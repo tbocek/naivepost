@@ -189,19 +189,30 @@ func TestATagForAFileNoBrowserPlaysSaysSo(t *testing.T) {
 // Only mp4: webm and mkv index as they go, and the flag is not theirs.
 func TestAnMp4ForAPageIsWrittenFrontFirst(t *testing.T) {
 	body := funcBody(t, "produce.go", `func \(a \*App\) produce\(`)
-	i := strings.Index(body, `args = append(args, "-movflags", "+faststart+negative_cts_offsets")`)
+	i := strings.Index(body, `"-movflags", "+faststart+negative_cts_offsets"`)
 	if i < 0 || !strings.Contains(body, `if st.Container == "mp4" {`) {
 		t.Fatal("the mp4 mux no longer asks for faststart")
 	}
-	// the second half of that flag is about SYNC, not loading: without it the
-	// muxer shifts the video track past its B-frame delay and writes an edit
-	// list saying "start 66.67 ms in", and a player that ignores edit lists
-	// runs the picture two frames behind the sound. Measured on a real render:
-	// ffprobe -ignore_editlist 1 gave video start_time 0.066667 against audio
-	// 0.000000, and 0.000000 for both once the offsets went in the sample
-	// table (ctts v1) instead.
+	// the other two are about SYNC, not loading. Without them the muxer shifts
+	// the video track past its B-frame delay and describes the shift in an
+	// edit list -- and players disagree about edit lists: Firefox only began
+	// honouring the media start time in 155 (bugzilla 1735300), so the file
+	// that is right in VLC runs its picture two frames behind the sound in a
+	// browser. negative_cts_offsets puts the delay in the sample table
+	// instead, use_editlist 0 leaves no list to read two ways. Measured on a
+	// real render with ffprobe honouring and then ignoring the lists:
+	//
+	//	before  video 0.021354 / 0.066667
+	//	after   video 0.000000 / 0.000000
 	if !strings.Contains(body, "negative_cts_offsets") {
 		t.Error("the mp4 leans on its edit list for A/V sync")
+	}
+	if !strings.Contains(body, `"-use_editlist", "0"`) {
+		t.Error("the mp4 still carries an edit list, which is the half of it a browser reads differently")
+	}
+	// mp4 only: it is a mov/mp4 muxer option, and webm would refuse it
+	if i := strings.Index(body, `if st.Container == "mp4" {`); i < 0 || i > strings.Index(body, `"-use_editlist"`) {
+		t.Error("the edit-list flag is not inside the mp4-only branch")
 	}
 	// on the LAST ffmpeg of the render -- the one that writes st.OutFile --
 	// and not on a clip encode, where it would cost a pass per clip for a file
@@ -211,5 +222,33 @@ func TestAnMp4ForAPageIsWrittenFrontFirst(t *testing.T) {
 	}
 	if strings.Contains(funcBody(t, "produce.go", `func \(a \*App\) encodeClip\(`), "faststart") {
 		t.Error("every clip is being rewritten front-first, for files only the concat reads")
+	}
+}
+
+// The audio of a joined render is CONTINUOUS, whatever the joins did to it.
+//
+// Every clip is encoded on its own and an AAC frame is 1024 samples, so a
+// clip's audio ends on a boundary its video does not, and the concat leaves a
+// hole at each join. Measured on a 14-clip lecture: 13 holes, 511 ms in total,
+// written into the file as stretched frame durations. VLC reads those
+// durations and stays in sync; a browser decodes AAC as the continuous stream
+// it usually is and runs the sound half a second ahead of the picture by the
+// end -- getting worse as it goes, which is the giveaway.
+func TestTheJoinedAudioIsFilledBeforeItIsLevelled(t *testing.T) {
+	if !strings.Contains(loudFlt, "aresample=async=1") {
+		t.Error("the joins' audio holes are left in the file; a browser will drift out of sync")
+	}
+	// in FRONT of the loudness pass, which is measuring what it is about to
+	// normalise
+	if i, j := strings.Index(loudFlt, "aresample"), strings.Index(loudFlt, "loudnorm"); i < 0 || j < 0 || i > j {
+		t.Errorf("the filter chain is %q -- the gap filling belongs in front of loudnorm", loudFlt)
+	}
+	// and it is the FINAL mux that gets it, not the per-clip encode: the holes
+	// are made by the concat, and a clip on its own has none
+	if !strings.Contains(funcBody(t, "produce.go", `func \(a \*App\) produce\(`), `"-af", loudFlt`) {
+		t.Error("the joined file is no longer filtered through loudFlt")
+	}
+	if strings.Contains(funcBody(t, "produce.go", `func \(a \*App\) encodeClip\(`), "aresample=async") {
+		t.Error("every clip is being gap-filled, for holes that only the join makes")
 	}
 }

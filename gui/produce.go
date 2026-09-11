@@ -33,7 +33,26 @@ const (
 	narrTail  = 0.2  // ...and after the last one, before the clip is over
 	maxExtend = 4.0  // seconds a clip may grow to fit its line
 	maxTempo  = 1.25 // ... and how much the line may be sped up after that
-	loudFlt   = "loudnorm=I=-14:TP=-1.5:LRA=11"
+	// The final mix, and the gap filling in front of it.
+	//
+	// Every clip is encoded on its own, and AAC frames are 1024 samples: a
+	// clip's audio therefore ends on a frame boundary that does not land
+	// exactly where its video does, and the concat leaves a HOLE at every
+	// join. Measured on a 14-clip lecture: 13 holes of 15-86 ms, 511 ms in
+	// total, written into the file as stretched frame durations.
+	//
+	// A player that reads each frame's own duration (VLC, mpv) plays the holes
+	// as the silences they are and stays in sync. One that decodes AAC as the
+	// continuous 1024-samples-a-frame stream it usually is -- which is what a
+	// browser does -- runs the sound ahead of the picture by the accumulated
+	// hole: 28 ms after the first join, half a second by the end. That is the
+	// "slightly out of sync, and worse as it goes on" that VLC will never show
+	// you. aresample fills them, and the same measurement afterwards is one
+	// hole of 60 ms instead of thirteen.
+	//
+	// In front of loudnorm rather than after it, so the loudness pass sees the
+	// continuous stream it is measuring.
+	loudFlt = "aresample=async=1:first_pts=0,loudnorm=I=-14:TP=-1.5:LRA=11"
 	// clipCeil limits every clip's audio before its AAC encode: lanes are mixed
 	// at their recorded levels (normalize=0), so two lanes are louder than one,
 	// and the loudnorm pass over the joined file comes too late to undo a
@@ -2147,17 +2166,32 @@ func (a *App) produce(segs []cutSeg, entries []narrEntry, st prodSettings, srcVi
 	// waits for. faststart is one more pass over the finished file and takes
 	// seconds. Not for webm or mkv, which index as they go.
 	if st.Container == "mp4" {
-		// ...and negative_cts_offsets with it, which is about SYNC and not
-		// about loading. B-frames mean the first frame is decoded before it is
-		// shown, so the first DTS is negative; the muxer's ordinary answer is
-		// to shift the whole video track forward and write an edit list saying
-		// "start 66.67 ms in". A player that honours edit lists is right
-		// either way -- VLC, mpv, ffprobe -- and one that does not shows the
-		// picture 67 ms (two frames) behind the sound, which is the lip sync
-		// somebody notices and nobody can measure. With this the offsets go in
-		// the sample table instead (ctts v1): the track starts at zero, the
-		// edit list has nothing left to say, and both kinds of player agree.
-		args = append(args, "-movflags", "+faststart+negative_cts_offsets")
+		// ...and the other two, which are about SYNC rather than loading.
+		//
+		// B-frames mean the first frame is decoded before it is shown, so its
+		// DTS is negative; the muxer's ordinary answer is to shift the whole
+		// video track forward and describe the shift in an edit list -- "start
+		// 66.67 ms into the media". Every player then has to agree about edit
+		// lists, and they do not. Firefox only started honouring the media
+		// start time in 155 (bugzilla 1735300), and the same file that is
+		// right in VLC runs its picture two frames behind the sound in a
+		// browser that reads them the other way. The AAC priming delay on the
+		// audio track is the same argument one track over.
+		//
+		// So: negative_cts_offsets puts the decode delay in the sample table
+		// (ctts v1), where the track genuinely starts at zero, and
+		// use_editlist 0 leaves no edit list to be read two ways. Measured on
+		// a real render, before and after, with ffprobe both honouring and
+		// ignoring the lists:
+		//
+		//	before  video 0.021354 / 0.066667   audio 0.000000 / 0.000000
+		//	after   video 0.000000 / 0.000000   audio 0.000000 / 0.000000
+		//
+		// Nothing is lost by dropping them: this render has no frames to trim
+		// off the front and nothing to reorder, which is the only thing an
+		// edit list is for here.
+		args = append(args, "-movflags", "+faststart+negative_cts_offsets",
+			"-use_editlist", "0")
 	}
 	args = append(args, st.OutFile)
 	if err := a.runCmd(ffTool("ffmpeg"), args...); err != nil {
