@@ -102,7 +102,7 @@ func TestProduceRendersAndDoesNotPlay(t *testing.T) {
 	}
 	// the run bar's ▶ is the render on this page, always -- there is no
 	// playback left for it to be handed to
-	if strings.Contains(funcBody(t, "pipeline.go", `func \(a \*App\) pageTransport\(`), `"produce"`) {
+	if strings.Contains(funcBody(t, "runbar.go", `func \(a \*App\) pageTransport\(`), `"produce"`) {
 		t.Error("the run bar still hands ▶ to a Produce preview that no longer exists")
 	}
 	// and the one shared player it borrowed goes with it

@@ -147,7 +147,7 @@ func TestAReadToCameraRunsThroughTheTextEdit(t *testing.T) {
 	for _, c := range []struct{ file, want string }{
 		{"transcript.go", `marks, err := a.findMarks(tl)`},
 		{"transcript.go", `return a.findTextEdit(tl)`},
-		{"cut_suggest.go", `a.cutByText(marks)`},
+		{"cut_suggest.go", `a.ed.applyTextCut(a.textCut(marks, a.ed.segs, a.ed.runs(), a.ed.talk))`},
 		{"project.go", "Style string `json:\"style,omitempty\"`"},
 		{"project.go", `Style:      a.videoStyleName(),`},
 		{"project.go", `a.applyStyle(p.Style)`},
@@ -244,7 +244,7 @@ func TestAFilmedRunIsTrimmedToItsWords(t *testing.T) {
 	if got := trimRunToWords(cutSeg{S: 300, E: 310}, words, none); got.S != 300 || got.E != 310 {
 		t.Errorf("a run with no words was trimmed: %+v", got)
 	}
-	if !strings.Contains(funcBody(t, "textedit.go", `func \(a \*App\) cutByText\(`), "trimRunToWords(") {
+	if !strings.Contains(funcBody(t, "textedit.go", `func \(a \*App\) textCut\(`), "trimRunToWords(") {
 		t.Error("the mechanical cut keeps the recordings' silent heads and tails")
 	}
 }

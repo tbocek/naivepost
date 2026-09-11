@@ -624,7 +624,7 @@ func TestPublishIsFoldedIntoProduce(t *testing.T) {
 	if strings.Contains(readSrc(t, "main.go"), `"publish"`) {
 		t.Error(`main.go still routes something to a "publish" page`)
 	}
-	play := funcBody(t, "pipeline.go", `func \(a \*App\) playClicked\(\) \{`)
+	play := funcBody(t, "runbar.go", `func \(a \*App\) playClicked\(\) \{`)
 	if strings.Contains(play, `case "publish":`) {
 		t.Error("▶ still dispatches to a Publish page that is not there")
 	}

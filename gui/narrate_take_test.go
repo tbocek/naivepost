@@ -390,7 +390,7 @@ func TestTheBandsPlayButtonBecomesAStopWhileTheTakesPlay(t *testing.T) {
 	}
 	// every way a walk can end has to redraw the button. The ones nobody
 	// clicked for arrive through the player, which reports to syncPlayIcons.
-	icons := funcBody(t, "pipeline.go", `func \(a \*App\) syncPlayIcons\(`)
+	icons := funcBody(t, "runbar.go", `func \(a \*App\) syncPlayIcons\(`)
 	if !strings.Contains(icons, "vp.band.syncPlayBtn()") {
 		t.Errorf("a walk that simply ran out leaves a ⏹ nothing is playing behind:\n%s", icons)
 	}

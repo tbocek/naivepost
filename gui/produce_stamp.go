@@ -18,9 +18,10 @@ import (
 
 // renderStampFile is where the stamp of the video beside it lives. Beside it
 // on purpose: deleting the video, or the folder, throws the answer away with
-// the thing it was about.
-func (a *App) renderStampFile() string {
-	out := a.prod.outFile
+// the thing it was about. Named from the settings the run was handed, not
+// from the page: this is read by the render's goroutine, and the page is the
+// GUI thread's.
+func renderStampFile(out string) string {
 	return strings.TrimSuffix(out, filepath.Ext(out)) + ".stamp"
 }
 
@@ -76,10 +77,10 @@ func fileMark(path string) string {
 // renderStale is whether ▶ has anything to encode: no file, or a file made
 // from something other than what is on the page now.
 func (a *App) renderStale(segs []cutSeg, entries []narrEntry, st prodSettings, vids, auds []string) bool {
-	if a.prod == nil || !exists(st.OutFile) {
+	if st.OutFile == "" || !exists(st.OutFile) {
 		return true
 	}
-	b, err := os.ReadFile(a.renderStampFile())
+	b, err := os.ReadFile(renderStampFile(st.OutFile))
 	if err != nil {
 		return true
 	}
@@ -93,7 +94,7 @@ func (a *App) markRendered(segs []cutSeg, entries []narrEntry, st prodSettings, 
 	if s == "" {
 		return
 	}
-	if err := os.WriteFile(a.renderStampFile(), []byte(s+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(renderStampFile(st.OutFile), []byte(s+"\n"), 0o644); err != nil {
 		a.logfIdle("    produce: could not write the render stamp (%v) — the next ▶ will encode again", err)
 	}
 }

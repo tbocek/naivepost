@@ -218,7 +218,7 @@ func TestProduceSaysWhatItReadsAndWroteLikeEveryOtherStep(t *testing.T) {
 			t.Errorf("produce.go still builds %s", gone)
 		}
 	}
-	if p, err := os.ReadFile("pipeline.go"); err == nil && strings.Contains(string(p), "setPlayIcon(p.playBtn") {
+	if p, err := os.ReadFile("runbar.go"); err == nil && strings.Contains(string(p), "setPlayIcon(p.playBtn") {
 		t.Error("the run bar still draws a play button Produce no longer has — that is a nil dereference")
 	}
 	// two rows, two jobs, one entry point that redraws both -- the encoder

@@ -195,7 +195,7 @@ func TestNarrateIsOneButton(t *testing.T) {
 			t.Errorf("narrateRun does not reach %s — ▶ only does half the step", half)
 		}
 	}
-	bar, err := os.ReadFile("pipeline.go")
+	bar, err := os.ReadFile("runbar.go")
 	if err != nil {
 		t.Fatal(err)
 	}

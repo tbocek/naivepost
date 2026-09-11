@@ -159,7 +159,7 @@ func TestOneTabAndOnePressDoTheWholeStep(t *testing.T) {
 
 	// ▶ reaches a step through the ticks beside it now (runPageNow), not
 	// through whichever page is showing
-	play := funcBody(t, "pipeline.go", `func \(a \*App\) runPageNow\(`)
+	play := funcBody(t, "runbar.go", `func \(a \*App\) runPageNow\(`)
 	if !strings.Contains(play, `case "prep":`) || !strings.Contains(play, "a.prepRun()") {
 		t.Errorf("▶ no longer runs the merged step:\n%s", play)
 	}

@@ -503,7 +503,7 @@ type App struct {
 	chainQuiet bool
 
 	stylePick  *gtk.DropDown
-	videoStyle string
+	videoStyle string     // which pipeline this session runs through; guarded by promptMu, like langTxt
 	styleQuiet bool       // applyStyle is setting the dropdown, not the hand
 	langEntry  *gtk.Entry // what the ASR is told this session is spoken in
 

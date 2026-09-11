@@ -152,7 +152,7 @@ func TestThePitchIsReadUnderTheSameLockAsTheVoice(t *testing.T) {
 // the sample's own button was drawing a ⏸ over it: a face that offered to pause
 // a sample that was not there, and synthesized a new one when pressed.
 func TestTheSamplesPlayButtonDoesNotClaimTheTakesWalk(t *testing.T) {
-	body := funcBody(t, "pipeline.go", `func \(a \*App\) syncPlayIcons\(`)
+	body := funcBody(t, "runbar.go", `func \(a \*App\) syncPlayIcons\(`)
 	i := strings.Index(body, "setPlayIcon(vp.playBtn")
 	if i < 0 {
 		t.Fatal("syncPlayIcons no longer draws the sample's play button")

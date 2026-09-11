@@ -183,6 +183,13 @@ cd gui && go build && ./gui
 
 Go 1.26, GTK4 via gotk4. No libadwaita.
 
+One package. The pipeline files -- transcribe, align, describe, fix, translate,
+the LLM and image clients -- touch no widget, and `gui/seam.go` says exactly
+what they may take from the application: an interface `*App` satisfies, plus
+the handful of fields read directly. A test reads those files and fails on
+anything past it, so a pipeline function that reaches for a page is a red test
+rather than a race that happens to work.
+
 ## A project on disk
 
 A project is a **folder** ending in `.naivepost`, holding everything the session

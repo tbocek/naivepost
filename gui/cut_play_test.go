@@ -40,7 +40,7 @@ func TestTheCutPageHasNoSuggestButtonOfItsOwn(t *testing.T) {
 // here is a ▶ that silently does nothing on a cut that has segments in it,
 // which is most cuts.
 func TestPlayRunsSuggestOnTheCutPage(t *testing.T) {
-	body := funcBody(t, "pipeline.go", `func \(a \*App\) runPageNow\(`)
+	body := funcBody(t, "runbar.go", `func \(a \*App\) runPageNow\(`)
 	i := strings.Index(body, `case "cut":`)
 	if i < 0 {
 		t.Fatal("playClicked has no Cut branch")

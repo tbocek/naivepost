@@ -344,11 +344,17 @@ func marksFrom(words []srcWord, kept []bool) []retake {
 	return out
 }
 
-// cutByText is the cut of a read to camera: every filmed second, minus the
+// textCut is the cut of a read to camera: every filmed second, minus the
 // marks, minus the dead air. No model -- the words decided, in Prepare.
-func (a *App) cutByText(marks []retake) {
-	a.ed.pushUndo()
-	segs := insertsOf(a.ed.segs)
+//
+// Only the arithmetic. What it is given is the editor's state as values --
+// the inserts it already holds, the filmed runs, where the talking is -- and
+// what it hands back is segments and two numbers for the log; putting them on
+// the page is the page's job (applyTextCut). It used to reach into the editor
+// itself, undo stack and status line included, which made a file about words
+// the one logic file that drove a widget.
+func (a *App) textCut(marks []retake, inserts []cutSeg, runs []tlSpan, talk [][2]float64) (segs []cutSeg, marked int, dead float64) {
+	segs = insertsOf(inserts)
 	// each filmed run trimmed to its words: a recording starts rolling
 	// before the first word and stops after the last, and neither stretch
 	// is the video. The same fenced placement a cut gets (endAfter,
@@ -357,19 +363,12 @@ func (a *App) cutByText(marks []retake) {
 	paths := append(vids, auds...)
 	words := a.spokenWords(paths)
 	edgeOf := a.edgeLookup(paths, a.sessionRows())
-	for _, r := range a.ed.runs() {
+	for _, r := range runs {
 		segs = append(segs, trimRunToWords(cutSeg{S: r.t0, E: r.t1}, words, edgeOf))
 	}
-	n := dropMarked(&segs, marks)
-	gone := dropDeadAir(&segs, a.ed.talk)
-	a.ed.segs = segs
-	a.ed.coalesce()
-	a.ed.persist()
-	a.ed.setBase()
-	a.setStatus(fmt.Sprintf("cut by the words: %d segments", len(a.ed.segs)))
-	total := a.ed.cutLen()
-	a.logf(">>> cut by the words: %d stretch(es) taken out, %s of silence, %d segments, %d:%02d total",
-		n, mmss(gone), len(a.ed.segs), int(total)/60, int(total)%60)
+	marked = dropMarked(&segs, marks)
+	dead = dropDeadAir(&segs, talk)
+	return segs, marked, dead
 }
 
 // trimRunToWords is a filmed run cut down to its speech: from just before its

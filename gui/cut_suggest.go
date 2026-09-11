@@ -46,7 +46,7 @@ func (a *App) suggestClicked() {
 		if m, ok := a.marksFromText(); ok {
 			marks = m
 		}
-		a.cutByText(marks)
+		a.ed.applyTextCut(a.textCut(marks, a.ed.segs, a.ed.runs(), a.ed.talk))
 		return
 	}
 	session := sessionText(rows, a.narratorMic(), marks)
@@ -1081,6 +1081,21 @@ func wordsBetween(rows []tsvRow, t0, t1 float64) bool {
 // again, and no arrangement of segments may keep them. What is left too short
 // to be a scene goes with them -- a sliver either side of a stumble is not a
 // shot, it is the frames the stumble was wearing.
+// applyTextCut puts the words' cut on the page: one undo step, the segments,
+// and the two lines that say what happened. The half of the old cutByText that
+// touched the editor, kept here with the rest of what ▶ does to the page.
+func (ed *cutEditor) applyTextCut(segs []cutSeg, marked int, dead float64) {
+	ed.pushUndo()
+	ed.segs = segs
+	ed.coalesce()
+	ed.persist()
+	ed.setBase()
+	ed.a.setStatus(fmt.Sprintf("cut by the words: %d segments", len(ed.segs)))
+	total := ed.cutLen()
+	ed.a.logf(">>> cut by the words: %d stretch(es) taken out, %s of silence, %d segments, %d:%02d total",
+		marked, mmss(dead), len(ed.segs), int(total)/60, int(total)%60)
+}
+
 // dropDeadAir takes the long silences out of the clips, and returns how much
 // went. Nothing else does.
 //

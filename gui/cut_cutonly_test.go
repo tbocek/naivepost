@@ -266,7 +266,7 @@ func TestEachPlayButtonBringsItsOwnPreview(t *testing.T) {
 // and the ▶✂ face stays lit while the preview is the cut at all. Buttons and
 // CSS are live widgets, so the seam is pinned in the source.
 func TestTheTwoPlayButtonsAreWired(t *testing.T) {
-	src := readSrc(t, "pipeline.go")
+	src := readSrc(t, "runbar.go")
 	for _, want := range []string{
 		// plain ▶ wears ⏸ only while the RECORDING runs...
 		"setPlayIcon(a.ed.playBtn, a.ed.playing() && !a.ed.cutOnly,",
@@ -274,7 +274,7 @@ func TestTheTwoPlayButtonsAreWired(t *testing.T) {
 		"a.ed.syncCutPlay()",
 	} {
 		if !strings.Contains(src, want) {
-			t.Errorf("pipeline.go no longer contains %q", want)
+			t.Errorf("runbar.go no longer contains %q", want)
 		}
 	}
 	src = readSrc(t, "cut.go")

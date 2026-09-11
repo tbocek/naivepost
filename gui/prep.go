@@ -224,6 +224,9 @@ func (a *App) buildSources() *gtk.Box {
 		"moments worth keeping. Both describe the picture; only what the cut is chosen from differs.")
 	a.stylePick.SetVAlign(gtk.AlignCenter)
 	a.stylePick.NotifyProperty("selected", func() {
+		// the cache first, then the save: the runner reads the cache, and a
+		// project written from the widget would be one from the OLD cache
+		a.setVideoStyle(styleOf(a.stylePick.Selected()))
 		if !a.styleQuiet {
 			a.saveProjectNow()
 		}
@@ -559,18 +562,29 @@ func openAtHalf(p *gtk.Paned) {
 	})
 }
 
-// videoStyleName is the style as the page shows it, or as the project said
-// before the page existed.
+// videoStyleName is the style, callable from a runner's goroutine.
+//
+// A cached string and not the dropdown, for the same reason sessionCtx and
+// asrLanguage are: the widget belongs to the GUI thread, and this is read by
+// findMarks in the middle of Prepare -- which is a runner. It used to read
+// stylePick.Selected() directly, a GTK call off the main thread that happened
+// to work. The dropdown writes the cache on every change (prep.go) and the
+// project writes it on load (applyStyle), so the two never disagree.
 func (a *App) videoStyleName() string {
-	if a.stylePick != nil {
-		return styleOf(a.stylePick.Selected())
-	}
+	a.promptMu.Lock()
+	defer a.promptMu.Unlock()
 	return a.videoStyle
+}
+
+func (a *App) setVideoStyle(name string) {
+	a.promptMu.Lock()
+	a.videoStyle = name
+	a.promptMu.Unlock()
 }
 
 // applyStyle is the project's answer, put on the page without saving it back.
 func (a *App) applyStyle(name string) {
-	a.videoStyle = name
+	a.setVideoStyle(name)
 	if a.stylePick == nil {
 		return
 	}

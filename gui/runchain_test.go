@@ -28,7 +28,7 @@ func TestTheChainIsAdvancedByTheStepThatFinished(t *testing.T) {
 		t.Errorf("the chain runs %v", pages)
 	}
 	// every step names a page the dispatch actually knows
-	run := funcBody(t, "pipeline.go", `func \(a \*App\) runPageNow\(`)
+	run := funcBody(t, "runbar.go", `func \(a \*App\) runPageNow\(`)
 	for _, s := range chainSteps {
 		if !strings.Contains(run, `case "`+s.page+`":`) {
 			t.Errorf("the chain cannot run %q", s.page)
@@ -105,7 +105,7 @@ func TestPlayAndItsMenuAreOneSplitControl(t *testing.T) {
 	if strings.Contains(readSrc(t, "main.go"), "ctlRow.Append(a.playBtn)") {
 		t.Error("the run bar appends ▶ separately, so there are two play buttons")
 	}
-	if !strings.Contains(funcBody(t, "pipeline.go", `func \(a \*App\) playClicked\(`), "a.chainRun()") {
+	if !strings.Contains(funcBody(t, "runbar.go", `func \(a \*App\) playClicked\(`), "a.chainRun()") {
 		t.Error("▶ does not run the ticked steps")
 	}
 	// the house helper, not a hand-rolled box: three places already draw a
