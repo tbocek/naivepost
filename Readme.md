@@ -1,4 +1,4 @@
-# naivepost
+# Native AI Video Editor for Post Processing, in short: Naivepost
 
 A desktop video editor for sessions you have already recorded, where the
 tedious half of the work is done by models running on your own machine.
