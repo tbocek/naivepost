@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!--
+    The same mark at 16px, monochrome, for a header bar or a tab.
+
+    The note lives inside the root element for the same reason as in the full
+    icon: a loader sniffs the first couple of hundred bytes of a file to decide
+    what it is, and a comment above <svg> pushes the only recognisable thing in
+    the file out of reach.
+
+    Not a scaled copy. The plate, the gradient and the red cut line all turn to
+    mud at this size, and the offset between the two pieces has to do the whole
+    job on its own — which is the reason the full icon is built around that
+    offset rather than around the red line.
+
+    Even-odd, because a symbolic icon is one flat colour: the sprocket holes
+    have to be genuinely transparent rather than filled with a background that
+    is not there.
+  -->
+  <g fill="#222222" fill-rule="evenodd">
+    <path d="M2 2.5 H6.5 A1 1 0 0 1 7.5 3.5 V9.5 A1 1 0 0 1 6.5 10.5 H2 A1 1 0 0 1 1 9.5 V3.5 A1 1 0 0 1 2 2.5 Z
+             M2 3.5 h1.7 v1.7 H2 Z  M4.3 3.5 h1.7 v1.7 H4.3 Z
+             M2 7.3 h1.7 v1.7 H2 Z  M4.3 7.3 h1.7 v1.7 H4.3 Z"/>
+    <path d="M9.7 5.5 H14.2 A1 1 0 0 1 15.2 6.5 V12.5 A1 1 0 0 1 14.2 13.5 H9.7 A1 1 0 0 1 8.7 12.5 V6.5 A1 1 0 0 1 9.7 5.5 Z
+             M9.7 6.5 h1.7 v1.7 H9.7 Z  M12 6.5 h1.7 v1.7 H12 Z
+             M9.7 10.3 h1.7 v1.7 H9.7 Z M12 10.3 h1.7 v1.7 H12 Z"/>
+  </g>
+</svg>

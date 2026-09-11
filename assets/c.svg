@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" data-naivepost="badge" data-naivepost-args="label=C">
+  <!-- Input: label | Letter | the big letter on the card -->
+  <!-- Input: item | Caption | what earned it — under the badge -->
+  <!-- Input: color | Colour | #rrggbb; empty follows the letter -->
+  <rect width="1920" height="1080" fill="#14171c"/>
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.03;0.12;1" dur="2.95s" fill="freeze"/>
+    <animateTransform attributeName="transform" type="translate" values="-1400 0;-1400 0;84 0;0 0;0 0" keyTimes="0;0.03;0.18;0.25;1" dur="2.95s" fill="freeze"/>
+    <rect x="740" y="320" width="440" height="440" rx="52" fill="#ffff7f"/>
+    <text x="960" y="645" font-family="DejaVu Sans, Liberation Sans, Helvetica, Arial, sans-serif" font-size="300" font-weight="700" fill="#16181d" text-anchor="middle">C</text>
+  </g>
+</svg>
