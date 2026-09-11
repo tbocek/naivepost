@@ -143,3 +143,65 @@ func TestTheClipCountIsOnlyEverWhatIsFinished(t *testing.T) {
 		}
 	}
 }
+
+// An empty Server box is an answer, the way it is for the audio and image
+// servers: the writing model runs on this machine too, on halogen-flash-
+// server's own port. It used to be a box with no default and a placeholder
+// reading "https://ai.example.com", so a machine running the stack as it comes
+// was told "no LLM configured" until three URLs had been typed.
+func TestAnEmptyWritingServerIsTheLocalOne(t *testing.T) {
+	if got, want := llmServer(appConf{}), "http://127.0.0.1:8731"; got != want {
+		t.Errorf("with nothing typed, llmServer = %q, want %q", got, want)
+	}
+	if got := llmServer(appConf{Server: "  https://ai.jos.li/  "}); got != "https://ai.jos.li" {
+		t.Errorf("a typed server gave %q -- its spaces and trailing slash have to go, "+
+			"because a path is joined straight onto it", got)
+	}
+	// and the model still has none: the id has to be one the server lists, and
+	// a made-up default would fail every call with a name nobody typed
+	if (appConf{}).withDefaults().Model != "" {
+		t.Error("the model id was given a default; Fetch models is how that box is filled")
+	}
+}
+
+// Thinking is switched off in BOTH spellings, because the two servers this
+// talks to read different ones: llama.cpp renders the chat template itself and
+// takes chat_template_kwargs, halogen-flash-server takes the same two names at
+// the top level (/health lists them under "supported") and ignores what it does
+// not know.
+//
+// The nested spelling alone is what shipped, and halogen never saw it: the
+// Settings Test asks for one word inside a 16-token budget, the model spent all
+// 16 on reasoning, and the round trip came back with empty content and
+// finish_reason "length" -- reported to the user as a fault of the model. With
+// the switch at the top level the same request answers in two tokens.
+func TestTheThinkingSwitchGoesOutInBothSpellings(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		body := map[string]any{}
+		thinkSwitch(body, on)
+		if body["enable_thinking"] != on {
+			t.Errorf("top-level enable_thinking is %v, want %v", body["enable_thinking"], on)
+		}
+		kw, ok := body["chat_template_kwargs"].(map[string]any)
+		if !ok {
+			t.Fatalf("no chat_template_kwargs: %v", body)
+		}
+		if kw["enable_thinking"] != on {
+			t.Errorf("templated enable_thinking is %v, want %v", kw["enable_thinking"], on)
+		}
+		// the reasoning is kept either way: the recorded page is the only
+		// place a run's thinking can be read afterwards
+		if body["preserve_thinking"] != true || kw["preserve_thinking"] != true {
+			t.Error("preserve_thinking is not sent in both spellings")
+		}
+	}
+	// and both callers go through it -- the pipeline's own call and the Test
+	// button, which has to fail and pass for the same reasons the run does
+	if !strings.Contains(readSrc(t, "llm.go"), "thinkSwitch(body, thinking)") {
+		t.Error("llmChatPost sets the thinking switch some other way")
+	}
+	if !strings.Contains(readSrc(t, "setup.go"), "thinkSwitch(req, false)") {
+		t.Error("the Settings Test does not send the switch the pipeline sends, so it can " +
+			"pass or fail for reasons a run never meets")
+	}
+}

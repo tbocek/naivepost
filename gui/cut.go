@@ -4958,10 +4958,15 @@ func (a *App) buildCut() gtk.Widgetter {
 					return
 				}
 			}
-			// a green border under the press: the drag trims it (hovering
-			// highlighted it first, so one button is enough). Lane badges are
-			// asked before anything else -- they exist only while a scene is in
-			// hand -- and the permanent lane switch before a scene's badge.
+			// Lane badges are asked before anything else -- they exist only
+			// while a scene is in hand -- and the permanent lane switch before
+			// a scene's badge.
+			//
+			// A green border is NOT among them: trimming one is the right
+			// button's (the slide gesture below), and this button reaching for
+			// it would take six px either side of every border away from
+			// drawing a selection there. The selection's own ends are the one
+			// exception, above, because they are this button's own object.
 			if area == ed.audArea {
 				if base := ed.laneSwitchAt(x+ed.viewX, y); base != "" {
 					ed.toggleLaneAll(base)
@@ -5180,6 +5185,27 @@ func (a *App) buildCut() gtk.Widgetter {
 			a0, a1 := ed.selSpan()
 			t := ed.tAtView(x)
 			px := x + ed.viewX
+			// A BORDER under the pointer is a border, even where the blue lies
+			// over it. The trim arrow has been showing there all along
+			// (wantCursor), and the selection's own verb -- slide every scene
+			// inside it -- is what the REST of the blue means, not its edges.
+			// Without this a selection that ends on the border you want to
+			// move makes that border unreachable: the left button starts a new
+			// selection, the right one slides the scenes, and the one thing
+			// the pointer promised is the one thing neither does.
+			onEdge := false
+			if area == ed.srcArea {
+				switch {
+				case ed.hitPics(y):
+					_, _, onEdge = ed.edgeAt(px)
+					onEdge = onEdge || ed.onHeldEdge(px)
+				case ed.hitSelBand(y):
+					// the green bar stands for the clip, so its ends are that
+					// clip's borders (bandClipPartAt)
+					_, part := ed.bandClipPartAt(px)
+					onEdge = part == selStart || part == selEnd
+				}
+			}
 			// The cut's own green first: left says WHICH SECONDS, right moves
 			// what is under it. Below the selection's case, which is the same
 			// verb over every scene inside it.
@@ -5242,7 +5268,7 @@ func (a *App) buildCut() gtk.Widgetter {
 				slideSrcs = []string{ed.pairAudAt(x+ed.viewX, y)}
 				slideWhat = slideSrcs[0]
 			case ed.sel.active && ed.sel.aud == "" && t >= a0 && t < a1 &&
-				(ed.hitPics(y) || ed.hitSelBand(y)):
+				(ed.hitPics(y) || ed.hitSelBand(y)) && !onEdge:
 				slideSegs = append([]cutSeg(nil), ed.segs...)
 				slideWhat = "the selected scenes"
 				foldShutList = ed.foldOpen(a0, a1, px) // same rule as one scene, over all of them

@@ -128,7 +128,8 @@ func (a *App) findRetakes(rows []tsvRow) ([]retake, error) {
 	}
 	brief := retakeBrief(spoken, a.narratorMic())
 	user := a.ctxBlockFor("retake") + fmt.Sprintf("WHAT WAS SAID, line by line:\n%s", brief)
-	msgs := []map[string]any{msg("system", a.sysPrompt("retake")), msg("user", user)}
+	system := a.sysPrompt("retake")
+	msgs := []map[string]any{msg("system", system), msg("user", user)}
 	// Asked MORE THAN ONCE, and every answer pooled. The call is sampled, and
 	// one run's answer drifts against the next -- twelve marks, then ten, one
 	// of them inverted -- so a retake missed is a retake missed by luck. It is
@@ -137,13 +138,26 @@ func (a *App) findRetakes(rows []tsvRow) ([]retake, error) {
 	// nothing: a wrong mark is refused whichever run it came from.
 	var found []struct{ From, To, Again int }
 	seen := map[[3]int]bool{}
+	cached := 0
 	for run := 0; run < retakeRuns; run++ {
 		var out struct {
 			Abandoned []struct {
 				From, To, Again int
 			} `json:"abandoned"`
 		}
-		reply, err := a.llmChatRetry("retake", msgs, false)
+		// the same session asked the same way: the same pool (llmcache.go).
+		// The RUN NUMBER is in the key, which is the whole point -- these
+		// requests are deliberately identical and their answers are meant to
+		// differ, so one slot per run replays the pool a re-run would
+		// otherwise pay for again, and never collapses three answers into one.
+		ask := askKey(system, user, run)
+		reply, hit := a.cachedReply("retake", ask)
+		var err error
+		if hit {
+			cached++
+		} else {
+			reply, err = a.llmChatRetry("retake", msgs, false)
+		}
 		if err != nil {
 			if run == 0 {
 				return nil, err
@@ -155,12 +169,20 @@ func (a *App) findRetakes(rows []tsvRow) ([]retake, error) {
 			a.logfIdle("!!! retakes: run %d: %s -- its answer is set aside", run+1, p)
 			continue
 		}
+		// kept only once it parsed, like every other cached answer: a reply
+		// that was set aside is one the next run has to ask about again
+		if !hit {
+			a.keepReply("retake", ask, reply)
+		}
 		for _, x := range out.Abandoned {
 			if k := [3]int{x.From, x.To, x.Again}; !seen[k] {
 				seen[k] = true
 				found = append(found, x)
 			}
 		}
+	}
+	if cached > 0 {
+		a.logfIdle(">>> retakes: %d of %d run(s) answered from the cache", cached, retakeRuns)
 	}
 	marks, notes := keepRetakes(spoken, found)
 	// ...and then the half the model cannot be taken at its word on: a retake
@@ -771,6 +793,14 @@ func (a *App) sessionWords(paths []string) []srcWord {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].s < out[j].s })
+	// ...and then the spelling the transcript pass settled on, which is where
+	// the session context reaches the subtitles (subwords.go). The raw
+	// transcript above is what the ALIGNER was handed and is the only thing
+	// its bare words can be walked against; this is what the editor asked the
+	// line to say. Unshifted rows on purpose: the words here carry no shift
+	// either, and matching two clocks that have moved differently matches
+	// nothing.
+	fixWords(out, loadTSVRows(filepath.Join(a.transcriptDir(), "session.tsv")))
 	return out
 }
 

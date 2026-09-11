@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -208,6 +209,92 @@ func TestTheWordsGetTheirSpellingBack(t *testing.T) {
 	}
 }
 
+// A gap is not a reason to throw a language away.
+//
+// One line of 123 came back missing and the whole German track was dropped --
+// 122 good lines binned for one, on a call that costs three minutes. The gaps
+// are asked about again on their own, and whatever is still missing after that
+// stays in the language it was spoken in: a viewer can read one English line
+// in a German track, and cannot read a track that was never written.
+func TestAMissingLineDoesNotCostTheWholeTrack(t *testing.T) {
+	body := funcBody(t, "translate.go", `func \(a \*App\) translateCues\(`)
+	if strings.Contains(body, "that language is left out\",\n\t\t\tname, miss") {
+		t.Error("a short answer still drops the whole track")
+	}
+	if !strings.Contains(body, "a.fillGaps(out, cues, name, system)") {
+		t.Error("the missing lines are never asked about again")
+	}
+	// ...and what is still missing falls back to the original text rather than
+	// to an empty cue, which would be a blank subtitle on screen
+	if !strings.Contains(body, `out[i] = strings.ReplaceAll(cues[i].text, "\n", " / ")`) {
+		t.Error("a line that never arrived is left empty")
+	}
+	// the cache holds a track that is complete IN THE LANGUAGE ASKED FOR: one
+	// carrying lines of the original must not be inherited by the next render
+	if !strings.Contains(body, "if !hit && miss == 0 {") {
+		t.Error("a part-translated track is cached, so it can never be completed")
+	}
+	// an empty cue is not a missing translation: it went out empty and came
+	// back empty, and asking again gets nothing again -- two calls were spent
+	// on exactly that
+	if !strings.Contains(body, "miss -= blankCues(cues, out)") {
+		t.Error("a cue with no words in it is counted as a line the model lost")
+	}
+	// the second ask is never served from the cache: it exists BECAUSE the
+	// answer before it was short
+	gaps := funcBody(t, "translate.go", `func \(a \*App\) fillGaps\(`)
+	if strings.Contains(gaps, "cachedReply(") {
+		t.Error("the gap-filling call reads the cache, which would repeat the gap for ever")
+	}
+	// it sends the lines' OWN numbers, or the answer lands on the wrong cues
+	if !strings.Contains(gaps, "their numbers ") || !strings.Contains(gaps, `%d\t%s\n", i+1`) {
+		t.Error("the gap request renumbers its lines from 1")
+	}
+}
+
+// The .srt is written beside the video for EVERY subtitle choice.
+//
+// The dropdown decides what the VIDEO carries -- burned into the picture, a
+// track inside the file, or neither -- and the file beside it is what you
+// upload with. Which of the two was asked for is not a thing to find out an
+// hour later with the encode already spent, so there is no choice that
+// withholds it: "sidecar" was this list's way of saying "the file and nothing
+// in the picture", and that is what "none in the video" means now.
+func TestTheSrtIsWrittenWhateverTheVideoCarries(t *testing.T) {
+	if len(prodSubsKey) != 3 || prodSubsKey[2] != "none" {
+		t.Errorf("the subtitle choices are %v, want burn/mux/none", prodSubsKey)
+	}
+	for _, k := range prodSubsKey {
+		if k == "sidecar" {
+			t.Error(`"sidecar" is still a choice, though every choice writes one`)
+		}
+	}
+	// a project that stored it keeps what it meant: nothing in the video
+	var st prodSettings
+	if err := json.Unmarshal([]byte(`{"subs":"sidecar"}`), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Subs != "none" {
+		t.Errorf("a stored sidecar project loads as %q, want none", st.Subs)
+	}
+	// the writing is not behind a mode test any more, and the cues it writes
+	// are built whatever the mode is -- they reach the picture only through
+	// the burn gate
+	body := funcBody(t, "produce.go", `func \(a \*App\) produce\(`)
+	if strings.Contains(body, `if st.Subs != "none" {`) {
+		t.Error("the subtitle lines are still built only for some choices")
+	}
+	side := strings.Index(body, `os.WriteFile(stem+tail+".srt"`)
+	burn := strings.Index(body, `if st.Subs == "burn" && len(caps) > 0 {`)
+	if side < 0 || burn < 0 {
+		t.Fatalf("produce no longer writes the .srt beside the video, or no longer burns (%d, %d)", side, burn)
+	}
+	// nothing to say is the one case that writes nothing at all
+	if !strings.Contains(body, "if cue == 0 {") {
+		t.Error("a render with no lines still writes an empty .srt beside the video")
+	}
+}
+
 // A translation is the same cues with their text in another language and their
 // times untouched, read back BY NUMBER: a model that drops a line or wraps one
 // in two would otherwise shift every line after it onto the wrong seconds,
@@ -236,11 +323,17 @@ func TestATranslationKeepsEveryLineOnItsOwnSeconds(t *testing.T) {
 	if got, miss := numberedLines("1\teins\n99\tnope", 2); miss != 1 || got[0] != "eins" {
 		t.Errorf("a line number off the end landed somewhere: %+v (%d missing)", got, miss)
 	}
-	// the render only translates where there is somewhere to put it -- not
-	// burned into the one picture, not when there are no subtitles at all
+	// the render translates whenever there are lines to translate: every
+	// choice writes the .srt beside the video now, so there is always
+	// somewhere to put them -- a picture with the words burned into it has
+	// one language IN it and is no reason to withhold the others
 	src := readSrc(t, "produce.go")
-	if !strings.Contains(src, `if cue > 0 && (st.Subs == "mux" || st.Subs == "sidecar") {`) {
-		t.Error("the render translates for a track it is not going to write")
+	if !strings.Contains(src, "tracks = a.subTracks(cues, clipDir, st.SubLangs)") ||
+		!strings.Contains(src, "if cue > 0 {") {
+		t.Error("the render no longer translates for every choice")
+	}
+	if strings.Contains(src, `st.Subs == "sidecar"`) {
+		t.Error("a subtitle mode that no longer exists is still being tested for")
 	}
 	// every track gets its own language tag, or a player lists two "English"
 	if !strings.Contains(src, `fmt.Sprintf("-metadata:s:s:%d", i), "language="+t.tag`) {

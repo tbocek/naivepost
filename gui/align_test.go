@@ -112,10 +112,18 @@ func TestSettingsNamesTheAlignerRatherThanAskingForOne(t *testing.T) {
 	if !strings.Contains(src, "testAligner(url, k, id)") {
 		t.Error("the aligner row has no Test")
 	}
-	// a box, empty by default: no aligner is a working setup, so a default
-	// naming one would put a red badge on a row allowed to be empty
-	if !strings.Contains(src, `alignModel := entry(c.AlignModel, ""`) {
-		t.Error("the aligner row has no box, or the box arrives with a name already in it")
+	// a box that is EMPTY and not blank: the preferred aligner is a
+	// placeholder, never text, because a name written into the box is a name
+	// the server is held to (alignModels), and no aligner at all is still a
+	// working setup -- a filled box would put a red badge on a row allowed to
+	// be empty
+	if !strings.Contains(src, "alignModel := entry(c.AlignModel, defAlignModel+") {
+		t.Error("the aligner row does not offer the preferred aligner as a placeholder")
+	}
+	if strings.Contains(src, "alignModel := entry(defAlignModel") ||
+		strings.Contains(src, "c.AlignModel = or(c.AlignModel") {
+		t.Error("the aligner box arrives with a name already IN it, which holds every " +
+			"server to that one id")
 	}
 
 	// and it says what it means when there is none, rather than failing: the
@@ -132,6 +140,41 @@ func TestSettingsNamesTheAlignerRatherThanAskingForOne(t *testing.T) {
 	// two aligners is a warning, not a silent pick
 	if !strings.Contains(body, "the first is used") {
 		t.Error("with two aligners registered, nothing says which one answers")
+	}
+	// ...and "first" is the run's own order, not the alphabet
+	if !strings.Contains(body, "alignOrder(ids)") {
+		t.Error("Test orders the aligners its own way, so it can name a different " +
+			"first than the run will use")
+	}
+}
+
+// Which aligner an empty box means: the one this stack is built around, where
+// the server has it. The stack registers two -- mms-aligner and qwen3-aligner
+// -- and the list used to be plain sort.Strings, so every machine with both
+// aligned through the MMS one because "mms" sorts first. That is picking the
+// aligner by alphabet, and the aligner is what decides whether a cut lands on
+// the word or 200 ms into it.
+func TestThePreferredAlignerIsTriedFirst(t *testing.T) {
+	ids := []string{"whisperx-align", "mms-aligner", defAlignModel}
+	alignOrder(ids)
+	if ids[0] != defAlignModel {
+		t.Errorf("the aligners are tried %v, want %q first", ids, defAlignModel)
+	}
+	if ids[1] != "mms-aligner" || ids[2] != "whisperx-align" {
+		t.Errorf("the rest are not in name order: %v -- one server has to try them the "+
+			"same way every run", ids)
+	}
+	// a preference and not a rule: a server without it still aligns, through
+	// whatever it does have
+	other := []string{"whisperx-align", "mms-aligner"}
+	alignOrder(other)
+	if other[0] != "mms-aligner" {
+		t.Errorf("a server with no %s aligns through %v, want mms-aligner first", defAlignModel, other)
+	}
+	// and nothing writes the preference into the settings file, which would
+	// hold such a server to a name it cannot answer to
+	if (appConf{}).withDefaults().AlignModel != "" {
+		t.Error("withDefaults names an aligner; no aligner at all is a working setup")
 	}
 }
 

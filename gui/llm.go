@@ -17,9 +17,28 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
+	"syscall"
 	"time"
 )
+
+// llmPort is where the writing model is expected when the Server box is empty:
+// the port halogen-flash-server listens on
+// (https://github.com/peonist-ai/halogen-flash-server, HALOGEN_API_PORT), on
+// the loopback. The same convention as ttsPort and sdPort, and for the same
+// reason: the stack this app is built against runs on this machine, so a
+// machine running it as it comes should not have to type three URLs to say so.
+const llmPort = 8731
+
+// llmServer is the writing server a config points at, ready to have a path
+// joined to it: the box, or the local default when it is empty.
+func llmServer(c appConf) string {
+	if u := strings.TrimRight(strings.TrimSpace(c.Server), "/"); u != "" {
+		return u
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", llmPort)
+}
 
 func txtPart(s string) map[string]any {
 	return map[string]any{"type": "text", "text": s}
@@ -213,13 +232,39 @@ func (r chatReply) recorded() string {
 	return b.String()
 }
 
+// thinkSwitch says whether the model may reason before it answers, in BOTH
+// spellings the local servers take. llama.cpp renders the chat template itself
+// and reads chat_template_kwargs; halogen-flash-server takes the same two
+// names at the top level -- /health lists "enable_thinking" and
+// "preserve_thinking" under "supported" -- and ignores keys it does not know.
+// Sending both is what lets one settings file point at either.
+//
+// It is not decoration. With the nested spelling alone, halogen never saw the
+// switch: asked for one word inside a 16-token budget it spent all 16 on
+// reasoning and answered with empty content (finish_reason "length"), which
+// the Settings Test reported as a fault of the model. The same request with
+// the switch at the top level answers in two tokens, and its prompt is 40
+// tokens shorter -- the thinking scaffold comes out of the template too.
+func thinkSwitch(body map[string]any, on bool) {
+	body["enable_thinking"] = on
+	// the reasoning is kept in the reply either way: the log records what the
+	// model thought (chatReply.recorded), and a job that did not ask to think
+	// has nothing to keep
+	body["preserve_thinking"] = true
+	body["chat_template_kwargs"] = map[string]any{
+		"enable_thinking": on, "preserve_thinking": true,
+	}
+}
+
 // llmChatPost is the wire call itself: build the body, post it, read the answer.
 // step names the caller so the watch can say whose call is running (llmstall.go).
 func (a *App) llmChatPost(step string, msgs []map[string]any, thinking bool,
 	tools []map[string]any, onText func(string)) (chatReply, error) {
 	c := a.readConf()
-	if c.Server == "" || c.Model == "" {
-		return chatReply{}, fmt.Errorf("no LLM configured -- use the gear button")
+	// the server has a default and the model cannot: the id has to match what
+	// this server actually serves, and Fetch models is how it is found
+	if c.Model == "" {
+		return chatReply{}, fmt.Errorf("no LLM model configured -- use the gear button")
 	}
 	body := map[string]any{
 		"model":            c.Model,
@@ -232,14 +277,11 @@ func (a *App) llmChatPost(step string, msgs []map[string]any, thinking bool,
 	if thinking {
 		body["temperature"] = 1.0
 		body["max_tokens"] = thinkTokens
-		body["chat_template_kwargs"] = map[string]any{"preserve_thinking": true}
 	} else {
 		body["temperature"] = 0.6
 		body["max_tokens"] = plainTokens
-		body["chat_template_kwargs"] = map[string]any{
-			"preserve_thinking": true, "enable_thinking": false,
-		}
 	}
+	thinkSwitch(body, thinking)
 	if len(tools) > 0 {
 		body["tools"] = tools
 	}
@@ -263,7 +305,7 @@ func (a *App) llmChatPost(step string, msgs []map[string]any, thinking bool,
 	stop := w.guard(cancel)
 	defer stop()
 	req, err := http.NewRequestWithContext(ctx, "POST",
-		strings.TrimRight(c.Server, "/")+"/v1/chat/completions", bytes.NewReader(buf))
+		llmServer(c)+"/v1/chat/completions", bytes.NewReader(buf))
 	if err != nil {
 		return chatReply{}, err
 	}
@@ -548,12 +590,100 @@ func (a *App) llmChatRetryOn(step string, msgs []map[string]any, thinking bool, 
 
 // llmChatRetryTools is the retrying call with tools on the table; with none
 // it is llmChatRetryOn exactly.
+//
+// Two kinds of failure, and they deserve different patience. An answer this app
+// cannot use -- a 400, a refusal, a reply that will not parse -- is the same
+// answer in two seconds, so it gets the one short retry it always had. A call
+// that died IN TRANSIT is a different thing: the server went away mid-answer
+// and is coming back. On this stack that is its own watchdog taking the
+// container down after 180 s of engine silence, for the restart policy to pick
+// up, and the restart is minutes of loading weights. Waiting through it is the
+// difference between a run that carries on and a Prepare that starts over --
+// so the waits climb past the restart rather than giving up inside it.
 func (a *App) llmChatRetryTools(step string, msgs []map[string]any, thinking bool,
 	tools []map[string]any, run toolRunner, onText func(string)) (string, error) {
 	reply, err := a.llmChatTools(step, msgs, thinking, tools, run, onText)
-	if err == nil || errors.Is(err, errStopped) {
-		return reply, err
+	for try := 0; err != nil && !errors.Is(err, errStopped); try++ {
+		wait, again := llmWait(err, try)
+		if !again {
+			break
+		}
+		if llmGone(err) {
+			a.logfIdle("!!! %s: the server went away mid-call (%v) -- waiting %s and asking again (%d of %d)",
+				step, err, durOf(wait), try+1, len(llmBackoff))
+		}
+		if !a.nap(wait) {
+			return "", errStopped
+		}
+		reply, err = a.llmChatTools(step, msgs, thinking, tools, run, onText)
 	}
-	time.Sleep(2 * time.Second)
-	return a.llmChatTools(step, msgs, thinking, tools, run, onText)
+	return reply, err
+}
+
+// llmBackoff is how long to wait before each attempt at a call that died in
+// transit. Past the restart, not inside it: the container has to stop, come
+// back and read tens of gigabytes of weights before it answers anything, and
+// an attempt made while that is happening is a connection refused that costs
+// one of the tries. Roughly eight minutes of patience in five attempts, all of
+// it interruptible.
+var llmBackoff = []time.Duration{5 * time.Second, 20 * time.Second, time.Minute,
+	2 * time.Minute, 4 * time.Minute}
+
+// llmWait is how long to wait before trying again, and whether to try at all.
+func llmWait(err error, try int) (time.Duration, bool) {
+	if llmGone(err) {
+		if try < len(llmBackoff) {
+			return llmBackoff[try], true
+		}
+		return 0, false
+	}
+	// anything else: the one short retry, and only on the first failure
+	if try == 0 {
+		return 2 * time.Second, true
+	}
+	return 0, false
+}
+
+// llmGone is whether the error means the server went away rather than answered
+// something unusable: the connection closed mid-reply (EOF), was reset, was
+// refused, or the stream stopped short of its end. Every one of those is a
+// server that is down or restarting, and none of them says anything about the
+// request -- which is what makes asking the same question again worth doing.
+//
+// A status code is deliberately not in here. A 500 is the server answering,
+// and answering the same way in four minutes.
+func llmGone(err error) bool {
+	if err == nil || errors.Is(err, errStopped) {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ENETUNREACH) {
+		return true
+	}
+	// ...and by the words, for the ones that arrive as a bare string: net/http
+	// and the h2 transport both report a server closing on us that way. Whole
+	// words, so a model's own prose in an error message cannot read as one.
+	return goneWords.MatchString(strings.ToLower(err.Error()))
+}
+
+var goneWords = regexp.MustCompile(`\b(eof|connection reset|connection refused|` +
+	`broken pipe|server closed|no such host|transport is closing)\b`)
+
+// nap waits, and answers false when the run was stopped instead. Sleeping
+// through a restart is only tolerable if ⏹ still ends it: eight minutes of
+// time.Sleep is eight minutes of a button that does nothing.
+func (a *App) nap(d time.Duration) bool {
+	ctx := a.runCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return !a.stopFlag.Load()
+	case <-ctx.Done():
+		return false
+	}
 }

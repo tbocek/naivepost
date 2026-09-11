@@ -74,10 +74,27 @@ func (a *App) findTextEdit(rows []tsvRow) ([]retake, error) {
 		return nil, a.writeRetakes(nil)
 	}
 	user := a.ctxBlockFor("textedit") + "WHAT WAS SAID:\n" + textBrief(words)
-	msgs := []map[string]any{msg("system", a.sysPrompt("textedit")), msg("user", user)}
-	reply, err := a.llmChatRetry("textedit", msgs, false)
-	if err != nil {
-		return nil, err
+	system := a.sysPrompt("textedit")
+	// the same words, the same context, the same wording: the same answer
+	// (llmcache.go). Prepare runs this pass on every press -- it is the last
+	// thing the step does, after everything above it has resumed from disk --
+	// so without the file it was the one call a re-run on unchanged material
+	// still paid for in full, over every word of the session.
+	//
+	// Pressing ▶ again is not how a different edit is asked for: final.txt is
+	// edited by hand and Cut rebuilds the marks from it (marksFromText).
+	ask := askKey(system, user)
+	reply, hit := a.cachedReply("textedit", ask)
+	if hit {
+		a.logfIdle(">>> textedit: the same words and the same context — the edit came from the cache")
+	} else {
+		var err error
+		reply, err = a.llmChatRetry("textedit",
+			[]map[string]any{msg("system", system), msg("user", user)}, false)
+		if err != nil {
+			return nil, err
+		}
+		a.keepReply("textedit", ask, reply)
 	}
 	// the text itself, beside the marks: it is the edit, and a person can
 	// read it -- or change it and cut again (marksFromText). Written first,

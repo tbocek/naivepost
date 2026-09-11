@@ -82,6 +82,13 @@ func TestTheLeftButtonOnlySelects(t *testing.T) {
 // recordings under them. The selection's own case comes first -- a right-drag
 // inside a selection moves every scene in it, which is the same verb over more
 // of the cut -- and only then the green under the pointer.
+//
+// With one exception, and it is the one that made a border unreachable: a
+// BORDER under the pointer is a border even where the blue lies over it. The
+// trim arrow is shown there (wantCursor), the left button starts a new
+// selection there, and without this the right one slid the scenes instead --
+// so a selection whose end sat on the border you wanted to move left you no
+// way at all to move it.
 func TestTheRightButtonMovesTheGreenAndThenTheTimeline(t *testing.T) {
 	body := closure(t, "cut.go", "slide.ConnectDragBegin(func(x, y float64) {")
 	for _, want := range []string{
@@ -102,6 +109,14 @@ func TestTheRightButtonMovesTheGreenAndThenTheTimeline(t *testing.T) {
 	}
 	if sel > grn {
 		t.Error("a scene inside a selection is taken alone, so the selection's own drag is unreachable")
+	}
+	// ...and the exception: the selection's case stands down on a border
+	if !strings.Contains(body, "onEdge := false") ||
+		!strings.Contains(body, "(ed.hitPics(y) || ed.hitSelBand(y)) && !onEdge:") {
+		t.Error("a border under an active selection cannot be trimmed by either button")
+	}
+	if i, j := strings.Index(body, "onEdge := false"), sel; i > j {
+		t.Error("onEdge is worked out after the case that reads it")
 	}
 	if grn > shift {
 		t.Error("the recordings are asked about before the green, so a scene cannot be moved")

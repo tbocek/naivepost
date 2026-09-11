@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -110,6 +109,13 @@ const (
 	defDiarModel = "sortformer-diar"
 	defTTSModel  = "index-tts2"
 	defSepModel  = "bs-roformer"
+	// ...and the forced aligner, which is a PREFERENCE rather than a demand:
+	// it is the one tried first when the box is empty and the server has it,
+	// and a server with some other aligner still aligns (alignModels). The
+	// stack registers two -- mms-aligner and this -- and the id is the whole
+	// difference in how well a cut point lands, so leaving it to sort order,
+	// where "mms" comes first, was picking the weaker one by alphabet.
+	defAlignModel = "qwen3-aligner"
 )
 
 func or(v, def string) string {
@@ -131,9 +137,12 @@ func (c appConf) withDefaults() appConf {
 	c.DiarModel = or(c.DiarModel, defDiarModel)
 	c.TTSModel = or(c.TTSModel, defTTSModel)
 	c.SepModel = or(c.SepModel, defSepModel)
-	// AlignModel has no default on purpose: no aligner is a working setup, so
-	// naming one that may not be there would put a red badge on a row that is
-	// allowed to be empty.
+	// AlignModel is not filled in here on purpose, though it has a default
+	// (defAlignModel): no aligner at all is a working setup, so writing a name
+	// into the file would put a red badge on a row that is allowed to be
+	// empty, and would hold a server that has a different one to a name it
+	// cannot answer to. Empty means "prefer that one if you have it", and
+	// alignModels is where that is done.
 	return c
 }
 
@@ -339,6 +348,9 @@ func (a *App) writeGlobal(g globalConf) error {
 	body := fmt.Sprintf(`# Endpoints and local tools used by the pipeline (written by the GUI's
 # settings dialog). Bash-sourceable -- keep this file chmod 600, the key is a
 # credential.
+# The model that writes -- an OpenAI-compatible chat API; empty means
+# 127.0.0.1:%d, which is halogen-flash-server as it comes. The model id has no
+# default: it has to be one this server lists (Fetch models in the dialog).
 LLM_SERVER=%q
 LLM_MODEL=%q
 LLM_API_KEY=%q
@@ -363,9 +375,10 @@ AUDIOCPP_TTS_MODEL=%q
 AUDIOCPP_SEP_MODEL=%q
 
 # ...and the one that places a cut point on the word rather than on a silence.
-# Empty means whichever model that server declares for "align", which is the
-# answer whenever it has exactly one. Name it when there are two, or when the
-# one it picks is registered but the engine will not serve it.
+# Empty means %s where that server declares it, and otherwise whichever
+# model it declares for "align" -- the answer whenever it has exactly one. Name
+# it when there are two others, or when the one it picks is registered but the
+# engine will not serve it.
 AUDIOCPP_ALIGN_MODEL=%q
 
 # Which ffmpeg every step shells out to; empty means whichever one is on PATH,
@@ -384,8 +397,8 @@ FIREFOX=%q
 # sends can change it.
 SD_SERVER=%q
 SD_API_KEY=%q
-`, c.Server, c.Model, c.Key, ttsPort, c.TTS, c.TTSKey,
-		c.Voices, c.ASRModel, c.DiarModel, c.TTSModel, c.SepModel, c.AlignModel, c.FFmpeg,
+`, llmPort, c.Server, c.Model, c.Key, ttsPort, c.TTS, c.TTSKey,
+		c.Voices, c.ASRModel, c.DiarModel, c.TTSModel, c.SepModel, defAlignModel, c.AlignModel, c.FFmpeg,
 		c.Firefox, sdPort, c.SD, c.SDKey)
 	body += rememberedBody(g)
 	return os.WriteFile(p, []byte(body), 0o600)
@@ -451,23 +464,22 @@ func fetchModels(server, key string) ([]string, error) {
 // a parts array (txtPart/imgPart), which is the whole difference between the
 // two Test buttons that call it.
 func llmRoundTrip(c appConf, content any, timeout time.Duration) (string, error) {
-	body, _ := json.Marshal(map[string]any{
+	req := map[string]any{
 		"model":       c.Model,
 		"messages":    []map[string]any{msg("user", content)},
 		"temperature": 0.6,
 		"max_tokens":  16, // one word and a stop; a rambling model is cut off here
-		"chat_template_kwargs": map[string]any{
-			"preserve_thinking": true, "enable_thinking": false,
-		},
-	})
-	req, err := http.NewRequest("POST", strings.TrimRight(c.Server, "/")+"/v1/chat/completions",
+	}
+	thinkSwitch(req, false) // the same switch the pipeline's execute mode sends
+	body, _ := json.Marshal(req)
+	post, err := http.NewRequest("POST", llmServer(c)+"/v1/chat/completions",
 		strings.NewReader(string(body)))
 	if err != nil {
 		return "", err
 	}
-	bearer(req, c.Key)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	bearer(post, c.Key)
+	post.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: timeout}).Do(post)
 	if err != nil {
 		return "", err
 	}
@@ -629,10 +641,16 @@ func testAligner(url, key, want string) (string, error) {
 	var ids []string
 	for id, m := range cat {
 		if m.Task == "align" {
-			ids = append(ids, fmt.Sprintf("%s (%s)", id, m.Family))
+			ids = append(ids, id)
 		}
 	}
-	sort.Strings(ids)
+	// the order the run will try them in, so a server with two is not told
+	// "the first is used" about a different first (alignOrder)
+	alignOrder(ids)
+	named := make([]string, 0, len(ids))
+	for _, id := range ids {
+		named = append(named, fmt.Sprintf("%s (%s)", id, cat[id].Family))
+	}
 	switch len(ids) {
 	case 0:
 		return fmt.Sprintf("no model on %s does forced alignment, so cut points come off the "+
@@ -640,10 +658,11 @@ func testAligner(url, key, want string) (string, error) {
 			"two words of one breath. Register one with task \"align\" in config-audiocpp.json "+
 			"to place them on the words instead (%s)", url, took), nil
 	case 1:
-		return fmt.Sprintf("%s places the cut points, on the word (%s)", ids[0], took), nil
+		return fmt.Sprintf("%s places the cut points, on the word (%s)", named[0], took), nil
 	default:
-		return fmt.Sprintf("%s answer for alignment on %s; the first is used, so leave one "+
-			"registered to be sure which (%s)", strings.Join(ids, " and "), url, took), nil
+		return fmt.Sprintf("%s answer for alignment on %s; the first is used -- %s, because "+
+			"%s is preferred where a server has it -- and a name in this box overrides that (%s)",
+			strings.Join(named, " and "), url, ids[0], defAlignModel, took), nil
 	}
 }
 
@@ -844,7 +863,7 @@ func (a *App) setupDialog() {
 
 	server := gtk.NewEntry()
 	server.SetText(c.Server)
-	server.SetPlaceholderText("https://ai.example.com")
+	server.SetPlaceholderText(fmt.Sprintf("empty = http://127.0.0.1:%d", llmPort))
 	server.SetHExpand(true)
 
 	key := gtk.NewPasswordEntry()
@@ -930,8 +949,10 @@ func (a *App) setupDialog() {
 
 	fetch := gtk.NewButtonWithLabel("Fetch models")
 	fetch.ConnectClicked(func() {
-		slog("LLM: querying %s for its model list …", server.Text())
-		srv, k := server.Text(), key.Text()
+		// llmServer, not the box: an empty box is the local default, and a
+		// fetch that asked "" for its models would fail on a setup that works
+		srv, k := llmServer(appConf{Server: server.Text()}), key.Text()
+		slog("LLM: querying %s for its model list …", srv)
 		go func() {
 			got, err := fetchModels(srv, k)
 			glib.IdleAdd(func() {
@@ -994,7 +1015,7 @@ func (a *App) setupDialog() {
 	llmBadge := newTestBadge()
 	hook(testLLMBtn, llmBadge, "LLM", func() (string, func() (string, error)) {
 		cc := appConf{Server: server.Text(), Model: model.Text(), Key: key.Text()}
-		return "asking " + cc.Server + " for one completion …",
+		return "asking " + llmServer(cc) + " for one completion …",
 			func() (string, error) { return testLLM(cc) }
 	})
 
@@ -1066,10 +1087,11 @@ func (a *App) setupDialog() {
 	diarModel := entry(c.DiarModel, defDiarModel, "Id of the diarization model — the one that tells speakers apart")
 	sepModel := entry(c.SepModel, defSepModel,
 		"Id of the separation model — the one that lifts the voice off a recording")
-	alignModel := entry(c.AlignModel, "",
+	alignModel := entry(c.AlignModel, defAlignModel+" if the server has it",
 		"Id of the forced aligner, which places a cut point on the word rather than on the "+
-			"nearest silence. Empty means whichever model the server declares for \"align\"; "+
-			"name one when it serves two, or when the one it picks will not load")
+			"nearest silence. Empty means "+defAlignModel+" where the server declares it, and "+
+			"otherwise whichever model it declares for \"align\"; name one when it serves two "+
+			"others, or when the one it picks will not load")
 
 	// the other local binary: the browser the model looks facts up through.
 	// Empty is the one on PATH, "off" is no search at all -- and the
@@ -1305,6 +1327,7 @@ func (a *App) setupDialog() {
 	// to run wide across the columns the Test buttons are in.
 	sec("Writing", "The model that describes the footage, proposes the cut and "+
 		"writes the narration.\n\nExpects an OpenAI-compatible chat API: POST /v1/chat/completions, "+
+		fmt.Sprintf("an empty Server meaning 127.0.0.1:%d, ", llmPort)+
 		"and GET /v1/models for the Fetch models button. The key is sent as "+
 		"Authorization: Bearer …; leave it empty for a server that wants none. "+
 		"Test asks for one short completion; the Test beside Model shows it a small "+

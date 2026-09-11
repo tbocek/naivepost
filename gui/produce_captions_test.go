@@ -54,8 +54,45 @@ func TestProduceNeverSpeaksACaptionsOnlyProject(t *testing.T) {
 	if strings.Count(s, "subText(ln)") < 2 {
 		t.Fatal("an .srt writer bypasses subText — its captions all sit at the bottom")
 	}
-	// a project that wrote captions and turned subtitles off is told so
-	if !strings.Contains(s, "the lines appear nowhere") {
-		t.Fatal("produce no longer warns when captions have no way into the video")
+	// a project that wrote captions and put nothing in the video is told where
+	// they went instead -- they are not lost, they are in the .srt beside it,
+	// which is written whatever the dropdown says
+	if !strings.Contains(s, "the lines are in the .srt beside it") {
+		t.Fatal("produce no longer says where a captions-only project's lines went")
+	}
+}
+
+// A cue with no words in it is not written at all.
+//
+// fixWords prints a rewritten stretch on the FIRST word of it and empties the
+// rest ("RSA-1024" over "one thousand twenty four"), and when such a stretch
+// crosses a cue boundary the second cue has no words left of its own. Written
+// out it was a blank caption in the .srt, and a blank line in the request to
+// the translator -- which answered nothing for it, twice, and had the line
+// reported as one it had lost. The seconds belong to the phrase already on
+// screen, so they extend it.
+func TestACueWithNoWordsExtendsTheOneBeforeIt(t *testing.T) {
+	// four words, the last two folded into the second, split by a long gap so
+	// they land in two cues
+	ws := []srcWord{
+		{s: 0, e: 1, w: "the", raw: "The"},
+		{s: 1, e: 2, w: "rsa", raw: "RSA-1024"},
+		{s: 3.0, e: 4, w: "one", raw: ""},
+		{s: 4, e: 5, w: "thousand", raw: ""},
+	}
+	got := wordCues(ws, 0, 1, 10)
+	if len(got) != 1 {
+		t.Fatalf("%d cues, want the one with words in it: %+v", len(got), got)
+	}
+	if got[0].text != "The RSA-1024" {
+		t.Errorf("the cue reads %q", got[0].text)
+	}
+	// ...and it stays up while the words it stands for are still being said
+	if end := got[0].at + got[0].dur; end < 4.9 {
+		t.Errorf("the caption leaves at %.1fs, before the phrase is finished", end)
+	}
+	// a cue that is long already is not stretched past what anyone can read
+	if got[0].dur > subCueMax+0.01 {
+		t.Errorf("the caption is held %.1fs, past the ceiling", got[0].dur)
 	}
 }

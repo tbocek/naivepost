@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -69,23 +70,151 @@ func (a *App) translateCues(cues []subCue, code string) []subCue {
 	user := a.ctxBlockFor("translate") + fmt.Sprintf(
 		"TRANSLATE THESE %d LINES INTO %s. Answer with %d lines, numbered as they are here:\n\n%s",
 		len(cues), name, len(cues), b.String())
-	msgs := []map[string]any{msg("system", a.sysPrompt("translate")), msg("user", user)}
-	reply, err := a.llmChatRetry("translate", msgs, false)
-	if err != nil {
-		a.logfIdle("!!! subtitles: %s: %v -- that language is left out", name, err)
-		return nil
+	system := a.sysPrompt("translate")
+	// the same cues, the same language, the same wording: the same answer
+	// (llmcache.go). This one is not a button anybody presses for a second
+	// opinion -- it is a side effect of rendering, and it ran again in full on
+	// every ▶ that muxed subtitles: three minutes of a ten-minute video's
+	// render spent translating lines that had not changed since the last one.
+	ask := askKey(system, user)
+	reply, hit := a.cachedReply("translate", ask)
+	if hit {
+		a.logfIdle(">>> subtitles: %s came from the cache -- the same lines were translated before", name)
+	} else {
+		var err error
+		reply, err = a.llmChatRetry("translate",
+			[]map[string]any{msg("system", system), msg("user", user)}, false)
+		if err != nil {
+			a.logfIdle("!!! subtitles: %s: %v -- that language is left out", name, err)
+			return nil
+		}
 	}
 	out, miss := numberedLines(reply, len(cues))
+	// a line with nothing in it is not a line that went missing: the model is
+	// right to answer nothing for it, and asking again gets nothing again.
+	// (Two calls were spent on exactly that -- an empty cue 31, which
+	// wordCues no longer makes.)
+	miss -= blankCues(cues, out)
+	// A gap is not a reason to throw the language away. One line in 123 came
+	// back missing and the whole German track was dropped -- 122 good lines
+	// for one -- so the gaps are asked about again on their own, and whatever
+	// is still missing after that stays in the language it was spoken in. A
+	// viewer can read one line of English in a German track; they cannot read
+	// a track that is not there.
 	if miss > 0 {
-		a.logfIdle("!!! subtitles: %s came back missing %d of %d lines -- that language is left out",
-			name, miss, len(cues))
-		return nil
+		a.logfIdle(">>> subtitles: %s came back missing %s -- asking again for %s",
+			name, gapList(out), plural(miss, "line"))
+		out, miss = a.fillGaps(out, cues, name, system)
+	}
+	if miss > 0 {
+		left := gapList(out) // named before they are filled, or there is nothing left to name
+		for i := range out {
+			if strings.TrimSpace(out[i]) == "" {
+				out[i] = strings.ReplaceAll(cues[i].text, "\n", " / ")
+			}
+		}
+		a.logfIdle("!!! subtitles: %s: %s left in the original (%s) -- the rest of the track is good",
+			name, plural(miss, "line"), left)
+	}
+	// kept only once every line is there IN THE LANGUAGE ASKED FOR: a track
+	// carrying lines of the original is one the next render should try again
+	// rather than inherit
+	if !hit && miss == 0 {
+		a.keepReply("translate", ask, numberedText(out))
 	}
 	done := make([]subCue, len(cues))
 	for i, c := range cues {
 		done[i] = subCue{s: c.s, e: c.e, text: wrapSub(strings.ReplaceAll(out[i], " / ", "\n"))}
 	}
 	return done
+}
+
+// fillGaps asks again for the lines that did not come back, and only those.
+// Their own numbers go with them, so the answer lands where it belongs however
+// few of them there are; the wording says so, because a model given lines 7
+// and 92 will otherwise answer 1 and 2.
+//
+// Never cached: this call exists BECAUSE the answer before it was short, and
+// serving that from a file would repeat the gap for ever (the same rule the
+// transcript pass keeps for its second attempt).
+func (a *App) fillGaps(out []string, cues []subCue, name, system string) ([]string, int) {
+	var want []int
+	for i, s := range out {
+		// a cue with no words in it is not asked about: there is nothing to
+		// translate, and the answer to an empty line is an empty line
+		if strings.TrimSpace(s) == "" && strings.TrimSpace(cues[i].text) != "" {
+			want = append(want, i)
+		}
+	}
+	if len(want) == 0 {
+		return out, 0
+	}
+	var b strings.Builder
+	for _, i := range want {
+		fmt.Fprintf(&b, "%d\t%s\n", i+1, strings.ReplaceAll(cues[i].text, "\n", " / "))
+	}
+	user := a.ctxBlockFor("translate") + fmt.Sprintf(
+		"TRANSLATE THESE %d LINES INTO %s. They are lines of a longer track, so their numbers "+
+			"do not start at 1: answer with %d lines, each beginning with the number printed "+
+			"in front of it here and a tab.\n\n%s", len(want), name, len(want), b.String())
+	reply, err := a.llmChatRetry("translate",
+		[]map[string]any{msg("system", system), msg("user", user)}, false)
+	if err != nil {
+		a.logfIdle("!!! subtitles: %s: %v", name, err)
+		return out, len(want)
+	}
+	got, _ := numberedLines(reply, len(out))
+	miss := 0
+	for _, i := range want {
+		if strings.TrimSpace(got[i]) != "" {
+			out[i] = got[i]
+			continue
+		}
+		miss++
+	}
+	return out, miss
+}
+
+// blankCues is how many of the lines that came back empty were empty going
+// out. They are not missing translations, and counting them as missing spends
+// a call on them and then reports them as lines the model lost.
+func blankCues(cues []subCue, out []string) int {
+	n := 0
+	for i, c := range cues {
+		if strings.TrimSpace(c.text) == "" && strings.TrimSpace(out[i]) == "" {
+			n++
+		}
+	}
+	return n
+}
+
+// gapList names the lines that did not come back, for the log: the first few
+// by number, because "missing 3 of 123" is a number and "7, 64, 92" is
+// something to go and look at.
+func gapList(out []string) string {
+	var at []string
+	for i, s := range out {
+		if strings.TrimSpace(s) != "" {
+			continue
+		}
+		if len(at) == 5 {
+			at = append(at, "…")
+			break
+		}
+		at = append(at, strconv.Itoa(i+1))
+	}
+	return "line " + strings.Join(at, ", ")
+}
+
+// numberedText is the lines back in the shape they came in, which is what the
+// cache holds: the answer to that request, whether it arrived in one piece or
+// two (fillGaps).
+func numberedText(lines []string) string {
+	var b strings.Builder
+	for i, s := range lines {
+		fmt.Fprintf(&b, "%d\t%s\n", i+1, s)
+	}
+	return b.String()
 }
 
 // numberedLines reads the answer back onto the line numbers it was given, and
@@ -125,6 +254,10 @@ func numberedLines(reply string, n int) ([]string, int) {
 type subTrack struct {
 	code, tag, name string
 	path            string
+	// the cues themselves, because the file is not the only thing written
+	// from them: the same track goes out as WebVTT beside the video (vttText),
+	// and re-reading the .srt to get them back would be a parser nobody needs.
+	cues []subCue
 }
 
 // subTracks writes the track and its translations, and says what it wrote. The
@@ -141,7 +274,8 @@ func (a *App) subTracks(cues []subCue, dir string, want []string) []subTrack {
 	if !ok {
 		tag, name = "und", strings.ToUpper(own)
 	}
-	out := []subTrack{{code: own, tag: tag, name: name, path: filepath.Join(dir, "final.srt")}}
+	out := []subTrack{{code: own, tag: tag, name: name,
+		path: filepath.Join(dir, "final.srt"), cues: cues}}
 	for _, code := range want {
 		if code == own {
 			continue // already the track above, and not a translation of it
@@ -157,13 +291,30 @@ func (a *App) subTracks(cues []subCue, dir string, want []string) []subTrack {
 			continue
 		}
 		out = append(out, subTrack{code: code, tag: t, name: n,
-			path: filepath.Join(dir, "final."+code+".srt")})
+			path: filepath.Join(dir, "final."+code+".srt"), cues: done})
 		if err := os.WriteFile(out[len(out)-1].path, []byte(srtText(done)), 0o644); err != nil {
 			a.logfIdle("!!! subtitles: %s: %v", n, err)
 			out = out[:len(out)-1]
 		}
 	}
 	return out
+}
+
+// subSideFiles is every path this video's subtitles can occupy beside it: the
+// spoken language under the video's own name, and one pair per language the
+// app can translate into.
+//
+// Named exactly, never globbed. "final*.srt" beside a final.mp4 also matches
+// the final2.srt of the render before it -- a different video, in the folder
+// people actually keep these in -- and this list is used to DELETE the stale
+// ones as well as to find them.
+func subSideFiles(out string) []string {
+	stem := strings.TrimSuffix(out, filepath.Ext(out))
+	files := []string{stem + ".srt", stem + ".vtt"}
+	for _, l := range subLangs {
+		files = append(files, stem+"."+l.code+".srt", stem+"."+l.code+".vtt")
+	}
+	return files
 }
 
 // srtText is the cues as an .srt.
@@ -173,4 +324,37 @@ func srtText(cues []subCue) string {
 		fmt.Fprintf(&b, "%d\n%s --> %s\n%s\n\n", i+1, srtTime(c.s), srtTime(c.e), c.text)
 	}
 	return b.String()
+}
+
+// vttText is the same cues as WebVTT, which is the only subtitle format a
+// browser reads.
+//
+// A <video> tag needs this and not the .srt: <track> parses WebVTT alone --
+// point it at an .srt and Firefox fetches the file, fails to parse it and
+// shows nothing -- and the tracks muxed INTO the mp4 are not offered by any
+// browser at all, whatever VLC does with them. Two files for the same cues,
+// because the player on the desk and the player on the page do not read the
+// same one.
+//
+// The difference is a header, a full stop instead of a comma, and the three
+// characters WebVTT treats as markup.
+func vttText(cues []subCue) string {
+	var b strings.Builder
+	b.WriteString("WEBVTT\n\n")
+	for i, c := range cues {
+		fmt.Fprintf(&b, "%d\n%s --> %s\n%s\n\n", i+1, vttTime(c.s), vttTime(c.e), vttEscape(c.text))
+	}
+	return b.String()
+}
+
+// vttTime is an .srt stamp with the decimal point WebVTT wants.
+func vttTime(t float64) string { return strings.Replace(srtTime(t), ",", ".", 1) }
+
+// vttEscape keeps a cue's text from being read as markup: WebVTT allows
+// <b>, <i> and &amp; inside a cue, so a spoken "R&D" or a "<" out of a
+// transcript would be swallowed or break the cue.
+func vttEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	return strings.ReplaceAll(s, ">", "&gt;")
 }

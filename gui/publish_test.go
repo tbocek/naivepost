@@ -438,7 +438,7 @@ func TestOneCallAnswersWithAllThreeParts(t *testing.T) {
 // after rewording the instruction.
 func TestPublishWritesTheTextBeforeItDraws(t *testing.T) {
 	body := funcBody(t, "publish.go", `func \(a \*App\) publishStage\(`)
-	iDesc := strings.Index(body, "a.writeUploadAt(brief)")
+	iDesc := strings.Index(body, "a.writeUploadAt(brief, segs)")
 	iDraw := strings.Index(body, "drawThumbnail")
 	if iDesc < 0 || iDraw < 0 {
 		t.Fatalf("publishStage no longer does both: %d %d", iDesc, iDraw)
@@ -468,6 +468,16 @@ func TestPublishWritesTheTextBeforeItDraws(t *testing.T) {
 	}
 	if !strings.Contains(body, "if textOnly {\n\t\treturn nil\n\t}") {
 		t.Error("Suggest again no longer stops before drawing")
+	}
+	// ...with one way out of a dead end. publish.json is written BEFORE the
+	// thumbnail is attempted, so a run whose draw failed closes the text gate
+	// and leaves nothing to draw from: no picture, no instruction, no frames.
+	// Every ▶ after that died on "nothing to tell the image model" without
+	// ever asking the job that names the frame -- on a session whose context
+	// said which frame to use.
+	if !strings.Contains(body, `len(st.Frames) == 0 && !exists(a.thumbFile())`) ||
+		!strings.Contains(body, "needText = true") {
+		t.Error("a page with nothing to draw from and nothing drawn never asks again")
 	}
 }
 
@@ -1249,6 +1259,15 @@ func TestTheThumbnailsLineIsSeededOnceAndThenItsOwn(t *testing.T) {
 	if old.ThumbTitle != "a name" || !old.TitleSeeded {
 		t.Errorf("a project from before the split reads as %+v, want its title on the picture", old)
 	}
+	// and a frame line that ended up in the instruction box before the reader
+	// could take one: not an instruction, and the image model must never be
+	// asked to draw those words (it answered generation_failed when it was)
+	if got := (pubSettings{Prompt: "frame: 10"}).migrate().Prompt; got != "" {
+		t.Errorf("a stored frame line survives as an edit instruction: %q", got)
+	}
+	if got := (pubSettings{Prompt: "Frame the lecturer against the slide."}).migrate().Prompt; got == "" {
+		t.Error("a real instruction that opens with the word was thrown away")
+	}
 	off := pubSettings{Title: "a name", TitleOff: true}.migrate()
 	if off.ThumbTitle != "" || !off.TitleSeeded || off.TitleOff {
 		t.Errorf("a project that had taken the line off reads as %+v, want it still off", off)
@@ -1261,11 +1280,24 @@ func TestTheThumbnailsLineIsSeededOnceAndThenItsOwn(t *testing.T) {
 // draw, and that frame becomes the thumbnail as it is: cropped, with the title
 // printed on it locally, nothing generated.
 func TestTheThumbnailCanBeAFramePickedOutOfTheVideo(t *testing.T) {
-	// the answer's fourth labelled line, in either spelling of a stamp
+	// The frame is named the way the brief stamps its lines -- a clip and an
+	// offset inside it -- and the editor does the addition (frameSecs). It was
+	// a session second once, and the model answered "frame: 10" off a line
+	// stamped [+10s] in a clip starting at session 1.9: the one number the
+	// brief never contains is the one it was asked for.
+	segs := []cutSeg{{S: 1.9, E: 32.2}, {S: 39.6, E: 105.5}}
 	for _, c := range []struct {
 		reply string
 		want  float64
 	}{
+		{"title: A Title\nframe: clip 1 +14\n\nThe description.", 15.9},
+		{"title: A Title\nframe: clip 2 +12s\n\nThe description.", 51.6},
+		{"title: A Title\nframe: Clip 2, +0.5\n\nThe description.", 40.1},
+		{"title: A Title\nframe: clip 2\n\nThe description.", 39.6},   // no offset: the clip's own start
+		{"title: A Title\nframe: clip 1 -2s\n\nThe description.", -1}, // a line said into the clip before the first
+		{"title: A Title\nframe: clip 9 +4\n\nThe description.", -1},  // a clip the cut does not have
+		// a plain session second still reads as one: an answer that gives one
+		// anyway is not an answer to throw away
 		{"title: A Title\nframe: 42\n\nThe description.", 42},
 		{"title: A Title\nframe: 1:23\n\nThe description.", 83},
 		{"frame: \"0:07\"\ntitle: A Title\n\nThe description.", 7},
@@ -1273,7 +1305,7 @@ func TestTheThumbnailCanBeAFramePickedOutOfTheVideo(t *testing.T) {
 		{"title: A Title\nframe: soon\n\nThe description.", -1},        // no number in it
 		{"title: A Title\nframe: -3\n\nThe description.", -1},          // nor a second before the video
 	} {
-		title, _, at, desc := splitUploadAt(c.reply)
+		title, _, at, desc := splitUploadAt(c.reply, segs)
 		if at != c.want {
 			t.Errorf("%q named second %v, want %v", c.reply, at, c.want)
 		}
@@ -1281,10 +1313,43 @@ func TestTheThumbnailCanBeAFramePickedOutOfTheVideo(t *testing.T) {
 			t.Errorf("peeling the frame line ate the rest: %q / %q", title, desc)
 		}
 	}
+	// ...and the same second FOLDED INTO the thumbnail line, which is where a
+	// model given a three-part shape actually writes it. This one shipped:
+	// a session whose context said "pick the title-slide frame, do not
+	// generate" answered "THUMBNAIL: frame: 10", the app sent those nine
+	// characters to sd.cpp as an edit instruction, and the job came back
+	// generation_failed with no thumbnail at all.
+	for _, c := range []struct {
+		reply string
+		at    float64
+		instr string
+	}{
+		{"title: A Title\nthumbnail: frame: clip 2 +12\n\nThe description.", 51.6, ""},
+		{"title: A Title\nTHUMBNAIL: frame: 2:05\n\nThe description.", 125, ""},
+		// a frame line the cut cannot place is still a frame line: it names
+		// no picture to draw, and drawing it is the failure this came from
+		{"title: A Title\nthumbnail: frame: clip 9 +4\n\nThe description.", -1, ""},
+		// an instruction that merely opens with the word names no second and
+		// stays an instruction
+		{"title: A Title\nthumbnail: Frame the lecturer against the slide.\n\nThe description.",
+			-1, "Frame the lecturer against the slide."},
+	} {
+		_, instr, at, desc := splitUploadAt(c.reply, segs)
+		if at != c.at || instr != c.instr {
+			t.Errorf("%q read as second %v instruction %q, want %v / %q", c.reply, at, instr, c.at, c.instr)
+		}
+		if !strings.Contains(desc, "The description.") {
+			t.Errorf("peeling the folded frame line ate the description: %q", desc)
+		}
+	}
 	// naming a frame and describing a picture are alternatives, and the one
 	// that names a frame leaves nothing for the image model to be stale about
 	body := funcBody(t, "publish.go", `func \(a \*App\) takeFrameAt\(`)
-	for _, want := range []string{"st.Own = true", `st.Prompt = ""`, "pubWriteCropped(", "a.thumbPlain()"} {
+	// the row becomes that ONE picture: it is the thumbnail, not a candidate
+	// among the three the cut offered, and nothing is going to be drawn from
+	// the others
+	for _, want := range []string{"st.Own = true", `st.Prompt = ""`, "pubWriteCropped(", "a.thumbPlain()",
+		"st.Frames = []string{a.storePath(best.path)}"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("takeFrameAt does not %q", want)
 		}
@@ -1292,6 +1357,24 @@ func TestTheThumbnailCanBeAFramePickedOutOfTheVideo(t *testing.T) {
 	// Own is what already means "chosen, not drawn": the words still go on it,
 	// printed locally, and ▶ never redraws it
 	stage := funcBody(t, "publish.go", `func \(a \*App\) publishStage\(`)
+	// and no candidates are taken from the cut once a frame has been named:
+	// the seeding happens AFTER the text for that reason, and skips a chosen
+	// picture outright. Three more frames beside it would read as a row of
+	// candidates rather than as the answer.
+	if i, j := strings.Index(stage, "a.writeUploadAt(brief, segs)"), strings.Index(stage, "pickShots("); i < 0 || j < 0 || i > j {
+		t.Error("the candidate row is filled before the text is written, so an answer that " +
+			"names a frame lands in a row that already holds three others")
+	}
+	if !strings.Contains(stage, "if len(st.Frames) == 0 && !written && !st.Own {") {
+		t.Error("a chosen thumbnail still gets candidate frames beside it")
+	}
+	// printing the title onto a CHOSEN picture is not drawing, so it happens
+	// on Suggest again too -- that button is how a frame answer is asked for,
+	// and returning in front of the seeding left the frame it had just chosen
+	// with no title printed on it
+	if i, j := strings.Index(stage, "if st.Own {"), strings.Index(stage, "if textOnly {"); i < 0 || j < 0 || i > j {
+		t.Error("Suggest again returns before the words are printed onto a picture it just chose")
+	}
 	if !strings.Contains(stage, "if at >= 0 {") || !strings.Contains(stage, "a.takeFrameAt(&st, at, aspect)") {
 		t.Error("a named moment does not become the thumbnail")
 	}
@@ -1303,8 +1386,15 @@ func TestTheThumbnailCanBeAFramePickedOutOfTheVideo(t *testing.T) {
 		t.Error("a video with no frames takes one anyway")
 	}
 	// the prompt offers the choice, and says which to prefer
-	if !strings.Contains(youtubeSystem, `answer a line "frame: <seconds>"`) {
-		t.Error("the prompt never mentions naming a frame")
+	// on the thumbnail line itself, and spelled there too (syscontext.go): the
+	// shape has ONE thumbnail line, and a wording that asks for a fourth line
+	// instead is a wording the model reconciles by writing "THUMBNAIL: frame:
+	// 10" -- which is how nine characters of instruction reached sd.cpp
+	if !strings.Contains(youtubeSystem, `answer it as "THUMBNAIL: frame: clip <n> +<seconds>"`) {
+		t.Error("the prompt never mentions naming a frame on the thumbnail line")
+	}
+	if !strings.Contains(sysSystem, `"frame: clip <n> +<seconds>"`) {
+		t.Error("the answer's shape does not allow the thumbnail line to name a second")
 	}
 	if !strings.Contains(youtubeSystem, "cannot promise something the video does not contain") {
 		t.Error("the prompt does not say why a real frame is the better answer")

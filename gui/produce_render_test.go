@@ -82,7 +82,7 @@ func TestPublishRender(t *testing.T) {
 	redirectOutput(t, a, "inputs", "narrate")
 	st := prodSettings{
 		Container: "mp4", Codec: "h264", CRF: 24, Preset: "ultrafast",
-		Height: 480, FPS: 30, AudioKbps: 128, GameVol: 0.22, Subs: "sidecar",
+		Height: 480, FPS: 30, AudioKbps: 128, GameVol: 0.22, Subs: "none",
 		OutFile: filepath.Join(a.produceDir(), "smoke.mp4"),
 	}
 	if err := a.produce(segs, entries, st, vids, auds); err != nil {
@@ -251,11 +251,16 @@ func TestProduceSaysWhatItReadsAndWroteLikeEveryOtherStep(t *testing.T) {
 		t.Error("Produce no longer refreshes on arrival — its rows would show the cut as it was two edits ago")
 	}
 	// a subtitle mode saved by some later version must not index off the end of
-	// the label list: the settings line reads it on every keystroke
+	// the label list: the settings line reads it on every keystroke. An unknown
+	// one falls back to the LAST entry, which puts nothing in the picture --
+	// "burned in" is first, and defaulting an answer nobody typed to lettering
+	// somebody's video is the wrong way round. ("sidecar" is migrated to
+	// "none" when the project loads, so it never reaches here.)
+	last := len(prodSubsKey) - 1
 	for _, c := range []struct {
 		key  string
 		want int
-	}{{"burn", 0}, {"mux", 1}, {"sidecar", 2}, {"none", 3}, {"holographic", 0}, {"", 0}} {
+	}{{"burn", 0}, {"mux", 1}, {"none", 2}, {"sidecar", last}, {"holographic", last}, {"", last}} {
 		if got := subsIndex(c.key); got != c.want {
 			t.Errorf("subsIndex(%q) = %d, want %d", c.key, got, c.want)
 		}

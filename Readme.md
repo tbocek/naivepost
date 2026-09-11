@@ -131,10 +131,15 @@ edges — all here.
 
 **Subtitles** come from Prepare's aligned words, not from a second transcription
 and not from reading the finished video back: the words that survive the cut,
-in each clip's own seconds, with their written spelling restored from the
-transcript. They can be burned in, muxed as a track, written as an `.srt`
-beside the video, or left out. **Translate** takes the same cues into other
-languages — one call per language for the whole track, read back by line number
+in each clip's own seconds, spelled the way the **fixed** transcript spells
+them — so the sentence in your context asking for the script's spelling of a
+name or a number reaches the subtitles too, whichever speech model heard it. An `.srt` **and** a `.vtt` are written beside the video on every
+render, one pair per language, whatever else you asked for — the video itself
+can carry them burned into the picture, as a track inside the file, or not at
+all. The `.vtt` is there because a browser reads no other subtitle format and
+ignores the tracks muxed into the file; a `<video>` tag pointing at the poster
+and every track is written out beside them, ready to paste into a page. **Translate**
+takes the same cues into other languages — one call per language for the whole track, read back by line number
 so a dropped line can never shift the rest onto the wrong seconds.
 
 The **thumbnail** is either drawn by an image model from real frames of your
@@ -147,12 +152,14 @@ instruction come from one model call that reads your context.
 
 ## What it needs
 
-Four HTTP servers, all local by default. Compose files for all of them are in
-`../cpp/`.
+Four HTTP servers, all local by default — an empty Server box in Settings
+means the loopback address below. Compose files for all of them are in
+`../cpp/`; the writing model's default port is
+[halogen-flash-server](https://github.com/peonist-ai/halogen-flash-server)'s own.
 
 | what | default | serves |
 |---|---|---|
-| an OpenAI-compatible LLM | `http://127.0.0.1:9001` | every text and vision job |
+| an OpenAI-compatible LLM | `http://127.0.0.1:8731` | every text and vision job |
 | audio.cpp | `http://127.0.0.1:8765` | speech-to-text, alignment, diarization, separation, TTS |
 | sd.cpp | `http://127.0.0.1:1234` | the thumbnail |
 | ffmpeg / ffprobe | on `PATH` | every frame, cut and encode |
@@ -164,6 +171,9 @@ never named here — that is the servers' business (`cpp/config-llamacpp.ini`,
 
 The vision model has to be able to read images, or Describe is the one job that
 cannot run.
+
+Which step calls which server, what waits for what, and what could overlap:
+[SERVICES.md](SERVICES.md).
 
 ## Build and run
 

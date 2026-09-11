@@ -27,6 +27,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
@@ -72,8 +74,8 @@ The thumbnail.
 
 There are two ways to answer for it, and the user context decides which.
 
-- Where the context asks for a picture the video ALREADY CONTAINS -- a slide, a title card, a particular moment, anything phrased as "use the frame that shows ...", "pick one", "do not generate" -- answer a line "frame: <seconds>" naming the second of the session where it is, read off the EVENT lines, and leave the thumbnail instruction EMPTY. The editor takes that frame as it is and prints the title onto it. This is the better answer whenever the context offers it: a frame out of the video cannot promise something the video does not contain.
-- Otherwise, no frame line, and the thumbnail instruction below.
+- Where the context asks for a picture the video ALREADY CONTAINS -- a slide, a title card, a particular moment, anything phrased as "use the frame that shows ...", "pick one", "do not generate" -- the thumbnail line is a frame line: answer it as "THUMBNAIL: frame: clip <n> +<seconds>", naming the clip whose block that picture is described in and the offset stamped on the EVENT line that describes it -- both copied off the brief, neither worked out -- and write no instruction anywhere. The editor takes that frame as it is and prints the title onto it. This is the better answer whenever the context offers it: a frame out of the video cannot promise something the video does not contain.
+- Otherwise the thumbnail line is the instruction below, and no second is named.
 
 The thumbnail instruction.
 
@@ -198,6 +200,17 @@ func (st pubSettings) migrate() pubSettings {
 		}
 	}
 	st.TitleOff = false
+	// "frame: 10" in the instruction box was never an instruction. It is a
+	// frame line the reader had nowhere to put, from before the thumbnail line
+	// could carry one (splitUploadAt), and left there it goes to the image
+	// model as the description of a picture -- which is how a run came back
+	// generation_failed with no thumbnail at all. One line only: a real
+	// instruction does not fit on one and start with the label.
+	if p := strings.TrimSpace(st.Prompt); !strings.Contains(p, "\n") {
+		if _, _, ok := peelLabel(p, "frame:"); ok {
+			st.Prompt = ""
+		}
+	}
 	return st
 }
 
@@ -1002,14 +1015,14 @@ func (a *App) publishBrief(segs []cutSeg, entries []narrEntry) string {
 // quote cannot throw a good reply away. The instruction is a suggestion in an
 // editable box; picking the base frame stays the user's.
 func (a *App) writeUpload(brief string) (title, instr, desc string, err error) {
-	title, instr, _, desc, err = a.writeUploadAt(brief)
+	title, instr, _, desc, err = a.writeUploadAt(brief, nil)
 	return title, instr, desc, err
 }
 
 // writeUploadAt is writeUpload with the thumbnail's own second: where the user
 // context asks for a picture the video already contains, the answer names the
 // moment instead of describing one to draw (youtubeSystem). -1 for no moment.
-func (a *App) writeUploadAt(brief string) (title, instr string, at float64, desc string, err error) {
+func (a *App) writeUploadAt(brief string, segs []cutSeg) (title, instr string, at float64, desc string, err error) {
 	msgs := []map[string]any{
 		msg("system", a.sysPrompt("youtube")),
 		msg("user", a.ctxBlockFor("youtube")+brief),
@@ -1022,7 +1035,7 @@ func (a *App) writeUploadAt(brief string) (title, instr string, at float64, desc
 	if err != nil {
 		return "", "", -1, "", err
 	}
-	title, instr, at, desc = splitUploadAt(reply)
+	title, instr, at, desc = splitUploadAt(reply, segs)
 	if desc == "" {
 		return "", "", -1, "", fmt.Errorf("the model answered with nothing")
 	}
@@ -1034,14 +1047,19 @@ func (a *App) writeUploadAt(brief string) (title, instr string, at float64, desc
 // -- an empty box is easier to notice than a wrong line. The rest goes through
 // cleanDescription.
 func splitUpload(reply string) (title, instr, desc string) {
-	title, instr, _, desc = splitUploadAt(reply)
+	title, instr, _, desc = splitUploadAt(reply, nil)
 	return title, instr, desc
 }
 
 // splitUploadAt is splitUpload with the thumbnail's own second: the moment the
 // picture is to be taken FROM, where the answer names one rather than
 // describing a picture to draw (youtubeSystem). -1 when it does not.
-func splitUploadAt(reply string) (title, instr string, at float64, desc string) {
+//
+// segs are the clips the brief was written from, and they are here because a
+// frame is named the way the brief stamps everything -- a clip and an offset
+// inside it -- and turning that into a session second is arithmetic the editor
+// does rather than the model (frameSecs).
+func splitUploadAt(reply string, segs []cutSeg) (title, instr string, at float64, desc string) {
 	// A fenced reply puts the fence before the labelled lines, so it has to come
 	// off here rather than in cleanDescription: by the time they are peeled the
 	// text no longer *starts* with a fence, and the closing one would be left
@@ -1059,15 +1077,85 @@ func splitUploadAt(reply string) (title, instr string, at float64, desc string) 
 		}
 		if v, rest, ok := peelLabel(s, "frame:"); ok {
 			s = rest
-			// "frame: 12" or "frame: 0:12", and a line that names no number
-			// at all is an answer that meant to leave it out
-			at = labelSecs(v)
+			// "frame: clip 3 +12", and a line that names no second at all is
+			// an answer that meant to leave it out
+			at = frameSecs(v, segs)
 			continue
 		}
 		break
 	}
+	// A frame FOLDED INTO the thumbnail line -- "THUMBNAIL: frame: 10" -- is a
+	// frame. The shape the job is given has one thumbnail line, so a model that
+	// decides to name a second writes it there rather than inventing a fourth
+	// line, and that is the answer this app most wants: it happened on a
+	// session whose context said "pick the title-slide frame, do not generate",
+	// and "frame: 10" went to sd.cpp as an edit instruction, which came back
+	// generation_failed with no thumbnail at all.
+	// The colon is what tells the two apart: an instruction that merely opens
+	// with the word -- "Frame the lecturer against the slide" -- is an
+	// instruction and stays one.
+	if instr != "" {
+		if v, _, ok := peelLabel(instr, "frame:"); ok {
+			// whether or not a second can be read off it: "frame: clip 9 +4"
+			// names a clip the cut does not have, and the one thing it
+			// certainly is not is an edit instruction. Sending it as one is
+			// what drew nothing at all.
+			instr = ""
+			if at < 0 {
+				at = frameSecs(v, segs)
+			}
+		}
+	}
 	return title, instr, at, cleanDescription(s)
 }
+
+// frameSecs is the session second a frame line names. Two spellings, and the
+// first is the one the job asks for:
+//
+//	clip 3 +12   the clip the brief numbered, and the offset stamped on the
+//	             EVENT line inside it -- both COPIED off the block the answer
+//	             was read from. The addition is done here.
+//	12 or 0:12   a plain session second, for an answer that gives one anyway.
+//
+// The clip form exists because the upload brief stamps every line as an offset
+// from its clip ([+10s]) and the session second the editor takes a frame by
+// appears nowhere in it: asked for a session second, a model answered
+// "frame: 10" off a line stamped [+10s] in a clip that starts at session 1.9,
+// and the thumbnail came out of the wrong moment. A clip further in would have
+// been wrong by minutes.
+//
+// -1 for a line with no number in it, a clip the cut does not have, or a
+// second before the video starts -- each of which means "no frame was named"
+// rather than "take the first one".
+func frameSecs(v string, segs []cutSeg) float64 {
+	v = strings.TrimSpace(strings.Trim(strings.TrimSpace(v), `"“”`))
+	m := frameClipRe.FindStringSubmatch(v)
+	if m == nil {
+		return labelSecs(v)
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil || n < 1 || n > len(segs) {
+		return -1
+	}
+	// no offset is the clip's own start: "the title slide is in clip 3" is an
+	// answer, and that clip's first frame is the picture it means
+	off := 0.0
+	if rest := strings.TrimSpace(m[2]); rest != "" {
+		if _, err := fmt.Sscanf(rest, "%f", &off); err != nil {
+			return -1
+		}
+	}
+	// a line can be stamped just OUTSIDE its clip ([-2s] is something said into
+	// the clip before it), so what is checked is the sum and not the offset
+	if t := segs[n-1].S + off; t >= 0 {
+		return t
+	}
+	return -1
+}
+
+// frameClipRe is "clip 3 +12", with whatever a model puts between the two
+// numbers -- a comma, "at", "+", nothing -- and an "s" after the second.
+var frameClipRe = regexp.MustCompile(`^(?i:clip)\s*#?\s*([0-9]+)\s*(?:at\b)?[,:]?\s*([-+]?[0-9]*\.?[0-9]*)\s*s?$`)
 
 // labelSecs reads a second off a labelled line: a plain number, or mm:ss as
 // the timeline writes one. -1 when there is no number in it.
@@ -1261,22 +1349,27 @@ func (a *App) drawStale(st pubSettings, aspect string) bool {
 // stops before the drawing (Suggest again); force draws even when unchanged.
 func (a *App) publishStage(track int, st pubSettings, aspect string, segs []cutSeg,
 	entries []narrEntry, needText, written, textOnly, force bool) error {
-	// A starting image on the very first run so the row is not empty; the first
-	// is simply the base. Not on a redraw: a row the user emptied is a decision.
-	if len(st.Frames) == 0 && !written {
-		a.logfIdle("    publish: no images chosen — taking %d from the cut", defPubFrames)
-		if st.Frames = pickShots(a.publishShots(), segs, defPubFrames); len(st.Frames) > 0 {
-			a.landPublish(st)
-		} else {
-			a.logfIdle("    publish: no frames extracted either — drawing from the instruction alone")
-		}
+	// ...and ask anyway when there is NOTHING to make a thumbnail from: no
+	// picture drawn or chosen, no instruction, no frames in the row.
+	//
+	// The gate the caller passes is about the text -- what is written once is
+	// not rewritten, because a title you emptied is a deletion you made. But
+	// it is publish.json that records "written", and that file is laid down
+	// before the thumbnail is attempted: a run whose draw failed leaves the
+	// page with the gate closed and nothing to draw, and every ▶ after it dies
+	// on "nothing to tell the image model" without ever asking the one job
+	// that would name a frame or describe a picture. That is where this
+	// session ended up, with a context that says which frame to use.
+	if !needText && !textOnly && !st.Own && strings.TrimSpace(st.Prompt) == "" &&
+		len(st.Frames) == 0 && !exists(a.thumbFile()) {
+		a.logfIdle("    publish: no picture, no images and no instruction — asking for the upload text again")
+		needText = true
 	}
-
 	if needText {
 		brief := a.publishBrief(segs, entries)
 		a.logCtx("publish")
 		a.prog(track, 0, "writing the title, the instruction and the description")
-		title, instr, at, desc, err := a.writeUploadAt(brief)
+		title, instr, at, desc, err := a.writeUploadAt(brief, segs)
 		if err != nil {
 			return err
 		}
@@ -1306,11 +1399,23 @@ func (a *App) publishStage(track int, st pubSettings, aspect string, segs []cutS
 			st.Title, len(st.Prompt), len(desc))
 		a.landPublish(st)
 	}
+	// A starting image on the very first run so the row is not empty; the first
+	// is simply the base. Not on a redraw: a row the user emptied is a decision.
+	//
+	// AFTER the text, not before it: an answer that named a frame has already
+	// put the one picture it means in the row (takeFrameAt), and candidates
+	// chosen for an image model that is not going to run are three pictures
+	// the page would have to explain.
+	if len(st.Frames) == 0 && !written && !st.Own {
+		a.logfIdle("    publish: no images chosen — taking %d from the cut", defPubFrames)
+		if st.Frames = pickShots(a.publishShots(), segs, defPubFrames); len(st.Frames) > 0 {
+			a.landPublish(st)
+		} else {
+			a.logfIdle("    publish: no frames extracted either — drawing from the instruction alone")
+		}
+	}
 	if err := a.writePublishFiles(st); err != nil {
 		a.logfIdle("    publish: %v", err) // the text is on the page either way
-	}
-	if textOnly {
-		return nil
 	}
 	// The first thumbnail to exist takes the video's title as the line printed
 	// on it, and nothing seeds it twice (seedThumbTitle says the same thing
@@ -1325,8 +1430,19 @@ func (a *App) publishStage(track int, st pubSettings, aspect string, segs []cutS
 		// the thumbnail is a picture that was chosen, and choosing it was the
 		// answer. The words still go on it: they are printed locally from the
 		// plain copy, which is what that picture now is.
+		//
+		// Before the textOnly gate, and deliberately: Suggest again is how an
+		// answer that names a frame is asked for, and printing the title onto
+		// the frame it just chose is not drawing -- it is a PNG encode. Behind
+		// the gate, that button returned before the line above had given the
+		// picture its words, so a frame it had just chosen came up with no
+		// title printed on it (publishDone re-prints, from a ThumbTitle that
+		// was never seeded).
 		a.logfIdle("    publish: the thumbnail is a chosen picture — not redrawing it (↻ over it draws)")
 		return a.printPubWords(st)
+	}
+	if textOnly {
+		return nil
 	}
 	// ...and a picture that is already this picture is not drawn again. ▶ is
 	// pressed to make the upload, not to spend a GPU on a thumbnail nothing
@@ -1370,12 +1486,13 @@ func (a *App) takeFrameAt(st *pubSettings, t float64, aspect string) error {
 	if err := pubWriteCropped(best.path, st.cropRect(srcA, outA), srcA, outA, w, h, a.thumbPlain()); err != nil {
 		return err
 	}
-	// the frame goes to the head of the row as well, so the page shows what
-	// was taken and ↻ over it has something to draw FROM
-	st.Frames = append([]string{a.storePath(best.path)}, st.Frames...)
-	if len(st.Frames) > maxPubFrames {
-		st.Frames = st.Frames[:maxPubFrames]
-	}
+	// the row becomes that frame and NOTHING else. It exists to be handed to
+	// the image model, and here nothing is drawn: references beside a picture
+	// that was chosen are pictures with no job, and a page showing four when
+	// one was asked for reads as four candidates rather than as the answer.
+	// It is also what ↻ over the thumbnail draws FROM, which is the one thing
+	// the row is still for.
+	st.Frames = []string{a.storePath(best.path)}
 	st.Own = true
 	st.Prompt = "" // nothing is drawn, so there is no instruction to be stale
 	a.logfIdle("    publish: the thumbnail is the frame at %s, as it is — no model, no GPU", mmss(best.t))

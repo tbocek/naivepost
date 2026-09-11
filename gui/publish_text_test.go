@@ -116,8 +116,11 @@ func TestTheTitleIsPrintedAcrossTheUpperPart(t *testing.T) {
 	if bottom := pubTitleBox.cy + pubTitleBox.hf/2; bottom > 0.5+1e-9 {
 		t.Errorf("pubTitleBox reaches %.2f down the frame, past the half it is given", bottom)
 	}
-	if top := pubTitleBox.cy - pubTitleBox.hf/2; top > 1e-9 {
-		t.Errorf("pubTitleBox starts %.2f down the frame; the half it is given begins at the top", top)
+	// ...and it starts near the top, but not ON it: the default is a box that
+	// was dragged to where it looked right and then measured, and a title
+	// printed hard against the top edge has no margin above it
+	if top := pubTitleBox.cy - pubTitleBox.hf/2; top < -1e-9 || top > 0.1 {
+		t.Errorf("pubTitleBox starts %.2f down the frame, which is not the top of the picture", top)
 	}
 	// ...and it is a CEILING rather than a fill: four to seven words in a box
 	// half the picture tall are set as large as they fit, and the rest of the

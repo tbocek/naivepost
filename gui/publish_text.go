@@ -39,12 +39,19 @@ func (t pubText) box() fxBox { return fxBox{cx: t.Cx, cy: t.Cy, wf: t.Wf, hf: t.
 // (pubNoLettering). It moves; the instruction says where it is
 // (pubTitleWhere).
 //
-// Half and not the band it was: a thumbnail title is four to seven words read
-// at the size of a phone's sidebar, and a band a sixth of the picture tall
-// sets those words small enough to be a caption. Given the half, fitText uses
-// as much of it as the words need and leaves the rest -- the box is a ceiling,
+// Nearly the half, and not the band it was: a thumbnail title is four to seven
+// words read at the size of a phone's sidebar, and a band a sixth of the
+// picture tall sets those words small enough to be a caption. fitText uses as
+// much of the box as the words need and leaves the rest -- it is a ceiling,
 // not a fill.
-var pubTitleBox = fxBox{cx: 0.5, cy: 0.25, wf: 0.94, hf: 0.5}
+//
+// The numbers are a box that was dragged to where it looked right and then
+// measured: the full width, edge to edge, from a twentieth of the way down to
+// a little under halfway. Full width because the snap lines are the picture's
+// own edges and that is where the hand put it; the 0.05 at the top is the
+// margin a title wants above it, which the old box (starting at the very top
+// edge) did not have.
+var pubTitleBox = fxBox{cx: 0.5, cy: 0.25, wf: 1, hf: 0.4}
 
 // printedTitle is what the picture carries: its own line (ThumbTitle), which
 // starts as the video's title and is its own from then on. st.Title is what

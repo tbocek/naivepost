@@ -74,8 +74,27 @@ func (a *App) alignModels() []string {
 			ids = append(ids, id)
 		}
 	}
-	sort.Strings(ids) // so the same server tries them in the same order every run
+	alignOrder(ids)
 	return ids
+}
+
+// alignOrder is the order the aligners are tried in: defAlignModel first where
+// the server has it, then the rest by name so one server answers the same way
+// every run.
+//
+// The preference is the whole point of the default. This stack registers two
+// aligners -- mms-aligner and qwen3-aligner -- and a plain sort put the MMS one
+// first on every machine with both, which is picking the aligner by alphabet.
+// It stays a preference and not a rule: a server with only the other one keeps
+// aligning, where a hard default would have it fall back to the waveform and
+// say so in red.
+func alignOrder(ids []string) {
+	sort.Slice(ids, func(i, j int) bool {
+		if (ids[i] == defAlignModel) != (ids[j] == defAlignModel) {
+			return ids[i] == defAlignModel
+		}
+		return ids[i] < ids[j]
+	})
 }
 
 // alignModel is the one that answered last, or the first worth trying.

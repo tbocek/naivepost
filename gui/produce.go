@@ -79,8 +79,11 @@ type prodSettings struct {
 	// Stored the wrong way round on purpose: the blurred backdrop is the
 	// default, and a project written before this setting existed has to keep
 	// getting it.
-	Bare bool   `json:"bare,omitempty"`
-	Subs string `json:"subs"` // burn | mux | sidecar | none
+	Bare bool `json:"bare,omitempty"`
+	// what the VIDEO carries: burn | mux | none. The .srt beside it is written
+	// for all three ("sidecar", which used to be the third, is migrated to
+	// "none" -- see UnmarshalJSON).
+	Subs string `json:"subs"`
 	// the languages the subtitles are also written in (translate.go). The
 	// session's own language is always there and is not in this list, so an
 	// empty list -- every project written before this -- is one track and no
@@ -163,14 +166,36 @@ func wordCues(words []srcWord, s0, speed, length float64) []prodLine {
 		}
 		var txt []string
 		for _, w := range cur {
+			// a word whose spelling was folded into the one in front of it
+			// (fixWords): it holds its seconds and says nothing of its own
+			if w.raw == "" {
+				continue
+			}
 			txt = append(txt, w.raw)
 		}
 		at := math.Max(0, (cur[0].s-s0)/speed)
 		end := math.Min(length, (cur[len(cur)-1].e-s0)/speed)
-		if end > at {
-			out = append(out, prodLine{text: strings.Join(txt, " "), at: at, delay: at, dur: end - at})
-		}
 		cur = nil
+		if end <= at {
+			return
+		}
+		// Every word here was folded into one in the cue BEFORE (fixWords):
+		// "RSA-1024" is printed on the first word of "one thousand twenty
+		// four" and the rest say nothing, and when that stretch crosses a cue
+		// boundary the second cue is left with no words of its own. It is not
+		// a blank subtitle -- the phrase is on screen already, and what these
+		// seconds want is for it to STAY there. A cue with nothing in it went
+		// into the .srt as an empty caption and out to the translator as an
+		// empty line, which came back empty twice and was reported as a line
+		// the model had lost.
+		if len(txt) == 0 {
+			if len(out) > 0 {
+				last := &out[len(out)-1]
+				last.dur = math.Min(math.Max(last.dur, end-last.at), subCueMax)
+			}
+			return
+		}
+		out = append(out, prodLine{text: strings.Join(txt, " "), at: at, delay: at, dur: end - at})
 	}
 	n := 0
 	for i, w := range words {
@@ -207,8 +232,12 @@ var (
 	prodHeights    = []string{"720p", "1080p", "original"}
 	prodFPS        = []string{"source", "60", "30", "24"}
 	prodABR        = []string{"128", "192", "256", "320"}
-	prodSubsLbl    = []string{"burned in", "track in file", "sidecar .srt", "none"}
-	prodSubsKey    = []string{"burn", "mux", "sidecar", "none"}
+	// What goes in the VIDEO. The .srt is written beside it whatever this
+	// says (every language asked for), so "sidecar" stopped being a choice:
+	// it was this list's way of saying "the file beside it, and nothing in
+	// the picture", which is what "none in the video" is now.
+	prodSubsLbl = []string{"burned in", "track in file", "none in the video"}
+	prodSubsKey = []string{"burn", "mux", "none"}
 )
 
 type producer struct {
@@ -289,7 +318,7 @@ func (a *App) syncNarrOff() {
 // and a 0 fps is not a video at all).
 func defaultProdSettings() prodSettings {
 	return prodSettings{Container: "mp4", Codec: "h264", CRF: 24, Preset: "veryslow",
-		Height: 1080, FPS: 30, AudioKbps: 128, GameVol: 0.22, Subs: "sidecar"}
+		Height: 1080, FPS: 30, AudioKbps: 128, GameVol: 0.22, Subs: "none"}
 }
 
 // UnmarshalJSON seeds the defaults before decoding so an ABSENT game_vol (an
@@ -303,6 +332,12 @@ func (s *prodSettings) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*s = prodSettings(v)
+	// "sidecar" was "the .srt beside the video, nothing in it". The file is
+	// written for every choice now, so what is left of that answer is the
+	// half about the video: nothing in it.
+	if s.Subs == "sidecar" {
+		s.Subs = "none"
+	}
 	return nil
 }
 
@@ -424,7 +459,28 @@ func (p *producer) setOut(path string) {
 
 // syncExt keeps the output filename's extension on the chosen container.
 func (p *producer) syncExt() {
-	if p.guard || p.outFile == "" {
+	// the container is built before the two dropdowns it drags with it, and
+	// its own SetSelected fires this before they exist
+	if p.guard || p.codec == nil || p.subs == nil {
+		return
+	}
+	// webm carries neither h264 nor h265, so prodSettings overrides the codec
+	// on the way to the encoder. Move the dropdown with it: the override was
+	// silent, and a page reading "webm / h264" while the file comes out VP9 is
+	// the page lying about what the button will do.
+	webm := pickText(p.container, prodContainers) == "webm"
+	if webm && pickText(p.codec, prodCodecs) != "vp9" {
+		setPick(p.codec, prodCodecs, "vp9")
+	}
+	// ...and the same for the one subtitle choice a container can refuse: a
+	// webm carries no srt and no mov_text, so "track in file" is a track that
+	// never gets written. mp4 and mkv both carry one and keep the choice --
+	// a browser ignores an in-band track, but VLC, mpv and QuickTime offer it,
+	// and it is the .srt/.vtt beside the file that a page reads anyway.
+	if webm && prodSubsKey[int(p.subs.Selected())] == "mux" {
+		p.subs.SetSelected(uint(subsIndex("none")))
+	}
+	if p.outFile == "" {
 		return
 	}
 	want := "." + pickText(p.container, prodContainers)
@@ -534,8 +590,10 @@ func (a *App) buildProduce() gtk.Widgetter {
 	p.height = dd(prodHeights, 1, "the short side of the frame — the cut page's aspect sets its shape; original keeps the footage's own size")
 	p.fps = dd(prodFPS, 2, "output frame rate — a ceiling rather than a target with VFR on")
 	p.abr = dd(prodABR, 0, "audio bitrate in kbit/s")
-	p.subs = dd(prodSubsLbl, 2, "what to do with the subtitles: burned "+
-		"into the picture, a separate track inside the file, an .srt beside it, or nothing")
+	p.subs = dd(prodSubsLbl, 2, "what the VIDEO carries: subtitles burned into the "+
+		"picture, a separate track inside the file, or neither. An .srt is written "+
+		"beside the video either way — one per language ticked — because the copy "+
+		"you did not ask for is the one wanted an hour later")
 
 	// ...and which languages they are also written in. A menu of ticks rather
 	// than a dropdown: more than one at a time is the whole point, and the
@@ -876,15 +934,18 @@ func (p *producer) updateOut() {
 	p.out.SetTooltipText(tip)
 }
 
-// subsIndex is the label for a stored subtitle mode, defaulting to the first
-// rather than panicking on a project written by a later version.
+// subsIndex is the label for a stored subtitle mode, rather than panicking on
+// a project written by a later version. A mode this build does not know falls
+// back to the one that changes nothing about the picture -- the first entry is
+// "burned in", and defaulting an unknown answer to lettering somebody's video
+// is the wrong way round.
 func subsIndex(key string) int {
 	for i, k := range prodSubsKey {
 		if k == key {
 			return i
 		}
 	}
-	return 0
+	return len(prodSubsKey) - 1
 }
 
 // ---- inputs -----------------------------------------------------------------
@@ -1513,6 +1574,13 @@ func (a *App) produceRun(words bool) {
 			}
 		}
 		wg.Wait()
+		// Both halves are in, so the deliverables can be described: the
+		// <video> tag, with the poster the words half just drew and the .vtt
+		// tracks the render half just wrote (produce_embed.go). Here and not
+		// at the end of either half -- the tag needs both, and it is rewritten
+		// even on a press that skipped the encode, because the files beside
+		// the video are then the ones the render before left.
+		a.writeEmbed(st.OutFile, st.Codec)
 		// the render's word is the run's: it is what the press was for, and a
 		// title that did not get written is a line in the log, not a failure
 		// to show for a video that rendered
@@ -1576,7 +1644,7 @@ func (a *App) produce(segs []cutSeg, entries []narrEntry, st prodSettings, srcVi
 			}
 		}
 	} else if len(entries) > 0 && st.Subs == "none" {
-		a.logfIdle("!!! captions only and subtitles set to none — the lines appear nowhere")
+		a.logfIdle(">>> captions only and nothing in the video — the lines are in the .srt beside it")
 	}
 	if len(todo) > 0 {
 		// a render that has to speak first is two jobs, and the bar says so;
@@ -1913,10 +1981,14 @@ func (a *App) produce(segs []cutSeg, entries []narrEntry, st prodSettings, srcVi
 	// not (captionLines)
 	cum := 0.0
 	var cues []subCue
-	if st.Subs != "none" {
-		vids, auds := a.snapSources()
-		transcriptSubs(clips, a.sessionWords(append(vids, auds...)), a.narratorMic())
-	}
+	// whatever the dropdown says: the .srt is written for every choice, so the
+	// lines are built for every choice. They reach the PICTURE only through
+	// the burn gate below -- captionLines is read here and there, and nowhere
+	// else.
+	// its own names: the render's vids and auds are the timeline's tracks, and
+	// these are the source PATHS the words come off
+	subV, subA := a.snapSources()
+	transcriptSubs(clips, a.sessionWords(append(subV, subA...)), a.narratorMic())
 	for _, c := range clips {
 		caps := captionLines(c)
 		for k, ln := range caps {
@@ -1939,18 +2011,25 @@ func (a *App) produce(segs []cutSeg, entries []narrEntry, st prodSettings, srcVi
 	// VLC did, next to the one muxed in -- and the sidecar choice below is
 	// where a file beside the video is asked for
 	srtPath := filepath.Join(clipDir, "final.srt")
-	// ...and the one an older build left beside the video is taken away, or
-	// it stays a second track forever: the sidecar choice writes its own
-	// below, when it is chosen
-	os.Remove(strings.TrimSuffix(st.OutFile, filepath.Ext(st.OutFile)) + ".srt")
+	// ...and the ones beside the video go first: this render writes its own
+	// below, and a render with nothing to say stops before it does. What is
+	// left there otherwise is the render BEFORE's -- a second subtitle track
+	// in every player that finds one, and a language in the <video> tag that
+	// the video no longer has (a translation that failed this time leaves last
+	// time's German sitting beside it).
+	for _, f := range subSideFiles(st.OutFile) {
+		os.Remove(f)
+	}
 	if err := os.WriteFile(srtPath, []byte(srt), 0o644); err != nil {
 		return err
 	}
 	// ...and the same track in the other languages asked for (translate.go).
-	// Only where there is somewhere to put them: burned into the picture there
-	// is one picture, and none where there are no subtitles at all.
-	tracks := []subTrack{{code: a.asrLanguage(), tag: "und", path: srtPath}}
-	if cue > 0 && (st.Subs == "mux" || st.Subs == "sidecar") {
+	// For every choice, because every choice writes them beside the video: a
+	// picture with the words burned into it has one language IN it and is no
+	// reason to withhold the others. Answers are cached on the exact lines
+	// (llmcache.go), so a re-render translates nothing twice.
+	tracks := []subTrack{{code: a.asrLanguage(), tag: "und", path: srtPath, cues: cues}}
+	if cue > 0 {
 		tracks = a.subTracks(cues, clipDir, st.SubLangs)
 	}
 
@@ -2059,36 +2138,65 @@ func (a *App) produce(segs []cutSeg, entries []narrEntry, st prodSettings, srcVi
 			}
 		}
 	}
+	// The index at the FRONT of the file. An mp4 muxed the ordinary way puts
+	// its moov after the mdat, because the muxer only knows the table once it
+	// has written every frame -- and a browser can play nothing at all until
+	// it has that table. Given ranges it fetches the tail and carries on;
+	// given a server without them it reads the whole file first, and a
+	// <video> tag that costs 90 MB before the first frame is a tag nobody
+	// waits for. faststart is one more pass over the finished file and takes
+	// seconds. Not for webm or mkv, which index as they go.
+	if st.Container == "mp4" {
+		// ...and negative_cts_offsets with it, which is about SYNC and not
+		// about loading. B-frames mean the first frame is decoded before it is
+		// shown, so the first DTS is negative; the muxer's ordinary answer is
+		// to shift the whole video track forward and write an edit list saying
+		// "start 66.67 ms in". A player that honours edit lists is right
+		// either way -- VLC, mpv, ffprobe -- and one that does not shows the
+		// picture 67 ms (two frames) behind the sound, which is the lip sync
+		// somebody notices and nobody can measure. With this the offsets go in
+		// the sample table instead (ctts v1): the track starts at zero, the
+		// edit list has nothing left to say, and both kinds of player agree.
+		args = append(args, "-movflags", "+faststart+negative_cts_offsets")
+	}
 	args = append(args, st.OutFile)
 	if err := a.runCmd(ffTool("ffmpeg"), args...); err != nil {
 		return err
 	}
-	if st.Subs != "none" && cue == 0 {
-		a.logfIdle("!!! subtitles were asked for (%s) and there is nothing to write: no narration, and no speech in the clips", st.Subs)
+	if cue == 0 {
+		a.logfIdle("!!! nothing to put in a subtitle: no narration, and no speech in the clips")
+		return nil
+	}
+	if st.Subs == "mux" && st.Container == "webm" {
+		a.logfIdle("webm cannot carry an srt track — the subtitles are the files beside the video")
 	}
 
-	switch {
-	case st.Subs == "mux" && st.Container == "webm":
-		a.logfIdle("webm cannot carry an srt track — subtitles written next to the video instead")
-		fallthrough
-	case st.Subs == "sidecar":
-		stem := strings.TrimSuffix(st.OutFile, filepath.Ext(st.OutFile))
-		for i, t := range tracks {
-			// the first beside the video under its own name, the rest with
-			// their language in it -- which is how every player finds them
-			side := stem + ".srt"
-			if i > 0 {
-				side = stem + "." + t.code + ".srt"
-			}
-			b, err := os.ReadFile(t.path)
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(side, b, 0o644); err != nil {
-				return err
-			}
-			a.logfIdle(">>> subtitles: %s", side)
+	// The .srt beside the video, for EVERY choice. What the dropdown decides
+	// is what the video carries; this file is what you upload with it, and
+	// which of the two was asked for is not a thing to find out an hour later
+	// with the encode already spent. It costs a file copy.
+	stem := strings.TrimSuffix(st.OutFile, filepath.Ext(st.OutFile))
+	for i, t := range tracks {
+		// the first beside the video under its own name, the rest with
+		// their language in it -- which is how every player finds them
+		tail := ""
+		if i > 0 {
+			tail = "." + t.code
 		}
+		b, err := os.ReadFile(t.path)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(stem+tail+".srt", b, 0o644); err != nil {
+			return err
+		}
+		// ...and the same cues as WebVTT, which is what a <video> tag on a
+		// page can actually read (vttText). Written from the track's own
+		// file, so a translation that was left out has no .vtt either.
+		if err := os.WriteFile(stem+tail+".vtt", []byte(vttText(t.cues)), 0o644); err != nil {
+			return err
+		}
+		a.logfIdle(">>> subtitles: %s.srt and .vtt", filepath.Base(stem+tail))
 	}
 	return nil
 }

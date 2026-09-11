@@ -294,7 +294,15 @@ func (a *App) syncPlayIcons() {
 
 // runCmd runs a subprocess and remembers it, so the stop button can kill it.
 // A kill while stopFlag is set reports as errStopped, not as a failure.
+//
+// The command goes in the log BEFORE it runs, every time. Every subprocess this
+// app starts is an ffmpeg, and what it is asked to do is the whole of what
+// comes out: a flag in the wrong place is a video that plays two frames out of
+// sync in one player and fine in another, and the answer to "what did it
+// actually run" should not be reading the source. Written as a shell would
+// take it, so it can be pasted, edited and run by hand.
 func (a *App) runCmd(name string, args ...string) error {
+	a.logCmd(name, args)
 	cmd := exec.Command(name, args...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -314,15 +322,56 @@ func (a *App) runCmd(name string, args ...string) error {
 		if len(tail) > 400 {
 			tail = tail[len(tail)-400:]
 		}
-		return fmt.Errorf("%s: %w\n%s", name, err, tail)
+		// the whole command in the error as well as in the log: an error is
+		// read where it lands -- a status line, a FAILED line at the end of a
+		// run -- and hunting back up the log for the line that goes with it is
+		// the part nobody does
+		return fmt.Errorf("%s: %w\n%s\n%s", name, err, cmdLine(name, args), tail)
 	}
 	return nil
+}
+
+// logCmd puts one command in the log, at the detail indent the steps use for
+// what they are doing rather than what they decided.
+func (a *App) logCmd(name string, args []string) {
+	a.logfIdle("    $ %s", cmdLine(name, args))
+}
+
+// cmdLine is a command as a shell would take it: every argument that needs
+// quoting quoted, and the rest left alone. The paths in this app have spaces in
+// them ("2026-09-10 15-04-39.mkv"), so a line printed with bare %v is a line
+// that looks runnable and is not.
+func cmdLine(name string, args []string) string {
+	out := make([]string, 0, len(args)+1)
+	out = append(out, shellArg(name))
+	for _, a := range args {
+		out = append(out, shellArg(a))
+	}
+	return strings.Join(out, " ")
+}
+
+// shellArg quotes one argument the way sh wants it: single quotes, with any
+// single quote inside closed, escaped and reopened.
+func shellArg(s string) string {
+	if s != "" && !strings.ContainsFunc(s, needsQuote) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func needsQuote(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return false
+	}
+	return !strings.ContainsRune("_@%+=:,./-", r)
 }
 
 // ffmpegProgress runs ffmpeg reporting completion against a known duration,
 // for the long single-invocation phases (frame extraction).
 func (a *App) ffmpegProgress(dur float64, cb func(float64), args ...string) error {
 	full := append([]string{"-progress", "pipe:1", "-nostats"}, args...)
+	a.logCmd(ffTool("ffmpeg"), full)
 	cmd := exec.Command(ffTool("ffmpeg"), full...)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
