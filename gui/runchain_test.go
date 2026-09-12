@@ -197,3 +197,32 @@ func TestTheChainMovesPagesTheWayTheTabsDo(t *testing.T) {
 		t.Error("showStep no longer knows which page needs rebuilding")
 	}
 }
+
+// A lone tick follows the tab.
+//
+// The ticks beside ▶ are a standing answer -- which steps it runs -- and most
+// of the time exactly one is on: the step being worked on. Walking to another
+// tab is the whole of "that one now", so pressing ▶ on Cut with Prepare ticked
+// re-ran Prepare, which is never what the press meant.
+func TestALoneChainTickFollowsThePage(t *testing.T) {
+	body := funcBody(t, "runchain.go", `func \(a \*App\) followChainTick\(`)
+	// never during a run: a chain moves the pages itself (chainNext), and this
+	// would retarget its ticks as it walked them
+	if !strings.Contains(body, `a.running || a.chainStep != ""`) {
+		t.Error("the ticks follow the page during a run, which rewrites a chain as it walks")
+	}
+	// and only a LONE tick: several is a chain somebody built on purpose
+	if !strings.Contains(body, "len(picked) != 1 || picked[0] == page") {
+		t.Error("a chain of several steps is rewritten by a tab click")
+	}
+	// one project write for one gesture, not one per toggle
+	if !strings.Contains(body, "a.chainQuiet = true") || strings.Count(body, "a.saveProjectNow()") != 1 {
+		t.Error("moving the tick saves the project twice, or saves it through the toggle handler")
+	}
+	// hung off showStep, so it happens for a tab click and for anything else
+	// that moves the page
+	show := funcBody(t, "main.go", `func \(a \*App\) showStep\(`)
+	if !strings.Contains(show, "a.followChainTick(name)") {
+		t.Error("showStep no longer moves the lone tick to the page it opened")
+	}
+}

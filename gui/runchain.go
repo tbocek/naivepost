@@ -231,6 +231,39 @@ func (a *App) buildChainMenu() *gtk.Box {
 	return box
 }
 
+// followChainTick moves a lone tick to the page just opened.
+//
+// The ticks are a standing answer -- which steps ▶ runs -- and most of the time
+// there is exactly one, the step being worked on. Walking to another tab is
+// then the whole of "I am working on that one now", and having to open the menu
+// to say it again is a second answer to the same question: press ▶ on Cut with
+// Prepare ticked and Prepare runs, which is never what the press meant.
+//
+// Only when exactly ONE is ticked. Several ticked is a chain somebody built on
+// purpose -- Prepare → Cut → Produce -- and a tab click must not rewrite it.
+// And never during a run: a chain moves the pages itself (chainNext), so this
+// would retarget the ticks as the chain walked them.
+func (a *App) followChainTick(page string) {
+	if a.chainTicks == nil || a.running || a.chainStep != "" {
+		return
+	}
+	if a.chainTicks[page] == nil {
+		return // a page the chain has no step for
+	}
+	picked := a.chainPicked()
+	if len(picked) != 1 || picked[0] == page {
+		return
+	}
+	// quietly, then one save: two toggles through the handler would be two
+	// writes of the project for one gesture
+	a.chainQuiet = true
+	a.chainTicks[picked[0]].SetActive(false)
+	a.chainTicks[page].SetActive(true)
+	a.chainQuiet = false
+	a.syncChain()
+	a.saveProjectNow()
+}
+
 // syncChain puts the answer on the button.
 func (a *App) syncChain() {
 	if a.chainPick == nil {

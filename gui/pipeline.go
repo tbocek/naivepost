@@ -30,6 +30,19 @@ import (
 	"time"
 )
 
+// diarWins is the window lengths diarization is tried at, longest first.
+//
+// Sortformer refuses a request past its encoder position table -- measured, 90 s
+// passes and 150 s does not -- so 90 is the most it can be ASKED. What the
+// table cannot say is whether the MACHINE can find the memory for it: the
+// backend allocates one contiguous buffer per request and it grows with the
+// window, 2.9 GB at 90 s. Measured on this box with an LLM's weights pinned
+// beside it: 90 s failed to allocate, 45 s answered in 400 ms, 5 s likewise.
+// So the window is a preference rather than a constant -- the pass runs at the
+// first length the server can actually hold, and a diarization at 25 s is a
+// slower diarization rather than none.
+var diarWins = []float64{diarWin, 45, 25}
+
 var errStopped = errors.New("stopped by user")
 
 // Where the local audio.cpp stack lives, what it runs on and what language it
@@ -43,21 +56,28 @@ const (
 	// 90 s passes, 150 s does not), and its slot names mean nothing across
 	// requests. Every window therefore carries the same short anchor clip of
 	// known voices in front; whichever slot owns an anchor block IS that voice.
-	diarWin     = 90.0
-	diarScanHop = 60.0 // pass 1 stride: only has to see each voice once
-	anchorPer   = 12.0 // seconds of each voice in the anchor
+	diarWin     = 90.0 // the longest window, and the first one tried (diarWins)
+	anchorPer   = 12.0 // seconds of each voice in the anchor, at diarWin
 	anchorMin   = 4.0  // speech that makes a slot count as a voice
 	minAnchorOv = 0.5  // anchor-block overlap to claim a slot
 	diarTurnGap = 0.5  // merge same-speaker turns closer than this
+	// pass 1's stride as a share of the window: it only has to see each voice
+	// once, so it steps two thirds of a window and overlaps the rest.
+	diarHopShare = 2.0 / 3.0
 
 	// The ASR encoders have a position table a session is far past (Nemotron
 	// refuses well before 12 minutes; others run full context over the whole
 	// recording). Long audio goes in as chunks, cut where nobody is talking.
 	asrChunkMax  = 300.0 // longest audio in one ASR request
 	asrChunkQwen = 60.0  // ...and for a model that allocates by the second (asrChunk)
-	asrCutSeek   = 20.0  // how far from an even cut a silence is worth taking
-	asrQuietDB   = -35   // what counts as quiet, in dBFS
-	asrQuietMin  = 0.4   // and for how long
+	// and the shortest it is worth halving to. Under this the chunk edges
+	// outnumber the sentences: every edge costs the decoder its context, and a
+	// transcript cut into ten-second pieces is a worse answer than no answer,
+	// which at least says so.
+	asrChunkMin = 20.0
+	asrCutSeek  = 20.0 // how far from an even cut a silence is worth taking
+	asrQuietDB  = -35  // what counts as quiet, in dBFS
+	asrQuietMin = 0.4  // and for how long
 
 	// segment building
 	mergeGap     = 0.7  // silence that ends a segment
@@ -501,6 +521,10 @@ func (a *App) transcribe(input, inDir string, base, unit float64) error {
 		return err
 	}
 	if !exists(filepath.Join(out, "turns.json")) {
+		// and when it fails, the step fails. There is no "skip it" answer: a
+		// window the machine cannot hold is walked down until one fits
+		// (diarWins), and what is left after that is a server that cannot do
+		// the job -- which a run should say rather than carry on past.
 		if err := a.diarize(out, dur, name, base, unit); err != nil {
 			if errors.Is(err, errStopped) {
 				return err
@@ -525,6 +549,25 @@ func (a *App) transcribe(input, inDir string, base, unit float64) error {
 // decoder losing its context costs nothing.
 func (a *App) asrLong(wav string, dur float64, name string, base, unit float64) ([]byte, string, error) {
 	limit := a.asrChunk()
+	// Down the same ladder diarization walks, and for the same failure: the
+	// model's own position table says how much audio it will READ, and the
+	// machine says how much of a graph it can find room for. Halving is not
+	// free here -- a chunk edge is a place the decoder loses its context, so
+	// the text at a join is the worst text in the file -- which is why this
+	// starts at what the model allows and shortens only when told to, rather
+	// than being set small to be safe.
+	for {
+		b, text, err := a.asrLongAt(wav, dur, name, base, unit, limit)
+		if err == nil || !noRoom(err) || limit <= asrChunkMin {
+			return b, text, err
+		}
+		limit = math.Max(asrChunkMin, math.Floor(limit/2))
+		a.logfIdle("!!! [%s] ASR: no room for that much audio (%v) -- trying %.0f s at a time",
+			name, err, limit)
+	}
+}
+
+func (a *App) asrLongAt(wav string, dur float64, name string, base, unit, limit float64) ([]byte, string, error) {
 	if dur <= limit {
 		return a.asrJSON(wav)
 	}
@@ -719,6 +762,42 @@ func concatLine(path string) string {
 }
 
 func (a *App) diarize(out string, dur float64, name string, base, unit float64) error {
+	var err error
+	for i, win := range diarWins {
+		if err = a.diarizeAt(out, dur, name, base, unit, win); err == nil || !noRoom(err) {
+			return err
+		}
+		// the server has the model and refused the buffer, not the audio: the
+		// next window down is the same pass over more, smaller requests
+		if i+1 < len(diarWins) {
+			a.logfIdle("!!! [%s] diarization: no room for a %.0f s window (%v) -- trying %.0f s",
+				name, win, err, diarWins[i+1])
+		}
+	}
+	return err
+}
+
+// noRoom is whether the server refused for want of memory rather than for
+// anything about the request. Its own words, because the failure arrives as a
+// 500 with a message and nothing else to go on. Both the passes that hand it a
+// stretch of audio ask this: what they choose is how much, and that is the
+// only thing either can do about the answer.
+func noRoom(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "failed to allocate") || strings.Contains(s, "out of memory") ||
+		strings.Contains(s, "alloc_tensor_range") || strings.Contains(s, "cudamalloc")
+}
+
+// diarizeAt is the pass at one window length.
+func (a *App) diarizeAt(out string, dur float64, name string, base, unit, win float64) error {
+	// the anchor is a share of the window, not a fixed dozen seconds: four
+	// voices at 12 s each is 48 s of anchor, which leaves a 45 s window no
+	// room for any new audio at all. A quarter of the window per voice keeps
+	// the same shape at every rung of the ladder.
+	per := math.Min(anchorPer, win/4)
 	dir := filepath.Join(out, "diar")
 	os.RemoveAll(dir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -728,7 +807,8 @@ func (a *App) diarize(out string, dur float64, name string, base, unit float64) 
 	turnsPath := filepath.Join(out, "turns.json")
 
 	// -- pass 1: where are the voices? --------------------------------------
-	nwin := int(math.Ceil(dur / diarScanHop))
+	scanHop := math.Max(10, math.Floor(win*diarHopShare))
+	nwin := int(math.Ceil(dur / scanHop))
 	scan := map[int][]span{}
 	for i := 0; i < nwin; i++ {
 		if err := a.checkpoint(); err != nil {
@@ -736,9 +816,9 @@ func (a *App) diarize(out string, dur float64, name string, base, unit float64) 
 		}
 		a.prog(trackSTT, base+(0.55+0.20*float64(i)/float64(nwin))*unit,
 			"finding voices %d/%d", i+1, nwin)
-		start := float64(i) * diarScanHop
+		start := float64(i) * scanHop
 		if err := a.runCmd(ffTool("ffmpeg"), "-v", "error", "-y",
-			"-ss", fmt.Sprint(start), "-t", fmt.Sprint(diarWin),
+			"-ss", fmt.Sprint(start), "-t", fmt.Sprint(win),
 			"-i", filepath.Join(out, "voice16k.wav"),
 			"-c:a", "pcm_s16le", filepath.Join(dir, "s.wav")); err != nil {
 			return err
@@ -801,12 +881,12 @@ func (a *App) diarize(out string, dur float64, name string, base, unit float64) 
 	var pieces []piece
 	acc := map[string]float64{}
 	for _, r := range rows {
-		if acc[r.slot] >= anchorPer {
+		if acc[r.slot] >= per {
 			continue
 		}
 		d := r.e - r.s
-		if d > anchorPer-acc[r.slot] {
-			d = anchorPer - acc[r.slot]
+		if d > per-acc[r.slot] {
+			d = per - acc[r.slot]
 		}
 		if d < 0.3 { // too short to carry a voice
 			continue
@@ -845,12 +925,12 @@ func (a *App) diarize(out string, dur float64, name string, base, unit float64) 
 		blocks[len(blocks)-1].e = t
 	}
 	alen := t
-	hop := math.Floor(diarWin - alen - 1)
+	hop := math.Floor(win - alen - 1)
 	if hop < 15 {
-		return fmt.Errorf("anchor too long (%.1f s of %.0f s window)", alen, diarWin)
+		return fmt.Errorf("anchor too long (%.1f s of %.0f s window)", alen, win)
 	}
-	a.logfIdle(">>> [%s] anchor: %d voice(s) in %.1f s, from window %d -- %.0f s of new audio per window",
-		name, len(blocks), alen, best, hop)
+	a.logfIdle(">>> [%s] anchor: %d voice(s) in %.1f s of a %.0f s window -- %.0f s of new audio each",
+		name, len(blocks), alen, win, hop)
 
 	// -- pass 2: every window carries the anchor ----------------------------
 	nwin = int(math.Ceil(dur / hop))
@@ -1064,6 +1144,15 @@ func (a *App) mergeSegments(out string) error {
 		}
 		if bi >= 0 {
 			return ts[bi].slot
+		}
+		// no turns at all is a recording diarization found no voices in -- it
+		// writes "[]" for one -- whose ASR nevertheless heard words. One
+		// voice, named as a diarized session would name it. "?" is for a word
+		// BETWEEN turns, which the loop below hands to the running speaker;
+		// with no turns there is none to run, and "?" would reach the timeline
+		// as a speaker's name.
+		if len(ts) == 0 {
+			return "SPEAKER_00"
 		}
 		return "?"
 	}

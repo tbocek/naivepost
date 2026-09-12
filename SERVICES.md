@@ -33,6 +33,7 @@ PREPARE  ───────────────────────�
   over 2–8 workers                    speech to text        audio.cpp  asr
         │                             word alignment        audio.cpp  align
         │                             diarization           audio.cpp  diar
+  │                             (window 90/45/25 s, first that fits)
         │                             (2 passes, ffmpeg cuts each window)
         │                             merge into segments   local
         └─────────────┬───────────────┘

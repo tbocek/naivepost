@@ -524,7 +524,9 @@ func TestABlankKeyIsNoHeaderAtAll(t *testing.T) {
 // the answer was stitched and exactly wrong when it was not: the one thing
 // worth having after "the server could not open c00.wav" is c00.wav.
 func TestAFailedASRKeepsTheChunkItFailedOn(t *testing.T) {
-	body := funcBody(t, "pipeline.go", `func \(a \*App\) asrLong\(`)
+	// asrLongAt is the pass; asrLong above it only chooses how much audio a
+	// request may carry and walks that down when the server has no room
+	body := funcBody(t, "pipeline.go", `func \(a \*App\) asrLongAt\(`)
 	if !strings.Contains(body, "done := false") || !strings.Contains(body, "if done {") {
 		t.Fatalf("asrLong no longer decides whether to sweep the chunks up:\n%s", body)
 	}

@@ -386,6 +386,9 @@ func (a *App) showStep(name string) {
 	a.outStack.SetVisibleChildName(name)
 	a.updateRunControls() // ▶ ⏹ belong to the new page's playback now
 	a.syncHelp()          // and so does the ⓘ
+	// ...and so does ▶ itself, when the ticks beside it name one step: the tab
+	// you walk to is the step you mean (followChainTick)
+	a.followChainTick(name)
 	// Cut's Inputs row lists what Suggest will be sent, and one of those things
 	// is the context box on Describe -- the page you have usually just come
 	// from. Refreshed on arrival rather than on every keystroke over there,

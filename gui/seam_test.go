@@ -8,6 +8,7 @@ package main
 // test rather than a race that happens to work.
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -112,5 +113,91 @@ func TestThePipelineFileImportsNoGTK(t *testing.T) {
 		if !strings.Contains(bar, want) {
 			t.Errorf("runbar.go does not hold %q", want)
 		}
+	}
+}
+
+// The diarization window is a preference, not a constant.
+//
+// Sortformer allocates one contiguous buffer per request and it grows with the
+// window. Measured on a real box with an LLM's weights pinned beside it: at
+// 90 s the server answered "Failed to allocate Sortformer diar backend
+// tensors", at 45 s it answered in 400 ms, at 5 s likewise. The window the
+// model permits and the window the machine can hold are two different numbers,
+// so the pass walks down until one fits.
+func TestDiarizationStepsDownItsWindowRatherThanFailing(t *testing.T) {
+	if len(diarWins) < 2 || diarWins[0] != diarWin {
+		t.Errorf("the window ladder is %v, want the longest first", diarWins)
+	}
+	for i := 1; i < len(diarWins); i++ {
+		if diarWins[i] >= diarWins[i-1] {
+			t.Errorf("the ladder does not descend: %v", diarWins)
+		}
+	}
+	// only an allocation failure steps down; anything else is the answer
+	for _, c := range []struct {
+		err  string
+		down bool
+	}{
+		{"sortformer-diar on http://127.0.0.1:8765 answered 500 Internal Server Error: " +
+			`{"error":{"message":"Failed to allocate Sortformer diar backend tensors"}}`, true},
+		{"cudaMalloc failed: out of memory", true},
+		{"alloc_tensor_range: failed to allocate ROCm0 buffer of size 3074294656", true},
+		{"no model \"sortformer-diar\" on that server", false},
+		{"anchor too long (48.0 s of 45 s window)", false},
+		{"stopped by user", false},
+	} {
+		if got := noRoom(errors.New(c.err)); got != c.down {
+			t.Errorf("noRoom(%.40q) = %v, want %v", c.err, got, c.down)
+		}
+	}
+	if noRoom(nil) {
+		t.Error("no error reads as no room")
+	}
+	body := funcBody(t, "pipeline.go", `func \(a \*App\) diarize\(`)
+	if !strings.Contains(body, "for i, win := range diarWins {") ||
+		!strings.Contains(body, "!noRoom(err)") {
+		t.Error("diarize no longer walks the ladder, or walks it for errors that are the answer")
+	}
+	// the anchor is a share of the window: four voices at a fixed 12 s each is
+	// 48 s, which leaves a 45 s window no room for any new audio at all
+	at := funcBody(t, "pipeline.go", `func \(a \*App\) diarizeAt\(`)
+	if !strings.Contains(at, "per := math.Min(anchorPer, win/4)") {
+		t.Error("the anchor does not shrink with the window, so a short window has no room for audio")
+	}
+	if strings.Contains(at, "diarWin") {
+		t.Error("diarizeAt still reads the constant instead of the window it was given")
+	}
+}
+
+// The ASR walks the same ladder, for the same failure and with one more thing
+// at stake: a chunk edge is where the decoder loses its context, so the text at
+// a join is the worst text in the file. That is why the chunk starts at what
+// the MODEL allows -- 300 s, or 60 s for a qwen3, which allocates about 1.5 GB
+// per 20 s -- and is halved only when the server says it has no room, rather
+// than being set small to be safe.
+func TestTheASRHalvesItsChunkRatherThanFailing(t *testing.T) {
+	body := funcBody(t, "pipeline.go", `func \(a \*App\) asrLong\(`)
+	for _, want := range []string{
+		"limit := a.asrChunk()",                // the model's answer first
+		"!noRoom(err) || limit <= asrChunkMin", // and only memory steps down
+		"math.Max(asrChunkMin, math.Floor(limit/2))",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("asrLong no longer contains %q", want)
+		}
+	}
+	// there is a floor: under it the edges outnumber the sentences, and a
+	// transcript in ten-second pieces is a worse answer than the failure
+	if asrChunkMin < 15 || asrChunkMin >= asrChunkQwen {
+		t.Errorf("the floor is %.0f s, which is not between a sentence and the smallest model limit", asrChunkMin)
+	}
+	// the retry re-cuts from scratch: the edges move when the limit does, so a
+	// chunk list from the longer attempt cannot be reused
+	at := funcBody(t, "pipeline.go", `func \(a \*App\) asrLongAt\(`)
+	if !strings.Contains(at, "asrCuts(dur, a.quietSpots(wav), limit, seek)") {
+		t.Error("the chunk edges are not cut from the limit this attempt is using")
+	}
+	if strings.Contains(at, "a.asrChunk()") {
+		t.Error("asrLongAt asks the model again instead of using the limit it was given")
 	}
 }

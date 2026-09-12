@@ -46,7 +46,10 @@ Pressing ▶ then does, in order:
    20 ms. This matters more than it sounds: ASR timestamps run a third of a
    second late on average, and every cut point in the app is placed on a word
    edge.
-5. **Diarization** — who spoke when, merged into the transcript.
+5. **Diarization** — who spoke when, merged into the transcript. The window it
+   asks for shrinks until the server can hold it (90 s, then 45, then 25): the
+   model permits 90 s, but the buffer grows with the window and a machine with
+   an LLM's weights pinned beside it may have no 2.9 GB hole to put one in.
 6. **Describe** — the frames go to a vision model in small batches, each batch
    carrying the words heard in those seconds and a rolling summary of what has
    happened so far, so the answer is *what is happening* rather than *what is in
