@@ -516,7 +516,12 @@ func TestAJoinIsReadBackOffTheWordsItWasShown(t *testing.T) {
 			before: "there has to be a full end to end run for you to pass",
 			after:  "The task opened last year.",
 			joined: "there has to be a full run for you to pass The task opened last year.",
-			why:    "does not touch the join"},
+			why:    "not at the join"},
+		{name: "a stretch a word or two short of the join is taken as being at it",
+			before: "and here I have the over date date and",
+			after:  "Here I have the date of the lecture.",
+			joined: "and here date and Here I have the date of the lecture.",
+			want:   "and here Here I have the date of the lecture."},
 		{name: "a rewrite is refused",
 			before: "I used to work at a small company",
 			after:  "One area of interest is startups.",
@@ -550,6 +555,42 @@ func TestAJoinIsReadBackOffTheWordsItWasShown(t *testing.T) {
 		if got := seamWords(keep); got != c.want {
 			t.Errorf("%s:\n got  %q\n want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// A word the model respelled is not a word it removed.
+//
+// It writes as it reads, and it respells while it writes: "Ein interessantes
+// Gebiet" for a transcript that says "Ein Interessensgebiet". That word matches
+// nothing, so the match reads it as deliberately dropped, and the answer came
+// back as two separate stretches and was refused whole -- the repair at the
+// join thrown away over a synonym a hundred words from it.
+//
+// Measured over two runs of one lecture's 29 joins: taking a stray word or two
+// as a respelling rather than a removal turns four refusals into two and five
+// into two, and gets one more join exactly right in both. A longer stretch away
+// from the join is still a refusal, because that is the model editing prose.
+func TestARespelledWordIsNotARemovedOne(t *testing.T) {
+	before := "and so the point here is that we were"
+	after := "The point here is that we were early."
+	win, at := seamFixture(before, after)
+	// the repair at the join, plus one word respelled far from it
+	joined := "and so THE POINT here is that we were early."
+	cut, why := seamCutOf(win, at, joined)
+	if why != "" {
+		t.Fatalf("a respelling refused the join: %s", why)
+	}
+	if cut.Before == 0 {
+		t.Error("the repair at the join was lost")
+	}
+	// ...but a real stretch away from the join is still refused: that is the
+	// removal that takes the object out of a sentence and leaves it parsing
+	if _, why := seamCutOf(win, at, "and so is that we were The point here is that we were early."); why == "" {
+		t.Error("a stretch out of the middle of BEFORE was accepted")
+	}
+	// and the threshold is a word or two, not a phrase
+	if seamNoise > 2 {
+		t.Errorf("stretches of up to %d words away from the join are ignored", seamNoise)
 	}
 }
 
@@ -619,4 +660,47 @@ func seamFixture(before, after string) ([]srcWord, int) {
 		at += 4 // the recording stopped and started again
 	}
 	return w, len(strings.Fields(before))
+}
+
+// final.txt is marked at every join, because a join is the only place in it
+// where anything can be wrong. Reading 29 marks and the words either side of
+// each is a check a person can do; reading five thousand words of continuous
+// prose is not, and the whole of one session was spent finding faults that way.
+func TestTheFinishedTextIsMarkedAtEveryJoin(t *testing.T) {
+	words := append(seamSaid("one two three", "t1"),
+		append(seamSaid("four five", "t2"), seamSaid("six seven", "t3")...)...)
+	drop := make([]bool, len(words))
+	drop[2] = true // "three" goes, at the first join
+	a := &App{}
+	got := a.finishedText(words, drop)
+	want := "one two |cut 1| four five |cut| six seven"
+	if got != want {
+		t.Errorf("\n got  %q\n want %q", got, want)
+	}
+	// a mark says how many words went, and says so even when none did: a
+	// stumble the pass walked past reads as ordinary prose otherwise
+	if !strings.Contains(got, "|cut 1|") || !strings.Contains(got, "|cut|") {
+		t.Error("the marks do not tell a repaired join from an untouched one")
+	}
+	// ...and they come back out on the way in, so the file can be edited by
+	// hand with them left in (marksFromText -> textTokens)
+	if toks := textTokens(got); strings.Join(toks, " ") != "one two four five six seven" {
+		t.Errorf("the marks are read back as words: %q", toks)
+	}
+	// however a hand mangles one, it is still a mark: no word anyone says has
+	// a pipe in it
+	for _, mangled := range []string{"|cut", "cut|", "||", "|cut 12|"} {
+		if toks := textTokens("one " + mangled + " two"); len(toks) != 2 {
+			t.Errorf("%q was read as a word: %q", mangled, toks)
+		}
+	}
+}
+
+// seamSaid is one take's words.
+func seamSaid(text, src string) []srcWord {
+	var out []srcWord
+	for _, x := range strings.Fields(text) {
+		out = append(out, srcWord{w: bareWord(x), raw: x, src: src})
+	}
+	return out
 }

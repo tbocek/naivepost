@@ -222,6 +222,13 @@ const seamReach = 70
 const (
 	seamMaxWords = 40
 	seamCeil     = 0.6
+	// ...and how far short of the join a stretch may stop and still be taken
+	// as being at it (seamCutOf). A word or two is a model stopping short of
+	// the last syllables of a fumble; farther is a different edit.
+	seamSnap = 3
+	// ...and the longest stretch away from the join that is taken as the model
+	// having respelled a word rather than removed it (seamCutOf).
+	seamNoise = 2
 )
 
 // askSeam asks about one join and answers how much comes off each side.
@@ -255,8 +262,26 @@ func (a *App) askSeam(system string, words []srcWord, at, k, n int) (seamCut, bo
 	reply, hit := a.cachedReply("textedit", ask)
 	if !hit {
 		var err error
+		// thinking, which is the one thing measured to help this pass.
+		//
+		// Scored against a 42-minute lecture cut by hand, 29 joins: without it
+		// the model hands back its input unchanged at ten to twelve of them and
+		// gets fifteen exactly right; with it there is not one join it passes
+		// over, and twenty are exactly right. It finds 128 of the 180 words the
+		// hand cut removed, against 56 to 67 without.
+		//
+		// It is not free. It costs about two minutes a join where the plain
+		// call costs seconds, and it removed 14 words the hand cut kept, 13 of
+		// them at one join, where the plain call removed none. Both were worth
+		// it here: a stumble left in is a stumble you can still take out by
+		// hand in final.txt, and a join nobody looked at is not.
+		//
+		// Two things that sounded better and measured worse: telling the model
+		// which kind of stumble the join is (13 right, and it over-cut), and
+		// having it choose between readings the machine builds from the
+		// punctuation (5 right, and it removed 289 words the hand cut kept).
 		reply, err = a.llmChatRetry("textedit",
-			[]map[string]any{msg("system", system), msg("user", user)}, false)
+			[]map[string]any{msg("system", system), msg("user", user)}, true)
 		if err != nil {
 			return seamCut{}, false, err
 		}
@@ -321,30 +346,70 @@ func seamCutOf(win []srcWord, at int, joined string) (seamCut, string) {
 			kept[owner[i]] = true
 		}
 	}
-	first, last, gaps := -1, -1, 0
-	for i, k := range kept {
-		if k {
+	// what it left out, stretch by stretch. There should be exactly one and it
+	// should be at the join; a second one somewhere else is the model editing
+	// prose, and the whole answer is refused over it.
+	//
+	// Except where that second one is a word or two, which is usually not a
+	// deletion at all. The model respells as it writes -- "Ein interessantes
+	// Gebiet" for a transcript that reads "Ein Interessensgebiet" -- and a word
+	// it spelled its own way matches nothing and reads here exactly as if it
+	// had been removed on purpose. Measured over two runs of a 42-minute
+	// lecture: taking those as respellings rather than removals turns four
+	// refusals into two and five into two, and gets one more join exactly right
+	// each time. It was the only change of several that held up across both.
+	first, last, other := -1, -1, 0
+	for i := 0; i < len(win); {
+		if kept[i] {
+			i++
 			continue
 		}
-		if first < 0 {
-			first = i
-		} else if kept[i-1] {
-			gaps++ // a second stretch, somewhere else
+		j := i
+		for j < len(win) && !kept[j] {
+			j++
 		}
-		last = i
+		switch {
+		case i <= at+seamSnap && j-1 >= at-1-seamSnap:
+			first, last = i, j-1 // the one at the join, which is the repair
+		case j-i > seamNoise:
+			other++
+		}
+		i = j
 	}
-	if first < 0 {
+	switch {
+	case first < 0 && other == 0:
 		return seamCut{}, "" // nothing left out, which is a whole answer
+	case first < 0:
+		return seamCut{}, fmt.Sprintf("the %s left out is not at the join",
+			plural(other, "stretch"))
+	case other > 0:
+		return seamCut{}, fmt.Sprintf("%d separate stretches left out, not one at the join", other+1)
 	}
-	if gaps > 0 {
-		return seamCut{}, fmt.Sprintf("%d separate stretches left out, not one at the join", gaps+1)
+	// ...and the stretch has to be AT the join, which is what tells a repair
+	// apart from the model editing prose: a hole in the middle of BEFORE is the
+	// removal that takes the object out of a sentence, leaving something that
+	// parses and means nothing.
+	//
+	// Coming within a word or two of the join counts as being at it, and the
+	// rest of the way is closed here. A model that names "Das heißt, hier habe
+	// ich jeweils das Über-Datum." and leaves "datum und" standing against the
+	// stop has found the abandoned attempt and stopped short of its last
+	// syllables; the words it left are the end of that same attempt, and they
+	// are on the side the pass spends first. Refusing the whole answer over
+	// them is how the join everybody could see kept coming back.
+	if d := at - 1 - last; d > 0 {
+		if d > seamSnap {
+			return seamCut{}, fmt.Sprintf("the stretch left out (%q) stops %d words short of the join",
+				seamWords(win[first:last+1]), d)
+		}
+		last = at - 1
 	}
-	// a stretch out of the middle of BEFORE is the model editing prose rather
-	// than repairing a stumble -- the removal that takes the object out of a
-	// sentence, leaving something that parses and means nothing
-	if first > at || last < at-1 {
-		return seamCut{}, fmt.Sprintf("the stretch left out (%q) does not touch the join",
-			seamWords(win[first:last+1]))
+	if d := first - at; d > 0 {
+		if d > seamSnap {
+			return seamCut{}, fmt.Sprintf("the stretch left out (%q) starts %d words past the join",
+				seamWords(win[first:last+1]), d)
+		}
+		first = at
 	}
 	if n := last - first + 1; n > seamMaxWords || float64(n) > seamCeil*float64(len(win)) {
 		return seamCut{}, fmt.Sprintf("%d of the %d words left out -- that is not a repair",
@@ -410,14 +475,41 @@ func seamWord(w srcWord) string {
 // written. It is the edit, and a person can read it -- or change it and cut
 // again (marksFromText), which is why it is punctuated rather than the bare
 // stream the match works in.
+//
+// Every join is marked, because a join is the only place in the file where
+// anything can be wrong. |cut 10| is a join where ten words went; |cut| is one
+// where the recording stopped and nothing went, which is worth seeing too --
+// a stumble the pass walked past looks exactly like ordinary prose otherwise.
+// Reading 29 marks and the few words either side of each is the check; reading
+// five thousand words of continuous text is not.
+//
+// The marks come back out again on the way in (textTokens), so this file can be
+// edited by hand and cut from with them left in or taken out.
 func (a *App) writeFinalText(words []srcWord, drop []bool) error {
-	var keep []srcWord
+	return os.WriteFile(a.finalText(), []byte(a.finishedText(words, drop)+"\n"), 0o644)
+}
+
+// finishedText is what it writes, apart from the file, so that the marking can
+// be read without a project on disk.
+func (a *App) finishedText(words []srcWord, drop []bool) string {
+	var b []string
+	last, gone := "", 0
 	for i, w := range words {
-		if drop == nil || !drop[i] {
-			keep = append(keep, w)
+		if drop != nil && drop[i] {
+			gone++
+			continue
 		}
+		if last != "" && w.src != last {
+			if gone > 0 {
+				b = append(b, fmt.Sprintf("|cut %d|", gone))
+			} else {
+				b = append(b, "|cut|")
+			}
+		}
+		b = append(b, seamWord(w))
+		last, gone = w.src, 0
 	}
-	return os.WriteFile(a.finalText(), []byte(seamWords(keep)+"\n"), 0o644)
+	return strings.Join(b, " ")
 }
 
 // finalText is where the edit lives: the words of the finished video.
@@ -515,7 +607,11 @@ func textTokens(reply string) []string {
 	var out []string
 	reply = pauseMark.ReplaceAllString(reply, " ")
 	for _, f := range strings.Fields(reply) {
-		if f == "SEAM" {
+		// the join marks final.txt is written with, and the one the whole-text
+		// pass used to write. Never a word anyone said: a pipe does not occur
+		// in a transcript, so the test can be the character rather than the
+		// exact spelling, and a mark a hand has mangled still goes.
+		if f == "SEAM" || strings.Contains(f, "|") {
 			continue
 		}
 		if w := bareWord(f); w != "" {
