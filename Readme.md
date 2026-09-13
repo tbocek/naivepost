@@ -59,7 +59,10 @@ Pressing ▶ then does, in order:
 6. **Describe** — the frames go to a vision model in small batches, each batch
    carrying the words heard in those seconds and a rolling summary of what has
    happened so far, so the answer is *what is happening* rather than *what is in
-   this picture*. Output is one EVENT line per few seconds.
+   this picture*. Output is one EVENT line per frame, stamped on that frame's
+   second; a frame in which nothing changed says only `same` and is folded
+   into the line before it when the log is read, so a change is dated to the
+   second it happened and a brief still reads one line per thing that happened.
 7. **Fix** — the raw transcripts are cleaned into publishable text, grounded in
    the event log and in what other microphones heard at the same moment. Times
    and speaker labels pass through byte-identical, enforced.

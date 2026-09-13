@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!--
+    naivepost — a strip of film, cut, with the two pieces pulled apart.
+
+    Why this note is INSIDE the svg element rather than above it, where it was:
+    an image loader decides what a file is by sniffing its first bytes, and the
+    window it sniffs is a couple of hundred bytes long. A comment above the root
+    element pushes "<svg" past the end of that window, and the file is then not
+    recognised as anything at all. That is what left this icon missing from the
+    shell while it rendered perfectly in every tool that goes by the file
+    extension. Keep the root element in the first line or two of the file.
+    (And no double hyphens in here: XML forbids them inside a comment, and a
+    loader that refuses to parse the file is the same missing icon by another
+    route.)
+
+    The first version of this had the pieces still in line with each other and a
+    red slash down the gap between them, and at 48px it read as a stripe painted
+    on one unbroken strip: the gap was there, it was simply too subtle to see
+    once the mark was small. Offsetting the halves is what makes the cut
+    legible. Two rectangles at different heights cannot be read as one thing, so
+    the eye gets "this was one strip and now it is two" without having to
+    resolve a gap a few pixels wide. It also settles the other risk, which is
+    that two upright bars side by side is the pause symbol.
+
+    Each piece keeps its own even run of sprocket holes rather than sharing one
+    run clipped by the cut. Clipped holes leave slivers at the cut edge that
+    turn to grit below about 64px.
+
+    The holes are filled with the plate's own gradient, in user space, so they
+    line up with the background exactly and the icon needs no masks or even-odd
+    paths to punch through.
+  -->
+  <defs>
+    <linearGradient id="plate" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="128">
+      <stop offset="0" stop-color="#3d4557"/>
+      <stop offset="1" stop-color="#20242e"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="28" fill="url(#plate)"/>
+
+  <!-- the piece that stays -->
+  <rect x="14" y="22" width="48" height="60" rx="7" fill="#eceff4"/>
+  <g fill="url(#plate)">
+    <rect x="20" y="27" width="9" height="8" rx="2"/>
+    <rect x="33" y="27" width="9" height="8" rx="2"/>
+    <rect x="46" y="27" width="9" height="8" rx="2"/>
+    <rect x="20" y="69" width="9" height="8" rx="2"/>
+    <rect x="33" y="69" width="9" height="8" rx="2"/>
+    <rect x="46" y="69" width="9" height="8" rx="2"/>
+  </g>
+
+  <!-- the piece that was moved -->
+  <rect x="66" y="46" width="48" height="60" rx="7" fill="#eceff4"/>
+  <g fill="url(#plate)">
+    <rect x="72" y="51" width="9" height="8" rx="2"/>
+    <rect x="85" y="51" width="9" height="8" rx="2"/>
+    <rect x="98" y="51" width="9" height="8" rx="2"/>
+    <rect x="72" y="93" width="9" height="8" rx="2"/>
+    <rect x="85" y="93" width="9" height="8" rx="2"/>
+    <rect x="98" y="93" width="9" height="8" rx="2"/>
+  </g>
+
+  <!-- where it was cut: the line runs the height of the mark, through the gap -->
+  <path d="M69 14 L59 114" stroke="#e2564a" stroke-width="5" stroke-linecap="round" fill="none"/>
+</svg>

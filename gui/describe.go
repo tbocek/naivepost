@@ -11,7 +11,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -39,18 +41,24 @@ What the speech is for. It comes from more than one microphone, and whoever is t
 
 What not to write. Nothing you were not shown or told: no genre, title, place or character assumed. No "appears to" or "seems to" -- if you cannot tell what something is, say how it looks and move on. No mention of frames, images, chunks, or yourself.
 
-The two lines:
-EVENT: what happens in these seconds and how hectic or calm it is -- present tense, concrete, specific. Up to 35 words when something happens; when nothing meaningful changes, the pace and a few words, twelve at most -- "Calm; same view, the tower keeps firing" is a whole line. The cut reads hundreds of these in one go and chooses by what CHANGES, so a long line about nothing is a long line in the way. Do not restate the STATE.
-STATE: the running state after these seconds, at most 50 words: where this is, what is being done, who else is present, the ongoing goal. Carry forward what is still true, drop what has stopped being true, keep it readable on its own.
+The lines:
+EVENT [+n s]: one line per frame, in the order the frames came, each carrying the stamp printed in front of that frame. What happens AT that frame and how hectic or calm it is -- present tense, concrete, specific, up to 35 words when something changes. A frame in which nothing has changed from the frame before it is the one word "same" and nothing else: the editor folds those into the line before them, so anything more is a line in the way. The first frame of a batch is judged against "Just before this". Do not restate the STATE.
+STATE: the running state after these frames, at most 50 words: where this is, what is being done, who else is present, the ongoing goal. Carry forward what is still true, drop what has stopped being true, keep it readable on its own.
 
-Both labels, every time, including when nothing happened. Written out, when something does:
+An EVENT line for every frame and one STATE line, every time. Written out, when something happens on the third of four frames:
 
-EVENT: Hectic; the red car spins at the hairpin, clips the barrier and stops across the track.
+EVENT [+0s]: same
+EVENT [+1s]: same
+EVENT [+2s]: Hectic; the red car spins at the hairpin, clips the barrier and stops across the track.
+EVENT [+3s]: Calm; the car sits across the track, yellow flags out.
 STATE: Lap 3 of 5, the red car last after the spin, yellow flags at the hairpin.
 
-...and when nothing does, which is most of the frames you will see:
+...and when nothing does, which is most of what you will see:
 
-EVENT: Calm; same view, the driver keeps talking.
+EVENT [+0s]: same
+EVENT [+1s]: same
+EVENT [+2s]: same
+EVENT [+3s]: same
 STATE: Lap 4 of 5, the red car last, the track clear again.
 
 Both examples are invented and none of it is in the session you are given.`
@@ -276,6 +284,58 @@ func eventState(reply string) (event, state string) {
 		event = "(no event line: " + flatten(reply) + ")"
 	}
 	return event, state
+}
+
+// stampedEvent is one frame's EVENT line: its offset from the batch's first
+// frame, and what happened at it. "same" means nothing changed since the frame
+// before.
+type stampedEvent struct {
+	off  float64
+	text string
+}
+
+// eventLines reads a reply that describes each frame on its own line.
+//
+// This is what puts the moment a thing happened on the frame it happened on.
+// One line per BATCH, stamped at the batch's first second, was how the log used
+// to be written, and it put "cuts to the title slide" three seconds before the
+// slide was there: the line described four seconds, its stamp was the first of
+// them, and the slide arrived on the last. Everything reading the log took the
+// stamp as the moment, and the thumbnail was a picture of the moment before.
+//
+// A reply in the old shape, one EVENT and no stamps, still reads: it becomes
+// the first frame's line, and the rest "same". A run described before this
+// change goes on resuming from its cache.
+func eventLines(reply string) ([]stampedEvent, string) {
+	var state string
+	rest := reply
+	if i := strings.Index(rest, "STATE:"); i >= 0 {
+		state = flatten(rest[i+len("STATE:"):])
+		rest = rest[:i]
+	}
+	var out []stampedEvent
+	for _, m := range stampedEventRe.FindAllStringSubmatch(rest, -1) {
+		off, err := strconv.ParseFloat(m[1], 64)
+		if err != nil {
+			continue
+		}
+		out = append(out, stampedEvent{off: off, text: flatten(m[2])})
+	}
+	if len(out) > 0 {
+		return out, state
+	}
+	ev, st := eventState(reply)
+	return []stampedEvent{{off: 0, text: ev}}, st
+}
+
+// stampedEventRe is "EVENT [+2s]: ..." with whatever a model puts around the
+// number, to the end of its line.
+var stampedEventRe = regexp.MustCompile(`(?m)EVENT\s*\[\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*s?\s*\]\s*:\s*(.*)$`)
+
+// isSame is a frame's line saying nothing changed.
+func isSame(text string) bool {
+	t := strings.ToLower(strings.Trim(strings.TrimSpace(text), ".\"'"))
+	return t == "same" || t == "(same)"
 }
 
 // flatten is one line of whatever it is given: events.tsv is a line per event
@@ -620,22 +680,45 @@ func (a *App) describeVideo(p *videoPlan, comm []speechSrc, chunkOff, chunkTotal
 			a.keepReply("describe", ask, reply)
 		}
 
-		event, newState := eventState(reply)
+		events, newState := eventLines(reply)
 		if newState != "" {
 			state = newState
 		}
+		// one row per FRAME, on the frame's own second: the file is the raw
+		// truth at the interval the frames were taken. A frame that changed
+		// nothing is written as "same" and folded into the line before it by
+		// whoever reads the file (loadEvents), so a brief sees one line per
+		// thing that happened and the stamp on it is the second it happened.
 		f, err := os.OpenFile(evPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(f, "%s\t%.2f\t%s\n", key, t1, event)
+		for i := lo; i < hi; i++ {
+			fs := float64(i-lo) * p.interval
+			text := "same"
+			for _, e := range events {
+				if math.Abs(e.off-fs) < p.interval/2 {
+					text = e.text
+					break
+				}
+			}
+			// a batch has to have a line at its first second whatever the
+			// model said, because that second is the batch's resume key
+			if i == lo && isSame(text) && len(recent) == 0 {
+				text = "Calm; same view."
+			}
+			fmt.Fprintf(f, "%.2f\t%.2f\t%s\n", t0+fs, t0+fs+p.interval, text)
+			if !isSame(text) {
+				recent = append(recent, tsvRow{s: t0 + fs, spk: "EVENT", text: text})
+			}
+		}
 		f.Close()
+		_ = t1
 		if err := os.WriteFile(statePath, []byte(state+"\n"), 0o644); err != nil {
 			return err
 		}
-		recent = append(recent, tsvRow{s: t0, spk: "EVENT", text: event})
 		if len(recent) > recentEvents {
-			recent = recent[1:]
+			recent = recent[len(recent)-recentEvents:]
 		}
 	}
 	if cached > 0 {

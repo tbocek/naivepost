@@ -88,6 +88,14 @@ func loadEvents(path string) []tsvRow {
 		fmt.Sscanf(f[0], "%f", &r.s)
 		fmt.Sscanf(f[1], "%f", &r.e)
 		r.text = f[2]
+		// a frame that changed nothing (describe.go) is the line before it,
+		// running one interval longer: the file keeps a row per frame so that
+		// the second a thing happened is the second on its row, and this is
+		// where those rows become one line per thing that happened
+		if isSame(r.text) && len(out) > 0 {
+			out[len(out)-1].e = r.e
+			continue
+		}
 		out = append(out, r)
 	}
 	return out

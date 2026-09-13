@@ -677,6 +677,22 @@ func TestTheFinishedTextIsMarkedAtEveryJoin(t *testing.T) {
 	if got != want {
 		t.Errorf("\n got  %q\n want %q", got, want)
 	}
+	// a word the transcript spelled as part of the one before it prints
+	// nothing: its spelling is already there. The subtitles skip it the same
+	// way; this file used to print its bare heard form as a second copy.
+	folded := []srcWord{
+		{w: "public", raw: "Public-Key-Pairs.", src: "t1"},
+		{w: "key", raw: "", src: "t1"},
+		{w: "pairs", raw: "", src: "t1"},
+		{w: "eine", raw: "Eine", src: "t1"},
+	}
+	if got := a.finishedText(folded, nil); got != "Public-Key-Pairs. Eine" {
+		t.Errorf("a folded spelling is printed twice: %q", got)
+	}
+	// ...while the prompt still gives it a token, or the matcher loses count
+	if got := seamWords(folded); got != "Public-Key-Pairs. key pairs Eine" {
+		t.Errorf("the prompt no longer names every word: %q", got)
+	}
 	// a mark says how many words went, and says so even when none did: a
 	// stumble the pass walked past reads as ordinary prose otherwise
 	if !strings.Contains(got, "|cut 1|") || !strings.Contains(got, "|cut|") {

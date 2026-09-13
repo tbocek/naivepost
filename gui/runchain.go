@@ -83,7 +83,9 @@ func (a *App) chainNext() {
 		// session it had not loaded: Prepare finished, the chain reached Cut
 		// with an editor that still had no recordings in it, and the step
 		// came to nothing.
+		a.chainMoving = true
 		a.showStep(page)
+		a.chainMoving = false
 		a.logf(">>> run: %s", a.pageName(page))
 		a.chainStep, a.chainAt = page, time.Now()
 		a.runPageNow(page)
@@ -241,10 +243,16 @@ func (a *App) buildChainMenu() *gtk.Box {
 //
 // Only when exactly ONE is ticked. Several ticked is a chain somebody built on
 // purpose -- Prepare → Cut → Produce -- and a tab click must not rewrite it.
-// And never during a run: a chain moves the pages itself (chainNext), so this
-// would retarget the ticks as the chain walked them.
+//
+// A run does not stop it. It used to: the chain moves the pages itself
+// (chainNext), and switching this off for the whole run was the blunt way of
+// keeping it from retargeting the ticks as the chain walked them. The cost was
+// that walking to another tab while a step ran did nothing, which is exactly
+// when you do it -- Prepare takes an hour and you go and look at Cut. So the
+// guard is now the chain's own move rather than the run: chainMoving is set
+// only around the page changes chainNext makes.
 func (a *App) followChainTick(page string) {
-	if a.chainTicks == nil || a.running || a.chainStep != "" {
+	if a.chainTicks == nil || a.chainMoving {
 		return
 	}
 	if a.chainTicks[page] == nil {

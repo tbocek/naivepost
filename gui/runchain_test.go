@@ -206,10 +206,20 @@ func TestTheChainMovesPagesTheWayTheTabsDo(t *testing.T) {
 // re-ran Prepare, which is never what the press meant.
 func TestALoneChainTickFollowsThePage(t *testing.T) {
 	body := funcBody(t, "runchain.go", `func \(a \*App\) followChainTick\(`)
-	// never during a run: a chain moves the pages itself (chainNext), and this
-	// would retarget its ticks as it walked them
-	if !strings.Contains(body, `a.running || a.chainStep != ""`) {
-		t.Error("the ticks follow the page during a run, which rewrites a chain as it walks")
+	// A run does not stop it. Walking to another tab while a step runs is
+	// exactly when you do it -- Prepare takes an hour and you go and look at
+	// Cut -- and switching this off for the whole run made that do nothing.
+	if strings.Contains(body, "a.running") {
+		t.Error("a run stops the tick following the page, which is when you most want it to")
+	}
+	// what it guards against instead is the CHAIN's own page moves, which is
+	// the thing that would retarget the ticks as it walked them
+	if !strings.Contains(body, "a.chainMoving") {
+		t.Error("the chain's own page moves are read as the hand walking to a tab")
+	}
+	next := funcBody(t, "runchain.go", `func \(a \*App\) chainNext\(`)
+	if !strings.Contains(next, "a.chainMoving = true") || !strings.Contains(next, "a.chainMoving = false") {
+		t.Error("chainNext does not say that the page move is its own")
 	}
 	// and only a LONE tick: several is a chain somebody built on purpose
 	if !strings.Contains(body, "len(picked) != 1 || picked[0] == page") {

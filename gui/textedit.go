@@ -206,11 +206,19 @@ func seamsOf(words []srcWord) []int {
 	return out
 }
 
-// seamReach is how many words either side of a join the model is shown. A
-// retake starts "a sentence or two further back", and seventy words is four or
-// five sentences of speech -- enough for the repetition to be inside the
-// window, short enough that the whole question fits on a screen.
-const seamReach = 70
+// seamReach is how many words either side of a join the model is shown.
+//
+// It was seventy: a retake starts "a sentence or two further back", and
+// seventy words is four or five sentences. Right for a stumble and wrong for a
+// restarted paragraph. On one lecture the speaker abandoned 63 words at one
+// join and 71 at the next and began the thought again; the model was handed
+// back its input unchanged at both, and it could not have done otherwise. At
+// the second the attempt was longer than everything it was shown, and at the
+// first it filled all but four words of it, so there was nothing before the
+// attempt to see that a new thought had started. Twice that is still a small
+// request, and the window has to hold the whole of what went plus enough in
+// front of it to tell.
+const seamReach = 140
 
 // How much of a join one answer may take out. A stumble is a phrase or a
 // sentence said twice; past that the model is rewriting the paragraph, which is
@@ -506,8 +514,17 @@ func (a *App) finishedText(words []srcWord, drop []bool) string {
 				b = append(b, "|cut|")
 			}
 		}
-		b = append(b, seamWord(w))
 		last, gone = w.src, 0
+		// a word whose spelling was folded into the one in front of it
+		// (redress): it keeps its seconds and stays in the video, but it has
+		// nothing of its own to print. The subtitles skip it for the same
+		// reason. This file used to fall back to the bare heard form instead
+		// -- seamWord, which the prompt needs so that every word makes a token
+		// -- and printed "Public-Key-Pairs. key pairs", the one spelling twice.
+		if w.raw == "" {
+			continue
+		}
+		b = append(b, w.raw)
 	}
 	return strings.Join(b, " ")
 }

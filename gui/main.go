@@ -504,6 +504,9 @@ type App struct {
 	chainStep  string
 	chainRan   []string
 	chainQuiet bool
+	// set while the CHAIN is moving the pages itself (chainNext), so that the
+	// move is not read as the hand walking to a tab (followChainTick)
+	chainMoving bool
 
 	stylePick  *gtk.DropDown
 	videoStyle string     // which pipeline this session runs through; guarded by promptMu, like langTxt

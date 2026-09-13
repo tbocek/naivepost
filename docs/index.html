@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Naivepost — a video editor for sessions you already recorded</title>
+<meta name="description" content="A desktop video editor for recorded sessions. Transcribes, describes, cuts, narrates, renders and writes the upload text with models running on your own machine. Every step is a proposal you can overrule.">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  /* The palette is the icon's: two slates, one paper, one red. Nothing else. */
+  :root {
+    --slate-1: #3d4557;
+    --slate-2: #20242e;
+    --paper:   #eceff4;
+    --red:     #e2564a;
+    --ink:     #1b1e25;
+    --rule:    #c9cdd6;
+    --mute:    #6a7080;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); color: var(--ink);
+         font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+         -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  a { color: inherit; text-decoration-color: var(--red); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+  a:hover { color: var(--red); }
+  h1, h2, h3 { font-weight: 650; letter-spacing: -0.01em; line-height: 1.15; margin: 0; }
+  p { margin: 0 0 1em; max-width: 62ch; }
+  code, pre, kbd { font-family: var(--mono); font-size: 0.92em; }
+  pre { margin: 0; white-space: pre; overflow-x: auto; line-height: 1.45; }
+
+  /* One red line, off plumb, the cut through the icon. It is fixed to the
+     window rather than laid on the page: a slant over the whole height of a
+     long page walks off the edge, a slant over the height of a screen does
+     not, and the page scrolls past it. It sits in the page's own margin, so
+     it is found relative to the centred column, and against the edge on a
+     screen narrower than the column. */
+  .page { position: relative; max-width: 1180px; margin: 0 auto; padding: 0 28px 0 84px; }
+  .page::before {
+    content: ""; position: fixed; top: -2vh; height: 104vh; width: 3px;
+    left: calc(50% - 590px + 62px);
+    background: var(--red); opacity: .92; border-radius: 2px;
+    transform: skewX(-3.5deg); transform-origin: top; pointer-events: none;
+  }
+  @media (max-width: 1236px) { .page::before { left: 62px; } }
+  @media (max-width: 720px) {
+    .page { padding: 0 18px 0 44px; }
+    .page::before { left: 30px; width: 2px; }
+  }
+
+  /* Masthead: the mark, the name, one sentence. No hero. */
+  header { display: grid; grid-template-columns: 56px 1fr; gap: 20px; align-items: start; padding: 44px 0 36px; }
+  header img { width: 56px; height: 56px; display: block; }
+  header h1 { font-size: 1.15rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--slate-1); }
+  header h1 span { color: var(--mute); font-weight: 450; text-transform: none; letter-spacing: 0; }
+  header .lede { font-size: clamp(1.6rem, 3vw, 2.5rem); font-weight: 600; line-height: 1.12; letter-spacing: -0.02em; max-width: 18em; margin: 14px 0 0; grid-column: 2; }
+  header .sub { grid-column: 2; margin: 14px 0 0; color: var(--mute); max-width: 52ch; font-size: 1.05rem; }
+
+  /* Sections are numbered the way the run log numbers its steps. */
+  section { padding: 34px 0; border-top: 1px solid var(--rule); }
+  section > h2 { font-size: 1.05rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--slate-1); margin-bottom: 18px; display: flex; gap: 14px; align-items: baseline; }
+  section > h2::before { content: attr(data-n); font-family: var(--mono); font-size: .8rem; font-weight: 500; color: var(--red); letter-spacing: 0; }
+
+  /* The steps: a ledger, not cards. */
+  .ledger { display: grid; grid-template-columns: max-content 1fr; column-gap: 26px; row-gap: 0; max-width: 78ch; }
+  .ledger dt { font-weight: 600; padding: 12px 0; border-top: 1px solid var(--rule); white-space: nowrap; }
+  .ledger dd { margin: 0; padding: 12px 0; border-top: 1px solid var(--rule); color: #2c3140; }
+  .ledger dd p { margin: 0; max-width: none; }
+  .ledger dd p + p { margin-top: .5em; }
+  .ledger dt small { display: block; font-weight: 400; color: var(--mute); font-family: var(--mono); font-size: .78rem; margin-top: 2px; }
+  @media (max-width: 720px) {
+    .ledger { grid-template-columns: 1fr; }
+    .ledger dt { padding-bottom: 4px; }
+    .ledger dd { border-top: 0; padding-top: 0; }
+  }
+
+  /* The screenshots: a strip of film on the slate. Scrolls sideways.
+     Frames are numbered along the edge; the sprocket holes are the icon's. */
+  .strip-wrap { position: relative; z-index: 1; margin: 0 -28px 0 -84px; padding: 0; background: linear-gradient(var(--slate-1), var(--slate-2)); color: var(--paper); }
+  @media (max-width: 720px) { .strip-wrap { margin: 0 -18px 0 -44px; } }
+  .strip-head { padding: 26px 28px 8px 84px; display: flex; justify-content: space-between; align-items: baseline; gap: 20px; flex-wrap: wrap; }
+  @media (max-width: 720px) { .strip-head { padding-left: 44px; padding-right: 18px; } }
+  .strip-head h2 { font-size: 1.05rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; color: var(--paper); }
+  .strip-head h2::before { content: "01"; font-family: var(--mono); font-size: .8rem; color: var(--red); margin-right: 14px; }
+  .strip-head p { margin: 0; color: #aeb5c4; font-size: .95rem; max-width: 60ch; }
+  .sprockets { height: 22px;
+      background: repeating-linear-gradient(90deg, transparent 0 18px, var(--paper) 18px 30px, transparent 30px 48px);
+      background-size: 48px 12px; background-repeat: repeat-x; background-position: 0 5px; opacity: .85; }
+  .strip { display: flex; gap: 22px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 12px 84px 14px; scrollbar-color: var(--paper) transparent; }
+  @media (max-width: 720px) { .strip { padding-left: 44px; padding-right: 18px; gap: 14px; } }
+  .frame { flex: 0 0 min(760px, 86vw); scroll-snap-align: start; }
+  .frame { align-self: flex-start; }
+  .frame a { display: block; text-decoration: none; }
+  .frame img { display: block; width: 100%; height: auto; border: 1px solid #10131a; box-shadow: 0 1px 0 #10131a, 0 12px 28px -14px #000; }
+  .frame figcaption { display: grid; grid-template-columns: max-content 1fr; gap: 14px; align-items: baseline; margin-top: 12px; color: #d5d9e2; font-size: .93rem; }
+  .frame figcaption b { font-family: var(--mono); font-weight: 500; color: var(--red); font-size: .78rem; letter-spacing: .04em; }
+  .frame figcaption span { max-width: 60ch; }
+  .strip-foot { padding: 4px 84px 26px; color: #8f97a8; font-size: .85rem; font-family: var(--mono); }
+  @media (max-width: 720px) { .strip-foot { padding-left: 44px; } }
+
+  /* Rules the code holds to: plain prose, numbered in the margin. */
+  .rules { counter-reset: r; max-width: 70ch; }
+  .rules div { counter-increment: r; position: relative; padding: 14px 0 14px 0; border-top: 1px solid var(--rule); }
+  .rules div::before { content: counter(r, decimal-leading-zero); position: absolute; left: -24px; top: 16px; font-family: var(--mono); font-size: .78rem; color: var(--mute); }
+  @media (max-width: 720px) { .rules div::before { position: static; display: block; margin-bottom: 4px; } }
+  .rules b { font-weight: 600; }
+  .rules p { margin: 0; max-width: none; }
+  .rules p + p { margin-top: .4em; color: #3f4553; }
+
+  /* What it needs: a small table, ruled, no zebra. */
+  table { border-collapse: collapse; max-width: 74ch; width: 100%; font-size: .97rem; }
+  th, td { text-align: left; padding: 9px 18px 9px 0; border-top: 1px solid var(--rule); vertical-align: top; }
+  th { font-weight: 600; color: var(--slate-1); font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; border-top: 0; padding-top: 0; }
+  td code { white-space: nowrap; }
+
+  .models { max-width: none; width: 100%; }
+  .models td:first-child { font-weight: 600; }
+  .models td:nth-child(2), .models td:nth-child(3) { font-family: var(--mono); font-size: .84rem; color: #3f4553; }
+  .models td:nth-child(4) { max-width: 44ch; }
+  .models .on { color: var(--red); }
+  @media (max-width: 720px) {
+    /* a row per job, stacked: the job, then model and thinking on one line, then the answer */
+    .models, .models tbody, .models tr, .models td { display: block; }
+    .models th { display: none; }
+    .models tr { border-top: 1px solid var(--rule); padding: 10px 0; }
+    .models td { border: 0; padding: 0; max-width: none; }
+    .models td:nth-child(2), .models td:nth-child(3) { display: inline; }
+    .models td:nth-child(3)::before { content: "\00a0\00b7\00a0thinking "; color: var(--mute); }
+    .models td:nth-child(4) { margin-top: 4px; color: #2c3140; }
+  }
+  .tree { background: #fff; border: 1px solid var(--rule); padding: 18px 20px; max-width: 74ch; font-size: .86rem; color: #2c3140; }
+  .tree i { font-style: normal; color: var(--mute); }
+
+  .build { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 74ch; }
+  .build pre { background: var(--slate-2); color: var(--paper); padding: 14px 18px; }
+  .build p { color: var(--mute); margin: 0; }
+
+  footer { border-top: 1px solid var(--rule); padding: 26px 0 48px; color: var(--mute); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 8px 28px; }
+  footer span { white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <img src="logo.svg" alt="" width="56" height="56">
+  <h1>Naivepost <span>· native AI video editor for post-processing</span></h1>
+  <p class="lede">An almost linear video editor.</p>
+  <p class="sub">You record in order; it edits in order. Four workflows, run one after the other: Prepare, Cut, Narrate, Produce. Models on your own machine do the tedious half, and every answer they give is a proposal you can overrule.</p>
+</header>
+
+<div class="strip-wrap">
+  <div class="strip-head">
+    <h2>Four workflows, in order</h2>
+    <p>Each is one tab with one <kbd>▶</kbd>. Run one at a time, or tick several and press once. Shown on one session, a 42-minute lecture in 35 takes, cut to 39. Scroll sideways; click for full size.</p>
+  </div>
+  <div class="sprockets" aria-hidden="true"></div>
+  <div class="strip">
+    <figure class="frame">
+      <a href="prepare.png"><img src="prepare-1600.jpg" width="1600" height="1373" alt="The Prepare page: a list of 35 recordings on the left; on the right, the user context describing the session in prose."></a>
+      <figcaption><b>1 · PREPARE</b><span>Drop in the recordings and write the context box once: who is speaking, in which languages, how names are spelled, what the thumbnail should show. Press ▶ and it transcribes, aligns and describes everything. You get a transcript on one clock and a log of what was on screen.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <a href="cut.png"><img src="cut-1600.jpg" width="1600" height="1373" alt="The Cut page: a preview of a slide with the lecturer in the corner; below it a timeline with kept stretches in green, frame thumbnails and a waveform."></a>
+      <figcaption><b>2 · CUT</b><span>Press ▶ and the joins are repaired: where a take stopped and you said it again, the abandoned attempt comes out. Then it is yours on the timeline, what stays in green. Drag a border, drop a stretch, or delete a word in the text file and press again.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <a href="narrate.png"><img src="narrate-1600.jpg" width="1600" height="1373" alt="The Narrate page: the preview with a voice reference waveform below it; on the right a list of short narration lines, each with its time and an emotion tag."></a>
+      <figcaption><b>3 · NARRATE</b><span>Optional. Press ▶ and a line is written for each clip and spoken in a voice cloned from a few seconds of your own recording. Edit any line, re-speak it, or switch the whole thing off.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <a href="produce.png"><img src="produce-1600.jpg" width="1600" height="1373" alt="The Produce page: a chosen frame with the title printed on it as the thumbnail, the title and description on the right, and the transcode settings below."></a>
+      <figcaption><b>4 · PRODUCE</b><span>Press ▶ and the video is rendered with subtitles in each language, and the title, description and thumbnail are written from the transcript and your context. What you upload is on disk, beside a log that says exactly what ran.</span></figcaption>
+    </figure>
+  </div>
+  <div class="sprockets" aria-hidden="true"></div>
+  <div class="strip-foot">01 · 02 · 03 · 04 &nbsp;&nbsp; 2976 × 2554 &nbsp;&nbsp; GTK4 on Linux</div>
+</div>
+
+<section>
+  <h2 data-n="02">Linear, on purpose</h2>
+  <p>A non-linear editor lets you put any clip anywhere. Most recorded sessions do not need that. A lecture, a talk to camera, a screen session: the order is the order it was shot, and the work is taking out what should not be there. So the timeline here is the recording, in sequence. The edit is which stretches stay.</p>
+  <p>You can still splice in a card or a still, switch which camera a moment is seen from, and paste a stretch in again. You do not rearrange. That is what makes the tedious part automatable: finding the stumbles, the retakes and the dead air is a job a model can do, and placing the cut on a word edge is a job the machine can do exactly.</p>
+</section>
+
+<section>
+  <h2 data-n="03">What each workflow does</h2>
+  <dl class="ledger">
+    <dt>Prepare<small>transcribe · align · describe</small></dt>
+    <dd><p>Every recording on one clock. Speech to text in 60-second chunks, then a forced aligner is handed each chunk's own words and puts every one within about 20&nbsp;ms of the sound. A transcript pass cleans the text with your context beside it, times and speakers passed through byte for byte. Frames go to a vision model four at a time, with the words heard over them and a running summary of what came before, and it writes one line per frame: what is <em>happening</em>, on that second.</p></dd>
+    <dt>Cut<small>lecture · gaming</small></dt>
+    <dd><p><b>Lecture</b>: you stopped the recording when you stumbled and said it again, so the mistakes are at the joins. The model is shown one join at a time, 140 words either side, and asked to write the two takes run on as one, leaving the stumble out. Its answer is matched back against the words it was shown, so it can only ever take words away. The cut itself is then placed with no model: the surviving words fence each edge, and the audio picks the quietest moment inside the fence. What survives is a text file with a mark at every join; delete a word there, press Cut, and it is out of the video. <b>Gaming</b>: the model reads the whole session timeline and answers with the moments worth keeping, to a length if you name one.</p></dd>
+    <dt>Narrate<small>optional</small></dt>
+    <dd><p>The model reads what each kept clip contains and writes a line for it, with an emotion. Text to speech says it in a voice cloned from a few seconds of your own recording. A line that does not fit is spoken faster, or the clip grows, and the log says which. Turn narration off and everything that exists to carry one disappears.</p></dd>
+    <dt>Produce<small>render · subtitles · upload text</small></dt>
+    <dd><p>Each clip encoded once, joined by stream copy, loudness-normalised over the whole. Subtitles come straight from the aligned words, no model, as <code>.srt</code> and <code>.vtt</code>; other languages are one call per language, read back by line number so a dropped line cannot shift the rest. Title, description and the thumbnail come from one call that reads your context: where you ask for a frame the video already contains, it names the second and the frame is taken as it is, with the title printed on it locally. Only when you write an edit instruction is an image model asked to draw.</p></dd>
+  </dl>
+</section>
+
+<section>
+  <h2 data-n="04">What asks a model, and when</h2>
+  <p>Every request goes to a local server you run. Answers are cached on the exact request, pictures included, so re-running a step whose inputs have not changed costs nothing, and every step writes its own resume marker, so a run that stopped carries on where it was.</p>
+  <table class="models">
+    <tr><th>job</th><th>model</th><th>thinking</th><th>answers with</th></tr>
+    <tr><td>speech to text</td><td>qwen3-asr · audio.cpp</td><td>–</td><td>text only, per 60 s chunk; it has no word times worth keeping</td></tr>
+    <tr><td>word times</td><td>qwen3-aligner · audio.cpp</td><td>–</td><td>a start and end per word, per chunk, the chunk's own words in hand; halved when the machine has no room</td></tr>
+    <tr><td>diarization, who spoke when</td><td>sortformer · audio.cpp</td><td>–</td><td>speaker turns, in a window that shrinks until the server can hold it: 90 s, then 45, then 25</td></tr>
+    <tr><td>what is on screen</td><td>LLM · llama.cpp, vision</td><td>off</td><td>one EVENT line per frame and a running STATE, four frames a request</td></tr>
+    <tr><td>clean transcript</td><td>LLM · llama.cpp</td><td>off</td><td>the same lines, respelled; times and speakers unchanged, enforced</td></tr>
+    <tr><td>lecture joins</td><td>LLM · llama.cpp</td><td><span class="on">on</span></td><td>the two takes run on as one; only deletions are accepted</td></tr>
+    <tr><td>gaming cut</td><td>LLM · llama.cpp</td><td><span class="on">on</span></td><td>the segments to keep, in session seconds copied off the timeline it was shown</td></tr>
+    <tr><td>captions, speed, effects</td><td>LLM · llama.cpp</td><td>off</td><td>one call per clip each, after the cut</td></tr>
+    <tr><td>narration</td><td>LLM · llama.cpp, then index-tts2 · audio.cpp</td><td><span class="on">on</span></td><td>a line per clip with an emotion; spoken in your cloned voice</td></tr>
+    <tr><td>title, description, thumbnail</td><td>LLM · llama.cpp</td><td><span class="on">on</span></td><td>labelled lines; the thumbnail either as a frame's second, taken as it is, or as an instruction for the image model</td></tr>
+    <tr><td>thumbnail, drawn</td><td>qwen-image-edit · sd.cpp</td><td>–</td><td>an image from real frames of the video and the instruction; only runs when there is one, and never when a frame was named</td></tr>
+    <tr><td>subtitles in other languages</td><td>LLM · llama.cpp</td><td>off</td><td>the numbered lines, translated, one call per language</td></tr>
+  </table>
+  <p style="margin-top:14px">Model, then the server it runs on. The LLM is whichever model your server lists; llama.cpp is the usual one, and any OpenAI-compatible server will do.</p>
+  <p>Thinking is on where it was measured to help and off where it was not. On the lecture joins it took the model from 15 of 29 joins matching a hand-made cut to 20 or 21, at about two minutes a join instead of seconds. The gaming cut and the narration also carry web search, for a name or a fact the footage does not show, and fall back to a plain call if a thinking one fails.</p>
+  <p>Some of the work asks no model at all. Placing a cut on a word edge, choosing the splice point inside the gap, building subtitles from the aligned words, taking a frame as the thumbnail and printing the title on it, and re-cutting from a text file you edited by hand are all arithmetic on files already on disk.</p>
+</section>
+
+<section>
+  <h2 data-n="05">Rules the code holds to</h2>
+  <div class="rules">
+    <div><b>Models propose; the machine places.</b><p>A model is never asked for a timestamp it would have to compute. It answers in words or line numbers, and the app turns that into seconds with the aligner's word times.</p></div>
+    <div><b>Every cut lands on a word edge.</b><p>The audio envelope chooses where between two known words a splice falls, never which words it touches.</p></div>
+    <div><b>Nothing is deleted, only marked.</b><p>The transcript keeps every word; the marks are a file you can read and edit.</p></div>
+    <div><b>A step's output is its resume marker.</b><p>A run that stopped, failed or ran out of memory resumes from where it stopped.</p></div>
+    <div><b>One box, every job.</b><p>What you tell the editor is said once, in the context box, and reaches every step from there.</p></div>
+    <div><b>Measured, not assumed.</b><p>Changes to how a model is asked are scored against a cut made by hand, with the unchanged prompt run again as a control.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2 data-n="06">What it needs</h2>
+  <table>
+    <tr><th>what</th><th>default</th><th>serves</th></tr>
+    <tr><td>an OpenAI-compatible LLM</td><td><code>127.0.0.1:8731</code></td><td>every text and vision job</td></tr>
+    <tr><td>audio.cpp</td><td><code>127.0.0.1:8765</code></td><td>speech to text, alignment, diarization, voice separation, text to speech</td></tr>
+    <tr><td>sd.cpp</td><td><code>127.0.0.1:1234</code></td><td>the thumbnail, when one is drawn</td></tr>
+    <tr><td>ffmpeg / ffprobe</td><td>on <code>PATH</code></td><td>every frame, cut and encode</td></tr>
+  </table>
+  <p style="margin-top:14px">All local by default. Nothing calls out unless you point it somewhere.</p>
+</section>
+
+<section>
+  <h2 data-n="07">A project on disk</h2>
+  <p>A folder ending in <code>.naivepost</code>, holding everything the session produced. Every file in it is readable, and every model call is written out in full under <code>llm/</code>, request and answer, so a wrong cut can be traced to the words that caused it.</p>
+<pre class="tree">&lt;name&gt;.naivepost/
+  naivepost.json            <i>sources, settings, context, prompts</i>
+  prepare/inputs/&lt;source&gt;/  <i>audio, transcript, word times</i>
+  prepare/describe/         <i>what was on screen, one line per frame</i>
+  prepare/transcript/
+    final.txt               <i>the words of the finished video, a mark at every join</i>
+  cut/cut.json              <i>the stretches that stay</i>
+  produce/                  <i>the render, subtitles, thumbnail, upload text</i>
+  llm/                      <i>a readable transcript of every model call</i></pre>
+</section>
+
+<section>
+  <h2 data-n="08">Build and run</h2>
+  <div class="build">
+    <pre>cd gui &amp;&amp; go build &amp;&amp; ./gui</pre>
+    <p>Go 1.26, GTK4 via gotk4. <code>go test ./...</code> takes about 24 seconds with no network, no GPU and no servers.</p>
+  </div>
+</section>
+
+<footer>
+  <span>Naivepost</span>
+  <span>Go · GTK4 · four local servers</span>
+  <span>The mark is a strip of film, cut, with the two pieces pulled apart.</span>
+</footer>
+
+</div>
+</body>
+</html>
