@@ -265,7 +265,7 @@ func (a *App) splitAtLine() {
 }
 
 // splitBorder cuts the footage at t in two and says whether it did. Only
-// inside a clip and only where both halves clear minSegLn; inserts are passed
+// inside a clip and only where both halves clear minPieceLn; inserts are passed
 // over. The right-hand half carries the flag: it is the clip whose START is
 // the new border (coalesce).
 func (ed *cutEditor) splitBorder(t float64) bool {
@@ -293,7 +293,10 @@ func (ed *cutEditor) splitBorder(t float64) bool {
 func (ed *cutEditor) splitIdx(t float64) int {
 	for i := range ed.segs {
 		s := ed.segs[i]
-		if !s.isInsert() && t > s.S+minSegLn && t < s.E-minSegLn {
+		// the same floor a removal leaves (minPieceLn), not the second it takes
+		// to be worth SUGGESTING a scene: cutting a border half a second into a
+		// clip is a thing a hand means, and refusing it silently is not an answer
+		if !s.isInsert() && t > s.S+minPieceLn && t < s.E-minPieceLn {
 			return i
 		}
 	}
@@ -350,4 +353,11 @@ func (ed *cutEditor) mergeTouching(held int) bool {
 // merge rather than discover the answer afterwards: clampSeg snaps a dragged
 // clip against its neighbour, so the everyday case is exactly 0 apart, and the
 // tolerance is for the frame or two a hand-placed one lands out by.
-const mergeTol = 0.25
+//
+// A frame or two is what it says, and for a long time it was a quarter of a
+// second -- seven frames, and wider than plenty of things worth cutting out. A
+// hole removed from the middle of a scene was two clips a fifth of a second
+// apart, which this then read as a pair that had failed to meet and closed
+// again: the removal undid itself and the status line said "removed 0.0 s".
+// Anything a hand can see at the top zoom (maxPps) is wider than this.
+const mergeTol = 0.04

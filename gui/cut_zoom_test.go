@@ -84,11 +84,56 @@ func TestAZoomDrawsOnceAndLeavesThePreviewAlone(t *testing.T) {
 	ed.vids = []tlVideo{{base: "a", path: "a.mkv", start: 0, dur: 60, interval: 5, fps: 30}}
 	ed.viewW = 800
 	ed.relayout()
-	ed.pps = 120
+	ed.pps = maxPps
 	ed.layoutPx()
 	was := ed.totalW
 	ed.zoomAt(400, 2)
-	if ed.pps != 120 || ed.totalW != was {
+	if ed.pps != maxPps || ed.totalW != was {
 		t.Errorf("zooming in at the ceiling changed pps to %g and width to %g", ed.pps, ed.totalW)
+	}
+}
+
+// How far in the zoom goes, and what has to keep up with it.
+//
+// Two things are drawn from something coarser than pixels at the top zoom: the
+// waveform, off an envelope at waveHz, and the ruler, off tickStep. Raising the
+// ceiling without raising those turns the wave into stair-steps of one bucket
+// each and leaves the ruler with four marks across the window -- a zoom that
+// shows more pixels and no more information.
+func TestTheTopZoomHasSomethingToDrawAtIt(t *testing.T) {
+	// at least one envelope bucket per pixel, or the wave is drawn in blocks
+	if waveHz < maxPps/2 {
+		t.Errorf("the envelope is %g Hz against a %g px/s ceiling: %.1f px a bucket",
+			waveHz, maxPps, maxPps/waveHz)
+	}
+	// the decode has to divide into whole samples per bucket
+	if waveRate%int(waveHz) != 0 {
+		t.Errorf("%d Hz audio does not divide into %g buckets a second", waveRate, waveHz)
+	}
+	// and the ruler goes below a second, because that is what the zoom is for
+	if step := tickStep(maxPps); step >= 1 {
+		t.Errorf("at the top zoom the ruler still steps %gs -- %.0f marks across an 800 px window",
+			step, 800/(step*maxPps))
+	}
+}
+
+// A ruler mark below a second says which fraction it is. Two marks 400 ms apart
+// both reading 0:37 are worse than no marks: the eye reads them as the same
+// instant drawn twice.
+func TestSubSecondRulerMarksSayWhichFraction(t *testing.T) {
+	for _, c := range []struct {
+		t, step float64
+		want    string
+	}{
+		{37, 1, "0:37"},
+		{97, 5, "1:37"},
+		{37.4, 0.2, "0:37.4"},
+		{37.5, 0.5, "0:37.5"},
+		{125.5, 0.5, "2:05.5"},
+		{60, 0.5, "1:00.0"},
+	} {
+		if got := tickLabel(c.t, c.step); got != c.want {
+			t.Errorf("%.1f s on a %gs step reads %q, want %q", c.t, c.step, got, c.want)
+		}
 	}
 }

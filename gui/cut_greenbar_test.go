@@ -238,8 +238,11 @@ func TestTheGreenBarIsWired(t *testing.T) {
 	if fall < kill {
 		t.Fatal("the green branch does not sit before the new-selection fall-through")
 	}
-	if strings.Contains(src[kill:fall], "holdBandClip") {
-		t.Error("the left press takes the clip again, so a selection drawn on the bar trims instead")
+	// the bar's ENDS are the clip's borders and this button trims them, after
+	// the ✕ and before the fall-through to a new selection. The cursor has
+	// been ew-resize over those ends for both buttons all along (wantCursor).
+	if !strings.Contains(src[kill:fall], "ed.holdBandClip(i, part)") {
+		t.Error("the left press cannot trim the bar's ends, though the pointer says it can")
 	}
 	// the right button: the bar's parts, and the picture band's own verbs
 	grab := strings.Index(src, "i, part := ed.bandClipPartAt(px)")

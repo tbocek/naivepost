@@ -532,7 +532,7 @@ func TestAFailedASRKeepsTheChunkItFailedOn(t *testing.T) {
 	}
 	// set on the way out and nowhere else: an early return is a failure, and
 	// every one of them is above this line
-	i, j := strings.Index(body, "done = true"), strings.Index(body, "return append(b, '\\n'), text, nil")
+	i, j := strings.Index(body, "done = true"), strings.Index(body, "return append(b, '\\n'), text, pieces, nil")
 	if i < 0 || j < 0 {
 		t.Fatal("asrLong no longer marks the run finished before it returns the answer")
 	}

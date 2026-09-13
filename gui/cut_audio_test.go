@@ -165,9 +165,9 @@ func TestARealRecordingIsDecodedIntoTheEnvelopeItSoundsLike(t *testing.T) {
 	if wf.hz != waveHz || len(wf.chans) != 2 {
 		t.Fatalf("decoded at %g Hz into %d channels, want %g into 2", wf.hz, len(wf.chans), waveHz)
 	}
-	// three seconds at a bucket per 10 ms, give or take the last partial one
-	if n := len(wf.chans[0]); n < 295 || n > 305 {
-		t.Errorf("three seconds came out as %d buckets, want about 300", n)
+	// three seconds of buckets, give or take the last partial one
+	if want := 3 * waveHz; float64(len(wf.chans[0])) < want-5 || float64(len(wf.chans[0])) > want+5 {
+		t.Errorf("three seconds came out as %d buckets, want about %g", len(wf.chans[0]), want)
 	}
 	if p := wf.peak(0, 0.2, 0.8); p < 0.5 {
 		t.Errorf("the tone reads as %g, want most of the way up", p)

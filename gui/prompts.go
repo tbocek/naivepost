@@ -40,7 +40,10 @@ var promptDefs = []promptDef{
 	// twice (retake.go). Before the cut and not inside it -- a retake is a
 	// fact about what was said, not a judgment about the video.
 	{key: "retake", def: strings.TrimSpace(retakeSystem)},
-	// ...or, for a read to camera, the edit itself as text (textedit.go)
+	// ...or, for a read to camera, the joins between takes -- which is where a
+	// speaker who stops when he stumbles puts every mistake (textedit.go).
+	// "stumble" was here, a second pass over the middles of takes; removed, not
+	// renamed, so a project's edited copy of it is a dead key.
 	{key: "textedit", def: strings.TrimSpace(textSystem)},
 	// the cut, then the three passes that follow it clip by clip: captions,
 	// speed, decorations. "audit" was here -- a second long call that moved

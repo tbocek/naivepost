@@ -395,3 +395,62 @@ func TestASeamIsNoWideAtAllAndTheSideDecides(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Between two recordings there are TWO gaps, and each one wears its own −.
+//
+// A take ends with footage nobody kept, then comes time nobody filmed, then the
+// next take opens with footage nobody kept. Those are two separate foldable
+// stretches of two separate files, and folding one has nothing to do with the
+// other. Both badges used to be pinned to the inner ends of the green bars --
+// the rule for the head and tail of the tape, applied to every recording's own
+// head and tail -- which drew the pair as ONE gap wearing a control at each end.
+func TestEachRecordingsOwnGapWearsItsOwnBadge(t *testing.T) {
+	ed := newTestEd(t) // pps 4
+	ed.vids = []tlVideo{
+		{base: "a", path: "a.mkv", start: 0, dur: 100, interval: 5, fps: 30},
+		{base: "b", path: "b.mkv", start: 200, dur: 100, interval: 5, fps: 30},
+	}
+	ed.relayout()
+	// kept: most of each take, leaving a tail on the first and a head on the
+	// second, with the unfilmed stretch between them
+	ed.segs = []cutSeg{{S: 10, E: 70}, {S: 240, E: 290}}
+	ed.layoutPx()
+
+	var tail, head *foldBadge
+	for i, b := range ed.foldBadges() {
+		switch {
+		case b.gap.t0 == 70:
+			tail = &ed.foldBadges()[i]
+		case b.gap.t0 == 200:
+			head = &ed.foldBadges()[i]
+		}
+	}
+	if tail == nil || head == nil {
+		t.Fatalf("no badge for the first take's tail or the second's head: %+v", ed.foldBadges())
+	}
+	// each in the middle of the stretch it folds, not against a bar
+	if got, want := tail.cx, (ed.xOf(70)+ed.xOf(100))/2; math.Abs(got-want) > 0.01 {
+		t.Errorf("the first take's tail − is at %g, want the middle of its own gap at %g", got, want)
+	}
+	if got, want := head.cx, (ed.xOf(200)+ed.xOf(240))/2; math.Abs(got-want) > 0.01 {
+		t.Errorf("the second take's head − is at %g, want the middle of its own gap at %g", got, want)
+	}
+	// ...and they are two badges in two places, not two against one seam
+	if math.Abs(tail.cx-head.cx) < foldMin {
+		t.Errorf("the two badges are %g px apart, which reads as one gap", math.Abs(tail.cx-head.cx))
+	}
+	// the tape's own head and tail keep the old rule: their far end is the edge
+	// of the page, where a badge floats in black with no timeline under it
+	for _, b := range ed.foldBadges() {
+		if b.gap.t0 == 0 {
+			if got, want := b.cx, ed.xOf(10)+killIn; math.Abs(got-want) > 0.01 {
+				t.Errorf("the tape's head − is at %g, want it inside the first clip at %g", got, want)
+			}
+		}
+		if b.gap.t1 == 300 {
+			if got, want := b.cx, ed.xOf(290)-killIn; math.Abs(got-want) > 0.01 {
+				t.Errorf("the tape's tail − is at %g, want it inside the last clip at %g", got, want)
+			}
+		}
+	}
+}

@@ -14,7 +14,6 @@ import (
 	_ "image/png"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -44,8 +43,31 @@ const (
 	// of them are a mark on the footage rather than a band across it.
 	srcEdgeW = 9.0
 	talkPad  = 0.2 // ...and how close to a word still counts as inside it
-	minSegLn = 1.0 // segments shorter than this are dropped when editing
-	undoDeep = 50  // how many edits back Undo reaches
+	// How long a stretch has to be to be worth SUGGESTING as a scene, and to
+	// be worth keeping or copying by name. A second: under that nobody means
+	// it as a shot.
+	minSegLn = 1.0
+	// ...and how long what is LEFT of a scene has to be when a hole is cut in
+	// it, which is a different question with a much smaller answer. It used to
+	// be the same second, and that second was taken out of the footage without
+	// a word: remove 0.4 s from 0.08 s into a clip and the 0.08 s piece failed
+	// the test, so the clip simply began 0.48 s later. It did not split, it got
+	// shorter -- and the seconds that went were seconds nobody selected.
+	//
+	// A remove takes out what was selected and nothing else. What is left is
+	// what the hand asked to keep, however short, down to about a frame: below
+	// that there is no picture in it to show.
+	minPieceLn = 0.04
+	undoDeep   = 50 // how many edits back Undo reaches
+	// How far in the zoom goes, in pixels per second. The ceiling is a real
+	// limit rather than a taste: the waveform is drawn from an envelope at
+	// waveHz, and past that many pixels a second the picture is stair-steps of
+	// a bucket each rather than a wave. Raised from 120 with waveHz raised to
+	// match -- at 240 px/s a frame of 30 fps footage is 8 px wide, which is
+	// where a hand placing a cut against a word edge stops being able to see
+	// what it is doing.
+	maxPps = 240.0
+
 	edgeGrab = 6.0 // px either side of a clip edge that hovers and trims it
 	// how far the pointer must travel before a press on something held is a
 	// DRAG of it rather than a click on it. Nobody double-clicks without
@@ -317,15 +339,8 @@ func (v *tlVideo) sessionAt(local float64) float64 { return v.start + local - v.
 
 // ffprobeFPS reads the average frame rate; r_frame_rate lies on VFR captures.
 func ffprobeFPS(path string) float64 {
-	out, err := exec.Command(ffTool("ffprobe"), "-v", "error", "-select_streams", "v:0",
-		"-show_entries", "stream=avg_frame_rate", "-of", "csv=p=0", path).Output()
-	if err != nil {
-		return 30
-	}
-	var num, den float64
-	fmt.Sscanf(strings.TrimSpace(string(out)), "%f/%f", &num, &den)
-	if den > 0 && num/den >= 1 && num/den <= 240 {
-		return num / den
+	if r := ffprobeInfo(path).fps; r > 0 {
+		return r
 	}
 	return 30
 }
@@ -2559,12 +2574,12 @@ func (ed *cutEditor) removeSpan(t0, t1 float64) {
 		// the halves are the same scene shortened, not new ones: they keep
 		// whatever it said about itself, and what it says now is which camera
 		// it shows
-		if s.S < t0 && t0-s.S >= minSegLn {
+		if s.S < t0 && t0-s.S >= minPieceLn {
 			h := s
 			h.E = t0
 			out = append(out, h)
 		}
-		if s.E > t1 && s.E-t1 >= minSegLn {
+		if s.E > t1 && s.E-t1 >= minPieceLn {
 			h := s
 			h.S = t1
 			out = append(out, h)
@@ -2583,12 +2598,14 @@ func (ed *cutEditor) stealSpan(t0, t1 float64, cam int) {
 			out = append(out, s)
 			continue
 		}
-		if s.S < t0 && t0-s.S >= minSegLn {
+		// the same floor a removal leaves: painting camera B over a moment of
+		// camera A must not take a second of A with it (minPieceLn)
+		if s.S < t0 && t0-s.S >= minPieceLn {
 			h := s
 			h.E = t0
 			out = append(out, h)
 		}
-		if s.E > t1 && s.E-t1 >= minSegLn {
+		if s.E > t1 && s.E-t1 >= minPieceLn {
 			h := s
 			h.S = t1
 			out = append(out, h)
@@ -3075,6 +3092,53 @@ func (ed *cutEditor) pickAt(px float64, clips bool) int {
 	ed.dropEdge()
 	ed.dropSeg()
 	return pickNone
+}
+
+// ---- trimming a border, from either button -------------------------------
+//
+// The pointer shows a trim arrow within edgeGrab px of every border, whichever
+// button the hand is about to press (wantCursor). That used to be true only of
+// the right button: the left drew a selection there instead, so the one gesture
+// the pointer was promising was the one the obvious button would not do. Six px
+// either side of a border is a poor place to begin a selection anyway -- begin
+// it a hair further out and drag onto the border, which is what a hand does.
+
+// trimGrab takes hold of the border under a timeline x, and says whether there
+// was one. The held edge first, by the wider tolerance a held thing gets
+// (edgeMove): what is already in hand is easier to catch again than to find.
+func (ed *cutEditor) trimGrab(px float64) bool {
+	return ed.onHeldEdge(px) || ed.grabEdge(px)
+}
+
+// trimTo drags the held border to a moment, the picture coming with it.
+func (ed *cutEditor) trimTo(t float64) {
+	ed.moveEdgeTo(t, true)
+	ed.showEdge(true)
+}
+
+// trimDrop puts the border down where the drag left it.
+func (ed *cutEditor) trimDrop() {
+	// a border trimmed out until it meets the next clip closes the gap between
+	// them, and two kept stretches with nothing between them are one stretch:
+	// the same join a clip dragged against its neighbour gets (cut_split.go).
+	// This is the commoner way to ask for it -- the gap is closed by extending
+	// what is kept, where sliding a clip moves the footage.
+	merged := ed.edgeDirty && ed.mergeTouching(ed.edgeSeg)
+	if ed.edgeDirty {
+		ed.persist() // the drag is over: this is the cut that goes on disk
+		if !merged {
+			// the picture lands exactly where the edge did, throttling or no
+			// throttling, so what you trimmed to is what is on screen and the
+			// next <f is judged against it. Only when something actually
+			// moved: a press that merely picked the border up is a choice, and
+			// a choice does not move the red line (pickAt).
+			ed.showEdge(false)
+		}
+	}
+	if merged {
+		return // the border is gone, and the join said so
+	}
+	ed.edgeStatus()
 }
 
 // redrawTracks repaints every band of the timeline. One call rather than a
@@ -3974,7 +4038,7 @@ func (ed *cutEditor) drawTrack(cr *cairo.Context, w, h int) {
 			cr.LineTo(x, float64(rulerH)-5)
 			cr.Stroke()
 			cr.MoveTo(x+2, float64(rulerH)-7)
-			cr.ShowText(fmt.Sprintf("%d:%02d", int(t)/60, int(t)%60))
+			cr.ShowText(tickLabel(t, stepS))
 		}
 	}
 
@@ -4336,13 +4400,31 @@ func (ed *cutEditor) inCut(t float64) bool {
 	return false
 }
 
+// tickStep is how far apart the ruler's marks stand, in seconds: the coarsest
+// step that still puts them about 70 px apart, so a window holds roughly twenty
+// of them at every zoom.
+//
+// Below a second at the top zooms, because that is what the zoom is FOR: at
+// 240 px/s a one-second ruler is four marks across the window, and a cut being
+// judged against a word edge wants to see the fifths of a second it is being
+// moved by. Those steps label with a decimal (tickLabel) -- two marks 400 ms
+// apart both reading 0:37 is worse than no mark at all.
 func tickStep(pps float64) float64 {
-	for _, s := range []float64{1, 2, 5, 10, 30, 60, 120, 300, 600} {
+	for _, s := range []float64{0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600} {
 		if s*pps >= 70 {
 			return s
 		}
 	}
 	return 1200
+}
+
+// tickLabel is a ruler mark's time, with as much of a second as the step it
+// stands on needs.
+func tickLabel(t, step float64) string {
+	if step >= 1 {
+		return fmt.Sprintf("%d:%02d", int(t)/60, int(t)%60)
+	}
+	return fmt.Sprintf("%d:%04.1f", int(t)/60, math.Mod(t, 60))
 }
 
 // The run bar drives the preview through these; see transport in pipeline.go.
@@ -4852,12 +4934,16 @@ func (a *App) buildCut() gtk.Widgetter {
 			return true
 		})
 		area.AddController(scroll)
-		// The left button says WHICH SECONDS, and that is all: a drag is a selection
-		// wherever it is pressed, a click puts the red line there and takes what it
-		// landed on in hand. Trimming and sliding are the right button's (the slide
-		// gesture below).
+		// The left button says WHICH SECONDS: a drag is a selection almost
+		// wherever it is pressed, a click puts the red line there and takes what
+		// it landed on in hand. The exception is a clip border, which this
+		// button trims exactly as the right one does -- the pointer has been
+		// showing a trim arrow over every border for both buttons, and a hand
+		// that sees it and presses is asking to trim. Sliding a recording or a
+		// whole scene is still the right button's (the slide gesture below).
 		drag := gtk.NewGestureDrag()
 		var dragStartX, dragStartY float64
+		var dragTrim bool // this drag took hold of a clip border (trimGrab)
 		var hadSel bool
 		var selT0, selT1 float64
 		var selPart int    // which part of the selection band this drag has, if any
@@ -4866,6 +4952,7 @@ func (a *App) buildCut() gtk.Widgetter {
 		drag.ConnectDragBegin(func(x, y float64) {
 			area.GrabFocus()
 			dragStartX, dragStartY = x, y
+			dragTrim = false
 			// a press in the effects lane is about the effect under it: it
 			// picks that effect up if it was not already in hand, and the
 			// drag then slides it -- the same deal a held clip gets one band
@@ -4908,12 +4995,21 @@ func (a *App) buildCut() gtk.Widgetter {
 					grabAt = ed.tAtView(x) - a
 					return
 				}
-				// clear of the blue, the GREEN bar's ✕ is the one thing it answers to this
-				// button; trimming and sliding are the right button's. A press that goes
-				// nowhere still takes the clip in hand at the release, with the picture
-				// band's.
+				// clear of the blue: the GREEN bar's ✕ throws the scene away and its
+				// ENDS are that scene's borders, which this button trims. Sliding the
+				// whole bar along the recording is still the right button's. A press
+				// that goes nowhere still takes the clip in hand at the release, with
+				// the picture band's.
 				if i := ed.bandKillAt(x + ed.viewX); i >= 0 {
 					ed.killSeg(i) // the page's one "drop that scene"
+					return
+				}
+				// the bar stands for the clip, so its ends are that clip's
+				// borders (bandClipPartAt) -- and a press on a border trims
+				// it, from this button as from the other
+				if i, part := ed.bandClipPartAt(x + ed.viewX); part == selStart || part == selEnd {
+					ed.holdBandClip(i, part)
+					dragTrim = true
 					return
 				}
 				ed.dropSel() // clear of it: this is a new selection
@@ -4962,11 +5058,11 @@ func (a *App) buildCut() gtk.Widgetter {
 			// while a scene is in hand -- and the permanent lane switch before
 			// a scene's badge.
 			//
-			// A green border is NOT among them: trimming one is the right
-			// button's (the slide gesture below), and this button reaching for
-			// it would take six px either side of every border away from
-			// drawing a selection there. The selection's own ends are the one
-			// exception, above, because they are this button's own object.
+			// A green border comes after all of them but before the selection:
+			// a badge you can see beats a border you are within six px of, and
+			// a border beats starting a selection on top of it. The six px
+			// this costs selection-drawing is the same six px the trim arrow
+			// has been claiming there all along.
 			if area == ed.audArea {
 				if base := ed.laneSwitchAt(x+ed.viewX, y); base != "" {
 					ed.toggleLaneAll(base)
@@ -5015,6 +5111,14 @@ func (a *App) buildCut() gtk.Widgetter {
 					return
 				}
 			}
+			// A BORDER is a border to both buttons. This is the press the
+			// trim arrow has been promising within edgeGrab px of every one of
+			// them (wantCursor), and answering it with a selection instead is
+			// the one thing this page was reliably infuriating about.
+			if area == ed.srcArea && ed.hitPics(y) && ed.trimGrab(x+ed.viewX) {
+				dragTrim = true
+				return
+			}
 			ed.dropEdge() // any other left click puts a held edge or clip down
 			ed.dropSeg()
 			ed.dropSel()
@@ -5049,6 +5153,16 @@ func (a *App) buildCut() gtk.Widgetter {
 			ed.syncSelBtns()
 		})
 		drag.ConnectDragUpdate(func(ox, oy float64) {
+			if dragTrim {
+				// nothing has moved and the pointer has barely left the press:
+				// still a click, and a click picks a border up rather than
+				// dragging it a pixel
+				if !ed.edgeDirty && math.Abs(ox) < dragSlop && math.Abs(oy) < dragSlop {
+					return
+				}
+				ed.trimTo(ed.tAtView(dragStartX + ox))
+				return
+			}
 			if ed.fxMoving {
 				// nothing has moved and the pointer has barely left the press: still a
 				// CLICK, which opens an effect's numbers at the release. Without the guard
@@ -5082,6 +5196,11 @@ func (a *App) buildCut() gtk.Widgetter {
 		})
 		drag.ConnectDragEnd(func(ox, oy float64) {
 			_, _, _ = hadSel, selT0, selT1
+			if dragTrim {
+				dragTrim = false
+				ed.trimDrop()
+				return
+			}
 			if ed.fxMoving {
 				ed.fxMoving, fxPart = false, fxWhole
 				moved := ed.fxDirty
@@ -5237,7 +5356,7 @@ func (a *App) buildCut() gtk.Widgetter {
 				case ed.hitPics(y):
 					// a border first, by the same few px the highlight under
 					// the pointer has been offering all along (hoverEdge)
-					if ed.onHeldEdge(px) || ed.grabEdge(px) {
+					if ed.trimGrab(px) {
 						trimming = true
 						return true
 					}
@@ -5318,8 +5437,7 @@ func (a *App) buildCut() gtk.Widgetter {
 					}
 				}
 				if trimming {
-					ed.moveEdgeTo(ed.tAtView(slideX0+ox), true)
-					ed.showEdge(true) // the picture comes with it
+					ed.trimTo(ed.tAtView(slideX0 + ox))
 					return
 				}
 				ed.moveSegTo(ed.tAtView(slideX0+ox)-slideGrab, true)
@@ -5380,29 +5498,7 @@ func (a *App) buildCut() gtk.Widgetter {
 			}()
 			if trimming {
 				trimming = false
-				// a border trimmed out until it meets the next clip closes the
-				// gap between them, and two kept stretches with nothing
-				// between them are one stretch: the same join a clip dragged
-				// against its neighbour gets (cut_split.go). This is the
-				// commoner way to ask for it -- the gap is closed by extending
-				// what is kept, where sliding a clip moves the footage.
-				merged := ed.edgeDirty && ed.mergeTouching(ed.edgeSeg)
-				if ed.edgeDirty {
-					ed.persist() // the drag is over: this is the cut that goes on disk
-					if !merged {
-						// the picture lands exactly where the edge did,
-						// throttling or no throttling, so what you trimmed to
-						// is what is on screen and the next ‹f is judged
-						// against it. Only when something actually moved: a
-						// press that merely picked the border up is a choice,
-						// and a choice does not move the red line (pickAt).
-						ed.showEdge(false)
-					}
-				}
-				if merged {
-					return // the border is gone, and the join said so
-				}
-				ed.edgeStatus()
+				ed.trimDrop()
 				return
 			}
 			if moving {
@@ -5685,7 +5781,7 @@ func (ed *cutEditor) zoomWheel(dy float64) {
 // keeping whatever is under that point under it afterwards.
 func (ed *cutEditor) zoomAt(viewX, factor float64) {
 	t := ed.tAtView(viewX)
-	pps := math.Max(ed.minPps(), math.Min(120, ed.pps*factor))
+	pps := math.Max(ed.minPps(), math.Min(maxPps, ed.pps*factor))
 	if pps == ed.pps {
 		return // against a stop: nothing to lay out and nothing to draw
 	}

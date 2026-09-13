@@ -270,6 +270,157 @@ func (a *App) clipWav(src string, t0, t1 float64, dir, name string) (string, err
 // wrote is not.
 func alignedWords(dir string) string { return filepath.Join(dir, "words.aligned.json") }
 
+// ---- what the ASR already knew ------------------------------------------------
+//
+// The ASR does its own chunking, and each request comes back with the text of
+// exactly the seconds it was handed. That split used to be thrown away --
+// asrLongAt joined the texts with a space and kept only the join -- so the
+// aligner had to GUESS how much of the transcript belonged in each of its own
+// windows. It guessed at four words a second.
+//
+// Measured on a 42-minute lecture whose speaker says 1.85: two windows of one
+// take drew 89 and 100 words for twenty seconds that held about 37 each. A
+// forced aligner cannot decline, so it compressed them; compressed words end
+// nowhere near the window's far edge, so the carry that was meant to hand the
+// overflow on handed nothing on and counted all of them as spoken. The text ran
+// out with 38 s of audio still to place, the loop stopped, and those 38 s had
+// no word over them. The cut then deleted them as footage with nothing said --
+// a fifth of that session, gone, with nothing logged.
+//
+// So the split is kept rather than re-derived. Same seconds, same text, no
+// estimate anywhere.
+
+// asrPiece is one ASR request: the seconds of the recording it covered, and
+// the words that came back for exactly those seconds.
+type asrPiece struct {
+	S    float64 `json:"s"`
+	E    float64 `json:"e"`
+	Text string  `json:"text"`
+}
+
+// asrPieces live beside words.json and never inside it: that file is the
+// server's own document and nothing here writes into it.
+func asrPiecesFile(dir string) string { return filepath.Join(dir, "asrchunks.json") }
+
+func saveASRPieces(dir string, pieces []asrPiece) error {
+	if len(pieces) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(pieces)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(asrPiecesFile(dir), b, 0o644)
+}
+
+// loadASRPieces is the split as the ASR made it, or nothing for a recording
+// transcribed before it was kept -- which still aligns, by the share-out in
+// alignPieces, only without the exactness.
+func loadASRPieces(dir string) []asrPiece {
+	b, err := os.ReadFile(asrPiecesFile(dir))
+	if err != nil {
+		return nil
+	}
+	var out []asrPiece
+	if json.Unmarshal(b, &out) != nil {
+		return nil
+	}
+	return out
+}
+
+// alignSpan is one stretch of a recording and the words said in it: what one
+// align request is made of.
+type alignSpan struct {
+	s, e  float64
+	words []string
+}
+
+// alignPieces is the recording cut into stretches that carry their own words.
+//
+// From the ASR's own split where there is one: its pieces are in order and
+// cover the recording, and the transcript was joined from them in that order,
+// so a cursor walking the transcript hands each piece back exactly what it
+// heard. The last piece takes whatever remains, so every word is placed
+// somewhere even if a count disagrees by one.
+//
+// Where there is no split -- a project transcribed before this was kept -- the
+// recording is cut the way the ASR cuts it and the words are shared out by how
+// much talking each stretch holds. Still an estimate, but one that cannot run
+// out of text early, because the shares add up to the whole transcript by
+// construction rather than by a rate per second.
+func alignPieces(pieces []asrPiece, text []string, dur float64, quiet []span) []alignSpan {
+	if out, ok := piecesFromASR(pieces, text); ok {
+		return out
+	}
+	edges := append(append([]float64{0}, asrCuts(dur, quiet, alignChunkMax, alignCutSeek)...), dur)
+	total := 0.0
+	for i := 0; i+1 < len(edges); i++ {
+		total += voicedIn(quiet, edges[i], edges[i+1])
+	}
+	var out []alignSpan
+	at, seen := 0, 0.0
+	for i := 0; i+1 < len(edges); i++ {
+		seen += voicedIn(quiet, edges[i], edges[i+1])
+		want := len(text) // the last stretch takes the rest, whatever rounding did
+		if total > 0 && i+2 < len(edges) {
+			want = int(math.Round(float64(len(text)) * seen / total))
+		}
+		want = min(max(want, at), len(text))
+		out = append(out, alignSpan{s: edges[i], e: edges[i+1], words: text[at:want]})
+		at = want
+	}
+	return out
+}
+
+// piecesFromASR is the exact mapping, or false when the pieces on disk do not
+// account for the transcript -- an older project, or a file written by a
+// different shape of answer. Wrong is worse than absent here: a mapping that is
+// off by a piece puts every word after it in the wrong place.
+func piecesFromASR(pieces []asrPiece, text []string) ([]alignSpan, bool) {
+	if len(pieces) == 0 {
+		return nil, false
+	}
+	n := 0
+	for _, p := range pieces {
+		n += len(strings.Fields(p.Text))
+	}
+	if n != len(text) {
+		return nil, false
+	}
+	out := make([]alignSpan, 0, len(pieces))
+	at := 0
+	for i, p := range pieces {
+		k := at + len(strings.Fields(p.Text))
+		if i == len(pieces)-1 {
+			k = len(text)
+		}
+		out = append(out, alignSpan{s: p.S, e: p.E, words: text[at:k]})
+		at = k
+	}
+	return out, true
+}
+
+// voicedIn is how much of t0..t1 has sound in it: the measure everything here
+// shares out by, because a stretch of silence holds no words however long it is.
+func voicedIn(quiet []span, t0, t1 float64) float64 {
+	at, v := t0, 0.0
+	for _, q := range quiet {
+		if q.e <= at || q.s >= t1 {
+			continue
+		}
+		if q.s > at {
+			v += q.s - at
+		}
+		if at = math.Max(at, q.e); at >= t1 {
+			return v
+		}
+	}
+	if t1 > at {
+		v += t1 - at
+	}
+	return v
+}
+
 // alignInput times one source's transcript, and is the reason a timing-less ASR
 // can be used at all: the segments a transcript is built from come from word
 // times (mergeSegments), so with neither the ASR's nor the aligner's there is
@@ -296,10 +447,7 @@ func (a *App) alignInput(dir, wav string, models []string) error {
 	if err != nil {
 		return err
 	}
-	// cut where nobody is talking, like the ASR's own chunking: a window that
-	// ends mid-word hands the aligner half a word to place
 	quiet := a.quietSpots(wav)
-	edges := append(append([]float64{0}, asrCuts(dur, quiet, alignChunkMax, alignCutSeek)...), dur)
 	tmp, err := os.MkdirTemp("", "naivepost-align-*")
 	if err != nil {
 		return err
@@ -307,69 +455,158 @@ func (a *App) alignInput(dir, wav string, models []string) error {
 	defer os.RemoveAll(tmp)
 
 	var out []asrToken
-	rest := text
-	for i := 0; i+1 < len(edges); i++ {
-		t0, t1 := edges[i], edges[i+1]
-		if len(rest) == 0 {
-			break
-		}
-		// ...and then shrink the window to the part of it with sound in it.
-		//
-		// A forced aligner spreads the text it is given across the audio it is
-		// given, and it has no way to decline: hand it a stretch that is half
-		// silence and it will put words in the silence. One recording here ran
-		// 13.5 s past the last thing said -- the camera left rolling -- and the
-		// last four words of it came back at 30.9 s of a 31.2 s file, each
-		// 80 ms long, when they had been said before 17.8. Every gap the page
-		// then drew between them was a gap nobody took.
-		s0, s1, any := soundSpan(quiet, t0, t1)
-		if !any {
-			continue // no sound in this window: no words were said in it
-		}
-		part := filepath.Join(tmp, fmt.Sprintf("w%02d.wav", i))
-		if err := a.runCmd(ffTool("ffmpeg"), "-v", "error", "-y", "-ss", fmt.Sprint(s0),
-			"-t", fmt.Sprint(s1-s0), "-i", wav, "-c:a", "pcm_s16le", part); err != nil {
-			return err
-		}
-		// what this window plausibly holds, generously: an aligner spreads
-		// whatever text it is given across whatever audio it is given, so too
-		// much text distorts the whole window and too little leaves words for
-		// the next one to pick up -- which the carry below does anyway.
-		take := min(len(rest), int((s1-s0)*alignWordsPerSec)+8)
-		got, err := a.alignOne(models, part, strings.Join(rest[:take], " "))
+	for _, sp := range alignPieces(loadASRPieces(dir), text, dur, quiet) {
+		got, err := a.alignSpanAt(models, wav, tmp, sp, quiet, alignChunkMax)
 		if err != nil {
 			return err
 		}
-		// words that land clear of the far edge are this window's; the rest are
-		// the next window's problem, and its audio starts before them. The last
-		// window keeps everything, since there is no next one to carry into.
-		keep := len(got)
-		if i+2 < len(edges) {
-			keep = 0
-			for _, w := range got {
-				if w.e > (s1-s0)-alignEdgeTrim {
-					break
-				}
-				keep++
-			}
-			if keep == 0 {
-				keep = len(got) // nothing landed clear: take it rather than stall
-			}
-		}
-		for _, w := range got[:keep] {
-			out = append(out, asrToken{Word: w.w,
-				Start: int64((w.s + s0) * sampleRate), End: int64((w.e + s0) * sampleRate)})
-		}
-		rest = rest[consumed(rest, got[:keep]):]
+		out = append(out, got...)
 	}
 	if len(out) == 0 {
 		return fmt.Errorf("no words came back")
 	}
+	a.warnIfBare(out, dur, quiet)
 	b, err := json.Marshal(map[string]any{"words": out})
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(alignedWords(dir), b, 0o644)
+}
+
+// alignSpanAt times one stretch, in the recording's own seconds.
+//
+// A stretch too long for one request is cut in two and each half timed with
+// its share of the stretch's words, so halving costs precision inside that
+// stretch and nothing at all outside it: the next piece still starts on the
+// word the ASR heard there. That is the whole difference from the carry this
+// replaced, which let one bad window spoil every window after it.
+func (a *App) alignSpanAt(models []string, wav, tmp string, sp alignSpan, quiet []span, limit float64) ([]asrToken, error) {
+	if len(sp.words) == 0 {
+		return nil, nil // nothing was heard here, so there is nothing to place
+	}
+	// a forced aligner spreads the text it is given across the audio it is
+	// given, and it cannot decline: hand it a stretch that is half silence and
+	// it puts words in the silence. One recording ran 13.5 s past the last
+	// thing said -- the camera left rolling -- and its last four words came
+	// back at 30.9 s of a 31.2 s file when they had been said before 17.8.
+	s0, s1, any := soundSpan(quiet, sp.s, sp.e)
+	if !any {
+		// words with no sound under them: nothing to trim to, so send the
+		// stretch as it stands rather than dropping what was heard in it
+		s0, s1 = sp.s, sp.e
+	}
+	if s1-s0 > limit && s1-s0 > alignChunkMin {
+		return a.alignHalves(models, wav, tmp, alignSpan{s: s0, e: s1, words: sp.words}, quiet, limit)
+	}
+	part := filepath.Join(tmp, fmt.Sprintf("w%09d.wav", int(s0*1000)))
+	if err := a.runCmd(ffTool("ffmpeg"), "-v", "error", "-y", "-ss", fmt.Sprint(s0),
+		"-t", fmt.Sprint(s1-s0), "-i", wav, "-c:a", "pcm_s16le", part); err != nil {
+		return nil, err
+	}
+	got, err := a.alignOne(models, part, strings.Join(sp.words, " "))
+	if err != nil {
+		// down the same ladder the ASR and diarization walk: a graph the
+		// machine cannot find room for, it can find room for in two halves
+		if noRoom(err) && s1-s0 > alignChunkMin {
+			a.logfIdle("!!! align: no room for %.0f s of audio (%v) -- halving", s1-s0, err)
+			half := math.Max(alignChunkMin, (s1-s0)/2)
+			return a.alignHalves(models, wav, tmp, alignSpan{s: s0, e: s1, words: sp.words}, quiet, half)
+		}
+		return nil, err
+	}
+	out := make([]asrToken, 0, len(got))
+	for _, w := range got {
+		out = append(out, asrToken{Word: w.w,
+			Start: int64((w.s + s0) * sampleRate), End: int64((w.e + s0) * sampleRate)})
+	}
+	return out, nil
+}
+
+// alignHalves times both halves of a stretch that would not go in one request.
+func (a *App) alignHalves(models []string, wav, tmp string, sp alignSpan, quiet []span, limit float64) ([]asrToken, error) {
+	lo, hi := splitSpan(sp, quiet)
+	first, err := a.alignSpanAt(models, wav, tmp, lo, quiet, limit)
+	if err != nil {
+		return nil, err
+	}
+	second, err := a.alignSpanAt(models, wav, tmp, hi, quiet, limit)
+	if err != nil {
+		return nil, err
+	}
+	return append(first, second...), nil
+}
+
+// splitSpan cuts a stretch at the quietest moment nearest its middle and
+// divides its words by how much talking falls each side of the cut. The cut is
+// kept away from both edges, because a half that cannot be made smaller is a
+// recursion that does not end.
+func splitSpan(sp alignSpan, quiet []span) (alignSpan, alignSpan) {
+	mid, cut, best := (sp.s+sp.e)/2, (sp.s+sp.e)/2, math.Inf(1)
+	for _, q := range quiet {
+		m := (math.Max(q.s, sp.s) + math.Min(q.e, sp.e)) / 2
+		if m <= sp.s || m >= sp.e {
+			continue
+		}
+		if d := math.Abs(m - mid); d < best {
+			cut, best = m, d
+		}
+	}
+	room := (sp.e - sp.s) / 8
+	cut = math.Min(math.Max(cut, sp.s+room), sp.e-room)
+	n := len(sp.words)
+	left := voicedIn(quiet, sp.s, cut)
+	k := n / 2
+	if total := left + voicedIn(quiet, cut, sp.e); total > 0 {
+		k = int(math.Round(float64(n) * left / total))
+	}
+	k = min(max(k, 0), n)
+	return alignSpan{s: sp.s, e: cut, words: sp.words[:k]},
+		alignSpan{s: cut, e: sp.e, words: sp.words[k:]}
+}
+
+// warnIfBare says so when the times do not cover the talking.
+//
+// This failure is silent by nature. Words placed in the wrong second are still
+// words, every one of them is present, and the only visible sign is voiced
+// audio with no word over it -- which the cut reads as footage where nothing
+// was said and deletes. It went unnoticed for a whole session. It does not get
+// to go unnoticed again.
+func (a *App) warnIfBare(out []asrToken, dur float64, quiet []span) {
+	voiced := voicedIn(quiet, 0, dur)
+	if voiced <= 0 {
+		return
+	}
+	bare := bareVoiced(out, dur, quiet)
+	if bare < alignBareWarn || bare < alignBareShare*voiced {
+		return
+	}
+	a.logfIdle("!!! align: %.0f s of the %.0f s spoken has no word over it -- the times are wrong, and the cut will drop that footage",
+		bare, voiced)
+}
+
+// bareVoiced is how many of the recording's talking seconds no word covers.
+func bareVoiced(out []asrToken, dur float64, quiet []span) float64 {
+	var cov []span
+	for _, w := range out {
+		s, e := float64(w.Start)/sampleRate-alignSoundPad, float64(w.End)/sampleRate+alignSoundPad
+		if n := len(cov); n > 0 && s <= cov[n-1].e {
+			cov[n-1].e = math.Max(cov[n-1].e, e)
+			continue
+		}
+		cov = append(cov, span{s: s, e: e})
+	}
+	sort.Slice(cov, func(i, j int) bool { return cov[i].s < cov[j].s })
+	bare, at := 0.0, 0.0
+	for _, c := range cov {
+		if c.s > at {
+			bare += voicedIn(quiet, at, c.s)
+		}
+		at = math.Max(at, c.e)
+	}
+	if at < dur {
+		bare += voicedIn(quiet, at, dur)
+	}
+	return bare
 }
 
 // soundSpan is the part of t0..t1 that has sound in it, padded, or false when
@@ -416,55 +653,31 @@ func soundSpan(quiet []span, t0, t1 float64) (float64, float64, bool) {
 	return math.Max(t0, first-alignSoundPad), math.Min(t1, last+alignSoundPad), true
 }
 
-// consumed is how many of the text's words an answer accounts for, and is what
-// makes the next window start on the right one.
-//
-// Counting the answer would do if a forced aligner always handed back one word
-// per word it was given, but the families do not agree on that either: some
-// answer in phrases. So the answer is read back against the text instead, a
-// word at a time, and a word that cannot be found within the next few is
-// passed over rather than allowed to drag the count backwards.
-func consumed(text []string, got []alignWord) int {
-	i := 0
-	for _, w := range got {
-		for _, f := range strings.Fields(w.w) {
-			for j := i; j < len(text) && j < i+4; j++ {
-				if sameWord(bareWord(text[j]), bareWord(f)) {
-					i = j + 1
-					break
-				}
-			}
-		}
-	}
-	if i == 0 {
-		return min(len(got), len(text)) // nothing matched: trust the count
-	}
-	return i
-}
-
 const (
-	// how much audio goes into one align request. Not a preference: 45 s
-	// answers on this stack and 60 s does not, so this is the size that fits
-	// with room to spare on a machine whose GPU memory is shared with
-	// everything else running.
-	alignChunkMax = 30.0
+	// how much audio goes into one align request -- the same number the ASR
+	// chunks by (asrChunkQwen), so the pieces line up and each one carries its
+	// own words. Where the machine cannot hold that much graph at once the
+	// request is halved and halved again (alignSpanAt), which is a cost inside
+	// one piece rather than a size everything pays for all the time.
+	alignChunkMax = 60.0
+	// and the shortest it is worth halving to. Below this a stretch is shorter
+	// than a sentence, and an aligner given a fragment with no phrase around it
+	// places it no better than the silence detector would.
+	alignChunkMin = 15.0
 	// how far a window edge may slide to find a silence. Small, because the
 	// window is: asrCuts gives up on sliding at all once the seek is half the
 	// piece, and a window that never slides ends mid-word.
 	alignCutSeek = 4.0
-	// how many words a window is assumed to hold, before the carry corrects
-	// it. Fast speech is about 3 a second; the aligner is given more than it
-	// needs rather than less, because words left over are picked up by the
-	// next window and words forced in are not.
-	alignWordsPerSec = 4.0
-	// how close to a window's far edge a word may end and still be trusted.
-	// The last word before a cut is the one most likely to be half in the next
-	// window, and it is cheaper to let the next window place it.
-	alignEdgeTrim = 2.0
 	// how much of the quiet either side of a window's speech is sent with it
 	// (soundSpan). A word fades out below the silence threshold before it is
 	// over, and a window cut exactly on the threshold clips it.
 	alignSoundPad = 0.25
+	// talking with no word over it worth saying out loud, in seconds and as a
+	// share of the talking. Both, because ten bare seconds of a four-hour
+	// session is rounding and ten bare seconds of a twenty-second clip is the
+	// whole clip (warnIfBare).
+	alignBareWarn  = 10.0
+	alignBareShare = 0.08
 )
 
 // alignOne aligns one window, walking the aligners until one answers. A

@@ -59,9 +59,10 @@ func prepRows() []prepRow {
 			"the transcript keeps every word, and the cut is handed one line saying " +
 			"those seconds were an attempt. The user context's script, where there is " +
 			"one, says what was meant to be said."},
-		{"Text edit", "textedit", "The edit of a read to camera, as text: every word that was said, " +
-			"answered with the words the finished video says -- the retakes and the false starts " +
-			"removed, nothing added. The session's style decides whether this or Retakes runs."},
+		{"Text edit", "textedit", "The edit of a read to camera: one join between takes at a " +
+			"time, the last words of the take that was interrupted and the first words of the " +
+			"take that follows, answered with how many come off each side. The session's style " +
+			"decides whether this or Retakes runs."},
 		{"Cut", "cut", "How ▶ Suggest chooses the moments: read what the session is, " +
 			"place what the context names, fill the rest, shape the whole. It assumes " +
 			"nothing about the kind of video — that is what the context above is for."},

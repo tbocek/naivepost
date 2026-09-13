@@ -16,7 +16,7 @@ func env(off float64, pic string) *edges {
 		if r == '#' {
 			v = 120
 		}
-		for i := 0; i < 10; i++ { // ten buckets to the tenth
+		for i := 0; i < int(waveHz/10); i++ { // however many buckets make a tenth
 			b = append(b, v)
 		}
 	}
@@ -88,10 +88,13 @@ func TestTheFloorIsTheRoomAndNotANumber(t *testing.T) {
 	if thr := quietRoom.floor(1); thr < 8 || thr > 20 {
 		t.Errorf("over silence the floor is %d, want a small margin over 4", thr)
 	}
-	loud := &edges{wf: &waveform{hz: waveHz, chans: [][]uint8{make([]uint8, 400)}}}
+	// four seconds, in whatever buckets that is: a 0.4 s cycle of speech over
+	// a hiss, half and half
+	loud := &edges{wf: &waveform{hz: waveHz, chans: [][]uint8{make([]uint8, int(4*waveHz))}}}
+	per := int(waveHz / 2.5)
 	for i := range loud.wf.chans[0] {
 		loud.wf.chans[0][i] = 30 // a hiss
-		if i%40 < 20 {
+		if i%per < per/2 {
 			loud.wf.chans[0][i] = 200 // and speech half the time
 		}
 	}

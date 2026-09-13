@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"os/exec"
 	"slices"
 	"sort"
 	"strconv"
@@ -405,12 +404,13 @@ type audTrack struct {
 // reports one mono track, which is the same guess this made when it was called
 // ffprobeChannels and keeps a file the probe stumbled over in the session.
 func ffprobeTracks(path string) []audTrack {
-	out, err := exec.Command(ffTool("ffprobe"), "-v", "error", "-select_streams", "a",
-		"-show_entries", "stream=channels:stream_tags=title", "-of", "csv=p=0", path).Output()
-	if err != nil {
-		return []audTrack{{chans: 1}}
+	// a file ffprobe could not open is the only one that gets a guess: a
+	// silent capture answers with no audio streams, and that is a real answer
+	// -- it has no lane (TestASilentVideoHasNoLane)
+	if info := ffprobeInfo(path); info.ok {
+		return info.tracks
 	}
-	return parseTracks(string(out))
+	return []audTrack{{chans: 1}}
 }
 
 // parseTracks reads that listing, one track per line. Split out from the probe

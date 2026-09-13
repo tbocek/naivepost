@@ -173,13 +173,13 @@ func TestTheEdgeToolIsWired(t *testing.T) {
 		"case ed.grabEdge(px):",              // press: pick up the border under the cursor
 		// the RIGHT press takes the border and the same drag trims it: the
 		// left button draws selections and nothing else now
-		"if ed.onHeldEdge(px) || ed.grabEdge(px) {",
+		"if ed.trimGrab(px) {",
 		"case ed.onHeldEdge(px):", // ...and the held one is offered first, and wider
 		// the border under the pointer is highlighted before any of that
 		"if ed.edgeHovOn {",
-		"ed.moveEdgeTo(ed.tAtView(slideX0+ox), true)", // drag: move it, without writing the file per motion
-		"ed.showEdge(true) // the picture comes with it",
-		"ed.persist() // the drag is over", // release: this is the cut that goes on disk
+		"ed.trimTo(ed.tAtView(slideX0 + ox))",    // right drag: move it, without writing the file per motion
+		"ed.trimTo(ed.tAtView(dragStartX + ox))", // ...and the left drag, the same border the same way
+		"ed.persist() // the drag is over",       // release: this is the cut that goes on disk
 		"ed.dropEdge() // any other left click puts a held edge or clip down",
 		// arrows nudge, but only while something is held
 		"case (ed.edgeOn || ed.segOn || ed.fxOn) && (keyval == gdk.KEY_Left || keyval == gdk.KEY_Right):",

@@ -43,9 +43,15 @@ Pressing ▶ then does, in order:
    of the footage every *n* seconds (the Freq control; 1 s is typical).
 3. **Speech to text** — every source transcribed, with word-level times.
 4. **Forced alignment** — a second pass that times each word to within about
-   20 ms. This matters more than it sounds: ASR timestamps run a third of a
-   second late on average, and every cut point in the app is placed on a word
-   edge.
+   20 ms. This matters more than it sounds: the best transcriber here returns no
+   word times at all, ASR timestamps elsewhere run a third of a second late, and
+   every cut point in the app is placed on a word edge. The aligner is given the
+   recording one piece at a time, and each piece carries the words the ASR heard
+   in exactly those seconds (`asrchunks.json`) — never a guess at how many words
+   a stretch of audio ought to hold. A forced aligner cannot decline the text it
+   is handed, so a guess that runs high compresses real speech and leaves the
+   rest of the recording with no words over it, which the cut then deletes as
+   footage where nobody spoke.
 5. **Diarization** — who spoke when, merged into the transcript. The window it
    asks for shrinks until the server can hold it (90 s, then 45, then 25): the
    model permits 90 s, but the buffer grows with the window and a machine with
@@ -77,17 +83,21 @@ A dropdown on Prepare that chooses **which pipeline runs**, not which wording is
 used:
 
 **Lecture** — a read to camera, where the speech *is* the video. Everything you
-said goes in; only the mistakes in the saying come out. A model is shown every
-word that was spoken, in order, with the seams between recordings and the long
-pauses marked, and answers with **the text of the finished video, removing words
-only** — never adding, never rewording. That answer is matched back against the
-word stream *from the end backwards*, so where something was said twice the
-**later** saying is the one kept, by construction rather than by instruction.
-Every dropped run becomes a cut whose edges are fenced by the surviving words on
+said goes in; only the mistakes in the saying come out. You stop the recording
+when you stumble and say it again, so the mistakes are at the **joins**, and
+that is what the model is asked about: one join at a time, the last words of
+the take that was interrupted and the first words of the take that follows, as
+they are written. It answers with two numbers — how many words come off each
+side so the two run on as one sentence — and *nothing* else. Nought and nought
+is a whole answer: a recording stopped to change a slide is not a stumble. The
+side **before** the join is cut first and as far back as the repetition goes,
+because what was said last is what you meant to keep.
+
+Each removal becomes a cut whose edges are fenced by the surviving words on
 either side: the cut can never touch a word that stays, and within that fence
-the audio envelope picks the quietest moment to splice at. The answer is written
-to `prepare/transcript/final.txt` — delete a word there by hand, press Cut, and
-it is out of the video, with no model asked.
+the audio envelope picks the quietest moment to splice at. What survives is
+written to `prepare/transcript/final.txt`, punctuated and readable — delete a
+word there by hand, press Cut, and it is out of the video, with no model asked.
 
 **Gaming** — a session where the interesting moments have to be *chosen*. The
 cut model reads the whole session timeline and answers with the segments worth
@@ -108,8 +118,11 @@ before anything has been transcribed.
 
 ▶ asks the model for a cut. From then on it is yours: drag to select, ＋ Add,
 ✕ to drop, ⌦ for whatever is in hand, Revert to go back to the suggestion.
-Trimming a clip edge is the right button (pick the border up — it turns white)
-then the left, or ‹f and f› a frame at a time. Everything snaps to word edges,
+**Trim a clip edge by dragging it** — with either button, on the pictures or on
+the green bar above them — or ‹f and f› a frame at a time once it is in hand.
+Wherever the pointer turns into a resize arrow, a drag there resizes: that is the
+whole rule. The right button is for *moving* things instead, a scene along its
+recording or a recording along the clock. Everything snaps to word edges,
 silences and visual cuts, with the pointer showing what a press would grab.
 
 You can also splice in cards, stills and sounds, switch which camera a scene is
@@ -204,7 +217,8 @@ produced. It can be moved, copied or zipped whole.
   sources/                        the footage, if you asked for it to be copied in
   prepare/
     inputs/<source>/              voice16k.wav, transcript.{txt,tsv,srt},
-                                  words.json, words.aligned.json, turns.json
+                                  words.json, asrchunks.json,
+                                  words.aligned.json, turns.json
     inputs/frames/<source>/       one JPEG per interval, named for its second
     describe/<source>/events.tsv  what was on screen, per few seconds
     transcript/

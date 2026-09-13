@@ -773,3 +773,47 @@ func TestTheTrackChoiceIsInTheRunsSnapshot(t *testing.T) {
 		t.Errorf("writing to the snapshot reached back into the row: %v", a.selItems[0].tracks)
 	}
 }
+
+// One probe per file, not one per question.
+//
+// Opening the Cut step asks four things about every recording -- how long, how
+// big, how fast, how many tracks -- and each used to be its own ffprobe
+// process, started on the GUI thread. A session of 31 takes is 93 processes in
+// a row: measured at 45 ms each, over four seconds, against a three-second hang
+// watchdog that duly wrote a stack dump while the window sat there. One call
+// per file answers all four; the answer is kept under the file's identity, so
+// walking back to the tab costs nothing.
+func TestOneProbePerFileAnswersEveryQuestion(t *testing.T) {
+	src := readSrc(t, "ffprobe.go")
+	for _, want := range []string{
+		"format=duration:stream=codec_type,width,height,avg_frame_rate,channels",
+		"fileMark(path)", // the key: a file still being written is asked again
+		"probeCache[key]",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("ffprobe.go no longer contains %q", want)
+		}
+	}
+	// and the four readers go through it rather than starting their own
+	for _, c := range []struct{ file, fn string }{
+		{"pipeline.go", `func ffprobeDur\(`},
+		{"pipeline.go", `func ffprobeSize\(`},
+		{"cut.go", `func ffprobeFPS\(`},
+		{"cut_draw.go", `func ffprobeTracks\(`},
+	} {
+		body := funcBody(t, c.file, c.fn)
+		if !strings.Contains(body, "ffprobeInfo(") {
+			t.Errorf("%s does not ask the shared probe", c.fn)
+		}
+		// the one exception: a file whose header carries no duration is
+		// decoded to find out, and that stays where it was
+		if strings.Contains(body, "ffTool(\"ffprobe\")") {
+			t.Errorf("%s still starts its own ffprobe", c.fn)
+		}
+	}
+	// a probe that FAILED is not an empty answer: a silent capture really has
+	// no audio stream, a file ffprobe cannot open says nothing
+	if !strings.Contains(readSrc(t, "cut_draw.go"), "if info := ffprobeInfo(path); info.ok {") {
+		t.Error("ffprobeTracks cannot tell a silent file from an unreadable one")
+	}
+}

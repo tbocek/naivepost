@@ -39,20 +39,43 @@ func closure(t *testing.T, file, head string) string {
 	return src[i : i+j]
 }
 
-// What the left press may still do on the pictures and in the band: press a
-// badge, drop a scene, and start a selection. Nothing that edits the cut.
-func TestTheLeftButtonOnlySelects(t *testing.T) {
+// What the left press may do on the pictures and in the band: press a badge,
+// drop a scene, trim a border, and start a selection. Trimming is here because
+// the pointer already promises it -- ew-resize within edgeGrab px of every
+// border, on both bands, for both buttons (wantCursor) -- and a page that shows
+// a trim arrow and then draws a selection instead is a page nobody can use.
+// MOVING is still the right button's: a scene slid along its recording and a
+// recording slid along the clock are what the two buttons exist to keep apart.
+func TestTheLeftButtonSelectsAndTrims(t *testing.T) {
 	body := closure(t, "cut.go", "drag.ConnectDragBegin(func(x, y float64) {")
 	for _, gone := range []string{
 		"trimming = true",
 		"moving = true",
 		"ed.pickAt(x+ed.viewX, false)",
 		"ed.onHeldSeg(",
-		"ed.holdBandClip(",
+		"ed.grabSeg(",
 	} {
 		if strings.Contains(body, gone) {
-			t.Errorf("the left press still edits the cut: %q", gone)
+			t.Errorf("the left press moves something: %q", gone)
 		}
+	}
+	// a border on either band, by the one implementation both buttons call
+	for _, want := range []string{
+		"ed.trimGrab(x+ed.viewX)",
+		"ed.holdBandClip(i, part)",
+		"dragTrim = true",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the left press cannot trim a border: %q is gone", want)
+		}
+	}
+	// and a border is asked AFTER every badge and before the new selection: a
+	// mark you can see beats a border you are within six px of
+	kill := strings.Index(body, "ed.rowKillAt(x+ed.viewX, y)")
+	trim := strings.Index(body, "ed.trimGrab(x+ed.viewX)")
+	newSel := strings.Index(body, "ed.sel.active = true")
+	if kill < 0 || trim < 0 || newSel < 0 || !(kill < trim && trim < newSel) {
+		t.Error("the border is not asked between the badges and the new selection")
 	}
 	// what it does instead, at the end of the same begin
 	for _, want := range []string{
@@ -71,7 +94,10 @@ func TestTheLeftButtonOnlySelects(t *testing.T) {
 	// and the left drag's update has nothing to drag but the selection, the
 	// effects lane and the blue band
 	up := closure(t, "cut.go", "drag.ConnectDragUpdate(func(ox, oy float64) {")
-	for _, gone := range []string{"ed.moveEdgeTo(", "ed.moveSegTo("} {
+	if !strings.Contains(up, "ed.trimTo(ed.tAtView(dragStartX + ox))") {
+		t.Error("the left drag no longer trims the border it took")
+	}
+	for _, gone := range []string{"ed.moveSegTo(", "ed.shiftTo("} {
 		if strings.Contains(up, gone) {
 			t.Errorf("the left drag still moves the cut: %q", gone)
 		}
@@ -89,12 +115,41 @@ func TestTheLeftButtonOnlySelects(t *testing.T) {
 // selection there, and without this the right one slid the scenes instead --
 // so a selection whose end sat on the border you wanted to move left you no
 // way at all to move it.
+// The pointer is a promise, and the left button is the one a hand presses. Every
+// place wantCursor answers "ew-resize" is a place a press must trim -- the blue
+// selection's own ends, the green bar's ends, and a clip border on the pictures.
+// This was wrong for all of the second and third: the arrow appeared, the left
+// press drew a selection, and the only way to trim was a right-click first that
+// nothing on screen mentioned.
+func TestTheTrimArrowMeansTheLeftButtonTrims(t *testing.T) {
+	cur := funcBody(t, "cut_selband.go", `func \(ed \*cutEditor\) wantCursor\(`)
+	press := closure(t, "cut.go", "drag.ConnectDragBegin(func(x, y float64) {")
+	for _, c := range []struct{ what, cursor, answer string }{
+		{"the blue selection's ends", "ed.selPartAt(x + ed.viewX)", "ed.holdSel(selPart)"},
+		{"the green bar's ends", "ed.bandClipPartAt(x + ed.viewX)", "ed.holdBandClip(i, part)"},
+		{"a clip border on the pictures", "", "ed.trimGrab(x+ed.viewX)"},
+	} {
+		if c.cursor != "" && !strings.Contains(cur, c.cursor) {
+			t.Errorf("%s: the pointer no longer answers there (%q)", c.what, c.cursor)
+		}
+		if !strings.Contains(press, c.answer) {
+			t.Errorf("%s: the pointer shows a trim arrow and the left press does not trim (%q)",
+				c.what, c.answer)
+		}
+	}
+	// and the border on the pictures is the one the HOVER highlighted: same
+	// reach, same function, so what lights up is what a press takes
+	if !strings.Contains(funcBody(t, "cut.go", `func \(ed \*cutEditor\) trimGrab\(`), "ed.grabEdge(px)") {
+		t.Error("the press finds a border by different means than the hover lights one")
+	}
+}
+
 func TestTheRightButtonMovesTheGreenAndThenTheTimeline(t *testing.T) {
 	body := closure(t, "cut.go", "slide.ConnectDragBegin(func(x, y float64) {")
 	for _, want := range []string{
-		"i, part := ed.bandClipPartAt(px)",          // the bar: its ends and its middle
-		"if ed.onHeldEdge(px) || ed.grabEdge(px) {", // the pictures: a border
-		"if ed.segOnGreen(px, y) < 0 {",             // ...and only where the cut keeps something
+		"i, part := ed.bandClipPartAt(px)", // the bar: its ends and its middle
+		"if ed.trimGrab(px) {",             // the pictures: a border
+		"if ed.segOnGreen(px, y) < 0 {",    // ...and only where the cut keeps something
 		"case green():",
 	} {
 		if !strings.Contains(body, want) {
@@ -125,7 +180,7 @@ func TestTheRightButtonMovesTheGreenAndThenTheTimeline(t *testing.T) {
 	// copy of it, and they are asked before anything that shifts a recording
 	up := closure(t, "cut.go", "slide.ConnectDragUpdate(func(ox, oy float64) {")
 	for _, want := range []string{
-		"ed.moveEdgeTo(ed.tAtView(slideX0+ox), true)",
+		"ed.trimTo(ed.tAtView(slideX0 + ox))",
 		"ed.moveSegTo(ed.tAtView(slideX0+ox)-slideGrab, true)",
 	} {
 		if !strings.Contains(up, want) {

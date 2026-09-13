@@ -39,6 +39,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // retakeSystem is the pass's wording. One narrow job, said as a procedure:
@@ -691,9 +692,19 @@ const repeatSkip = 3
 // compared exactly: at two letters every rule above matches half the language.
 // bareWord is a word with the punctuation around it taken off, lowercased, so
 // that "again," and "Again" are the same word.
+//
+// Every letter, not the ASCII ones: the test used to be a-z A-Z 0-9, which
+// TrimFunc applies to BOTH ENDS, so a word beginning with an umlaut lost it.
+// "über" came back as "ber" and "Übung" as "bung" -- while an umlaut in the
+// middle survived, because the trim never reached it. That is not a cosmetic
+// fault. Every word comparison in the app goes through here, and the one that
+// lines the aligner's words up against the transcript's (redress) could not
+// match "über" to "Über-Datum.", so it folded the two into one and left the
+// word after them with no written form at all. Sixty-four words of one German
+// lecture were folded that way.
 func bareWord(s string) string {
 	return strings.ToLower(strings.TrimFunc(s, func(r rune) bool {
-		return !('a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9' || r == '\'')
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '\''
 	}))
 }
 

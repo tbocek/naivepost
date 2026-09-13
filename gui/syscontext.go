@@ -61,7 +61,9 @@ WHAT EACH JOB IS GIVEN, AND WHAT IT ANSWERS WITH -- nothing around the answer:
     {"abandoned":[{"from":<n>,"to":<n>,"again":<n>}]}
     <n> is a line number exactly as the request gave it. "from" to "to" is the stretch that was abandoned, inclusive; "again" is the line where the attempt that was kept begins, or 0 when it was broken off and never picked up. Nothing to mark is a whole answer: {"abandoned":[]}.
   translate: the numbered lines of one video's subtitle track. Answers exactly those lines, in order, translated -- one line out for every line in, each beginning with its own number and a tab.
-  textedit: every word spoken in the session, in order, with the seams between recordings and the long pauses marked. Answers the TEXT OF THE FINISHED VIDEO and nothing else: the same words in the same order and spelling, with words removed and none added.
+  textedit: ONE join -- the last words of the take that was interrupted, then the first words of the take that follows. Answers strict JSON and nothing else:
+    {"joined":"<the two parts run on as one, with the stumble left out>"}
+    Every word of the answer must be a word the request gave, spelled and ordered as it gave it; the only thing you may do is leave words out, and what you leave out must be one stretch at the join. Leaving nothing out is a whole answer: a recording that stopped between two thoughts is not a stumble.
   cut: the footage range and the session timeline. Answers SEGMENTS, strict JSON and nothing else:
     {"segments":[{"start":<sec>,"end":<sec>}]}
     <sec> is session seconds, a number. Segments in order, never overlapping, and inside the range the request gives.
@@ -240,7 +242,8 @@ func knownSection(head string) bool {
 // sysJobLabel is how the jobs list names each key's own line.
 var sysJobLabel = map[string]string{
 	"describe": "describe:", "fix": "transcript:", "cut": "cut:",
-	"narrate": "narrate:", "youtube": "upload text:",
+	"textedit": "textedit:",
+	"narrate":  "narrate:", "youtube": "upload text:",
 	"captions": "captions:", "speed": "speed:", "effects": "effects:",
 }
 
@@ -278,4 +281,6 @@ func ownJobLine(key, blk string) string {
 // how the answer is READ). It sits at the wording's end, where the model has
 // the rules in hand.
 const ctxRule = `WHERE THIS DISAGREES WITH THE USER CONTEXT
-Everything above is a default for a session nobody described. The USER CONTEXT in the request was written by the person whose recording this is, and wherever it asks for something these rules would not -- more of an effect or none, a longer segment, another voice, a different subject, a line kept that this would drop, a language this did not expect -- the user context wins and the rule above gives way. What it does not change is the mechanics you were given first: the shape of the answer, the clock, what may be invented, and the ranges the reply is judged by. Those are how the answer is read, not how the video is made.`
+Everything above is a default for a session nobody described. The USER CONTEXT in the request was written by the person whose recording this is, and wherever it asks for something these rules would not -- more of an effect or none, a longer segment, another voice, a different subject, a line kept that this would drop, a language this did not expect -- the user context wins and the rule above gives way. What it does not change is the mechanics you were given first: the shape of the answer, the clock, what may be invented, and the ranges the reply is judged by. Those are how the answer is read, not how the video is made.
+
+The context is written once for the whole session and every job is given the same copy, so it carries instructions for jobs that are not yours: a title, a description, a thumbnail, what the transcript should spell, how long the video should be. An instruction that names a step or a thing another job makes is that job's. Where you meet one, it is not an instruction to you and it does not change what your answer is: answer your own question, in your own shape, and leave it alone.`

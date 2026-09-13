@@ -102,7 +102,11 @@ func TestSplittingWhereNoBorderCanGoRefuses(t *testing.T) {
 		{"with nothing selected", 20, 30, "", false},
 		{"a selection pointed at a waveform", 20, 30, "mic", true},
 		{"past everything the cut keeps", 80, 90, "", true},
-		{"a sliver of a second at the scene's own edge", 0, 0.5, "", true},
+		// half a second at a scene's own edge is NOT among them any more: it
+		// used to need a whole second either side, which is the floor for
+		// suggesting a scene rather than for cutting one (minPieceLn). A hand
+		// asking for those seconds as their own scene means it.
+		{"a border closer to the edge than a frame", 0, 0.02, "", true},
 	} {
 		ed.undo = nil
 		ed.segs = []cutSeg{{S: 0, E: 60}}
@@ -115,7 +119,17 @@ func TestSplittingWhereNoBorderCanGoRefuses(t *testing.T) {
 				c.what, len(ed.undo))
 		}
 	}
-	// one end already on a border draws the other one, and only that one
+	// ...and the half-second sliver that used to be refused now works: the
+	// border goes in and those seconds become a scene of their own
+	ed.undo = nil
+	ed.segs = []cutSeg{{S: 0, E: 60}}
+	ed.sel.t0, ed.sel.t1, ed.sel.active, ed.sel.aud = 0, 0.5, true, ""
+	a.splitSelRange()
+	segsEqual(t, ed.segs, []cutSeg{{S: 0, E: 0.5}, {S: 0.5, E: 60, Split: true}})
+
+	// one end already on a border draws the other one, and only that one.
+	// From a whole scene again: the sliver above left a border at 0.5
+	ed.segs = []cutSeg{{S: 0, E: 60}}
 	ed.sel.aud, ed.sel.active = "", true
 	ed.sel.t0, ed.sel.t1 = 0, 30
 	a.splitSelRange()
@@ -292,5 +306,65 @@ func TestPickingUpAClipLeavesTheLineWhereItIs(t *testing.T) {
 	if end := strings.Index(tail, "if merged {"); end < 0 || k > end {
 		t.Error("the picture is cued after every drop, moved or not — a press that " +
 			"only picked the clip up moves the red line")
+	}
+}
+
+// A remove takes out what was selected and NOTHING else.
+//
+// It used to take up to a second more. removeSpan dropped any surviving piece
+// under minSegLn, which is a second -- the floor for suggesting a scene, not
+// for cutting one -- so a hole near either end of a clip ate the piece beside
+// it and the clip simply began later or ended earlier. On screen it did not
+// split the green, it made it shorter, and the seconds that went were seconds
+// nobody had selected.
+func TestARemoveCutsAHoleAndKeepsBothSides(t *testing.T) {
+	for _, c := range []struct {
+		what   string
+		t0, t1 float64
+		want   []cutSeg
+	}{
+		{"through the middle", 80, 82,
+			[]cutSeg{{S: 54.42, E: 80}, {S: 82, E: 120.03}}},
+		{"a tenth of a second from the clip's own start", 54.5, 54.94,
+			[]cutSeg{{S: 54.42, E: 54.5}, {S: 54.94, E: 120.03}}},
+		{"half a second from the start", 54.9, 55.34,
+			[]cutSeg{{S: 54.42, E: 54.9}, {S: 55.34, E: 120.03}}},
+		{"within a second of the end", 119.5, 119.94,
+			[]cutSeg{{S: 54.42, E: 119.5}, {S: 119.94, E: 120.03}}},
+		{"a hole narrower than the old merge tolerance", 80, 80.15,
+			[]cutSeg{{S: 54.42, E: 80}, {S: 80.15, E: 120.03}}},
+	} {
+		ed := &cutEditor{segs: []cutSeg{{S: 54.42, E: 120.03}}}
+		ed.removeSpan(c.t0, c.t1)
+		// and the hole survives the tidy-up: coalesce reading a deliberate gap
+		// as two clips that failed to meet is how a small removal undid itself
+		ed.coalesce()
+		if len(ed.segs) != len(c.want) {
+			t.Errorf("%s: %d scene(s), want %d: %v", c.what, len(ed.segs), len(c.want), ed.segs)
+			continue
+		}
+		for i := range c.want {
+			if math.Abs(ed.segs[i].S-c.want[i].S) > 1e-9 || math.Abs(ed.segs[i].E-c.want[i].E) > 1e-9 {
+				t.Errorf("%s: scene %d is %.3f-%.3f, want %.3f-%.3f",
+					c.what, i, ed.segs[i].S, ed.segs[i].E, c.want[i].S, c.want[i].E)
+			}
+		}
+	}
+}
+
+// The two floors are different questions and must not be one number again.
+func TestTheFloorForCuttingIsNotTheFloorForSuggesting(t *testing.T) {
+	if minPieceLn >= minSegLn {
+		t.Errorf("what a removal may leave (%gs) is not smaller than what is worth suggesting as a scene (%gs)",
+			minPieceLn, minSegLn)
+	}
+	// about a frame: below this there is no picture in the piece to show
+	if minPieceLn > 1.0/24 {
+		t.Errorf("a removal may not leave anything under %gs, which is more than a frame", minPieceLn)
+	}
+	// and the merge tolerance is the frame or two its comment claims, not the
+	// seven frames it used to be -- a gap wider than this is one a hand meant
+	if mergeTol > 3*minPieceLn {
+		t.Errorf("two clips %gs apart are merged as touching; a removal that small would undo itself", mergeTol)
 	}
 }

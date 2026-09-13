@@ -113,7 +113,8 @@ func TestDescribeAsksTheCacheBeforeTheModel(t *testing.T) {
 // again IS how a different answer is asked for.)
 func TestTheMechanicalPassesAskTheCacheBeforeTheModel(t *testing.T) {
 	for _, c := range []struct{ file, fn, step string }{
-		{"textedit.go", `func \(a \*App\) findTextEdit\(`, "textedit"},
+		// one entry per join now, asked inside askSeam (textedit.go)
+		{"textedit.go", `func \(a \*App\) askSeam\(`, "textedit"},
 		{"retake.go", `func \(a \*App\) findRetakes\(`, "retake"},
 		{"translate.go", `func \(a \*App\) translateCues\(`, "translate"},
 	} {

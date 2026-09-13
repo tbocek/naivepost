@@ -233,12 +233,16 @@ func (a *App) ffmpegProgress(dur float64, cb func(float64), args ...string) erro
 }
 
 func ffprobeDur(f string) (float64, error) {
-	out, err := exec.Command(ffTool("ffprobe"), "-v", "error",
-		"-show_entries", "format=duration", "-of", "csv=p=0", f).Output()
-	d := strings.TrimSpace(string(out))
-	if err != nil || d == "" || d == "N/A" {
+	// the one probe every caller shares (ffprobe.go): asked once per file and
+	// remembered, because the Cut page asks four of these about every
+	// recording in the session and used to start a process for each
+	if v := ffprobeInfo(f).dur; v > 0 {
+		return v, nil
+	}
+	d := ""
+	{
 		// stream-to-disk recorders never finalize the header; decode and count
-		out, err = exec.Command("bash", "-c",
+		out, err := exec.Command("bash", "-c",
 			fmt.Sprintf(`ffmpeg -v error -progress /dev/stdout -i %q -f null - 2>/dev/null | awk -F= '/^out_time_us/ { t = $2 } END { printf "%%.2f", t / 1e6 }'`, f)).Output()
 		if err != nil {
 			return 0, fmt.Errorf("duration of %s: %w", f, err)
@@ -258,15 +262,11 @@ func ffprobeDur(f string) (float64, error) {
 // height is the image server's decision, not ours: it is asked for 1280x720
 // and a model with a fixed latent size may hand back something else.
 func ffprobeSize(f string) (w, h int, err error) {
-	out, err := exec.Command(ffTool("ffprobe"), "-v", "error", "-select_streams", "v:0",
-		"-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", f).Output()
-	if err != nil {
-		return 0, 0, fmt.Errorf("size of %s: %w", f, err)
+	info := ffprobeInfo(f)
+	if info.w <= 0 || info.h <= 0 {
+		return 0, 0, fmt.Errorf("cannot read the size of %s -- no video stream", f)
 	}
-	if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%dx%d", &w, &h); err != nil || w <= 0 || h <= 0 {
-		return 0, 0, fmt.Errorf("cannot read the size of %s (ffprobe said %q)", f, strings.TrimSpace(string(out)))
-	}
-	return w, h, nil
+	return info.w, info.h, nil
 }
 
 // walk any decoded JSON, visiting every object -- survives the CLI and server
@@ -466,7 +466,7 @@ func (a *App) transcribe(input, inDir string, base, unit float64) error {
 	if !exists(filepath.Join(out, "words.json")) {
 		a.prog(trackSTT, base+0.05*unit, "recognising speech")
 		a.logfIdle(">>> [%s] ASR (%s)", name, a.readConf().ASRModel)
-		body, text, err := a.asrLong(wav, dur, name, base, unit)
+		body, text, pieces, err := a.asrLong(wav, dur, name, base, unit)
 		if err != nil {
 			return fmt.Errorf("ASR: %w", err)
 		}
@@ -477,6 +477,12 @@ func (a *App) transcribe(input, inDir string, base, unit float64) error {
 		}
 		if err := os.WriteFile(filepath.Join(out, "transcript.txt"),
 			[]byte(strings.TrimRight(text, "\n")+"\n"), 0o644); err != nil {
+			return err
+		}
+		// which seconds each request covered and what came back for them --
+		// written before words.json, because words.json is the resume marker
+		// and nothing may exist after it that the marker does not stand for
+		if err := saveASRPieces(out, pieces); err != nil {
 			return err
 		}
 		// words.json last, and whole: it is this stage's resume marker, so it
@@ -547,7 +553,7 @@ func (a *App) transcribe(input, inDir string, base, unit float64) error {
 // own document; a long one is cut into pieces, stitched back into one answer
 // of the same shape. The cuts slide to the middle of a silence, where a
 // decoder losing its context costs nothing.
-func (a *App) asrLong(wav string, dur float64, name string, base, unit float64) ([]byte, string, error) {
+func (a *App) asrLong(wav string, dur float64, name string, base, unit float64) ([]byte, string, []asrPiece, error) {
 	limit := a.asrChunk()
 	// Down the same ladder diarization walks, and for the same failure: the
 	// model's own position table says how much audio it will READ, and the
@@ -557,9 +563,9 @@ func (a *App) asrLong(wav string, dur float64, name string, base, unit float64) 
 	// starts at what the model allows and shortens only when told to, rather
 	// than being set small to be safe.
 	for {
-		b, text, err := a.asrLongAt(wav, dur, name, base, unit, limit)
+		b, text, pieces, err := a.asrLongAt(wav, dur, name, base, unit, limit)
 		if err == nil || !noRoom(err) || limit <= asrChunkMin {
-			return b, text, err
+			return b, text, pieces, err
 		}
 		limit = math.Max(asrChunkMin, math.Floor(limit/2))
 		a.logfIdle("!!! [%s] ASR: no room for that much audio (%v) -- trying %.0f s at a time",
@@ -567,9 +573,15 @@ func (a *App) asrLong(wav string, dur float64, name string, base, unit float64) 
 	}
 }
 
-func (a *App) asrLongAt(wav string, dur float64, name string, base, unit, limit float64) ([]byte, string, error) {
+func (a *App) asrLongAt(wav string, dur float64, name string, base, unit, limit float64) ([]byte, string, []asrPiece, error) {
 	if dur <= limit {
-		return a.asrJSON(wav)
+		b, text, err := a.asrJSON(wav)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		// one request is one piece, and the aligner wants the same shape
+		// whether the recording was cut up or not
+		return b, text, []asrPiece{{S: 0, E: dur, Text: text}}, nil
 	}
 	seek := math.Min(asrCutSeek, limit/3)
 	edges := append(append([]float64{0}, asrCuts(dur, a.quietSpots(wav), limit, seek)...), dur)
@@ -579,7 +591,7 @@ func (a *App) asrLongAt(wav string, dur float64, name string, base, unit, limit 
 	dir := filepath.Join(filepath.Dir(wav), "asr")
 	os.RemoveAll(dir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	// the chunks are scratch and go when the answer is stitched -- but only
 	// then. A failed run keeps them, because the one thing worth having after
@@ -593,9 +605,10 @@ func (a *App) asrLongAt(wav string, dur float64, name string, base, unit, limit 
 
 	var words []any
 	var texts []string
+	var pieces []asrPiece
 	for i := 0; i < n; i++ {
 		if err := a.checkpoint(); err != nil {
-			return nil, "", err
+			return nil, "", nil, err
 		}
 		a.prog(trackSTT, base+(0.05+0.45*float64(i)/float64(n))*unit,
 			"recognising speech %d/%d", i+1, n)
@@ -605,24 +618,29 @@ func (a *App) asrLongAt(wav string, dur float64, name string, base, unit, limit 
 		if err := a.runCmd(ffTool("ffmpeg"), "-v", "error", "-y",
 			"-ss", fmt.Sprint(edges[i]), "-t", fmt.Sprint(edges[i+1]-edges[i]),
 			"-i", wav, "-c:a", "pcm_s16le", part); err != nil {
-			return nil, "", err
+			return nil, "", nil, err
 		}
 		body, text, err := a.asrJSON(part)
 		if err != nil {
-			return nil, "", err
+			return nil, "", nil, err
 		}
 		words = append(words, shiftWords(body, edges[i])...)
-		if t := strings.TrimSpace(text); t != "" {
+		t := strings.TrimSpace(text)
+		if t != "" {
 			texts = append(texts, t)
 		}
+		// what this request covered and what it heard there, kept together.
+		// Joining the texts and dropping the seconds is what used to leave the
+		// aligner guessing how many words belong in a window (alignInput).
+		pieces = append(pieces, asrPiece{S: edges[i], E: edges[i+1], Text: t})
 	}
 	text := strings.Join(texts, " ")
 	b, err := json.MarshalIndent(map[string]any{"text": text, "words": words}, "", "  ")
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	done = true
-	return append(b, '\n'), text, nil
+	return append(b, '\n'), text, pieces, nil
 }
 
 // asrChunk is how much audio one ASR request may hold, which is not one number
@@ -654,6 +672,14 @@ func asrCuts(dur float64, quiet []span, max, seek float64) []float64 {
 	}
 	if seek < 0 || 2*seek >= max {
 		seek = 0
+	}
+	// the pieces are sized so two cuts sliding apart cannot overflow, which
+	// means a generous seek buys its room out of the piece: 20 s of reach
+	// against a 60 s ceiling was making 19 s pieces, three times the requests
+	// and three times the places the decoder loses its context. A sixth of the
+	// ceiling leaves every piece at least two thirds of what the model allows.
+	if seek > max/6 {
+		seek = max / 6
 	}
 	n := int(math.Ceil(dur / (max - 2*seek)))
 	step := dur / float64(n)

@@ -26,11 +26,16 @@ import (
 )
 
 const (
-	// The envelope's resolution. 10 ms is a hair under one pixel at the top
-	// zoom (120 px/s), so the drawing never runs out of detail, and an hour of
-	// stereo is 720 kB of it -- small enough to keep in memory and to cache on
-	// disk without thinking about it.
-	waveHz = 100.0
+	// The envelope's resolution: a hair under one pixel at the top zoom
+	// (maxPps), so the drawing never runs out of detail, and an hour of stereo
+	// is 1.4 MB of it -- small enough to keep in memory and to cache on disk
+	// without thinking about it.
+	//
+	// Every cached envelope carries the rate it was built at in its own header
+	// (waveHead.Hz) and is drawn by that, so raising this does not spoil the
+	// caches a project already has: they go on drawing correctly at 100 Hz and
+	// are rebuilt at this rate the next time their recording changes.
+	waveHz = 200.0
 	// What the decode asks ffmpeg for. Peaks of a downsampled signal are a
 	// little lower than the true ones, which does not matter for a picture, and
 	// 8 kHz is a tenth of the bytes to push through the pipe.

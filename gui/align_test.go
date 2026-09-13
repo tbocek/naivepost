@@ -9,6 +9,7 @@ package main
 // are in, and getting the unit wrong puts a cut somewhere in the next decade.
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -266,15 +267,24 @@ func TestAFailedAlignmentFailsWhereItFailed(t *testing.T) {
 // 30 s and 45 s of the same audio answered fine. Both halves have to be bounded
 // -- the reading and the timing -- or the other one dies instead.
 func TestOneRequestCannotBeAskedForTheWholeTake(t *testing.T) {
-	if alignChunkMax > 45 {
-		t.Errorf("alignChunkMax is %gs; 60s did not come back on the stack this was measured on", alignChunkMax)
+	// the two passes chunk by the same number, which is what lets a piece
+	// carry its own words from one to the other (alignPieces)
+	if alignChunkMax != asrChunkQwen {
+		t.Errorf("the aligner chunks by %gs and the ASR by %gs; the pieces have to line up",
+			alignChunkMax, asrChunkQwen)
 	}
 	if asrChunkQwen > 90 {
 		t.Errorf("asrChunkQwen is %gs; a 96s take is what failed", asrChunkQwen)
 	}
-	body := funcBody(t, "align.go", `func \(a \*App\) alignInput\(`)
-	if !strings.Contains(body, "asrCuts(") {
-		t.Error("alignment sends the whole recording in one request")
+	// 60 s was measured not to come back on the stack this was written on, so
+	// the ceiling is only ever a starting point: what will not go in one
+	// request is halved until it does
+	body := funcBody(t, "align.go", `func \(a \*App\) alignSpanAt\(`)
+	if !strings.Contains(body, "noRoom(err)") || !strings.Contains(body, "alignHalves") {
+		t.Error("an align request too big for the machine is not halved and retried")
+	}
+	if !strings.Contains(funcBody(t, "align.go", `func alignPieces\(`), "asrCuts(") {
+		t.Error("a recording with no ASR split is sent whole")
 	}
 	// the ASR's limit follows the model, not the machine: Nemotron reads five
 	// minutes whole and Qwen3 cannot, and making them share a number costs one
@@ -284,29 +294,106 @@ func TestOneRequestCannotBeAskedForTheWholeTake(t *testing.T) {
 	}
 }
 
-// A window's text has to end where the audio does, and the only handle on that
-// is the answer. Counting it works until a family answers in phrases instead of
-// words, and then every window after the first is reading the wrong text.
-func TestTheNextWindowStartsOnTheRightWord(t *testing.T) {
-	text := strings.Fields("the whole run took roughly nine minutes and the cuts are better")
-	for _, c := range []struct {
-		name string
-		got  []alignWord
-		want int
-	}{
-		{"one word per word", []alignWord{{w: "the"}, {w: "whole"}, {w: "run"}}, 3},
-		{"punctuation and case", []alignWord{{w: "The"}, {w: "whole"}, {w: "run,"}}, 3},
-		{"phrases", []alignWord{{w: "the whole run"}, {w: "took roughly"}}, 5},
-		{"a word it could not place", []alignWord{{w: "the"}, {w: "xxxx"}, {w: "run"}}, 3},
-		{"nothing it was given", []alignWord{{w: "zzz"}, {w: "qqq"}}, 2},
-		{"more than the text", []alignWord{{w: "zzz"}}, 1},
-	} {
-		if got := consumed(text, c.got); got != c.want {
-			t.Errorf("%s: consumed %d of the text, want %d", c.name, got, c.want)
+// Every stretch sent to the aligner carries the words the ASR heard in exactly
+// those seconds. Nothing counts, nothing estimates, nothing is handed on.
+func TestEveryPieceGetsTheWordsTheASRHeardInIt(t *testing.T) {
+	text := strings.Fields("one two three four five six seven eight nine ten")
+	pieces := []asrPiece{
+		{S: 0, E: 20, Text: "one two three"},
+		{S: 20, E: 40, Text: "four five six seven"},
+		{S: 40, E: 60, Text: "eight nine ten"},
+	}
+	got := alignPieces(pieces, text, 60, nil)
+	if len(got) != 3 {
+		t.Fatalf("%d stretches from 3 ASR pieces", len(got))
+	}
+	for i, want := range [][]string{{"one", "two", "three"},
+		{"four", "five", "six", "seven"}, {"eight", "nine", "ten"}} {
+		if strings.Join(got[i].words, " ") != strings.Join(want, " ") {
+			t.Errorf("stretch %d holds %q, want %q", i, got[i].words, want)
+		}
+		if got[i].s != pieces[i].S || got[i].e != pieces[i].E {
+			t.Errorf("stretch %d covers %.0f..%.0f, want %.0f..%.0f",
+				i, got[i].s, got[i].e, pieces[i].S, pieces[i].E)
 		}
 	}
-	if got := consumed([]string{"one"}, []alignWord{{w: "zzz"}, {w: "qqq"}}); got != 1 {
-		t.Errorf("consumed %d words of a one-word text", got)
+	// pieces that do not account for the transcript are not trusted at all: a
+	// mapping off by one piece puts every word after it in the wrong place,
+	// which is worse than having no mapping
+	short := alignPieces([]asrPiece{{S: 0, E: 60, Text: "one two"}}, text, 60, nil)
+	if len(short) == 1 && len(short[0].words) == 2 {
+		t.Error("a piece list missing eight words was used as the split anyway")
+	}
+}
+
+// The bug this whole shape exists to stop. The aligner used to be told a window
+// holds four words a second and to carry the leftovers on; a speaker saying
+// 1.85 handed two windows 89 and 100 words for twenty seconds holding about 37
+// each, and the transcript ran out with 38 s of audio left to place. That audio
+// had no word over it, so the cut deleted it as footage with nothing said.
+//
+// Whatever the share-out does, every word has to land somewhere and the last
+// stretch has to be reached.
+func TestTheWordsNeverRunOutBeforeTheAudioDoes(t *testing.T) {
+	text := make([]string, 570) // the take that broke: 570 words, 308.5 s
+	for i := range text {
+		text[i] = fmt.Sprintf("w%d", i)
+	}
+	// talking throughout, with the pauses a lecture has
+	quiet := []span{{s: 0, e: 1.3}, {s: 32.8, e: 34}, {s: 86.8, e: 90.6},
+		{s: 120.8, e: 122}, {s: 162, e: 163.2}, {s: 203.6, e: 204.4},
+		{s: 227, e: 227.8}, {s: 277.5, e: 278.2}, {s: 306.6, e: 308.5}}
+	got := alignPieces(nil, text, 308.5, quiet)
+	if len(got) < 2 {
+		t.Fatalf("308.5 s came back as %d stretches", len(got))
+	}
+	at := 0
+	for i, sp := range got {
+		for _, w := range sp.words {
+			if w != text[at] {
+				t.Fatalf("stretch %d starts on %q, want %q -- the words are out of step", i, w, text[at])
+			}
+			at++
+		}
+	}
+	if at != len(text) {
+		t.Errorf("%d of %d words were placed; %d had nowhere to go", at, len(text), len(text)-at)
+	}
+	if n := len(got[len(got)-1].words); n == 0 {
+		t.Error("the last stretch of the recording got no words -- the text ran out first")
+	}
+}
+
+// Halving a stretch the server cannot hold divides its words with it. The cost
+// is precision inside that stretch; it must not be a word going missing, and it
+// must not be a cut that cannot be halved again.
+func TestAHalvedStretchKeepsAllOfItsWords(t *testing.T) {
+	words := strings.Fields("a b c d e f g h i j k l")
+	quiet := []span{{s: 28, e: 32}}
+	lo, hi := splitSpan(alignSpan{s: 0, e: 60, words: words}, quiet)
+	if len(lo.words)+len(hi.words) != len(words) {
+		t.Errorf("halves hold %d and %d of %d words", len(lo.words), len(hi.words), len(words))
+	}
+	if strings.Join(append(append([]string{}, lo.words...), hi.words...), " ") != strings.Join(words, " ") {
+		t.Error("the halves do not read as the whole")
+	}
+	if lo.e != hi.s {
+		t.Errorf("the halves meet at %.1f and %.1f", lo.e, hi.s)
+	}
+	if lo.e != 30 {
+		t.Errorf("the cut went to %.1f s, want 30 -- the middle of the silence beside it", lo.e)
+	}
+	// and never onto an edge, or halving a stretch would not make it smaller
+	for _, c := range []struct {
+		what  string
+		quiet []span
+	}{{"a silence at the very start", []span{{s: 0, e: 1}}},
+		{"a silence at the very end", []span{{s: 59, e: 60}}},
+		{"no silence at all", nil}} {
+		a, b := splitSpan(alignSpan{s: 0, e: 60, words: words}, c.quiet)
+		if a.e-a.s < 1 || b.e-b.s < 1 {
+			t.Errorf("%s: halves of %.1f s and %.1f s", c.what, a.e-a.s, b.e-b.s)
+		}
 	}
 }
 
@@ -350,8 +437,8 @@ func TestTheAlignerIsNeverHandedSilence(t *testing.T) {
 	// ...and the times that come back are offset by what was SENT, not by the
 	// window it was cut from -- the one arithmetic slip that would move every
 	// word of every window
-	body := funcBody(t, "align.go", `func \(a \*App\) alignInput\(`)
-	for _, want := range []string{"soundSpan(quiet, t0, t1)", "(w.s + s0) * sampleRate", "-ss\", fmt.Sprint(s0)"} {
+	body := funcBody(t, "align.go", `func \(a \*App\) alignSpanAt\(`)
+	for _, want := range []string{"soundSpan(quiet, sp.s, sp.e)", "(w.s + s0) * sampleRate", "-ss\", fmt.Sprint(s0)"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the window's own start is not carried through: want %q", want)
 		}

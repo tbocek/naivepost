@@ -52,61 +52,372 @@ func styleIndex(name string) uint {
 	return 1
 }
 
-// textSystem is the pass's wording.
-const textSystem = `You edit what was said down to what the finished video says.
+// textSystem is the pass's wording: one seam at a time.
+//
+// It used to be one call over the whole session, answering with the text of
+// the finished video. That asks a model to reproduce five thousand words while
+// making twenty surgical deletions, and the copy is the likeliest continuation
+// at every step: measured on a 63-minute lecture, 4743 words in and 4738 out,
+// with the retake at the first seam kept word for word. A seam at a time is a
+// small, local question with a small answer, and no copying to drift into.
+const textSystem = `You are repairing the join where a recording stopped and the next one started.
 
-You are given every word spoken in one session, in order, lowercase and without punctuation, as the speech recognizer heard it. A line break is a breath. "SEAM" is where one recording stops and the next begins. "(pause 4.6s)" is that much silence. The user context may carry the script: what was MEANT to be said. It is a hint and not the truth -- it writes 42 where the speaker says forty two, and a sentence not in it is the person talking, which stays.
+The speaker stumbled, stopped recording, and said it again -- sometimes starting a sentence or two further back. So the end of BEFORE and the start of AFTER can be the same thing said twice, and what the video plays has to run on as one.
 
-Answer with the text of the finished video, made from the words you were given by REMOVING WORDS ONLY. Never add a word, never change one, never reorder them; keep the spelling you were given. Leave the markers out.
+You are given the last words of BEFORE and the first words of AFTER, as they were said. Answer with the two of them RUN ON AS ONE, strict JSON and nothing else:
 
-Remove:
-- an attempt that was said again. The earlier one goes and the later one stays, always. When the later take starts further back than the mistake, everything it says again goes with it.
-- a false start: a few words broken off and never finished.
-- a fragment left hanging before a seam or a long pause, that the words after it do not carry on.
+  {"joined":"<the words of BEFORE and AFTER, in order, with the stumble left out>"}
 
-Keep everything else, off-script included: a word said once is in the video. If nothing was said twice and nothing broke off, answer with every word you were given.`
+THE TEST IS THE READING. Read your answer aloud. It has to be one piece of speech that makes sense: the sentence has to finish, and the paragraph has to say what the speaker was saying.
 
-// findTextEdit is the pass: the words in, the words out, the marks between.
+DELETE ONLY. Every word of your answer must be a word you were given, spelled as you were given it and in the order you were given it. Do not reword anything, do not add a word, do not move a word, do not repair the grammar of anything you keep. The ONLY thing you may do is leave words out.
+
+LEAVE OUT ONE STRETCH, AT THE JOIN. The words you leave out have to be next to each other and they have to be the ones either side of the join -- the end of BEFORE, the start of AFTER, or some of each. Never a stretch out of the middle of BEFORE, and never one further into AFTER.
+
+BEFORE gives way first: leave out the abandoned attempt off the end of BEFORE, going as far back as the repetition goes, and keep AFTER whole. Only where the join still does not read may you leave out words from the start of AFTER too, and then as few as possible -- what was said last is what the speaker meant to keep.
+
+Leaving nothing out is a whole answer, and the ordinary one. A speaker who stopped to change a slide did not stumble: give back everything you were given, word for word.`
+
+// There is no second pass over the middles of takes, and there was one.
+//
+// It asked, take by take, which stretches inside it were fumbles. On a
+// 42-minute lecture it answered with 23 removals, against 22 the joins found,
+// and three of the 23 were real. The rest took content out of grammatical
+// sentences -- typically the object of a verb, leaving a sentence that parses
+// and means nothing -- and several technical terms stopped appearing in the
+// script at all.
+//
+// It is not a wording that can be fixed. A pass asked "which stretches here are
+// fumbles" answers with stretches, and saying {"remove":[]} is the ordinary
+// answer did not stop it -- that sentence was in the prompt for all 23. The
+// question presupposes its answer.
+//
+// And it has no job. A read to camera is recorded by stopping when you stumble
+// and saying it again, so the mistakes are at the joins; that is what Lecture
+// MEANS, and the join pass already looks exactly there. What it cost was every
+// sentence it touched. What removing it costs is two or three real stumbles a
+// session, which are a word each in final.txt.
+
+// findTextEdit is the pass: one call per seam, the removals, the marks.
+//
+// The marks come straight out of the answers -- each is a run of words with
+// times of its own -- so nothing here has to match a text back against the
+// words. The finished text is WRITTEN from what survives (finalText), and it
+// is that file the hand-edit path reads back through the match (marksFromText).
 func (a *App) findTextEdit(rows []tsvRow) ([]retake, error) {
 	vids, auds := a.snapSources()
-	words := a.spokenWords(append(vids, auds...))
+	paths := append(vids, auds...)
+	words := a.spokenWords(paths)
 	if len(words) < 4 {
 		return nil, a.writeRetakes(nil)
 	}
-	user := a.ctxBlockFor("textedit") + "WHAT WAS SAID:\n" + textBrief(words)
+	seams := seamsOf(words)
+	if len(seams) == 0 {
+		// one recording, so no join to repair. Everything said stands, which
+		// is what a take nobody interrupted means.
+		a.logfIdle(">>> text edit: one recording, no seam to repair -- every word stands")
+		if err := a.writeFinalText(words, nil); err != nil {
+			return nil, err
+		}
+		return nil, a.writeRetakes(nil)
+	}
 	system := a.sysPrompt("textedit")
-	// the same words, the same context, the same wording: the same answer
-	// (llmcache.go). Prepare runs this pass on every press -- it is the last
-	// thing the step does, after everything above it has resumed from disk --
-	// so without the file it was the one call a re-run on unchanged material
-	// still paid for in full, over every word of the session.
+	drop := make([]bool, len(words))
+	asked, cached := 0, 0
+	for k, at := range seams {
+		if err := a.checkpoint(); err != nil {
+			return nil, err
+		}
+		a.prog(trackFix, 0, "repairing join %d/%d", k+1, len(seams))
+		cut, hit, err := a.askSeam(system, words, at, k, len(seams))
+		if err != nil {
+			return nil, err
+		}
+		asked++
+		if hit {
+			cached++
+		}
+		for i := at - cut.Before; i < at; i++ {
+			drop[i] = true
+		}
+		for i := at; i < at+cut.After; i++ {
+			drop[i] = true
+		}
+	}
+	a.logfIdle(">>> text edit: %d join(s) repaired, %d from the cache", asked, cached)
+
+	kept := make([]bool, len(words))
+	for i := range kept {
+		kept[i] = !drop[i]
+	}
+	// ...and then "keep the later" once more, at every join this leaves behind.
 	//
-	// Pressing ▶ again is not how a different edit is asked for: final.txt is
-	// edited by hand and Cut rebuilds the marks from it (marksFromText).
+	// A join can be repaired correctly and still leave a word or two standing
+	// on BOTH sides of the cut, and then the video says them twice. This is the
+	// mechanical backstop for that: it was already here for the hand-edited
+	// path (marksOfText) and the per-seam pass was written without it, which is
+	// how one stumble reached one video three times running.
+	for _, n := range dedupeJoins(words, kept) {
+		a.logfIdle(">>> text edit: %s", n)
+	}
+	// the text and the marks are one answer, so whatever the dedupe took goes
+	// out of both (writeFinalText reads drop, marksFrom reads kept)
+	for i := range drop {
+		drop[i] = !kept[i]
+	}
+	marks, notes := a.placeEdges(marksFrom(words, kept), paths, rows, words)
+	for _, n := range notes {
+		a.logfIdle(">>> text edit: %s", n)
+	}
+	marks = mergeMarks(marks)
+	gone := 0
+	for _, d := range drop {
+		if d {
+			gone++
+		}
+	}
+	for _, m := range marks {
+		a.logfIdle(">>> text edit: %s-%s goes (%q)", mmss(m.S), mmss(m.To), m.Text)
+	}
+	a.logfIdle(">>> text edit: %d of %d words removed in %d stretch(es)", gone, len(words), len(marks))
+	if err := a.writeFinalText(words, drop); err != nil {
+		return nil, err
+	}
+	return marks, a.writeRetakes(marks)
+}
+
+// seamCut is one join's answer, as the rest of the pass needs it: how many
+// words come off each side. It is worked out from the joined text the model
+// writes (seamCutOf), never read off a number the model was asked to count.
+type seamCut struct {
+	Before int
+	After  int
+}
+
+// seamsOf is where one recording's words end and the next one's begin: the
+// index of the first word of each later take.
+func seamsOf(words []srcWord) []int {
+	var out []int
+	for i := 1; i < len(words); i++ {
+		if words[i].src != words[i-1].src {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// seamReach is how many words either side of a join the model is shown. A
+// retake starts "a sentence or two further back", and seventy words is four or
+// five sentences of speech -- enough for the repetition to be inside the
+// window, short enough that the whole question fits on a screen.
+const seamReach = 70
+
+// How much of a join one answer may take out. A stumble is a phrase or a
+// sentence said twice; past that the model is rewriting the paragraph, which is
+// the one thing this pass must never be allowed to do.
+//
+// Two numbers because the window is not always seamReach either side: the first
+// join of a session may have twenty words in front of it, where forty is the
+// whole of it and a share is the only guard that means anything.
+const (
+	seamMaxWords = 40
+	seamCeil     = 0.6
+)
+
+// askSeam asks about one join and answers how much comes off each side.
+//
+// The model is asked for the JOINED TEXT, not for two numbers, and the numbers
+// are worked out here from what it left out.
+//
+// Counting was the whole trouble. Asked "how many words come off the end of
+// BEFORE", a model that has read the join correctly still has to count
+// backwards through a list it cannot index, and it came back short every time:
+// measured on one lecture, an abandoned attempt six words long was given up as
+// three, and a phrase said on both sides of the stop was left standing on both.
+// Writing the join out is the job it is good at, and it is the same job the
+// prompt already judges it by: READ IT.
+//
+// The answer can only take words away. It is matched back against the words it
+// was shown (keepMask, which is how a hand-edited final.txt is read), so a word
+// the model reworded, added or moved matches nothing and changes nothing, and
+// the worst a wandering answer can do is leave the join exactly as it was.
+func (a *App) askSeam(system string, words []srcWord, at, k, n int) (seamCut, bool, error) {
+	lo := max(0, at-seamReach)
+	hi := min(len(words), at+seamReach)
+	user := a.ctxBlockFor("textedit") + fmt.Sprintf(
+		"JOIN %d of %d.\n\nBEFORE (the end of the take that was interrupted):\n%s\n\n"+
+			"AFTER (the beginning of the take that follows):\n%s\n\n"+
+			"Answer {\"joined\":\"...\"} and nothing else: these %d words and then these %d, "+
+			"in that order, with the stretch at the join left out.",
+		k+1, n, seamWords(words[lo:at]), seamWords(words[at:hi]), at-lo, hi-at)
+
 	ask := askKey(system, user)
 	reply, hit := a.cachedReply("textedit", ask)
-	if hit {
-		a.logfIdle(">>> textedit: the same words and the same context — the edit came from the cache")
-	} else {
+	if !hit {
 		var err error
 		reply, err = a.llmChatRetry("textedit",
 			[]map[string]any{msg("system", system), msg("user", user)}, false)
 		if err != nil {
-			return nil, err
+			return seamCut{}, false, err
 		}
+	}
+	var got struct {
+		Joined string `json:"joined"`
+	}
+	if problem := jsonReply(reply, &got); problem != "" {
+		// a join nobody could answer for is a join that stays: the words on
+		// both sides of it were said, and keeping something said twice is a
+		// smaller fault than cutting something said once
+		a.logfIdle("!!! text edit: join %d: %s -- nothing removed there", k+1, problem)
+		return seamCut{}, hit, nil
+	}
+	cut, why := seamCutOf(words[lo:hi], at-lo, got.Joined)
+	if why != "" {
+		a.logfIdle("!!! text edit: join %d: %s -- nothing removed there", k+1, why)
+		return seamCut{}, hit, nil
+	}
+	if !hit {
 		a.keepReply("textedit", ask, reply)
 	}
-	// the text itself, beside the marks: it is the edit, and a person can
-	// read it -- or change it and cut again (marksFromText). Written first,
-	// so the marks are always the newer file of the two.
-	if err := os.WriteFile(a.finalText(), []byte(strings.TrimSpace(reply)+"\n"), 0o644); err != nil {
-		return nil, err
+	return cut, hit, nil
+}
+
+// seamCutOf turns the joined text back into how much comes off each side, or
+// says why it cannot be used. at is the index, within win, of the first word of
+// AFTER.
+//
+// The match is against WHAT WAS PRINTED, and that is the whole of the lesson
+// here. The model reads seamWords: the spelling the transcript pass settled on.
+// The words themselves carry a second spelling, the bare one the aligner heard,
+// and for a while the answer was matched against that instead. They are not the
+// same: the transcript folds a heard "das über datum" into a written "das
+// Über-Datum.", and one German lecture had sixty-four words folded that way.
+// Every fold looked to the match like a word the model had deliberately
+// dropped, so every answer read as several separate stretches and was refused
+// whole -- twenty-nine joins of a session, nought marks, while the very same
+// answers matched against the printed forms give ten clean cuts with not one
+// invented word between them.
+//
+// So the answer can only take words away, and what it may take words away from
+// is exactly the text it was shown.
+func seamCutOf(win []srcWord, at int, joined string) (seamCut, string) {
+	toks, owner := shownTokens(win)
+	ans := textTokens(joined)
+	if len(ans) == 0 {
+		return seamCut{}, "the answer has no words in it"
 	}
-	marks, ok := a.marksOfText(reply, words, rows, append(vids, auds...))
-	if !ok {
-		return nil, a.writeRetakes(nil)
+	// keepMask walks the answer backwards against the words, which is what
+	// prefers the LATER of two sayings -- the rule the whole pass runs on
+	shown := make([]srcWord, len(toks))
+	for i, t := range toks {
+		shown[i].w = t
 	}
-	return marks, a.writeRetakes(marks)
+	keptTok, _ := keepMask(shown, ans)
+	// a word survives if any of what was printed for it did: the transcript
+	// spells some single words as two, and half a spelling is not a deletion
+	kept := make([]bool, len(win))
+	for i, ok := range keptTok {
+		if ok {
+			kept[owner[i]] = true
+		}
+	}
+	first, last, gaps := -1, -1, 0
+	for i, k := range kept {
+		if k {
+			continue
+		}
+		if first < 0 {
+			first = i
+		} else if kept[i-1] {
+			gaps++ // a second stretch, somewhere else
+		}
+		last = i
+	}
+	if first < 0 {
+		return seamCut{}, "" // nothing left out, which is a whole answer
+	}
+	if gaps > 0 {
+		return seamCut{}, fmt.Sprintf("%d separate stretches left out, not one at the join", gaps+1)
+	}
+	// a stretch out of the middle of BEFORE is the model editing prose rather
+	// than repairing a stumble -- the removal that takes the object out of a
+	// sentence, leaving something that parses and means nothing
+	if first > at || last < at-1 {
+		return seamCut{}, fmt.Sprintf("the stretch left out (%q) does not touch the join",
+			seamWords(win[first:last+1]))
+	}
+	if n := last - first + 1; n > seamMaxWords || float64(n) > seamCeil*float64(len(win)) {
+		return seamCut{}, fmt.Sprintf("%d of the %d words left out -- that is not a repair",
+			n, len(win))
+	}
+	return seamCut{Before: at - first, After: last + 1 - at}, ""
+}
+
+// shownTokens is the window as the model reads it: one entry per word of what
+// seamWords printed, each saying which of the window's words it came from.
+//
+// Usually one token per word. Not always: where the transcript has words the
+// recogniser never heard, they ride on the next word that does have a time
+// (redress), so one word can print as two or three. Those tokens all point back
+// at the same word, and the word goes only if the whole of it went.
+func shownTokens(win []srcWord) (toks []string, owner []int) {
+	for i, w := range win {
+		n := 0
+		for _, f := range strings.Fields(seamWord(w)) {
+			if b := bareWord(f); b != "" {
+				toks = append(toks, b)
+				owner = append(owner, i)
+				n++
+			}
+		}
+		if n == 0 {
+			// nothing printable at all: a token of its own so the walk keeps
+			// its place, and one the answer will never match
+			toks = append(toks, "")
+			owner = append(owner, i)
+		}
+	}
+	return toks, owner
+}
+
+// seamWords is one side of a join as the model reads it: the words as they are
+// WRITTEN -- the case and punctuation the transcript pass settled on -- because
+// the question is whether the join reads as a sentence, and a lower-case stream
+// with no stops in it has no sentences to read. The match that follows is on
+// the bare forms either way (textTokens), so what is shown here changes nothing
+// about how an answer is understood.
+func seamWords(ws []srcWord) string {
+	var b []string
+	for _, w := range ws {
+		b = append(b, seamWord(w))
+	}
+	return strings.Join(b, " ")
+}
+
+// seamWord is one word as it is shown and as it is written out: the spelling
+// the transcript pass settled on, or the bare one it was heard as where the
+// fold left it none. Never empty -- a word with nothing to print is still a
+// word of the recording, and leaving it out would shift every number after it
+// off the word it names (seamNumbered).
+func seamWord(w srcWord) string {
+	if w.raw != "" {
+		return w.raw
+	}
+	return w.w
+}
+
+// writeFinalText writes the finished text: the words that survive, as they are
+// written. It is the edit, and a person can read it -- or change it and cut
+// again (marksFromText), which is why it is punctuated rather than the bare
+// stream the match works in.
+func (a *App) writeFinalText(words []srcWord, drop []bool) error {
+	var keep []srcWord
+	for i, w := range words {
+		if drop == nil || !drop[i] {
+			keep = append(keep, w)
+		}
+	}
+	return os.WriteFile(a.finalText(), []byte(seamWords(keep)+"\n"), 0o644)
 }
 
 // finalText is where the edit lives: the words of the finished video.
@@ -196,29 +507,6 @@ func (a *App) spokenWords(paths []string) []srcWord {
 		}
 	}
 	return out
-}
-
-// textBrief is the words as the model reads them: one line per breath, a
-// SEAM where the recording changes, and the long pauses said in seconds.
-func textBrief(words []srcWord) string {
-	var b strings.Builder
-	for i, w := range words {
-		if i > 0 {
-			p := words[i-1]
-			switch gap := w.s - p.e; {
-			case w.src != p.src:
-				b.WriteString("\nSEAM\n")
-			case gap >= retakePause:
-				fmt.Fprintf(&b, "\n(pause %.1fs)\n", gap)
-			case gap >= mergeGap:
-				b.WriteString("\n")
-			default:
-				b.WriteString(" ")
-			}
-		}
-		b.WriteString(w.w)
-	}
-	return b.String()
 }
 
 // textTokens is the answer as words: whatever it was wrapped in, bare and

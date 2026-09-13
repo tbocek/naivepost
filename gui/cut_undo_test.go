@@ -189,7 +189,7 @@ func TestVisibleFramesAreTheSameFramesEitherWay(t *testing.T) {
 	// the ruler's visible span, same idea: at the top zoom a tick a second over
 	// an hour is 3600 labels, of which a window holds about twenty
 	ticks := 0
-	for _, pps := range []float64{0.33, 4, 20, 120} {
+	for _, pps := range []float64{0.33, 4, 20, maxPps} {
 		stepS := tickStep(pps)
 		from, to := 1000.0/pps, (1000.0+view)/pps // a window somewhere in the middle
 		for t := math.Ceil(from/stepS) * stepS; t < to; t += stepS {

@@ -201,3 +201,29 @@ func TestTheASRHalvesItsChunkRatherThanFailing(t *testing.T) {
 		t.Error("asrLongAt asks the model again instead of using the limit it was given")
 	}
 }
+
+// The user context is one box for the whole session, so it carries
+// instructions for jobs other than the one reading it -- a title, a
+// description, a thumbnail. It shipped that way and the text edit answered
+// with them: a session whose context said a title and a one-paragraph
+// description got back exactly those, 668 bytes where 32'000 characters of
+// speech went in. Nothing matched, nothing was marked, and Cut kept every
+// filmed second including the stumbles the pass exists to remove.
+func TestAContextInstructionForAnotherJobIsNotAnInstruction(t *testing.T) {
+	// said once, to every job, where the context's own rule is stated
+	for _, want := range []string{
+		"every job is given the same copy",
+		"An instruction that names a step or a thing another job makes is that job's",
+		"answer your own question, in your own shape, and leave it alone",
+	} {
+		if !strings.Contains(ctxRule, want) {
+			t.Errorf("ctxRule no longer says %q", want)
+		}
+	}
+	// ...and the text edit's answer may only DELETE from the words it was
+	// shown, so a title or a paragraph arriving there matches nothing and
+	// changes nothing (seamCutOf)
+	if !strings.Contains(textSystem, `{"joined":`) || !strings.Contains(textSystem, "DELETE ONLY") {
+		t.Error("the text edit accepts an answer that is not made of the words it gave")
+	}
+}

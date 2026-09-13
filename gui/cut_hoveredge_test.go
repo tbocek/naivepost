@@ -232,9 +232,12 @@ func TestTheHoverIsWired(t *testing.T) {
 		// hover on both bands, and the pointer follows it
 		"hover.ConnectMotion(func(x, y float64) { ed.hoverTracks(x, y) })",
 		"hover.ConnectMotion(func(x, y float64) { ed.hoverLanes(x, y) })",
-		// the right press takes the border, the drag trims it
-		"if ed.onHeldEdge(px) || ed.grabEdge(px) {",
-		"ed.moveEdgeTo(ed.tAtView(slideX0+ox), true)",
+		// either press takes the border the hover highlighted, and the drag
+		// trims it -- the pointer showed the same arrow for both buttons
+		"if ed.trimGrab(px) {",
+		"ed.trimGrab(x+ed.viewX)",
+		"ed.trimTo(ed.tAtView(slideX0 + ox))",
+		"ed.trimTo(ed.tAtView(dragStartX + ox))",
 		// the second click is the only way to a whole clip
 		"pick.SetButton(gdk.BUTTON_PRIMARY)",
 		"if n < 2 {",

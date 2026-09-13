@@ -183,21 +183,55 @@ func (ed *cutEditor) foldBadges() []foldBadge {
 	return out
 }
 
-// foldBadgeX: the badge sits in the middle of a gap between two clips (the ends
-// are grips). The head and tail gaps are not between anything, so their badge
-// goes just INSIDE the first/last clip, killIn from the border -- never past
-// that clip's middle, which is its ✕.
+// foldBadgeX: the badge sits in the middle of the gap it folds, wherever that
+// gap is. Its ends are grips, and its middle is the one part of it a press can
+// only mean one thing on.
+//
+// Two gaps do not get that: the one that opens the tape and the one that closes
+// it. Their middle is an arbitrary point in the void -- they are the longest
+// gaps on the page -- and their far end IS the edge of the page, where a badge
+// floats in black with nothing to say which timeline it is on. So those go just
+// INSIDE the clip they run up against, killIn from the border and never past
+// that clip's middle, which is its ✕. A gap with no room for the badge at all,
+// a folded one drawn as a seam (foldPx), goes the same way.
+//
+// EVERY head and tail used to take that fallback, on the grounds that a gap at
+// a recording's own edge is "not between anything". Between two recordings it
+// is: the tail of one take and the head of the next are two separate foldable
+// stretches with the unfilmed border between them, and pinning both badges to
+// the inner ends of the bars drew them as one gap wearing a control at each
+// end. They are two gaps, and each one now says so by wearing its own.
 func (ed *cutEditor) foldBadgeX(g foldGap, x0, x1 float64) float64 {
 	mid := (x0 + x1) / 2
-	head, tail := ed.headTail(g)
-	switch {
-	case head:
-		mid = ed.insideBar(g.t1, true)
-	case tail:
-		mid = ed.insideBar(g.t0, false)
+	opens, closes := ed.endsOfTape(g)
+	if x1-x0 < foldMin || opens || closes {
+		head, tail := ed.headTail(g)
+		switch {
+		case head:
+			mid = ed.insideBar(g.t1, true)
+		case tail:
+			mid = ed.insideBar(g.t0, false)
+		}
 	}
 	const plate = segKillR + segKillPad
 	return math.Max(plate, math.Min(mid, ed.totalW-plate))
+}
+
+// endsOfTape says whether a gap is the one that opens the whole tape or the one
+// that closes it -- the two whose far end is the edge of the page. Asked of the
+// filmed runs, not of the clock: a session begins when the first camera started
+// rolling, and the hours before that are not a gap anyone can see.
+func (ed *cutEditor) endsOfTape(g foldGap) (opens, closes bool) {
+	runs := ed.runs()
+	if len(runs) == 0 {
+		return false, false
+	}
+	first, last := runs[0].t0, runs[0].t1
+	for _, r := range runs[1:] {
+		first = math.Min(first, r.t0)
+		last = math.Max(last, r.t1)
+	}
+	return g.t0 <= first+0.01, g.t1 >= last-0.01
 }
 
 // insideBar is a point killIn inside the kept clip that starts (or ends) at
