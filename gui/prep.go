@@ -143,9 +143,10 @@ func (a *App) buildSources() *gtk.Box {
 	addBtn := gtk.NewButtonWithLabel("Add source files…")
 	addBtn.SetTooltipText("Add recordings or footage — several at once")
 	addBtn.ConnectClicked(a.addFilesDialog)
-	addDirBtn := gtk.NewButtonWithLabel("Add source folder…")
-	addDirBtn.SetTooltipText("Add everything playable in a folder")
-	addDirBtn.ConnectClicked(a.addFolderDialog)
+	// "Add source folder…" was beside it. Nobody used it -- a session's
+	// recordings are picked by name -- and files picked by name are the one
+	// shape that works everywhere, a Flatpak's portal file chooser included,
+	// where a folder handed over whole is a different and weaker grant.
 	// The legend was here: the four row icons with their words, once, along
 	// the top of the list. It cost a line of the page permanently to answer a
 	// question asked twice -- and it answered it a hand's width away from the
@@ -175,7 +176,6 @@ func (a *App) buildSources() *gtk.Box {
 
 	addRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	addRow.Append(addBtn)
-	addRow.Append(addDirBtn)
 	addRow.Append(a.copyTick)
 
 	listScroll := gtk.NewScrolledWindow()

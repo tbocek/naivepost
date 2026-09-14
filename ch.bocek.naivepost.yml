@@ -1,0 +1,115 @@
+# Flatpak manifest for naivepost. Built by `./release.sh flatpak`, which
+# vendors the Go modules first, because flatpak-builder builds with the
+# network off.
+#
+# What is in the runtime and therefore NOT built here, checked on GNOME 50:
+#   - GTK 4 and GStreamer, including gtk4paintablesink (libgstgtk4.so), which
+#     is the video sink the preview needs and which most distributions do not
+#     package;
+#   - ffmpeg and ffprobe as programs, with every filter the app uses;
+#   - h264 encoding (libx264, vaapi, nvenc), aac, opus, vp9, av1, mov_text and
+#     webvtt -- the patent-encumbered part of that comes from the codecs-extra
+#     extension declared below, which Flathub installs beside the app.
+# So ffmpeg is inside the sandbox, and the app finds it on PATH exactly as it
+# does outside.
+#
+# Permissions, and why each:
+#   --share=network        the four model servers are reached over HTTP. There
+#                          is no localhost-only grant in Flatpak.
+#   --socket=pulseaudio    the preview plays sound.
+#   --device=dri           the preview is drawn through GL.
+#   no --filesystem        files are chosen one by one in the file dialog, and
+#                          a project is a folder named in a Save dialog; both go
+#                          through the portal and the grant follows the choice.
+#                          A user who wants a folder open without asking can
+#                          add one with `flatpak override --filesystem=...`.
+# What the app does differently inside: it writes no desktop entry of its own
+# (Flatpak exports the one below) and offers the model no web search, because
+# there is no host browser to launch (gui/icon.go, gui/websearch.go).
+
+app-id: ch.bocek.naivepost
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: naivepost
+
+add-extensions:
+  org.freedesktop.Platform.codecs-extra:
+    directory: lib/codecs-extra
+    version: '25.08-extra'
+    add-ld-path: lib
+    no-autodownload: false
+    autodelete: false
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --socket=pulseaudio
+  - --share=network
+
+build-options:
+  append-path: /usr/lib/sdk/golang/bin
+  env:
+    GOFLAGS: -mod=vendor -trimpath -buildvcs=false
+    GOCACHE: /run/build/naivepost/.gocache
+    CGO_ENABLED: '1'
+
+modules:
+  - name: naivepost
+    buildsystem: simple
+    build-commands:
+      - cd gui && go build -ldflags "-s -w" -o /app/bin/naivepost .
+      # the icon tree twice: where freedesktop looks, and beside the binary,
+      # which is where the app itself looks first (gui/icon.go iconDirs)
+      - mkdir -p /app/share && cp -r gui/icons /app/share/
+      - ln -s ../share/icons /app/bin/icons
+      - install -Dm644 gui/icons/hicolor/scalable/apps/ch.bocek.naivepost.svg
+          /app/share/icons/hicolor/scalable/apps/ch.bocek.naivepost.svg
+      - install -Dm644 gui/icons/hicolor/symbolic/apps/ch.bocek.naivepost-symbolic.svg
+          /app/share/icons/hicolor/symbolic/apps/ch.bocek.naivepost-symbolic.svg
+      - install -Dm644 ch.bocek.naivepost.desktop /app/share/applications/ch.bocek.naivepost.desktop
+      - install -Dm644 ch.bocek.naivepost.metainfo.xml /app/share/metainfo/ch.bocek.naivepost.metainfo.xml
+      - mkdir -p /app/lib/codecs-extra
+    sources:
+      # the checkout itself, with gui/vendor/ already made by release.sh
+      - type: dir
+        path: .
+        skip:
+          - dist
+          - docs
+          - .flatpak-builder
+          - .git
+      - type: inline
+        dest-filename: ch.bocek.naivepost.desktop
+        contents: |
+          [Desktop Entry]
+          Type=Application
+          Name=Naivepost
+          Comment=An almost linear video editor
+          Exec=naivepost %f
+          Icon=ch.bocek.naivepost
+          Terminal=false
+          Categories=AudioVideo;Video;AudioVideoEditing;
+          MimeType=video/x-matroska;video/mp4;video/webm;video/quicktime;
+      - type: inline
+        dest-filename: ch.bocek.naivepost.metainfo.xml
+        contents: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <component type="desktop-application">
+            <id>ch.bocek.naivepost</id>
+            <name>Naivepost</name>
+            <summary>An almost linear video editor</summary>
+            <metadata_license>CC0-1.0</metadata_license>
+            <description>
+              <p>A desktop editor for sessions you have already recorded. Four workflows, run in order: Prepare, Cut, Narrate, Produce. Models on your own machine do the tedious half, and every answer they give is a proposal you can overrule.</p>
+              <p>It talks to four local servers over HTTP: an OpenAI-compatible LLM, audio.cpp for speech, alignment, diarization and voices, and sd.cpp for a drawn thumbnail. None is bundled; run them where you like and name them in Settings.</p>
+            </description>
+            <launchable type="desktop-id">ch.bocek.naivepost.desktop</launchable>
+            <url type="homepage">https://github.com/tbocek/naivepost</url>
+            <provides><binary>naivepost</binary></provides>
+            <content_rating type="oars-1.1"/>
+          </component>

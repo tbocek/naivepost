@@ -132,7 +132,16 @@ func or(v, def string) string {
 // Test on a differently-stocked server into a failure about a name nobody
 // typed.
 func (c appConf) withDefaults() appConf {
-	c.Voices = or(c.Voices, defVoices)
+	// inside a Flatpak the shared folder is not visible unless the user
+	// granted it, so the default is a folder of the sandbox's own, which "Add
+	// file…" can write to; the wav is sent to the server with each request,
+	// so the server needs no view of it. Pointing AUDIOCPP_VOICES at the
+	// shared folder still works once the folder is granted (flatpak override).
+	if inFlatpak() {
+		c.Voices = or(c.Voices, filepath.Join(dataHome(), "naivepost", "voices"))
+	} else {
+		c.Voices = or(c.Voices, defVoices)
+	}
 	c.ASRModel = or(c.ASRModel, defASRModel)
 	c.DiarModel = or(c.DiarModel, defDiarModel)
 	c.TTSModel = or(c.TTSModel, defTTSModel)

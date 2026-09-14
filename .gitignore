@@ -15,3 +15,6 @@ publish/
 *.json
 test*
 cache
+dist/
+gui/vendor/
+.flatpak-builder/

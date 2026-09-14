@@ -202,6 +202,20 @@ cd gui && go build && ./gui
 
 Go 1.26, GTK4 via gotk4. No libadwaita.
 
+To ship it, `./release.sh` tags the next version (v0.1, v0.2, ...) and pushes
+the tag; GitHub Actions (`.github/workflows/release.yml`) then runs the tests,
+builds a Flatpak and an AppImage and attaches both to the release. The same
+builds run locally with `./release.sh flatpak` (flatpak-builder needed, from
+`ch.bocek.naivepost.yml`) and `./release.sh appimage` (docker or podman
+needed, built in a Debian testing container); both land in `dist/`. Prefer the
+Flatpak where Flatpak exists: the GNOME runtime already carries GTK4, the GTK4
+video sink, GStreamer and an ffmpeg with h264, so nothing is bundled by hand
+and ffmpeg is inside the sandbox. The four servers are not in either; the app
+reaches them over HTTP wherever you run them. The AppImage also expects what
+any desktop has: an icon theme, GL, the X11/Wayland and text libraries. Inside
+Flatpak the app writes no desktop entry of its own and offers the model no web
+search.
+
 One package. The pipeline files -- transcribe, align, describe, fix, translate,
 the LLM and image clients -- touch no widget, and `gui/seam.go` says exactly
 what they may take from the application: an interface `*App` satisfies, plus

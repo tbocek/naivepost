@@ -201,8 +201,7 @@ func TestTheSourceListSaysWhatItIsWithoutAHeadingOverIt(t *testing.T) {
 	if strings.Contains(body, `gtk.NewLabel("Sources")`) {
 		t.Error("the Sources heading is back over the list it is the only one of")
 	}
-	for _, want := range []string{`gtk.NewButtonWithLabel("Add source files…")`,
-		`gtk.NewButtonWithLabel("Add source folder…")`} {
+	for _, want := range []string{`gtk.NewButtonWithLabel("Add source files…")`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the add buttons no longer say what they add: want %s", want)
 		}

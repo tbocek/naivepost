@@ -1017,10 +1017,15 @@ func TestAddingASourceAsksWhetherToCopyItIn(t *testing.T) {
 	if now, _ := os.Stat(to); now.ModTime() != stat.ModTime() {
 		t.Error("the second add copied the file again")
 	}
-	// both Add buttons go through the one decision...
+	// Add goes through the one decision... (there were two Add buttons, files
+	// and folder; the folder one went, because recordings are picked by name
+	// and that is the one shape a portal file chooser has)
 	src2 := readSrc(t, "project.go")
-	if n := strings.Count(src2, "a.askImport"); n != 2 {
-		t.Errorf("%d of the two Add buttons decide where the file should live, want 2", n)
+	if n := strings.Count(src2, "a.askImport"); n != 1 {
+		t.Errorf("%d Add paths decide where the file should live, want the one", n)
+	}
+	if strings.Contains(readSrc(t, "prep.go"), `NewButtonWithLabel("Add source folder`) || strings.Contains(src2, "func (a *App) addFolderDialog") {
+		t.Error("the folder button is back")
 	}
 	// ...which is a setting of the project, not a question per file: copy by
 	// default, and the tick beside the buttons turns it off

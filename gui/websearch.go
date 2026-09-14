@@ -486,6 +486,12 @@ func webTools() []map[string]any {
 // hand and the settings do not say off, nothing otherwise -- and the reason,
 // once, in the log, so a run with no searches in it says why.
 func (a *App) webToolsFor(step string) ([]map[string]any, string) {
+	// a sandbox has no host browser to launch; the model writes only what the
+	// material shows, which is the rule anyway
+	if inFlatpak() {
+		a.logfIdle(">>> %s: no web search inside Flatpak", step)
+		return nil, ""
+	}
 	bin, err := firefoxBin(a.readConf().Firefox)
 	if err != nil {
 		a.logfIdle(">>> %s: no web search (%v)", step, err)

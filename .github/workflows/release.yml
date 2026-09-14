@@ -1,0 +1,72 @@
+# On a tag v*: test, then build the AppImage and the Flatpak, and attach both
+# to a GitHub release for that tag. The builds are the same ones release.sh
+# does by hand; nothing is done here that cannot be done locally.
+#
+# Tests do not run on the runner itself: ubuntu-latest has GLib 2.80 and the
+# Go bindings (gotk4 0.4.1) need 2.86, so they compile in a Debian testing
+# container, the same distribution the AppImage is built in.
+
+name: release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: debian:forky
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            ca-certificates git build-essential pkg-config \
+            libgtk-4-dev libgraphene-1.0-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-dev \
+            libjson-glib-dev libgirepository1.0-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-gtk4 ffmpeg
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: gui/go.mod
+      - run: cd gui && go vet ./... && go test ./...
+
+  appimage:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # release.sh builds inside a debian:forky container; docker is on the runner
+      - run: VERSION=$GITHUB_REF_NAME ./release.sh appimage
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/naivepost-*.AppImage
+          generate_release_notes: true
+
+  flatpak:
+    needs: test
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+      # flatpak-builder has no network during the build, so the Go modules go
+      # in as a vendor tree, exactly as release.sh flatpak does
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: gui/go.mod
+      - run: cd gui && go mod vendor
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: ch.bocek.naivepost.yml
+          bundle: naivepost-${{ github.ref_name }}.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
+          upload-artifact: false
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: naivepost-*.flatpak
+          generate_release_notes: true

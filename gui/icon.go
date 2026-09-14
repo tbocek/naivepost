@@ -22,7 +22,7 @@ import (
 
 // appID is the application id, the icon name and the base name of both svgs.
 // One string: see above.
-const appID = "li.jos.naivepost"
+const appID = "ch.bocek.naivepost"
 
 // iconDirs is where the hicolor tree might be, best guess first: beside the
 // binary (an installed or built copy: <somewhere>/gui/naivepost-gui with
@@ -153,6 +153,13 @@ func dataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
+// inFlatpak is whether this process runs inside a Flatpak sandbox. The file
+// is the sandbox's own description of itself and is the documented way to ask.
+func inFlatpak() bool {
+	_, err := os.Stat("/.flatpak-info")
+	return err == nil
+}
+
 // builtOnTheFly reports whether this binary is one the go tool made to run
 // once: `go run .` and `go test` both build into a cache directory that is
 // deleted on exit, and an entry pointing there launches nothing. Such a run
@@ -256,6 +263,12 @@ func (a *App) installDesktop() {
 		exe = p
 	}
 	if builtOnTheFly(exe) {
+		return
+	}
+	// under Flatpak the desktop entry, icon and MIME type are exported by
+	// Flatpak from the manifest, and a file written here would point into a
+	// sandbox path the shell cannot launch
+	if inFlatpak() {
 		return
 	}
 	path := filepath.Join(data, "applications", appID+".desktop")

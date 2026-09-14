@@ -892,24 +892,6 @@ func (a *App) addFilesDialog() {
 	a.pickFiles("Add sources", a.vidDir, extFilter("Audio and video", exts...), a.askImport)
 }
 
-// addFolderDialog adds everything playable in a folder: how a session arrives
-// off a card, and what the two folder pickers on this page used to be for.
-func (a *App) addFolderDialog() {
-	a.pickFolder("Add every recording in a folder", a.vidDir, func(dir string) {
-		names := listMedia(dir)
-		if len(names) == 0 {
-			a.logf("nothing added: %s holds no video or audio files", dir)
-			a.setStatus("nothing playable in that folder")
-			return
-		}
-		var paths []string
-		for _, n := range names {
-			paths = append(paths, filepath.Join(dir, n))
-		}
-		a.askImport(paths)
-	})
-}
-
 // addSources puts files in the list and remembers where they came from, so the
 // next chooser opens where the last one did. The two folders are no longer what
 // the list is made of -- they are only where it starts looking.
