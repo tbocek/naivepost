@@ -56,11 +56,19 @@ const (
 	// 90 s passes, 150 s does not), and its slot names mean nothing across
 	// requests. Every window therefore carries the same short anchor clip of
 	// known voices in front; whichever slot owns an anchor block IS that voice.
-	diarWin     = 90.0 // the longest window, and the first one tried (diarWins)
-	anchorPer   = 12.0 // seconds of each voice in the anchor, at diarWin
-	anchorMin   = 4.0  // speech that makes a slot count as a voice
-	minAnchorOv = 0.5  // anchor-block overlap to claim a slot
-	diarTurnGap = 0.5  // merge same-speaker turns closer than this
+	diarWin   = 90.0 // the longest window, and the first one tried (diarWins)
+	anchorPer = 12.0 // seconds of each voice in the anchor, at diarWin
+	// shortTake is the length under which a recording is a start/stop rather
+	// than a take: the recorder was opened and closed again. Such a file
+	// carries no speech, no anchor for a voice, and not even one whole frame
+	// interval; it is written up as silence and the run carries on.
+	shortTake = 2.0
+	// anchorCut is the shortest stretch of one voice worth cutting into the
+	// anchor; anything under it cannot carry a voice
+	anchorCut   = 0.3
+	anchorMin   = 4.0 // speech that makes a slot count as a voice
+	minAnchorOv = 0.5 // anchor-block overlap to claim a slot
+	diarTurnGap = 0.5 // merge same-speaker turns closer than this
 	// pass 1's stride as a share of the window: it only has to see each voice
 	// once, so it steps two thirds of a window and overlaps the rest.
 	diarHopShare = 2.0 / 3.0
@@ -459,6 +467,15 @@ func (a *App) transcribe(input, inDir string, base, unit float64) error {
 		return err
 	}
 	a.logfIdle(">>> [%s] %.1f s of audio", name, dur)
+	if dur < shortTake {
+		// a start/stop, not a take: the same files an empty recording gets,
+		// without asking three servers about %.1f s of nothing
+		a.logfIdle(">>> [%s] %.1f s long -- a start/stop, not a take: written up as silence", name, dur)
+		if err := writeSilence(out); err != nil {
+			return err
+		}
+		return a.mergeSegments(out)
+	}
 
 	if err := a.checkpoint(); err != nil {
 		return err
@@ -546,6 +563,20 @@ func (a *App) transcribe(input, inDir string, base, unit float64) error {
 		return fmt.Errorf("merge: %w", err)
 	}
 	return nil
+}
+
+// writeSilence writes what a recording without speech leaves behind: an empty
+// transcript, a words.json with no words (the stage's resume marker, in the
+// shape the server answers) and no turns. No ASR pieces file: none is what a
+// recording transcribed in one request leaves, and the aligner takes that.
+func writeSilence(out string) error {
+	if err := os.WriteFile(filepath.Join(out, "transcript.txt"), []byte("\n"), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(out, "words.json"), []byte("{\"text\":\"\"}\n"), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(out, "turns.json"), []byte("[]\n"), 0o644)
 }
 
 // asrLong is one recording through the ASR in as many requests as its length
@@ -803,6 +834,34 @@ func (a *App) diarize(out string, dur float64, name string, base, unit float64) 
 	return err
 }
 
+// anchorPiece is one stretch of one voice cut into the anchor.
+type anchorPiece struct {
+	src, len float64
+	slot     string
+}
+
+// anchorPieces takes up to per seconds of each voice from rows, which are in
+// slot order and then time order, skipping any stretch under anchorCut.
+func anchorPieces(rows []span, per float64) []anchorPiece {
+	var pieces []anchorPiece
+	acc := map[string]float64{}
+	for _, r := range rows {
+		if acc[r.slot] >= per {
+			continue
+		}
+		d := r.e - r.s
+		if d > per-acc[r.slot] {
+			d = per - acc[r.slot]
+		}
+		if d < anchorCut {
+			continue
+		}
+		acc[r.slot] += d
+		pieces = append(pieces, anchorPiece{r.s, d, r.slot})
+	}
+	return pieces
+}
+
 // noRoom is whether the server refused for want of memory rather than for
 // anything about the request. Its own words, because the failure arrives as a
 // 500 with a message and nothing else to go on. Both the passes that hand it a
@@ -900,25 +959,13 @@ func (a *App) diarizeAt(out string, dur float64, name string, base, unit, win fl
 		}
 		return rows[i].s < rows[j].s
 	})
-	type piece struct {
-		src, len float64
-		slot     string
-	}
-	var pieces []piece
-	acc := map[string]float64{}
-	for _, r := range rows {
-		if acc[r.slot] >= per {
-			continue
-		}
-		d := r.e - r.s
-		if d > per-acc[r.slot] {
-			d = per - acc[r.slot]
-		}
-		if d < 0.3 { // too short to carry a voice
-			continue
-		}
-		acc[r.slot] += d
-		pieces = append(pieces, piece{r.s, d, r.slot})
+	pieces := anchorPieces(rows, per)
+	if len(pieces) == 0 {
+		// voices were heard but none for long enough to anchor -- a snippet
+		// under a second. Nothing to tell apart: no turns, same as no voices,
+		// and not an empty concat list for ffmpeg to refuse.
+		a.logfIdle(">>> [%s] diarization: no voice long enough to anchor -- no turns", name)
+		return os.WriteFile(turnsPath, []byte("[]\n"), 0o644)
 	}
 	var list strings.Builder
 	for i, p := range pieces {
@@ -1250,6 +1297,49 @@ func (a *App) mergeSegments(out string) error {
 
 // extractFrames dumps one video's frames into inputs/frames/<basename>/.
 // A marker file records interval + size, so re-runs skip until either changes.
+// frameChunk is one worker's share of a frame extraction: frames first..
+// first+n-1, from start for dur seconds.
+type frameChunk struct {
+	start, dur float64
+	first, n   int
+}
+
+// frameChunks splits total frames at one every interval over workers, in
+// chunks whose lengths are whole intervals so frame n is always t=(n-1)*interval.
+// The tail is never a single frame: the count is a rounding of the file's
+// length, and a lone last frame that turns out not to exist would leave that
+// worker with nothing written, which ffmpeg reports as an error. Folded into
+// the chunk before it, the same missing frame costs nothing -- ffmpeg stops at
+// the end of the file one frame short of its cap, and says nothing.
+func frameChunks(total, workers int, interval float64) []frameChunk {
+	per := (total + workers - 1) / workers
+	var chunks []frameChunk
+	for k := 0; k < workers; k++ {
+		n := min(per, total-k*per)
+		if n <= 0 {
+			break
+		}
+		chunks = append(chunks, frameChunk{float64(k*per) * interval, float64(n) * interval, k*per + 1, n})
+	}
+	if l := len(chunks); l >= 2 && chunks[l-1].n == 1 {
+		chunks[l-2].n++
+		chunks[l-2].dur += interval
+		chunks = chunks[:l-1]
+	}
+	return chunks
+}
+
+// frameFilter is the filter graph for a take of dur seconds sampled every
+// interval: the graph as built, or -- for a take shorter than one interval,
+// where fps would emit nothing -- the scale alone and the word to stop after
+// the first frame. With interval 0 every frame is wanted and nothing changes.
+func frameFilter(vf, scaleVF string, dur, interval float64) (string, bool) {
+	if interval > 0 && dur < interval {
+		return scaleVF, true
+	}
+	return vf, false
+}
+
 func (a *App) extractFrames(video string, interval float64, scaleName, scaleVF, inDir string, base, unit float64) error {
 	name := baseName(video)
 	fdir := filepath.Join(inDir, "frames", name)
@@ -1290,6 +1380,9 @@ func (a *App) extractFrames(video string, interval float64, scaleName, scaleVF, 
 	if err != nil {
 		return err
 	}
+	// shorter than one interval, the fps filter emits nothing and ffmpeg
+	// fails for having written no file; the first frame is the whole take
+	vf, oneFrame := frameFilter(vf, scaleVF, dur, interval)
 
 	// Extraction is decode-bound: to keep one frame per second the decoder
 	// still chews through every source frame. Splitting the timeline into
@@ -1300,7 +1393,11 @@ func (a *App) extractFrames(video string, interval float64, scaleName, scaleVF, 
 	workers = max(2, min(8, workers))
 	totalFrames := 0
 	if interval > 0 {
-		totalFrames = int(math.Ceil(dur / interval))
+		// what the fps filter emits over the whole file: the slot count rounded,
+		// not rounded up -- measured, and a 49.25 s file at 1 s is 49 frames. A
+		// count one too high sends the last worker after a frame that is not
+		// there, and a chunk that yields nothing is an ffmpeg error.
+		totalFrames = int(math.Round(dur / interval))
 		if totalFrames < workers*4 {
 			workers = 1
 		}
@@ -1313,6 +1410,9 @@ func (a *App) extractFrames(video string, interval float64, scaleName, scaleVF, 
 		if vf != "" { // "-vf" with an empty graph is an ffmpeg error
 			args = append(args, "-vf", vf)
 		}
+		if oneFrame {
+			args = append(args, "-frames:v", "1")
+		}
 		args = append(args, "-q:v", "4", "-start_number", "1", pattern)
 		if err := a.ffmpegProgress(dur, func(f float64) {
 			a.prog(trackFrames, base+f*unit, "extracting %.0f%%", f*100)
@@ -1320,10 +1420,9 @@ func (a *App) extractFrames(video string, interval float64, scaleName, scaleVF, 
 			return err
 		}
 	} else {
-		chunkFrames := (totalFrames + workers - 1) / workers
-		chunkDur := float64(chunkFrames) * interval
+		chunks := frameChunks(totalFrames, workers, interval)
 		var mu sync.Mutex
-		fracs := make([]float64, workers)
+		fracs := make([]float64, len(chunks))
 		report := func() {
 			mu.Lock()
 			sum := 0.0
@@ -1334,31 +1433,24 @@ func (a *App) extractFrames(video string, interval float64, scaleName, scaleVF, 
 			a.prog(trackFrames, base+sum*unit, "extracting %.0f%%", sum*100)
 		}
 		var wg sync.WaitGroup
-		errs := make([]error, workers)
-		for k := 0; k < workers; k++ {
-			n := chunkFrames
-			if k == workers-1 {
-				n = totalFrames - k*chunkFrames
-			}
-			if n <= 0 {
-				continue
-			}
+		errs := make([]error, len(chunks))
+		for k, c := range chunks {
 			wg.Add(1)
-			go func(k, n int) {
+			go func(k int, c frameChunk) {
 				defer wg.Done()
-				weight := float64(n) / float64(totalFrames)
-				errs[k] = a.ffmpegProgress(chunkDur, func(f float64) {
+				weight := float64(c.n) / float64(totalFrames)
+				errs[k] = a.ffmpegProgress(c.dur, func(f float64) {
 					mu.Lock()
 					fracs[k] = math.Min(1, f) * weight
 					mu.Unlock()
 					report()
 				}, "-v", "error", "-y",
-					"-ss", fmt.Sprintf("%f", float64(k)*chunkDur),
-					"-t", fmt.Sprintf("%f", chunkDur),
+					"-ss", fmt.Sprintf("%f", c.start),
+					"-t", fmt.Sprintf("%f", c.dur),
 					"-i", video, "-vf", vf, "-q:v", "4",
-					"-start_number", fmt.Sprint(k*chunkFrames+1),
-					"-frames:v", fmt.Sprint(n), pattern)
-			}(k, n)
+					"-start_number", fmt.Sprint(c.first),
+					"-frames:v", fmt.Sprint(c.n), pattern)
+			}(k, c)
 		}
 		wg.Wait()
 		stopped := false

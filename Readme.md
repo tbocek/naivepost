@@ -41,7 +41,10 @@ Pressing ▶ then does, in order:
    and everything else, and the two halves replace it for everything below.
 2. **Audio extraction and frames** — 16 kHz mono wav per source, and a JPEG out
    of the footage every *n* seconds (the Freq control; 1 s is typical).
-3. **Speech to text** — every source transcribed, with word-level times.
+3. **Speech to text** — every source transcribed, with word-level times. A file
+   under two seconds — a recorder opened and closed again — is written up as
+   silence without asking any server, and a video shorter than the frame
+   interval keeps its one frame.
 4. **Forced alignment** — a second pass that times each word to within about
    20 ms. This matters more than it sounds: the best transcriber here returns no
    word times at all, ASR timestamps elsewhere run a third of a second late, and
