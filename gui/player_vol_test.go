@@ -199,8 +199,15 @@ func TestTheGainNeverTouchesTheServersStreamVolume(t *testing.T) {
 	if !strings.Contains(reset, `"volume", 1.0`) || !strings.Contains(reset, `"mute", false`) {
 		t.Errorf("resetStreamVolume does not put the stream back to full and unmuted:\n%s", reset)
 	}
-	// every pipeline goes through it as it is built
-	for _, fn := range []string{`func NewPlayer\(`, `func newAux\(`} {
+	// every pipeline goes through it as it is built: the video pipelines --
+	// the one playing and the spare prerolling the next cut (player_spare.go)
+	// -- through videoPipe, which NewPlayer and Preload both build with, and
+	// the lanes through newAux
+	if !strings.Contains(funcBody(t, "player.go", `func NewPlayer\(`), "videoPipe(") ||
+		!strings.Contains(funcBody(t, "player_spare.go", `func \(p \*Player\) Preload\(`), "videoPipe(") {
+		t.Error("a video pipeline is built somewhere other than videoPipe")
+	}
+	for _, fn := range []string{`func videoPipe\(`, `func newAux\(`} {
 		b := funcBody(t, "player.go", fn)
 		if !strings.Contains(b, "audioFilter(") || !strings.Contains(b, "resetStreamVolume(pb)") {
 			t.Errorf("%s does not build the shared audio path and reset the stream volume:\n%s", fn, b)

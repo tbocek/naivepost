@@ -1013,7 +1013,7 @@ func (a *App) setupDialog() {
 	// the audio.cpp tests all aim at the same server; empty means the compose
 	// service on the loopback port
 	audioTarget := func() string {
-		if u := strings.TrimSpace(tts.Text()); u != "" {
+		if u := serverURL(tts.Text()); u != "" {
 			return u
 		}
 		return fmt.Sprintf("http://127.0.0.1:%d", ttsPort)
@@ -1181,7 +1181,7 @@ func (a *App) setupDialog() {
 	// -- the server has exactly one model, so "does it answer" and "is it the
 	// right one" are answered by the same capabilities call
 	sdTarget := func() string {
-		if u := strings.TrimRight(strings.TrimSpace(sd.Text()), "/"); u != "" {
+		if u := serverURL(sd.Text()); u != "" {
 			return u
 		}
 		return fmt.Sprintf("http://127.0.0.1:%d", sdPort)

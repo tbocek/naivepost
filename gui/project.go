@@ -615,6 +615,9 @@ func (a *App) startAutosave() {
 	if a.win != nil {
 		a.win.ConnectCloseRequest(func() bool {
 			a.narr.flushSave() // ...and the same for the last line typed
+			if a.ed != nil {
+				a.ed.flushLine() // the red line, as it stood when the window closed (cut_line.go)
+			}
 			a.flushProject()
 			a.flushPrompts()
 			return false // false lets the window close; this only writes

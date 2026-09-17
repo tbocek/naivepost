@@ -279,11 +279,13 @@ func TestTheTwoPlayButtonsAreWired(t *testing.T) {
 	}
 	src = readSrc(t, "cut.go")
 	for _, want := range []string{
-		// the pause face only while the cut itself is running
-		"if ed.playing() && ed.cutOnly {",
+		// the pause face only while the cut itself is running -- and not
+		// while the review runs it, whose own button wears that ⏸ (cut_review.go)
+		"if ed.playing() && ed.cutOnly && !ed.reviewOn {",
 		"ed.cutPlayIcon.SetFromIconName(\"media-playback-pause-symbolic\")",
-		// the lamp: a lit face for as long as the preview is the cut
-		"ed.cutPlayBtn.AddCSSClass(\"suggested-action\")",
+		// the lamp: a lit face for as long as the preview is the cut -- and
+		// not the review of it, which has the lamp then (cut_review.go)
+		"lamp(ed.cutPlayBtn, ed.cutOnly && !ed.reviewOn)",
 		// each button hands its own idea of the preview to the shared press
 		"ed.playBtn.ConnectClicked(func() { ed.playAs(false) })",
 		"ed.cutPlayBtn.ConnectClicked(func() { ed.playAs(true) })",

@@ -36,11 +36,11 @@ func (a *App) audioURL() string {
 // configuredAudio is the server the user pointed us at, from the settings file
 // or the environment; "" means the compose default on the loopback port.
 func (a *App) configuredAudio() string {
-	if u := a.readConf().TTS; u != "" {
+	if u := serverURL(a.readConf().TTS); u != "" {
 		return u
 	}
 	for _, k := range []string{"NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"} {
-		if u := strings.TrimRight(strings.TrimSpace(os.Getenv(k)), "/"); u != "" {
+		if u := serverURL(os.Getenv(k)); u != "" {
 			return u
 		}
 	}

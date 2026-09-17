@@ -182,7 +182,11 @@ func (a *App) syncPlayIcons() {
 		setPlayIcon(a.ed.playBtn, a.ed.playing() && !a.ed.cutOnly,
 			"play the recording from the playhead — every second of it, removed "+
 				"stretches included", "pause the preview")
+		// and its lamp: lit while the preview is the recording, as ▶✂ is lit
+		// while it is the cut and ▶✂✂ while it is the review (lamp)
+		lamp(a.ed.playBtn, !a.ed.cutOnly)
 		a.ed.syncCutPlay()
+		a.ed.syncReviewPlay() // and the third, whose ⏸ is only the review's
 	}
 	if n := a.narr; n != nil {
 		// the preview has no button of its own any more: the picture is its

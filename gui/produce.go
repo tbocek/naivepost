@@ -2042,15 +2042,10 @@ func (a *App) produce(segs []cutSeg, entries []narrEntry, st prodSettings, srcVi
 	if err := os.WriteFile(srtPath, []byte(srt), 0o644); err != nil {
 		return err
 	}
-	// ...and the same track in the other languages asked for (translate.go).
-	// For every choice, because every choice writes them beside the video: a
-	// picture with the words burned into it has one language IN it and is no
-	// reason to withhold the others. Answers are cached on the exact lines
-	// (llmcache.go), so a re-render translates nothing twice.
-	tracks := []subTrack{{code: a.asrLanguage(), tag: "und", path: srtPath, cues: cues}}
-	if cue > 0 {
-		tracks = a.subTracks(cues, clipDir, st.SubLangs)
-	}
+	// the other languages are translated AFTER the clips are encoded (below):
+	// the mux is the first thing that needs them, and the translation is an
+	// LLM call that queues behind the upload text's (llmgate.go) -- made
+	// here it would hold the encoder idle for as long as that took
 
 	// 4. encode each clip -- the only video encode in the whole pipeline
 	ext := "." + st.Container
@@ -2126,6 +2121,21 @@ func (a *App) produce(segs []cutSeg, entries []narrEntry, st prodSettings, srcVi
 
 	if err := a.checkpoint(); err != nil {
 		return err
+	}
+	// ...and the same track in the other languages asked for (translate.go).
+	// For every choice, because every choice writes them beside the video: a
+	// picture with the words burned into it has one language IN it and is no
+	// reason to withhold the others. Answers are cached on the exact lines
+	// (llmcache.go), so a re-render translates nothing twice. Here, with the
+	// encodes behind it: the burned-in words are the source language and
+	// never wait for this, and the mux just below is the first thing that
+	// reads a translated track.
+	tracks := []subTrack{{code: a.asrLanguage(), tag: "und", path: srtPath, cues: cues}}
+	if cue > 0 {
+		if len(st.SubLangs) > 0 {
+			a.prog(trackSTT, 0.94, "translating")
+		}
+		tracks = a.subTracks(cues, clipDir, st.SubLangs)
 	}
 	a.prog(trackSTT, 0.96, "loudness + mux")
 	if err := os.MkdirAll(filepath.Dir(st.OutFile), 0o755); err != nil {

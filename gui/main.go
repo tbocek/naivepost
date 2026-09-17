@@ -458,7 +458,9 @@ type App struct {
 	linkTag       *gtk.TextTag      // paths in the log that open on a click (logPath)
 	linkPaths     map[string]string // what a tagged path displays -> where it really is
 	llmMu         sync.Mutex        // guards llmSeq; describe calls from worker goroutines
-	llmSeq        int               // per-run counter naming the llm/ exchange files
+	gate          *llmGate          // one chat request on the wire at a time (llmgate.go)
+	gateMu        sync.Mutex
+	llmSeq        int // per-run counter naming the llm/ exchange files
 	// whether this video has a narration at all. The Narrate page's own
 	// checkbox writes it, the run refuses when it is set, and Produce hides
 	// what only a narration needs (narrate.go, produce.go).

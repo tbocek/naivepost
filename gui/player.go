@@ -82,6 +82,11 @@ type Player struct {
 	// pending segment, applied once the new uri has prerolled
 	pendStart, pendStop int64 // nanoseconds; pendStart < 0 = nothing pending
 	pendPlay            bool  // false = preroll only, show the first frame paused
+	// a second pipeline prerolled at wherever the line is about to be put
+	// next, so a cut is a swap and not a reload (Preload, player_spare.go).
+	// Built on the first Preload, so a player that never jumps -- Narrate's,
+	// the voice sample's -- never carries one.
+	spare *spare
 	// the clock the stream runs on: 1 is the footage's own, and a cut with
 	// speed effects in it moves this as the line crosses them (SetRate). Every
 	// seek in this file carries it, the separate recordings' seeks included,
@@ -103,32 +108,14 @@ type Player struct {
 func NewPlayer() (*Player, error) {
 	gst.Init()
 
-	pb := gst.ElementFactoryMake("playbin3", "playbin")
-	if pb == nil {
-		return nil, fmt.Errorf("playbin3 not available (gst-plugins-base)")
+	pb, gain, paintable, err := videoPipe("main")
+	if err != nil {
+		return nil, err
 	}
-	sink := gst.ElementFactoryMake("gtk4paintablesink", "videosink")
-	if sink == nil {
-		return nil, fmt.Errorf("gtk4paintablesink not available (pacman -S gst-plugin-gtk4)")
-	}
-	pb.SetObjectProperty("video-sink", sink)
-
-	pv := sink.ObjectProperty("paintable")
-	gobj, ok := pv.(gobject.Object)
-	if !ok {
-		return nil, fmt.Errorf("paintable property is %T, expected a gobject.Object", pv)
-	}
-	// ToGlibNone hands out the pointer without a transfer; Take refs it into
-	// gotk4's world, so both wrappers legitimately co-own the C object.
-	paintable := &gdk.Paintable{Object: coreglib.Take(gobject.UnsafeObjectToGlibNone(gobj))}
 
 	pic := gtk.NewPicture()
 	pic.SetPaintable(paintable)
 	pic.SetContentFit(gtk.ContentFitContain)
-
-	filter, gain := audioFilter("main")
-	pb.SetObjectProperty("audio-filter", filter)
-	resetStreamVolume(pb)
 
 	p := &Player{pb: pb, gain: gain, Picture: pic, video: paintable, pendStart: -1, pendStop: -1,
 		rate: 1, seekRate: 1, fxGain: 1}
@@ -136,50 +123,95 @@ func NewPlayer() (*Player, error) {
 	// and on the roll it visits when one of them moves
 	p.applyVol()
 	allPlayers = append(allPlayers, p)
+	p.watch(pb)
+	return p, nil
+}
 
-	// signal watch dispatches on the default main context, i.e. the GTK loop
+// videoPipe builds one video pipeline: playbin3 into a gtk4paintablesink,
+// with the app's own volume element in its audio path. Its paintable is what
+// a GtkPicture shows. Built twice per player that jumps -- the one playing
+// and the spare prerolling the next cut -- and once for every other.
+func videoPipe(name string) (pb, gain gst.Element, paintable gdk.Paintabler, err error) {
+	pb = gst.ElementFactoryMake("playbin3", name)
+	if pb == nil {
+		return nil, nil, nil, fmt.Errorf("playbin3 not available (gst-plugins-base)")
+	}
+	sink := gst.ElementFactoryMake("gtk4paintablesink", name+"sink")
+	if sink == nil {
+		return nil, nil, nil, fmt.Errorf("gtk4paintablesink not available (pacman -S gst-plugin-gtk4)")
+	}
+	pb.SetObjectProperty("video-sink", sink)
+
+	pv := sink.ObjectProperty("paintable")
+	gobj, ok := pv.(gobject.Object)
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("paintable property is %T, expected a gobject.Object", pv)
+	}
+	// ToGlibNone hands out the pointer without a transfer; Take refs it into
+	// gotk4's world, so both wrappers legitimately co-own the C object.
+	paintable = &gdk.Paintable{Object: coreglib.Take(gobject.UnsafeObjectToGlibNone(gobj))}
+
+	filter, gain := audioFilter(name)
+	pb.SetObjectProperty("audio-filter", filter)
+	resetStreamVolume(pb)
+	return pb, gain, paintable, nil
+}
+
+// watch puts the bus watch on one of this player's video pipelines. The
+// signal watch dispatches on the default main context, i.e. the GTK loop.
+// One handler for both pipelines, because which of them is the one playing
+// changes at every swap (PlaySegment): the message is read for whichever
+// role its pipeline has NOW.
+func (p *Player) watch(pb gst.Element) {
 	bus := pb.GetBus()
 	bus.AddSignalWatch()
 	bus.ConnectMessage(func(_ gst.Bus, msg *gst.Message) {
-		switch msg.Type() {
-		case gst.MessageAsyncDone:
-			if p.pendStart >= 0 {
-				start, stop := p.pendStart, p.pendStop
-				p.pendStart, p.pendStop = -1, -1
-				p.seekRate = p.rate
-				if stop > 0 {
-					p.pb.Seek(p.rate, gst.FormatTime,
-						gst.SeekFlagFlush|gst.SeekFlagAccurate,
-						gst.SeekTypeSet, start, gst.SeekTypeSet, stop)
-				} else {
-					p.pb.Seek(p.rate, gst.FormatTime,
-						gst.SeekFlagFlush|gst.SeekFlagAccurate,
-						gst.SeekTypeSet, start, gst.SeekTypeNone, 0)
-				}
-				if p.pendPlay {
-					p.pb.SetState(gst.StatePlaying)
-					p.setPlaying(true)
-				}
-			}
-		case gst.MessageEOS:
-			// freeze on the last frame instead of tearing the stream down
-			p.pb.SetState(gst.StatePaused)
-			p.ended = true
-			p.setPlaying(false)
-		case gst.MessageError:
-			errMsg, _ := msg.ParseError()
-			// the pipeline is done for; say so, and stop drawing ⏸ over a
-			// stream that has stopped
-			p.setPlaying(false)
-			if p.OnError != nil {
-				p.OnError(fmt.Sprint(errMsg))
-				return
-			}
-			fmt.Println("gst error:", errMsg)
+		if p.pb == pb {
+			p.mainMsg(msg)
+		} else if s := p.spare; s != nil && s.pb == pb {
+			s.msg(msg)
 		}
 	})
+}
 
-	return p, nil
+// mainMsg is the playing pipeline's bus.
+func (p *Player) mainMsg(msg *gst.Message) {
+	switch msg.Type() {
+	case gst.MessageAsyncDone:
+		if p.pendStart >= 0 {
+			start, stop := p.pendStart, p.pendStop
+			p.pendStart, p.pendStop = -1, -1
+			p.seekRate = p.rate
+			if stop > 0 {
+				p.pb.Seek(p.rate, gst.FormatTime,
+					gst.SeekFlagFlush|gst.SeekFlagAccurate,
+					gst.SeekTypeSet, start, gst.SeekTypeSet, stop)
+			} else {
+				p.pb.Seek(p.rate, gst.FormatTime,
+					gst.SeekFlagFlush|gst.SeekFlagAccurate,
+					gst.SeekTypeSet, start, gst.SeekTypeNone, 0)
+			}
+			if p.pendPlay {
+				p.pb.SetState(gst.StatePlaying)
+				p.setPlaying(true)
+			}
+		}
+	case gst.MessageEOS:
+		// freeze on the last frame instead of tearing the stream down
+		p.pb.SetState(gst.StatePaused)
+		p.ended = true
+		p.setPlaying(false)
+	case gst.MessageError:
+		errMsg, _ := msg.ParseError()
+		// the pipeline is done for; say so, and stop drawing ⏸ over a
+		// stream that has stopped
+		p.setPlaying(false)
+		if p.OnError != nil {
+			p.OnError(fmt.Sprint(errMsg))
+			return
+		}
+		fmt.Println("gst error:", errMsg)
+	}
 }
 
 // audioFilter is every pipeline's audio path: scaletempo (a rate other than 1
@@ -265,6 +297,9 @@ func fileURI(path string) string {
 // PlaySegment cues [start, stop) seconds of file; stop < 0 means to the end.
 // play=false prerolls only: the first frame shows, paused, until Toggle.
 func (p *Player) PlaySegment(file string, start, stop float64, play bool) {
+	if p.swapIn(file, start, stop, play) {
+		return // the spare had it prerolled: no reload, and no wait
+	}
 	p.pb.SetState(gst.StateReady)
 	p.pb.SetObjectProperty("uri", fileURI(file))
 	p.loaded = file
@@ -948,6 +983,7 @@ func (p *Player) Stop() {
 	}
 	p.loaded = ""
 	p.ended = false
+	p.dropSpare() // ⏹ is a fresh start for the next ▶, and that includes what was prerolled for it
 	p.dropCard()
 	p.SetMuted(false) // whatever was covering the sound is over with the stream
 	p.setPlaying(false)

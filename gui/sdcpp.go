@@ -29,10 +29,10 @@ const sdPort = 1234
 // the environment, for the same reason it does for audio.cpp: it is the one of
 // the two the user can see and clear.
 func (a *App) sdURL() string {
-	if u := strings.TrimRight(strings.TrimSpace(a.readConf().SD), "/"); u != "" {
+	if u := serverURL(a.readConf().SD); u != "" {
 		return u
 	}
-	if u := strings.TrimRight(strings.TrimSpace(os.Getenv("SD_SERVER")), "/"); u != "" {
+	if u := serverURL(os.Getenv("SD_SERVER")); u != "" {
 		return u
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d", sdPort)

@@ -1,5 +1,7 @@
 package main
 
+import "context"
+
 // The seam between the pipeline and the pages.
 //
 // Twenty-odd files in this package run the pipeline -- transcribe, align,
@@ -68,6 +70,9 @@ type runner interface {
 
 	// the record of a chat, written for the log page (llmlog.go)
 	recordChatStart(step string, thinking bool, msgs []map[string]any) *chatRec
+	// one chat request on the wire at a time, across every step (llmgate.go)
+	takeLLM(ctx context.Context, step string) error
+	giveLLM()
 }
 
 var _ runner = (*App)(nil)

@@ -122,7 +122,14 @@ The page opens as soon as there is footage — you can lay the session out, see
 where takes fall against each other, shift a recording by hand and listen,
 before anything has been transcribed.
 
-▶ asks the model for a cut. From then on it is yours: drag to select, ＋ Add,
+▶ asks the model for a cut. The toolbar has three ▶s of its own: plain ▶ plays
+the recording, every second of it; ▶✂ plays the cut, removed stretches skipped,
+with the clock on the finished video's time; ▶✂✂ reviews the cuts — ten seconds
+of the finished video before each join and ten after it, one join after the
+other, stopping after the last — so every splice is heard in one sitting
+without watching the minutes between them.
+
+From then on the cut is yours: drag to select, ＋ Add,
 ✕ to drop, ⌦ for whatever is in hand, Revert to go back to the suggestion.
 **Trim a clip edge by dragging it** — with either button, on the pictures or on
 the green bar above them — or ‹f and f› a frame at a time once it is in hand.

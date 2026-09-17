@@ -613,6 +613,17 @@ type cutEditor struct {
 	// because the label was two glyphs and the pause one falls to another font
 	// -- see syncCutPlay.
 	cutPlayIcon *gtk.Image
+	// the third ▶ (cut_review.go): plays the seconds either side of every
+	// join, one after the other. reviewOn while it is doing so; review is the
+	// seam it is on, the join between segs[review] and segs[review+1].
+	reviewOn bool
+	review   int
+	// the line has been seen inside the seam's window since the review
+	// sought it: only then is a line found before the window a hand's
+	// doing. Before that it is the seek not yet landed (reviewStep).
+	reviewArmed bool
+	reviewBtn   *gtk.Button
+	reviewIcon  *gtk.Image
 	// the clip a gap was last skipped to, so a jump that cannot be made is not
 	// attempted again on every tick. -1 is "not in a gap"; see skipGap.
 	jumped int
@@ -653,6 +664,12 @@ type cutEditor struct {
 	fxCursor string
 	aspectDD *gtk.DropDown // the toolbar's aspect choice
 	aspectMu bool          // the dropdown is being set by code, not by hand
+
+	// the red line's file (cut_line.go): a write is armed, the project it
+	// was last restored for, and the timer -- glib's, or a test's own clock
+	lineArmed bool
+	lineOf    string
+	lineArm   func(uint, func() bool)
 
 	undoBtn, redoBtn, revertBtn *gtk.Button
 	playBtn                     *gtk.Button // ▶/⏸ for the preview; drawn by syncPlayIcons
@@ -884,6 +901,7 @@ func (ed *cutEditor) reload() error {
 	}
 	ed.relayout()
 	ed.updateInputs() // the recordings just changed, and so did their lengths
+	ed.restoreLine()  // where the last session left the line (cut_line.go)
 	return nil
 }
 
@@ -1376,6 +1394,7 @@ func (ed *cutEditor) setPlayhead(t float64) {
 	ed.cancelHold()
 	ed.syncFxHold() // and an effect being aimed is being aimed at THIS frame
 	ed.showTime()
+	ed.noteLine()     // remembered across sessions (cut_line.go)
 	ed.syncSelBtns()  // | Split cuts at the line, and now there is one
 	ed.syncPlayGain() // the line may have landed inside a volume effect
 	if v := ed.videoAt(t); v != nil && ed.player != nil {
@@ -1398,9 +1417,11 @@ func (ed *cutEditor) setPlayhead(t float64) {
 		// path reaches it -- but by then these pipelines are already running,
 		// and a lane switched off is not to be heard for that moment either.
 		ed.syncHush()
-		if same {
+		if same && !ed.player.Preloaded(v.path, v.at(t)) {
 			ed.player.SeekTo(v.at(t)) // same file: cheap in-place seek
 		} else {
+			// another file, or this one with the spare already sitting at
+			// the second (cut_preload.go): PlaySegment swaps it in
 			ed.player.PlaySegment(v.path, v.at(t), -1, wasPlaying)
 		}
 	}
@@ -1538,6 +1559,7 @@ func (ed *cutEditor) frameStep(n int) {
 	local := math.Max(v.off, math.Min(v.off+v.dur, v.at(ed.playhead)+float64(n)/v.fps))
 	ed.playhead = v.sessionAt(local)
 	ed.reLive(ed.playhead) // a hand on the line: the live clock comes with it
+	ed.noteLine()
 	// the rate before the seek, never after -- it only takes hold at one, and
 	// this is the seek. The same bargain setPlayhead makes.
 	ed.player.SetRate(fxPreviewRateAt(ed.fx, ed.playhead))
@@ -1677,12 +1699,22 @@ func (ed *cutEditor) skipGap() bool {
 		// running on the old file, and the position it reads back is inside
 		// this same gap again. Ask once more, from the first second there is
 		// footage for, and if there is none, stop rather than pretend to play.
-		if to := ed.playable(ed.segs[next].S); ed.videoAt(to) != nil {
-			ed.setPlayhead(to)
-		} else {
+		//
+		// But only when the player is NOT on the clip's own file. When it is,
+		// the seek is in flight and the read is stale -- the first position a
+		// freshly cued file answers is 0, which sits in this gap when the
+		// recording began during it -- and asking again is a flushing seek
+		// every tick, which is a pipeline that never stops flushing: the line
+		// stood at the join for good, and the ▶✂ that put it there wore ⏸
+		// over a picture that did not move.
+		to := ed.playable(ed.segs[next].S)
+		switch v := ed.videoAt(to); {
+		case v == nil:
 			ed.jumped = -1
 			ed.player.Pause()
 			ed.a.updateRunControls()
+		case v != ed.playVideo:
+			ed.setPlayhead(to)
 		}
 	}
 	return true
@@ -1818,12 +1850,19 @@ func (ed *cutEditor) followPlayback() bool {
 		was := ed.playhead
 		ed.playhead = ed.playVideo.sessionAt(pos)   // off included: a cut lane's window starts partway in
 		ed.posT, ed.posAt = ed.playhead, time.Now() // the camera's clock; see livePlayhead
+		ed.noteLine()                               // once a second of this, not ten (cut_line.go)
 		ed.syncFxHold()                             // ▶ walks the line off whatever was picked up
 		ed.showTime()
 		// ▶ plays the dropped stretches too, so a seam the line has walked
 		// into comes open and stays open (cut_fold.go). ▶✂ never enters one.
 		if !ed.cutOnly {
 			ed.walkFold()
+		}
+		// the cut review has heard its seconds after the join: on to the next
+		// join, or the end. Before the gap skip, which the review leaves to
+		// carry the line over the removed stretch it is there to hear.
+		if ed.reviewTick() {
+			return true
 		}
 		// a card comes up as the line reaches it and goes as the line leaves,
 		// and while it is up this is what advances it frame by frame -- unless
@@ -1850,6 +1889,7 @@ func (ed *cutEditor) followPlayback() bool {
 				return true
 			}
 		}
+		ed.preloadAhead()   // the next jump, prerolled before it comes (cut_preload.go)
 		ed.syncPlayRate()   // the line has crossed into or out of a speed effect
 		ed.syncPlayGain()   // and into or out of a volume one
 		ed.revealPlayhead() // playback runs the line off the view; recenter and follow
@@ -3386,6 +3426,7 @@ func (ed *cutEditor) syncPlayBtn() {
 		return
 	}
 	ed.cutPlayBtn.SetSensitive(len(ed.segs) > 0)
+	ed.syncReviewPlay() // and ▶✂✂ needs two clips, not one
 }
 
 // syncInsertBtn tells the Insert button which of its two jobs it is doing. Held
@@ -4443,6 +4484,14 @@ func (ed *cutEditor) playAs(cut bool) {
 		if ed.playing() {
 			return
 		}
+	} else if cut && ed.reviewOn {
+		// ▶✂ pressed while the review runs: the same switch-over, from the
+		// review to the plain cut. The review's own button is the one that
+		// pauses it (playReview); this one's face said ▶, so it plays.
+		ed.reviewOff()
+		if ed.playing() {
+			return
+		}
 	}
 	ed.toggle()
 }
@@ -4456,6 +4505,9 @@ func (ed *cutEditor) setCutOnly(cut bool) {
 	}
 	ed.cutOnly = cut
 	ed.jumped = -1
+	if !cut {
+		ed.reviewOff() // the review is a cut preview; there is none to review the recording by
+	}
 	ed.syncPlayBtn() // an empty cut is nothing to play; see that function
 	if cut {
 		// the mode promises kept material, so it delivers some immediately
@@ -4491,7 +4543,10 @@ func (ed *cutEditor) syncCutPlay() {
 	if ed.cutPlayBtn == nil || ed.cutPlayIcon == nil {
 		return
 	}
-	if ed.playing() && ed.cutOnly {
+	// ⏸ only while the plain cut runs: under a review the cut is running
+	// too, but the review's button is the one that started it and the one
+	// that wears the ⏸ (syncReviewPlay) -- one ⏸ per thing running
+	if ed.playing() && ed.cutOnly && !ed.reviewOn {
 		ed.cutPlayIcon.SetFromIconName("media-playback-pause-symbolic")
 		ed.cutPlayBtn.SetTooltipText("pause the cut preview")
 	} else {
@@ -4500,11 +4555,9 @@ func (ed *cutEditor) syncCutPlay() {
 			"stretches are skipped, so this runs the finished video. The clock reads the " +
 			"cut's own time while it does. Changes nothing that is saved.")
 	}
-	if ed.cutOnly {
-		ed.cutPlayBtn.AddCSSClass("suggested-action")
-	} else {
-		ed.cutPlayBtn.RemoveCSSClass("suggested-action")
-	}
+	// lit while the preview is the cut and not the review of it: one lamp
+	// across the three ▶s (lamp, cut_review.go)
+	lamp(ed.cutPlayBtn, ed.cutOnly && !ed.reviewOn)
 }
 
 func (ed *cutEditor) toggle() {
@@ -4536,6 +4589,9 @@ func (ed *cutEditor) toggle() {
 	// the showInsert below it: ▶ starts the recordings (syncMix), and a lane
 	// this scene silences is one ▶ must not start at all
 	ed.syncHush()
+	if ed.playing() {
+		ed.reviewOff() // a pause is a decision: the review does not resume from it
+	}
 	ed.player.Toggle()
 	// the black "no footage on this row" frame comes and goes with the
 	// standstill (showInsert), and pausing is a standstill nothing else
@@ -4546,6 +4602,7 @@ func (ed *cutEditor) toggle() {
 }
 
 func (ed *cutEditor) stop() {
+	ed.reviewOff()
 	if ed.player != nil {
 		ed.player.Stop()
 	}
@@ -4804,6 +4861,10 @@ func (a *App) buildCut() gtk.Widgetter {
 	ed.cutPlayBtn.SetChild(face)
 	ed.cutPlayBtn.ConnectClicked(func() { ed.playAs(true) })
 	ed.syncCutPlay() // opens with its tooltip and face in the recording state
+	// The third ▶: every join, a few seconds either side, one after the other
+	// (cut_review.go). What ▶✂ is for once the cut exists and the question is
+	// no longer "what does the video run" but "does each splice work".
+	reviewBtn := ed.buildReviewBtn()
 
 	// The selection in numbers. It used to sit under its own ⟦ in / out ⟧ / ✕
 	// buttons, but the band made those a second way of doing what a drag
@@ -4834,7 +4895,7 @@ func (a *App) buildCut() gtk.Widgetter {
 	// the wheel over the bar steps frames, so a hand hovering the transport
 	// never has to land on one exact button to scrub
 	bar.AddController(ed.wheelFrames())
-	bar.Append(linked(ed.playBtn, ed.cutPlayBtn, prev5, prevF, nextF, next5))
+	bar.Append(linked(ed.playBtn, ed.cutPlayBtn, reviewBtn, prev5, prevF, nextF, next5))
 	// how loud the preview is, next to the two ▶s that use it -- the run bar
 	// at the bottom of the window has one too, and both are the same number
 	// (volumeCtl). Here as well as there because this is the page a cut is
@@ -5607,6 +5668,7 @@ func (a *App) buildCut() gtk.Widgetter {
 	})
 	ed.hbar = gtk.NewScrollbar(gtk.OrientationHorizontal, ed.hadj)
 	ed.hbar.SetVisible(false)
+	ed.gearScrollbar() // the thumb, slowed down when zoomed in (cut_scrollgear.go)
 
 	band := gtk.NewBox(gtk.OrientationVertical, 4)
 	band.Append(ed.srcArea)

@@ -34,10 +34,29 @@ const llmPort = 8731
 // llmServer is the writing server a config points at, ready to have a path
 // joined to it: the box, or the local default when it is empty.
 func llmServer(c appConf) string {
-	if u := strings.TrimRight(strings.TrimSpace(c.Server), "/"); u != "" {
+	if u := serverURL(c.Server); u != "" {
 		return u
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d", llmPort)
+}
+
+// serverURL is what a Server box says, as a URL: trimmed, without the
+// trailing slash a path is about to be joined to, and with https:// in
+// front when no scheme was typed. "ai.example.com" is a host, and a host
+// on its own is not a URL any client would open; typed without a scheme it
+// used to fail with a message about an unsupported protocol, which is not
+// what was wrong with it. https, because a server named by host is out on
+// the network, and the loopback default carries its http of its own. Empty
+// stays empty: that is the caller's "use the default".
+func serverURL(s string) string {
+	u := strings.TrimRight(strings.TrimSpace(s), "/")
+	if u == "" {
+		return ""
+	}
+	if !strings.Contains(u, "://") {
+		u = "https://" + u
+	}
+	return u
 }
 
 func txtPart(s string) map[string]any {
@@ -296,6 +315,12 @@ func (a *App) llmChatPost(step string, msgs []map[string]any, thinking bool,
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// one request on the wire at a time (llmgate.go): the queue is waited
+	// out before the watch below starts, so the wait is not read as a stall
+	if err := a.takeLLM(ctx, step); err != nil {
+		return chatReply{}, err
+	}
+	defer a.giveLLM()
 	// the watch holds the call to a silence rule and says every minute what is
 	// arriving; a call nobody streams has no silence to measure, so it keeps a
 	// whole-call ceiling on the client instead
