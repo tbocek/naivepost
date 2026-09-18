@@ -1,0 +1,16 @@
+{
+  "sources": [
+    {
+      "path": "project:sources/lecture.mkv",
+      "footage": true,
+      "narrator": 1,
+      "sepvoice": false,
+      "tracks": [0]
+    }
+  ],
+  "interval": 1.0,
+  "language": "en",
+  "no_narration": false,
+  "reference_sources": false,
+  "context": "The weekly blockchain lecture, recorded in one sitting: camera on the speaker, a separate microphone, and the screen capture of the slides."
+}

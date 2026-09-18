@@ -1,0 +1,12 @@
+# Run from rust/. GSK_RENDERER=cairo: the default GL renderer needs a graphics
+# driver this container has not got. GTK_A11Y/GSETTINGS_BACKEND keep the log clean.
+set dotenv-load := false
+
+# Tests, on a virtual display: several tests build real widgets.
+test:
+    xvfb-run -a env GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory cargo test
+
+# just snapshot 03-window -> shots/03-window.png
+snapshot screen:
+    @mkdir -p shots
+    xvfb-run -a env GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory cargo run -- --snapshot {{screen}} --project fixtures/demo.naivepost --out shots/{{screen}}.png

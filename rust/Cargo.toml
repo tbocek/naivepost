@@ -1,0 +1,22 @@
+[package]
+name = "naivepost"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "naivepost"
+path = "src/lib.rs"
+
+[[bin]]
+name = "naivepost"
+path = "src/main.rs"
+
+[dependencies]
+gtk4 = { version = "0.11", features = ["v4_14"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_5"] }
+gsk = { package = "gsk4", version = "0.11" }
+cairo = { package = "cairo-rs", version = "0.22", features = ["png"] }
+gio = "0.22"
+glib = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
