@@ -1,3 +1,4 @@
+pub mod layout;
 pub mod project;
 pub mod snapshot;
 pub mod ui;

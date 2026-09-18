@@ -4,6 +4,7 @@
 //! window (spec/00-principles.md §5, directive C).
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -73,5 +74,8 @@ pub fn save(project: &Project, dir: &Path) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     let text = serde_json::to_string_pretty(project).map_err(|err| err.to_string())?;
     let file = dir.join(PROJECT_FILE);
-    fs::write(&file, text).map_err(|err| format!("{}: {err}", file.display()))
+    fs::write(&file, text).map_err(|err| format!("{}: {err}", file.display()))?;
+    // §1: files are 0644; a new file's mode would otherwise follow the umask.
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o644))
+        .map_err(|err| format!("{}: {err}", file.display()))
 }
