@@ -17,27 +17,20 @@
 
 <sub><!-- back -->[← F5.7](08-produce.md#f57-page-runs) · [↑ 09 The LLM client, tools, gate, cache, log](#09--the-llm-client-tools-gate-cache-log) · [all flows](11-flow-index.md#3-all-flows) · [F6.2 →](#3-retries-f62)</sub>
 
-```text
- the request carries the job's tools, each with its JSON schema — the description IS the instruction
-        ▼
- ┌ round i of P.eng.llmToolRounds ─────────────────────────────────────────────────┐
- │ the model answers with tool_calls                                               │
- │   ├─ append the assistant turn                                                  │
- │   ├─ run each tool ──► one `tool` message per call, carrying its result          │
- │   └─ log ">>> <step>: round i of 8 — the model asked for name{args…}"           │
- │        identical to the round before ──► "…asks for the same thing again — …"   │
- └───────────────────────┬─────────────────────────────────────────────────────────┘
-                         │ a round with no calls
-                         ▼
-               finish was called? ──yes──► the flow is complete
-                         │ no
-                         └──► asked once "Call finish when you are done, or continue with the
-                              tools.", then taken as finished with what it produced
- rounds exhausted ──► "!!! <step>: still calling tools after 8 rounds — the step gets no answer
-                       from this call"
- an error on round 0 that is not a stop ──► read as a server refusing a `tools` field:
-                       the same request again without it, logged
- a tool's own error is returned to the model as text — it never fails the job
+```mermaid
+flowchart TD
+  A(["request with the job's tools"]) --> R["round i of P.eng.llmToolRounds"]
+  R --> C{"tool calls?"}
+  C -- yes --> RUN["append the assistant turn · run each tool · one tool message per call<br/>“>>> ‹step›: round i of 8 — the model asked for name{args}”"]
+  RUN --> R
+  C -- no --> F{"finish called?"}
+  F -- yes --> DONE["the flow is complete"]:::done
+  F -- no --> ONCE["asked once to call finish · then taken as finished"]:::done
+  R -. rounds exhausted .-> EX["“!!! ‹step›: still calling tools after 8 rounds — …”"]:::refuse
+  A -. round 0 errors, not a stop .-> NT["asked again without the tools field"]
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 **Prototype:** only tools offered: `web_search` and `web_read`, to three jobs — client step names `suggest` (prompt key `cut`), `narrate`, `publish` (key `youtube`); no `finish`, no job-specific tool; a round without calls just returns its content. Log lines and exchange-page names use the step names, not the prompt keys (`suggest`/cut, `publish`/youtube, `transcript`/fix). S1–S3: the rewrite; S4–S7: the prototype's loop, kept.
@@ -48,21 +41,19 @@ Web tools (where offered; descriptions verbatim in [`prompts/tools.md`](prompts/
 
 <sub><!-- back -->[← F6.1](#2-tool-protocol-f61) · [↑ 09 The LLM client, tools, gate, cache, log](#09--the-llm-client-tools-gate-cache-log) · [all flows](11-flow-index.md#3-all-flows) · [F6.3 →](#4-liveness-and-the-gate-f63)</sub>
 
-```text
- transport death — EOF · reset · refused · broken pipe · unreachable · "server closed" · "no such host"
-        ▼
-   5 s ──► 20 s ──► 1 min ──► 2 min ──► 4 min        every wait cancellable by ⏹
-   "!!! <step>: the server went away mid-call (…) -- waiting T and asking again (i of 5)"
-        │           far enough to outlast a container restart and a weight load
-        ▼
- anything else — a 4xx/5xx, an unusable answer
-   one retry, after 2 s, on the FIRST failure only     a status code is never "the server went away"
-        ▼
- content repair, in the degraded (JSON) mode
-   noAnswer     the whole reply was reasoning
-   cutOff       the JSON ended early ──► "answer again with far fewer items"
-   thinkAgain   an empty answer ──► thinking off for the retry
-   retryTurn    "Your answer failed validation: … Return corrected strict JSON only."
+```mermaid
+flowchart TD
+  E(["a call fails"]) --> K{"a transport death?"}
+  K -- yes --> W["wait 5 s → 20 s → 1 min → 2 min → 4 min, each cancellable by ⏹<br/>“!!! ‹step›: the server went away mid-call … (i of 5)”"]
+  W --> AGAIN["the same request again"]
+  K -- no --> O{"the first failure?"}
+  O -- yes --> TWO["one retry after 2 s"]
+  O -- no --> FAIL["the step fails"]:::refuse
+  AGAIN --> OK["answer"]:::done
+  TWO --> OK
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 - Transport death (EOF, reset, refused, broken pipe, unreachable, or the words eof/connection reset/connection refused/broken pipe/server closed/no such host/transport is closing): wait 5 s, 20 s, 1 min, 2 min, 4 min (past a container restart and weight load), each cancellable by ⏹; log "!!! <step>: the server went away mid-call (…) -- waiting T and asking again (i of 5)".
@@ -73,21 +64,24 @@ Web tools (where offered; descriptions verbatim in [`prompts/tools.md`](prompts/
 
 <sub><!-- back -->[← F6.2](#3-retries-f62) · [↑ 09 The LLM client, tools, gate, cache, log](#09--the-llm-client-tools-gate-cache-log) · [all flows](11-flow-index.md#3-all-flows) · last flow →</sub>
 
-```text
- THE GATE — one chat request on the wire per application
-   step B ──► waits ──► ">>> B: waited for the LLM -- it was busy with A; one request at a time"
-                        logged only when the holder is a DIFFERENT step · cancellable by ⏹
-        ▼
- THE WATCH — started once the gate is taken, looking four times per heartbeat
-   ┌ every minute ──────────────────────────────────────────────────────────────┐
-   │ ">>> <step>: nothing yet, 3m in"                                           │
-   │ ">>> <step>: 1.2 kB thinking, 0 B reply, 4m in"                            │
-   │ ">>> <step>: 1.2 kB thinking, 800 B reply, 5m in — "…the last 90 bytes""   │
-   └────────────────────────────────────────────────────────────────────────────┘
-   streamed    no byte for P.eng.llmStallMinutes ──► ">>> <step>: nothing for T — giving up"
-               reported as "nothing arrived in 5m0s" / "stopped answering after T -- nothing
-               more for 5m0s"
-   unstreamed  no stall rule at all — only the P.eng.llmWholeMinutes ceiling ends it
+```mermaid
+flowchart TD
+  S(["a step wants the LLM"]) --> G{"the gate free?"}
+  G -- no --> WAIT["waits · “>>> ‹step›: waited for the LLM -- it was busy with ‹other› …”<br/>only when the holder is a different step · cancellable by ⏹"]
+  WAIT --> G
+  G -- yes --> CALL["the call · the watch starts"]
+  CALL --> HB["every minute: “nothing yet, T in” / “X thinking, Y reply, T in — …tail”"]
+  HB --> ST{"streamed?"}
+  ST -- yes --> Q{"no byte for P.eng.llmStallMinutes?"}
+  Q -- yes --> GIVE["“>>> ‹step›: nothing for T — giving up”"]:::refuse
+  Q -- no --> HB
+  ST -- no --> CEIL{"past P.eng.llmWholeMinutes?"}
+  CEIL -- yes --> GIVE
+  CEIL -- no --> HB
+  CALL --> DONE["the reply · the gate released"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 - A streamed call is given up after P.eng.llmStallMinutes (5) without a byte — any byte off the wire counts, including keep-alives the event parser never sees; the guard looks four times per heartbeat; an unstreamed call is held to P.eng.llmWholeMinutes (10). Heartbeat every minute, three shapes: ">>> <step>: nothing yet, T in"; ">>> <step>: X thinking, Y reply, T in"; the same plus " — \"…tail\"" (last 90 bytes of the answer, else of the reasoning, trimmed forward to a character boundary, whitespace-collapsed, Go-quoted). The guard also ticks for an unstreamed call, where X and Y stay 0: it logs "nothing yet" every minute and is never given up for silence — only the 10-minute ceiling ends it. Giving up: ">>> <step>: nothing for T — giving up", cancellation reported as "nothing arrived in 5m0s" or "stopped answering after T -- nothing more for 5m0s". REVIEW: two thinking jobs are unstreamed in the prototype, so sit under the 10-minute ceiling with no stall rule: the upload text, and textedit (every seam repair, about two minutes each); the rewrite SHOULD stream both.

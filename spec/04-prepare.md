@@ -10,22 +10,15 @@ Sources, transcripts, frames, and what the models make of them. One ▶ runs the
 
 ## 1. Screen
 
-```text
-┌ Prepare ─────────────────────────────────────────────┬──────────────────────────────────────────────┐
-│ [Add source files…]  ☑ copy into project             │ User Context                    [User Context ▾]│
-│ ┌──────────────────────────────────────────────────┐ │ ┌──────────────────────────────────────────┐ │
-│ │ 🎥 🎤1  2026-09-16 17-25-06.mkv           ✂ 🗑    │ │ │ The weekly blockchain lecture at OST: one │ │
-│ │ 🎥      2026-09-16 17-25-45.mkv           ✂ 🗑    │ │ │ person speaking to camera, mostly in      │ │
-│ │ …                                                 │ │ │ German … about 12 minutes …               │ │
-│ └──────────────────────────────────────────────────┘ │ │                                          │ │
-│ Freq:[1s][−][+] [Original ▾] Language:[de] Style:[Lecture ▾] │ └────────────────────────────────────┘ │
-│                                                       │  (rows: User Context, System context, Describe prompt,│
-│                                                       │   Transcript, Retakes, Text edit, Cut, Captions,│
-│                                                       │   Speed, Effects, Narration, Translate,        │
-│   Upload text — each headed "<Name> prompt")   │
-└───────────────────────────────────────────────────────┴──────────────────────────────────────────────┘
- Inputs: 2418 frames → 605 vision · 778 lines → 32 fixer      Outputs: [📁] Prepare: 41 files, 220 MB
-```
+![The Prepare page with the Describe prompt open](img/04-prepare.png)
+
+<sub>Screenshot of the prototype on the ETH lecture project.</sub>
+
+**1** sources list and frame controls ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)) · **2** row title, "‹Name› prompt" · **3** row picker · **4** Reset (live only while this machine holds an edit) · **5** the prompt or the User Context · **6** Inputs readout · **7** Outputs: folder button and count
+
+![The row picker open](img/04-prompt-picker.png)
+
+<sub>Screenshot of the prototype on the ETH lecture project.</sub> The list scrolls: Translate and Upload text sit below Narration.
 
 Left: the sources list ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)) and, under it, Freq (frame interval stepper: each, 0.1, 0.2, 0.5, 1s, 2s, 3s, 4s, 5s; "Seconds between frames — type 0.1 to 5, or 'each' for every frame"), Frame size (Original, 896w (LLM), 480p, 720p, 1080p; "Frame size — Original keeps the video's own size"), Language (ASR code; "…the wrong one transcribes into gibberish. Empty means en"), Style (style table; shipped Lecture and Gaming; a blank project stores "" = **Gaming** — REVIEW: with no project loaded the prototype's dropdown opens on "Lecture", so picker and stored value disagree until touched; the rewrite MUST ship and show an explicit default; "Lecture: a read to camera -- the speech is the video, cut by removing the words said twice and the false starts. Gaming: a session -- the cut picks the moments worth keeping. Both describe the picture; only what the cut is chosen from differs.").
 
@@ -39,25 +32,26 @@ Inputs readout: "N frames → M vision · L lines → K fixer", per-file tooltip
 
 <sub><!-- back -->[← F0.13](03-shell.md#f013-tests) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.2 →](#f12-voice-separation-rows-with-)</sub>
 
-```text
- ▶ ──► no sources                 ──► "add at least one source"
-       two sources, one base name ──► "A and B have the same name — rename one"
-         │
-         ▼
-       save the project  ──►  stopped inside Describe last time?  ──yes──►  clear events.tsv + state.txt
-         │                                                                  (the scaled frames are kept)
-         ▼
-       preflight: audio.cpp healthy · ASR and diarization (and separation when asked) served
-         │
-         ▼
-   0%            10%                        30%                                            100%
-   ├── separate ──┼────────── ingest ────────┼──────────────── understand ───────────────────┤
-   │    F1.2      │   speech F1.3 ║ frames F1.6   describe F1.7 → fix F1.8 → mark F1.9|F1.10
-   │  (rows ✂)    │   two tracks, in parallel
-         │
-         ▼
-       ">>> prepare wrote:" + a tree of the three folders · status "prepared — N files"
-       ⏹ → "stopped — finished work is kept"      ✗ → "prepare FAILED: …"
+```mermaid
+flowchart TD
+  A(["▶"]) --> B{"no sources?"}
+  B -- yes --> R1["“add at least one source”"]:::refuse
+  B -- no --> C{"two sources, one base name?"}
+  C -- yes --> R2["“A and B have the same name — rename one”"]:::refuse
+  C -- no --> S["save the project"]
+  S --> D{"stopped inside Describe last time?"}
+  D -- yes --> CL["clear events.tsv and state.txt · the scaled frames are kept"]
+  D -- no --> PF
+  CL --> PF["preflight: audio.cpp healthy · ASR and diarization served · separation when asked"]
+  PF --> SEP["0–10 % · voice separation F1.2 · only rows with ✂"]
+  SEP --> ING["10–30 % · ingest: speech F1.3 per source ║ frames F1.6 per video, in parallel"]
+  ING --> UND["30–100 % · understand: describe F1.7 → fix F1.8 → mark F1.9 or F1.10"]
+  UND --> OK["“>>> prepare wrote:” + the three folders · status “prepared — N files”"]:::done
+  UND -. ⏹ .-> ST["“stopped — finished work is kept”"]
+  UND -. fails .-> FL["“prepare FAILED: …”"]:::refuse
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Ignore when running. No sources → "add at least one source". Two sources with one base name → refuse (log "!!! A and B are both inputs/<base> -- rename one", status "A and B have the same name — rename one"). S2 Save the project. S3 Last run stopped inside Describe → remove every `events.tsv`/`state.txt` (">>> stopped last time — describing from the start again: … (scaled frames kept)"); a failed clear is logged (">>> could not clear the last run (…) -- resuming it") and the run resumes from disk. S4 startRun; log ">>> prepare: N input files", each file, the inputs summary, ">>> prepare: sending the session context from Prepare (N characters)". S5 Check the audio server; ASR and diarization models (and separation when asked) served. S6 Phases, share of the bar: voice separation ([F1.2](#f12-voice-separation-rows-with-)) 0–10 % when asked; ingest ([F1.3](#f13-per-source-audio--text--word-times--speakers--segments) + [F1.6](#f16-frames-per-video) in parallel) to 30 %; understand = describe ([F1.7](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4)) → fix ([F1.8](#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines)) → marking ([F1.9](#f19-mark-retakes-gaming-style)/F1.10) 30–100 %. S7 Success: fraction 1, ">>> prepare wrote:" + tree of the three folders, status "prepared — N files"; stopped → "stopped — finished work is kept"; failed → "prepare FAILED: …" / "prepare failed — see log". S8 Refresh the page, gates and Cut page; unload audio models.
@@ -66,20 +60,25 @@ S1 Ignore when running. No sources → "add at least one source". Two sources wi
 
 <sub><!-- back -->[← F1.1](#f11--prepare) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.3 →](#f13-per-source-audio--text--word-times--speakers--segments)</sub>
 
-```text
- <source> ──► decode to 44.1 kHz stereo ──► chunks ≤ P.policy.sepChunkMaxSeconds, cut at silences
-                                                 │
-              ┌──────────────────── per chunk ───┴──────────────────┐
-              │ upload ──► separation model ──┬──► "vocals|voice"  ──┼──► VOICE
-              │                               └──► "instrumental"   │    (else every other stem,
-              └───────────────────────────────────────── amix ──────┘     normalize=0) ──► REST
-                                                 │
-                                                 ▼
-   stems/<base>.split-voice.wav        stems/<base>.split-novoice.wav | .mkv (picture copied, sound FLAC)
-                                                 │
-                                                 ▼
-   the row becomes two rows:   REST keeps 🎥 footage      VOICE takes the 🎤 slot      ✂ wish cleared
-   rest ≥ 10 dB under the mix → a warning        both halves already there → ">>> [base] already split"
+```mermaid
+flowchart TD
+  A(["a row with ✂"]) --> H{"both halves already there?"}
+  H -- yes --> SK["“>>> ‹base› already split”"]:::done
+  H -- no --> DEC["decode to 44.1 kHz stereo · “>>> ‹base› splitting the voice off X s in N part(s)”"]
+  DEC --> CH["chunks ≤ P.policy.sepChunkMaxSeconds, cut at silences"]
+  CH --> RUN["per chunk: upload → separation model"]
+  RUN --> V{"a stem named vocals or voice?"}
+  V -- no --> R["“stems A, B -- none of them is the voice”"]:::refuse
+  V -- yes --> REST{"an instrumental stem?"}
+  REST -- yes --> J
+  REST -- no --> MIX["every other stem mixed · amix normalize=0"] --> J
+  J["join the parts · a video's rest muxed with the picture copied, sound FLAC"]
+  J --> W["stems/‹base›.split-voice.wav · stems/‹base›.split-novoice.wav or .mkv"]
+  W --> ROWS["the row becomes two: REST keeps 🎥 footage · VOICE takes the 🎤 slot · wish cleared"]:::done
+  W -. rest ≥ 10 dB under the mix .-> WARN["a warning"]
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Decode to 44.1 kHz stereo pcm. S2 Chunk at P.policy.sepChunkMaxSeconds (300 s) on silences. S3 Per chunk: upload, run the separation model; voice = `vocals|voice` stem, rest = `instrumental` stem (or every other stem mixed with amix normalize=0). S4 Join the parts; a video's rest muxed as mkv, picture copied. S5 Write `stems/<base>.split-voice.wav` and `<base>.split-novoice.wav|.mkv` (names keep the timestamp). S6 Log ">>> [base] splitting the voice off X s in N part(s) (<sep model>)" before the first chunk goes up, then ">>> [base] split into A and B" and a loudness report; warn when the rest is ≥ 10 dB under the mix. S7 Source row → two rows: rest keeps footage, voice takes the narrator slot; wish cleared; project saved. Skip when both halves exist.
@@ -88,22 +87,26 @@ S1 Decode to 44.1 kHz stereo pcm. S2 Chunk at P.policy.sepChunkMaxSeconds (300 s
 
 <sub><!-- back -->[← F1.2](#f12-voice-separation-rows-with-) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.4 →](#f14-asr-in-chunks)</sub>
 
-```text
- <source> ──► voice16k.wav (mono 16 kHz)          ">>> [base] X s of audio"
-                  │
-                  ├─ shorter than P.policy.minTakeSeconds? ──yes──► written up as silence, no server asked
-                  ▼ no
-             ASR       F1.4     — skipped when words.json is there
-                  ▼
-             align     F1.5     — when an aligner is served; ASR word times missing AND no aligner = hard error
-                  ▼
-             diarize            — skipped when turns.json is there; fatal after the 90 → 45 → 25 s ladder
-                  ▼
-             segments   words (aligned times, else the ASR's) + speaker by greatest turn overlap,
-                        else the nearest turn within 1 s, else SPEAKER_00, else "?"
-                        break on: speaker change · gap > 0.7 s · 12 s      word end clamped to start + 2 s
-                  ▼
-             transcript.tsv · transcript.srt        ">>> [base] N segments"
+```mermaid
+flowchart TD
+  A(["a source"]) --> W["voice16k.wav, mono 16 kHz · “>>> ‹base› X s of audio”"]
+  W --> SH{"shorter than P.policy.minTakeSeconds?"}
+  SH -- yes --> SIL["written up as silence, no server asked"]:::done
+  SH -- no --> ASR["ASR · F1.4 · skipped when words.json exists"]
+  ASR --> AL{"an aligner served?"}
+  AL -- yes --> ALN["align · F1.5"]
+  AL -- no --> DI
+  ALN --> AF{"failed?"}
+  AF -- "no" --> DI
+  AF -- "yes, the ASR has word times" --> WARN["warning — the ASR's times stand"] --> DI
+  AF -- "yes, no word times, text exists" --> HARD["hard error, named plainly"]:::refuse
+  AF -- "yes, no transcript either" --> DI
+  DI["diarize · skipped when turns.json exists · fatal after the 90 → 45 → 25 s ladder"]
+  DI --> SEG["segments: aligned times, else the ASR's · speaker by turn overlap<br/>break on a speaker change, a gap over 0.7 s, or 12 s"]
+  SEG --> OUT["transcript.tsv · transcript.srt · “>>> ‹base› N segments”"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 `voice16k.wav` (mono 16 kHz) unless present; log ">>> [base] X s of audio". S2 **Short take**: < P.policy.minTakeSeconds (2.0) → written up as silence, no server asked (">>> [base] X s long -- a start/stop, not a take: written up as silence"). S3 ASR ([F1.4](#f14-asr-in-chunks)) unless `words.json` exists. S4 Alignment ([F1.5](#f15-forced-alignment)) when an aligner is served and `words.aligned.json` absent; failure = warning if the ASR gave word times, hard error if not, silent with no transcript either (nothing to align). S5 Diarization unless `turns.json` exists (fatal after the window ladder). S6 Segments: words from aligned or ASR times; speaker by greatest turn overlap, else nearest turn within 1 s, else SPEAKER_00 when no turns, else "?"; word end clamped to start + 2 s; segment breaks on speaker change, gap > 0.7 s, or 12 s; write `transcript.tsv`, `transcript.srt`; log ">>> [base] N segments".
@@ -112,24 +115,22 @@ S1 `voice16k.wav` (mono 16 kHz) unless present; log ">>> [base] X s of audio". S
 
 <sub><!-- back -->[← F1.3](#f13-per-source-audio--text--word-times--speakers--segments) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.5 →](#f15-forced-alignment)</sub>
 
-```text
- voice16k.wav ──► fits the limit? ──yes──► one request ──────────────────────┐
-  limit: 60 s for a qwen3 model,    │ no                                     │
-         else 300 s                 ▼                                        │
-                    cut at silence midpoints into even pieces                │
-                    (seek ≤ 20 s, capped at limit/6 and step/3) · scratch in asr/
-                                    │                                        │
-                    ┌───────────── ⟲ per chunk ──────────────┐               │
-                    │ checkpoint · "recognising speech i/n"   │               │
-                    │ cut (-ss before -i) ──► upload ──► ASR {audio, language}│
-                    └────────────────────┬───────────────────┘               │
-                          out of memory ─┴─► halve the limit, down to 20 s, retry
-                                    │                                        │
-                                    ▼◄───────────────────────────────────────┘
-                    stitch {text, words}, sample offsets shifted
-                                    ▼
-      transcript.txt ──► asrchunks.json ──► words.json        (last: it is the resume marker)
-      no text at all is a real case: ">>> [base] no speech found -- an empty transcript"
+```mermaid
+flowchart TD
+  A(["voice16k.wav"]) --> L["limit: 60 s for a qwen3 model, else 300 s"]
+  L --> F{"fits the limit?"}
+  F -- yes --> ONE["one request"]
+  F -- no --> CUT["cut at silence midpoints into even pieces<br/>seek ≤ 20 s, capped at limit/6 and step/3 · scratch in asr/"]
+  CUT --> PER["per chunk: checkpoint · “recognising speech i/n”<br/>cut with -ss before -i → upload → ASR, audio and language"]
+  PER --> OOM{"out of memory?"}
+  OOM -- yes --> HALF["halve the limit, never under 20 s"] --> CUT
+  OOM -- no --> ST
+  ONE --> ST["stitch text and words, sample offsets shifted"]
+  ST --> WR["transcript.txt → asrchunks.json → words.json last, the resume marker"]:::done
+  ST -. no text at all .-> EMPTY["“>>> ‹base› no speech found -- an empty transcript” · a real case"]
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Chunk limit 60 s for a qwen3-family model, else 300 s; out-of-memory → halve down to 20 s, retry (logged). S2 File fits → one request; else cut at silence midpoints into even pieces (seek ≤ 20 s, capped at limit/6 and step/3); scratch in `asr/`, removed on success. S3 Per chunk: checkpoint, progress "recognising speech i/n", cut with -ss before -i, upload, run ASR with `{audio, language}`. S4 Stitch `{text, words}`, sample offsets shifted; write `transcript.txt`, `asrchunks.json`, `words.json` last. Empty text is a real case (">>> [base] no speech found -- an empty transcript").
@@ -138,27 +139,29 @@ S1 Chunk limit 60 s for a qwen3-family model, else 300 s; out-of-memory → halv
 
 <sub><!-- back -->[← F1.4](#f14-asr-in-chunks) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.6 →](#f16-frames-per-video)</sub>
 
-```text
- which aligner?   the configured id ──► else any model declared task "align" ──► preferring qwen3-aligner
-                  a configured id the server does not serve for alignment: alignment is SKIPPED for the run
-                  "!!! align: <url> does not serve \"X\" for alignment -- cut points come off the waveform"
-                       │  the first that answers is used for the rest of the run
-                       ▼
- pieces      the ASR's own chunks when the word counts agree
-             else 60 s windows cut at silences, words shared out by voiced seconds
-                       ▼
- per window  trim to where sound is (0.25 s pad)
-             over the limit and > 15 s ──► split at the quietest moment nearest the middle
-                                           (inside the middle three quarters)
-             out of memory ──► halve, never under 15 s
-                       ▼
- request     {audio, text, language} ──► words from words|alignment|segments|result.*
-             times read as samples → milliseconds → seconds → a bare number (> 120 s = samples)
-                       ▼
- words.aligned.json written whole at the end   ·   lower-cased here, dressed again by F1.13
-                       ▼
- "!!! align: N s of the M s spoken has no word over it -- the times are wrong, and the cut will
-  drop that footage"          when bare voiced seconds ≥ 10 s AND ≥ 8 %
+```mermaid
+flowchart TD
+  A{"which aligner?"} --> C1["the configured id"]
+  A --> C2["else any model declared task align, preferring qwen3-aligner"]
+  C1 --> SV{"served for alignment?"}
+  SV -- no --> SKIP["alignment skipped for the run<br/>“!!! align: ‹url› does not serve … -- cut points come off the waveform”"]:::refuse
+  SV -- yes --> P
+  C2 --> P{"the ASR's chunk word counts agree?"}
+  P -- yes --> PA["pieces = the ASR's own chunks"]
+  P -- no --> PB["60 s windows at silences, words shared out by voiced seconds"]
+  PA --> TR
+  PB --> TR["each window trimmed to sound · 0.25 s pad"]
+  TR --> BIG{"over the limit and longer than 15 s?"}
+  BIG -- yes --> SPL["split at the quietest moment nearest the middle"] --> TR
+  BIG -- no --> RQ["request audio, text, language"]
+  RQ --> OOM{"out of memory?"}
+  OOM -- yes --> HALF["halve, never under 15 s"] --> TR
+  OOM -- no --> RD["read words · times as samples → ms → s → a bare number"]
+  RD --> W["words.aligned.json, whole, at the end"]:::done
+  W -. bare voiced seconds ≥ 10 s and ≥ 8 % .-> WARN["“!!! align: N s of the M s spoken has no word over it …”"]
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Aligner = configured id, else every model declared task align, preferring qwen3-aligner; the first to answer serves the rest of the run. A configured id not served for alignment is not replaced: alignment skipped for the run with "!!! align: <url> does not serve \"X\" for alignment -- cut points come off the waveform". S2 Pieces = the ASR's own chunks when word counts agree, else 60 s windows cut at silences, words shared by voiced seconds. S3 Each window trimmed to sound (0.25 s pad); over the limit and > 15 s → split at the quietest moment nearest the middle (inside the middle three quarters); out-of-memory → halve, ≥ 15 s. S4 Request `{audio, text, language}`; reply words from `words|alignment|segments|result.*`; times read as samples, then milliseconds, then seconds, then a bare number (samples when > 120 s); words stored lower-cased, written form restored by the word list ([F1.13](#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles)). S5 Write `words.aligned.json` whole at the end. S6 Warn "!!! align: N s of the M s spoken has no word over it -- the times are wrong, and the cut will drop that footage" when bare voiced seconds ≥ 10 s and ≥ 8 %.
@@ -167,20 +170,20 @@ S1 Aligner = configured id, else every model declared task align, preferring qwe
 
 <sub><!-- back -->[← F1.5](#f15-forced-alignment) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.7 →](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4)</sub>
 
-```text
- <video> ──► .interval == "<interval>|<scale>"? ──yes──► rename legacy numbered frames only, skip
-               │ no                                      ">>> [base] frames already extracted (Xs, scale)"
-               ▼
-             clear the folder · filter  fps=1/interval + the scale
-             a take shorter than one interval ──► its first frame alone
-               ▼
-             chunks of whole intervals, workers = clamp(CPU/4, 2, 8)      progress from ffmpeg -progress
-             1 worker for a tiny job or every-frame mode
-               │
-               ▼
-             f000001.jpg f000002.jpg …  ──rename──►  <start + (n−1)·interval>.jpg   (-1, -2 within a second)
-               ▼
-             write .interval        ">>> [base] N frames extracted"
+```mermaid
+flowchart TD
+  A(["a video"]) --> M{".interval matches interval and scale?"}
+  M -- yes --> RN["rename legacy numbered frames only · skip<br/>“>>> ‹base› frames already extracted …”"]:::done
+  M -- no --> LOG["log the plan, then clear the folder"]
+  LOG --> SHORT{"shorter than one interval?"}
+  SHORT -- yes --> ONE["its first frame alone"]
+  SHORT -- no --> PAR["chunks of whole intervals · workers = clamp CPU/4 into 2..8<br/>one worker for a tiny or every-frame job"]
+  PAR --> REN["f000001.jpg … renamed to start + (n−1)·interval · -1, -2 within a second"]
+  ONE --> REN
+  REN --> MK["write .interval · “>>> ‹base› N frames extracted”"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Marker `.interval` = "<interval>|<scale>" matches → only rename legacy numbered frames; skip (">>> [base] frames already extracted (Xs, scale), skipping"). S2 Else log the plan (">>> [base] extracting a frame every Xs at <scale>" / "…extracting EVERY frame -- gigabytes"), clear the folder; filter `fps=1/interval` + scale (take shorter than one interval → its first frame alone). S3 Parallel chunks of whole intervals (workers clamp(CPU/4, 2, 8); 1 for tiny or every-frame jobs); progress from ffmpeg's `-progress`. S4 Rename `f000001.jpg…` to `<start + (n−1)·interval>` stamps (-1, -2 within one second). S5 Write the marker; log ">>> [base] N frames extracted".
@@ -189,30 +192,34 @@ S1 Marker `.interval` = "<interval>|<scale>" matches → only rename legacy numb
 
 <sub><!-- back -->[← F1.6](#f16-frames-per-video) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.8 →](#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines)</sub>
 
+```mermaid
+flowchart TD
+  A(["footage source"]) --> I{"extracted at interval 0?"}
+  I -- yes --> R["“‹base› was extracted as every-frame; describe needs a fixed interval …”"]:::refuse
+  I -- no --> SC["frames scaled once to 896 wide into .llmframes/"]
+  SC --> RES["resume: chunks already in events.tsv skipped<br/>the last 3 rows and state.txt seed the history"]
+  RES --> REQ["one request per P.policy.describeFramesPerReq frames · layout below"]
+  REQ --> T["tools: record_event · set_state · finish"]
+  T --> F{"every frame has an event?"}
+  F -- no --> T
+  F -- yes --> W["events.tsv: one row per frame · state.txt after every chunk"]
+  W --> DONE["“>>> ‹base› event log complete (N chunks)”"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
+```
+
 ```text
- frames sorted by stamp ──► interval 0? ──► refused: "<base> was extracted as every-frame; describe
-        │                                   needs a fixed interval — rerun Prepare with e.g. 1s"
-        ▼
- scaled to 896 wide into .llmframes/ (unless the preset was already 896w or 480p)
-        ▼
- resume: chunks whose start is in events.tsv are skipped · the last 3 rows seed the window
-         state.txt seeds the STATE ("Recording just started.")
-        ▼
- ┌ one request per P.policy.describeFramesPerReq frames ──────────────────────────────┐
- │  User Context                                                                      │
- │  STATE so far: …                                                                   │
- │  Frames cover t=As to t=Bs, X s apart.                                             │
- │  Just before this: <the last events>                                               │
- │  --- context before (do not describe) ---   --- spoken during these frames ---     │
- │  --- context after (do not describe) ---    (always all three, "(none)" when empty) │
- │  [+0.0s] FRAME 1 of 4  <image>   [+1.0s] FRAME 2 of 4  <image>   …                  │
- └────────────────────────────────────────────────────────────────────────────────────┘
-        ▼                    cached on the whole content, images inline
- tools: record_event(frame, text, calm) · set_state(text) · finish
- prototype: one "EVENT [+Ns]: …" line per frame + "STATE: …", parsed leniently
-        ▼
- events.tsv: one row per frame (no event → "same"; a batch's first frame with no history may not be)
- state.txt after every chunk       ">>> [base] event log complete (N chunks, M answered from the cache)"
+User Context
+STATE so far: …
+Frames cover t=As to t=Bs, X s apart.
+Just before this: ‹the last events›
+--- context before (do not describe) ---
+--- spoken during these frames ---
+--- context after (do not describe) ---
+[+0.0s] FRAME 1 of 4  ‹image›
+[+1.0s] FRAME 2 of 4  ‹image›
+…
 ```
 
 S1 Frames sorted by stamp (interval-0 folder refused: "<base> was extracted as every-frame; describe needs a fixed interval — rerun Prepare with e.g. 1s"; missing or empty folders likewise); scaled once to 896 wide into `.llmframes/` unless the preset was 896w (LLM) or 480p. Each recording heard alongside the video logged with its offset (">>> [video] hearing X alongside it, starting Y s in"). S2 Resume: chunks whose start is in `events.tsv` skipped; last 3 rows seed the rolling window; `state.txt` seeds the STATE ("Recording just started."). S3 Message: User Context; "STATE so far: …"; "Frames cover t=As to t=Bs, X s apart."; "Just before this:" + last events; speech block (always three sections: context before, spoken during, context after; before/after within 10 s, ≤ 2 per source); then per frame "[+N.Ns] FRAME i of n" + image. S4 Cache on the whole content (images inline). S5 **Tools** ([`02-services.md` §3.2](02-services.md#32-describe-per-chunk-of-frames)): `record_event(frame, text, calm)`, `set_state(text)`, `finish`. Prototype: one "EVENT [+Ns]: …" line per frame + "STATE: …", parsed leniently. S6 One `events.tsv` row per frame (no event → "same"; a batch's first frame with no history must not be "same"); `state.txt` after every chunk. S7 Log ">>> [base] event log complete (N chunks)", or "(N chunks, M answered from the cache)" when any were.
@@ -221,25 +228,25 @@ S1 Frames sorted by stamp (interval-0 folder refused: "<base> was extracted as e
 
 <sub><!-- back -->[← F1.7](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.9 →](#f19-mark-retakes-gaming-style)</sub>
 
-```text
- every source on the session clock ──► transcripts + event logs loaded
-        ▼
- ┌ per block of P.policy.fixBlockLines lines ─────────────────────────────────┐
- │ context ±5 s from every other source (its events and lines) + own events   │
- │ "Context around these lines:" … "Transcript lines to clean (N, return N):" │
- │        ▼   tools: fix_line(n, text) · finish                               │
- │ prototype: N TSV lines back — discarded unless the count, the times (±0.01)│
- │ and the speakers are identical; two tries; the originals kept on failure   │
- └────────────────────────────────────────────────────────────────────────────┘
-        ▼   only a valid block is cached
- <source>/transcript.fixed.tsv (+ subtitles.srt)  |  commentary.fixed.tsv      ·  offsets.tsv
-        ▼
- session.tsv — every row sorted by start, events labelled EVENT
-        ▼   ">>> session timeline: N rows across M source(s)"
- the style's marking pass:  Lecture → F1.10   ·   Gaming → F1.9
-        │   a failure leaves it unmarked: "!!! retakes: … -- the timeline stands unmarked"
-        ▼
- session.txt — exactly what the cut model sees, marked stretches folded into one line each
+```mermaid
+flowchart TD
+  A(["every source on the session clock"]) --> OFF["offsets.tsv written first"]
+  OFF --> BL["per block of P.policy.fixBlockLines lines<br/>context ±5 s from every other source and its own events"]
+  BL --> T["tools: fix_line · flag_line · get_lines · finish"]
+  T --> V{"n in the block, no tab?"}
+  V -- no --> ERR["that line's error back to the model"]:::refuse
+  ERR --> T
+  V -- yes --> T
+  T --> OUT["transcript.fixed.tsv (+ subtitles.srt) or commentary.fixed.tsv"]
+  OUT --> SS["session.tsv · “>>> session timeline: N rows across M source(s)”"]
+  SS --> MK{"style?"}
+  MK -- Lecture --> J["F1.10"]
+  MK -- Gaming --> RT["F1.9"]
+  J --> TXT
+  RT --> TXT["session.txt · marked stretches folded into one line each"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Place every source on the session clock; load transcripts and event logs. S2 Per block: checkpoint; context ±5 s from every other source (events and lines) + own events; message "Context around these lines:\n…\nTranscript lines to clean (N lines, return exactly N):\n…". S3 **Tools**: `fix_line(n, text)` per line; `finish`. Prototype: N TSV lines back, discarded unless count, times (±0.01) and speakers identical; two tries; originals kept on failure. Only valid blocks cached. S4 Write `<source>/transcript.fixed.tsv` (+ `subtitles.srt` for a video) or `commentary.fixed.tsv`. (`offsets.tsv` is written earlier, in S1's placement pass, before any block goes out.) S5 Merge into `session.tsv` (sorted by start; events labelled EVENT); log ">>> session timeline: N rows across M source(s)". S6 Run the style's marking pass ([F1.9](#f19-mark-retakes-gaming-style) or [F1.10](#f110-repair-the-joins-lecture-style)); failure leaves the timeline unmarked ("!!! retakes: … -- the timeline stands unmarked"). S7 Write `session.txt` exactly as the cut model sees it (marked stretches folded to one line each: "<stamp> (abandoned attempt to <stamp>, said again at <stamp> -- already removed, read straight past it)").
@@ -248,30 +255,24 @@ S1 Place every source on the session clock; load transcripts and event logs. S2 
 
 <sub><!-- back -->[← F1.8](#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.10 →](#f110-repair-the-joins-lecture-style)</sub>
 
-```text
- spoken lines  ──► fewer than 4? ──► an empty retakes.tsv, done
-        ▼
- brief: every spoken line numbered, "(N.Ns pause)" at gaps ≥ P.policy.retakePauseSeconds,
-        "--- the recording stops here; the next one begins ---" at a source change
-        ▼
- P.policy.retakeRuns identical calls (thinking off), each its own cache slot ──► pooled, deduped
-        │      tools: mark_abandoned(from, to, again) · unmark · finish
-        │      the tool refuses: out of range · "again" inside the stretch · past the timeline
-        │                       · farther than P.policy.retakeReachSeconds
-        ▼
- verify against the words
-        ├─ removal < P.policy.retakeMinSeconds                    ──► dropped (a breath, not an attempt)
-        ├─ again = 0                                              ──► only for a whole take
-        ├─ the repeated tail, fuzzy match (≥ 70 % run, ≤ 3 skips) ──► the mark trimmed to it
-        ├─ a rephrase                                             ──► trimmed to the broken-off tail (≤ 6 s)
-        └─ a refused mark                                         ──► both attempts re-heard by a second ASR pass
-        ▼
- edges placed (F1.11) ──► marks merged
-        ▼
- more than P.policy.retakeCeil of the speech would go? ──yes──► everything refused
-        ▼
- retakes.tsv (empty on purpose when none)
- ">>> retakes: N abandoned stretch(es), m:ss of speech, kept out of the cut"
+```mermaid
+flowchart TD
+  A(["spoken lines"]) --> F{"fewer than 4?"}
+  F -- yes --> E["an empty retakes.tsv"]:::done
+  F -- no --> BR["brief: every line numbered · pauses ≥ P.policy.retakePauseSeconds drawn · seams marked"]
+  BR --> RUNS["P.policy.retakeRuns identical calls, thinking off, pooled and deduped"]
+  RUNS --> T["tools: mark_abandoned · unmark · get_lines · finish"]
+  T --> V{"in range · again outside the stretch · within P.policy.retakeReachSeconds?"}
+  V -- no --> ERR["refusal back to the model"]:::refuse
+  ERR --> T
+  V -- yes --> VW["checked against the words: under P.policy.retakeMinSeconds dropped · trimmed to the repeated tail · rephrase trimmed to the fragment · refused marks re-heard"]
+  VW --> ED["edges placed · F1.11 · marks merged"]
+  ED --> CEIL{"more than P.policy.retakeCeil of the speech?"}
+  CEIL -- yes --> NONE["“!!! retakes: … -- refused, nothing is marked”"]:::refuse
+  CEIL -- no --> W["retakes.tsv · “>>> retakes: N abandoned stretch(es) …”"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Spoken lines (< 4 → empty `retakes.tsv`). S2 Brief: spoken lines numbered, "(N.Ns pause)" at gaps ≥ P.policy.retakePauseSeconds (1.5 s), "--- the recording stops here; the next one begins ---" at source changes. S3 P.policy.retakeRuns (3) identical calls (thinking off), each its own cache slot (run index in the key), answers pooled, deduped. Prototype: strict JSON `{"abandoned":[{"from","to","again"}]}`, 1-based line numbers. **Tools**: `mark_abandoned(from, to, again)`, `unmark`, `finish` (tool validates: range, `again` inside the stretch, beyond the timeline, farther than P.policy.retakeReachSeconds 180 s). S4 Verify against the words: removal < P.policy.retakeMinSeconds (0.3 s) dropped; `again = 0` only for a whole take; repeated tail found by fuzzy match (≥ 70 % run, ≤ 3 skips; words equal, prefix ≥ 3 bytes, or one edit), mark trimmed to it; rephrase trimmed to the broken-off tail (fragments ≤ 6 s); refused marks re-heard by a second ASR pass on both attempts. S5 Place edges ([F1.11](#f111-place-the-edges-of-a-mark)), merge marks. S6 > P.policy.retakeCeil (40 %) of the speech would go → refuse everything: "!!! retakes: <m:ss> of <m:ss> of speech called abandoned -- refused, nothing is marked"; empty `retakes.tsv` written. S7 Write `retakes.tsv` (empty on purpose when none); log ">>> retakes: N abandoned stretch(es), m:ss of speech, kept out of the cut".
@@ -280,30 +281,30 @@ S1 Spoken lines (< 4 → empty `retakes.tsv`). S2 Brief: spoken lines numbered, 
 
 <sub><!-- back -->[← F1.9](#f19-mark-retakes-gaming-style) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.11 →](#f111-place-the-edges-of-a-mark)</sub>
 
+```mermaid
+flowchart TD
+  A(["the words"]) --> S{"any seam, i.e. a source change?"}
+  S -- no --> ONE["“>>> text edit: one recording, no seam to repair …”"]:::done
+  S -- yes --> PER["per seam, thinking ON · BEFORE and AFTER, P.policy.seamReachWords each · layout below"]
+  PER --> T["tools: drop_words · keep_join · get_words · finish"]
+  T --> ST{"one stretch at the join, within P.policy.seamSnapWords?"}
+  ST -- no --> R1["refused — nothing removed at this join"]:::refuse
+  ST -- yes --> MAX{"≤ P.policy.seamMaxWords and ≤ P.policy.seamCeil?"}
+  MAX -- no --> R1
+  MAX -- yes --> DD["dedupe words said again straight across the cut"]
+  DD --> MK["marks → edges F1.11 → merged"]
+  MK --> OUT["final.txt with a cut mark at every join + retakes.tsv, together"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
+```
+
 ```text
- seams = the source changes          none ──► ">>> text edit: one recording, no seam to repair"
-        ▼
- ┌ per seam, thinking ON ─────────────────────────────────────────────────────────────────┐
- │ JOIN k of n.                                                                           │
- │ BEFORE (the end of the take that was interrupted):  … the last 140 words …             │
- │ AFTER (the beginning of the take that follows):     … the first 140 words …            │
- └────────────────────────────────────────────────────────────────────────────────────────┘
-      … das heißt, hier habe ich das Über-  ┃  Das heißt, hier habe ich das Datum der …
-      ◄──── P.policy.seamReachWords ───────►┃◄──── P.policy.seamReachWords ────►
-                                          join
-        ▼  tools: drop_words(side, count) · keep_join · finish
-        ▼  prototype: {"joined": "…"} matched backwards against the PRINTED words,
-           preferring the later saying
-   one stretch, at the join within P.policy.seamSnapWords?  ──no──► refused, nothing removed there
-        │ yes    (other stretches ≤ P.policy.seamNoiseWords are respellings, ignored)
-        ▼
-   ≤ P.policy.seamMaxWords and ≤ P.policy.seamCeil of what was shown? ──no──► refused
-        │ yes
-        ▼
- words repeated straight across a cut deduped (3 words either side; the earlier one goes)
-        ▼
- marks ──► edges (F1.11) ──► merged ──► final.txt (|cut N| at every join) + retakes.tsv, together
- ">>> text edit: N of M words removed in K stretch(es)"
+JOIN k of n.
+BEFORE (the end of the take that was interrupted):
+… the last P.policy.seamReachWords words …
+AFTER (the beginning of the take that follows):
+… the first P.policy.seamReachWords words …
 ```
 
 S1 Words of every recording except the narrator mic (< 4 → empty). S2 Seams = source changes; none → ">>> text edit: one recording, no seam to repair -- every word stands". S3 Per seam (thinking ON): "JOIN k of n." + "BEFORE (the end of the take that was interrupted):" + last P.policy.seamReachWords (140) words + "AFTER (the beginning of the take that follows):" + first 140 words. **Tools**: `drop_words(side, count)`, `keep_join`, `finish`. Prototype: `{"joined": "…"}` matched backwards (preferring the later saying); dropped words must be one stretch at the join (snap 3 words; other stretches ≤ 2 words are respellings); refusals logged "!!! text edit: join k: <reason> -- nothing removed there" (no words; not at the join; several stretches; > P.policy.seamMaxWords 40 or > P.policy.seamCeil 60 %). Cached only when usable. S4 Dedupe words repeated straight across a cut (3 words either side; earlier goes). S5 Marks from dropped runs; edges ([F1.11](#f111-place-the-edges-of-a-mark)); merge. S6 Write `final.txt` (surviving words as written; `|cut N|` / `|cut|` at every join) and `retakes.tsv` together; log ">>> text edit: N of M words removed in K stretch(es)".
@@ -312,19 +313,9 @@ S1 Words of every recording except the narrator mic (< 4 → empty). S2 Seams = 
 
 <sub><!-- back -->[← F1.10](#f110-repair-the-joins-lecture-style) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.12 →](#f112-hand-edit-the-text-lecture)</sub>
 
-```text
-  the last surviving word                              the retake's first word
-   ▁▂▄▆█▆▄▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁                    ▁▁▁▁▁▁▁▂▄▇█▆▃▁
-          └ word end                                       └ word start
-            ├─ 0.08 s pad                                  │
-            ├─ follow the word's own sound, up to 0.25 s    │
-            ├─ then the quietest moment within 0.4 s        │
-            ▼                                               ▼
-        cut lands here                          resumes just before it, when nothing
-                                                was said in between
-  no word times at all: the mono envelope alone — reach 0.8 s, pad 0.05 s, late stamp 0.6 s
-  floor = the 20th percentile of ±4 s, raised to max(3×, +8)     tail level = peak − 12 dB
-```
+![Where the cut lands around a mark](img/04-edges.svg)
+
+<sub>Illustration of the rule, not a measurement.</sub>
 
 With word times: cut ends after the last surviving word (0.08 s pad; follows the word's own sound up to 0.25 s, then the quietest moment within 0.4 s), resumes just before the retake's first word when nothing was said between. Without: mono envelope alone (reach 0.8 s, pad 0.05 s, late stamp 0.6 s). Envelope floor = 20th percentile of ±4 s raised to max(3×, +8); tail level = peak − 12 dB.
 
@@ -332,17 +323,20 @@ With word times: cut ends after the last surviving word (0.08 s pad; follows the
 
 <sub><!-- back -->[← F1.11](#f111-place-the-edges-of-a-mark) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.13 →](#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles)</sub>
 
-```text
- prepare/transcript/final.txt        the words of the video, |cut N| at every join
-        │  the user deletes words in an editor (the marks may stay or go)
-        ▼
- next Cut ▶ ──► final.txt newer than retakes.tsv? ──no──► the model's marks stand
-        │ yes
-        ▼
- the marks are remade from the TEXT, no model asked
- ">>> final.txt was edited after Prepare -- the marks are remade from it, no model asked"
-        ├─ a word that was never said ──► dropped, with a warning
-        └─ more than 40 % removed     ──► refused, nothing is marked
+```mermaid
+flowchart TD
+  A(["prepare/transcript/final.txt"]) -->|the user deletes words| E["edited"]
+  E --> NX(["next Cut ▶"]) --> N{"final.txt newer than retakes.tsv?"}
+  N -- no --> KEEP["the model's marks stand"]:::done
+  N -- yes --> RE["marks remade from the text, no model asked<br/>“>>> final.txt was edited after Prepare -- …”"]
+  RE --> NS{"words that were never said?"}
+  NS -- yes --> DROP["dropped, with a warning"] --> CE
+  NS -- no --> CE{"more than 40 % removed?"}
+  CE -- yes --> REF["refused, nothing marked"]:::refuse
+  CE -- no --> OK["marks written"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 User edits `prepare/transcript/final.txt` (deletes words; join marks may stay or go). S2 Next Cut ▶, if its mtime is after `retakes.tsv`'s: marks remade from the text, no model (">>> final.txt was edited after Prepare -- the marks are remade from it, no model asked"); never-said words dropped with a warning; > 40 % removed refused. REVIEW: a rewrite SHOULD also offer this file in an editor on the Prepare page, join marks as clickable seams.
@@ -368,21 +362,16 @@ P.policy: minTakeSeconds, retakePause, retakeRuns, retakeReach, retakeMin, retak
 
 <sub><!-- back -->[← F1.12](#f112-hand-edit-the-text-lecture) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F2.1 →](05-cut.md#f21-play-the-recording-)</sub>
 
-```text
- aligner (or ASR) tokens          " sen" "tence"      whole words or pieces:
-        ▼                                             a leading space anywhere means piece tokens
- glued into words on the session clock                punctuation-only tokens ride the previous word
-        ▼
- dressed with the case and punctuation of the RAW transcript          (look-ahead 8 words)
-        ▼
- re-dressed with the spelling the FIX pass settled on                 (resync window 6 words)
-        │  a whole respelling is printed on the first word of the run, the rest emptied
-        │  a line with no word in common is left alone
-        ▼
- one word list for the session — times never change, only the written form
-        ▼
- the join pass shows the model THIS spelling and matches the answer back against these tokens
- (a word printed as two owns both; it survives if either does)
+```mermaid
+flowchart TD
+  A(["aligner or ASR tokens"]) --> G["glued into words on the session clock<br/>a leading space anywhere = piece tokens · punctuation rides the previous word"]
+  G --> D1["dressed with the raw transcript's case and punctuation · look-ahead 8"]
+  D1 --> D2["re-dressed with the fix pass's spelling · resync window 6<br/>a respelling on the first word of a run, the rest emptied"]
+  D2 --> L["one word list · times never change, only the written form"]
+  L --> USE["the join pass shows this spelling and matches its answer against these tokens"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 After the fix pass, one word list for the whole session: aligner (or ASR) tokens glued into words on the session clock (a leading space anywhere → piece tokens, none → whole words; punctuation-only tokens ride the previous word without moving its end), dressed with the raw transcript's case and punctuation (look-ahead 8), then re-dressed with the fix pass's spelling (resync window 6; a whole respelling printed on a run's first word, the rest emptied; a line with no word in common left alone). Times never change, only the written form. The join pass shows the model this spelling and matches its answer back against exactly these tokens (a word printed as two owns both; survives if either does).

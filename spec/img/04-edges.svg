@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="300" viewBox="0 0 780 300" font-family="Cantarell, Inter, 'Noto Sans', 'DejaVu Sans', sans-serif" font-size="12">
+  <!-- F1.11: where the cut lands around a mark. Illustrative envelope, not a measurement. -->
+  <rect x="0" y="0" width="780" height="300" fill="#ffffff"/>
+  <rect x="20" y="40" width="740" height="150" rx="6" fill="#23252b"/>
+  <!-- the two words -->
+  <rect x="60" y="48" width="170" height="16" rx="3" fill="#3a63c8" opacity="0.85"/>
+  <text x="145" y="60" text-anchor="middle" fill="#fff">the last surviving word</text>
+  <rect x="540" y="48" width="180" height="16" rx="3" fill="#3a63c8" opacity="0.85"/>
+  <text x="630" y="60" text-anchor="middle" fill="#fff">the retake's first word</text>
+  <!-- tail level and floor -->
+  <line x1="20" y1="120" x2="760" y2="120" stroke="#e5a50a" stroke-dasharray="5 4"/>
+    <line x1="20" y1="168" x2="760" y2="168" stroke="#8ff0a4" stroke-dasharray="3 4"/>
+    <!-- envelope -->
+  <polyline fill="#62a0ea" fill-opacity="0.55" stroke="#99c1f1" stroke-width="1.2"
+    points="20,186 60,178 75,120 95,86 115,72 135,92 155,80 175,104 200,96 222,122 230,140 240,150 252,158 266,166 280,172 300,176 320,180 340,182 360,183 380,184 400,184 420,183 440,184 460,183 480,182 500,181 520,180 535,176 548,150 560,108 575,82 595,76 615,90 640,84 665,100 690,94 712,118 730,150 760,186 760,190 20,190"/>
+  <!-- markers -->
+  <line x1="230" y1="40" x2="230" y2="190" stroke="#ffffff" stroke-width="1"/>
+  <line x1="255" y1="40" x2="255" y2="190" stroke="#c0bfbc" stroke-dasharray="2 3"/>
+  <line x1="300" y1="40" x2="300" y2="190" stroke="#c0bfbc" stroke-dasharray="2 3"/>
+  <line x1="372" y1="36" x2="372" y2="194" stroke="#e01b24" stroke-width="3"/>
+  <line x1="536" y1="36" x2="536" y2="194" stroke="#e01b24" stroke-width="3"/>
+  <line x1="540" y1="40" x2="540" y2="190" stroke="#ffffff" stroke-width="1"/>
+  <!-- annotations below -->
+  <g fill="#2e2e2e">
+    <text x="230" y="210" text-anchor="middle">word end</text>
+    <text x="255" y="226" text-anchor="middle">+0.08 s pad</text>
+    <text x="300" y="242" text-anchor="middle">its own sound, ≤ 0.25 s</text>
+    <text x="372" y="210" text-anchor="middle" fill="#c01c28" font-weight="bold">cut lands here</text>
+    <text x="372" y="226" text-anchor="middle">quietest moment within 0.4 s</text>
+    <text x="540" y="210" text-anchor="middle">word start</text>
+    <text x="536" y="226" text-anchor="middle" fill="#c01c28" font-weight="bold">resumes just before it</text>
+    <text x="536" y="242" text-anchor="middle">when nothing was said in between</text>
+  </g>
+  <text x="20" y="22" font-weight="bold" fill="#2e2e2e">With word times</text>
+  <line x1="170" y1="18" x2="200" y2="18" stroke="#e5a50a" stroke-width="2" stroke-dasharray="5 4"/><text x="206" y="22" fill="#9c6e03">tail level = peak − 12 dB</text>
+  <line x1="390" y1="18" x2="420" y2="18" stroke="#2e7d32" stroke-width="2" stroke-dasharray="3 4"/><text x="426" y="22" fill="#2e7d32">floor = 20th percentile of ±4 s, raised to max(3×, +8)</text>
+  <text x="20" y="276" fill="#555">No word times at all: the envelope alone decides — reach 0.8 s, pad 0.05 s, late stamp 0.6 s.</text>
+</svg>

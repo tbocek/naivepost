@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="376" viewBox="0 0 720 376" font-family="Cantarell, Inter, 'Noto Sans', 'DejaVu Sans', sans-serif" font-size="13">
+  <!-- Proposed screen (flow F0.7): not in the prototype, drawn in its visual style. -->
+  <rect x="0.5" y="0.5" width="719" height="375" rx="10" fill="#fafafa" stroke="#c0c0c0"/>
+  <path d="M10.5 0.5 H709.5 A10 10 0 0 1 719.5 10.5 V46 H0.5 V10.5 A10 10 0 0 1 10.5 0.5 Z" fill="#ebebeb" stroke="#c0c0c0"/>
+  <text x="360" y="28" text-anchor="middle" font-weight="bold" fill="#2e2e2e">Editing policy</text>
+  <text x="696" y="29" text-anchor="middle" font-size="16" fill="#2e2e2e">×</text>
+  <rect x="580" y="12" width="70" height="20" rx="10" fill="#fdf0d5" stroke="#e5a50a"/>
+  <text x="615" y="26" text-anchor="middle" font-size="11" fill="#9c6e03">proposed</text>
+
+  <g fill="#6f6f6f" font-size="12" font-weight="bold">
+    <text x="24" y="76">field</text><text x="270" y="76">value</text><text x="370" y="76">source</text><text x="470" y="76">because</text>
+  </g>
+  <line x1="16" y1="86" x2="704" y2="86" stroke="#dadada"/>
+
+  <g fill="#2e2e2e">
+    <!-- row 1 -->
+    <text x="24" y="112">minTakeSeconds</text>
+    <rect x="262" y="96" width="84" height="26" rx="6" fill="#fff" stroke="#cdcdcd"/><text x="272" y="114">2.0</text>
+    <rect x="370" y="99" width="62" height="20" rx="10" fill="#ededed"/><text x="401" y="113" text-anchor="middle" font-size="11" fill="#555">default</text>
+    <line x1="16" y1="132" x2="704" y2="132" stroke="#ededed"/>
+    <!-- row 2 -->
+    <text x="24" y="158">targetLengthSeconds</text>
+    <rect x="262" y="142" width="84" height="26" rx="6" fill="#fff" stroke="#cdcdcd"/><text x="272" y="160">720</text>
+    <rect x="370" y="145" width="62" height="20" rx="10" fill="#dbe8fb"/><text x="401" y="159" text-anchor="middle" font-size="11" fill="#1c5fb8">model</text>
+    <text x="470" y="160" fill="#555" font-style="italic">"about 12 minutes"</text>
+    <line x1="16" y1="178" x2="704" y2="178" stroke="#ededed"/>
+    <!-- row 3 -->
+    <text x="24" y="204">keepSwearing</text>
+    <rect x="262" y="190" width="40" height="22" rx="11" fill="#3584e4"/><circle cx="291" cy="201" r="9" fill="#fff"/>
+    <rect x="370" y="191" width="62" height="20" rx="10" fill="#dbe8fb"/><text x="401" y="205" text-anchor="middle" font-size="11" fill="#1c5fb8">model</text>
+    <text x="470" y="206" fill="#555" font-style="italic">"keep it raw"</text>
+    <line x1="16" y1="224" x2="704" y2="224" stroke="#ededed"/>
+    <!-- row 4 -->
+    <text x="24" y="250">deadAirMaxSeconds</text>
+    <rect x="262" y="234" width="84" height="26" rx="6" fill="#fff" stroke="#3584e4" stroke-width="2"/><text x="272" y="252">8.0</text>
+    <rect x="370" y="237" width="62" height="20" rx="10" fill="#dff3e4"/><text x="401" y="251" text-anchor="middle" font-size="11" fill="#1b7a3a">user</text>
+    <line x1="16" y1="270" x2="704" y2="270" stroke="#ededed"/>
+    <!-- more -->
+    <text x="24" y="296" fill="#8a8a8a">… every field of 10-parameters.md §2</text>
+  </g>
+
+  <line x1="0.5" y1="318" x2="719.5" y2="318" stroke="#dadada"/>
+  <rect x="440" y="330" width="150" height="32" rx="6" fill="#e6e6e6" stroke="#cdcdcd"/>
+  <text x="515" y="351" text-anchor="middle" fill="#2e2e2e">Reset to defaults</text>
+  <rect x="602" y="330" width="100" height="32" rx="6" fill="#3584e4"/>
+  <text x="652" y="351" text-anchor="middle" fill="#fff">Close</text>
+</svg>

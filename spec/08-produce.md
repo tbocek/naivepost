@@ -10,27 +10,11 @@ Renders the video; writes subtitles per language, title, description, thumbnail.
 
 ## 1. Screen
 
-```text
-┌ Produce ────────────────────────────────────────────┬────────────────────────────────────────────────┐
-│ Images ⓘ                              [Add image…]  │ Title ⓘ                                   [↻] │
-│ ┌────────┐ ┌────────┐ ┌────────┐                     │ [Blockchain Basics: Keys and Signatures      ] │
-│ │ base   │ │ ref 2  │ │ ref 3  │                     │ YouTube description ⓘ                          │
-│ │ ┌crop┐ │ │        │ │        │                     │ ┌────────────────────────────────────────────┐ │
-│ │ └────┘ │ │        │ │        │                     │ │ In this lecture we …                       │ │
-│ └────────┘ └────────┘ └────────┘                     │ │ 0:00 What this is                          │ │
-│ 17-25-30   [Set Thumbnail][Change…][−]                │   (a reference slot also has [Make base]) │ #blockchain #lecture …                     │ │
-│ Edit instruction ⓘ                                   │ └────────────────────────────────────────────┘ │
-│ [blur the background, keep the lecturer sharp …    ] ├────────────────────────────────────────────────┤
-│ Negative prompt ⓘ                                    │ Transcode ⓘ                          [⤓] [↻] │
-│ [watermarks, lettering                              ] │ Container: [mp4 ▾]  Codec: [h264 ▾]  Preset: [veryslow ▾] │
-│ Thumbnail ⓘ                              [⤓] [↻]     │ Resolution: [1080p ▾] Frame rate: [30 ▾] Audio: [128 ▾] │
-│ ┌────────────────────────────────────────────────┐   │ Subtitles:[none ▾] Translate:[none ▾]  Game audio: ━●━ 0.22 │
-│ │        (thumbnail; drag a box to add words)    │   │ Quality (CRF): ━━━━━━●━━━ 24   Frame timing: ☐ peak rate (VFR) │
-│ │   ✎ Blockchain Basics                           │   │ Channels: ☐ mono              Frame edges: ☑ blurred │
-│ └────────────────────────────────────────────────┘   │                                                │
-└──────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
- Inputs: 57 clips · 11:52 · 3 to speak · no upload text      Outputs: [📁] 61 files, 220 MB
-```
+![The Produce page](img/08-produce.png)
+
+<sub>Screenshot of the prototype on the ETH lecture project.</sub> Narration is off in this project, so the Game audio slider is hidden.
+
+**1** Add image… · **2** the base image the image model edits · **3** Set Thumbnail · Change… · remove (a reference slot also has Make base) · **4** Edit instruction · **5** Negative prompt · **6** Thumbnail: ⤓ export · ↻ redraw · **7** the thumbnail: drag a box to add words, ✎ to reword · **8** Title, ↻ suggest · **9** YouTube description · **10** Transcode: ⤓ save the video · ↻ encode again · **11** container · codec · preset · resolution · frame rate · audio · **12** Subtitles · Translate (· Game audio with narration on) · **13** Quality (CRF) · **14** Frame timing · Channels · Frame edges · **15** Inputs readout
 
 - **Encoder settings** (labels, options, defaults and tooltips in [`inventory/produce.md`](inventory/produce.md) §A, normative): Container mp4/mkv/webm; Codec h264/h265/vp9; Preset ultrafast…veryslow (default veryslow — REVIEW: `medium` or `slow` is a better default for hour-long sessions); Resolution 720p/1080p/original (short side; the cut's aspect sets the shape); Frame rate source/60/30/24; Audio 128/192/256/320 kbit/s; Subtitles burned in / track in file / none in the video (.srt and .vtt written beside the video regardless); Translate (per-language ticks in the settings list; session's own language never offered); Game audio 0..1 (hidden when narration off); Quality CRF 14..34 (mark at 24); Frame timing "peak rate (VFR)"; Channels "mono"; Frame edges "blurred" (on). webm forces vp9; "track in file" → "none". Output = `produce/final.<container>`, not asked. ↻ Transcode ("Encode the video again from the cut and these settings — no model call…"); ⤓ Save video (copy elsewhere).
 - **Images row**: up to 8; first = base the image model edits, others = references it can name ("the ship from the second image"); base shows a crop box when its shape differs from the video's; per slot: Set Thumbnail (use as is, no model), Change…, remove; Make base on every non-base slot; empty state "No image — the thumbnail will be drawn from the instruction alone." **Edit instruction** and **Negative prompt** boxes; **Thumbnail** with ⤓ export (JPEG under 2 MB) and ↻ redraw; picture is a text-overlay editor: drag a box → words printed to fill it; drag borders/middle to resize/move; ✎ to reword or remove; title band is its own box.
@@ -43,28 +27,24 @@ Renders the video; writes subtitles per language, title, description, thumbnail.
 
 <sub><!-- back -->[← F4.8](07-narrate.md#f48-narration-off) · [↑ 08 Produce](#08--produce) · [all flows](11-flow-index.md#3-all-flows) · [F5.2 →](#f52-the-render)</sub>
 
-```text
- ▶ ──► busy · no cut ──► "no cut yet — build one on the Cut step first"
-        ▼
-      the render is up to date (F5.3)? ──yes──► ">>> the video is already what this page describes —
-        │                                       not encoding it again (↻ beside Transcode encodes anyway)"
-        ├─ the video exists ──► confirm "Overwrite <base>?"
-        │                       "<path> — size, age … The encode takes minutes and there is no undo for it."
-        ▼
-      snapshot everything on the GUI thread: the cut (the Cut page's own when it holds one — an
-      unsaved tweak still renders — else cut/cut.json), the lines, the settings, the sources,
-      the publish state, the aspect
-        ▼
-   ┌─ WORDS ─────────────────────────────┐   ┌─ RENDER ───────────────────────────────────────┐
-   │ F5.6, its own progress line         │   │ F5.2                                           │
-   │ a failure is logged and the render  │   │ its error is the run's verdict                 │
-   │ carries on                          │   │                                                │
-   └──────────────┬──────────────────────┘   └──────────────────┬─────────────────────────────┘
-                  └──────────────┬──────────────────────────────┘
-                                 ▼   the two halves touch no common file
-                        the <video> tag page (F5.5)
-                                 ▼
-                        "produced <file> — X s, size"
+```mermaid
+flowchart TD
+  A(["▶"]) --> G{"busy · no cut?"}
+  G -- yes --> R["“no cut yet — build one on the Cut step first”"]:::refuse
+  G -- no --> U{"the render is up to date? F5.3"}
+  U -- yes --> SK["“>>> the video is already what this page describes — not encoding it again …”"]
+  U -- "no, a video exists" --> OW["confirm “Overwrite ‹base›?”"]
+  U -- "no video yet" --> SN
+  OW --> SN["snapshot on the GUI thread: the cut, lines, settings, sources, publish state, aspect"]
+  SK --> SN
+  SN --> WORDS["words F5.6 · a failure is logged, the render carries on"]
+  SN --> REND["render F5.2 · its error is the run's verdict"]
+  WORDS --> TAG["the video tag page F5.5"]
+  REND --> TAG
+  TAG --> DONE["status “done” · “>>> ‹path› (X s, size)”"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Refuse when busy; no cut → "no cut yet — build one on the Cut step first". S2 Render up to date ([F5.3](#f53-what-up-to-date-means) stamp) → encode skipped (">>> the video is already what this page describes — not encoding it again (↻ beside Transcode encodes anyway)"); else if the video exists, confirm "Overwrite <base>?" ("<path> — size, age\n\nThe encode takes minutes and there is no undo for it."). S3 Snapshot on the GUI thread (cut, lines, settings, sources, publish state, aspect); cut = the Cut page's own if it holds one (unsaved tweak still renders), else `cut/cut.json` — one function answers "what is the cut" for render, subtitles, brief and stamp. S4 startRun; one opening line: ">>> transcoding <file>: N clips at <container>/<codec> crf N — the thumbnail and the upload text are left as they are", or ">>> producing <file>: … and the thumbnail redrawn beside them" when `publish.json` exists, else "… and the upload text and thumbnail written beside them". Two halves in parallel: **words** ([F5.6](#f56-upload-text-and-thumbnail), own progress line; failure logged "!!! the upload text and thumbnail failed: … -- the render carries on") and **render** ([F5.2](#f52-the-render)). S5 After both: write the `<video>` tag page ([F5.5](#f55-the-video-tag)). S6 Render's error = run's verdict. Progress text "produced <file> — X s, size"; status "done" / "production stopped" / "production failed — see log"; log ">>> <path>  (X s, size)".
@@ -73,36 +53,22 @@ S1 Refuse when busy; no cut → "no cut yet — build one on the Cut step first"
 
 <sub><!-- back -->[← F5.1](#f51--produce) · [↑ 08 Produce](#08--produce) · [all flows](11-flow-index.md#3-all-flows) · [F5.3 →](#f53-what-up-to-date-means)</sub>
 
-```text
- clear produce/clips/
-        ▼
- 1/2 speak every line with no wav          captions only ──► nothing is spoken; the lines ride the
-        │                                                    subtitle track alone
-        ▼
- plan one clip per cut segment (after speed effects split them)
-        │  footage (rate, clamped to the recording) · copies · inserts · sounds over footage
-        │  under P.policy.minClipSeconds ──► dropped, with any narration lost named in the log
-        │  narration matched to clips (overlap ≥ half the shorter span) and fitted (F4.3)
-        │  lane mixes per clip · frame box · camera paths · text, gain, hush and still cues
-        ▼
- subtitles on the produced clock (F5.4) ──► clips/final.srt · stale sidecars deleted by exact name
-        ▼
- 2/2 encode each clip   c000_<stamp>, c001_… ·  -ss before -i
-        │  video: the filter graph of 06 §4 + burned subtitles
-        │  audio: speed ──► hush ──► lane bed ──► gains ──► seam dips ──► narration at
-        │         P.policy.gameVolume ──► limiter −1 dBFS ──► 48 kHz
-        ▼
- join by STREAM COPY  (so every clip must share a frame size and audio layout)
-        ▼
- translate the cues into the ticked languages (F5.4) — after the encodes, so the encoder never idles
- behind the LLM gate
-        ▼
- loudness + mux   aresample=async=1:first_pts=0, loudnorm I −14 / TP −1.5 / LRA 11, 48 kHz
-                  subtitle tracks when "track in file" (mov_text in mp4, srt in mkv, never webm)
-                  mp4 faststart
-        ▼
- sidecars <stem>[.code].srt and .vtt per language ──► the stamp (F5.3)
- checkpoints between every subprocess
+```mermaid
+flowchart TD
+  A(["clear produce/clips/"]) --> SPK{"voice = captions only?"}
+  SPK -- yes --> CAPS["nothing spoken · the lines ride the subtitle track"]
+  SPK -- no --> SP["1/2 · speak every line with no wav"]
+  CAPS --> PL
+  SP --> PL["plan one clip per segment, after speed splits<br/>under P.policy.minClipSeconds dropped, lost narration named<br/>lines matched and fitted F4.3 · lane mixes · camera paths · cues"]
+  PL --> SUB["subtitles on the produced clock F5.4 → clips/final.srt"]
+  SUB --> ENC["2/2 · encode each clip, -ss before -i<br/>speed → hush → lanes → gains → dips → narration at P.policy.gameVolume → limiter"]
+  ENC --> JN["join by stream copy"]
+  JN --> TR["translate the cues F5.4 · after the encodes"]
+  TR --> MX["loudness and mux: loudnorm I −14, TP −1.5, LRA 11 · subtitle tracks · faststart"]
+  MX --> SC["sidecars ‹stem›[.code].srt and .vtt"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Clear `produce/clips/`. S2 Speak every line without a wav (job "speaking" 1/2) — unless voice is "captions only": nothing spoken, lines carried by the subtitle track alone (with Subtitles "none in the video" warn ">>> captions only and nothing in the video — the lines are in the .srt beside it"). S3 Plan one clip per cut segment (after speed-effect splits): footage (rate, clamped to the recording), copies (`copy:<s>`), inserts (missing file → "clip N: <file> is not there any more — skipped"), sounds over footage; clips under P.policy.minClipSeconds (0.5) dropped, log line naming any narration lost. Narration lines matched to clips (overlap ≥ half the shorter span) and fitted ([F4.3](07-narrate.md#f43-fit-a-line-to-its-clip-the-renders-rule-mirrored-by-the-row-warnings)). Sound plan for own-clock runs; lane mixes per clip (overlaps ≥ 0.1 s; per-lane report "<lane> is mixed into N of the M clips"); frame box per clip; camera paths; text, gain, hush, still cues. S4 Subtitles on the produced clock ([F5.4](#f54-subtitles)) → `clips/final.srt`; stale sidecars beside the video deleted by exact name. S5 Encode each clip (job "clip": stems `c000_<stamp>`; -ss before -i; filter graph of [`06-effects.md` §4](06-effects.md#4-render-how-each-effect-becomes-ffmpeg) + burned subtitles; audio: speed → hush → lane bed → gains → seam dips → narration mix at P.policy.gameVolume → limiter −1 dBFS → 48 kHz format; codec args by codec/preset/CRF; every command logged). Size mismatch vs clip 0 logged (join is a stream copy). S6 Join by stream copy ("joining"). S7 Translate cues into ticked languages ([F5.4](#f54-subtitles); after the encodes so the encoder never idles behind the LLM gate). S8 Loudness + mux: `aresample=async=1:first_pts=0,loudnorm=I=-14:TP=-1.5:LRA=11`, 48 kHz, the audio codec, subtitle tracks when "track in file" (mov_text in mp4, srt in mkv; never webm), mp4 faststart flags. S9 Sidecars `<stem>[.code].srt` and `.vtt` per language; each logged. S10 Checkpoints between every subprocess. The run writes the stamp ([F5.3](#f53-what-up-to-date-means)) once the render returns without error; a press that skipped the encode writes none.
@@ -111,19 +77,16 @@ S1 Clear `produce/clips/`. S2 Speak every line without a wav (job "speaking" 1/2
 
 <sub><!-- back -->[← F5.2](#f52-the-render) · [↑ 08 Produce](#08--produce) · [all flows](11-flow-index.md#3-all-flows) · [F5.4 →](#f54-subtitles)</sub>
 
-```text
- the stamp = a hash of
-     the encoder settings (without the output path)
-     the segments
-     the lines — bounds, text, wav size and mtime
-     the sources — path, size, mtime
-     the aspect · the voice · the narration flag
-        ▼
- kept as <stem>.stamp beside the video
-        ▼
- ▶ compares · equal ──► the encode is skipped     unwritable or uncomputable ──► never matches
- NOT in it: the title, the description, the thumbnail, the upload record
- the upload text is "written" when produce/publish/publish.json exists — deleting publish/ starts it over
+```mermaid
+flowchart TD
+  H["a hash of: encoder settings, not the output path · the segments<br/>the lines: bounds, text, wav size and mtime · the sources: path, size, mtime<br/>the aspect · the voice · the narration flag"] --> S["‹stem›.stamp beside the video"]
+  S --> C{"▶: the same hash?"}
+  C -- yes --> SKIP["the encode is skipped"]:::done
+  C -- no --> ENC["encode, then write the new stamp"]:::done
+  N["not in it: title, description, thumbnail, upload record"] -.- H
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 Stamp = hash of encoder settings (minus output path), segments, lines (bounds, text, wav size and mtime), sources (path, size, mtime), aspect, voice, narration flag; kept as `<stem>.stamp` beside the video. Not in it: title, description, thumbnail, upload record. Upload text is "written" when `produce/publish/publish.json` exists; deleting `publish/` starts it over.
@@ -132,25 +95,26 @@ Stamp = hash of encoder settings (minus output path), segments, lines (bounds, t
 
 <sub><!-- back -->[← F5.3](#f53-what-up-to-date-means) · [↑ 08 Produce](#08--produce) · [all flows](11-flow-index.md#3-all-flows) · [F5.5 →](#f55-the-video-tag)</sub>
 
-```text
- cues per clip     narration lines where a clip has them
-                   else the clip's own speech from the aligned words (the narrator mic excluded),
-                   respelled from the fixed transcript
-                        ▼  per word, a new cue at
-                   a gap ≥ P.policy.subtitleBreakSeconds · over 2 × P.policy.subtitleRowChars characters
-                   · ≥ P.policy.subtitleMaxSeconds          an empty cue extends the previous one
-        ▼
- on the produced clock   no overlaps · a gap under P.policy.subtitleHoldSeconds is held
-                         · a cue under P.policy.subtitleMinSeconds folds into the next
-                         · wrapped at 42 chars into ≤ 2 rows · {\an8} / {\an5} for top / centre
-        ▼
- per ticked language (the session's own is track 0 and never translated)
-   batches of P.policy.translateBatch numbered lines, thinking off
-   "TRANSLATE THESE N LINES INTO X. Answer with N lines, numbered as they are here:"
-   tools: translate_line(n, text) · finish
-        ├─ missing numbers ──► re-asked once, with their original numbers
-        ├─ still missing    ──► the original text stands, with a warning
-        └─ cached only when complete
+```mermaid
+flowchart TD
+  A(["per clip"]) --> N{"narration lines on it?"}
+  N -- yes --> NL["the lines"]
+  N -- no --> F{"a footage clip?"}
+  F -- no --> NONE["no cues"]
+  F -- yes --> SW["its own speech from the aligned words, narrator mic excluded"]
+  NL --> CUE
+  SW --> CUE["a new cue at a gap ≥ P.policy.subtitleBreakSeconds, over 2 × subtitleRowChars characters, or ≥ subtitleMaxSeconds"]
+  CUE --> CLK["on the produced clock: no overlaps · short gaps held · short cues folded · ≤ 2 rows of 42"]
+  CLK --> TR{"languages ticked?"}
+  TR -- yes --> T["batches of P.policy.translateBatch numbered lines · translate_line · finish"]
+  T --> MISS{"numbers missing?"}
+  MISS -- yes --> AGAIN["asked once more with their numbers"]
+  AGAIN --> LEFT["still missing: the original text, with a warning"]
+  MISS -- no --> DONE["the track"]:::done
+  LEFT --> DONE
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Cues per clip: its narration lines if any, else — footage clips only, never an insert, a freeze or a clip with no video — its own speech from the aligned words (narrator mic excluded), respelled from the fixed transcript; per word, new cue at a gap ≥ P.policy.subtitleBreakSeconds (0.6), over 2 × P.policy.subtitleRowChars (42) characters, or ≥ P.policy.subtitleMaxSeconds (6); an empty cue extends the previous. S2 Produced clock: no overlaps; gaps under 1.2 s held; cues under 0.8 s folded into the next; wrapped at 42 chars, ≤ 2 rows; `{\an8}`/`{\an5}` for top/centre. S3 Translation per ticked language: numbered batches of P.policy.translateBatch lines (REVIEW: new; prototype sent all lines at once and repaired gaps); message "TRANSLATE THESE N LINES INTO X. Answer with N lines, numbered as they are here:"; thinking off; **Tools**: `translate_line(n, text)`, `finish` ([`02-services.md` §3.10](02-services.md#310-translate-per-batch-of-numbered-lines)); missing numbers re-asked once with original numbers; still missing → original text + warning; cached only when complete. Session's own language = track 0, never translated.
@@ -159,21 +123,14 @@ S1 Cues per clip: its narration lines if any, else — footage clips only, never
 
 <sub><!-- back -->[← F5.4](#f54-subtitles) · [↑ 08 Produce](#08--produce) · [all flows](11-flow-index.md#3-all-flows) · [F5.6 →](#f56-upload-text-and-thumbnail)</sub>
 
-```text
- the thumbnail ──► <stem>.jpg   (JPEG 90, the poster)
- the .vtt files on disk ──► one <track> each, the video's own language first and default
-        ▼
- <stem>.html
-   ┌──────────────────────────────────────────────────────────────┐
-   │ <video poster="…jpg" controls src="final.mp4" preload="none">│
-   │   <track src="final.vtt"    srclang="en" default>            │
-   │   <track src="final.de.vtt" srclang="de">                    │
-   │ </video>                                                     │
-   └──────────────────────────────────────────────────────────────┘
-        ▼
- notes logged when the container or codec is not web-playable, and that subtitles need http, not file://
- the tag is rewritten even when the encode was skipped
+```html
+<video poster="final.jpg" controls src="final.mp4" preload="none">
+  <track src="final.vtt"    srclang="en" default>
+  <track src="final.de.vtt" srclang="de">
+</video>
 ```
+
+<sub>`final.html`: the poster is the thumbnail as JPEG 90; one track per `.vtt` on disk, the video's own language first and default. Rewritten even when the encode was skipped.</sub>
 
 Poster `<stem>.jpg` (JPEG 90) from the thumbnail; tracks = `.vtt` files on disk, video's own language first and default; `<stem>.html` = bare `<video poster controls src preload="none">`, one `<track>` per language. Notes logged: container/codec not web-playable; subtitles need http, not file://.
 
@@ -181,34 +138,23 @@ Poster `<stem>.jpg` (JPEG 90) from the thumbnail; tracks = `.vtt` files on disk,
 
 <sub><!-- back -->[← F5.5](#f55-the-video-tag) · [↑ 08 Produce](#08--produce) · [all flows](11-flow-index.md#3-all-flows) · [F5.7 →](#f57-page-runs)</sub>
 
-```text
- the brief   "THE FINISHED VIDEO: N clips, m:ss long."
-             per clip "CLIP n (at m:ss in the video, X s): session a–b" + what was seen and said
-             + the narration at its time in the video, or "(no narration has been written…)"
-             REVIEW: for a long session the brief MUST be bounded (P.machine.briefMaxChars) by folding
-             each clip to its first lines and events; the model MAY read more with get_lines
-        ▼
- the "youtube" prompt · thinking ON · web tools offered
- tools: set_title · set_description · pick_frame(clip, offset) · set_thumbnail_instruction(text, negative?)
-        · finish (a title and a description are required)
-        ▼
- a frame was picked? ──yes──► the nearest extracted frame, cropped to the video's shape, IS the
-        │                     thumbnail — no model, no GPU · own = true · the row holds that frame only
-        ▼ no
- first run with no images and no frame ──► 3 frames evenly spread over the kept footage fill the row
-        ▼
- publish.json and description.txt written BEFORE drawing (a failed draw keeps the thinking)
-        ▼
- draw, unless own or the stamp says it is already drawn from these images and this instruction
-   prompt = the instruction + "Do not write any words, letters, titles, logos or captions into the
-            picture. Keep the <upper|middle|lower> part of the picture calm and uncluttered: a title
-            will be printed across it afterwards."
-   frame  = the video's aspect at long side P.policy.thumbnailLongSide · the base cropped, references raw
-   sd.cpp {prompt, negative_prompt, width, height, seed −1, ref_images, auto_resize_ref_image, png}
-          polled every second: "drawing (<status>)"
-        ▼
- thumbnail-plain.png ──► print the marked texts, then the title ──► thumbnail.png + thumbnail.stamp
- a missing title or instruction leaves the previous value · the description is always replaced
+```mermaid
+flowchart TD
+  A(["the brief: the finished video, clip by clip, and the narration"]) --> M["the youtube prompt · thinking ON · web tools"]
+  M --> T["tools: set_title · set_description · pick_frame · set_thumbnail_instruction · get_frames · finish"]
+  T --> K{"a frame picked?"}
+  K -- yes --> FR["the nearest frame, cropped to the video's shape, IS the thumbnail<br/>no model, no GPU · own = true"]
+  K -- no --> ROW{"images in the row?"}
+  ROW -- no --> THREE["3 frames spread over the kept footage fill the row"] --> PJ
+  ROW -- yes --> PJ["publish.json and description.txt written BEFORE drawing"]
+  PJ --> ST{"already drawn from these images and this instruction?"}
+  ST -- yes --> PR
+  ST -- no --> SD["sd.cpp: the instruction + “Do not write any words …” · polled every second"]
+  SD --> PR["print the marked texts, then the title → thumbnail.png + thumbnail.stamp"]:::done
+  FR --> PR
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 S1 Brief: "THE FINISHED VIDEO: N clips, m:ss long." + "WHAT IS IN EACH CLIP:" + per clip "CLIP n (at m:ss in the video, X s): session a–b" with what was seen and said, + "THE NARRATION SPOKEN OVER IT, at its time in the finished video:" and the lines (or "(no narration has been written for this video)"). Unlike the narration brief ([F4.2](07-narrate.md#f42-the-narration-call)): no MARKED or CAPTION lines; effects not passed. REVIEW: for long sessions the brief MUST be bounded (P.machine.briefMaxChars, default ~120 kB) by folding each clip to its first lines and events; the model MAY read more with `get_lines`. S2 System = "youtube" prompt; thinking on; web tools offered. **Tools**: `set_title`, `set_description`, `pick_frame(clip, offset)`, `set_thumbnail_instruction(text, negative?)`, `finish` ([`02-services.md` §3.9](02-services.md#39-upload-text-and-thumbnail)). Prototype: "TITLE: …", "THUMBNAIL: <instruction | frame: clip n +s>", then the description, peeled from prose. S3 Picked frame: nearest extracted frame, cropped to the video's shape, is the thumbnail as is (no model, no GPU); row holds that frame only; `own` = true. S4 First run, no images, no chosen frame: 3 frames evenly spread over the kept footage fill the row ("    publish: no images chosen — taking 3 from the cut"). S5 Write `publish.json` and `description.txt` before drawing (failed draw keeps the thinking); title printed onto the picture the first time it exists — REVIEW: later rewrites leave the picture's words unchanged, so a re-suggested title and thumbnail disagree until the user retypes it ([`12-decisions.md` §3](12-decisions.md#3-where-the-prototype-overrules-the-model--and-where-that-decision-moves)). S6 Draw (unless `own`, or its own stamp says already drawn from these images and this instruction): instruction + "Do not write any words, letters, titles, logos or captions into the picture. Keep the <upper|middle|lower> part of the picture calm and uncluttered: a title will be printed across it afterwards."; frame = video's aspect at long side 1280; base cropped, references raw; sd.cpp request {prompt, negative_prompt, width, height, seed −1, ref_images, auto_resize_ref_image, png} (steps/cfg left to the server); empty instruction refused: "nothing to tell the image model — write an edit instruction first (▶ suggests one)"; poll every second: "drawing (<status>)" or "drawing (<status>, N ahead in the queue)"; result → `thumbnail-plain.png`. S7 Print marked texts, then title, onto `thumbnail.png`; write `thumbnail.stamp`. S8 Missing title/instruction keeps the previous value; description always replaced.
@@ -217,22 +163,23 @@ S1 Brief: "THE FINISHED VIDEO: N clips, m:ss long." + "WHAT IS IN EACH CLIP:" + 
 
 <sub><!-- back -->[← F5.6](#f56-upload-text-and-thumbnail) · [↑ 08 Produce](#08--produce) · [all flows](11-flow-index.md#3-all-flows) · [F6.1 →](09-llm-and-tools.md#2-tool-protocol-f61)</sub>
 
-```text
- ↻ over the thumbnail   redraw from the images and the instruction as they stand (clears "own",
-                        always draws)   "thumbnail drawn — ▶ renders the video"
- ↻ beside Title         rewrite the title, the instruction and the description — the only thing that
-                        rewrites text   "title, instruction and description rewritten — ▶ renders the video"
- Set Thumbnail          take that image as it is, cropped
-                        "thumbnail taken from <file> — the words are printed on it; ↻ draws over it"
- drag a box on it       ┌ Words on the thumbnail ─────────────────┐   boxes snap to the picture's and
-                        │ [ Blockchain Basics              ]      │   each other's edges and middles
-                        │        [Remove]  [Cancel]  [Save]       │   re-printing costs a decode,
-                        └─────────────────────────────────────────┘   never a GPU run
- ⤓ export thumbnail     JPEG at the first of 92, 85, 75, 60, 40 that fits 2 MiB (the last attempt is
-                        written even when it does not; never rescaled) · <project>-thumbnail.jpg
- ⤓ Save video           a copy to a chosen path · <project>.<container>
- ↻ Transcode            encode again from the cut and these settings — no model call
+```mermaid
+flowchart TD
+  T(["↻ over the thumbnail"]) --> TD["redraw from the images and the instruction · clears own, always draws<br/>“thumbnail drawn — ▶ renders the video”"]:::done
+  TI(["↻ beside Title"]) --> TX["rewrite title, instruction and description — the only thing that rewrites text"]:::done
+  ST(["Set Thumbnail on an image"]) --> SS["that image as it is, cropped · “thumbnail taken from ‹file› — …”"]:::done
+  W(["drag a box, or ✎"]) --> WD["“Words on the thumbnail” · Remove / Cancel / Save · re-printing never costs a GPU run"]:::done
+  E(["⤓ export thumbnail"]) --> EJ["JPEG at the first of 92, 85, 75, 60, 40 that fits 2 MiB"]:::done
+  V(["⤓ Save video"]) --> VC["a copy to a chosen path"]:::done
+  R(["↻ Transcode"]) --> RE["encode again, no model call"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
+
+![The Words on the thumbnail dialog](img/08-words.png)
+
+<sub>Screenshot of the prototype on the ETH lecture project.</sub>
 
 - ↻ over the thumbnail: redraw from current images and instruction (clears "own"; always draws). No cut → "no cut yet — the thumbnail is drawn from the cut's own frames"; opens ">>> publish: drawing the thumbnail again — one sd.cpp call, nothing rewritten"; ends "thumbnail drawn — ▶ renders the video".
 - ↻ beside Title: rewrite title, instruction, description only. No cut → "no cut yet — build one on the Cut step first"; opens ">>> publish: rewriting the title, instruction and description — one LLM call"; ends "title, instruction and description rewritten — ▶ renders the video".

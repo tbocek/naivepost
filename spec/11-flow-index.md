@@ -6,35 +6,31 @@
 
 ## 1. The top-level flow
 
-```text
-                 ┌──────────────────────────────────────────────────────────────────────┐
-                 │  Settings (⚙): servers, models, ffmpeg, firefox — F0.13 tests          │
-                 └──────────────────────────────────────────────────────────────────────┘
-   open/new ──► ┌─────────┐   ▶    ┌─────────┐   ▶    ┌─────────┐   ▶    ┌─────────┐
-   F0.6/8/9     │ Prepare │ ─────► │   Cut   │ ─────► │ Narrate │ ─────► │ Produce │ ──► video, subtitles,
-                │  F1.x   │        │  F2.x   │        │  F4.x   │        │  F5.x   │     thumbnail, upload text
-                └────┬────┘        └────┬────┘        └────┬────┘        └─────────┘
-      sources, context,          timeline, cut.json,    narration.json,
-      transcripts, frames,       effects (F3.x)         voice
-      events, marks, final.txt
-                 ▲                      ▲
-                 └── edit final.txt ────┘  (F1.12: a hand edit re-cuts with no model)
-
-   run bar: [▶ | chain ▾] [⏹] progress ─ one press runs the ticked steps in order (F0.4); ⏸ parks between subprocesses
-   every model call: one gate, one exchange page, tools first (F6.x)
+```mermaid
+flowchart LR
+  O(["open / new · F0.6 F0.8 F0.9"]) --> P
+  P["Prepare · F1.x<br/>sources, context, transcripts, frames, events, marks, final.txt"] -->|▶| C["Cut · F2.x<br/>timeline, cut.json, effects F3.x"]
+  C -->|▶| N["Narrate · F4.x<br/>narration.json, voice"]
+  N -->|▶| PR["Produce · F5.x"]
+  PR --> OUT(["video · subtitles · thumbnail · upload text"]):::done
+  P -. "edit final.txt · F1.12: a hand edit re-cuts with no model" .-> C
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+  classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
+
+- **Settings** (⚙): servers, models, ffmpeg, firefox; tested by [F0.13](03-shell.md#f013-tests).
+- **Run bar**: ▶ runs the ticked steps in order ([F0.4](03-shell.md#f04-the-chain)); ⏸ parks between subprocesses.
+- **Every model call**: one gate, one exchange page, tools first ([F6.1](09-llm-and-tools.md#2-tool-protocol-f61)).
 
 ## 2. Tab states
 
-```text
- Prepare ── always open ──────────────────────────────────────────────────────────────
- Cut ────── locked until a source is footage ("Add footage on the Prepare step first…")
-            preview modes: recording ▶ | cut ▶✂ | review ▶✂✂  (one lit, one ⏸)
-            run-bar ▶ = Suggest until the preview started, then the preview's transport until ⏹
- Narrate ── open; ▶ refuses without a cut; greyed when narration is off
-            run-bar ▶ = write+speak until the preview started
- Produce ── open; ▶ refuses without a cut
-```
+| tab | when it opens | what the run bar's ▶ does there |
+|---|---|---|
+| Prepare | always | runs Prepare |
+| Cut | once a source is footage ("Add footage on the Prepare step first…") | Suggest, until the preview started; then the preview's transport until ⏹. Preview modes: recording ▶, cut ▶✂, review ▶✂✂ — one lit, one ⏸ |
+| Narrate | always; ▶ refuses without a cut; greyed when narration is off | write and speak, until the preview started |
+| Produce | always; ▶ refuses without a cut | render |
 
 ## 3. All flows
 
@@ -113,13 +109,13 @@
 
 ## 4. Model calls at a glance
 
-```text
- Prepare   describe ×(frames/4)   fix ×(lines/25)   retake ×3 | textedit ×(joins)        [cache]
- Cut       cut ×1 (+web)  captions ×(clips/5)  speed ×1  effects ×1                       (gaming only)
- Narrate   narrate ×1 (+web)                                             TTS ×(lines)
- Produce   youtube ×1 (+web)                sd.cpp ×1 (when drawn)      translate ×(languages × batches)
- Setup     policy ×1 (new, when the context changes)
-```
+| step | model calls | note |
+|---|---|---|
+| Prepare | describe ×(frames/4) · fix ×(lines/25) · retake ×3 or textedit ×(joins) | cached |
+| Cut | cut ×1 (+web) · captions ×(clips/5) · speed ×1 · effects ×1 | Gaming only |
+| Narrate | narrate ×1 (+web) · TTS ×(lines) | |
+| Produce | youtube ×1 (+web) · sd.cpp ×1 when drawn · translate ×(languages × batches) | |
+| Setup | policy ×1 | new; when the context changes |
 
 ## 5. Where each kind of decision lives (directive A)
 
