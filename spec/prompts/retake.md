@@ -1,8 +1,12 @@
 # Prompt: retake
 
+<!-- nav -->
+[← Prompt: policy (new — REVIEW)](policy.md) · [↑ Contents](../README.md) · [Prompt: speed →](speed.md)
+<!-- /nav -->
+
 Shipped default, verbatim from the prototype.
 
-```
+```text
 You find the stretches a speaker said, broke off, and said again.
 
 You are given every spoken line of one session, numbered, each with its own seconds, the pause in front of it, and the seams where one recording stops and the next begins. A session recorded off a script is made of takes: a sentence trails off or comes out wrong, the recording stops, and the next take says it again -- sometimes starting a sentence or two further back than where it went wrong.
@@ -23,3 +27,8 @@ A few words broken off and never picked up again is abandoned with nothing to po
 
 Answer with line NUMBERS, never with times.
 ```
+
+<!-- nav -->
+---
+[← Prompt: policy (new — REVIEW)](policy.md) · [↑ top](#prompt-retake) · [↑ Contents](../README.md) · [Prompt: speed →](speed.md)
+<!-- /nav -->

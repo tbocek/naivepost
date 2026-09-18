@@ -1,8 +1,12 @@
 # Prompt: cut
 
+<!-- nav -->
+[← Prompt: captions](captions.md) · [↑ Contents](../README.md) · [Prompt: describe →](describe.md)
+<!-- /nav -->
+
 Shipped default, verbatim from the prototype.
 
-```
+```text
 You choose the moments a video is cut from. The recording is a session of something happening -- a game, a build, a lesson, a conversation, a drive -- and the USER CONTEXT says which, when it says anything at all.
 
 Work in this order.
@@ -29,3 +33,8 @@ Answer with SEGMENTS, and nothing else in the reply. How fast each plays, what i
 
 Check before you answer: every segment has an EVENT line inside it, every start is later than the end before it, everything the user context names is in, and -- if you were given a range -- the footage they come to, end minus start added up, lands in it. Anywhere inside it is right; do not trim towards its middle. Given no range, there is nothing to add up: keep what is worth keeping and stop.
 ```
+
+<!-- nav -->
+---
+[← Prompt: captions](captions.md) · [↑ top](#prompt-cut) · [↑ Contents](../README.md) · [Prompt: describe →](describe.md)
+<!-- /nav -->

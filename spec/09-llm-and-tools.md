@@ -1,35 +1,119 @@
 # 09 — The LLM client, tools, gate, cache, log
 
+<!-- nav -->
+[← 08 Produce](08-produce.md) · [↑ Contents](README.md) · [10 Parameters →](10-parameters.md)
+
+**Flows:** [F6.1](#2-tool-protocol-f61) · [F6.2](#3-retries-f62) · [F6.3](#4-liveness-and-the-gate-f63)
+<!-- /nav -->
+
 ## 1. Request contract
+
 - `POST <server>/v1/chat/completions`, bearer key when set; model id required ("no LLM model configured -- use the gear button").
-- Body: `model`, `messages` (text parts and `image_url` data URLs), sampling `top_p 0.95, top_k 20, min_p 0, presence_penalty 0`; thinking mode `temperature 1.0, max_tokens 65536, enable_thinking true`; execute mode `temperature 0.6, max_tokens 8192, enable_thinking false`; the thinking switch sent both top-level and in `chat_template_kwargs` (llama.cpp reads one, other servers the other), `preserve_thinking true`; `tools` when offered; `stream true` when the caller streams.
+- Body: `model`, `messages` (text parts and `image_url` data URLs), sampling `top_p 0.95, top_k 20, min_p 0, presence_penalty 0`; thinking mode `temperature 1.0, max_tokens 65536, enable_thinking true`; execute mode `temperature 0.6, max_tokens 8192, enable_thinking false`; thinking switch sent top-level and in `chat_template_kwargs` (llama.cpp reads one, other servers the other), `preserve_thinking true`; `tools` when offered; `stream true` when the caller streams.
 - Response: `choices[0].message.{content, reasoning_content, tool_calls}` and `finish_reason`. Streaming only when the response is `text/event-stream`: `data:` chunks, `[DONE]`, tool calls reassembled by index; reasoning kept apart and never returned as the answer; EOF without `[DONE]` keeps what arrived.
 - Every request rides the run's cancel context.
 
-## 2. Tool protocol
-S1 Offer the job's tools (`02-services.md` §3) with their JSON schemas; descriptions are the instructions. S2 Loop up to P.llm.toolRounds (8): a round with calls appends the assistant turn and one `tool` message per call with the tool's result; log ">>> <step>: round i of 8 — the model asked for name(args…)" (or "…asks for the same thing again — …" when identical, the tell for a loop). S3 A round without calls: if the job's `finish` was called, the flow is complete; else ask once "Call finish when you are done, or continue with the tools." and then treat it as finished with what was produced. S4 Exhausted rounds → "!!! <step>: still calling tools after 8 rounds — the step gets no answer from this call". S5 An error on round 0 that is not a stop is read as a server refusing a `tools` field: the identical request is put again with the field removed, logged once (">>> <step>: the server refused the request with tools (…) -- asked again without them"), and the job falls back to its degraded one-answer mode with the prototype's parsers and "Your answer failed validation: … Return corrected strict JSON only." turns. A transport retry re-runs the whole tool loop from the original messages. S6 Tool errors are returned as text to the model, never failing the job. S7 Every call and result is written to the exchange page.
-Web tools (where offered; descriptions verbatim in `prompts/tools.md`): `web_search(broad, medium, narrow)` drives a headless Firefox over WebDriver BiDi against DuckDuckGo's result page, deduping by URL; the ladder climbs while the web still answers (an erroring query is skipped; a narrower query finding nothing after a wider one that did ends the climb with the wider hits; only a ladder finding nothing anywhere reports the error); results numbered as `N. title / url / snippet`, or "No results for any of the three queries."; `web_read(url)` returns up to 6000 characters cut on a character boundary, refusing "the page had no text", "the page is behind a bot wall (<phrase>)" and "the page had almost no text (blocked, or not loaded)" under 200 characters, all as "web_read failed: <reason>". Whether the tools are offered is logged once per step with the reason (">>> <step>: no web search inside Flatpak" / "…(web search is off)" / "…(no firefox found -- name one in the settings, or set it to off)"); the firefox setting resolves to the named binary, else firefox/firefox-esr/firefox-bin on PATH, else the usual install paths; each search and read is one log line (">>> <step>: searched a / b / c -- N result(s) for <used>", ">>> <step>: read <url> (N characters)"). 45 s per call.
+## 2. Tool protocol (F6.1)
 
-## 3. Retries
+<sub><!-- back -->[← F5.7](08-produce.md#f57-page-runs) · [↑ 09 The LLM client, tools, gate, cache, log](#09--the-llm-client-tools-gate-cache-log) · [all flows](11-flow-index.md#3-all-flows) · [F6.2 →](#3-retries-f62)</sub>
+
+```text
+ the request carries the job's tools, each with its JSON schema — the description IS the instruction
+        ▼
+ ┌ round i of P.eng.llmToolRounds ─────────────────────────────────────────────────┐
+ │ the model answers with tool_calls                                               │
+ │   ├─ append the assistant turn                                                  │
+ │   ├─ run each tool ──► one `tool` message per call, carrying its result          │
+ │   └─ log ">>> <step>: round i of 8 — the model asked for name{args…}"           │
+ │        identical to the round before ──► "…asks for the same thing again — …"   │
+ └───────────────────────┬─────────────────────────────────────────────────────────┘
+                         │ a round with no calls
+                         ▼
+               finish was called? ──yes──► the flow is complete
+                         │ no
+                         └──► asked once "Call finish when you are done, or continue with the
+                              tools.", then taken as finished with what it produced
+ rounds exhausted ──► "!!! <step>: still calling tools after 8 rounds — the step gets no answer
+                       from this call"
+ an error on round 0 that is not a stop ──► read as a server refusing a `tools` field:
+                       the same request again without it, logged
+ a tool's own error is returned to the model as text — it never fails the job
+```
+
+**Prototype:** only tools offered: `web_search` and `web_read`, to three jobs — client step names `suggest` (prompt key `cut`), `narrate`, `publish` (key `youtube`); no `finish`, no job-specific tool; a round without calls just returns its content. Log lines and exchange-page names use the step names, not the prompt keys (`suggest`/cut, `publish`/youtube, `transcript`/fix). S1–S3: the rewrite; S4–S7: the prototype's loop, kept.
+S1 Offer the job's tools ([`02-services.md` §3](02-services.md#3-tool-catalogue-rewrite-directive-b)) with JSON schemas; descriptions are the instructions. S2 Loop up to P.eng.llmToolRounds (8): a round with calls appends the assistant turn and one `tool` message per call with its result; log ">>> <step>: round i of 8 — the model asked for name{args}" — name directly followed by the raw arguments JSON cut at 60 bytes plus "…"; several calls per round joined by ", " ("…asks for the same thing again — …" when identical: the tell for a loop). S3 Round without calls: job's `finish` called → flow complete; else ask once "Call finish when you are done, or continue with the tools.", then treat as finished with what was produced. S4 Rounds exhausted → "!!! <step>: still calling tools after 8 rounds — the step gets no answer from this call". Prototype defect the rewrite MUST NOT keep: the last round's calls still run (a web search up to 45 s each), their results never sent, logged or recorded; the loop MUST stop before running tools it cannot deliver. S5 A non-stop error on round 0 is read as a server refusing a `tools` field: identical request resent without the field, logged (">>> <step>: the server refused the request with tools (…) -- asked again without them"). Prototype: the only test is "an error on round 0 that is not a stop", so a transport death or 500 on the first round is misread as a refusal, logged so, tools dropped for that call; the refusal is not remembered, so a step retrying with tools (narrate's three attempts) re-offers the field and re-logs the line each time; no mode switch — the "Your answer failed validation: … Return corrected strict JSON only." turns and three-attempt validation loops are caller-side code, same with or without tools. The rewrite SHOULD remember a refusal per server and tell a refused field from a dead server ([§3](#3-retries-f62)). A transport retry re-runs the whole tool loop from the original messages. S6 Tool errors go back to the model as text, never failing the job. S7 Every call and result goes to the exchange page (prototype: a call only as "[tool call name(args)]" text appended to the reply, a result only as the `tool` message of the next round's request — see [§7](#7-exchange-log)).
+Web tools (where offered; descriptions verbatim in [`prompts/tools.md`](prompts/tools.md)): `web_search(broad, medium, narrow)` drives headless Firefox over WebDriver BiDi against DuckDuckGo's result page, deduping by URL; the ladder climbs while the web answers (an erroring query is skipped; a narrower query finding nothing after a wider one that did ends the climb with the wider hits; only a ladder finding nothing anywhere reports the error); results: header `Results for "<query>":`, then up to 8 hits (P.eng.searchHits) numbered `N. title / url / snippet`, or "No results for any of the three queries."; `web_read(url)` returns up to 6000 bytes cut back to a UTF-8 character boundary, " …" appended when clipped; refuses "the page had no text", "the page is behind a bot wall (<phrase>)" and "the page had almost no text (blocked, or not loaded)" under 200 characters, all as "web_read failed: <reason>". Whether tools are offered: logged once per step with the reason (">>> <step>: no web search inside Flatpak" / "…(web search is off)" / "…(no firefox found -- name one in the settings, or set it to off)" / "…(firefox: <stat error>)" for a missing named binary); firefox setting → the named binary, else firefox/firefox-esr/firefox-bin on PATH, else the usual install paths; each search and read logs one line (">>> <step>: searched a / b / c -- N result(s) for <used>", ">>> <step>: read <url> (N characters)"). 45 s per call: one budget over the whole search ladder (three queries share it) and over a read, including browser boot (15 s) and render wait (15 s); one headless browser launched and killed per tool call, on ports from 9223 upward.
+
+## 3. Retries (F6.2)
+
+<sub><!-- back -->[← F6.1](#2-tool-protocol-f61) · [↑ 09 The LLM client, tools, gate, cache, log](#09--the-llm-client-tools-gate-cache-log) · [all flows](11-flow-index.md#3-all-flows) · [F6.3 →](#4-liveness-and-the-gate-f63)</sub>
+
+```text
+ transport death — EOF · reset · refused · broken pipe · unreachable · "server closed" · "no such host"
+        ▼
+   5 s ──► 20 s ──► 1 min ──► 2 min ──► 4 min        every wait cancellable by ⏹
+   "!!! <step>: the server went away mid-call (…) -- waiting T and asking again (i of 5)"
+        │           far enough to outlast a container restart and a weight load
+        ▼
+ anything else — a 4xx/5xx, an unusable answer
+   one retry, after 2 s, on the FIRST failure only     a status code is never "the server went away"
+        ▼
+ content repair, in the degraded (JSON) mode
+   noAnswer     the whole reply was reasoning
+   cutOff       the JSON ended early ──► "answer again with far fewer items"
+   thinkAgain   an empty answer ──► thinking off for the retry
+   retryTurn    "Your answer failed validation: … Return corrected strict JSON only."
+```
+
 - Transport death (EOF, reset, refused, broken pipe, unreachable, or the words eof/connection reset/connection refused/broken pipe/server closed/no such host/transport is closing): wait 5 s, 20 s, 1 min, 2 min, 4 min (past a container restart and weight load), each cancellable by ⏹; log "!!! <step>: the server went away mid-call (…) -- waiting T and asking again (i of 5)".
-- Anything else (a 4xx/5xx, an unusable answer): one retry after 2 s on the first failure only. A status code is never "the server went away". REVIEW: a 5xx whose body names a device or memory failure SHOULD back off like a transport death rather than resend at once.
-- Content repair in degraded (JSON) mode: `noAnswer` (the whole reply was reasoning), `cutOff` (unexpected end of JSON → "answer again with far fewer items"), `thinkAgain` (an empty answer turns thinking off for the retry), `retryTurn`. With tools these become tool results.
+- Anything else (a 4xx/5xx, an unusable answer): one retry after 2 s, first failure only. A status code is never "the server went away". REVIEW: a 5xx whose body names a device or memory failure SHOULD back off like a transport death, not resend at once.
+- Content repair in degraded (JSON) mode: `noAnswer` (whole reply was reasoning), `cutOff` (unexpected end of JSON → "answer again with far fewer items"), `thinkAgain` (empty answer → thinking off for the retry), `retryTurn`. With tools these become tool results.
 
-## 4. Liveness
-- A streamed call is given up after P.llm.stallMinutes (5) without a byte — any byte off the wire counts, including keep-alives the event parser never sees; the guard looks four times per heartbeat; an unstreamed call is held to P.llm.wholeMinutes (10). Heartbeat every minute in three shapes: ">>> <step>: nothing yet, T in"; ">>> <step>: X thinking, Y reply, T in"; the same with "— “…tail”" (the last 90 characters of the answer, else of the reasoning, whitespace-collapsed). Giving up: ">>> <step>: nothing for T — giving up", then the cancellation is reported as "nothing arrived in 5m0s" or "stopped answering after T -- nothing more for 5m0s". REVIEW: the upload-text call is the one thinking job the prototype does not stream (so it is held to the 10-minute ceiling); the rewrite SHOULD stream it.
-- The **gate**: one chat request on the wire per application, taken before the watch starts and released after the reply; a queued step logs once ">>> <step>: waited for the LLM -- it was busy with <other>; one request at a time". The wait is cancellable by ⏹. Produce runs its translation after the encodes so the encoder never idles behind the gate.
+## 4. Liveness and the gate (F6.3)
+
+<sub><!-- back -->[← F6.2](#3-retries-f62) · [↑ 09 The LLM client, tools, gate, cache, log](#09--the-llm-client-tools-gate-cache-log) · [all flows](11-flow-index.md#3-all-flows) · last flow →</sub>
+
+```text
+ THE GATE — one chat request on the wire per application
+   step B ──► waits ──► ">>> B: waited for the LLM -- it was busy with A; one request at a time"
+                        logged only when the holder is a DIFFERENT step · cancellable by ⏹
+        ▼
+ THE WATCH — started once the gate is taken, looking four times per heartbeat
+   ┌ every minute ──────────────────────────────────────────────────────────────┐
+   │ ">>> <step>: nothing yet, 3m in"                                           │
+   │ ">>> <step>: 1.2 kB thinking, 0 B reply, 4m in"                            │
+   │ ">>> <step>: 1.2 kB thinking, 800 B reply, 5m in — "…the last 90 bytes""   │
+   └────────────────────────────────────────────────────────────────────────────┘
+   streamed    no byte for P.eng.llmStallMinutes ──► ">>> <step>: nothing for T — giving up"
+               reported as "nothing arrived in 5m0s" / "stopped answering after T -- nothing
+               more for 5m0s"
+   unstreamed  no stall rule at all — only the P.eng.llmWholeMinutes ceiling ends it
+```
+
+- A streamed call is given up after P.eng.llmStallMinutes (5) without a byte — any byte off the wire counts, including keep-alives the event parser never sees; the guard looks four times per heartbeat; an unstreamed call is held to P.eng.llmWholeMinutes (10). Heartbeat every minute, three shapes: ">>> <step>: nothing yet, T in"; ">>> <step>: X thinking, Y reply, T in"; the same plus " — \"…tail\"" (last 90 bytes of the answer, else of the reasoning, trimmed forward to a character boundary, whitespace-collapsed, Go-quoted). The guard also ticks for an unstreamed call, where X and Y stay 0: it logs "nothing yet" every minute and is never given up for silence — only the 10-minute ceiling ends it. Giving up: ">>> <step>: nothing for T — giving up", cancellation reported as "nothing arrived in 5m0s" or "stopped answering after T -- nothing more for 5m0s". REVIEW: two thinking jobs are unstreamed in the prototype, so sit under the 10-minute ceiling with no stall rule: the upload text, and textedit (every seam repair, about two minutes each); the rewrite SHOULD stream both.
+- The **gate**: one chat request on the wire per application, taken before the watch starts, released after the reply; a queued step logs once ">>> <step>: waited for the LLM -- it was busy with <other>; one request at a time" — only when the holder was a different step; queued behind its own earlier call, a step waits silently. Wait cancellable by ⏹. Produce runs its translation after the encodes so the encoder never idles behind the gate.
 
 ## 5. Context budgets (REVIEW — new)
-The prototype sent whole sessions (a 64-minute lecture made a 451 kB upload brief and a 778-line translation call, and the server lost its GPU). The rewrite MUST bound every prompt: P.llm.promptMaxChars (default 120 000) per request; jobs over it read the rest through `get_lines`/`get_events` tools or run in batches (captions 5 clips; translation P.policy.translateBatch lines; the cut brief folded per clip). The exchange log records the size sent.
+
+The prototype sent whole sessions (a 64-minute lecture made a 451 kB upload brief and a 778-line translation call, and the server lost its GPU). The rewrite MUST bound every prompt: P.machine.promptMaxChars (default 120 000) per request; jobs over it read the rest via `get_lines`/`get_events` tools or run in batches (captions 5 clips; translation P.policy.translateBatch lines; cut brief folded per clip). The app log records the size sent (">>> <step>: N kB of text and M image(s) went to the LLM"; not on the exchange page).
 
 ## 6. Cache
-`<project>/cache/llm/<step>/<sha256 of the JSON-encoded parts joined by NUL>`; the key holds everything that decides the answer (system prompt, user text, rolling state, speech, context, image data URLs, the run index for pooled calls). Only usable answers are stored (a fix block that failed validation, a join not at the seam, an incomplete translation are not); a key that cannot be computed is no key (nothing read, nothing stored); an empty reply is never stored; a cache that cannot be written is a slower step, never a failed one. Used by describe, transcript, textedit, retake, translate; not by the cut, narration or upload text. With tools, the cached unit is the finished item list of a job with identical inputs.
+
+`<project>/cache/llm/<step>/<sha256 of the JSON-encoded parts, each followed by a NUL byte>`; the key holds the texts deciding the answer (system prompt, user text, rolling state, speech, context, image data URLs, run index for pooled calls) — NOT the model id or thinking flag: changing the model in Settings replays the old model's cached answers. REVIEW: the rewrite MUST put the model id and thinking flag in the key. Only usable answers stored (not a fix block that failed validation, a join not at the seam, an incomplete translation); an uncomputable key is no key (nothing read or stored); an empty reply is never stored; an unwritable cache makes a slower step, never a failed one. Used by describe, transcript, textedit, retake, translate; not by the cut, narration or upload text. Two irregularities: translate stores the reconstructed numbered text, not the reply, and never caches its gap-filling second call; the transcript fixer caches only its first attempt. A cache hit is answered before the gate and the exchange log, so a resumed run's page holds only uncached calls. With tools, the cached unit is the finished item list of a job with identical inputs.
 
 ## 7. Exchange log
-`<project>/llm/<MMDD-HHMMSS>-<first step>.html`, one page per run (a run = the calls between two queue resets; a call outside a run gets its own page). Sections: "N. step", a meta line (time, model, thinking/execute, duration), every message (text in `pre`, images inline), tool calls and results, the reply with reasoning in a `details` block, notes for cut-off and empty answers. App log: sizes sent, the verdict and the first 110 characters of the reply, and once per run the clickable page link. Recording never fails the call.
+
+`<project>/llm/<MMDD-HHMMSS>-<first step>.html`, one page per run (a run = the calls between two queue resets; a call outside a run gets its own page). Sections: an `h1` "N. step"; a meta line (time, model, thinking/execute, "reply pending" until the answer is in, then the outcome); each message as an `h2` role, text in `pre` (images inline); the reply, reasoning in a `details` block; notes for cut-off and empty answers. Tool calls: "[tool call name(args)]" text appended to the reply; tool results: the `tool` messages of the next round's request. Page written when the request goes out, streamed reply appended into an open `pre`, whole file rewritten when the call is done. App log: sizes sent, the verdict ("X came back in T, after Y of thinking"; "— cut off at the model's token limit"; "— the model answered nothing at all"; "the call failed after T: …"), ">>>   the reply begins: " with the first 110 characters after the last `</think>`, and once per run the clickable page link. Recording never fails the call.
 
 ## 8. Prompt assembly
-System message = the "system" prompt cut to the job's sections by a per-job table (describe/fix/retake: THE ANSWER, THE MATERIAL, THE CLOCKS, the jobs list, NEVER INVENT; textedit/translate: THE ANSWER, the jobs list, NEVER INVENT; cut/narrate/youtube additionally THE FOUR STEPS and TOOLS; cut/captions/effects/speed THE CUT; speed without NEVER INVENT and THE MATERIAL; the jobs list is cut to this job's own line and the example indented under it; an unknown heading and anything before the first heading go to every job) + "\n\n" + the job's prompt + (when the User Context is non-empty) the precedence rule, whose second half says an instruction in the context that names another step is that step's and not this job's to act on. User message = the User Context block (+ the speech rule for cut and narrate) + the job's material. The twelve prompts are in `prompts/`; the policy-derivation prompt (F0.7) is new.
+
+System message = the "system" prompt cut to the job's sections by a per-job table (describe/fix/retake: THE ANSWER, THE MATERIAL, THE CLOCKS, the jobs list, NEVER INVENT; textedit/translate: THE ANSWER, the jobs list, NEVER INVENT; cut/narrate/youtube additionally THE FOUR STEPS and TOOLS; cut/captions/effects/speed THE CUT; speed only THE ANSWER, THE CUT and the jobs list; jobs list cut to this job's own line, its example indented under it; an unknown heading and anything before the first heading go to every job; a job with no table row gets the whole system prompt) + "\n\n" + the job's prompt (+ for narrate its no-microphone note and captions addendum, [`07-narrate.md`](07-narrate.md)) + (User Context non-empty) the precedence rule, whose second half says a context instruction naming another step is that step's, not this job's, to act on. User message = the User Context block (+ the speech rule for cut and narrate) + the job's material. The twelve prompts: [`prompts/`](prompts); the policy-derivation prompt ([F0.7](03-shell.md#f07-derive-the-editing-policy-review--new)) is new.
 
 ## 9. Model list and tests
-`GET /v1/models` (15 s) fills the Settings dropdown. The Settings tests send one completion and one red-square vision probe (`03-shell.md` F0.13).
+
+`GET /v1/models` (15 s) fills the Settings dropdown. The Settings tests send one completion and one red-square vision probe ([`03-shell.md`](03-shell.md) [F0.13](03-shell.md#f013-tests)).
+
+<!-- nav -->
+---
+[← 08 Produce](08-produce.md) · [↑ top](#09--the-llm-client-tools-gate-cache-log) · [↑ Contents](README.md) · [10 Parameters →](10-parameters.md)
+<!-- /nav -->

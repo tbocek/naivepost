@@ -1,12 +1,18 @@
 # Inventory: Cut tab — timeline, transport, editing, suggest, inserts, audio
 
+<!-- nav -->
+<span>← start</span> · [↑ Contents](../README.md) · [Inventory: effects (Cut page) and their rendering →](effects.md)
+<!-- /nav -->
+
 Raw material for the spec, read off gui/cut*.go (non-effects), player.go, player_spare.go.
 
 ## A. UI layout
+
 Page = vertical paned (380): top = horizontal paned (660) of preview (GtkPicture contain-fit, min height 160, click toggles play) and the form column; bottom = toolbar, tracks, scrollbar.
 Form column: pinned heading (title + ✕ "close this form — nothing is lost that was not already saved"), a scroller holding either the idle rows or a form body, pinned footer for buttons. Idle rows: Thumbnails [🖼− 🖼+] ("smaller|larger thumbnails on the tracks", ×3/4, ×4/3, clamp 40..160), Aspect ratio [dropdown], Playhead [clock], Selection [marks], Cut [total], Cut at 1× [totalRaw], Source [totalSrc], Segments [totalSegs].
 
 Toolbar (wheel over it steps frames; Shift = 5):
+
 1. linked(▶, ▶✂, ▶✂✂, ‹‹f, ‹f, f›, f››). ▶ "play or pause the preview at the playhead" (never greyed). ▶✂ (stock icon + "✂"): "pause the cut preview" / "play the CUT instead of the recording: the removed stretches are skipped, so this runs the finished video. The clock reads the cut's own time while it does. Changes nothing that is saved."; sensitive when segs > 0; lit while cutOnly and no review. ▶✂✂ (icon + "✂✂"): sensitive with ≥2 clips; "review every cut in one go: plays 10 s of the finished video before each join and 10 s after it, one join after the other, and stops after the last. The removed stretches are skipped as under ▶✂. Changes nothing that is saved." / "pause the cut review"; lit while reviewing. Frame buttons: "back 5 frames (pauses) — or whatever is held, 5 frames" etc.
 2. volume control (icon + 0..100, 120 px, shared tooltip).
 3. separator.
@@ -20,6 +26,7 @@ Red line 2 px RGB(0.9,0.15,0.15) on its own layer.
 Bottom bar: inputs "2 videos · 41:12 · +1 recording · no timeline" with a tooltip listing every video and lane, line counts and the session context; "nothing to cut — no source on Inputs is marked as footage" when none. Outputs: folder "cut/ — the cut, as cut.json" + summary. Run bar ▶ = Suggest until the preview has been started, then the preview's transport until ⏹.
 
 ## B. Timeline model
+
 Session clock from srcClock over the snapshot; tlVideo{base, path, start, wall, dur, interval, fps (default 30), frames, w, h, lane, off}; at(t)=t−start+off; sessionAt(local)=start+local−off. tlAudio{base, path, start, off, dur, chans, master, track}.
 Rows = greedy interval colouring of recordings in start order, pins (cut.json rows) applied first; nRows floor keeps an emptied bottom row until its ✕. Filmed runs = merged recording spans; cells = runs cut at folded gaps; spans carry pixel origins (gutter first; a folded cell has zero width).
 x↔time: xOf walks spans (folded cell → its seam x; past the end → totalW); tAt is the inverse, half-open on the right (the seam second belongs to the later take); left of the first run → its start.
@@ -32,6 +39,7 @@ Thumbnails: step = max(1, thumbHt·aspect/(pps·interval)); decoded in a worker 
 Visual-change scores per recording in the background from 24×14 brightness postages of consecutive frames.
 
 ## C. Cut model
+
 cutSeg: s, e (session seconds; s==e with dur>0 = spliced insert), ins (asset path, project-relative, or "copy:SECONDS"), dur (spliced insert length), rate (written only by produceSegs), ss (start inside an inserted sound), mute (spliced: silent; overwriting: footage sound kept), cam (picture row), lane (which recording an overlaid sound replaces; "" = everything), quiet (lanes this scene does not hear), split (starts at a Split border; blocks coalesce). length() = dur if spliced, else (e−s)/rate.
 cut.json: {segs, aspect, fx, sound (legacy read-only), shift, rows, lanes, nrows, folds}; beside it cut/line.json {"t"}.
 Edits: rangePieces (snap both ends, one piece per filmed run, drop < 1 s, cam = selection row); addRange (steal the span off other rows, append, coalesce, persist); removeSpan (inserts dropped whole or kept whole; remainders ≥ 0.04 s); stealSpan; layOver; layOverSound (one sound per kept piece, ss walking; floor 0.05 s); addSplice; splitBorder (strictly inside a footage clip, halves ≥ 0.04; the right half carries split); mergeTouching/mergeDropped (same-camera neighbours within 0.04 s; clears split); coalesce (sort by s; merge non-insert same-camera clips touching within 0.04 s unless split, across spliced cards); splitSpliced (render view: a spliced card inside a clip cuts it in two).
@@ -40,6 +48,7 @@ persist: syncFolds → write cut.json → totals → outputs → updateGates (th
 Lengths: cutLen = Σ length of applyFx(splitSpliced(segs), fx); "%.1f s" or "%.1f s, %.1f s in the video" when they differ ≥ 0.05.
 
 ## D. Transport
+
 Three ▶ rule: each wears ⏸ only while its thing runs; pressing it pauses; pressing another switches over without stopping; exactly one lit. setCutOnly statuses: "preview is the cut — and the cut is empty, so ▶✂ has nothing to play until a clip is added" / "preview is the cut — the clock reads the finished video" / "preview is the recording again — everything plays, cuts and all". toggle refuses an empty cut in ✂ mode ("the cut is empty — add a clip to play it, or press ▶ to play the recording instead"), clears the watched row, snaps onto kept material, hushes before moving, ends a review on pause. stop = review off, player stop, started=false.
 setPlayhead: set, re-base the live clock, hasPlay, cancel card hold, sync held effect, clock, note line, buttons, gain; if a recording covers t: rate before seek, mix on file change, hush, in-place seek (unless the spare holds the target) else PlaySegment; then showInsert, redraw.
 Clock: "mm:ss.d"; "--:--.-" with no playhead; under ▶✂ the cut's own clock with tooltip "X into the cut, of Y — the finished video's own clock (the ▶✂ preview), the speed effects included. Session time here is Z."; else "The red line: X s into the session — <file> at mm:ss.d, frame N — kept|cut away here" or "in the gap between recordings".
@@ -54,6 +63,7 @@ Hush/mix: mixUnder(v) = every non-master lane overlapping v with delta/lo/hi/tra
 Remembered line: cut/line.json written at most once per second, flushed on close, restored once per project when a recording covers it.
 
 ## E. Editing flows
+
 Left press order: gutter fold-all; selection band (fold badge, selection ✕, selection ends/middle, green-bar ✕, green-bar ends → trim, else drop selection); effects lane (✕, hold/part, else drop); selection ends on the pictures within 10 px; lane/row sound switches; speaker badge; camera badge; cut-lane ✕; empty-row ✕; trim grab on a clip border (6 px) → trimming; else drop holds and start a new selection (scope = the lane or row it was drawn on).
 Drag: trim after 4 px slop; effect drag; selection move/resize; new selection. Drag end: trim drop (merge touching, persist, land on the edge, status "clip N: a – b (X s[, Y s in the video])"); effect persist/status/click opens its form; real drag (≥5 px) keeps the selection; click → clear selection and marks, set watched row when on a row, set playhead, hold the scene under the click.
 Double click: pick up an edge within 12 px (held) or 6 px, or a clip.
@@ -66,6 +76,7 @@ Keys: Space play/pause; Ctrl+Z undo; Ctrl+Shift+Z / Ctrl+Y redo; Delete/BackSpac
 Cursors: pointer over badges/switches/✕; ew-resize over borders and selection ends; grab over band middles/effect bodies; crosshair while an effect is armed.
 
 ## F. Suggest (▶)
+
 Guards: busy; hand edits → "you have hand edits — press Revert first for a fresh suggestion"; no session timeline → "run Describe first — the suggestion reads the session timeline, and there is none".
 Read style: no model. marks = retakes.tsv, or remade from final.txt when it was edited later; textCut = inserts + each filmed run trimmed to its words (placed by sound within 0.4 s, never outside the run) → dropMarked → dropDeadAir; one undo, coalesce, persist, base; "cut by the words: N segments"; log ">>> cut by the words: N stretch(es) taken out, m:ss of silence, N segments, M:SS total".
 Gaming style: 4 queue jobs: suggest (LLM "cut"), captions, speed, decorations (see fx inventory). Target length only from the context text (regex "N min|m|s|sec"; a bare number is never a length); none → ">>> suggest: the user context names no length — everything worth keeping goes in". suggestCut: system prompt "cut"; user = context block + "SESSION LENGTH: N seconds, which the timeline writes as mm:ss. Every start and end you give is a number of SECONDS between 0 and N." + target block ("TARGET LENGTH: N seconds … KEEP between A and B seconds of footage, in at most K segments. Stop at the first set of moments that lands in that range." | "NO TARGET LENGTH. …") + "SESSION TIMELINE:" + session.txt. Web tools offered, dropped after the first rejection. Streaming progress counts closed segments. Thinking on; off after a call that wrote nothing. 3 attempts with retryTurn; "no valid cut after 3 attempts".
@@ -74,6 +85,7 @@ Apply: undo; keep hand-placed inserts; joinSeams (close holes ≤ 1.5 s only if 
 snapEdge scoring within 5 s: baseline 0.35, distance penalty −0.4·d/5, outward +0.3; silence midpoint 0.8, word edge 0.9, line start/end 0.95, visual peak min(1, score/(4·mean)) only where nobody is talking (±0.2 s).
 
 ## G. Inserts
+
 Insert needs a line or a selection ("click the timeline where the insert goes first"); chooser "Insert a clip, image, animation or sound" (sound-scoped selection: "Insert a sound over the selected seconds"), starting in <project>/assets where the built-in SVG cards are written on first open. Extensions: audio mp3 wav ogg oga flac m4a aac opus; picture mp4 mkv mov webm avi m4v png jpg jpeg webp bmp gif svg. insKind by extension: video|svg|audio|still.
 Mode: a selection gives the length and means overwrite; no selection means splice with the file's own length (video/audio duration; SVG animation length; else 4 s). mute default = file has no sound; the sound question is asked only when relevant.
 Form in the column (askInsertParams): one entry per declared card field (Logo… picker for logo fields); radios "Insert BETWEEN the footage — the video gets longer by the card, nothing filmed is lost" / "Play OVER the footage — the card replaces those seconds (the same as Remove)" / "Put it on a LANE of its own — a row of the band to cut to, and nothing is cut yet" (video only); tick "Play it SILENT — the insert's own sound is not used" (spliced) or "Keep the sound running under it — only the picture is replaced" (over); Seconds entry ("how long the card runs…"); Cancel + Insert/Save. Status "<file> inserted at m:ss for X s, <how> — the cut is now a (was b) — ↶ Undo takes it back".
@@ -82,6 +94,7 @@ Preview of cards: 8 fps for video/animated SVG, one frame for stills; nearest re
 Black frame when paused on a row with no footage.
 
 ## H. Audio
+
 Envelopes: 200 buckets/s from an 8 kHz decode, peak bytes, cached as cache/waves/<lane>.wave (magic AWV4, header chans/hz/count/size/mtime). Dual mono collapsed when channel difference ≤ 1/100 of peak or the two envelopes match (mean diff < 1, max 8): "L=R"; "mono"; "L"/"R".
 Drawing: 1 px columns from the baseline, IEC 60268-18 meter scale stretched so −48 dBFS sits on the floor; a ground shows where the recording is; paired strips dimmed.
 Lanes vs strips: a row's own first track is the master strip under its pictures; further tracks and separate recordings are lanes ("<base> #N"). Selection scope is the lane/row it was drawn on; a sound selection greys Add/Split/Remove and aims Copy/Insert at sound.
@@ -89,9 +102,11 @@ Cut lanes' sound: the source's master track windowed. Audio inserts drawn violet
 Per-scene hearing: speaker badges per lane on the held/current scene; green wash where heard, grey where silenced; whole-lane switch in the gutter; legacy whole-cut sound migrated once with a log line.
 
 ## I. Implicit constants (Cut)
+
 rulerH 18; selBandH 22; laneGap 3; snapTol 5 s; talkPad 0.2 s; minSegLn 1.0 s; minPieceLn 0.04 s; undoDeep 50; maxPps 240; edgeGrab 6 px; dragSlop 4 px; edgeMove 12 px; splicePx 22; snapPx 8; scrubEvery 90 ms; suggestChooseShare 0.7; insDefault 4 s; sndMinLn 0.05; playTick 100 ms; thumb 40..160; zoom 1.25; tick steps; pan viewW/8; paned 660/380; preview floor 160; segKill radius 4 pad 3 hit 10; killIn 16; killMin 32; mergeTol 0.04; selGripPx 6/10; selMinBand 50; selMinLen 0.04; foldMin 20; gutterPx 30; hear badge r 4.5 hit 10; waveHz 200; waveRate 8000; waveLaneH 30; waveGap 4; wavePad 3; dualMonoRatio 100; thumbBatch 6; insPreviewFPS 8; insPreviewW 960; insFilmMax 48; reviewPad 10 s; preloadLead 3 s; preloadTol 0.01; gearPx 40; lineSaveMs 1000; rateSeekGap 250 ms; suggest min/max segments; maxSpeedRate 4; window 0.6/1.2|1.5; shortTarget 60; captionBatch 5; seamMax 1.5; deadAirMax 8; deadAirKeep 0.5; attempts 3 (cut) / 2 (passes). Colours listed in the source (kept tint RGBA(0.2,0.8,0.3,0.3), insert violet, scrim, speed tint, selection blue, marks green/red, recording edges amber striped).
 
 ## J. Invariants
+
 1. One thing held at a time; holds are indices and are dropped on renumbering; things picked from the toolbar are re-found by identity.
 2. Picking up is not an edit; one undo per drag.
 3. An unmoved press is a click; a right click never moves the line.
@@ -111,3 +126,8 @@ rulerH 18; selBandH 22; laneGap 3; snapTol 5 s; talkPad 0.2 s; minSegLn 1.0 s; m
 17. Rates take hold at a seek; hushed lanes are never started; nothing decodes inside a draw; the tracks are a window drawn under a translate.
 18. cut.json existing gates Narrate and Produce; persist is its only writer.
 19. Exactly one ▶ lit; the page is a snapshot rebuilt only when Prepare's output changed.
+
+<!-- nav -->
+---
+<span>← start</span> · [↑ top](#inventory-cut-tab--timeline-transport-editing-suggest-inserts-audio) · [↑ Contents](../README.md) · [Inventory: effects (Cut page) and their rendering →](effects.md)
+<!-- /nav -->

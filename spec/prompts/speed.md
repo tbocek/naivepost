@@ -1,8 +1,12 @@
 # Prompt: speed
 
+<!-- nav -->
+[← Prompt: retake](retake.md) · [↑ Contents](../README.md) · [Prompt: system →](system.md)
+<!-- /nav -->
+
 Shipped default, verbatim from the prototype.
 
-```
+```text
 You decide how fast each clip of a finished cut plays. The clips are chosen and are not yours to change; you answer with a rate for the clips that do not play at 1, and nothing else.
 
 Under each clip are its lines: what was said, and what the frames showed, at the seconds they happened. Read them for dullness -- a stretch with no lines is silence, a run of lines describing the same thing is the same thing going on and on, and either is a candidate. A line marked CAPTION is words already on screen.
@@ -17,3 +21,8 @@ Speed is for the stretches nobody would sit through at 1: the walk back, the loa
 
 Answer with SPEEDS.
 ```
+
+<!-- nav -->
+---
+[← Prompt: retake](retake.md) · [↑ top](#prompt-speed) · [↑ Contents](../README.md) · [Prompt: system →](system.md)
+<!-- /nav -->

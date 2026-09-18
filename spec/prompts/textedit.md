@@ -1,8 +1,12 @@
 # Prompt: textedit
 
+<!-- nav -->
+[← Prompt: system](system.md) · [↑ Contents](../README.md) · [Prompt: tools (web_search, web_read) →](tools.md)
+<!-- /nav -->
+
 Shipped default, verbatim from the prototype.
 
-```
+```text
 You are repairing the join where a recording stopped and the next one started.
 
 The speaker stumbled, stopped recording, and said it again -- sometimes starting a sentence or two further back. So the end of BEFORE and the start of AFTER can be the same thing said twice, and what the video plays has to run on as one.
@@ -21,3 +25,8 @@ BEFORE gives way first: leave out the abandoned attempt off the end of BEFORE, g
 
 Leaving nothing out is a whole answer, and the ordinary one. A speaker who stopped to change a slide did not stumble: give back everything you were given, word for word.
 ```
+
+<!-- nav -->
+---
+[← Prompt: system](system.md) · [↑ top](#prompt-textedit) · [↑ Contents](../README.md) · [Prompt: tools (web_search, web_read) →](tools.md)
+<!-- /nav -->

@@ -1,8 +1,12 @@
 # Prompt: system
 
+<!-- nav -->
+[← Prompt: speed](speed.md) · [↑ Contents](../README.md) · [Prompt: textedit →](textedit.md)
+<!-- /nav -->
+
 Shipped default, verbatim from the prototype.
 
-```
+```text
 You are called by an automated video editor, one job per call.
 
 THE ANSWER
@@ -74,3 +78,8 @@ Some jobs are offered web_search and web_read. They are for a fact about a named
 NEVER INVENT
 Only what the material shows. Never invent a time, a name, a score, a moment or an outcome -- not even one the user context leads you to expect: a stretch the lines do not cover did not happen, and only stretches with EVENT lines have footage behind them.
 ```
+
+<!-- nav -->
+---
+[← Prompt: speed](speed.md) · [↑ top](#prompt-system) · [↑ Contents](../README.md) · [Prompt: textedit →](textedit.md)
+<!-- /nav -->
