@@ -40,7 +40,7 @@ The spec is **UI driven**: each chapter starts from the screen, then its flows a
 - **Every flow is drawn and written**: under each `F<n>.<m>` heading, a Mermaid flowchart (red: a refusal; green: where the flow ends well), or real before/after screenshots for the editing verbs, then the numbered steps. Mermaid renders on GitHub and GitLab; other viewers show its source. Where a diagram and the steps disagree, the steps are normative.
 - **Parameters**: `P.<area>.<name>`, the area being the value's home ([`00-principles.md` §3](00-principles.md#3-rewrite-directive-a--no-implicit-behaviour)): `P.policy.*` editing policy (project, derived from the User Context), `P.machine.*` machine settings, `P.project.*` project settings, `P.eng.*` engineering constants. Every cited name is a row in [`10-parameters.md`](10-parameters.md); a flow that reads one says so.
 - **Tools** the model may call: `tool:<name>`, defined in [`02-services.md` §3](02-services.md#3-tool-catalogue-rewrite-directive-b) and [`09-llm-and-tools.md`](09-llm-and-tools.md).
-- **Strings in quotes** ("…"): the prototype's user-visible text; keep unless the review changes it. Log strings are quoted with the prototype's prefix — `>>> ` progress, `!!! ` failure, four spaces detail — only to name their level. REVIEW (new): the log prints the text alone, no prefix and no indent; a failure shows in red, a detail line dimmed.
+- **Strings in quotes** ("…"): the prototype's user-visible text; keep unless the review changes it. Log strings are quoted with the prototype's prefix — `>>> ` progress, `!!! ` failure, four spaces detail — only to name their level. New: the log prints the text alone, no prefix and no indent; a failure shows in red, a detail line dimmed.
 - **MUST / SHOULD / MAY** in their usual sense. "Prototype:" notes how the Go code did it where the spec proposes otherwise.
 
 ## Scope
@@ -49,7 +49,7 @@ In: everything the prototype does on its four tabs, the shell, the files it writ
 
 ## Status
 
-Draft for review. Every chapter verified against the code a second time (tab chapters carry "Details confirmed against the code"; 01, 02, 09, 10 had corrections folded in; the twelve prompts in [`prompts/`](prompts) diff clean against the shipped text). **REVIEW** marks a proposed change from the prototype (mostly a constant becoming a parameter, or a parsed reply becoming a tool call) for the reviewer to confirm or adapt.
+Draft for review. Every chapter verified against the code a second time (tab chapters carry "Details confirmed against the code"; 01, 02, 09, 10 had corrections folded in; the twelve prompts in [`prompts/`](prompts) diff clean against the shipped text). Every change from the prototype is stated as decided, with "Prototype:" saying what the code did and "New" what the code has not got at all. **REVIEW** marks the few decisions still open for the reviewer.
 
 <!-- nav -->
 ---

@@ -8,7 +8,7 @@
 
 ## 1. The four servers
 
-Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (REVIEW, new; [09 §10](09-llm-and-tools.md#10-every-request-timed-review--new)); each model is given at most its Settings slot count of requests at once ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
+Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new)); each model is given at most its Settings slot count of requests at once ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
 
 | what | default | serves | API |
 |---|---|---|---|
@@ -77,7 +77,7 @@ Reads: `get_frames`, `get_events`, `get_context`, `speech_around`.
 | tool | args | result |
 |---|---|---|
 | `fix_line` | `n` (line number in the block), `text` | ok, or error when `n` is not in this block or the text has a tab |
-| `get_lines` | `from`, `to` | the lines around the block from this and every other source, beyond the brief's ±P.policy.fixContextSeconds |
+| `get_lines` | `from`, `to` | the lines around the block from this and every other source, beyond the brief's ±P.machine.fixContextSeconds |
 | `flag_line` | `n`, `why` | ok — the line stands, the note is logged: the channel the prototype lacks, where a wrong speaker or mis-timed row is "not yours to fix" with nowhere to say so |
 
 Times and speakers are not arguments: the tool cannot change them — the enforcement the prototype did by comparison. A line no `fix_line` names keeps its ASR text. That is the point: the prototype threw away **the whole block of 25 lines** when one row came back with a changed time, speaker or lost tab, dropped reply lines with fewer than four tab fields before counting, then re-asked the identical question once more without saying what was wrong.
@@ -86,19 +86,19 @@ Times and speakers are not arguments: the tool cannot change them — the enforc
 
 | tool | args | result |
 |---|---|---|
-| `mark_abandoned` | `from`, `to`, `again` (line numbers; `again` 0 = never picked up) | **ok with the stretch that will actually be removed** — the seconds left after trimming to the words the later take repeats and placing the edges on the audio — plus the running share of the session's speech now marked; or the refusal ("lines a-b say they are said again at line c, which is inside them -- not a mark", out of range, farther than P.policy.retakeReachSeconds, shorter than P.policy.retakeMinSeconds) |
+| `mark_abandoned` | `from`, `to`, `again` (line numbers; `again` 0 = never picked up) | **ok with the stretch that will actually be removed** — the seconds left after trimming to the words the later take repeats and placing the edges on the audio — plus the running share of the session's speech now marked; or the refusal ("lines a-b say they are said again at line c, which is inside them -- not a mark", out of range, farther than P.machine.retakeReachSeconds, shorter than P.machine.retakeMinSeconds) |
 | `unmark` | `from`, `to` | ok |
-| `get_lines` | `from`, `to` | the lines again, with the pause before each in seconds — including those under P.policy.retakePauseSeconds, which the brief omits |
+| `get_lines` | `from`, `to` | the lines again, with the pause before each in seconds — including those under P.machine.retakePauseSeconds, which the brief omits |
 
-`finish` answers with the total marked against P.policy.retakeCeil, so a model over the ceiling can take some back. Prototype: three identical calls are pooled and deduped; each mark is trimmed to the repeated tail by a fuzzy matcher; a whole take gets `again` rewritten to 0; a rephrase is trimmed to the broken-off fragment; a refused mark is re-heard by a second ASR pass and sometimes resurrected; overlapping marks are merged; over the ceiling **every mark from all three runs is thrown away**. The model is told none of it.
+`finish` answers with the total marked against P.machine.retakeCeil, so a model over the ceiling can take some back. Prototype: three identical calls are pooled and deduped; each mark is trimmed to the repeated tail by a fuzzy matcher; a whole take gets `again` rewritten to 0; a rephrase is trimmed to the broken-off fragment; a refused mark is re-heard by a second ASR pass and sometimes resurrected; overlapping marks are merged; over the ceiling **every mark from all three runs is thrown away**. The model is told none of it.
 
 ### 3.5 Text edit (per join)
 
 | tool | args | result |
 |---|---|---|
-| `drop_words` | `side` (before/after), `count` | ok with the exact words that would go and the sentence left reading across the join; error when the stretch does not touch the join, `count` runs past what was shown, or it would lose more than P.policy.seamMaxWords or P.policy.seamCeil |
+| `drop_words` | `side` (before/after), `count` | ok with the exact words that would go and the sentence left reading across the join; error when the stretch does not touch the join, `count` runs past what was shown, or it would lose more than P.machine.seamMaxWords or P.machine.seamCeil |
 | `keep_join` | – | nothing removed here (a whole answer) |
-| `get_words` | `side`, `count` | more words than the brief's P.policy.seamReachWords, on either side |
+| `get_words` | `side`, `count` | more words than the brief's P.machine.seamReachWords, on either side |
 
 Prototype: the model returned the joined text; the app derived the counts by matching backwards. With tools the counts are stated directly; the app still re-derives the deleted stretch to check it is one stretch at the join.
 
@@ -108,7 +108,7 @@ Prototype: the model returned the joined text; the app derived the counts by mat
 |---|---|---|
 | `add_segment` | `start`, `end` (session seconds copied off lines), `why` | ok with **what the segment became**: the snapped edges and how far each moved, the seconds a mark will take out of it, whether it survives P.policy.minSceneSeconds, and the running footage total against the target window — or the error (no footage under an edge, so the segment would be dropped; past the end, with the mm:ss reading of the model's own number; ends before start; overlaps an added segment) |
 | `remove_segment` | `start` | ok |
-| `set_speed` | `start`, `rate` | ok with the rate as applied (P.policy.minRate…maxRate, lowered where the clip would otherwise render under P.policy.minClipSeconds) and the resulting on-screen length |
+| `set_speed` | `start`, `rate` | ok with the rate as applied (P.eng.minRate…maxRate, lowered where the clip would otherwise render under P.eng.minClipSeconds) and the resulting on-screen length |
 | `cut_status` | – | kept footage so far, the target window, segment count against its floor and ceiling, and the marks and dead air still to come out — the reading `finish_cut` would give, at any time |
 | `finish_cut` | – | the whole-cut checks (count within [min, max], footage within the target window) as a problem list, worst first, or ok |
 
@@ -128,7 +128,7 @@ Prototype: the model returned the joined text; the app derived the counts by mat
 | `write_line` | `clip`, `at` (offset), `text`, `emotion`, `pos?` | ok with **the line as it will play**: where it lands after packing behind the line above (lead, gap, tail), how many words fit against the ceiling, whether the clip will be grown, the schedule slid earlier or the speech sped up to make room — and the emotion resolved into its eight weights; error when the clip is not one given, `pos` is not top/center/bottom, or the emotion is not in the vocabulary |
 | `leave_silent` | `clip` | ok |
 | `list_emotions` | – | the eight bases with their kin words and the named blends with recipes — the table the prototype keeps to itself |
-| `get_lines` | `from`, `to` | the transcript around a clip, beyond the brief's ±P.policy.narrationContextSeconds |
+| `get_lines` | `from`, `to` | the transcript around a clip, beyond the brief's ±P.machine.narrationContextSeconds |
 | `describe_insert` | `clip` | what is actually on an inserted card: its text, parameters, length. The prototype passes only the **file name**, so "tier.svg?S=Dust II" is all the writer knows about a full-screen graphic |
 
 `finish` names the clips with no answer and those whose lines will not fit, so they can be rewritten shorter instead of squeezed by the render. Prototype: one JSON answer matched to clips by echoed bounds within 0.5 s, scanning forward; **a single clip skipped, a single echo more than half a second out, or entries out of clip order rejects the whole reply**, three times, then the run fails with nothing written; `pos` outside five known words silently becomes bottom; entries are re-sorted by (clip, offset) though out-of-order clips were just rejected; and the user's hand-made "this clip plays its own audio" list is wiped every run.
@@ -172,7 +172,7 @@ The model reads the User Context and sets only the fields it speaks to ("clips u
 
 ## 5. Details confirmed against the code (verification pass)
 
-- **Request bodies.** `/v1/tasks/run`: ASR `{"audio","language"}`, diarization `{"audio"}`, alignment `{"audio","text","language"}` — `audio` is always the server-side path an upload returned, never local. `/v1/audio/speech`: `{"model","input","voice_ref","language","options"}` with `voice_ref` the uploaded path of `narrate/voice_ref.wav` (re-uploaded before every line: a remembered path dies with a server restart), `options` the emotion vector plus `seed`, `language` hard-coded "en" (REVIEW: the project language, as ASR and alignment send). `img_gen`: `prompt`, `negative_prompt?`, `width?`, `height?`, `seed` (always), `ref_images` (data URLs — an edit model is conditioned on references, not `init_image`), `auto_resize_ref_image` (always), `output_format?`; everything else deliberately left to the server's start-up flags.
+- **Request bodies.** `/v1/tasks/run`: ASR `{"audio","language"}`, diarization `{"audio"}`, alignment `{"audio","text","language"}` — `audio` is always the server-side path an upload returned, never local. `/v1/audio/speech`: `{"model","input","voice_ref","language","options"}` with `voice_ref` the uploaded path of `narrate/voice_ref.wav` (re-uploaded before every line: a remembered path dies with a server restart), `options` the emotion vector plus `seed`, `language` = P.policy.ttsLanguage (the project language, as ASR and alignment send; prototype: hard-coded "en"). `img_gen`: `prompt`, `negative_prompt?`, `width?`, `height?`, `seed` (always), `ref_images` (data URLs — an edit model is conditioned on references, not `init_image`), `auto_resize_ref_image` (always), `output_format?`; everything else deliberately left to the server's start-up flags.
 - **sd.cpp waits.** Capabilities 15 s; submit 60 s; each poll 30 s at a 1 s interval; cancel 10 s.
 - **Settings tests** (ten buttons and "Test All", each with its own verdict): LLM — one completion, `max_tokens` 16, thinking forced off, 60 s; LLM vision — a generated 48 px red square as a data URL, 120 s, passes only if the reply contains "red"; TTS endpoint — `/health` (15 s) then the catalogue, looking for family `index_tts2` or task `clon`; TTS model, ASR, diarization, separation — one id each against `/v1/models`, checking the declared task; aligner — by task, never by id (a box could only disagree with the server); ffmpeg — `LookPath`, `ffprobe` beside it, then `-filters`/`-encoders` against `rubberband, subtitles, loudnorm, atempo, amix, adelay, alimiter` and `libx264, libx265, aac, libopus`; firefox — `--version`, then a real headless search. `GET /v1/models` on the LLM backs only "Fetch models" (the id has no default and must be one the server lists) and the sd.cpp fallback probe.
 - **No Save in Settings.** The file is written 600 ms after the last keystroke and again on close if a write is owed; a save resets the cached TTS model id and the "already listening on" note.

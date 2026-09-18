@@ -16,9 +16,9 @@ One editable line per clip: what is said, in which voice, with what emotion. ▶
 
 **1** Narration tick · **2** preview · **3** back 3 s · ▶ · forward 3 s · **4** ＋ a line at the playhead · **5** slider over the cut, clock “session · cut/length” · **6** volume · **7** who speaks · **8** take ＋ − ▶ · **9** Add file… · **10** take band · **11** sample sentence · **12** sample ▶ ⏹ ⟳ · **13** pitch · **14** time field · **15** end time, “(~)” while estimated · **16** ▶ speak this line · **17** ↻ re-roll · **18** ＋ a line below · **19** 🗑 remove · **20** “[emotion] words” · **21** the fit warning · **22** Inputs readout
 
-REVIEW: the row's ＋ is the full-width sign U+FF0B, which only CJK fonts carry; on a machine without one it draws as a missing-glyph box. The rewrite SHOULD use an icon or an ASCII “+”.
+Prototype: the row's ＋ is the full-width sign U+FF0B, which only CJK fonts carry; on a machine without one it draws as a missing-glyph box. The rewrite uses the list-add icon.
 
-- **Narration tick**: "Whether this video has a narration. Unticked, ▶ writes none, the lines already written are left alone, and Produce drops the game-volume slider…" (the shipped tooltip also promises the subtitle choices go — stale: only the slider is hidden, since captions also come from the transcript. REVIEW: fix the wording.) Off greys lines, preview and voice picker; Produce renders as if there were no lines.
+- **Narration tick**: "Whether this video has a narration. Unticked, ▶ writes none, the lines already written are left alone, and Produce drops the game-volume slider…" (the shipped tooltip also promises the subtitle choices go — stale: only the slider is hidden, since captions also come from the transcript. the rewrite's wording drops that promise.) Off greys lines, preview and voice picker; Produce renders as if there were no lines.
 - **Preview**: finished frame (crop, zoom, stops, titles), narration mixed over the cut's sound; click = play/pause. Transport: back 3 s, ▶/⏸, forward 3 s, ＋ new line at this second, slider on the cut's own clock ("what the edit removed is not on this bar…"; paused, wheel steps a frame), clock "session · cut/length", shared volume.
 - **Lines column**: one row per entry, sorted by clip then offset. Row: time entry (mm:ss.s, session clock; typing moves within the clip; Enter/leave may move it to another clip; a time in a gap is refused and written back), status ("– end time", "(~)" while estimated, "(no line — this clip plays on its own audio)", "(caption — the viewer reads it; never spoken)", warnings "⚠ ~N s of speech, M s before the clip ends|the next line" and "⚠ this clip's lines run N s past it — the render will have them moved earlier[ and sped up]"), ▶ speak this line — audition from 3 s ahead where those seconds are its own, then continue down the cut; five other cases, each in its own words: a press while speaking pauses; a wordless row "clip N has no line — playing it on its own audio" / "…and no recording covers it"; a caption "line N is a caption — read, never spoken; playing its moment" / "…and no recording covers its clip"; a synthesis in flight "still speaking line N for the first time — ⏹ gives up on it". A clip no recording covers speaks alone off the tick ("synthesizing… (first line after a cold start also loads the model)", then "entry N — no recording covers this clip, so the line plays on its own", failure "synthesis failed — see log"), ↻ re-roll (new take, same words), ＋ add a line below, 🗑 remove (clip plays its own audio). Text box: `[emotion] words`, `[top|center|bottom] words` for captions; may carry the line's second in the tag as `@N` (`[excited @65] Weee` moves the line, clamped out of the clip's last second) — write-only: the time field owns the number, the box never prints it back. Tooltip explains the tag, judge vs weighted mixes, the eight base emotions.
 - **Voice picker**: unlabelled dropdown, tooltip "Who speaks the narration…" (No audio — captions only; Narrator 1..4 — the recording tagged on Prepare; every .wav in the voices folder); the take band's ＋ − ▶; "Add file…" (copies a recording into the voices folder). **Take band** (narrator slot with a recording only): the recording's waveform ("reading the recording…" while the envelope decodes); red ▶-start bar, drawn through the ruler too; faint red bar under the pointer; blue live selection; playhead while ▶ walks; each take shaded, labelled with its duration alone ("4.2s") when wider than 34 px; own scrollbar once the wheel zooms past fit. Drag selects; ＋ makes a take (≥ 0.4 s); − takes seconds back out (splitting takes); click sets the red bar; ▶ plays the takes from the bar (raw recording when none); wheel zooms; Shift+wheel pans; "With no takes the seconds are chosen for you." Sample: an entry (default "This is the voice the narration will be spoken in. It should stay clear and easy to follow for a couple of minutes."), ▶ speaks it, ⏹, ⟳ new take; pitch −6..+6 semitones ("Shift the reference recording before it is cloned — a different speaker, not the same one transposed"), applied 400 ms after the last move.
@@ -36,7 +36,7 @@ flowchart TD
   G -- yes --> R["refused, each with its own sentence"]:::refuse
   G -- no --> P["pull half-typed rows · save the project"]
   P --> W["1/2 · “thinking about it”, pulsing · then “writing N/M clips”<br/>one call · F4.2"]
-  W --> REP["every line replaced · the silent list cleared (REVIEW: MUST keep it)<br/>the old file kept as narration.prev.json"]
+  W --> REP["a line for every clip without one · every clip when P.policy.narrationRewrite<br/>the silent list kept<br/>the old file kept as narration.prev.json"]
   REP --> CO{"voice = captions only?"}
   CO -- yes --> C["“narrate: captions only — N line(s) written, none spoken”"]:::done
   CO -- no --> S["2/2 · per line: blank or cached → skipped · else speak it F4.4"]
@@ -46,7 +46,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 Refuse: busy; no cut ("no cut yet — build one on the Cut step first"); narration off ("this video has no narration — tick Narration at the top of this page to write one"); no session timeline ("run Transcript first — no session timeline"). S2 Pull half-typed rows; keep the previous file as `narration.prev.json`. S3 Save the project; job "narration" 1/2 — bar opens at "thinking about it", pulses every 150 ms until the first clip closes, then "writing N/M clips" as they stream; log ">>> narrate: <why> — writing N clip(s), one LLM call, then speaking them" where <why> is the staleness reason ("there is no narration yet" / "clip N has no narration — it is new, or the cut moved under it" / "the narration has lines for clips the cut no longer has") or "rewriting every line"; one model call ([F4.2](#f42-the-narration-call)). S4 Replace every line (REVIEW: the prototype always rewrites; the Readme promised only missing lines — the rewrite SHOULD rewrite only clips with no entry unless the user asks for all, via a choice on the ▶ or the policy); clear the silent list — **REVIEW: it holds the user's own "this clip plays its own audio" decisions; wiping it every run destroys hand work; the rewrite MUST keep it** ([`12-decisions.md` §3](12-decisions.md#3-where-the-prototype-overrules-the-model--and-where-that-decision-moves)); save; rebuild; ">>> narration written for N clips"; "narration written — speaking it". S5 Captions-only voice → done ("narrate: captions only — N line(s) written, none spoken"). S6 Job "speaking" 2/2, one task per line: checkpoint; skip blank text or a cached wav; else synthesize ([F4.4](#f44-speak-a-line-tts)). "    narrate: N line(s) spoken, M already in the cache" — four-space indent, not `>>> `. S7 Done: status "narration ready and spoken — ▶ the preview hears it in place" / "narration ready — captions only, nothing spoken" / "<stage> stopped" / "<stage> failed — see log". (Prototype bug: written to the progress bar's hidden text, never shown; they belong on the status line.)
+S1 Refuse: busy; no cut ("no cut yet — build one on the Cut step first"); narration off ("this video has no narration — tick Narration at the top of this page to write one"); no session timeline ("run Transcript first — no session timeline"). S2 Pull half-typed rows; keep the previous file as `narration.prev.json`. S3 Save the project; job "narration" 1/2 — bar opens at "thinking about it", pulses every 150 ms until the first clip closes, then "writing N/M clips" as they stream; log ">>> narrate: <why> — writing N clip(s), one LLM call, then speaking them" where <why> is the staleness reason ("there is no narration yet" / "clip N has no narration — it is new, or the cut moved under it" / "the narration has lines for clips the cut no longer has") or "rewriting every line"; one model call ([F4.2](#f42-the-narration-call)). S4 Write a line for every clip without one, and for every clip when P.policy.narrationRewrite is on (prototype: always rewrote every line, though the Readme promised only the missing ones); keep the silent list — it holds the user's own "this clip plays its own audio" decisions (prototype: wiped it every run) ([`12-decisions.md` §3](12-decisions.md#3-where-the-prototype-overrules-the-model--and-where-that-decision-moves)); save; rebuild; ">>> narration written for N clips"; "narration written — speaking it". S5 Captions-only voice → done ("narrate: captions only — N line(s) written, none spoken"). S6 Job "speaking" 2/2, one task per line: checkpoint; skip blank text or a cached wav; else synthesize ([F4.4](#f44-speak-a-line-tts)). "    narrate: N line(s) spoken, M already in the cache" — four-space indent, not `>>> `. S7 Done: status "narration ready and spoken — ▶ the preview hears it in place" / "narration ready — captions only, nothing spoken" / "<stage> stopped" / "<stage> failed — see log". (Prototype bug: written to the progress bar's hidden text, never shown; they belong on the status line.)
 
 ### F4.2 The narration call
 
@@ -59,7 +59,7 @@ SYSTEM  house rules + the "narrate" prompt
 USER    User Context (+ the speech rule)
         THE CLIPS AND WHAT IS KNOWN ABOUT EACH:
         CLIP 7: 3:20–3:38 (18 s of footage at 2x, 9 s on screen, at most 13 words -- fewer is better, none is fine)
-          [+0.4s] NARRATOR: …        lines within ±P.policy.narrationContextSeconds
+          [+0.4s] NARRATOR: …        lines within ±P.machine.narrationContextSeconds
           [+6.1s] EVENT: …
           [+2.0s] MARKED: boss fight   [+4.0s] CAPTION: …
         CLIP 8: an insert — "not footage: a graphic or clip inserted here … Narrate what is ON it, or say nothing"
@@ -89,23 +89,23 @@ System = house rules + the "narrate" prompt (+ speech addendum when the clips pl
 
 ```mermaid
 flowchart TD
-  A(["a clip's lines"]) --> P["pack from max P.policy.narrationLeadSeconds, at<br/>never before the previous end + narrationGapSeconds · + narrationTailSeconds"]
+  A(["a clip's lines"]) --> P["pack from max P.eng.narrationLeadSeconds, at<br/>never before the previous end + narrationGapSeconds · + narrationTailSeconds"]
   P --> F{"fits?"}
   F -- yes --> OK["as placed"]:::done
-  F -- no --> G["1 · grow the clip, ≤ P.policy.narrationMaxExtendSeconds, never past the footage"]
+  F -- no --> G["1 · grow the clip, ≤ P.eng.narrationMaxExtendSeconds, never past the footage"]
   G --> F2{"fits?"}
   F2 -- yes --> OK
   F2 -- no --> SL["2 · slide every line earlier, down to the lead<br/>“clip N: … moved X s earlier”"]
   SL --> F3{"fits?"}
   F3 -- yes --> OK
-  F3 -- no --> SP["3 · speed up, ≤ P.policy.narrationMaxTempo · pack and slide again<br/>“clip N: narration X s does not fit Y s — sped up Zx”"]
+  F3 -- no --> SP["3 · speed up, ≤ P.eng.narrationMaxTempo · pack and slide again<br/>“clip N: narration X s does not fit Y s — sped up Zx”"]
   SP --> CUT["what still overruns is cut by the clip's end"]:::refuse
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-Lines pack in order from max(P.policy.narrationLeadSeconds 0.3, at), never before the previous line's end + P.policy.narrationGapSeconds (0.3); need = packed end + P.policy.narrationTailSeconds (0.2). Over the clip: grow it by up to P.policy.narrationMaxExtendSeconds (4 s), never past the footage; still over: slide every line earlier, down to the lead; still over: speed up to P.policy.narrationMaxTempo (1.25×), then pack and slide earlier once more at the new tempo; only then log. Each step logged ("clip N: the narration does not fit where it was placed — moved X s earlier" / "clip N: narration X s does not fit Y s — sped up Zx"). Speech length = the wav's duration if it exists, else — **on the Narrate page only** — characters / the narration's own measured rate (default 15 chars/s, clamped 8..28). In the render a line with no synthesis has length 0, takes no room; its cue is held to the next line or the clip's end.
+Lines pack in order from max(P.eng.narrationLeadSeconds 0.3, at), never before the previous line's end + P.eng.narrationGapSeconds (0.3); need = packed end + P.eng.narrationTailSeconds (0.2). Over the clip: grow it by up to P.eng.narrationMaxExtendSeconds (4 s), never past the footage; still over: slide every line earlier, down to the lead; still over: speed up to P.eng.narrationMaxTempo (1.25×), then pack and slide earlier once more at the new tempo; only then log. Each step logged ("clip N: the narration does not fit where it was placed — moved X s earlier" / "clip N: narration X s does not fit Y s — sped up Zx"). Speech length = the wav's duration if it exists, else — **on the Narrate page only** — characters / the narration's own measured rate (default 15 chars/s, clamped 8..28). In the render a line with no synthesis has length 0, takes no room; its cue is held to the next line or the clip's end.
 
 ### F4.4 Speak a line (TTS)
 
@@ -117,7 +117,7 @@ flowchart TD
   REF --> H{"audio.cpp healthy · TTS served and able to clone?"}
   H -- no --> R["failure, named"]:::refuse
   H -- yes --> UP["upload the reference — every line, a server path dies with a restart"]
-  UP --> RQ["POST /v1/audio/speech · model, input, voice_ref, language “en” (REVIEW), options"]
+  UP --> RQ["POST /v1/audio/speech · model, input, voice_ref, language = P.policy.ttsLanguage, options"]
   RQ --> EM{"a weighted tag, every name known?"}
   EM -- yes --> VEC["emotion_vector of 8 floats · alpha 1"]
   EM -- no --> JD["use_emotion_text · the names go to the judge · alpha 0.85"]
@@ -130,7 +130,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 Reference on disk ([F4.6](#f46-choose-the-voice-and-build-the-reference)). S2 Audio server health; TTS model served and able to clone. S3 Upload the reference every line (a server path dies with a restart). S4 POST /v1/audio/speech `{model, input: text, voice_ref: <server path>, language: "en", options: {emotion_alpha "0.85", seed, and either emotion_vector "<8 floats>" with emotion_alpha "1" (a weighted tag whose names are all known) or use_emotion_text "true" + emotion_text "<names>" (the judge)}}`. REVIEW: prototype hard-codes "en"; it SHOULD follow the project language or a policy field. S5 Reply under 1000 bytes or non-200 = failure; else write `narrate/tts/<hash>.wav`. S6 Emotion vocabulary: eight bases (happy, angry, sad, afraid, disgusted, melancholic, surprised, calm) with kin words, 21 named blends as recipes over the bases; weights 0..1; unknown names go to the judge as words; never an error.
+S1 Reference on disk ([F4.6](#f46-choose-the-voice-and-build-the-reference)). S2 Audio server health; TTS model served and able to clone. S3 Upload the reference every line (a server path dies with a restart). S4 POST /v1/audio/speech `{model, input: text, voice_ref: <server path>, language: "en", options: {emotion_alpha "0.85", seed, and either emotion_vector "<8 floats>" with emotion_alpha "1" (a weighted tag whose names are all known) or use_emotion_text "true" + emotion_text "<names>" (the judge)}}`. `language` = P.policy.ttsLanguage, the project language (prototype: hard-coded "en"). S5 Reply under 1000 bytes or non-200 = failure; else write `narrate/tts/<hash>.wav`. S6 Emotion vocabulary: eight bases (happy, angry, sad, afraid, disgusted, melancholic, surprised, calm) with kin words, 21 named blends as recipes over the bases; weights 0..1; unknown names go to the judge as words; never an error.
 
 ### F4.5 Preview the cut with narration
 
@@ -166,7 +166,7 @@ flowchart TD
   T -- no --> R1["“narrator N is not tagged on the Prepare step — …”"]:::refuse
   T -- yes --> TK{"hand-picked takes?"}
   TK -- yes --> HP["the takes win outright · no cap, no diarization"]
-  TK -- no --> AU["automatic: solo turns ≥ P.policy.refMinTakeSeconds, ≥ refMinWordsPerSecond<br/>up to refWantSeconds from ≤ refTakeMax pieces"]
+  TK -- no --> AU["automatic: solo turns ≥ P.eng.refMinTakeSeconds, ≥ refMinWordsPerSecond<br/>up to refWantSeconds from ≤ refTakeMax pieces"]
   K -- "a .wav in the voices folder" --> VF["that file"]
   HP --> LV
   AU --> LV
@@ -181,7 +181,7 @@ flowchart TD
 
 <sub>Screenshot of the prototype on the ETH lecture project.</sub> Drag across the wave, press ＋: a 2.6 s take, the status says “take added: 0:00–0:03 — 1 take(s), 2.6 s of reference (14 s is plenty)”.
 
-S1 Pick a voice: captions only (nothing spoken); Narrator N (recording tagged on Prepare; "narrator N is not tagged on the Prepare step — tag a recording, or pick another voice"); a voices-folder file ("voice X is no longer in DIR — pick another"). Switching keeps what was synthesized (cache key carries the voice) and reports the switch: "no audio — the narration is written and timed, never spoken" / "voice: narrator N's — it is re-cut from the recording on the next line spoken" / "voice: <name> — ▶ beside the sample plays it" / "could not install that voice — see log". S2 Reference: hand-picked takes win outright (no cap, no diarization needed); else automatic from diarization turns and transcript: takes ≥ P.policy.refMinTakeSeconds (5), ≥ 2 s from other speakers, ≥ 1.5 words/s, up to P.policy.refWantSeconds (14) from ≤ 3 pieces; errors "nothing is tagged as narrator N on the Prepare step", "no diarization for X -- run Prepare, or pick the seconds by hand under the video", "no clean solo stretch found for the voice reference". S3 Level to −16 LUFS / −1.5 dBTP / LRA 7, mono 48 kHz pcm → `voice_ref_base.wav`; pitch-shift (rubberband, formants preserved) → `voice_ref.wav`. A wav header the server cannot read (extensible format, > 48 kHz) is logged ("voice reference <file> is not a wav the server reads -- cutting it again") and re-cut; a project with `voice_ref.wav` but no `voice_ref_base.wav` renames the former to the base. S4 Takes: ＋ on a selection ≥ 0.4 s ("take added: a–b"; "that is X s — a take has to be at least 0.4 s"), − subtracts seconds (splitting takes), ▶ walks takes from the red bar; takes sorted, merged when touching; changing takes, pitch or voice removes the shifted reference (and the base where needed). S5 Sample: speak the entry text in the voice (cached per voice and text; "sample in <voice>"; ⟳ = new take).
+S1 Pick a voice: captions only (nothing spoken); Narrator N (recording tagged on Prepare; "narrator N is not tagged on the Prepare step — tag a recording, or pick another voice"); a voices-folder file ("voice X is no longer in DIR — pick another"). Switching keeps what was synthesized (cache key carries the voice) and reports the switch: "no audio — the narration is written and timed, never spoken" / "voice: narrator N's — it is re-cut from the recording on the next line spoken" / "voice: <name> — ▶ beside the sample plays it" / "could not install that voice — see log". S2 Reference: hand-picked takes win outright (no cap, no diarization needed); else automatic from diarization turns and transcript: takes ≥ P.eng.refMinTakeSeconds (5), ≥ 2 s from other speakers, ≥ 1.5 words/s, up to P.machine.refWantSeconds (14) from ≤ 3 pieces; errors "nothing is tagged as narrator N on the Prepare step", "no diarization for X -- run Prepare, or pick the seconds by hand under the video", "no clean solo stretch found for the voice reference". S3 Level to −16 LUFS / −1.5 dBTP / LRA 7, mono 48 kHz pcm → `voice_ref_base.wav`; pitch-shift (rubberband, formants preserved) → `voice_ref.wav`. A wav header the server cannot read (extensible format, > 48 kHz) is logged ("voice reference <file> is not a wav the server reads -- cutting it again") and re-cut; a project with `voice_ref.wav` but no `voice_ref_base.wav` renames the former to the base. S4 Takes: ＋ on a selection ≥ 0.4 s ("take added: a–b"; "that is X s — a take has to be at least 0.4 s"), − subtracts seconds (splitting takes), ▶ walks takes from the red bar; takes sorted, merged when touching; changing takes, pitch or voice removes the shifted reference (and the base where needed). S5 Sample: speak the entry text in the voice (cached per voice and text; "sample in <voice>"; ⟳ = new take).
 
 ### F4.7 Edit lines
 
@@ -239,7 +239,7 @@ Greys the page; leaves `narration.json` alone; Produce hides the game-volume sli
 
 ## 4. Parameters used
 
-P.policy: narrationMinWords, narrationMaxWords, narrationWordsPerSecond (0.75), narrationLead, narrationGap, narrationTail, narrationMaxExtend, narrationMaxTempo, narrationContextWindow (±4 s), ttsLanguage, refMinTakeSeconds, refPadSeconds (2), refWantSeconds, refTakeMax (3), refMinWordsPerSecond (1.5), takeMinSeconds (0.4), emotionAlpha (0.85), runInSeconds (3), speech rate defaults (15, 8..28). Engineering: tick 100 ms, seek debounce 120 ms, autosave 400 ms, band geometry, cache key format (frozen).
+Parameters ([10](10-parameters.md)): narrationMinWords, narrationMaxWords, narrationWordsPerSecond (0.75), narrationLead, narrationGap, narrationTail, narrationMaxExtend, narrationMaxTempo, narrationContextWindow (±4 s), ttsLanguage, refMinTakeSeconds, refPadSeconds (2), refWantSeconds, refTakeMax (3), refMinWordsPerSecond (1.5), takeMinSeconds (0.4), emotionAlpha (0.85), runInSeconds (3), speech rate defaults (15, 8..28). Engineering: tick 100 ms, seek debounce 120 ms, autosave 400 ms, band geometry, cache key format (frozen).
 
 ## 5. Rules
 

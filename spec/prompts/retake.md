@@ -1,7 +1,7 @@
 # Prompt: retake
 
 <!-- nav -->
-[← Prompt: policy (new — REVIEW)](policy.md) · [↑ Contents](../README.md) · [Prompt: speed →](speed.md)
+[← Prompt: policy (new)](policy.md) · [↑ Contents](../README.md) · [Prompt: speed →](speed.md)
 <!-- /nav -->
 
 Shipped default, verbatim from the prototype.
@@ -30,5 +30,5 @@ Answer with line NUMBERS, never with times.
 
 <!-- nav -->
 ---
-[← Prompt: policy (new — REVIEW)](policy.md) · [↑ top](#prompt-retake) · [↑ Contents](../README.md) · [Prompt: speed →](speed.md)
+[← Prompt: policy (new)](policy.md) · [↑ top](#prompt-retake) · [↑ Contents](../README.md) · [Prompt: speed →](speed.md)
 <!-- /nav -->

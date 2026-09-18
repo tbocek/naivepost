@@ -1,7 +1,7 @@
 # Prompt: narrate
 
 <!-- nav -->
-[← Prompt: fix](fix.md) · [↑ Contents](../README.md) · [Prompt: policy (new — REVIEW) →](policy.md)
+[← Prompt: fix](fix.md) · [↑ Contents](../README.md) · [Prompt: policy (new) →](policy.md)
 <!-- /nav -->
 
 Shipped default, verbatim from the prototype.
@@ -49,5 +49,5 @@ Answer with ENTRIES.
 
 <!-- nav -->
 ---
-[← Prompt: fix](fix.md) · [↑ top](#prompt-narrate) · [↑ Contents](../README.md) · [Prompt: policy (new — REVIEW) →](policy.md)
+[← Prompt: fix](fix.md) · [↑ top](#prompt-narrate) · [↑ Contents](../README.md) · [Prompt: policy (new) →](policy.md)
 <!-- /nav -->

@@ -1,10 +1,10 @@
-# Prompt: policy (new — REVIEW)
+# Prompt: policy (new)
 
 <!-- nav -->
 [← Prompt: narrate](narrate.md) · [↑ Contents](../README.md) · [Prompt: retake →](retake.md)
 <!-- /nav -->
 
-Not in the prototype. Used by flow [F0.7](../03-shell.md#f07-derive-the-editing-policy-review--new) to derive the editing policy from the User Context with `tool:set_policy`.
+Not in the prototype. Used by flow [F0.7](../03-shell.md#f07-derive-the-editing-policy-new) to derive the editing policy from the User Context with `tool:set_policy`.
 
 ```text
 You read the editor's context for one recorded session and set the editing policy fields it speaks to. Nothing else.
@@ -16,5 +16,5 @@ Leave every other field alone: a default is a whole answer, and a value the cont
 
 <!-- nav -->
 ---
-[← Prompt: narrate](narrate.md) · [↑ top](#prompt-policy-new--review) · [↑ Contents](../README.md) · [Prompt: retake →](retake.md)
+[← Prompt: narrate](narrate.md) · [↑ top](#prompt-policy-new) · [↑ Contents](../README.md) · [Prompt: retake →](retake.md)
 <!-- /nav -->

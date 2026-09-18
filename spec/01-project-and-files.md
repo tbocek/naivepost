@@ -41,7 +41,7 @@ A project is a folder ending in `.naivepost`. The folder **is** the output folde
   produce/publish/publish.json       the upload text and thumbnail state (§5); a project written before the move keeps them in <name>.naivepost/publish/, read there for ever, never migrated
   produce/publish/thumbnail.png, thumbnail-plain.png, thumbnail.stamp, description.txt
   llm/<MMDD-HHMMSS>-<step>.html      one readable page per run
-  requests.tsv                       every request sent outside, timed (REVIEW, new; [09 §10](09-llm-and-tools.md#10-every-request-timed-review--new))
+  requests.tsv                       every request sent outside, timed (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new))
 ```
 
 Directories 0755, files 0644, except prompts, the settings file and the machine's watchdog dumps (0700 / 0600).
@@ -69,14 +69,14 @@ Paths written into any project file follow one rule: inside the project → `pro
 |---|---|---|
 | sources | in order; `footage` only on video; `narrator` 1..N (exclusive); `sepvoice` is a wish cleared when granted; `tracks` = audio stream indices in the session (empty = first) | [] |
 | interval | Freq: seconds between the frames sent to the describe model, counted from each scene change; 0.25 to 5; always written (prototype: the extraction interval, 0 = every frame) | 1.0 |
-| frame_scale | prototype only: the Frame size preset; ignored on load, never written (REVIEW: frames are stored at the video's own size, [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) S1) | — |
-| run_steps | prototype only: the chain's ticked pages; ignored on load, never written (REVIEW: the run bar has no step picker, [03 §2](03-shell.md#2-the-run-bar)) | — |
+| frame_scale | prototype only: the Frame size preset; ignored on load, never written (frames are stored at the video's own size, [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) S1) | — |
+| run_steps | prototype only: the chain's ticked pages; ignored on load, never written (the run bar has no step picker, [03 §2](03-shell.md#2-the-run-bar)) | — |
 | language | ASR language code | en |
 | no_narration | narration off | false |
 | reference_sources | inverted on purpose: absent = copy sources in | false |
 | vid_dir / aud_dir | last chooser folders | root/input_video, root/input_audio |
 | context | the User Context, verbatim | "" |
-| policy | REVIEW (new, not in the prototype): the editing policy ([`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults)) with a `source` per field (user / model / default) | defaults |
+| policy | new, not in the prototype: the editing policy ([`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults)) with a `source` per field (user / model / default) | defaults |
 | produce | encoder settings ([`08-produce.md` §2](08-produce.md#2-flows)); `out_file` is never stored | defaults |
 | publish | upload text and thumbnail state ([§5](#5-producepublishpublishjson)) | absent |
 
@@ -114,7 +114,7 @@ Existing segments unlock the Narrate and Produce ▶: the live editor's if it ha
  "silent": [{"s": 40.0, "e": 65.0}]}
 ```
 
-`s`/`e` the clip's bounds, copied verbatim from the cut; `at` seconds from the clip's start — REVIEW: on a clip with a rate the prototype reads it three ways (clamped against the on-screen length when the line is written, a session offset when lines are refitted, divided by the rate again in the render), which cannot all be right; the rewrite MUST fix one meaning and state it here; `text` "" = deliberately silent; `emotion` a delivery tag; `pos` caption placement top/center/"" (bottom); `roll` re-roll count (salts the TTS cache). `silent` = clips whose last line was deleted on purpose, kept by bounds. Entries always sorted by (s, at).
+`s`/`e` the clip's bounds, copied verbatim from the cut; `at` seconds from the clip's start **on the recording's own clock**, rate ignored: a line stays on the same picture whatever speed the clip plays at, and the render places it at `at / rate` of the clip's output seconds (prototype: read three ways — clamped against the on-screen length when written, a session offset when refitted, divided by the rate again in the render); `text` "" = deliberately silent; `emotion` a delivery tag; `pos` caption placement top/center/"" (bottom); `roll` re-roll count (salts the TTS cache). `silent` = clips whose last line was deleted on purpose, kept by bounds. Entries always sorted by (s, at).
 
 TTS cache key (deliberately stable across versions): `25e<alpha>|[<roll>#][<voiceKey>|]<text>|<emotion or 8-float vector>`; file = first 8 bytes of SHA-1 as hex; seed = bytes 8..11.
 
@@ -136,7 +136,7 @@ The first frame is the base the image model edits; the rest are references. `own
 - `events.tsv`: `start\tend\ttext` per frame; a `same` row extends the previous row when read.
 - `retakes.tsv`: `S\tE\tAgain\tTo\tText[\tWhole]` (3- to 6-column files accepted); `Whole` = the recordings the mark takes out entire, base names comma-separated, empty or absent when none.
 - `final.txt`: the surviving words as written, `|cut N|` or `|cut|` at every join.
-- `requests.tsv` (REVIEW, new): one line per request sent outside, appended when it ends, a header line first: `started\trun\tstep\tjob\tservice\tmodel\tkind\tsent_bytes\timages\treceived_bytes\ttokens_in\ttokens_out\twait_s\tfirst_byte_s\ton_wire_s\tthinking_s\toutcome\tattempt`. `started` local time with milliseconds; `service` one of `llm`, `audio`, `image`, `web`; `kind` e.g. `chat`, `asr`, `align`, `diarize`, `tts`, `separate`, `upload`, `image`, `search`, `read`; seconds with two decimals, empty when not known; `outcome` one of `ok`, `cache`, `error <status or reason>`, `stalled`, `cancelled`. Kept across runs, never rewritten; moves with the project on Save As; a new project starts an empty one.
+- `requests.tsv` (new): one line per request sent outside, appended when it ends, a header line first: `started\trun\tstep\tjob\tservice\tmodel\tkind\tsent_bytes\timages\treceived_bytes\ttokens_in\ttokens_out\twait_s\tfirst_byte_s\ton_wire_s\tthinking_s\toutcome\tattempt`. `started` local time with milliseconds; `service` one of `llm`, `audio`, `image`, `web`; `kind` e.g. `chat`, `asr`, `align`, `diarize`, `tts`, `separate`, `upload`, `image`, `search`, `read`; seconds with two decimals, empty when not known; `outcome` one of `ok`, `cache`, `error <status or reason>`, `stalled`, `cancelled`. Kept across runs, never rewritten; moves with the project on Save As; a new project starts an empty one.
 - `meta.env`: `KEY=VALUE` lines; its existence says the sources were read. Prototype: the only reader (`loadMeta`) looks in the old place, `inputs/meta.env`, and nothing calls it — the file is for humans and scripts; the rewrite MAY drop it.
 - `words.json`: the ASR server's own document (`{"text", "words":[{word,start_sample,end_sample}]}`); `words.aligned.json`: `{"words":[…]}` from the aligner; `turns.json`: `[{start_sample,end_sample,speaker_id}]`; `asrchunks.json`: a bare array `[{"s","e","text"}]` — the seconds each ASR request covered and exactly what came back for them. A recording under P.policy.minTakeSeconds is written as silence, no server: `transcript.txt` = "\n", `words.json` = `{"text":""}`, `turns.json` = `[]`, no `asrchunks.json`.
 - `.frames`: `<grid>|<scene threshold>` (frames are always the video's own size); `scenes.tsv`: `time\tscore` per scene change (prototype: `.interval` = `<interval>|<scale name>`, no scenes).

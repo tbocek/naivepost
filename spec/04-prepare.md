@@ -3,7 +3,7 @@
 <!-- nav -->
 [← 03 The shell](03-shell.md) · [↑ Contents](README.md) · [05 Cut →](05-cut.md)
 
-**Flows:** [F1.1](#f11--prepare) · [F1.2](#f12-voice-separation-rows-with-) · [F1.3](#f13-per-source-audio--text--word-times--speakers--segments) · [F1.4](#f14-asr-in-chunks) · [F1.5](#f15-forced-alignment) · [F1.6](#f16-frames-per-video) · [F1.7](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) · [F1.8](#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines) · [F1.9](#f19-mark-retakes) · [F1.10](#f110-repair-the-joins) · [F1.11](#f111-place-the-edges-of-a-mark) · [F1.12](#f112-hand-edit-the-text) · [F1.13](#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles)
+**Flows:** [F1.1](#f11--prepare) · [F1.2](#f12-voice-separation-rows-with-) · [F1.3](#f13-per-source-audio--text--word-times--speakers--segments) · [F1.4](#f14-asr-in-chunks) · [F1.5](#f15-forced-alignment) · [F1.6](#f16-frames-per-video) · [F1.7](#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) · [F1.8](#f18-fix-the-transcripts-blocks-of-pmachinefixblocklines--25-lines) · [F1.9](#f19-mark-retakes) · [F1.10](#f110-repair-the-joins) · [F1.11](#f111-place-the-edges-of-a-mark) · [F1.12](#f112-hand-edit-the-text) · [F1.13](#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles)
 <!-- /nav -->
 
 Sources, transcripts, frames, and what the models make of them. One ▶ runs the whole step; each stage skips when its output exists.
@@ -20,9 +20,9 @@ Sources, transcripts, frames, and what the models make of them. One ▶ runs the
 
 <sub>Screenshot of the prototype on the ETH lecture project.</sub> The list scrolls: Translate and Upload text sit below Narration.
 
-Left: the sources list ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)) and, under it, Freq (P.project.frameInterval: how often a frame goes to the describe model, counted from each scene change — 0.25, 0.5, 1s, 2s, 3s, 4s, 5s; default 1 s). REVIEW (new): Freq no longer sets extraction. Frames are extracted on a fixed P.eng.frameGridSeconds (250 ms) grid restarted at every scene change ([F1.6](#f16-frames-per-video)), so the Cut timeline has a picture down to its deepest zoom; Freq only decides which of them the model sees ([F1.7](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4)). Prototype: Freq is the extraction interval ("Seconds between frames — type 0.1 to 5, or 'each' for every frame"; stops each, 0.1, 0.2, 0.5, 1s … 5s), so zoomed in the picture band shows black between frames, Frame size (Original, 896w (LLM), 480p, 720p, 1080p; "Frame size — Original keeps the video's own size"; REVIEW: **gone in the rewrite** — frames are stored at the video's own size and scaled to P.machine.describeFrameWidth only on their way to the model, [F1.7](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) S1), Language (ASR code; "…the wrong one transcribes into gibberish. Empty means en"). REVIEW (new): **no Style control**. What the prototype's Style dropdown chose (Lecture: joins repaired, cut by the words; Gaming: retakes marked, cut chosen by the model) is set from the User Context by the policy ([F0.7](03-shell.md#f07-derive-the-editing-policy-review--new)): P.policy.markingPass and P.policy.cutMode. Prototype: a Style dropdown (Lecture / Gaming; a blank project stores "" = Gaming while the dropdown opens on "Lecture").
+Left: the sources list ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)) and, under it, Freq (P.project.frameInterval: how often a frame goes to the describe model, counted from each scene change — 0.25, 0.5, 1s, 2s, 3s, 4s, 5s; default 1 s). New: Freq no longer sets extraction. Frames are extracted on a fixed P.eng.frameGridSeconds (250 ms) grid restarted at every scene change ([F1.6](#f16-frames-per-video)), so the Cut timeline has a picture down to its deepest zoom; Freq only decides which of them the model sees ([F1.7](#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4)). Prototype: Freq is the extraction interval ("Seconds between frames — type 0.1 to 5, or 'each' for every frame"; stops each, 0.1, 0.2, 0.5, 1s … 5s), so zoomed in the picture band shows black between frames, Frame size (Original, 896w (LLM), 480p, 720p, 1080p; "Frame size — Original keeps the video's own size"; **gone in the rewrite** — frames are stored at the video's own size and scaled to P.machine.describeFrameWidth only on their way to the model, [F1.7](#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) S1), Language (ASR code; "…the wrong one transcribes into gibberish. Empty means en"). New: **no Style control**. What the prototype's Style dropdown chose (Lecture: joins repaired, cut by the words; Gaming: retakes marked, cut chosen by the model) is set from the User Context by the policy ([F0.7](03-shell.md#f07-derive-the-editing-policy-new)): P.policy.markingPass and P.policy.cutMode. Prototype: a Style dropdown (Lecture / Gaming; a blank project stores "" = Gaming while the dropdown opens on "Lecture").
 
-Right: the prompt bench — one heading row (title, "edited — kept in your settings" mark, row picker, Reset), one text box. The User Context row hides mark and Reset (no built-in wording to differ from). Row 0 = **User Context** (per project, sent with every request, outranks the prompts; empty sends nothing). Rows 1–12 = the twelve prompts in pipeline order, per machine; ✎ = edited on this machine; Reset restores the shipped wording. Every keystroke is stored. REVIEW: add a row "Editing policy" opening the form of [F0.7](03-shell.md#f07-derive-the-editing-policy-review--new).
+Right: the prompt bench — one heading row (title, "edited — kept in your settings" mark, row picker, Reset), one text box. The User Context row hides mark and Reset (no built-in wording to differ from). Row 0 = **User Context** (per project, sent with every request, outranks the prompts; empty sends nothing). Rows 1–12 = the twelve prompts in pipeline order, per machine; ✎ = edited on this machine; Reset restores the shipped wording. Every keystroke is stored. REVIEW: add a row "Editing policy" opening the form of [F0.7](03-shell.md#f07-derive-the-editing-policy-new).
 
 Inputs readout: "N frames → M vision · L lines → K fixer", per-file tooltip. Outputs: one folder button for `prepare/`, label "Prepare:" + count; its tooltip names the three subfolders.
 
@@ -54,7 +54,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 Ignore when running. No sources → "add at least one source". Two sources with one base name → refuse (log "!!! A and B are both inputs/<base> -- rename one", status "A and B have the same name — rename one"). S2 Save the project. S3 Last run stopped inside Describe → remove every `events.tsv`/`state.txt` (">>> stopped last time — describing from the start again: … (scaled frames kept)"); a failed clear is logged (">>> could not clear the last run (…) -- resuming it") and the run resumes from disk. S4 startRun; log ">>> prepare: N input files", each file, the inputs summary, ">>> prepare: sending the session context from Prepare (N characters)". S5 Check the audio server; ASR and diarization models (and separation when asked) served. S6 Phases, share of the bar: voice separation ([F1.2](#f12-voice-separation-rows-with-)) 0–10 % when asked; ingest ([F1.3](#f13-per-source-audio--text--word-times--speakers--segments) + [F1.6](#f16-frames-per-video) in parallel) to 30 %; understand = describe ([F1.7](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4)) → fix ([F1.8](#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines)) → marking ([F1.9](#f19-mark-retakes)/F1.10) 30–100 %. S7 Success: fraction 1, ">>> prepare wrote:" + tree of the three folders, status "prepared — N files"; stopped → "stopped — finished work is kept"; failed → "prepare FAILED: …" / "prepare failed — see log". S8 Refresh the page, gates and Cut page; unload audio models.
+S1 Ignore when running. No sources → "add at least one source". Two sources with one base name → refuse (log "!!! A and B are both inputs/<base> -- rename one", status "A and B have the same name — rename one"). S2 Save the project. S3 Last run stopped inside Describe → remove every `events.tsv`/`state.txt` (">>> stopped last time — describing from the start again: … (scaled frames kept)"); a failed clear is logged (">>> could not clear the last run (…) -- resuming it") and the run resumes from disk. S4 startRun; log ">>> prepare: N input files", each file, the inputs summary, ">>> prepare: sending the session context from Prepare (N characters)". S5 Check the audio server; ASR and diarization models (and separation when asked) served. S6 Phases, share of the bar: voice separation ([F1.2](#f12-voice-separation-rows-with-)) 0–10 % when asked; ingest ([F1.3](#f13-per-source-audio--text--word-times--speakers--segments) + [F1.6](#f16-frames-per-video) in parallel) to 30 %; understand = describe ([F1.7](#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4)) → fix ([F1.8](#f18-fix-the-transcripts-blocks-of-pmachinefixblocklines--25-lines)) → marking ([F1.9](#f19-mark-retakes)/F1.10) 30–100 %. S7 Success: fraction 1, ">>> prepare wrote:" + tree of the three folders, status "prepared — N files"; stopped → "stopped — finished work is kept"; failed → "prepare FAILED: …" / "prepare failed — see log". S8 Refresh the page, gates and Cut page; unload audio models.
 
 ### F1.2 Voice separation (rows with 🗣)
 
@@ -65,7 +65,7 @@ flowchart TD
   A(["a row with 🗣"]) --> H{"both halves already there?"}
   H -- yes --> SK["“>>> ‹base› already split”"]:::done
   H -- no --> DEC["decode to 44.1 kHz stereo · “>>> ‹base› splitting the voice off X s in N part(s)”"]
-  DEC --> CH["chunks ≤ P.policy.sepChunkMaxSeconds, cut at silences"]
+  DEC --> CH["chunks ≤ P.machine.sepChunkMaxSeconds, cut at silences"]
   CH --> RUN["per chunk: upload → separation model"]
   RUN --> V{"a stem named vocals or voice?"}
   V -- no --> R["“stems A, B -- none of them is the voice”"]:::refuse
@@ -81,7 +81,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 Decode to 44.1 kHz stereo pcm. S2 Chunk at P.policy.sepChunkMaxSeconds (300 s) on silences. S3 Per chunk: upload, run the separation model; voice = `vocals|voice` stem, rest = `instrumental` stem (or every other stem mixed with amix normalize=0). S4 Join the parts; a video's rest muxed as mkv, picture copied. S5 Write `stems/<base>.split-voice.wav` and `<base>.split-novoice.wav|.mkv` (names keep the timestamp). S6 Log ">>> [base] splitting the voice off X s in N part(s) (<sep model>)" before the first chunk goes up, then ">>> [base] split into A and B" and a loudness report; warn when the rest is ≥ 10 dB under the mix. S7 Source row → two rows: rest keeps footage, voice takes the narrator slot; wish cleared; project saved. Skip when both halves exist.
+S1 Decode to 44.1 kHz stereo pcm. S2 Chunk at P.machine.sepChunkMaxSeconds (300 s) on silences. S3 Per chunk: upload, run the separation model; voice = `vocals|voice` stem, rest = `instrumental` stem (or every other stem mixed with amix normalize=0). S4 Join the parts; a video's rest muxed as mkv, picture copied. S5 Write `stems/<base>.split-voice.wav` and `<base>.split-novoice.wav|.mkv` (names keep the timestamp). S6 Log ">>> [base] splitting the voice off X s in N part(s) (<sep model>)" before the first chunk goes up, then ">>> [base] split into A and B" and a loudness report; warn when the rest is ≥ 10 dB under the mix. S7 Source row → two rows: rest keeps footage, voice takes the narrator slot; wish cleared; project saved. Skip when both halves exist.
 
 ### F1.3 Per source: audio → text → word times → speakers → segments
 
@@ -168,13 +168,13 @@ S1 Aligner = configured id, else every model declared task align, preferring qwe
 
 ### F1.6 Frames per video
 
-<sub><!-- back -->[← F1.5](#f15-forced-alignment) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.7 →](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4)</sub>
+<sub><!-- back -->[← F1.5](#f15-forced-alignment) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.7 →](#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4)</sub>
 
 ```mermaid
 flowchart TD
   A(["a video"]) --> M{".frames marker matches grid and threshold?"}
   M -- yes --> SK["skip · “>>> ‹base› frames already extracted …”"]:::done
-  M -- no --> SD["scene pass: the video at 4 frames a second · ffmpeg scdet<br/>a change = score over P.policy.sceneThreshold · changes nearer than P.policy.sceneMinGapSeconds merged"]
+  M -- no --> SD["scene pass: the video at 4 frames a second · ffmpeg scdet<br/>a change = score over P.machine.sceneThreshold · changes nearer than P.machine.sceneMinGapSeconds merged"]
   SD --> ST["scenes.tsv: time and score of each change"]
   ST --> G["per scene: its first frame, then one every P.eng.frameGridSeconds until the next change"]
   G --> SH{"a take shorter than one grid step?"}
@@ -188,22 +188,22 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 The marker `.frames` = "<grid>|<threshold>" matches → skip (">>> [base] frames already extracted (…), skipping"). S2 Scene pass over the whole video: `fps=4,scale=640:-2,scdet=threshold=0`; a scene change is a frame whose score exceeds P.policy.sceneThreshold (1.0); changes nearer than P.policy.sceneMinGapSeconds (0.5 s) merge into the first; written as `scenes.tsv` (`time\tscore`). The start of the file is always a scene start. S3 Frames: in each scene, its first frame, then one every P.eng.frameGridSeconds (0.25 s) until the next change; the grid restarts at every change, so the first picture of a new slide is always there. Every frame at the video's own size: no scaling here (the model's copies are made in [F1.7](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) S1; prototype: scaled by the Frame size preset). Parallel chunks (workers clamp(CPU/4, 2, 8); one for a tiny job); a take shorter than one grid step → its first frame alone; progress from ffmpeg's `-progress`. S4 Each frame named by its exact second on the file's clock: `<start + t>` as `YYYY-MM-DD_HH-MM-SS.mmm`. S5 Write the marker; log ">>> [base] N frames, K scene changes".
+S1 The marker `.frames` = "<grid>|<threshold>" matches → skip (">>> [base] frames already extracted (…), skipping"). S2 Scene pass over the whole video: `fps=4,scale=640:-2,scdet=threshold=0`; a scene change is a frame whose score exceeds P.machine.sceneThreshold (1.0); changes nearer than P.machine.sceneMinGapSeconds (0.5 s) merge into the first; written as `scenes.tsv` (`time\tscore`). The start of the file is always a scene start. S3 Frames: in each scene, its first frame, then one every P.eng.frameGridSeconds (0.25 s) until the next change; the grid restarts at every change, so the first picture of a new slide is always there. Every frame at the video's own size: no scaling here (the model's copies are made in [F1.7](#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) S1; prototype: scaled by the Frame size preset). Parallel chunks (workers clamp(CPU/4, 2, 8); one for a tiny job); a take shorter than one grid step → its first frame alone; progress from ffmpeg's `-progress`. S4 Each frame named by its exact second on the file's clock: `<start + t>` as `YYYY-MM-DD_HH-MM-SS.mmm`. S5 Write the marker; log ">>> [base] N frames, K scene changes".
 
 Measured on the ETH lecture (2026-09-18), against the slide changes the describe log records: on a slide recording, the 4-per-second pass at threshold 1.0 found 6 of 8 changes, where the frame-by-frame pass at the source rate found 3 — the slide transitions are animated, so no single frame-to-frame step stands out; it missed a blank page one second after another change and a quote building into the same slide. On a browser demo it found 6 of 8 and added about 15 triggers from scrolling and typing. A false trigger costs one extra frame; a missed change is caught at the next grid step for the timeline and at the next Freq step for the model.
 
 Prototype: a uniform `fps=1/interval` grid (interval = Freq; 0 = every frame, "…extracting EVERY frame -- gigabytes"), `f000001.jpg…` renamed to `<start + (n−1)·interval>` stamps (-1, -2 within one second), marker `.interval` = "<interval>|<scale>", no scene detection.
 
-### F1.7 Describe (per footage source, chunks of P.policy.describeFramesPerReq = 4)
+### F1.7 Describe (per footage source, chunks of P.machine.describeFramesPerReq = 4)
 
-<sub><!-- back -->[← F1.6](#f16-frames-per-video) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.8 →](#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines)</sub>
+<sub><!-- back -->[← F1.6](#f16-frames-per-video) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.8 →](#f18-fix-the-transcripts-blocks-of-pmachinefixblocklines--25-lines)</sub>
 
 ```mermaid
 flowchart TD
   A(["footage source"]) --> PICK["which frames go: per scene, its first frame, then one every Freq seconds<br/>P.project.frameInterval, until the next scene change"]
   PICK --> SC["those frames scaled once to P.machine.describeFrameWidth wide into .llmframes/ · the stored frames stay full size"]
   SC --> RES["resume: chunks already in events.tsv skipped<br/>the last 3 rows and state.txt seed the history"]
-  RES --> REQ["one request per P.policy.describeFramesPerReq frames · layout below"]
+  RES --> REQ["one request per P.machine.describeFramesPerReq frames · layout below"]
   REQ --> T["tools: record_event · set_state · finish"]
   T --> F{"every frame has an event?"}
   F -- no --> T
@@ -227,16 +227,16 @@ Just before this: ‹the last events›
 …
 ```
 
-S0 Which frames go (REVIEW, new): from the 250 ms grid, per scene its first frame, then one every P.project.frameInterval (Freq) until the next change — a scene shorter than Freq sends its first frame only, and the first picture of every new slide always reaches the model. Prototype: every extracted frame, evenly spaced, and an every-frame folder is refused ("<base> was extracted as every-frame; describe needs a fixed interval — rerun Prepare with e.g. 1s"). S1 Frames sorted by stamp (missing or empty folders refused); each frame that goes is scaled once to P.machine.describeFrameWidth (896) wide, height by aspect, into `.llmframes/`, and the scaled copy is what is sent; the frames on disk stay the video's own size (REVIEW, new: one rule for every video; prototype: scaled unless the Frame size preset was 896w (LLM) or 480p, which were sent as stored). Measured on the ETH lecture: a 1080p frame is 147 kB and its 896-wide copy 55 kB, so the 250 ms grid at the video's own size is about 2.7 GB for 71 minutes, against about 0.9 GB had it been stored at 896. Each recording heard alongside the video logged with its offset (">>> [video] hearing X alongside it, starting Y s in"). S2 Resume: chunks whose start is in `events.tsv` skipped; last 3 rows seed the rolling window; `state.txt` seeds the STATE ("Recording just started."). S3 Message: User Context; "STATE so far: …"; "Frames cover t=As to t=Bs. A frame marked NEW SCENE is the first after a scene change."; "Just before this:" + last events; speech block (always three sections: context before, spoken during, context after; before/after within 10 s, ≤ 2 per source); then per frame "[+N.Ns] FRAME i of n" (", NEW SCENE" on a scene's first frame) + image; the stamps are no longer evenly spaced. S4 Cache on the whole content (images inline). S5 **Tools** ([`02-services.md` §3.2](02-services.md#32-describe-per-chunk-of-frames)): `record_event(frame, text, calm)`, `set_state(text)`, `finish`. Prototype: one "EVENT [+Ns]: …" line per frame + "STATE: …", parsed leniently. S6 One `events.tsv` row per frame (no event → "same"; a batch's first frame with no history must not be "same"); `state.txt` after every chunk. S7 Log ">>> [base] event log complete (N chunks)", or "(N chunks, M answered from the cache)" when any were.
+S0 Which frames go (new): from the 250 ms grid, per scene its first frame, then one every P.project.frameInterval (Freq) until the next change — a scene shorter than Freq sends its first frame only, and the first picture of every new slide always reaches the model. Prototype: every extracted frame, evenly spaced, and an every-frame folder is refused ("<base> was extracted as every-frame; describe needs a fixed interval — rerun Prepare with e.g. 1s"). S1 Frames sorted by stamp (missing or empty folders refused); each frame that goes is scaled once to P.machine.describeFrameWidth (896) wide, height by aspect, into `.llmframes/`, and the scaled copy is what is sent; the frames on disk stay the video's own size (new: one rule for every video; prototype: scaled unless the Frame size preset was 896w (LLM) or 480p, which were sent as stored). Measured on the ETH lecture: a 1080p frame is 147 kB and its 896-wide copy 55 kB, so the 250 ms grid at the video's own size is about 2.7 GB for 71 minutes, against about 0.9 GB had it been stored at 896. Each recording heard alongside the video logged with its offset (">>> [video] hearing X alongside it, starting Y s in"). S2 Resume: chunks whose start is in `events.tsv` skipped; last 3 rows seed the rolling window; `state.txt` seeds the STATE ("Recording just started."). S3 Message: User Context; "STATE so far: …"; "Frames cover t=As to t=Bs. A frame marked NEW SCENE is the first after a scene change."; "Just before this:" + last events; speech block (always three sections: context before, spoken during, context after; before/after within 10 s, ≤ 2 per source); then per frame "[+N.Ns] FRAME i of n" (", NEW SCENE" on a scene's first frame) + image; the stamps are no longer evenly spaced. S4 Cache on the whole content (images inline). S5 **Tools** ([`02-services.md` §3.2](02-services.md#32-describe-per-chunk-of-frames)): `record_event(frame, text, calm)`, `set_state(text)`, `finish`. Prototype: one "EVENT [+Ns]: …" line per frame + "STATE: …", parsed leniently. S6 One `events.tsv` row per frame (no event → "same"; a batch's first frame with no history must not be "same"); `state.txt` after every chunk. S7 Log ">>> [base] event log complete (N chunks)", or "(N chunks, M answered from the cache)" when any were.
 
-### F1.8 Fix the transcripts (blocks of P.policy.fixBlockLines = 25 lines)
+### F1.8 Fix the transcripts (blocks of P.machine.fixBlockLines = 25 lines)
 
-<sub><!-- back -->[← F1.7](#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.9 →](#f19-mark-retakes)</sub>
+<sub><!-- back -->[← F1.7](#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.9 →](#f19-mark-retakes)</sub>
 
 ```mermaid
 flowchart TD
   A(["every source on the session clock"]) --> OFF["offsets.tsv written first"]
-  OFF --> BL["per block of P.policy.fixBlockLines lines<br/>context ±5 s from every other source and its own events"]
+  OFF --> BL["per block of P.machine.fixBlockLines lines<br/>context ±5 s from every other source and its own events"]
   BL --> T["tools: fix_line · flag_line · get_lines · finish"]
   T --> V{"n in the block, no tab?"}
   V -- no --> ERR["that line's error back to the model"]:::refuse
@@ -259,21 +259,21 @@ S1 Place every source on the session clock; load transcripts and event logs. S2 
 
 ### F1.9 Mark retakes
 
-<sub><!-- back -->[← F1.8](#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.10 →](#f110-repair-the-joins)</sub>
+<sub><!-- back -->[← F1.8](#f18-fix-the-transcripts-blocks-of-pmachinefixblocklines--25-lines) · [↑ 04 Prepare](#04--prepare) · [all flows](11-flow-index.md#3-all-flows) · [F1.10 →](#f110-repair-the-joins)</sub>
 
 ```mermaid
 flowchart TD
   A(["spoken lines"]) --> F{"fewer than 4?"}
   F -- yes --> E["an empty retakes.tsv"]:::done
-  F -- no --> BR["brief: every line numbered · pauses ≥ P.policy.retakePauseSeconds drawn · seams marked"]
-  BR --> RUNS["P.policy.retakeRuns identical calls, thinking off, pooled and deduped"]
+  F -- no --> BR["brief: every line numbered · pauses ≥ P.machine.retakePauseSeconds drawn · seams marked"]
+  BR --> RUNS["P.machine.retakeRuns identical calls, thinking off, pooled and deduped"]
   RUNS --> T["tools: mark_abandoned · unmark · get_lines · finish"]
-  T --> V{"in range · again outside the stretch · within P.policy.retakeReachSeconds?"}
+  T --> V{"in range · again outside the stretch · within P.machine.retakeReachSeconds?"}
   V -- no --> ERR["refusal back to the model"]:::refuse
   ERR --> T
-  V -- yes --> VW["checked against the words: under P.policy.retakeMinSeconds dropped · trimmed to the repeated tail · rephrase trimmed to the fragment · refused marks re-heard"]
+  V -- yes --> VW["checked against the words: under P.machine.retakeMinSeconds dropped · trimmed to the repeated tail · rephrase trimmed to the fragment · refused marks re-heard"]
   VW --> ED["edges placed · F1.11 · marks merged"]
-  ED --> CEIL{"more than P.policy.retakeCeil of the speech?"}
+  ED --> CEIL{"more than P.machine.retakeCeil of the speech?"}
   CEIL -- yes --> NONE["“!!! retakes: … -- refused, nothing is marked”"]:::refuse
   CEIL -- no --> W["retakes.tsv · “>>> retakes: N abandoned stretch(es) …”"]:::done
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
@@ -281,7 +281,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 Spoken lines (< 4 → empty `retakes.tsv`). S2 Brief: spoken lines numbered, "(N.Ns pause)" at gaps ≥ P.policy.retakePauseSeconds (1.5 s), "--- the recording stops here; the next one begins ---" at source changes. S3 P.policy.retakeRuns (3) identical calls (thinking off), each its own cache slot (run index in the key), answers pooled, deduped. Prototype: strict JSON `{"abandoned":[{"from","to","again"}]}`, 1-based line numbers. **Tools**: `mark_abandoned(from, to, again)`, `unmark`, `finish` (tool validates: range, `again` inside the stretch, beyond the timeline, farther than P.policy.retakeReachSeconds 180 s). S4 Verify against the words: removal < P.policy.retakeMinSeconds (0.3 s) dropped; `again = 0` only for a whole take; repeated tail found by fuzzy match (≥ 70 % run, ≤ 3 skips; words equal, prefix ≥ 3 bytes, or one edit), mark trimmed to it; rephrase trimmed to the broken-off tail (fragments ≤ 6 s); refused marks re-heard by a second ASR pass on both attempts. S5 Place edges ([F1.11](#f111-place-the-edges-of-a-mark)), merge marks. S6 > P.policy.retakeCeil (40 %) of the speech would go → refuse everything: "!!! retakes: <m:ss> of <m:ss> of speech called abandoned -- refused, nothing is marked"; empty `retakes.tsv` written. S7 Write `retakes.tsv` (empty on purpose when none); log ">>> retakes: N abandoned stretch(es), m:ss of speech, kept out of the cut".
+S1 Spoken lines (< 4 → empty `retakes.tsv`). S2 Brief: spoken lines numbered, "(N.Ns pause)" at gaps ≥ P.machine.retakePauseSeconds (1.5 s), "--- the recording stops here; the next one begins ---" at source changes. S3 P.machine.retakeRuns (3) identical calls (thinking off), each its own cache slot (run index in the key), answers pooled, deduped. Prototype: strict JSON `{"abandoned":[{"from","to","again"}]}`, 1-based line numbers. **Tools**: `mark_abandoned(from, to, again)`, `unmark`, `finish` (tool validates: range, `again` inside the stretch, beyond the timeline, farther than P.machine.retakeReachSeconds 180 s). S4 Verify against the words: removal < P.machine.retakeMinSeconds (0.3 s) dropped; `again = 0` only for a whole take; repeated tail found by fuzzy match (≥ 70 % run, ≤ 3 skips; words equal, prefix ≥ 3 bytes, or one edit), mark trimmed to it; rephrase trimmed to the broken-off tail (fragments ≤ 6 s); refused marks re-heard by a second ASR pass on both attempts. S5 Place edges ([F1.11](#f111-place-the-edges-of-a-mark)), merge marks. S6 > P.machine.retakeCeil (40 %) of the speech would go → refuse everything: "!!! retakes: <m:ss> of <m:ss> of speech called abandoned -- refused, nothing is marked"; empty `retakes.tsv` written. S7 Write `retakes.tsv` (empty on purpose when none); log ">>> retakes: N abandoned stretch(es), m:ss of speech, kept out of the cut".
 
 ### F1.10 Repair the joins
 
@@ -291,11 +291,11 @@ S1 Spoken lines (< 4 → empty `retakes.tsv`). S2 Brief: spoken lines numbered, 
 flowchart TD
   A(["the words"]) --> S{"any seam, i.e. a source change?"}
   S -- no --> ONE["“>>> text edit: one recording, no seam to repair …”"]:::done
-  S -- yes --> PER["per seam, thinking ON · BEFORE and AFTER, P.policy.seamReachWords each · layout below"]
+  S -- yes --> PER["per seam, thinking ON · BEFORE and AFTER, P.machine.seamReachWords each · layout below"]
   PER --> T["tools: drop_words · keep_join · get_words · finish"]
-  T --> ST{"one stretch at the join, within P.policy.seamSnapWords?"}
+  T --> ST{"one stretch at the join, within P.machine.seamSnapWords?"}
   ST -- no --> R1["refused — nothing removed at this join"]:::refuse
-  ST -- yes --> MAX{"≤ P.policy.seamMaxWords and ≤ P.policy.seamCeil?"}
+  ST -- yes --> MAX{"≤ P.machine.seamMaxWords and ≤ P.machine.seamCeil?"}
   MAX -- no --> R1
   MAX -- yes --> DD["dedupe words said again straight across the cut"]
   DD --> MK["marks → edges F1.11 → merged"]
@@ -317,16 +317,16 @@ be invented -- are not its to change:
 JOIN k of n.
 
 BEFORE (the end of the take that was interrupted):
-<the P.policy.seamReachWords words before the seam>
+<the P.machine.seamReachWords words before the seam>
 
 AFTER (the beginning of the take that follows):
-<the P.policy.seamReachWords words after it>
+<the P.machine.seamReachWords words after it>
 
 Answer {"joined":"..."} and nothing else: these N words and then these M, in that order,
 with the stretch at the join left out.
 ```
 
-- **The words** are the session's word list ([F1.13](#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles)): every word the aligner heard, on the session clock, the narrator mic left out, and the words an earlier join already took out left out too; BEFORE and AFTER run across earlier and later takes when the seam is near one. Each is printed as the fix pass ([F1.8](#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines)) spelled it — case and punctuation — or, where the fix pass left it no spelling, as heard: lower case, no punctuation. So fillers the fix pass dropped still show ("eben", "version also"); heard words the fix pass wrote as one compound show once, as the compound (the prototype showed "Block-Level level" until 2026-09-18); a transcript word the aligner never heard rides on the next heard word; and a sentence end the fix pass did not mark is not marked.
+- **The words** are the session's word list ([F1.13](#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles)): every word the aligner heard, on the session clock, the narrator mic left out, and the words an earlier join already took out left out too; BEFORE and AFTER run across earlier and later takes when the seam is near one. Each is printed as the fix pass ([F1.8](#f18-fix-the-transcripts-blocks-of-pmachinefixblocklines--25-lines)) spelled it — case and punctuation — or, where the fix pass left it no spelling, as heard: lower case, no punctuation. So fillers the fix pass dropped still show ("eben", "version also"); heard words the fix pass wrote as one compound show once, as the compound (the prototype showed "Block-Level level" until 2026-09-18); a transcript word the aligner never heard rides on the next heard word; and a sentence end the fix pass did not mark is not marked.
 - **Not given:** word times, pauses, the sound, the frames, the fixed transcript's own lines, the other joins' answers.
 - **The answer** is matched back against the words shown (S3); only the words it leaves out count. From them: marks, then edges placed by the sound ([F1.11](#f111-place-the-edges-of-a-mark)), then `final.txt`, from which the cut is built ([F2.14](05-cut.md#f214-suggest-a-cut), `cutMode` words).
 - **The log:** every call, its thinking and its reply are on the run's page `llm/<MMDD-HHMMSS>-<first step>.html` — for a ▶ on Prepare that is the page named `…-describe.html`.
@@ -363,11 +363,11 @@ By hand:      the 16 at the join -- exactly the second stretch
 
 Fixed in the prototype (2026-09-18): the window leaves out words an earlier join already took out. It used to show them, and the one-stretch check counted them: the first stretch above was join 21's, and without it the answer is one stretch at the join and exactly the hand cut. Measured by feeding the unchanged answer through: accepted, the 16 words at the join.
 
-Fixed in the prototype (2026-09-18): two stretches that both reach within P.policy.seamSnapWords of the join are two stretches, and refused. The later one used to overwrite the earlier and the answer was applied as the later alone — join 52 left out "kompiliert, und jetzt kann ich mir anschauen, was er" and "hat. 啊", one kept "kompiliert" between them, and only "hat. 啊" went. REVIEW: two such stretches MAY be joined into one when what lies between is a word said twice.
+Fixed in the prototype (2026-09-18): two stretches that both reach within P.machine.seamSnapWords of the join are two stretches, and refused. The later one used to overwrite the earlier and the answer was applied as the later alone — join 52 left out "kompiliert, und jetzt kann ich mir anschauen, was er" and "hat. 啊", one kept "kompiliert" between them, and only "hat. 啊" went.
 
 Fixed in the prototype (2026-09-18): a word the fix pass wrote into the compound before it is shown once, as that compound, and goes with it. It used to be shown again bare ("Proof-of-Concept-Serie, of concept serie"), and an answer that kept the compound and left out the bare words took out the compound's own sound — join 17 cut "die letzte Proof-" off from its end. Only words that are part of the compound's letters count; a word the fix pass took out (a filler, a word said twice inside a take) is still shown bare, as before.
 
-**Refused, then asked again.** A refused answer is asked once more (P.policy.seamRetries), with its own cache slot; the log says "-- asking once more", and "-- nothing removed there" after the last. A refusal still keeps the stumble.
+**Refused, then asked again.** A refused answer is asked once more (P.machine.seamRetries), with its own cache slot; the log says "-- asking once more", and "-- nothing removed there" after the last. A refusal still keeps the stumble.
 
 **A whole take removed is flagged, not refused.** When the words a join takes out include every word of a recording, the mark names it (`retakes.tsv`, sixth column), the log says ">>> text edit: all of ‹base› goes (m:ss-m:ss) -- marked yellow on Cut, worth a look", `final.txt` marks that join `|cut N|whole take|`, and the Cut page tints the recording yellow ([05](05-cut.md#1-screen)). A take that was nothing but a false start should go whole; a join that misread its window looks the same — on the ETH lecture join 41 took all 15 s of a take whose first eight words were wanted.
 
@@ -380,7 +380,7 @@ Fixed in the prototype (2026-09-18): a word the fix pass wrote into the compound
 5. `retakes.tsv` in the same step: the dropped runs as marks, their edges placed by the sound ([F1.11](#f111-place-the-edges-of-a-mark)). The cut is built from them ([F2.14](05-cut.md#f214-suggest-a-cut)).
 6. `final.txt` edited by hand is read back on the next cut, `|cut|` marks included, with no model ([F1.12](#f112-hand-edit-the-text)).
 
-S1 Words of every recording except the narrator mic (< 4 → empty). S2 Seams = source changes; none → ">>> text edit: one recording, no seam to repair -- every word stands". S3 Per seam (thinking ON): "JOIN k of n." + "BEFORE (the end of the take that was interrupted):" + last P.policy.seamReachWords (140) words + "AFTER (the beginning of the take that follows):" + first 140 words. **Tools**: `drop_words(side, count)`, `keep_join`, `finish`. Prototype: `{"joined": "…"}` matched backwards (preferring the later saying); dropped words must be one stretch at the join (snap 3 words; other stretches ≤ 2 words are respellings); refusals logged "!!! text edit: join k: <reason> -- nothing removed there" (no words; not at the join; several stretches; > P.policy.seamMaxWords 40 or > P.policy.seamCeil 60 %). Cached only when usable. S4 Dedupe words repeated straight across a cut (3 words either side; earlier goes). S5 Marks from dropped runs; edges ([F1.11](#f111-place-the-edges-of-a-mark)); merge. S6 Write `final.txt` (surviving words as written; `|cut N|` / `|cut|` at every join) and `retakes.tsv` together; log ">>> text edit: N of M words removed in K stretch(es)".
+S1 Words of every recording except the narrator mic (< 4 → empty). S2 Seams = source changes; none → ">>> text edit: one recording, no seam to repair -- every word stands". S3 Per seam (thinking ON): "JOIN k of n." + "BEFORE (the end of the take that was interrupted):" + last P.machine.seamReachWords (140) words + "AFTER (the beginning of the take that follows):" + first 140 words. **Tools**: `drop_words(side, count)`, `keep_join`, `finish`. Prototype: `{"joined": "…"}` matched backwards (preferring the later saying); dropped words must be one stretch at the join (snap 3 words; other stretches ≤ 2 words are respellings); refusals logged "!!! text edit: join k: <reason> -- nothing removed there" (no words; not at the join; several stretches; > P.machine.seamMaxWords 40 or > P.machine.seamCeil 60 %). Cached only when usable. S4 Dedupe words repeated straight across a cut (3 words either side; earlier goes). S5 Marks from dropped runs; edges ([F1.11](#f111-place-the-edges-of-a-mark)); merge. S6 Write `final.txt` (surviving words as written; `|cut N|` / `|cut|` at every join) and `retakes.tsv` together; log ">>> text edit: N of M words removed in K stretch(es)".
 
 ### F1.11 Place the edges of a mark
 
@@ -392,7 +392,7 @@ S1 Words of every recording except the narrator mic (< 4 → empty). S2 Seams = 
 
 The aligner returns words back to back — each ends where the next begins — so where the word after a kept word was dropped, the fence has no width: the edge lands on the aligner's time and the sound is never asked. Measured on the ETH lecture: 72 of the 114 proposed edges sit exactly on an aligned word time.
 
-With word times: cut ends after the last surviving word (0.08 s pad; follows the word's own sound up to 0.25 s, then the quietest moment within 0.4 s), resumes just before the retake's first word when nothing was said between. Without: mono envelope alone (reach 0.8 s, pad 0.05 s, late stamp 0.6 s). Envelope floor = 20th percentile of ±4 s raised to max(3×, +8); tail level = peak − 12 dB. REVIEW: the edge cache holds linear peaks (a byte = peak × 255 of full scale), but the tail level and the floor treat it as a −70…0 dBFS meter; everything under about −30 dBFS reads as silence, and a single silent 5 ms bucket at a word's end stops the tail there. Scored against three hand-cut projects (ETH, admin, rep), the placement as it is still beat every alternative tried — a dB envelope, a fade-to-room rule — so the rewrite SHOULD keep it until a change scores better on all three: fewer edges that cut off sound the hand cut kept, without more that keep sound it dropped.
+With word times: cut ends after the last surviving word (0.08 s pad; follows the word's own sound up to 0.25 s, then the quietest moment within 0.4 s), resumes just before the retake's first word when nothing was said between. Without: mono envelope alone (reach 0.8 s, pad 0.05 s, late stamp 0.6 s). Envelope floor = 20th percentile of ±4 s raised to max(3×, +8); tail level = peak − 12 dB. Known and kept: the edge cache holds linear peaks (a byte = peak × 255 of full scale), but the tail level and the floor treat it as a −70…0 dBFS meter; everything under about −30 dBFS reads as silence, and a single silent 5 ms bucket at a word's end stops the tail there. Scored against three hand-cut projects (ETH, admin, rep), the placement as it is still beat every alternative tried — a dB envelope, a fade-to-room rule — so the rewrite keeps it as it is; a change needs to score better on all three: fewer edges that cut off sound the hand cut kept, without more that keep sound it dropped.
 
 ### F1.12 Hand-edit the text
 
@@ -414,7 +414,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 User edits `prepare/transcript/final.txt` (deletes words; join marks may stay or go). S2 Next Cut ▶, if its mtime is after `retakes.tsv`'s: marks remade from the text, no model (">>> final.txt was edited after Prepare -- the marks are remade from it, no model asked"); never-said words dropped with a warning; > 40 % removed refused. REVIEW: a rewrite SHOULD also offer this file in an editor on the Prepare page, join marks as clickable seams.
+S1 User edits `prepare/transcript/final.txt` (deletes words; join marks may stay or go). S2 Next Cut ▶, if its mtime is after `retakes.tsv`'s: marks remade from the text, no model (">>> final.txt was edited after Prepare -- the marks are remade from it, no model asked"); never-said words dropped with a warning; > 40 % removed refused. No editor in the app: the file is edited in any text editor.
 
 ## 3. Data written
 
@@ -422,7 +422,7 @@ See [`01-project-and-files.md` §1](01-project-and-files.md#1-layout) (prepare/�
 
 ## 4. Parameters used
 
-P.policy: minTakeSeconds, retakePause, retakeRuns, retakeReach, retakeMin, retakeCeil, retakeFrag, againReach, seamReach, seamMaxWords, seamCeil, seamSnap, seamNoise, describeFramesPerReq, describeRecentEvents, describeCtxSegs, describeCtxWindow, fixBlock. P.audio: chunk sizes, silence threshold, diarization windows and anchor sizes, merge gap/length. Engineering: frame workers, quality, scratch handling. Full list in [`10-parameters.md`](10-parameters.md).
+Parameters ([10](10-parameters.md)): minTakeSeconds, retakePause, retakeRuns, retakeReach, retakeMin, retakeCeil, retakeFrag, againReach, seamReach, seamMaxWords, seamCeil, seamSnap, seamNoise, describeFramesPerReq, describeRecentEvents, describeCtxSegs, describeCtxWindow, fixBlock. P.audio: chunk sizes, silence threshold, diarization windows and anchor sizes, merge gap/length. Engineering: frame workers, quality, scratch handling. Full list in [`10-parameters.md`](10-parameters.md).
 
 ## 5. Rules
 
@@ -452,7 +452,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-After the fix pass, one word list for the whole session: aligner (or ASR) tokens glued into words on the session clock; a word whose loudest moment is under 1/P.policy.strayWordRatio of its recording's median word and which starts more than P.policy.strayWordGapSeconds after the word before it is taken as put on the wrong sound and timed at that word's end, logged ">>> words: "‹word›" was placed on almost no sound, well after the word before it -- timed at the end of that word instead (m:ss)" (new 2026-09-18; on the ETH lecture "Geld." had been put on a breath 3.4 s late, and the clip ending on it carried the silence; the only such word in three lectures, 18 155 words); (a leading space anywhere → piece tokens, none → whole words; punctuation-only tokens ride the previous word without moving its end), dressed with the raw transcript's case and punctuation (look-ahead 8), then re-dressed with the fix pass's spelling (resync window 6; a whole respelling printed on a run's first word, the rest emptied; a line with no word in common left alone). Times never change, only the written form. The join pass shows the model this spelling and matches its answer back against exactly these tokens (a word printed as two owns both; survives if either does).
+After the fix pass, one word list for the whole session: aligner (or ASR) tokens glued into words on the session clock; a word whose loudest moment is under 1/P.machine.strayWordRatio of its recording's median word and which starts more than P.machine.strayWordGapSeconds after the word before it is taken as put on the wrong sound and timed at that word's end, logged ">>> words: "‹word›" was placed on almost no sound, well after the word before it -- timed at the end of that word instead (m:ss)" (new 2026-09-18; on the ETH lecture "Geld." had been put on a breath 3.4 s late, and the clip ending on it carried the silence; the only such word in three lectures, 18 155 words); (a leading space anywhere → piece tokens, none → whole words; punctuation-only tokens ride the previous word without moving its end), dressed with the raw transcript's case and punctuation (look-ahead 8), then re-dressed with the fix pass's spelling (resync window 6; a whole respelling printed on a run's first word, the rest emptied; a line with no word in common left alone). Times never change, only the written form. The join pass shows the model this spelling and matches its answer back against exactly these tokens (a word printed as two owns both; survives if either does).
 
 ## 6. Details confirmed against the code (verification pass)
 

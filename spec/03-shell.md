@@ -3,7 +3,7 @@
 <!-- nav -->
 [← 02 Services and the tool catalogue](02-services.md) · [↑ Contents](README.md) · [04 Prepare →](04-prepare.md)
 
-**Flows:** [F0.1](#f01-switch-tab) · [F0.2](#f02-press-) · [F0.3](#f03-press-) · [F0.4](#f04-run-every-step-im-feeling-lucky) · [F0.5](#f05-a-runs-bookkeeping-every-step-uses-it) · [F0.6](#f06-open-at-start) · [F0.7](#f07-derive-the-editing-policy-review--new) · [F0.8](#f08-new-project) · [F0.9](#f09-open-a-project) · [F0.10](#f010-save-as) · [F0.11](#f011-rescan) · [F0.12](#f012-add-sources-from-prepare) · [F0.13](#f013-tests)
+**Flows:** [F0.1](#f01-switch-tab) · [F0.2](#f02-press-) · [F0.3](#f03-press-) · [F0.4](#f04-run-every-step-im-feeling-lucky) · [F0.5](#f05-a-runs-bookkeeping-every-step-uses-it) · [F0.6](#f06-open-at-start) · [F0.7](#f07-derive-the-editing-policy-new) · [F0.8](#f08-new-project) · [F0.9](#f09-open-a-project) · [F0.10](#f010-save-as) · [F0.11](#f011-rescan) · [F0.12](#f012-add-sources-from-prepare) · [F0.13](#f013-tests)
 <!-- /nav -->
 
 ## 1. The window
@@ -12,11 +12,11 @@
 
 <sub>Screenshot of the prototype on the ETH lecture project.</sub>
 
-**1** New · **2** Open · **3** Save · **4** project name/path · **5** tab row · **6** ⓘ · **7** Settings · **8** Rescan · **9** the visible tab's page · **10** ▶ run / pause · **11** chain (REVIEW: replaced by "I'm feeling lucky", [§2](#2-the-run-bar)) · **12** ⏹ · **13** progress bar (draws no text) · **14** Inputs readout · **15** Outputs: folder button and count · **16** log expander · **17** status line · **18** the log
+**1** New · **2** Open · **3** Save · **4** project name/path · **5** tab row · **6** ⓘ · **7** Settings · **8** Rescan · **9** the visible tab's page · **10** ▶ run / pause · **11** chain (prototype; replaced by "I'm feeling lucky", [§2](#2-the-run-bar)) · **12** ⏹ · **13** progress bar (draws no text) · **14** Inputs readout · **15** Outputs: folder button and count · **16** log expander · **17** status line · **18** the log
 
 - One window, title "Naivepost", default 1240×740. Header bar: New ("New project — name it, put it where you want it, and start over"), Open ("Load a project — sources, prompts and settings"), Save ("Save this project to a file"), project name/path (as the window narrows: path + tab words → file name + tab words → file name + icons only), tab row as title widget, then, packed from the right edge inward (reads ⓘ ⚙ ⟳ on screen): Rescan ("Rescan inputs and outputs"), Settings ("Settings — the LLM and audio.cpp endpoints"), ⓘ (tooltip = current tab's label + help text).
 - Tabs: Prepare (view-list), Cut (edit-cut), Narrate (microphone), Produce (multimedia). Locked tab: greyed, not disabled; tooltip = the reason; a click bounces and puts the reason on the status line. Cut locked until a source is marked footage ("Add footage on the Prepare step first — the cut is laid out from the recordings"). Narrate and Produce never locked; their ▶ refuses without a cut.
-- Bottom: run bar ([§2](#2-the-run-bar)), the visible tab's "Inputs:" and "Outputs:" readouts, then the log expander, its header carrying the status line. Log: read-only monospace; each line is the message alone. REVIEW (new): no `>>> `, `!!! ` or four-space prefix — the level shows by colour (failure red, detail dimmed, progress plain). Prototype: lines start `>>> `, `!!! ` or four spaces. Only one log line is a link — the per-run model exchange page, opened in a browser (GTK's file launcher, `xdg-open` fallback); no other path clickable. REVIEW: the rewrite MAY tag every path it writes.
+- Bottom: run bar ([§2](#2-the-run-bar)), the visible tab's "Inputs:" and "Outputs:" readouts, then the log expander, its header carrying the status line. Log: read-only monospace; each line is the message alone. New: no `>>> `, `!!! ` or four-space prefix — the level shows by colour (failure red, detail dimmed, progress plain). Prototype: lines start `>>> `, `!!! ` or four spaces. Only one log line is a link — the per-run model exchange page, opened in a browser (GTK's file launcher, `xdg-open` fallback); no other path clickable. New: every path the log names is a link to it.
 - Page and bottom bar are two halves of a draggable divider, not a fixed strip; collapsing the log expander returns its height to the page.
 - A page whose prerequisites vanish while open switches silently to Prepare ([F0.1](#f01-switch-tab) S2's bounce is only for a click).
 - Closing the window flushes the narration autosave, red line, project and prompts, then closes; no prompt.
@@ -48,7 +48,7 @@ S1 Click a tab (or a lucky run moves to it). S2 Locked → bounce, status = lock
 
 <sub>Proposed screen, drawn in the prototype's style; the gears turn while a run computes.</sub>
 
-REVIEW (new): two ways to run, no step picker.
+New: two ways to run, no step picker.
 
 - ▶ (suggested-action): "Run this step — or resume what is paused"; runs the visible tab's step alone ([F0.2](#f02-press-)). While a run or page transport is busy it shows ⏸ "Pause".
 - **I'm feeling lucky**: "Run every step, Prepare to Produce, without stopping to ask" ([F0.4](#f04-run-every-step-im-feeling-lucky)). Icon: two gears, still when idle, turning while any run computes — a single step's too — so the bar shows work is going on even when the progress bar has nothing to count. Insensitive while a run is busy (⏸ and ⏹ act on it).
@@ -144,7 +144,7 @@ S1 startRun: running, flags cleared, fresh cancel context, queue reset (also clo
 
 ### F0.6 Open at start
 
-<sub><!-- back -->[← F0.5](#f05-a-runs-bookkeeping-every-step-uses-it) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.7 →](#f07-derive-the-editing-policy-review--new)</sub>
+<sub><!-- back -->[← F0.5](#f05-a-runs-bookkeeping-every-step-uses-it) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.7 →](#f07-derive-the-editing-policy-new)</sub>
 
 ```mermaid
 flowchart TD
@@ -160,7 +160,7 @@ flowchart TD
 
 S1 A file handed by the desktop (first only); else S2 the last project remembered for this root in the settings file, if still on disk; else S3 `<root>/session.naivepost` if it exists; else S4 a blank session at `<root>/session.naivepost`.
 
-### F0.7 Derive the editing policy (REVIEW — new)
+### F0.7 Derive the editing policy (new)
 
 <sub><!-- back -->[← F0.6](#f06-open-at-start) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.8 →](#f08-new-project)</sub>
 
@@ -194,7 +194,7 @@ The pipeline fields decide which flows run: P.policy.markingPass picks [F1.9](04
 
 ### F0.8 New project
 
-<sub><!-- back -->[← F0.7](#f07-derive-the-editing-policy-review--new) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.9 →](#f09-open-a-project)</sub>
+<sub><!-- back -->[← F0.7](#f07-derive-the-editing-policy-new) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.9 →](#f09-open-a-project)</sub>
 
 ```mermaid
 flowchart TD
@@ -236,7 +236,7 @@ flowchart TD
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-S1 Folder chooser "Open a project"; a path naming `naivepost.json` opens its folder. S2 A single-file project from before project folders is not opened: "!!! <file> is an old single-file project -- not supported", status "not a project folder" (REVIEW (new): prototype adopted it into a folder). S3 Set project path and output folder first, then apply the project (sources, missing ones logged "!!! <file> is not there any more -- dropped from the session", interval, language, prompts, context, policy, narration flag, reference flag, hints, produce, publish; the prototype's `frame_scale` and `style` are read once and dropped ([01](01-project-and-files.md))). S4 Migrate old folder names; refresh every page; remember the project for this root. A failed open logs "!!! <err>", status "could not open that project — see log".
+S1 Folder chooser "Open a project"; a path naming `naivepost.json` opens its folder. S2 A single-file project from before project folders is not opened: "!!! <file> is an old single-file project -- not supported", status "not a project folder" (prototype: adopted it into a folder). S3 Set project path and output folder first, then apply the project (sources, missing ones logged "!!! <file> is not there any more -- dropped from the session", interval, language, prompts, context, policy, narration flag, reference flag, hints, produce, publish; the prototype's `frame_scale` and `style` are read once and dropped ([01](01-project-and-files.md))). S4 Migrate old folder names; refresh every page; remember the project for this root. A failed open logs "!!! <err>", status "could not open that project — see log".
 
 ### F0.10 Save as
 
@@ -309,7 +309,7 @@ S0 A copy is a run of its own: refuses while anything else runs ("a run is alrea
 
 **1** Add source files… · **2** copy into project · **3** 🎥 footage · **4** 🎤 narrator slot · **5** file name · **6** 🗣 split the voice (✂ in the shot) · **7** 🗑 remove · **8** Freq · **9** frame size — gone in the rewrite: frames are stored at the video's own size and scaled for the model · **10** Language · **11** Style — gone in the rewrite: the policy sets it from the User Context
 
-Row controls, in order: 🎥 footage toggle (video only; "Footage — frames come out of this file and it can be cut. Off: it is only listened to…"); 🎤 narrator button cycling free slots 1..N then none ("1 is the voice the narration is spoken in; 2–4 are the rest of the group"; slot 1 highlighted); file name (middle-ellipsized; tooltip = path); track menu when the file holds ≥ 2 audio streams — face is an icon and "<on>/<total>", dimmed while any track is out; popover headed "Audio tracks in this file", a three-line explanation over the checks ("Track N — <title> (stereo|mono)"; last ticked track cannot be unticked; each ticked track becomes a lane, mixed like a separate recording); ⚠ when the name has no timestamp (tooltip explains renaming or dragging into place on Cut); 🗣 split-the-voice toggle (greyed on a split product; REVIEW (new): prototype draws ✂, which on Cut means Split — the rewrite MUST NOT reuse it); 🗑 remove from session ("the file itself is left alone"). The four symbol controls (🎥 🎤 ✂ 🗑) end their tooltip with the four-line legend of the row's symbols; track button and ⚠ do not.
+Row controls, in order: 🎥 footage toggle (video only; "Footage — frames come out of this file and it can be cut. Off: it is only listened to…"); 🎤 narrator button cycling free slots 1..N then none ("1 is the voice the narration is spoken in; 2–4 are the rest of the group"; slot 1 highlighted); file name (middle-ellipsized; tooltip = path); track menu when the file holds ≥ 2 audio streams — face is an icon and "<on>/<total>", dimmed while any track is out; popover headed "Audio tracks in this file", a three-line explanation over the checks ("Track N — <title> (stereo|mono)"; last ticked track cannot be unticked; each ticked track becomes a lane, mixed like a separate recording); ⚠ when the name has no timestamp (tooltip explains renaming or dragging into place on Cut); 🗣 split-the-voice toggle (greyed on a split product; prototype: ✂, which on Cut means Split, so it is not reused); 🗑 remove from session ("the file itself is left alone"). The four symbol controls (🎥 🎤 ✂ 🗑) end their tooltip with the four-line legend of the row's symbols; track button and ⚠ do not.
 
 Rules: only a video may be footage; one row per narrator slot; two sources with one base name refuse the run ("A and B are both inputs/<base> -- rename one", status "A and B have the same name — rename one"); a missing file is dropped loudly. Slot 1 auto-filled whenever unheld — after an add, a removal, a rescan that dropped a row, or a load that stripped a bad tag — with the first untagged recording, footage last; a loaded project with two rows in one slot or footage on an audio file has the offending flag cleared on load. Strings: "Add source files…" ("Add recordings or footage — several at once"); "copy into project" ("Ticked, an added file is copied into the project's sources/ folder, so the project holds everything it needs. Unticked, the file is referenced where it is: nothing is duplicated, and the session breaks if it moves."); the list's tooltip "Every file here is transcribed, and placed on the session clock by the timestamp in its name".
 
@@ -321,7 +321,7 @@ Rules: only a video may be footage; one row per narrator slot; two sources with 
 
 No Save/Cancel: every box written 600 ms after the last keystroke and on close ("settings saved to <path>"). Each Test reads what is typed, shows a spinner then ✓/✗ with the verdict as tooltip, mirrors its lines into the main log as "settings: …". Test All runs every test. Each section's ⓘ explains at length what the server is expected to speak.
 
-REVIEW (new): beside every model box — the LLM model, each audio.cpp model (ASR, diarization, aligner, TTS, separation) and the image model — a **Slots** spin button, 1 to 16, default 1: "How many requests this model is given at once. Match the server's parallel slots for this model — llama.cpp's `--parallel`, for one. More than it has only queues them on the server instead of here; two models on one GPU share it however this is set." Respected by every request the app makes to that model; a request that finds every slot taken waits its turn ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)). Prototype: no such setting — the LLM is held to one request at a time in code, and audio and image requests are not held at all.
+New: beside every model box — the LLM model, each audio.cpp model (ASR, diarization, aligner, TTS, separation) and the image model — a **Slots** spin button, 1 to 16, default 1: "How many requests this model is given at once. Match the server's parallel slots for this model — llama.cpp's `--parallel`, for one. More than it has only queues them on the server instead of here; two models on one GPU share it however this is set." Respected by every request the app makes to that model; a request that finds every slot taken waits its turn ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)). Prototype: no such setting — the LLM is held to one request at a time in code, and audio and image requests are not held at all.
 
 ### F0.13 Tests
 
@@ -350,7 +350,7 @@ flowchart LR
 
 ## 6. The settings file
 
-`~/.config/naivepost/llm.conf`, `KEY="value"` lines, written whole: `LLM_SERVER, LLM_MODEL, LLM_API_KEY, AUDIOCPP_SERVER, AUDIOCPP_API_KEY, AUDIOCPP_VOICES, AUDIOCPP_ASR_MODEL, AUDIOCPP_DIAR_MODEL, AUDIOCPP_TTS_MODEL, AUDIOCPP_SEP_MODEL, AUDIOCPP_ALIGN_MODEL, FFMPEG, FIREFOX, SD_SERVER, SD_API_KEY, PROJECT_<n>_ROOT/FILE`; REVIEW (new): `LLM_SLOTS`, `AUDIOCPP_ASR_SLOTS`, `AUDIOCPP_DIAR_SLOTS`, `AUDIOCPP_ALIGN_SLOTS`, `AUDIOCPP_TTS_SLOTS`, `AUDIOCPP_SEP_SLOTS`, `SD_SLOTS` (absent = 1). Precedence: dialog box → this file → (legacy `<root>/llm.conf`, migrated once) → built-in default. The audio URL also honours `NAIVEPOST_TTS_URL` and `AUDIOCPP_SERVER` below the dialog; sd `SD_SERVER`. REVIEW: the rewrite MAY add `SUBTITLE_LANGUAGES` (code:tag:name list) and a `STYLES` table per [`00-principles.md` §5](00-principles.md#6-generalisations-proposed-review).
+`~/.config/naivepost/llm.conf`, `KEY="value"` lines, written whole: `LLM_SERVER, LLM_MODEL, LLM_API_KEY, AUDIOCPP_SERVER, AUDIOCPP_API_KEY, AUDIOCPP_VOICES, AUDIOCPP_ASR_MODEL, AUDIOCPP_DIAR_MODEL, AUDIOCPP_TTS_MODEL, AUDIOCPP_SEP_MODEL, AUDIOCPP_ALIGN_MODEL, FFMPEG, FIREFOX, SD_SERVER, SD_API_KEY, PROJECT_<n>_ROOT/FILE`; new: `LLM_SLOTS`, `AUDIOCPP_ASR_SLOTS`, `AUDIOCPP_DIAR_SLOTS`, `AUDIOCPP_ALIGN_SLOTS`, `AUDIOCPP_TTS_SLOTS`, `AUDIOCPP_SEP_SLOTS`, `SD_SLOTS` (absent = 1). Precedence: dialog box → this file → (legacy `<root>/llm.conf`, migrated once) → built-in default. The audio URL also honours `NAIVEPOST_TTS_URL` and `AUDIOCPP_SERVER` below the dialog; sd `SD_SERVER`. New: `SUBTITLE_LANGUAGES` (code:tag:name list, [`00-principles.md` §6](00-principles.md#6-generalisations)).
 
 ## 7. The model exchange log (llm/)
 

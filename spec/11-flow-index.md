@@ -42,7 +42,7 @@ flowchart LR
 | [F0.4](03-shell.md#f04-run-every-step-im-feeling-lucky) | Run every step (I'm feeling lucky) | [03](03-shell.md) |
 | [F0.5](03-shell.md#f05-a-runs-bookkeeping-every-step-uses-it) | A run's bookkeeping (progress, checkpoints) | [03](03-shell.md) |
 | [F0.6](03-shell.md#f06-open-at-start) | Open at start | [03](03-shell.md) |
-| [F0.7](03-shell.md#f07-derive-the-editing-policy-review--new) | Derive the editing policy from the context (new) | [03](03-shell.md) |
+| [F0.7](03-shell.md#f07-derive-the-editing-policy-new) | Derive the editing policy from the context (new) | [03](03-shell.md) |
 | [F0.8](03-shell.md#f08-new-project) | New project | [03](03-shell.md) |
 | [F0.9](03-shell.md#f09-open-a-project) | Open a project | [03](03-shell.md) |
 | [F0.10](03-shell.md#f010-save-as) | Save as | [03](03-shell.md) |
@@ -55,8 +55,8 @@ flowchart LR
 | [F1.4](04-prepare.md#f14-asr-in-chunks) | ASR in chunks | [04](04-prepare.md) |
 | [F1.5](04-prepare.md#f15-forced-alignment) | Forced alignment | [04](04-prepare.md) |
 | [F1.6](04-prepare.md#f16-frames-per-video) | Frames | [04](04-prepare.md) |
-| [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) | Describe | [04](04-prepare.md) |
-| [F1.8](04-prepare.md#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines) | Fix the transcripts | [04](04-prepare.md) |
+| [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) | Describe | [04](04-prepare.md) |
+| [F1.8](04-prepare.md#f18-fix-the-transcripts-blocks-of-pmachinefixblocklines--25-lines) | Fix the transcripts | [04](04-prepare.md) |
 | [F1.9](04-prepare.md#f19-mark-retakes) | Mark retakes | [04](04-prepare.md) |
 | [F1.10](04-prepare.md#f110-repair-the-joins) | Repair the joins | [04](04-prepare.md) |
 | [F1.11](04-prepare.md#f111-place-the-edges-of-a-mark) | Place the edges of a mark | [04](04-prepare.md) |

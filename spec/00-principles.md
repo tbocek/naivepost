@@ -37,7 +37,7 @@ The prototype encodes hundreds of decisions as constants: a file under 2 s is si
 | **Prompt** | The twelve prompts, per machine, resettable | how a job is worded |
 | **Engineering constant** | Fixed in code: about the machine, not the edit (pixel sizes, timeouts, cache formats) | 6 px grab reach, 100 ms tick, cache magic |
 
-The **editing policy** is new: a JSON object in the project (`policy` in `naivepost.json`) holding every value that decides what the video becomes. Fields and defaults: [`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults). Filled three ways, by precedence: (1) a value the user typed into the policy form; (2) a value a model derived from the User Context via `tool:set_policy` (flow [F0.7](03-shell.md#f07-derive-the-editing-policy-review--new) in [`03-shell.md`](03-shell.md)); (3) the shipped default. The form shows each value's origin.
+The **editing policy** is new: a JSON object in the project (`policy` in `naivepost.json`) holding every value that decides what the video becomes. Fields and defaults: [`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults). Filled three ways, by precedence: (1) a value the user typed into the policy form; (2) a value a model derived from the User Context via `tool:set_policy` (flow [F0.7](03-shell.md#f07-derive-the-editing-policy-new) in [`03-shell.md`](03-shell.md)); (3) the shipped default. The form shows each value's origin.
 
 Rule of thumb: if changing the number could change which frames or words end up in the video, it is policy; if it only changes how the app looks, waits or caches, it is an engineering constant.
 
@@ -48,7 +48,7 @@ The prototype asks for a whole answer as strict JSON, parses and validates it, a
 Design rules for tools:
 
 - Every job has a `finish` tool (or a named terminal tool such as `finish_cut`) ending the flow; a job that stops calling tools without finishing is asked once to finish, then treated as done with what it produced.
-- Reading tools hand out material in pieces (`get_lines(from, to)`, `get_frames(clip)`) so a 64-minute session is not one 450 kB prompt (context budgets: [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-review--new)). Every job handed an extract — a window of words, two lines of context a side, four frames — MUST also have the tool fetching more, or the window silently bounds what the model can get right.
+- Reading tools hand out material in pieces (`get_lines(from, to)`, `get_frames(clip)`) so a 64-minute session is not one 450 kB prompt (context budgets: [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-new)). Every job handed an extract — a window of words, two lines of context a side, four frames — MUST also have the tool fetching more, or the window silently bounds what the model can get right.
 - Writing tools carry the prototype parsers' validation; the result is `ok` plus the normalised item, or a one-sentence actionable problem.
 - **A tool result says what the app made of the item**, not merely that it was accepted: the snapped edges and how far they moved, the seconds a mark really takes out, the rate after clamping, the caption after being pulled inside its clip. Wherever the prototype changes an answer behind the model's back, the rewrite returns that change as the tool's answer or, if it comes later, reports it at `finish`. Audit of every such place: [`12-decisions.md`](12-decisions.md).
 - **Nothing is dropped in silence.** The prototype sometimes skips a failing item without a word, sometimes kills the whole reply over it, and sometimes throws a whole answer away over a ceiling. In the rewrite an unusable item comes back as that item's error; a ceiling is a reading the model can ask for (`cut_status`) and is told at `finish` — so it can take one mark back instead of losing thirty.
@@ -61,7 +61,7 @@ Design rules for tools:
 
 ## 5. Rewrite directive C — components, each tested alone
 
-REVIEW (new). Every part of a screen that has its own state and draws itself is a **component**, and every stage of a pipeline is a **function**; each MUST be testable on its own, without the window, the other components, a server or a model.
+New in the rewrite. Every part of a screen that has its own state and draws itself is a **component**, and every stage of a pipeline is a **function**; each MUST be testable on its own, without the window, the other components, a server or a model.
 
 A component is:
 
@@ -92,9 +92,9 @@ Tests come in two kinds, and a change to a pipeline stage needs both:
 
 Prototype: the Cut page is one editor (`cutEditor`, `cut.go`, 6 874 lines) that owns the state of every track and draws them all in one pass; a track cannot be drawn or pressed in a test without the whole editor, and much of the testing reads the source text for expected lines (638 such checks across the test files).
 
-## 6. Generalisations proposed (REVIEW)
+## 6. Generalisations
 
-- **No styles.** The prototype's Style dropdown (Lecture / Gaming) is gone: the User Context says what kind of video this is, and the policy derived from it ([F0.7](03-shell.md#f07-derive-the-editing-policy-review--new)) picks the flows — P.policy.markingPass (joins / retakes / none), P.policy.cutMode (words / model) and which cut-stage passes run (captionsPass, speedPass, decorationsPass). The rewrite asks no job the context rules out.
+- **No styles.** The prototype's Style dropdown (Lecture / Gaming) is gone: the User Context says what kind of video this is, and the policy derived from it ([F0.7](03-shell.md#f07-derive-the-editing-policy-new)) picks the flows — P.policy.markingPass (joins / retakes / none), P.policy.cutMode (words / model) and which cut-stage passes run (captionsPass, speedPass, decorationsPass). The rewrite asks no job the context rules out.
 - **Languages** for subtitles become a settings list (code, ISO-639-2 tag, name), not three constants.
 - **Cards** (SVG inserts) stay a folder of files with a declared-inputs convention; the two built-ins are shipped files, not code.
 - **Narrator slots** stay four; the number is a policy default.
