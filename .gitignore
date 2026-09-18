@@ -1,20 +1,37 @@
-# media and generated artifacts stay out of git -- gui/ is the project
-input_audio/
-input_video/
-out/
-llm.conf
-gui/naivepost-gui
-gui/gui
-step*/
-inputs/
-understand/
-cut/
-narrate/
-produce/
-publish/
-*.json
-test*
-cache
-dist/
-gui/vendor/
-.flatpak-builder/
+# media and generated artifacts stay out of git -- gui/ is the prototype, rust/ the rewrite.
+# Every rule is anchored (leading /): unanchored, `cut/` or `test*` also match
+# rust/src/cut/ or rust/tests/ and silently keep the rewrite's sources out of git.
+/input_audio/
+/input_video/
+/out/
+/llm.conf
+/gui/naivepost-gui
+/gui/gui
+/gui/vendor/
+/dist/
+/.flatpak-builder/
+
+# project folders and files the prototype writes when run from the repo
+/step*/
+/inputs/
+/understand/
+/cut/
+/narrate/
+/produce/
+/publish/
+/cache
+/*.json
+/test*
+/gui/step*/
+/gui/inputs/
+/gui/understand/
+/gui/cut/
+/gui/narrate/
+/gui/produce/
+/gui/publish/
+/gui/cache
+/gui/*.json
+/gui/test*
+
+# the rewrite's build output
+/rust/target/
