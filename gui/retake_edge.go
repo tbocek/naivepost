@@ -226,3 +226,55 @@ func (e *edges) startAt(t float64) float64 {
 	}
 	return max(e.off, e.off+float64(j)/e.wf.hz-edgePad)
 }
+
+// retimeStrays moves a word the aligner put on (almost) nothing back onto the
+// end of the word before it.
+//
+// The aligner can place a word late: it is matching text to sound, and a last
+// word said quickly after the one before it can be matched to the next thing
+// that makes any noise at all. On one lecture "Geld." was put on a breath 3.4 s
+// after "viel", and the clip that ended on it carried three seconds of silence
+// and the breath. That word's loudest moment was a tenth of what that
+// recording's words reach, a second and more after its neighbour -- and in
+// three lectures, 18 155 words, it was the only one both quiet like that and
+// that far out. So both, not either: a soft word right after another is
+// ordinary speech, and so is a loud one after a pause.
+func retimeStrays(ws []srcWord, e *edges) {
+	c := e.wf.chans[0]
+	peak := make([]int, len(ws))
+	var all []int
+	for i, w := range ws {
+		i0, i1 := e.at(w.s), e.at(w.e)
+		if i0 < 0 || i1 < 0 {
+			peak[i] = -1
+			continue
+		}
+		p := 0
+		for k := i0; k <= i1; k++ {
+			p = max(p, int(c[k]))
+		}
+		peak[i] = p
+		all = append(all, p)
+	}
+	if len(all) == 0 {
+		return
+	}
+	sort.Ints(all)
+	med := all[len(all)/2]
+	for i := 1; i < len(ws); i++ {
+		if peak[i] < 0 || peak[i]*strayRatio >= med || ws[i].s-ws[i-1].e <= strayGapSeconds {
+			continue
+		}
+		ws[i].s, ws[i].e = ws[i-1].e, ws[i-1].e
+		ws[i].stray = true
+	}
+}
+
+const (
+	// how much quieter than a recording's typical word a word must be, and
+	// how far after the word before it, to count as put on the wrong sound
+	// (retimeStrays). Measured, not guessed: at a fifth and half a second
+	// the same three lectures give 14 words, most of them real soft ones.
+	strayRatio      = 10
+	strayGapSeconds = 1.0
+)

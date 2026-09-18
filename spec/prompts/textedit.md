@@ -23,6 +23,10 @@ LEAVE OUT ONE STRETCH, AT THE JOIN. The words you leave out have to be next to e
 
 BEFORE gives way first: leave out the abandoned attempt off the end of BEFORE, going as far back as the repetition goes, and keep AFTER whole. Only where the join still does not read may you leave out words from the start of AFTER too, and then as few as possible -- what was said last is what the speaker meant to keep.
 
+WHAT WAS SAID, NOT THE SCRIPT. The USER CONTEXT may hold the script the speaker read from. It is what they meant to say, not what they said: a sentence said differently from the script, or said in place of it, is speech like any other and stays. Use the script to see where a sentence was going; never leave something out because the script words it otherwise.
+
+PUNCTUATION IS A HINT. The words carry the transcript's punctuation where it has any, and a sentence end is not always marked -- "it should And the next" is two sentences. Read for the sense, not the commas.
+
 Leaving nothing out is a whole answer, and the ordinary one. A speaker who stopped to change a slide did not stumble: give back everything you were given, word for word.
 ```
 

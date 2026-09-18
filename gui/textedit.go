@@ -20,7 +20,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+	"unicode"
 )
 
 // the video styles, as the project stores them. Blank is the ordinary answer
@@ -76,6 +78,10 @@ LEAVE OUT ONE STRETCH, AT THE JOIN. The words you leave out have to be next to e
 
 BEFORE gives way first: leave out the abandoned attempt off the end of BEFORE, going as far back as the repetition goes, and keep AFTER whole. Only where the join still does not read may you leave out words from the start of AFTER too, and then as few as possible -- what was said last is what the speaker meant to keep.
 
+WHAT WAS SAID, NOT THE SCRIPT. The USER CONTEXT may hold the script the speaker read from. It is what they meant to say, not what they said: a sentence said differently from the script, or said in place of it, is speech like any other and stays. Use the script to see where a sentence was going; never leave something out because the script words it otherwise.
+
+PUNCTUATION IS A HINT. The words carry the transcript's punctuation where it has any, and a sentence end is not always marked -- "it should And the next" is two sentences. Read for the sense, not the commas.
+
 Leaving nothing out is a whole answer, and the ordinary one. A speaker who stopped to change a slide did not stumble: give back everything you were given, word for word.`
 
 // There is no second pass over the middles of takes, and there was one.
@@ -111,6 +117,12 @@ func (a *App) findTextEdit(rows []tsvRow) ([]retake, error) {
 	if len(words) < 4 {
 		return nil, a.writeRetakes(nil)
 	}
+	for _, w := range words {
+		if w.stray {
+			a.logfIdle(">>> words: %q was placed on almost no sound, well after the word before it -- timed at the end of that word instead (%s)",
+				w.raw, mmss(w.s))
+		}
+	}
 	seams := seamsOf(words)
 	if len(seams) == 0 {
 		// one recording, so no join to repair. Everything said stands, which
@@ -129,7 +141,7 @@ func (a *App) findTextEdit(rows []tsvRow) ([]retake, error) {
 			return nil, err
 		}
 		a.prog(trackFix, 0, "repairing join %d/%d", k+1, len(seams))
-		cut, hit, err := a.askSeam(system, words, at, k, len(seams))
+		gone, hit, err := a.askSeam(system, words, drop, at, k, len(seams))
 		if err != nil {
 			return nil, err
 		}
@@ -137,10 +149,7 @@ func (a *App) findTextEdit(rows []tsvRow) ([]retake, error) {
 		if hit {
 			cached++
 		}
-		for i := at - cut.Before; i < at; i++ {
-			drop[i] = true
-		}
-		for i := at; i < at+cut.After; i++ {
+		for _, i := range gone {
 			drop[i] = true
 		}
 	}
@@ -170,6 +179,7 @@ func (a *App) findTextEdit(rows []tsvRow) ([]retake, error) {
 		a.logfIdle(">>> text edit: %s", n)
 	}
 	marks = mergeMarks(marks)
+	marks = a.flagWholeTakes(marks, words, kept)
 	gone := 0
 	for _, d := range drop {
 		if d {
@@ -237,6 +247,12 @@ const (
 	// ...and the longest stretch away from the join that is taken as the model
 	// having respelled a word rather than removed it (seamCutOf).
 	seamNoise = 2
+	// ...and how many times a join whose answer was refused is asked again.
+	// A refusal keeps the stumble, which is the safe way to fail, but on one
+	// lecture four of 57 joins were refused and every one of them was a
+	// stumble left for the hand; a second answer costs one call where the
+	// first went wrong and nothing where it did not.
+	seamRetries = 1
 )
 
 // askSeam asks about one join and answers how much comes off each side.
@@ -256,63 +272,113 @@ const (
 // was shown (keepMask, which is how a hand-edited final.txt is read), so a word
 // the model reworded, added or moved matches nothing and changes nothing, and
 // the worst a wandering answer can do is leave the join exactly as it was.
-func (a *App) askSeam(system string, words []srcWord, at, k, n int) (seamCut, bool, error) {
-	lo := max(0, at-seamReach)
-	hi := min(len(words), at+seamReach)
+func (a *App) askSeam(system string, words []srcWord, drop []bool, at, k, n int) ([]int, bool, error) {
+	idx, atW := seamWindow(words, drop, at)
+	if atW == 0 || atW == len(idx) {
+		return nil, false, nil // one side of this join is already gone whole
+	}
+	win := make([]srcWord, len(idx))
+	for i, x := range idx {
+		win[i] = words[x]
+	}
+	before, after := seamWords(win[:atW]), seamWords(win[atW:])
 	user := a.ctxBlockFor("textedit") + fmt.Sprintf(
 		"JOIN %d of %d.\n\nBEFORE (the end of the take that was interrupted):\n%s\n\n"+
 			"AFTER (the beginning of the take that follows):\n%s\n\n"+
 			"Answer {\"joined\":\"...\"} and nothing else: these %d words and then these %d, "+
 			"in that order, with the stretch at the join left out.",
-		k+1, n, seamWords(words[lo:at]), seamWords(words[at:hi]), at-lo, hi-at)
+		k+1, n, before, after, len(strings.Fields(before)), len(strings.Fields(after)))
 
-	ask := askKey(system, user)
-	reply, hit := a.cachedReply("textedit", ask)
-	if !hit {
-		var err error
-		// thinking, which is the one thing measured to help this pass.
-		//
-		// Scored against a 42-minute lecture cut by hand, 29 joins: without it
-		// the model hands back its input unchanged at ten to twelve of them and
-		// gets fifteen exactly right; with it there is not one join it passes
-		// over, and twenty are exactly right. It finds 128 of the 180 words the
-		// hand cut removed, against 56 to 67 without.
-		//
-		// It is not free. It costs about two minutes a join where the plain
-		// call costs seconds, and it removed 14 words the hand cut kept, 13 of
-		// them at one join, where the plain call removed none. Both were worth
-		// it here: a stumble left in is a stumble you can still take out by
-		// hand in final.txt, and a join nobody looked at is not.
-		//
-		// Two things that sounded better and measured worse: telling the model
-		// which kind of stumble the join is (13 right, and it over-cut), and
-		// having it choose between readings the machine builds from the
-		// punctuation (5 right, and it removed 289 words the hand cut kept).
-		reply, err = a.llmChatRetry("textedit",
-			[]map[string]any{msg("system", system), msg("user", user)}, true)
-		if err != nil {
-			return seamCut{}, false, err
+	first := askKey(system, user)
+	cached := false
+	for try := 0; try <= seamRetries; try++ {
+		ask := first
+		if try > 0 {
+			// its own cache slot: the first answer was refused and never kept,
+			// and asking again must not be answered by the same words
+			ask = fmt.Sprintf("%s|try %d", first, try+1)
+		}
+		reply, hit := a.cachedReply("textedit", ask)
+		cached = cached || hit
+		if !hit {
+			var err error
+			// thinking, which is the one thing measured to help this pass.
+			//
+			// Scored against a 42-minute lecture cut by hand, 29 joins: without it
+			// the model hands back its input unchanged at ten to twelve of them and
+			// gets fifteen exactly right; with it there is not one join it passes
+			// over, and twenty are exactly right. It finds 128 of the 180 words the
+			// hand cut removed, against 56 to 67 without.
+			//
+			// It is not free. It costs about two minutes a join where the plain
+			// call costs seconds, and it removed 14 words the hand cut kept, 13 of
+			// them at one join, where the plain call removed none. Both were worth
+			// it here: a stumble left in is a stumble you can still take out by
+			// hand in final.txt, and a join nobody looked at is not.
+			//
+			// Two things that sounded better and measured worse: telling the model
+			// which kind of stumble the join is (13 right, and it over-cut), and
+			// having it choose between readings the machine builds from the
+			// punctuation (5 right, and it removed 289 words the hand cut kept).
+			reply, err = a.llmChatRetry("textedit",
+				[]map[string]any{msg("system", system), msg("user", user)}, true)
+			if err != nil {
+				return nil, cached, err
+			}
+		}
+		then := "nothing removed there"
+		if try < seamRetries {
+			then = "asking once more"
+		}
+		var got struct {
+			Joined string `json:"joined"`
+		}
+		if problem := jsonReply(reply, &got); problem != "" {
+			// a join nobody could answer for is a join that stays: the words on
+			// both sides of it were said, and keeping something said twice is a
+			// smaller fault than cutting something said once
+			a.logfIdle("!!! text edit: join %d: %s -- %s", k+1, problem, then)
+			continue
+		}
+		cut, why := seamCutOf(win, atW, got.Joined)
+		if why != "" {
+			a.logfIdle("!!! text edit: join %d: %s -- %s", k+1, why, then)
+			continue
+		}
+		if !hit {
+			a.keepReply("textedit", ask, reply)
+		}
+		// back to the session's own words: the window skipped the ones an
+		// earlier join had already taken, so its neighbours are not always
+		// neighbours in words
+		return idx[atW-cut.Before : atW+cut.After], cached, nil
+	}
+	return nil, cached, nil
+}
+
+// seamWindow is one join as the model is shown it: up to seamReach words
+// either side of it, as indexes into words, and where between them the join
+// falls.
+//
+// Words an earlier join already took out are not in it. They used to be: the
+// model read a phrase said twice where the video now says it once, and an
+// answer that kept one of the two was matched back as two stretches -- the
+// earlier join's and its own -- and refused. Measured on one lecture that was a
+// join whose answer was exactly the cut made by hand, thrown away.
+func seamWindow(words []srcWord, drop []bool, at int) ([]int, int) {
+	var before, after []int
+	for i := at - 1; i >= 0 && len(before) < seamReach; i-- {
+		if drop == nil || !drop[i] {
+			before = append(before, i)
 		}
 	}
-	var got struct {
-		Joined string `json:"joined"`
+	slices.Reverse(before)
+	for i := at; i < len(words) && len(after) < seamReach; i++ {
+		if drop == nil || !drop[i] {
+			after = append(after, i)
+		}
 	}
-	if problem := jsonReply(reply, &got); problem != "" {
-		// a join nobody could answer for is a join that stays: the words on
-		// both sides of it were said, and keeping something said twice is a
-		// smaller fault than cutting something said once
-		a.logfIdle("!!! text edit: join %d: %s -- nothing removed there", k+1, problem)
-		return seamCut{}, hit, nil
-	}
-	cut, why := seamCutOf(words[lo:hi], at-lo, got.Joined)
-	if why != "" {
-		a.logfIdle("!!! text edit: join %d: %s -- nothing removed there", k+1, why)
-		return seamCut{}, hit, nil
-	}
-	if !hit {
-		a.keepReply("textedit", ask, reply)
-	}
-	return cut, hit, nil
+	return append(before, after...), len(before)
 }
 
 // seamCutOf turns the joined text back into how much comes off each side, or
@@ -354,6 +420,12 @@ func seamCutOf(win []srcWord, at int, joined string) (seamCut, string) {
 			kept[owner[i]] = true
 		}
 	}
+	// a word shown as part of the one before it goes where that one goes
+	for i, r := range seamRoots(win) {
+		if r != i {
+			kept[i] = kept[r]
+		}
+	}
 	// what it left out, stretch by stretch. There should be exactly one and it
 	// should be at the join; a second one somewhere else is the model editing
 	// prose, and the whole answer is refused over it.
@@ -377,8 +449,14 @@ func seamCutOf(win []srcWord, at int, joined string) (seamCut, string) {
 			j++
 		}
 		switch {
-		case i <= at+seamSnap && j-1 >= at-1-seamSnap:
+		case i <= at+seamSnap && j-1 >= at-1-seamSnap && first < 0:
 			first, last = i, j-1 // the one at the join, which is the repair
+		case i <= at+seamSnap && j-1 >= at-1-seamSnap:
+			// a second stretch that also reaches the join. It used to take
+			// the first one's place, silently: an answer that left out
+			// "... anschauen, was er" and "hat." with one word kept between
+			// them was applied as "hat." alone. Two stretches are two.
+			other++
 		case j-i > seamNoise:
 			other++
 		}
@@ -434,7 +512,11 @@ func seamCutOf(win []srcWord, at int, joined string) (seamCut, string) {
 // (redress), so one word can print as two or three. Those tokens all point back
 // at the same word, and the word goes only if the whole of it went.
 func shownTokens(win []srcWord) (toks []string, owner []int) {
+	roots := seamRoots(win)
 	for i, w := range win {
+		if roots[i] != i {
+			continue // printed as part of the word it was folded into
+		}
 		n := 0
 		for _, f := range strings.Fields(seamWord(w)) {
 			if b := bareWord(f); b != "" {
@@ -453,6 +535,47 @@ func shownTokens(win []srcWord) (toks []string, owner []int) {
 	return toks, owner
 }
 
+// seamRoots is, for every word of a window, the word it is shown as: itself,
+// or -- for a word the transcript pass wrote INTO the word before it
+// ("Proof-of-Concept-Serie," over proof, of, concept, serie) -- that word.
+//
+// Those words used to be shown a second time, bare: "Proof-of-Concept-Serie,
+// of concept serie". A model that tidied the doubling away left out the bare
+// ones, and with them went the sound of the compound it had meant to keep --
+// "die letzte Proof-" and then the next take. Shown once, the compound is one
+// thing to keep or leave out, and its words go together.
+//
+// Only words that ARE part of that spelling. The transcript pass also leaves
+// no spelling on words it took out -- a filler, a word said twice inside a
+// take -- and those are still shown, bare, as they always were: hiding them
+// changes the text the model reads, not just how a compound is printed.
+func seamRoots(win []srcWord) []int {
+	roots := make([]int, len(win))
+	for i, w := range win {
+		roots[i] = i
+		if w.raw != "" || i == 0 || win[i-1].src != w.src {
+			continue
+		}
+		r := roots[i-1]
+		if part := letters(w.w); part != "" && strings.Contains(letters(win[r].raw), part) {
+			roots[i] = r
+		}
+	}
+	return roots
+}
+
+// letters is a word with everything but its letters and digits taken out,
+// lower case: "Proof-of-Concept-Serie," is "proofofconceptserie".
+func letters(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // seamWords is one side of a join as the model reads it: the words as they are
 // WRITTEN -- the case and punctuation the transcript pass settled on -- because
 // the question is whether the join reads as a sentence, and a lower-case stream
@@ -461,17 +584,19 @@ func shownTokens(win []srcWord) (toks []string, owner []int) {
 // about how an answer is understood.
 func seamWords(ws []srcWord) string {
 	var b []string
-	for _, w := range ws {
-		b = append(b, seamWord(w))
+	for i, r := range seamRoots(ws) {
+		if r == i {
+			b = append(b, seamWord(ws[i]))
+		}
 	}
 	return strings.Join(b, " ")
 }
 
 // seamWord is one word as it is shown and as it is written out: the spelling
 // the transcript pass settled on, or the bare one it was heard as where the
-// fold left it none. Never empty -- a word with nothing to print is still a
-// word of the recording, and leaving it out would shift every number after it
-// off the word it names (seamNumbered).
+// fold left it none. Never empty. A word folded into the one before it is not
+// asked for at all (seamRoots); this is what the rest print, and what a word
+// with nothing to be folded into prints.
 func seamWord(w srcWord) string {
 	if w.raw != "" {
 		return w.raw
@@ -500,27 +625,44 @@ func (a *App) writeFinalText(words []srcWord, drop []bool) error {
 // finishedText is what it writes, apart from the file, so that the marking can
 // be read without a project on disk.
 func (a *App) finishedText(words []srcWord, drop []bool) string {
+	// which recordings keep anything at all: a join whose dropped words hold
+	// every word of one is marked as taking a whole take (flagWholeTakes)
+	alive := map[string]bool{}
+	for i, w := range words {
+		if drop == nil || !drop[i] {
+			alive[w.src] = true
+		}
+	}
 	var b []string
 	last, gone := "", 0
+	whole := false
 	for i, w := range words {
 		if drop != nil && drop[i] {
 			gone++
+			if !alive[w.src] {
+				whole = true
+			}
 			continue
 		}
 		if last != "" && w.src != last {
+			mark := "|cut|"
 			if gone > 0 {
-				b = append(b, fmt.Sprintf("|cut %d|", gone))
-			} else {
-				b = append(b, "|cut|")
+				mark = fmt.Sprintf("|cut %d|", gone)
 			}
+			if whole {
+				// one mark still: every field of it holds a pipe, so it is
+				// read back as no words at all (textTokens)
+				mark += "whole take|"
+			}
+			b = append(b, mark)
 		}
-		last, gone = w.src, 0
+		last, gone, whole = w.src, 0, false
 		// a word whose spelling was folded into the one in front of it
 		// (redress): it keeps its seconds and stays in the video, but it has
 		// nothing of its own to print. The subtitles skip it for the same
-		// reason. This file used to fall back to the bare heard form instead
-		// -- seamWord, which the prompt needs so that every word makes a token
-		// -- and printed "Public-Key-Pairs. key pairs", the one spelling twice.
+		// reason, and so does the join prompt now (seamRoots). This file used
+		// to fall back to the bare heard form instead and printed
+		// "Public-Key-Pairs. key pairs", the one spelling twice.
 		if w.raw == "" {
 			continue
 		}
@@ -564,6 +706,7 @@ func (a *App) marksOfText(text string, words []srcWord, rows []tsvRow, paths []s
 		a.logfIdle(">>> text edit: %s", n)
 	}
 	marks = mergeMarks(marks)
+	marks = a.flagWholeTakes(marks, words, kept)
 	for _, m := range marks {
 		a.logfIdle(">>> text edit: %s-%s goes (%q)", mmss(m.S), mmss(m.To), m.Text)
 	}
@@ -800,4 +943,52 @@ func trimRunToWords(seg cutSeg, words []srcWord, edgeOf func(float64) *edges) cu
 		t = e.endAfter(*last, math.Min(seg.E, last.e+troughReach))
 	}
 	return cutSeg{S: s, E: t}
+}
+
+// wholeTakes is every recording none of whose words survive, with its first
+// and last word: a join is allowed to take a whole take out -- a short take
+// that was nothing but a false start is exactly that -- but it is also what a
+// join that misread its window looks like. Measured on one lecture: a join
+// took out all fifteen seconds of the take before it, and the first eight of
+// its words were wanted.
+func wholeTakes(words []srcWord, kept []bool) map[string][2]float64 {
+	span := map[string][2]float64{}
+	alive := map[string]bool{}
+	for i, w := range words {
+		if kept[i] {
+			alive[w.src] = true
+		}
+		if sp, ok := span[w.src]; ok {
+			span[w.src] = [2]float64{sp[0], w.e}
+		} else {
+			span[w.src] = [2]float64{w.s, w.e}
+		}
+	}
+	for src := range alive {
+		delete(span, src)
+	}
+	return span
+}
+
+// flagWholeTakes names, on each mark, the recordings it takes out entire, and
+// says so in the log. Flagged, not refused: the Cut page tints such a
+// recording yellow, and final.txt marks its join "|whole take|", so it is
+// found by looking rather than by listening to the whole video.
+func (a *App) flagWholeTakes(marks []retake, words []srcWord, kept []bool) []retake {
+	whole := wholeTakes(words, kept)
+	for i := range marks {
+		var names []string
+		for src, sp := range whole {
+			if sp[0] >= marks[i].S-0.01 && sp[1] <= marks[i].E+0.01 {
+				names = append(names, src)
+			}
+		}
+		slices.Sort(names)
+		marks[i].Whole = strings.Join(names, ",")
+		for _, src := range names {
+			a.logfIdle(">>> text edit: all of %s goes (%s-%s) -- marked yellow on Cut, worth a look",
+				src, mmss(whole[src][0]), mmss(whole[src][1]))
+		}
+	}
+	return marks
 }

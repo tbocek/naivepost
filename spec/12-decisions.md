@@ -29,8 +29,8 @@ Rule of thumb: **if the app changes what the model said, the model hears about i
 | policy [F0.7](03-shell.md#f07-derive-the-editing-policy-review--new) | which fields the context speaks to | the field is known and in range | – | the defaults |
 | describe [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) | what is on each frame; the running state | which frame an event landed on | folding "same" rows when the file is read | frames per request, context windows |
 | fix [F1.8](04-prepare.md#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines) | the wording of a line | the line is in this block; no tab | building `session.tsv` | block size, context seconds |
-| retakes [F1.9](04-prepare.md#f19-mark-retakes-gaming-style) | which lines were abandoned, and where re-said | the stretch really removed after trimming and edge placement; running share against the ceiling | – | pause, reach, min, ceiling, runs |
-| joins [F1.10](04-prepare.md#f110-repair-the-joins-lecture-style) | how the two takes read as one | which words that removes; whether one stretch at the join | dedupe across the cut; `final.txt` | window, snap, noise, max, ceiling |
+| retakes [F1.9](04-prepare.md#f19-mark-retakes) | which lines were abandoned, and where re-said | the stretch really removed after trimming and edge placement; running share against the ceiling | – | pause, reach, min, ceiling, runs |
+| joins [F1.10](04-prepare.md#f110-repair-the-joins) | how the two takes read as one | which words that removes; whether one stretch at the join | dedupe across the cut; `final.txt` | window, snap, noise, max, ceiling |
 | cut [F2.14](05-cut.md#f214-suggest-a-cut) | which stretches are worth keeping, and why | the snapped edges, the marks inside a segment, the running footage total | closing 1.5 s holes, dead air, coalescing | target, window, min/max segments, snap tolerance |
 | captions [F3.9](06-effects.md#f39-captions-proposed-by-the-model-after-the-cut) | the words and where they sit | the caption as clamped into its clip, with its fades | clamping to the cut as applied | batch, minimum length |
 | speed [F3.10](06-effects.md#f310-speeds-proposed-by-the-model) | how fast a dull stretch may run | the rate after clamping, and the on-screen length | merging same-rate stretches | min/max rate, merge gap |
@@ -99,7 +99,7 @@ Each is mechanical, checkable and visible on screen afterwards; none is a judgem
 - **The session clock**, source placement and hand shift corrections.
 - **Edge snapping, hole closing, dead-air removal, coalescing, clamping** — the walk-back (rule 2.6). Runs after `finish` on every reply, model- or hand-made; the page shows what it did.
 - **The render's arithmetic**: fitting, ducking, loudness, frame boxes, cue wrapping.
-- **Which marking pass a style runs**, and whether a job is asked at all (the Lecture cut asks no model; the text decides).
+- **Nothing chooses the pipeline but the User Context.** Which marking pass runs, whether the cut comes from the words or from a model, and which cut-stage passes are asked at all are policy fields the policy job sets from the context ([F0.7](03-shell.md#f07-derive-the-editing-policy-review--new)) — decisions the model makes once, visibly, in the policy form, instead of a style dropdown.
 
 ## 5. Gaps this audit closed
 

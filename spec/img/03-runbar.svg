@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="120" viewBox="0 0 900 120" font-family="Cantarell, Inter, 'Noto Sans', 'DejaVu Sans', sans-serif" font-size="13">
+  <!-- Proposed run bar (flows F0.2, F0.4): ▶ this step · I'm feeling lucky (all steps) · ⏹. The gears turn while a run computes. -->
+  <defs>
+    <path id="cog" d="M-1.6,-9 h3.2 l0.6,2.4 a7,7 0 0 1 2.1,1.2 l2.3,-0.9 1.6,2.8 -1.8,1.7 a7,7 0 0 1 0,2.4 l1.8,1.7 -1.6,2.8 -2.3,-0.9 a7,7 0 0 1 -2.1,1.2 l-0.6,2.4 h-3.2 l-0.6,-2.4 a7,7 0 0 1 -2.1,-1.2 l-2.3,0.9 -1.6,-2.8 1.8,-1.7 a7,7 0 0 1 0,-2.4 l-1.8,-1.7 1.6,-2.8 2.3,0.9 a7,7 0 0 1 2.1,-1.2 z M0,-2.6 a2.6,2.6 0 1 0 0.01,0 z" fill-rule="evenodd"/>
+  </defs>
+  <rect width="900" height="120" fill="#fafafa"/>
+  <line x1="0" y1="0.5" x2="900" y2="0.5" stroke="#d6d6d6"/>
+  <!-- ▶ this step -->
+  <rect x="12" y="12" width="36" height="34" rx="6" fill="#3584e4"/>
+  <path d="M25,21 L37,29 L25,37 Z" fill="#fff"/>
+  <!-- I'm feeling lucky -->
+  <rect x="54" y="12" width="158" height="34" rx="6" fill="#ebebeb" stroke="#cdcdcd"/>
+  <g transform="translate(74,26)" fill="#2e2e2e">
+    <use href="#cog"><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3s" repeatCount="indefinite"/></use>
+  </g>
+  <g transform="translate(84,37) scale(0.7)" fill="#2e2e2e">
+    <use href="#cog"><animateTransform attributeName="transform" type="rotate" from="360" to="0" dur="2.1s" repeatCount="indefinite"/></use>
+  </g>
+  <text x="98" y="34" fill="#2e2e2e">I'm feeling lucky</text>
+  <!-- ⏹ -->
+  <rect x="218" y="12" width="36" height="34" rx="6" fill="#ebebeb" stroke="#cdcdcd"/>
+  <rect x="230" y="23" width="12" height="12" rx="1" fill="#2e2e2e"/>
+  <!-- progress -->
+  <rect x="266" y="27" width="250" height="5" rx="2.5" fill="#dcdcdc"/>
+  <rect x="266" y="27" width="96" height="5" rx="2.5" fill="#3584e4"/>
+  <text x="530" y="34" fill="#2e2e2e"><tspan font-weight="bold">Inputs:</tspan> 57 clips · 64:03</text>
+  <text x="700" y="34" fill="#2e2e2e"><tspan font-weight="bold">Outputs:</tspan> 73 files, 1.2 GB</text>
+  <!-- log header with the status line -->
+  <text x="14" y="72" fill="#2e2e2e">› Log</text>
+  <text x="886" y="72" text-anchor="end" fill="#8a8a8a">Prepare 1/4 · describe 1/2: chunk 4/12</text>
+  <!-- labels -->
+  <g font-size="11" fill="#6f6f6f">
+    <text x="30" y="104" text-anchor="middle">this step</text>
+    <text x="133" y="104" text-anchor="middle">every step, Prepare → Produce</text>
+    <text x="236" y="104" text-anchor="middle">stop</text>
+  </g>
+  <rect x="780" y="92" width="108" height="20" rx="10" fill="#fdf0d5" stroke="#e5a50a"/>
+  <text x="834" y="106" text-anchor="middle" font-size="11" fill="#9c6e03">proposed</text>
+</svg>

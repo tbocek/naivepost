@@ -386,6 +386,9 @@ type cutEditor struct {
 	// ...and whether the fold-all control in the gutter has it (cut_gutter.go)
 	foldAllHov bool
 	laneN      int // how many rows the picture band is stacked into (at least 1)
+	// the recordings a join took out entire, by base name: tinted yellow on
+	// their row, a thing to look at rather than an error (flagWholeTakes)
+	whole map[string]bool
 	// nRows is the row count the band holds on to even when the HIGHEST rows
 	// are empty. An empty row between two full ones survives relayout because
 	// the pins hold the gap open; an empty row at the bottom has nothing under
@@ -758,6 +761,14 @@ func (ed *cutEditor) reload() error {
 	}
 	ed.vids = nil
 	ed.film = nil // another project's card is not this one's
+	ed.whole = map[string]bool{}
+	for _, m := range a.loadRetakes() {
+		for _, b := range strings.Split(m.Whole, ",") {
+			if b != "" {
+				ed.whole[b] = true
+			}
+		}
+	}
 	for _, s := range all[:len(vids)] {
 		// no frames is not a reason to refuse the page: a recording is a lane
 		// before it is a transcript, and everything the lane is made of --
@@ -3882,6 +3893,28 @@ func srcEdgeMark(cr *cairo.Context, x, dir, top, h, room float64) {
 	cr.Stroke()
 }
 
+// wholeTakeMark tints a recording that a join took out entire: a yellow wash
+// over its pictures and a yellow frame round them. Under the edge stripes,
+// which still say where the take begins and ends; over the pictures, which
+// stay readable through it.
+//
+// Yellow and not red: nothing is wrong. A take that was nothing but a false
+// start goes whole, and should. But a join that misread its window looks
+// exactly the same, and on one lecture it took fifteen seconds of which the
+// first eight were wanted -- so the take is shown, not hidden.
+func wholeTakeMark(cr *cairo.Context, x0, x1, top, h float64) {
+	if x1 <= x0 {
+		return
+	}
+	cr.SetSourceRGBA(0.98, 0.85, 0.1, 0.3)
+	cr.Rectangle(x0, top, x1-x0, h)
+	cr.Fill()
+	cr.SetSourceRGB(0.96, 0.8, 0.05)
+	cr.SetLineWidth(2)
+	cr.Rectangle(x0+1, top+1, x1-x0-2, h-2)
+	cr.Stroke()
+}
+
 // hatchStrokes paints "the footage stops here": dashed yellow diagonals,
 // clipped to the band. Marks only and no ground of their own, because the one
 // thing they mark is already painted something -- the splice marker is violet
@@ -4019,6 +4052,9 @@ func (ed *cutEditor) drawTrack(cr *cairo.Context, w, h int) {
 		//
 		// Its name is not a place on the tape at all: that is pinned, below.
 		x0, x1 := v.pxOrigin+srcEdgeIn, ed.xOf(v.start+v.dur)-srcEdgeIn
+		if ed.whole[v.base] {
+			wholeTakeMark(cr, v.pxOrigin, ed.xOf(v.start+v.dur), lt, ed.laneH())
+		}
 		srcEdgeMark(cr, x0, 1, lt, ed.laneH(), x1-x0)
 		// ...and the far end only where the two marks would be the same two
 		// pixels: a recording drawn narrower than its own borders is one

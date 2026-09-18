@@ -10,7 +10,7 @@ A desktop editor for already-recorded sessions: camera footage, separate microph
 
 **Linear on purpose**: the timeline is the recording in shooting order; the edit is which stretches stay. Cards, stills and sounds can be spliced in and a moment shown from another camera; nothing is rearranged.
 
-Four workflows, in order, one tab and one ▶ each: **Prepare → Cut → Narrate → Produce**. Several can be ticked and run in one press.
+Four workflows, in order, one tab and one ▶ each: **Prepare → Cut → Narrate → Produce**. "I'm feeling lucky" runs all four in one press.
 
 ## 2. Rules the prototype holds to (keep them)
 
@@ -32,7 +32,7 @@ The prototype encodes hundreds of decisions as constants: a file under 2 s is si
 | Home | Meaning | Examples |
 |---|---|---|
 | **Machine setting** | Settings dialog / settings file; about this computer | server URLs, model ids, ffmpeg path, voices folder |
-| **Project setting** | Stored in the project file; shown on a tab | frame interval, language, style, encoder settings |
+| **Project setting** | Stored in the project file; shown on a tab | frame interval, language, encoder settings |
 | **Editing policy** | Stored in the project; derived from the User Context by a model call, else defaults; editable as a form | minimum take length, dead-air threshold, review pad, words per caption row, target length |
 | **Prompt** | The twelve prompts, per machine, resettable | how a job is worded |
 | **Engineering constant** | Fixed in code: about the machine, not the edit (pixel sizes, timeouts, cache formats) | 6 px grab reach, 100 ms tick, cache magic |
@@ -59,15 +59,48 @@ Design rules for tools:
 
 [`02-services.md` §3](02-services.md#3-tool-catalogue-rewrite-directive-b) lists the tool catalogue per job; each tab chapter names its flows' tools; [`12-decisions.md`](12-decisions.md) audits, per job, which decisions the model makes and which the app keeps.
 
-## 5. Generalisations proposed (REVIEW)
+## 5. Rewrite directive C — components, each tested alone
 
-- **Styles** become a list of named pipelines, not two hard-coded names: each says which marking pass runs (joins / retakes / none), whether the cut is text-derived or model-chosen, and which policy defaults apply. Shipped: Lecture and Gaming.
+REVIEW (new). Every part of a screen that has its own state and draws itself is a **component**, and every stage of a pipeline is a **function**; each MUST be testable on its own, without the window, the other components, a server or a model.
+
+A component is:
+
+- **In:** a value — the model it shows (a recording's pictures and edges, a lane's samples and badges, the cut's segments) and the view it is shown in (the time↔x mapping, the zoom, the row height). Never the whole application.
+- **Out:** what it wants done, as values — "slide recording B by −19 s", "silence lane L in the scene at 0:40", "select 1:14–1:59 of camera 2" — handed to its owner, which applies them and hands back a new value.
+- **Drawing:** onto a surface it is given. A test draws it into an image and looks at pixels; a test gives it a press and reads the value it sends out.
+
+The timeline is the first place this applies. Its components, each with its own tests:
+
+| component | shows | sends out |
+|---|---|---|
+| ruler | the clock, folds as seams | a press: put the line there |
+| selection band | kept scenes (green), the selection (blue), fold badges | add / drop / resize a scene, select, fold |
+| camera row | one camera's pictures, recording edges (amber), a whole take a join removed (yellow), the lens | pick up, slide, select footage, watch this row |
+| sound strip | a recording's own sound under its pictures | select that recording's sound |
+| recorders' lane | one separate recording or extra track, speaker badges | slide it, silence it in a scene |
+| effects lane | effect bars in rows | hold, move, resize, open, remove an effect |
+| gutter | per-row and per-lane switches, row ✕ | hear / silence a lane for the cut, close a row |
+| playhead | the red line | — |
+| the timeline itself | lays the above out: rows by interval colouring ([05 F2.10](05-cut.md#f210-cameras-and-hearing)), time↔x, zoom, scroll | nothing of its own: it routes its children's values |
+
+The same holds for the other pages (a sources row, the prompt bench, the run bar, the log, a narration line, the take band, the render and publish forms) and for the pipelines, whose stages are functions of values with no screen at all: the session's word list ([F1.13](04-prepare.md#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles)), the join window and the match of an answer ([F1.10](04-prepare.md#f110-repair-the-joins)), the dedupe, marks from words, edge placement ([F1.11](04-prepare.md#f111-place-the-edges-of-a-mark)), `final.txt` written and read back, the cut built from the marks ([F2.14](05-cut.md#f214-suggest-a-cut)).
+
+Tests come in two kinds, and a change to a pipeline stage needs both:
+
+- **Fixtures:** made-up material shaped like the case — a take that restarts inside itself, a compound written over four heard words — never a user's recording word for word.
+- **Replays of a real run:** the model's answers from a run's exchange log fed back through the stage, scored against a cut made by hand, with the unchanged code as the control. A replay of the unchanged code MUST reproduce the run it came from before any change is judged by it.
+
+Prototype: the Cut page is one editor (`cutEditor`, `cut.go`, 6 874 lines) that owns the state of every track and draws them all in one pass; a track cannot be drawn or pressed in a test without the whole editor, and much of the testing reads the source text for expected lines (638 such checks across the test files).
+
+## 6. Generalisations proposed (REVIEW)
+
+- **No styles.** The prototype's Style dropdown (Lecture / Gaming) is gone: the User Context says what kind of video this is, and the policy derived from it ([F0.7](03-shell.md#f07-derive-the-editing-policy-review--new)) picks the flows — P.policy.markingPass (joins / retakes / none), P.policy.cutMode (words / model) and which cut-stage passes run (captionsPass, speedPass, decorationsPass). The rewrite asks no job the context rules out.
 - **Languages** for subtitles become a settings list (code, ISO-639-2 tag, name), not three constants.
 - **Cards** (SVG inserts) stay a folder of files with a declared-inputs convention; the two built-ins are shipped files, not code.
 - **Narrator slots** stay four; the number is a policy default.
-- **Frame-interval stops, scale presets, encoder option lists** stay shipped lists, in one table the settings can extend.
+- **Frame-interval stops, encoder option lists** stay shipped lists, in one table the settings can extend.
 
-## 6. Glossary
+## 7. Glossary
 
 - **Session**: all recordings of one sitting, on one clock (the *session clock*, seconds from the earliest timestamped file).
 - **Source**: one session file; *footage* (frames come out of it, it can be cut) and/or a *recording* (heard); one source may hold *narrator slot* 1–4.
@@ -80,7 +113,7 @@ Design rules for tools:
 - **Effect**: zoom, speed (incl. stop), text, svg, volume, label; spans `[t, t+dur)` of session time.
 - **Line**: one narration entry over one clip (`narrate/narration.json`).
 - **Policy**: the project's editing parameters ([§3](#3-rewrite-directive-a--no-implicit-behaviour)).
-- **Run**: one press of ▶: a chain of steps with one progress bar, one log page, one cancel.
+- **Run**: one press of ▶ (the visible step) or of "I'm feeling lucky" (every step): one progress bar, one log page, one cancel.
 
 <!-- nav -->
 ---

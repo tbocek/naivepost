@@ -22,7 +22,9 @@ Red playhead: 2 px line on its own layer across both bands. No timeline tooltips
 
 **Form column**: idle readings (thumbnail size, aspect, playhead clock, selection, cut length, cut at 1×, source length, segments) or the form of what is being placed or edited (insert, effect); forms are live (kept as you type; one Undo reverts the whole edit), pinned heading (✕ closes), pinned button footer.
 
-**Tracks**: gutter (fold-all badge, per-lane and per-row sound switches, empty-row ✕), ruler, selection band (green bar per kept scene with ✕ and draggable ends; blue selection with ✕ and ends; fold −/+ badges), effects lane (one row per overlapping group), picture rows (thumbnails; amber striped edges where a recording starts/ends; each row's first audio track as a strip below; camera and speaker badges on the scene under the line or held; pinned name plate per row — recording base name, "from m:ss" for a cut lane windowing a file, "+1.23 s" when the source has a hand correction; in/out marks as 3 px lines with flag triangles across the whole band, green in, red out; every insert a violet band across every row, hatched when spliced, with a plated `card` mark naming the file, plus own marks on the wave strips if sound-only; rose wash over the picture under any speed effect; dashed white outline around the row a click set the preview to watch, gone when ▶ hands the preview back), then the separate recordings' lanes, then the scrollbar (hidden when everything fits; thumb geared at high zoom so one screenful is always 40 px of drag).
+**Pictures**: the thumbnails come from the frames Prepare extracted. REVIEW (new): on the 250 ms grid restarted at each scene change ([F1.6](04-prepare.md#f16-frames-per-video)) the band has a picture at every zoom; prototype: one frame every Freq seconds, so zoomed in the band shows black between them.
+
+**Tracks**: gutter (fold-all badge, per-lane and per-row sound switches, empty-row ✕), ruler, selection band (green bar per kept scene with ✕ and draggable ends; blue selection with ✕ and ends; fold −/+ badges), effects lane (one row per overlapping group), picture rows (thumbnails; amber striped edges where a recording starts/ends; a yellow wash and frame over a recording the join pass took out entire — flagged for a look, not an error ([F1.10](04-prepare.md#f110-repair-the-joins)); each row's first audio track as a strip below; camera and speaker badges on the scene under the line or held; pinned name plate per row — recording base name, "from m:ss" for a cut lane windowing a file, "+1.23 s" when the source has a hand correction; in/out marks as 3 px lines with flag triangles across the whole band, green in, red out; every insert a violet band across every row, hatched when spliced, with a plated `card` mark naming the file, plus own marks on the wave strips if sound-only; rose wash over the picture under any speed effect; dashed white outline around the row a click set the preview to watch, gone when ▶ hands the preview back), then the separate recordings' lanes, then the scrollbar (hidden when everything fits; thumb geared at high zoom so one screenful is always 40 px of drag).
 
 ## 2. Model (summary; full schema in `01-project-and-files.md` §3)
 
@@ -122,6 +124,14 @@ S1 Click on a track → red line there, selection cleared, scene under the click
 ### F2.5 Hush and mix (what the preview hears)
 
 <sub><!-- back -->[← F2.4](#f24-place-and-step-the-line) · [↑ 05 Cut](#05--cut) · [all flows](11-flow-index.md#3-all-flows) · [F2.6 →](#f26-select)</sub>
+
+![A separate recording overlapping the footage, silenced in one scene](img/05-lanes.png)
+
+<sub>Screenshot of the prototype on the ETH lecture project, staged: the lecture has no separate recordings, so 45 s of another day's recording was added to a copy of the project as `2026-09-16 17-26-20.wav`, placing it at 1:14–1:59 on the session clock.</sub>
+
+**1** the camera row's own sound strip · **2** the recorders' band: one lane per separate recording or extra track, name plate with the channel layout ("mono") · **3** the lane's sound over footage that has its own: both play unless a scene silences one · **4** the held scene (clip 2, picked up) · **5** its speaker badge on the camera sound: heard · **6** its speaker badge on the lane: silenced · **7** the lane's gutter switch: the lane for the whole cut · **8** status "2026-09-16 17-26-20 is silent in the scene at 0:40"
+
+Sound overlaps whenever two sources were recording at once: a camera's own sound, a separate recording (a narrator mic, a phone, a second recorder), each extra ticked track of a multi-track file, and a second camera's sound. Each is one lane, placed by the time stamp in its name and slid by a right-drag ([F2.8](#f28-trim-and-move)). Every lane is heard by default. A scene's speaker badges decide what that scene hears; a gutter switch turns a lane off for the whole cut ([F2.10](#f210-cameras-and-hearing)). The render mixes what each scene hears, the same way ([08](08-produce.md)).
 
 ```mermaid
 flowchart TD
@@ -251,6 +261,16 @@ S1 Copy takes the selection in hand (≥ 1 s; "copied m:ss – m:ss (X s) — cl
 
 <sub><!-- back -->[← F2.9](#f29-copy-paste-lane) · [↑ 05 Cut](#05--cut) · [all flows](11-flow-index.md#3-all-flows) · [F2.11 →](#f211-folds-and-rows)</sub>
 
+![Two recordings at the same time: one row each](img/05-rows.png)
+
+<sub>Screenshot of the prototype on the ETH lecture project, staged: the lecture has no simultaneous recordings, so the second file was shifted 19 s back in a copy of the project and the cut cleared, to show two cameras running at once.</sub>
+
+**1** camera 1 (17-25-06, 0:00–0:37) · **2** camera 2 (17-25-45) with its shift correction "−19.00 s" in the name plate · **3** the overlap 0:20–0:37: both cameras filmed it · **4** dashed outline: the watched row · **5** the preview shows the watched row, not the cut · **6** the one kept scene, taken from camera 1 · **7** status "watching camera 2 — the cut shows camera 1 here; ▶ plays the cut"
+
+Recordings that run at the same time (by the time stamps in their names, or after a shift) are laid out on rows by greedy interval colouring: a recording goes on the lowest row free for its whole span, so one camera's files share a row and a second camera gets its own. Overlapping time is laid out once; each row shows its own pictures and sound. A kept scene takes its picture from one row (the lens badge, S1) and hears the lanes its speaker badges allow (S2). Clips never overlap: in the staged shot, ＋ Add over the same seconds on camera 2 added nothing.
+
+REVIEW: in the prototype a right-drag that slides a recording pins **every** recording to the row it is on (`rows` in `cut.json`), so a drag that creates an overlap leaves both recordings on one row, the later drawn over the earlier, and the earlier one's overlapped seconds cannot be seen or picked. The rewrite SHOULD pin only the recording dragged and re-run the colouring, so an overlap made by a drag gets a row of its own, as the same overlap does when read from the file names.
+
 ```mermaid
 flowchart TD
   S(["the scene under the line, or the held one"]) --> LENS["🔍 lens badge: which row its picture comes from<br/>“the scene at m:ss is shown from ‹cam› now”"]
@@ -331,15 +351,15 @@ flowchart TD
   G2 -- yes --> R1["“you have hand edits — press Revert first …”"]:::refuse
   G2 -- no --> G3{"a session timeline?"}
   G3 -- no --> R2["“run Describe first — …”"]:::refuse
-  G3 -- yes --> ST{"style?"}
-  ST -- Lecture --> L1["marks from retakes.tsv, or remade from final.txt F1.12"]
+  G3 -- yes --> ST{"P.policy.cutMode?"}
+  ST -- words --> L1["marks from retakes.tsv, or remade from final.txt F1.12"]
   L1 --> L2["every filmed run trimmed to its words"]
   L2 --> WB
-  ST -- Gaming --> M1["the cut · thinking ON · web tools<br/>add_segment · remove_segment · set_speed · cut_status · finish_cut"]
+  ST -- model --> M1["the cut · thinking ON · web tools<br/>add_segment · remove_segment · set_speed · cut_status · finish_cut"]
   M1 --> FC{"finish_cut: count and footage within the target window?"}
   FC -- no --> FIX["every fault at once, worst first"] --> M1
   FC -- "no, after P.eng.llmAttempts" --> FAIL["“no valid cut after 3 attempts”"]:::refuse
-  FC -- yes --> M2["captions F3.9 → speeds F3.10 → decorations F3.11"]
+  FC -- yes --> M2["captions F3.9 → speeds F3.10 → decorations F3.11<br/>only the passes P.policy.captionsPass · speedPass · decorationsPass switch on"]
   M2 --> WB
   WB["walk-back: holes ≤ P.policy.seamMaxSeconds closed where somebody talked · edges snapped<br/>marks removed · dead air removed · coalesced · effects clamped"]
   WB --> DONE["one Undo · persisted · the new base · “>>> suggested N segments, M:SS total”"]:::done
@@ -349,8 +369,8 @@ flowchart TD
 ```
 
 S1 Guards: busy; hand edits ("you have hand edits — press Revert first for a fresh suggestion"); no session timeline ("run Describe first — the suggestion reads the session timeline, and there is none").
-S2a **Text-derived styles (Lecture)**: no model. Marks from `retakes.tsv`, or remade from `final.txt` if edited later ([F1.12](04-prepare.md#f112-hand-edit-the-text-lecture)). Cut = hand-placed inserts + every filmed run trimmed to its words (just before the first to just after the last, placed by the sound within 0.4 s, never outside the run) → marked stretches removed → dead air removed (silences over P.policy.deadAirMaxSeconds = 8 inside a clip cut, leaving P.policy.deadAirKeepSeconds = 0.5) → coalesce → persist → base. Status "cut by the words: N segments"; log ">>> cut by the words: N stretch(es) taken out, m:ss of silence, N segments, M:SS total".
-S2b **Model-chosen styles (Gaming)**: four jobs on the bar. (1) The cut: target length from P.policy.targetLengthSeconds (derived from the context by [F0.7](03-shell.md#f07-derive-the-editing-policy-review--new); prototype: a regex over the context); message = User Context + "SESSION LENGTH: N seconds…" + the target block ("KEEP between A and B seconds of footage, in at most K segments…" or "NO TARGET LENGTH…") + "SESSION TIMELINE:" + `session.txt`; thinking on; web tools offered (dropped after a first rejection). **Tools**: `add_segment`, `remove_segment`, `set_speed`, `finish_cut` ([`02-services.md` §3.6](02-services.md#36-cut-gaming)); the prototype's whole-reply checks (timestamps past the end, with the mm:ss hint; fewer than min(1 + target/30, 4) segments; more than max(target/5, 40); footage outside target × [0.6, 1.2 | 1.5] × [1, 4]) become `finish_cut`'s answer. Up to P.eng.llmAttempts = 3 rounds of correction; "no valid cut after 3 attempts". Streaming progress counts segments. (2) Captions, (3) speeds, (4) decorations: [`06-effects.md`](06-effects.md) [F3.9](06-effects.md#f39-captions-proposed-by-the-model-after-the-cut)–[F3.11](06-effects.md#f311-decorations-proposed-by-the-model).
+S2a **P.policy.cutMode = words** (the prototype's Lecture): no model. Marks from `retakes.tsv`, or remade from `final.txt` if edited later ([F1.12](04-prepare.md#f112-hand-edit-the-text)). Cut = hand-placed inserts + every filmed run trimmed to its words (just before the first to just after the last, placed by the sound within 0.4 s, never outside the run) → marked stretches removed → dead air removed (silences over P.policy.deadAirMaxSeconds = 8 inside a clip cut, leaving P.policy.deadAirKeepSeconds = 0.5) → coalesce → persist → base. Status "cut by the words: N segments"; log ">>> cut by the words: N stretch(es) taken out, m:ss of silence, N segments, M:SS total".
+S2b **P.policy.cutMode = model** (the prototype's Gaming): up to four jobs on the bar — the cut, then only the passes the policy switches on (P.policy.captionsPass, speedPass, decorationsPass; a context that says "no captions, no speed changes, no effects" means those jobs are never called, not called and told to return nothing). (1) The cut: target length from P.policy.targetLengthSeconds (derived from the context by [F0.7](03-shell.md#f07-derive-the-editing-policy-review--new); prototype: a regex over the context); message = User Context + "SESSION LENGTH: N seconds…" + the target block ("KEEP between A and B seconds of footage, in at most K segments…" or "NO TARGET LENGTH…") + "SESSION TIMELINE:" + `session.txt`; thinking on; web tools offered (dropped after a first rejection). **Tools**: `add_segment`, `remove_segment`, `set_speed`, `finish_cut` ([`02-services.md` §3.6](02-services.md#36-cut-model-chosen)); the prototype's whole-reply checks (timestamps past the end, with the mm:ss hint; fewer than min(1 + target/30, 4) segments; more than max(target/5, 40); footage outside target × [0.6, 1.2 | 1.5] × [1, 4]) become `finish_cut`'s answer. Up to P.eng.llmAttempts = 3 rounds of correction; "no valid cut after 3 attempts". Streaming progress counts segments. (2) Captions, (3) speeds, (4) decorations: [`06-effects.md`](06-effects.md) [F3.9](06-effects.md#f39-captions-proposed-by-the-model-after-the-cut)–[F3.11](06-effects.md#f311-decorations-proposed-by-the-model).
 S3 Apply: one Undo; hand-placed inserts kept; holes ≤ P.policy.seamMaxSeconds (1.5) closed only if somebody talked in them; both edges of every segment snapped (silence midpoint 0.8, word edge 0.9, line edge 0.95, visual cut where nobody talks; within 5 s; outward preferred); marked stretches removed; dead air removed; coalesce; effects clamped to the footage kept and replaced as a list; persist; base. Log ">>> suggested N segments, M:SS total" and ">>> …and N effect(s): the speeds, the captions and the decorations".
 
 ## 6. Parameters used

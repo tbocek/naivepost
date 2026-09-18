@@ -66,10 +66,10 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  S(["a step wants the LLM"]) --> G{"the gate free?"}
-  G -- no --> WAIT["waits · “>>> ‹step›: waited for the LLM -- it was busy with ‹other› …”<br/>only when the holder is a different step · cancellable by ⏹"]
+  S(["a step wants a model"]) --> G{"a free slot on that model?<br/>P.machine.slots"}
+  G -- no --> WAIT["waits its turn, first come first served · “>>> ‹step›: waiting for ‹model› -- all N slot(s) busy (‹steps›)”<br/>said once · cancellable by ⏹"]
   WAIT --> G
-  G -- yes --> CALL["the call · the watch starts"]
+  G -- yes --> CALL["the call takes the slot · the watch starts"]
   CALL --> HB["every minute: “nothing yet, T in” / “X thinking, Y reply, T in — …tail”"]
   HB --> ST{"streamed?"}
   ST -- yes --> Q{"no byte for P.eng.llmStallMinutes?"}
@@ -78,14 +78,15 @@ flowchart TD
   ST -- no --> CEIL{"past P.eng.llmWholeMinutes?"}
   CEIL -- yes --> GIVE
   CEIL -- no --> HB
-  CALL --> DONE["the reply · the gate released"]:::done
+  CALL --> DONE["the reply · the slot given back"]:::done
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
 - A streamed call is given up after P.eng.llmStallMinutes (5) without a byte — any byte off the wire counts, including keep-alives the event parser never sees; the guard looks four times per heartbeat; an unstreamed call is held to P.eng.llmWholeMinutes (10). Heartbeat every minute, three shapes: ">>> <step>: nothing yet, T in"; ">>> <step>: X thinking, Y reply, T in"; the same plus " — \"…tail\"" (last 90 bytes of the answer, else of the reasoning, trimmed forward to a character boundary, whitespace-collapsed, Go-quoted). The guard also ticks for an unstreamed call, where X and Y stay 0: it logs "nothing yet" every minute and is never given up for silence — only the 10-minute ceiling ends it. Giving up: ">>> <step>: nothing for T — giving up", cancellation reported as "nothing arrived in 5m0s" or "stopped answering after T -- nothing more for 5m0s". REVIEW: two thinking jobs are unstreamed in the prototype, so sit under the 10-minute ceiling with no stall rule: the upload text, and textedit (every seam repair, about two minutes each); the rewrite SHOULD stream both.
-- The **gate**: one chat request on the wire per application, taken before the watch starts, released after the reply; a queued step logs once ">>> <step>: waited for the LLM -- it was busy with <other>; one request at a time" — only when the holder was a different step; queued behind its own earlier call, a step waits silently. Wait cancellable by ⏹. Produce runs its translation after the encodes so the encoder never idles behind the gate.
+- **Slots** (REVIEW, new): every model the app talks to — the LLM, each audio.cpp model (ASR, diarization, aligner, TTS, separation) and the image model — has a slot count set in Settings ([03 §5](03-shell.md#5-settings-dialog)), P.machine.slots, default 1. It is how many of this app's requests that model is given at once; the server may have more and serve other clients with them. A request takes a slot before it goes on the wire and gives it back when the reply is in (or the call is given up); when every slot is taken it waits, first come first served, and says so once: ">>> ‹step›: waiting for ‹model› -- all N slot(s) busy (‹steps›)". The wait is cancellable by ⏹ and is not the stall watch's business: the watch starts once the request is on the wire. Held across the HTTP call only, so a step thinking between tool rounds holds nothing. Steps whose requests do not depend on each other MAY send up to N at once: describe chunks of different videos, fix blocks, the retake pool's runs, subtitle translations, one TTS line per slot. A step whose requests depend on the answers before them sends them in order whatever N is: the join pass ([F1.10](04-prepare.md#f110-repair-the-joins)), whose every window leaves out what the joins before it took, and a tool conversation's rounds. Two models on one server are two slot counts; the Settings text says so, since a GPU shared between them is not two GPUs.
+- Prototype: one chat request on the wire per application, taken before the watch starts, released after the reply; a queued step logs once ">>> <step>: waited for the LLM -- it was busy with <other>; one request at a time" — only when the holder was a different step; queued behind its own earlier call, a step waits silently. Wait cancellable by ⏹. Produce runs its translation after the encodes so the encoder never idles behind the gate.
 
 ## 5. Context budgets (REVIEW — new)
 
@@ -106,6 +107,18 @@ System message = the "system" prompt cut to the job's sections by a per-job tabl
 ## 9. Model list and tests
 
 `GET /v1/models` (15 s) fills the Settings dropdown. The Settings tests send one completion and one red-square vision probe ([`03-shell.md`](03-shell.md) [F0.13](03-shell.md#f013-tests)).
+
+## 10. Every request timed (REVIEW — new)
+
+Every request the app sends outside — to the LLM, to audio.cpp (ASR, alignment, diarization, TTS, separation, uploads), to the image server, and the web tools' searches and page reads — is measured and written down in the open project's folder, `requests.tsv` ([01 §6](01-project-and-files.md#6-text-formats)): one line per request, appended the moment it ends, whether it succeeded, failed, was given up by the stall watch or cancelled by ⏹. A retry is a line of its own. A reply served from the cache is a line too, marked as such with no time on the wire, so the file shows what a re-run saved. Nothing in the file is ever rewritten; a line is written before the reply is used, so a step that then fails still leaves its requests behind.
+
+What a line holds: when it started; the run it belongs to (the name of that run's `llm/` page, empty outside a run); the step and the job; the service and the model; the kind of request; what went out (bytes, images) and what came back (bytes; tokens in and out when the server says); how long it **waited for a slot** ([§4](#4-liveness-and-the-gate-f63)); how long until the first byte came back; how long it was **on the wire** in all; for a thinking model, how much of that was thinking; the outcome; the attempt number.
+
+At the end of every run the log says it in one line per service: ">>> requests: llm 57 in 2h 13m on the wire, 4m waiting for a slot; audio 38 in 6m 10s; web 3 in 12s". Local work — ffmpeg and the other subprocesses — is not in the file; it is logged as the commands it ran.
+
+It is what the slot counts are chosen by (time spent waiting for a slot against time on the wire), what a prompt or a model is compared by, and where numbers like "a thinking join takes three to fifteen minutes" come from rather than from someone's memory of a run.
+
+Prototype: only model calls are timed, and only for reading — the log line ">>> ‹step›: X kB came back in T" and the run's `llm/` page ("took T"). Audio, image and web requests are not timed at all, and nothing is kept in a form a program can read.
 
 <!-- nav -->
 ---

@@ -3,7 +3,7 @@
 <!-- nav -->
 [← 02 Services and the tool catalogue](02-services.md) · [↑ Contents](README.md) · [04 Prepare →](04-prepare.md)
 
-**Flows:** [F0.1](#f01-switch-tab) · [F0.2](#f02-press-) · [F0.3](#f03-press-) · [F0.4](#f04-the-chain) · [F0.5](#f05-a-runs-bookkeeping-every-step-uses-it) · [F0.6](#f06-open-at-start) · [F0.7](#f07-derive-the-editing-policy-review--new) · [F0.8](#f08-new-project) · [F0.9](#f09-open-a-project) · [F0.10](#f010-save-as) · [F0.11](#f011-rescan) · [F0.12](#f012-add-sources-from-prepare) · [F0.13](#f013-tests)
+**Flows:** [F0.1](#f01-switch-tab) · [F0.2](#f02-press-) · [F0.3](#f03-press-) · [F0.4](#f04-run-every-step-im-feeling-lucky) · [F0.5](#f05-a-runs-bookkeeping-every-step-uses-it) · [F0.6](#f06-open-at-start) · [F0.7](#f07-derive-the-editing-policy-review--new) · [F0.8](#f08-new-project) · [F0.9](#f09-open-a-project) · [F0.10](#f010-save-as) · [F0.11](#f011-rescan) · [F0.12](#f012-add-sources-from-prepare) · [F0.13](#f013-tests)
 <!-- /nav -->
 
 ## 1. The window
@@ -12,11 +12,11 @@
 
 <sub>Screenshot of the prototype on the ETH lecture project.</sub>
 
-**1** New · **2** Open · **3** Save · **4** project name/path · **5** tab row · **6** ⓘ · **7** Settings · **8** Rescan · **9** the visible tab's page · **10** ▶ run / pause · **11** chain · **12** ⏹ · **13** progress bar (draws no text) · **14** Inputs readout · **15** Outputs: folder button and count · **16** log expander · **17** status line · **18** the log
+**1** New · **2** Open · **3** Save · **4** project name/path · **5** tab row · **6** ⓘ · **7** Settings · **8** Rescan · **9** the visible tab's page · **10** ▶ run / pause · **11** chain (REVIEW: replaced by "I'm feeling lucky", [§2](#2-the-run-bar)) · **12** ⏹ · **13** progress bar (draws no text) · **14** Inputs readout · **15** Outputs: folder button and count · **16** log expander · **17** status line · **18** the log
 
 - One window, title "Naivepost", default 1240×740. Header bar: New ("New project — name it, put it where you want it, and start over"), Open ("Load a project — sources, prompts and settings"), Save ("Save this project to a file"), project name/path (as the window narrows: path + tab words → file name + tab words → file name + icons only), tab row as title widget, then, packed from the right edge inward (reads ⓘ ⚙ ⟳ on screen): Rescan ("Rescan inputs and outputs"), Settings ("Settings — the LLM and audio.cpp endpoints"), ⓘ (tooltip = current tab's label + help text).
 - Tabs: Prepare (view-list), Cut (edit-cut), Narrate (microphone), Produce (multimedia). Locked tab: greyed, not disabled; tooltip = the reason; a click bounces and puts the reason on the status line. Cut locked until a source is marked footage ("Add footage on the Prepare step first — the cut is laid out from the recordings"). Narrate and Produce never locked; their ▶ refuses without a cut.
-- Bottom: run bar ([§2](#2-the-run-bar)), the visible tab's "Inputs:" and "Outputs:" readouts, then the log expander, its header carrying the status line. Log: read-only monospace; lines start `>>> `, `!!! ` or four spaces. Only one log line is a link — the per-run model exchange page, opened in a browser (GTK's file launcher, `xdg-open` fallback); no other path clickable. REVIEW: the rewrite MAY tag every path it writes.
+- Bottom: run bar ([§2](#2-the-run-bar)), the visible tab's "Inputs:" and "Outputs:" readouts, then the log expander, its header carrying the status line. Log: read-only monospace; each line is the message alone. REVIEW (new): no `>>> `, `!!! ` or four-space prefix — the level shows by colour (failure red, detail dimmed, progress plain). Prototype: lines start `>>> `, `!!! ` or four spaces. Only one log line is a link — the per-run model exchange page, opened in a browser (GTK's file launcher, `xdg-open` fallback); no other path clickable. REVIEW: the rewrite MAY tag every path it writes.
 - Page and bottom bar are two halves of a draggable divider, not a fixed strip; collapsing the log expander returns its height to the page.
 - A page whose prerequisites vanish while open switches silently to Prepare ([F0.1](#f01-switch-tab) S2's bounce is only for a click).
 - Closing the window flushes the narration autosave, red line, project and prompts, then closes; no prompt.
@@ -28,10 +28,10 @@
 
 ```mermaid
 flowchart TD
-  A(["click a tab, or the chain moves to it"]) --> B{"locked?"}
+  A(["click a tab, or a lucky run moves to it"]) --> B{"locked?"}
   B -- yes --> R["bounce · status = the lock reason<br/>“Add footage on the Prepare step first — …”"]:::refuse
   B -- no --> C["flush the narration autosave"]
-  C --> D["show the page and its Inputs/Outputs readouts<br/>sync ⓘ · the lone chain tick follows the page"]
+  C --> D["show the page and its Inputs/Outputs readouts<br/>sync ⓘ"]
   D --> E{"which page?"}
   E -- Cut --> E1["rebuild if Prepare's output changed"]
   E -- Narrate --> E2["refit the lines to the cut"]
@@ -40,15 +40,21 @@ flowchart TD
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-S1 Click a tab (or the chain moves to it). S2 Locked → bounce, status = lock reason; stop. S3 Flush the narration autosave. S4 Show the page and its Inputs/Outputs readouts; sync ⓘ; the lone chain tick follows the page ([F0.4](#f04-the-chain) S7). S5 Refresh: Cut rebuilds if Prepare's output changed since its build; Narrate refits its lines to the cut; Produce refreshes readouts and publish panel.
+S1 Click a tab (or a lucky run moves to it). S2 Locked → bounce, status = lock reason; stop. S3 Flush the narration autosave. S4 Show the page and its Inputs/Outputs readouts; sync ⓘ. S5 Refresh: Cut rebuilds if Prepare's output changed since its build; Narrate refits its lines to the cut; Produce refreshes readouts and publish panel.
 
 ## 2. The run bar
 
-![The chain popover under the run bar](img/03-chain.png)
+![Proposed run bar: ▶ this step, I'm feeling lucky, ⏹](img/03-runbar.svg)
 
-<sub>Screenshot of the prototype on the ETH lecture project.</sub> REVIEW: the prototype labels one ticked step "1 steps"; the rewrite SHOULD say "1 step".
+<sub>Proposed screen, drawn in the prototype's style; the gears turn while a run computes.</sub>
 
-- ▶ (suggested-action): "Run the ticked steps — or resume what is paused"; while a run or page transport is busy it shows ⏸ "Pause". (Prototype: every control refresh rewrites the idle tooltip to "Run this step — or resume what is paused"; the rewrite uses one wording.) ⏹: "Stop the run or the playback — ⏸ is what parks one to carry on later". Chain button label: none / "N steps" / all; tooltip "Which steps ▶ runs, in this order. Narrate skips itself when the video has no narration, and Cut skips itself when the cut has hand edits." Fresh project, or project file without `run_steps` → **Prepare ticked alone**; each tick is written to the project on toggle.
+REVIEW (new): two ways to run, no step picker.
+
+- ▶ (suggested-action): "Run this step — or resume what is paused"; runs the visible tab's step alone ([F0.2](#f02-press-)). While a run or page transport is busy it shows ⏸ "Pause".
+- **I'm feeling lucky**: "Run every step, Prepare to Produce, without stopping to ask" ([F0.4](#f04-run-every-step-im-feeling-lucky)). Icon: two gears, still when idle, turning while any run computes — a single step's too — so the bar shows work is going on even when the progress bar has nothing to count. Insensitive while a run is busy (⏸ and ⏹ act on it).
+- ⏹: "Stop the run or the playback — ⏸ is what parks one to carry on later".
+- Nothing about which steps run is stored in the project; `run_steps` in an older file is ignored ([01](01-project-and-files.md)).
+- Prototype: ▶ runs "the ticked steps"; a chain button beside it (label none / "N steps" / all) opens a popover of four ticks, saved as `run_steps` (fresh project → Prepare alone; a lone tick follows the page). One ticked step reads "1 steps".
 - Progress bar: two tracks summed (0 = speech/describe, 1 = frames/fix). It draws **no text of its own**: the tracks' lines, joined by "  ·  " (e.g. "describe 1/2: chunk 4/12", "<job> done" for a finished track), go to the **status line** in the log expander's header, so a run overwrites whatever was last there. Tooltip per track "<job>: task i of n, k waiting" / "…, none waiting" / "<job>: N task(s), all done"; nothing queued → standing tooltip "The run: the job, which of the run's jobs it is, and the task it is on" stays. A model thinking with nothing countable pulses the bar.
 
 ### F0.2 Press ▶
@@ -61,16 +67,16 @@ flowchart TD
   B -- yes --> P["toggle pause<br/>“pausing after the current stage…” / “resumed”"]
   B -- no --> C{"this page's transport<br/>playing or started?"}
   C -- yes --> T["toggle it · Cut ▶✂ · Narrate ▶"]
-  C -- no --> S["snapshot the sources"] --> K[[the chain · F0.4]]
+  C -- no --> S["snapshot the sources"] --> K["this page's step<br/>F1.1 · F2.14 · F4.1 · F5.1"]
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-S1 Run under way → toggle pause ("pausing after the current stage…" / "resumed"); stop. S2 Visible tab's transport playing or started (Cut or Narrate: once its preview started) → toggle it; stop. S3 Snapshot the sources. S4 Run the chain ([F0.4](#f04-the-chain)).
+S1 Run under way → toggle pause ("pausing after the current stage…" / "resumed"); stop. S2 Visible tab's transport playing or started (Cut or Narrate: once its preview started) → toggle it; stop. S3 Snapshot the sources. S4 Run the visible tab's step alone (Prepare [F1.1](04-prepare.md#f11--prepare), Cut [F2.14](05-cut.md#f214-suggest-a-cut), Narrate [F4.1](07-narrate.md#f41--write-and-speak), Produce [F5.1](08-produce.md#f51--produce)) under the run bookkeeping ([F0.5](#f05-a-runs-bookkeeping-every-step-uses-it)); its own refusals apply. No "all done" line for one step.
 
 ### F0.3 Press ⏹
 
-<sub><!-- back -->[← F0.2](#f02-press-) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.4 →](#f04-the-chain)</sub>
+<sub><!-- back -->[← F0.2](#f02-press-) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.4 →](#f04-run-every-step-im-feeling-lucky)</sub>
 
 ```mermaid
 flowchart TD
@@ -88,17 +94,16 @@ flowchart TD
 
 S1 Page transport playing or cued → stop it, status "playback stopped"; does not return — the run stops too, so one press ends both and status reads "stopping…". S2 No run → nothing more. S3 Set the stop flag, cancel the run context (aborts model and audio calls), kill registered subprocesses; status "stopping…". S4 Pause/stop act only between subprocesses; a stopped subprocess is not a failure. S5 A stop that reached Describe arms "describe from the start" for the next Prepare run.
 
-### F0.4 The chain
+### F0.4 Run every step (I'm feeling lucky)
 
 <sub><!-- back -->[← F0.3](#f03-press-) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.5 →](#f05-a-runs-bookkeeping-every-step-uses-it)</sub>
 
 ```mermaid
 flowchart TD
-  A(["▶"]) --> B{"busy?"}
+  A(["I'm feeling lucky"]) --> B{"busy?"}
   B -- yes --> R1["“a run is already active — stop it first (⏹)”"]:::refuse
-  B -- no --> C{"anything ticked?"}
-  C -- no --> R2["“nothing ticked beside ▶ — tick the steps to run”"]:::refuse
-  C -- yes --> L["“>>> run: Prepare → Cut → Produce”"]
+  B -- no --> S["snapshot the sources · gears turn"]
+  S --> L["“>>> run: Prepare → Cut → Narrate → Produce”"]
   L --> P["Prepare · F1.1"]
   P --> CU{"Cut has hand edits?"}
   CU -- yes --> CS["“>>> run: Cut skipped — the cut has hand edits, which are kept”"]
@@ -110,30 +115,30 @@ flowchart TD
   NS --> PR
   NR --> PR["Produce · F5.1"]
   PR --> E["“>>> run: all done in T — Prepare 2m 03s, Cut 12s”"]:::done
-  N1[/"only ticked steps run, in page order<br/>each switches to its page and logs “>>> run: ‹Name›”<br/>⏹ ends the chain: “stopped after T — … — N step(s) left undone”"/]
+  N1[/"every step, in page order<br/>each switches to its page and logs “>>> run: ‹Name›”<br/>⏹ or a failure ends the run: “stopped after T — … — N step(s) left undone”"/]
   N1 -.- P
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-S1 Busy → refuse ("a run is already active — stop it first (⏹)"). S2 Nothing ticked → "nothing ticked beside ▶ — tick the steps to run". S3 Log ">>> run: Prepare → Cut → Produce". S4 Each ticked step in page order: skip Narrate if narration off (">>> run: Narrate skipped — this video has no narration"); skip Cut if it has hand edits (">>> run: Cut skipped — the cut has hand edits, which are kept"); else switch to the page synchronously ([F0.1](#f01-switch-tab)), log ">>> run: <Name>", run its step (Prepare [F1.1](04-prepare.md#f11--prepare), Cut [F2.14](05-cut.md#f214-suggest-a-cut), Narrate [F4.1](07-narrate.md#f41--write-and-speak), Produce [F5.1](08-produce.md#f51--produce)). A declining step is skipped, not waited for. S5 A stop ends the chain. REVIEW: in the prototype a FAILING step logs its failure and the chain walks on to the next ticked step; the rewrite SHOULD stop the chain on failure. S6 End line, mirrored on the status line: ">>> run: all done in T — Prepare 2m 03s, Cut 12s" (status "all done in T") / ">>> run: stopped after T — … — N step(s) left undone" (status "stopped after T") / ">>> run: T — … — N step(s) left undone" when steps were skipped or declined (status "ran T, N left undone"); no line for a single finished step; **no line and no status at all** when every ticked step declined or was skipped — the status keeps the last refusal's text (REVIEW: the rewrite SHOULD say so). Durations: "45s" under a minute, else "9m 12s". S7 Lone tick follows the page: exactly one step ticked and the user opens another tab → the tick moves there quietly and is saved.
+S1 Busy → refuse ("a run is already active — stop it first (⏹)"). S2 Snapshot the sources; the gears start turning. S3 Log ">>> run: Prepare → Cut → Narrate → Produce" (a step that will skip itself is still listed). S4 Each step in page order: skip Narrate if narration off (">>> run: Narrate skipped — this video has no narration"); skip Cut if it has hand edits (">>> run: Cut skipped — the cut has hand edits, which are kept"); else switch to the page synchronously ([F0.1](#f01-switch-tab)), log ">>> run: <Name>", run its step (Prepare [F1.1](04-prepare.md#f11--prepare), Cut [F2.14](05-cut.md#f214-suggest-a-cut), Narrate [F4.1](07-narrate.md#f41--write-and-speak), Produce [F5.1](08-produce.md#f51--produce)). A declining step is skipped, not waited for. S5 A stop or a failing step ends the run (prototype: a failing step logs its failure and the run walks on). S6 End line, mirrored on the status line: ">>> run: all done in T — Prepare 2m 03s, Cut 12s" (status "all done in T") / ">>> run: stopped after T — … — N step(s) left undone" (status "stopped after T") / ">>> run: T — … — N step(s) left undone" when steps were skipped or declined (status "ran T, N left undone"). Every step declined or skipped → the same line with N = 4 (prototype: no line, and the status keeps the last refusal). Durations: "45s" under a minute, else "9m 12s". The gears stop.
 
 ### F0.5 A run's bookkeeping (every step uses it)
 
-<sub><!-- back -->[← F0.4](#f04-the-chain) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.6 →](#f06-open-at-start)</sub>
+<sub><!-- back -->[← F0.4](#f04-run-every-step-im-feeling-lucky) · [↑ 03 The shell](#03--the-shell-window-tabs-run-bar-log-settings-projects) · [all flows](11-flow-index.md#3-all-flows) · [F0.6 →](#f06-open-at-start)</sub>
 
 ```mermaid
 flowchart LR
   S["startRun<br/>flags cleared · fresh cancel context<br/>queue reset · log expanded"] --> J["qJob"] --> Q["qPush"] --> T["qTake"]
   T --> P["prog · fraction, text"] --> D{"more tasks?"}
   D -- yes --> T
-  D -- no --> DN["qDone"] --> E["endRun<br/>the chain continues<br/>audio models unloaded off-thread"]
+  D -- no --> DN["qDone"] --> E["endRun<br/>a lucky run moves on<br/>audio models unloaded off-thread"]
   T -.between subprocesses.-> CP{{checkpoint<br/>pause: poll 200 ms · stop: the stop error}}
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-S1 startRun: running, flags cleared, fresh cancel context, queue reset (also closes the model log page), controls, log expanded. S2 Each stage: `qJob(track, name, phase, of)`, `qPush(track, n, kind)`, per task `qTake` (also for tasks skipped as their output exists), `prog(track, fraction, text)`, `qDone(track, share)`. S3 Between subprocesses: `checkpoint()` (pause polls every 200 ms; stop returns the stop error). S4 endRun: running off, controls, the chain continues, audio models unloaded off-thread.
+S1 startRun: running, flags cleared, fresh cancel context, queue reset (also closes the model log page), controls, log expanded. S2 Each stage: `qJob(track, name, phase, of)`, `qPush(track, n, kind)`, per task `qTake` (also for tasks skipped as their output exists), `prog(track, fraction, text)`, `qDone(track, share)`. S3 Between subprocesses: `checkpoint()` (pause polls every 200 ms; stop returns the stop error). S4 endRun: running off, controls, a lucky run moves to its next step, audio models unloaded off-thread.
 
 ## 3. Projects
 
@@ -148,14 +153,12 @@ flowchart TD
   B -- yes --> O2["open it"]:::done
   B -- no --> C{"root/session.naivepost exists?"}
   C -- yes --> O3["open it"]:::done
-  C -- no --> D{"root/project.json · legacy?"}
-  D -- yes --> O4["adopt it into a folder · F0.9"]:::done
-  D -- no --> O5["a blank session at root/session.naivepost"]:::done
+  C -- no --> O5["a blank session at root/session.naivepost"]:::done
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-S1 A file handed by the desktop (first only); else S2 the last project remembered for this root in the settings file, if still on disk; else S3 `<root>/session.naivepost` if it exists; else S4 `<root>/project.json` (legacy, adopted into a folder); else a blank session at `<root>/session.naivepost`.
+S1 A file handed by the desktop (first only); else S2 the last project remembered for this root in the settings file, if still on disk; else S3 `<root>/session.naivepost` if it exists; else S4 a blank session at `<root>/session.naivepost`.
 
 ### F0.7 Derive the editing policy (REVIEW — new)
 
@@ -181,7 +184,9 @@ flowchart TD
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-Runs after the User Context changes (debounced; on the next ▶ or on demand from the policy form). S1 Empty context → every policy field default; stop. S2 Ask the LLM (thinking off) with `tool:get_context` and `tool:set_policy`, system prompt "policy" (new, [`prompts/`](prompts) to add): read the context, set only fields it speaks to. S3 Each `set_policy` validated (known field, in range), stored with `source: model` and its `because`. S4 Hand-set fields (`source: user`) never overwritten. S5 The policy form (from the ⚙ menu and each tab's ⓘ) shows every field with value, source and reason.
+Runs after the User Context changes (debounced; on the next ▶ or on demand from the policy form). S1 Empty context → every policy field default (markingPass retakes, cutMode model, every pass on — the prototype's blank-project behaviour); stop. S2 Ask the LLM (thinking off) with `tool:get_context` and `tool:set_policy`, system prompt "policy" (new, [`prompts/`](prompts) to add): read the context, set only fields it speaks to. S3 Each `set_policy` validated (known field, in range), stored with `source: model` and its `because`. S4 Hand-set fields (`source: user`) never overwritten. S5 The policy form (from the ⚙ menu and each tab's ⓘ) shows every field with value, source and reason.
+
+The pipeline fields decide which flows run: P.policy.markingPass picks [F1.9](04-prepare.md#f19-mark-retakes), [F1.10](04-prepare.md#f110-repair-the-joins) or no marking pass in Prepare; P.policy.cutMode picks the words-derived or the model-chosen cut in [F2.14](05-cut.md#f214-suggest-a-cut); P.policy.captionsPass, speedPass and decorationsPass decide which of [F3.9](06-effects.md#f39-captions-proposed-by-the-model-after-the-cut)–[F3.11](06-effects.md#f311-decorations-proposed-by-the-model) are called at all. A changed context re-derives them before the next run; a changed markingPass invalidates the marks (`retakes.tsv`, `final.txt`), so Prepare re-runs its marking pass.
 
 ![Editing policy form (proposed)](img/03-policy-form.svg)
 
@@ -220,11 +225,8 @@ S1 Refused during a run ("stop the run first — a new project would pull its in
 ```mermaid
 flowchart TD
   A(["Open"]) --> B["folder chooser “Open a project”"]
-  B --> C{"a legacy file?"}
-  C -- yes --> AD["adopt: stage ‹name›.data aside<br/>rewrite absolute paths to project:‹rel›<br/>write naivepost.json · rename into place"]
-  C -- no --> P
-  AD --> P["set the project path and output folder FIRST"]
-  P --> AP["apply: sources, interval, scale, style, chain, language,<br/>prompts, context, narration, produce, publish"]
+  B --> P["set the project path and output folder FIRST"]
+  P --> AP["apply: sources, interval, language,<br/>prompts, context, policy, narration, produce, publish"]
   AP -. will not open .-> RF["“!!! ‹err›” · status “could not open that project — see log”"]:::refuse
   AP --> MS{"a source file missing?"}
   MS -- yes --> DR["“!!! ‹file› is not there any more -- dropped from the session”"]
@@ -234,7 +236,7 @@ flowchart TD
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-S1 Folder chooser "Open a project" (legacy files: double-click or command line only). S2 Adopt a legacy file into a folder if needed (staged; refuses if the target exists or a stale `.adopting` remains). S3 Set project path and output folder first, then apply the project (sources, missing ones logged "!!! <file> is not there any more -- dropped from the session", interval, scale, style, chain, language, prompts, context, narration flag, reference flag, hints, produce, publish). S4 Migrate old folder names; refresh every page; remember the project for this root. A failed open logs "!!! <err>", status "could not open that project — see log".
+S1 Folder chooser "Open a project"; a path naming `naivepost.json` opens its folder. S2 A single-file project from before project folders is not opened: "!!! <file> is an old single-file project -- not supported", status "not a project folder" (REVIEW (new): prototype adopted it into a folder). S3 Set project path and output folder first, then apply the project (sources, missing ones logged "!!! <file> is not there any more -- dropped from the session", interval, language, prompts, context, policy, narration flag, reference flag, hints, produce, publish; the prototype's `frame_scale` and `style` are read once and dropped ([01](01-project-and-files.md))). S4 Migrate old folder names; refresh every page; remember the project for this root. A failed open logs "!!! <err>", status "could not open that project — see log".
 
 ### F0.10 Save as
 
@@ -305,9 +307,9 @@ S0 A copy is a run of its own: refuses while anything else runs ("a run is alrea
 
 <sub>Screenshot of the prototype on the ETH lecture project.</sub> Not in this project, so not in the shot: the track menu (a file with ≥ 2 audio streams) and ⚠ (a name without a timestamp).
 
-**1** Add source files… · **2** copy into project · **3** 🎥 footage · **4** 🎤 narrator slot · **5** file name · **6** ✂ split the voice · **7** 🗑 remove · **8** Freq · **9** frame size · **10** Language · **11** Style
+**1** Add source files… · **2** copy into project · **3** 🎥 footage · **4** 🎤 narrator slot · **5** file name · **6** 🗣 split the voice (✂ in the shot) · **7** 🗑 remove · **8** Freq · **9** frame size — gone in the rewrite: frames are stored at the video's own size and scaled for the model · **10** Language · **11** Style — gone in the rewrite: the policy sets it from the User Context
 
-Row controls, in order: 🎥 footage toggle (video only; "Footage — frames come out of this file and it can be cut. Off: it is only listened to…"); 🎤 narrator button cycling free slots 1..N then none ("1 is the voice the narration is spoken in; 2–4 are the rest of the group"; slot 1 highlighted); file name (middle-ellipsized; tooltip = path); track menu when the file holds ≥ 2 audio streams — face is an icon and "<on>/<total>", dimmed while any track is out; popover headed "Audio tracks in this file", a three-line explanation over the checks ("Track N — <title> (stereo|mono)"; last ticked track cannot be unticked; each ticked track becomes a lane, mixed like a separate recording); ⚠ when the name has no timestamp (tooltip explains renaming or dragging into place on Cut); ✂ split-the-voice toggle (greyed on a split product); 🗑 remove from session ("the file itself is left alone"). The four symbol controls (🎥 🎤 ✂ 🗑) end their tooltip with the four-line legend of the row's symbols; track button and ⚠ do not.
+Row controls, in order: 🎥 footage toggle (video only; "Footage — frames come out of this file and it can be cut. Off: it is only listened to…"); 🎤 narrator button cycling free slots 1..N then none ("1 is the voice the narration is spoken in; 2–4 are the rest of the group"; slot 1 highlighted); file name (middle-ellipsized; tooltip = path); track menu when the file holds ≥ 2 audio streams — face is an icon and "<on>/<total>", dimmed while any track is out; popover headed "Audio tracks in this file", a three-line explanation over the checks ("Track N — <title> (stereo|mono)"; last ticked track cannot be unticked; each ticked track becomes a lane, mixed like a separate recording); ⚠ when the name has no timestamp (tooltip explains renaming or dragging into place on Cut); 🗣 split-the-voice toggle (greyed on a split product; REVIEW (new): prototype draws ✂, which on Cut means Split — the rewrite MUST NOT reuse it); 🗑 remove from session ("the file itself is left alone"). The four symbol controls (🎥 🎤 ✂ 🗑) end their tooltip with the four-line legend of the row's symbols; track button and ⚠ do not.
 
 Rules: only a video may be footage; one row per narrator slot; two sources with one base name refuse the run ("A and B are both inputs/<base> -- rename one", status "A and B have the same name — rename one"); a missing file is dropped loudly. Slot 1 auto-filled whenever unheld — after an add, a removal, a rescan that dropped a row, or a load that stripped a bad tag — with the first untagged recording, footage last; a loaded project with two rows in one slot or footage on an audio file has the offending flag cleared on load. Strings: "Add source files…" ("Add recordings or footage — several at once"); "copy into project" ("Ticked, an added file is copied into the project's sources/ folder, so the project holds everything it needs. Unticked, the file is referenced where it is: nothing is duplicated, and the session breaks if it moves."); the list's tooltip "Every file here is transcribed, and placed on the session clock by the timestamp in its name".
 
@@ -318,6 +320,8 @@ Rules: only a video may be footage; one row per narrator slot; two sources with 
 <sub>Screenshot of the prototype on the ETH lecture project.</sub> Server boxes are empty (their placeholders show the loopback defaults); the ✓ is a passed ffmpeg test.
 
 No Save/Cancel: every box written 600 ms after the last keystroke and on close ("settings saved to <path>"). Each Test reads what is typed, shows a spinner then ✓/✗ with the verdict as tooltip, mirrors its lines into the main log as "settings: …". Test All runs every test. Each section's ⓘ explains at length what the server is expected to speak.
+
+REVIEW (new): beside every model box — the LLM model, each audio.cpp model (ASR, diarization, aligner, TTS, separation) and the image model — a **Slots** spin button, 1 to 16, default 1: "How many requests this model is given at once. Match the server's parallel slots for this model — llama.cpp's `--parallel`, for one. More than it has only queues them on the server instead of here; two models on one GPU share it however this is set." Respected by every request the app makes to that model; a request that finds every slot taken waits its turn ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)). Prototype: no such setting — the LLM is held to one request at a time in code, and audio and image requests are not held at all.
 
 ### F0.13 Tests
 
@@ -346,7 +350,7 @@ flowchart LR
 
 ## 6. The settings file
 
-`~/.config/naivepost/llm.conf`, `KEY="value"` lines, written whole: `LLM_SERVER, LLM_MODEL, LLM_API_KEY, AUDIOCPP_SERVER, AUDIOCPP_API_KEY, AUDIOCPP_VOICES, AUDIOCPP_ASR_MODEL, AUDIOCPP_DIAR_MODEL, AUDIOCPP_TTS_MODEL, AUDIOCPP_SEP_MODEL, AUDIOCPP_ALIGN_MODEL, FFMPEG, FIREFOX, SD_SERVER, SD_API_KEY, PROJECT_<n>_ROOT/FILE`. Precedence: dialog box → this file → (legacy `<root>/llm.conf`, migrated once) → built-in default. The audio URL also honours `NAIVEPOST_TTS_URL` and `AUDIOCPP_SERVER` below the dialog; sd `SD_SERVER`. REVIEW: the rewrite MAY add `SUBTITLE_LANGUAGES` (code:tag:name list) and a `STYLES` table per [`00-principles.md` §5](00-principles.md#5-generalisations-proposed-review).
+`~/.config/naivepost/llm.conf`, `KEY="value"` lines, written whole: `LLM_SERVER, LLM_MODEL, LLM_API_KEY, AUDIOCPP_SERVER, AUDIOCPP_API_KEY, AUDIOCPP_VOICES, AUDIOCPP_ASR_MODEL, AUDIOCPP_DIAR_MODEL, AUDIOCPP_TTS_MODEL, AUDIOCPP_SEP_MODEL, AUDIOCPP_ALIGN_MODEL, FFMPEG, FIREFOX, SD_SERVER, SD_API_KEY, PROJECT_<n>_ROOT/FILE`; REVIEW (new): `LLM_SLOTS`, `AUDIOCPP_ASR_SLOTS`, `AUDIOCPP_DIAR_SLOTS`, `AUDIOCPP_ALIGN_SLOTS`, `AUDIOCPP_TTS_SLOTS`, `AUDIOCPP_SEP_SLOTS`, `SD_SLOTS` (absent = 1). Precedence: dialog box → this file → (legacy `<root>/llm.conf`, migrated once) → built-in default. The audio URL also honours `NAIVEPOST_TTS_URL` and `AUDIOCPP_SERVER` below the dialog; sd `SD_SERVER`. REVIEW: the rewrite MAY add `SUBTITLE_LANGUAGES` (code:tag:name list) and a `STYLES` table per [`00-principles.md` §5](00-principles.md#6-generalisations-proposed-review).
 
 ## 7. The model exchange log (llm/)
 
@@ -355,7 +359,7 @@ One HTML page per run named `MMDD-HHMMSS-<first step>.html`; each call a numbere
 ## 8. Details confirmed against the code (verification pass)
 
 - **Subprocess logging**: every subprocess is logged before it runs, as a shell would take it (quoted arguments), at the four-space indent; a failure repeats the command and the last 400 characters of its output in the error.
-- **[F0.9](#f09-open-a-project) legacy adoption**: a path naming `naivepost.json` opens its folder; adopting a legacy file stages `<name>.data` aside, rewrites absolute paths into that folder to `project:<rel>`, writes `naivepost.json`, removes the old file, renames into place (">>> <name> is a folder now, with the project inside it as naivepost.json — everything this session writes is in there"). A project with a legacy `out_dir` other than the project folder loads with "!!! this project used to write into A and now writes into B -- the old folder is untouched". Folder migration: two passes (step1..step6 → named folders; inputs/ and understand/{describe,transcript} → prepare/…), one log line per move, failures logged and left in place, emptied `understand/` removed.
+- **[F0.9](#f09-open-a-project) open**: a path naming `naivepost.json` opens its folder. Prototype only, dropped in the rewrite: adopting a single-file project (`<root>/project.json` at start, or a file handed over) into a folder, staged via `<name>.data` and `.adopting`. A project with a legacy `out_dir` other than the project folder loads with "!!! this project used to write into A and now writes into B -- the old folder is untouched". Folder migration: two passes (step1..step6 → named folders; inputs/ and understand/{describe,transcript} → prepare/…), one log line per move, failures logged and left in place, emptied `understand/` removed.
 - **[F0.10](#f010-save-as)**: a failed rename logs "!!! could not move the output folder to <to>: <err> -- the N file(s) are still in <from>"; nothing logged when nothing to move.
 - **Settings file**: rewritten whole with its explanatory comments; a cleared box is written back as the shipped default for exactly five fields — voices folder and the ASR, diarization, TTS and separation model ids; everything else (three server URLs, aligner id, LLM model, all three keys, ffmpeg, firefox) written as typed, empty included. Legacy `~/.config/naivepost/settings.json` (`{"projects": {root: file}}`) is read, never written, only when `llm.conf` has no `PROJECT_*` lines. Legacy keys `AUDIOCPP_MODELS` (its `voices/` subfolder is the voices folder when `AUDIOCPP_VOICES` is absent), `PROMPT_*`, `SD_MODEL`, `AUDIOCPP_LANGUAGE` are read and ignored.
 - **Settings dialog log**: collapsed until a test fails, which opens it.

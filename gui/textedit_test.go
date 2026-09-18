@@ -315,6 +315,11 @@ func TestTheTextEditIsJudgedByWhetherTheJoinReads(t *testing.T) {
 		"LEAVE OUT ONE STRETCH, AT THE JOIN", // not a hole in the middle of a sentence
 		"BEFORE gives way first",             // the earlier saying goes
 		"Leaving nothing out is a whole answer",
+		// the script in the User Context is what was meant, not what was
+		// said: a restart said off-script was once taken for the stumble
+		"WHAT WAS SAID, NOT THE SCRIPT",
+		// and a sentence end the transcript did not mark is still one
+		"PUNCTUATION IS A HINT",
 	} {
 		if !strings.Contains(textSystem, want) {
 			t.Errorf("textSystem no longer says %q", want)
@@ -349,13 +354,18 @@ func TestTheTextEditIsJudgedByWhetherTheJoinReads(t *testing.T) {
 	}
 	// ...and the answer is checked against the window it was asked about
 	ask := funcBody(t, "textedit.go", `func \(a \*App\) askSeam\(`)
-	if !strings.Contains(ask, "seamCutOf(words[lo:hi], at-lo, got.Joined)") {
+	if !strings.Contains(ask, "seamCutOf(win, atW, got.Joined)") {
 		t.Error("a join's answer is trusted rather than checked against what it was asked about")
 	}
 	// a join nobody could answer for keeps its words: something said twice is
 	// a smaller fault than something said once and cut
 	if !strings.Contains(ask, "nothing removed there") {
 		t.Error("an unreadable answer removes something anyway")
+	}
+	// ...but it is asked once more first: on one lecture every refused join
+	// was a stumble left for the hand
+	if !strings.Contains(ask, "try <= seamRetries") || !strings.Contains(ask, "asking once more") || seamRetries != 1 {
+		t.Error("a refused join is not asked a second time")
 	}
 }
 
@@ -621,9 +631,10 @@ func TestAFoldedWordDoesNotBreakTheJoin(t *testing.T) {
 		win = append(win, srcWord{s: at, e: at + 0.3, w: bareWord(x), raw: x, src: "t2"})
 		at += 0.4
 	}
-	// a word the transcript left no spelling for still shows, as it was heard:
-	// a gap in what is printed is a gap the answer cannot help falling into
-	if !strings.Contains(seamWords(win[:join]), "Über-Datum. datum und") {
+	// a word the transcript wrote into the one before it is shown once, as
+	// part of that word: shown again bare, it was the thing a model tidied
+	// away, and its sound went with it
+	if !strings.Contains(seamWords(win[:join]), "Über-Datum. und") {
 		t.Fatalf("the window is not printed as the model reads it: %q", seamWords(win[:join]))
 	}
 	joined := "Das heißt, hier habe ich entsprechend das Datum der Vorlesung."
@@ -689,9 +700,10 @@ func TestTheFinishedTextIsMarkedAtEveryJoin(t *testing.T) {
 	if got := a.finishedText(folded, nil); got != "Public-Key-Pairs. Eine" {
 		t.Errorf("a folded spelling is printed twice: %q", got)
 	}
-	// ...while the prompt still gives it a token, or the matcher loses count
-	if got := seamWords(folded); got != "Public-Key-Pairs. key pairs Eine" {
-		t.Errorf("the prompt no longer names every word: %q", got)
+	// ...and the prompt shows it once too, the compound owning its words
+	// (seamRoots)
+	if got := seamWords(folded); got != "Public-Key-Pairs. Eine" {
+		t.Errorf("the prompt shows a folded word twice: %q", got)
 	}
 	// a mark says how many words went, and says so even when none did: a
 	// stumble the pass walked past reads as ordinary prose otherwise

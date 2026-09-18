@@ -20,6 +20,8 @@ Zoom, speed (incl. stop), text, SVG drawing, volume, label. Each: one record in 
 | rate, snd | – | rate (1 own clock; 0 = stop); sound answer "" / pitch / own / scene / mute | – | – | – | – |
 | gain | – | – | – | – | linear gain, 0 = silence | – |
 | text / src | – | – | the words | the file | – | the name |
+| cam (REVIEW: new) | the camera row it was framed on | – | – | – | – | – |
+| lane (REVIEW: new) | – | – | – | – | "" = the whole bed; a lane's name = that lane only | – |
 
 Legacy: `view` → zoom; `mute` → `snd: "mute"`. `ease` stores "" for linear, keeping old files byte-identical. Text/svg with no box → its kind's default (text: lower third; svg: middle); model-proposed captions carry no box → lower third.
 
@@ -353,6 +355,28 @@ One list, one owner; nothing reaches backwards; dur is the bar for every kind; o
 - A cut-model rate for a whole segment is a speed effect spanning it, not counted against any decorations ceiling.
 - **Cards**: a shipped card carries `data-naivepost=<kind>` and `data-naivepost-args=<defaults>` on its root; as an insert it is redrawn from the generator with the path's parameters merged over those defaults; an unstamped file only gets its holes filled. Logged per render, how a card was arrived at: "drawn by the built-in <name> card[, except that <note>]", "filled in", or "has no {{placeholders}} and was not drawn by a card, so its parameters were ignored". The `CARDS.md` contract is normative: 1920×1080, opaque background; self-contained (images as `data:` URLs — the render folder resolves no relative href, refuses an absolute one); machine fonts as a family list, no `@font-face`; ~0.58 em per character for sizing by eye; placeholders in content and attributes, values XML-escaped, never left in the picture; `<!-- Input: key[flags] | Label | hint -->` declares the insert form. Seeds written badges first, then the board (embeds badge files as logos; default `new` "A[1.2s]: a.svg, B[1.8s]: b.svg") as its template; nothing overwritten; what was written logged. An indefinitely repeating document has no own length: takes the default insert length, loops for its slot; the bake writes one static SVG per frame (`f%05d.svg`). A CSS animation with no `@keyframes` is drawn as a still ("<file>: a CSS animation with no @keyframes in the file — drawn as a still").
 - The 1× sound read head opens only where debt ≥ 0.05 s; a card, held frame or clip on no recording closes it, the dip half on each side of the join.
+
+## 9. Where recordings overlap
+
+Two cameras can film the same seconds ([05 F2.10](05-cut.md#f210-cameras-and-hearing)), and several sounds can run at once ([05 F2.5](05-cut.md#f25-hush-and-mix-what-the-preview-hears)). In the prototype an effect has no camera and no lane: the clip it lands on decides. Each kept scene shows one camera (its lens) and hears the lanes its badges allow. The other cameras' own sound is never in the mix.
+
+| effect | prototype (render) | REVIEW |
+|---|---|---|
+| Zoom | the box is fractions of the scene's lens camera, per clip. After a lens switch the same fractions land on the other camera's frame ("effects stay"). Across a cut to another camera the box goes on in the new frame and jumps. Over inserts: none. | A zoom SHOULD carry `cam`, the row it was framed on, and act only on clips shown from that camera. A lens switch under a zoom says so: "the zoom at m:ss was framed on camera N — it no longer applies here". A zoom does not cross into a clip from another camera. |
+| Stop (rate 0) | the frame at `t` from the lens of the scene holding `t`, resolved at render time, so it follows a lens switch. A stop reaching into a clip from another camera is scaled to that clip. At a second the cut drops: no frame (skipped in the render, a failure in the preview). | Keep. A stop at a dropped second SHOULD be refused when placed. |
+| Speed, sound "" or pitch | the lens camera's sound and every heard lane are sped together (tempo held, or pitch shifted). | Keep. The preview MUST play "pitch" as the render does, or say it cannot. |
+| Speed, sound own or scene | the lens camera's sound and every heard lane read at 1×, with a 0.15 s dip where they rejoin the picture. | Keep. The preview plays sound at picture speed here; it SHOULD say "sound at 1× in the render only". |
+| Speed, sound mute; Stop | the render silences only the lens camera's sound: the hush runs before the lanes are mixed in, so separate recordings and extra tracks stay audible. The preview mutes everything. | MUST: silence the whole bed, as the preview does. |
+| Volume | one gain on the bed (the lens camera's sound plus every heard lane), after the mix, before the narration. No way to reach one lane. Over a card or a freeze the preview applies it, the render does not. | A volume SHOULD carry `lane`: "" the whole bed (today), or one lane's name, gained before the mix. The render MUST apply a volume over a card's own sound, as the preview does. |
+| Text, SVG | the output frame, after the camera: no camera, no lane. Over an insert or freeze: all or nothing, by the clip's start second. | Keep. |
+| Label | read only by the model briefs ("MARKED"); nothing rendered. | Keep. |
+
+Preview and render MUST agree on two things they do not agree on today:
+
+- **Which camera a zoom is framed on.** The preview frames on the watched row when one is watched; the render uses the scene's lens. While an effect form is open, the preview MUST show the lens camera.
+- **The output frame under aspect "source".** The render uses the first footage clip's frame for the whole video; the preview uses whichever camera is playing. With cameras of different shapes, both MUST use the first footage clip's frame.
+
+The model passes know nothing of cameras and lanes: suggested scenes all take row 0, suggested zooms are always centred at height 0.6, and the caption, speed and decoration briefs name no camera or lane, so a proposed volume hits the whole bed. REVIEW: with more than one camera row or lane, the cut brief SHOULD name the rows and lanes, and a suggested scene SHOULD say which camera it is shown from.
 
 <!-- nav -->
 ---

@@ -3,10 +3,12 @@
 <!-- nav -->
 [← 01 The project on disk](01-project-and-files.md) · [↑ Contents](README.md) · [03 The shell →](03-shell.md)
 
-**In depth:** [3.1 Shared](#31-shared) · [3.2 Describe (per chunk of frames)](#32-describe-per-chunk-of-frames) · [3.3 Fix (per block of transcript lines)](#33-fix-per-block-of-transcript-lines) · [3.4 Retake marking (gaming)](#34-retake-marking-gaming) · [3.5 Text edit (lecture, per join)](#35-text-edit-lecture-per-join) · [3.6 Cut (gaming)](#36-cut-gaming) · [3.7 Captions / speed / decorations (per clip)](#37-captions--speed--decorations-per-clip) · [3.8 Narration](#38-narration) · [3.9 Upload text and thumbnail](#39-upload-text-and-thumbnail) · [3.10 Translate (per batch of numbered lines)](#310-translate-per-batch-of-numbered-lines)
+**In depth:** [3.1 Shared](#31-shared) · [3.2 Describe (per chunk of frames)](#32-describe-per-chunk-of-frames) · [3.3 Fix (per block of transcript lines)](#33-fix-per-block-of-transcript-lines) · [3.4 Retake marking](#34-retake-marking) · [3.5 Text edit (per join)](#35-text-edit-per-join) · [3.6 Cut (model-chosen)](#36-cut-model-chosen) · [3.7 Captions / speed / decorations (per clip)](#37-captions--speed--decorations-per-clip) · [3.8 Narration](#38-narration) · [3.9 Upload text and thumbnail](#39-upload-text-and-thumbnail) · [3.10 Translate (per batch of numbered lines)](#310-translate-per-batch-of-numbered-lines)
 <!-- /nav -->
 
 ## 1. The four servers
+
+Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (REVIEW, new; [09 §10](09-llm-and-tools.md#10-every-request-timed-review--new)); each model is given at most its Settings slot count of requests at once ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
 
 | what | default | serves | API |
 |---|---|---|---|
@@ -31,9 +33,9 @@ Uploads, task runs and the sd.cpp submit/poll ride the run's cancel context, so 
 | voice split | separation (audio.cpp) | – | voice and rest stems |
 | what is on screen | LLM with vision | off | one EVENT per frame + a running STATE, four frames a call |
 | clean transcript | LLM | off | the same lines respelled; times and speakers unchanged, enforced |
-| lecture joins | LLM | on | the two takes run on as one; only deletions accepted |
-| retakes (gaming) | LLM | off | line numbers of abandoned stretches, three runs pooled |
-| gaming cut | LLM (+ web tools) | on | segments in session seconds copied off the timeline; three attempts, web tools withdrawn after the first rejected one, thinking off for a retry when the model reasoned and wrote nothing |
+| joins (markingPass joins) | LLM | on | the two takes run on as one; only deletions accepted |
+| retakes (markingPass retakes) | LLM | off | line numbers of abandoned stretches, three runs pooled |
+| model cut (cutMode model) | LLM (+ web tools) | on | segments in session seconds copied off the timeline; three attempts, web tools withdrawn after the first rejected one, thinking off for a retry when the model reasoned and wrote nothing |
 | captions, speed, effects | LLM | off | per clip, in the clip's own seconds |
 | narration | LLM (+ web tools) → TTS | on | a line per clip with an emotion; spoken in the cloned voice |
 | upload text | LLM (+ web tools) | on | title, thumbnail (frame or instruction), description |
@@ -80,7 +82,7 @@ Reads: `get_frames`, `get_events`, `get_context`, `speech_around`.
 
 Times and speakers are not arguments: the tool cannot change them — the enforcement the prototype did by comparison. A line no `fix_line` names keeps its ASR text. That is the point: the prototype threw away **the whole block of 25 lines** when one row came back with a changed time, speaker or lost tab, dropped reply lines with fewer than four tab fields before counting, then re-asked the identical question once more without saying what was wrong.
 
-### 3.4 Retake marking (gaming)
+### 3.4 Retake marking
 
 | tool | args | result |
 |---|---|---|
@@ -90,7 +92,7 @@ Times and speakers are not arguments: the tool cannot change them — the enforc
 
 `finish` answers with the total marked against P.policy.retakeCeil, so a model over the ceiling can take some back. Prototype: three identical calls are pooled and deduped; each mark is trimmed to the repeated tail by a fuzzy matcher; a whole take gets `again` rewritten to 0; a rephrase is trimmed to the broken-off fragment; a refused mark is re-heard by a second ASR pass and sometimes resurrected; overlapping marks are merged; over the ceiling **every mark from all three runs is thrown away**. The model is told none of it.
 
-### 3.5 Text edit (lecture, per join)
+### 3.5 Text edit (per join)
 
 | tool | args | result |
 |---|---|---|
@@ -100,7 +102,7 @@ Times and speakers are not arguments: the tool cannot change them — the enforc
 
 Prototype: the model returned the joined text; the app derived the counts by matching backwards. With tools the counts are stated directly; the app still re-derives the deleted stretch to check it is one stretch at the join.
 
-### 3.6 Cut (gaming)
+### 3.6 Cut (model-chosen)
 
 | tool | args | result |
 |---|---|---|
@@ -157,7 +159,7 @@ Prototype: the model returned the joined text; the app derived the counts by mat
 |---|---|---|
 | `set_policy` | `field`, `value`, `because` | ok or error (unknown field, out of range) |
 
-The model reads the User Context and sets only the fields it speaks to ("clips under 2 s", "about 12 minutes", "keep the swearing"); every other field keeps its default. The form shows the `because`.
+The model reads the User Context and sets only the fields it speaks to ("clips under 2 s", "about 12 minutes", "keep the swearing"); every other field keeps its default. The pipeline fields are among them: markingPass ("I read from a script, stumbled and started again" → joins; "a gaming session, cut out the dead stretches" → retakes), cutMode, captionsPass, speedPass, decorationsPass. They decide which flows and jobs run at all. The form shows the `because`.
 
 ## 4. Degraded modes
 

@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 - **Settings** (⚙): servers, models, ffmpeg, firefox; tested by [F0.13](03-shell.md#f013-tests).
-- **Run bar**: ▶ runs the ticked steps in order ([F0.4](03-shell.md#f04-the-chain)); ⏸ parks between subprocesses.
+- **Run bar**: ▶ runs the visible step ([F0.2](03-shell.md#f02-press-)); "I'm feeling lucky" runs every step in order ([F0.4](03-shell.md#f04-run-every-step-im-feeling-lucky)); ⏸ parks between subprocesses.
 - **Every model call**: one gate, one exchange page, tools first ([F6.1](09-llm-and-tools.md#2-tool-protocol-f61)).
 
 ## 2. Tab states
@@ -39,7 +39,7 @@ flowchart LR
 | [F0.1](03-shell.md#f01-switch-tab) | Switch tab | [03](03-shell.md) |
 | [F0.2](03-shell.md#f02-press-) | Press ▶ (run / pause / transport) | [03](03-shell.md) |
 | [F0.3](03-shell.md#f03-press-) | Press ⏹ | [03](03-shell.md) |
-| [F0.4](03-shell.md#f04-the-chain) | The chain | [03](03-shell.md) |
+| [F0.4](03-shell.md#f04-run-every-step-im-feeling-lucky) | Run every step (I'm feeling lucky) | [03](03-shell.md) |
 | [F0.5](03-shell.md#f05-a-runs-bookkeeping-every-step-uses-it) | A run's bookkeeping (progress, checkpoints) | [03](03-shell.md) |
 | [F0.6](03-shell.md#f06-open-at-start) | Open at start | [03](03-shell.md) |
 | [F0.7](03-shell.md#f07-derive-the-editing-policy-review--new) | Derive the editing policy from the context (new) | [03](03-shell.md) |
@@ -57,10 +57,10 @@ flowchart LR
 | [F1.6](04-prepare.md#f16-frames-per-video) | Frames | [04](04-prepare.md) |
 | [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-ppolicydescribeframesperreq--4) | Describe | [04](04-prepare.md) |
 | [F1.8](04-prepare.md#f18-fix-the-transcripts-blocks-of-ppolicyfixblocklines--25-lines) | Fix the transcripts | [04](04-prepare.md) |
-| [F1.9](04-prepare.md#f19-mark-retakes-gaming-style) | Mark retakes (Gaming) | [04](04-prepare.md) |
-| [F1.10](04-prepare.md#f110-repair-the-joins-lecture-style) | Repair the joins (Lecture) | [04](04-prepare.md) |
+| [F1.9](04-prepare.md#f19-mark-retakes) | Mark retakes | [04](04-prepare.md) |
+| [F1.10](04-prepare.md#f110-repair-the-joins) | Repair the joins | [04](04-prepare.md) |
 | [F1.11](04-prepare.md#f111-place-the-edges-of-a-mark) | Place the edges of a mark | [04](04-prepare.md) |
-| [F1.12](04-prepare.md#f112-hand-edit-the-text-lecture) | Hand-edit final.txt | [04](04-prepare.md) |
+| [F1.12](04-prepare.md#f112-hand-edit-the-text) | Hand-edit final.txt | [04](04-prepare.md) |
 | [F1.13](04-prepare.md#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles) | The session's word list (glue, dress, respell) | [04](04-prepare.md) |
 | [F2.1](05-cut.md#f21-play-the-recording-) | Play the recording | [05](05-cut.md) |
 | [F2.2](05-cut.md#f22-play-the-cut-) | Play the cut | [05](05-cut.md) |
@@ -112,7 +112,7 @@ flowchart LR
 | step | model calls | note |
 |---|---|---|
 | Prepare | describe ×(frames/4) · fix ×(lines/25) · retake ×3 or textedit ×(joins) | cached |
-| Cut | cut ×1 (+web) · captions ×(clips/5) · speed ×1 · effects ×1 | Gaming only |
+| Cut | cut ×1 (+web) · captions ×(clips/5) · speed ×1 · effects ×1 | cutMode model only; each pass only when the policy switches it on |
 | Narrate | narrate ×1 (+web) · TTS ×(lines) | |
 | Produce | youtube ×1 (+web) · sd.cpp ×1 when drawn · translate ×(languages × batches) | |
 | Setup | policy ×1 | new; when the context changes |

@@ -8,7 +8,7 @@ Every prototype constant, with meaning and proposed home ([`00-principles.md` §
 
 ## 1. Machine settings (Settings dialog / llm.conf)
 
-LLM server (empty = `http://127.0.0.1:8731`), LLM model, LLM key; audio.cpp server (8765), key, voices folder (/mnt/models/audiocpp/voices; Flatpak: data home), ASR model (nemotron-asr), diarization model (sortformer-diar), TTS model (index-tts2), separation model (bs-roformer), aligner (none → prefer qwen3-aligner); ffmpeg path (empty = PATH; ffprobe beside it); firefox path or "off"; sd.cpp server (1234), key; remembered last project per root. Proposed additions: subtitle languages list (en/eng/English, de/deu/German, fr/fra/French), style table, and two bounds (REVIEW, new): P.machine.promptMaxChars (120 000, most one request may carry, [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-review--new)) and P.machine.briefMaxChars (120 000, the upload brief).
+LLM server (empty = `http://127.0.0.1:8731`), LLM model, LLM key; audio.cpp server (8765), key, voices folder (/mnt/models/audiocpp/voices; Flatpak: data home), ASR model (nemotron-asr), diarization model (sortformer-diar), TTS model (index-tts2), separation model (bs-roformer), aligner (none → prefer qwen3-aligner); ffmpeg path (empty = PATH; ffprobe beside it); firefox path or "off"; sd.cpp server (1234), key; remembered last project per root. Proposed additions: subtitle languages list (en/eng/English, de/deu/German, fr/fra/French), P.machine.slots (REVIEW, new; one count per model — LLM, each audio.cpp model, image model — default 1: requests to that model on the wire at once, the rest wait their turn; [09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63); prototype: the LLM fixed at one in code, the others unlimited), P.machine.describeFrameWidth (REVIEW, new; 896 — the width every frame is scaled to before it goes to the vision model, height by aspect: a 16:9 frame is 896×504. A setting of the model, not of the edit: Qwen-VL reads images in 28-px patches and 896 = 32 × 28, so a 16:9 frame is 576 patches with nothing padded; Gemma 3 rescales to 896×896 anyway; Claude, GPT and LLaVA resize or tile to their own sizes, and 896 wide sits inside what they take. Prototype: fixed in code, `scale=896:-2`), and two bounds (REVIEW, new): P.machine.promptMaxChars (120 000, most one request may carry, [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-review--new)) and P.machine.briefMaxChars (120 000, the upload brief).
 
 ## 2. Editing policy (project; derived from the User Context by F0.7; else defaults)
 
@@ -74,6 +74,9 @@ One row per parameter; chapters cite the first column. Prototype constant named 
 | P.policy.seamMaxWords | 40 | most words a join may remove | seamMaxWords |
 | P.policy.seamCeil | 0.6 | most of the shown words a join may remove | seamCeil |
 | P.policy.seamSnapWords | 3 | at-the-join tolerance (measured: refusals 4→2) | seamSnap |
+| P.policy.seamRetries | 1 | a refused join is asked again this many times (new 2026-09-18) | seamRetries |
+| P.policy.strayWordRatio | 10 | a word whose loudest moment is under 1/N of its recording's median word is "on no sound" (F1.13; measured: 1 of 18 155 words in three lectures) | strayRatio |
+| P.policy.strayWordGapSeconds | 1.0 | …and it must start this long after the word before it | strayGapSeconds |
 | P.policy.seamNoiseWords | 2 | stretches this short elsewhere are respellings (measured: 5→2) | seamNoise |
 | P.policy.joinReachWords | 3 | dedupe across a cut | joinReach |
 | P.policy.keepReachWords | 200 | backward match look-back | keepReach |
@@ -82,7 +85,8 @@ One row per parameter; chapters cite the first column. Prototype constant named 
 | P.policy.describeRecentEvents | 3 | previous EVENT lines carried along | recentEvents |
 | P.policy.describeCtxSegs | 2 | speech context: segments per side per source | ctxSegs |
 | P.policy.describeCtxWindowSeconds | 10 | speech context: window per side per source | ctxWindow |
-| P.policy.describeFrameWidth | 896 | frame width sent to the vision model | scale=896:-2 |
+| P.policy.sceneThreshold | 1.0 | scdet score, on the 4-per-second stream, over which a frame starts a new scene (measured: 6 of 8 slide changes found; the source-rate pass found 3) | new |
+| P.policy.sceneMinGapSeconds | 0.5 | scene changes nearer than this merge into the first | new |
 | P.policy.fixBlockLines | 25 | transcript lines per fixer request | fixBlock |
 | P.policy.fixContextSeconds | 5 | cross-source grounding window | ±5 s |
 | P.policy.fixTries | 2 | attempts per block | try < 2 |
@@ -156,11 +160,15 @@ One row per parameter; chapters cite the first column. Prototype constant named 
 | P.policy.blurSigma | 0.02·height, min 4 | frame-edge blur | blurSigma |
 | P.policy.keepSwearing | true | caption cleaning rule (from the prompt) | captionSystem |
 | P.policy.decorationDensity | "three or four per five minutes" | from the effects prompt | fxRules |
-| P.policy.styles | Lecture (joins, text cut), Gaming (retakes, model cut) |  | styleRead/styleMoments |
+| P.policy.markingPass | retakes | which Prepare marking pass runs: joins ([F1.10](04-prepare.md#f110-repair-the-joins)), retakes ([F1.9](04-prepare.md#f19-mark-retakes)) or none — from the User Context | styleRead/styleMoments |
+| P.policy.cutMode | model | how Suggest builds the cut: words (derived from the marked text, no model) or model | styleRead/styleMoments |
+| P.policy.captionsPass | on | whether [F3.9](06-effects.md#f39-captions-proposed-by-the-model-after-the-cut) is called at all | new |
+| P.policy.speedPass | on | whether [F3.10](06-effects.md#f310-speeds-proposed-by-the-model) is called at all | new |
+| P.policy.decorationsPass | on | whether [F3.11](06-effects.md#f311-decorations-proposed-by-the-model) is called at all | new |
 
 ## 3. Project settings (tab controls)
 
-P.project.frameInterval (stops 0, 0.1, 0.2, 0.5, 1, 2, 3, 4, 5; default 1), frame scale (original, 896w (LLM), 480p, 720p, 1080p), language (en), style, chain ticks (Prepare), narration on/off, copy sources (on), the User Context; encoder settings (mp4, h264, CRF 24, veryslow, 1080, 30 fps, 128 kbit/s, subtitles none, no languages, VFR off, mono off, blurred edges on); publish state; aspect (source).
+P.project.frameInterval (Freq: seconds between frames sent to the describe model, counted from each scene change; stops 0.25, 0.5, 1, 2, 3, 4, 5; default 1 — prototype: the extraction interval, stops 0, 0.1, 0.2, 0.5, 1 … 5), language (en), narration on/off, copy sources (on), the User Context; encoder settings (mp4, h264, CRF 24, veryslow, 1080, 30 fps, 128 kbit/s, subtitles none, no languages, VFR off, mono off, blurred edges on); publish state; aspect (source).
 
 ## 4. Prompts
 
@@ -179,6 +187,7 @@ Those the chapters cite by name:
 | P.eng.llmTailChars | 90 (360 kept) | heartbeat tail shown / kept of a streaming tail |
 | P.eng.searchHits | 8 | hits per web query |
 | P.eng.preloadLeadSeconds | 3 | preview: how far ahead the next clip is opened (tolerance 0.01 s) |
+| P.eng.frameGridSeconds | 0.25 | extraction grid, restarted at every scene change: at the deepest zoom (240 px/s) one frame is 60 px, so the picture band has no black gaps (new) |
 | P.eng.audiocppUnloadSeconds | 20 | the only deadline on an audio.cpp call (`unload_all_models`) |
 
 The rest, by area:

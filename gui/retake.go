@@ -78,6 +78,10 @@ type retake struct {
 	// camera stop, the breath, the run-up (placeEdges).
 	To   float64
 	Text string
+	// the recordings this mark takes out entire, by base name, comma
+	// separated: a join that removed a whole take is flagged for a look
+	// rather than forbidden (flagWholeTakes), and the Cut page tints it
+	Whole string
 }
 
 const (
@@ -352,7 +356,11 @@ func speechSecs(rows []tsvRow) float64 {
 func (a *App) writeRetakes(marks []retake) error {
 	var b strings.Builder
 	for _, m := range marks {
-		fmt.Fprintf(&b, "%.2f\t%.2f\t%.2f\t%.2f\t%s\n", m.S, m.E, m.Again, m.To, m.Text)
+		fmt.Fprintf(&b, "%.2f\t%.2f\t%.2f\t%.2f\t%s", m.S, m.E, m.Again, m.To, m.Text)
+		if m.Whole != "" {
+			fmt.Fprintf(&b, "\t%s", m.Whole)
+		}
+		b.WriteString("\n")
 	}
 	if err := os.MkdirAll(a.transcriptDir(), 0o755); err != nil {
 		return err
@@ -387,6 +395,9 @@ func (a *App) loadRetakes() []retake {
 				m.To = to
 			}
 			m.Text = f[4]
+			if len(f) > 5 {
+				m.Whole = f[5]
+			}
 		} else if len(f) > 3 {
 			m.Text = f[3]
 		}
@@ -440,6 +451,10 @@ type srcWord struct {
 	// and not "eastern university".
 	raw string
 	src string // the recording it was said in (baseName), for the seams
+	// stray: the aligner put this word on almost no sound, well after the
+	// word before it, and it has been moved onto that word's end
+	// (retimeStrays)
+	stray bool
 }
 
 // againReach is how much of the later take is read for the repeat: a retake
@@ -794,6 +809,9 @@ func (a *App) sessionWords(paths []string) []srcWord {
 		base := baseName(p)
 		dir := filepath.Join(a.inputsDir(), base)
 		mine := glueWords(wordTimes(dir), at[p]-zero)
+		if e := a.loadEdges(p, at[p]-zero); e != nil {
+			retimeStrays(mine, e)
+		}
 		dressWords(mine, readFileString(filepath.Join(dir, "transcript.txt")))
 		for _, w := range mine {
 			w.src = base

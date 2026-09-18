@@ -224,14 +224,14 @@ flowchart TD
   A(["☐ Narration"]) --> G["the lines, the preview and the voice picker greyed"]
   G --> K["narration.json left exactly as it is"]
   K --> P["Produce: no game-volume slider, no lines in the render"]
-  P --> C["the chain skips Narrate"]
+  P --> C["a lucky run skips Narrate"]
   C --> B(["☑ again: everything written is still there"]):::done
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-Greys the page; leaves `narration.json` alone; Produce hides the game-volume slider and renders without lines; the chain skips Narrate.
+Greys the page; leaves `narration.json` alone; Produce hides the game-volume slider and renders without lines; a lucky run skips Narrate ([F0.4](03-shell.md#f04-run-every-step-im-feeling-lucky)).
 
 ## 3. Data
 
