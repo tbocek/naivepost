@@ -2,6 +2,7 @@ pub mod cut;
 pub mod layout;
 pub mod narration;
 pub mod project;
+pub mod publish;
 pub mod snapshot;
 pub mod ui;
 

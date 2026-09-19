@@ -438,7 +438,7 @@ impl Default for Raw {
 /// absent key must mean, not zero.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
-struct RawPublish {
+pub(crate) struct RawPublish {
     frames: Vec<String>,
     crop: Crop,
     own: bool,
@@ -669,7 +669,7 @@ fn adopted_prompt_keys(raw: &Raw) -> Vec<String> {
 /// say it — no printed line, title counted as answered — then retires. Nothing else is
 /// inferred from a bare title: whether the picture gets words is the Produce page's
 /// decision (08 §2, F5.6), and guessing would print where nobody chose to.
-fn migrate_publish(mut raw: RawPublish) -> Publish {
+pub(crate) fn migrate_publish(mut raw: RawPublish) -> Publish {
     // A project from when the picture printed the entry's words. `title_off` was that
     // project's own answer and retires once read: it clears the printed line, whether
     // or not the title has been seeded since. Otherwise an unseeded title with no
@@ -700,7 +700,7 @@ fn migrate_publish(mut raw: RawPublish) -> Publish {
 /// so index 2 of [f0,f1,f2] gives [f2,f0,f1] — the prototype's moveToFront
 /// (gui/publish.go). An index naming no other frame — 0, or past the end — names the
 /// base already at the front, so it moves nothing.
-fn move_to_front(frames: Vec<String>, i: usize) -> Vec<String> {
+pub(crate) fn move_to_front(frames: Vec<String>, i: usize) -> Vec<String> {
     if i == 0 || i >= frames.len() {
         return frames;
     }
