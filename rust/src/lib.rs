@@ -12,6 +12,7 @@ pub mod roles;
 pub mod run;
 pub mod services;
 pub mod settings;
+pub mod startup;
 pub mod shell;
 pub mod snapshot;
 pub mod textfmt;
