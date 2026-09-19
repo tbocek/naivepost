@@ -1,9 +1,11 @@
+pub mod clock;
 pub mod cut;
 pub mod layout;
 pub mod narration;
 pub mod project;
 pub mod publish;
 pub mod requests;
+pub mod services;
 pub mod settings;
 pub mod snapshot;
 pub mod textfmt;
