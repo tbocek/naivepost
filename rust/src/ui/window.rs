@@ -10,6 +10,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::project::Project;
+use crate::run;
 use crate::shell::{self, Move, Outcome, Page, Shell};
 use crate::PAGES;
 
@@ -148,6 +149,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         .build();
     paint_tabs(&switcher, &shell.borrow(), project);
 
+    // Where ▶ is decided: the run bar's own state, beside the shell's. Nothing about which of
+    // pause / transport / start applies is worked out here — run.rs does that (F0.2).
+    let bar = Rc::new(RefCell::new(run::RunBar::default()));
+
     // The status line: the shell's sentence, right-aligned in the bottom row (§1's "status line").
     let status = gtk::Label::new(Some(""));
     status.set_widget_name("status-line");
@@ -163,12 +168,26 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let guard = Rc::new(RefCell::new(false));
     wire_switching(&stack, &switcher, &status, &shell, &guard, project);
 
+    // §2's run bar: ▶ at the left of the row above the log. Only ▶ belongs to F0.2 — the "I'm
+    // feeling lucky" gears are F0.4, ⏹ is F0.3, and the progress bar with the log expander is F0.5,
+    // so none of those widgets go in here yet.
+    let play = gtk::Button::from_icon_name(run::PLAY_ICON);
+    play.set_widget_name("play-button");
+    play.add_css_class("suggested-action");
+    paint_run_bar(&play, &bar.borrow(), shell.borrow().page, run::Transport::default());
+
+    let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    run_row.set_widget_name("run-bar");
+    run_row.append(&play);
+    run_row.append(&status);
+    wire_play(&play, &bar, &shell, &status, project);
+
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
     box_.append(&switcher);
     box_.set_widget_name("page-tabs");
     box_.append(&stack);
     stack.set_vexpand(true);
-    box_.append(&status);
+    box_.append(&run_row);
 
     window.set_content(Some(&box_));
     window
@@ -223,6 +242,50 @@ fn wire_switching(
     });
 }
 
+/// The run bar as it should be drawn right now: the icon and tooltip [`run::controls`] says, and
+/// nothing else. It decides nothing — ▶ is one button that becomes ⏸ rather than a second button
+/// beside it, and which of the two applies is F0.2's precedence, settled in run.rs.
+/// The run bar's icon and tooltip are the whole of what F0.2 puts on screen. `transport` is the
+/// visible page's preview, which only Cut and Narrate have — [`run::transport_for`] answers `None`
+/// for the other two, and that is why their ▶ runs the step while a preview plays.
+fn paint_run_bar(play: &gtk::Button, bar: &run::RunBar, page: Page, transport: run::Transport) {
+    let drawn = run::controls(&bar.running, run::transport_for(page, transport));
+    play.set_icon_name(drawn.icon);
+    play.set_tooltip_text(Some(drawn.tooltip));
+}
+
+/// Where a press of ▶ is decided: ask [`run::RunBar::press`], then redraw the button and put the
+/// bar's sentence on the status line. Same shape as [`wire_switching`] — one handler, one job.
+///
+/// The transport is `Transport::default()` because no page has a preview model yet (the Cut review
+/// and the Narrate voice sample arrive with their own pages' rounds), so nothing is ever playing to
+/// be toggled; ⏹, which would end a preview, is F0.3.
+fn wire_play(
+    play: &gtk::Button,
+    bar: &Rc<RefCell<run::RunBar>>,
+    shell: &Rc<RefCell<Shell>>,
+    status: &gtk::Label,
+    project: &Project,
+) {
+    let bar = bar.clone();
+    let shell = shell.clone();
+    let status = status.clone();
+    let project = project.clone();
+    play.connect_clicked(move |play| {
+        let pressed = bar.borrow_mut().press(shell.borrow().page, run::Transport::default(), &project);
+        // A press that started a step has the page's own work to do (F1.1/F2.14/F4.1/F5.1), and that
+        // is those flows' round; the bar only records the run it opened.
+        let _ = pressed;
+        paint_run_bar(
+            play,
+            &bar.borrow(),
+            shell.borrow().page,
+            run::Transport::default(),
+        );
+        status.set_text(&bar.borrow().status);
+    });
+}
+
 /// The switching state as the window currently shows it — for the tests that drive a real click.
 pub fn state(window: &adw::ApplicationWindow) -> UiState {
     let (Some(switcher), Some(status)) = (find_switcher(window.upcast_ref()), find_status(window.upcast_ref()))
@@ -274,6 +337,32 @@ fn find_switcher(root: &gtk::Widget) -> Option<adw::ViewSwitcher> {
         let Ok(child) = child else { continue };
         let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
         if let Some(found) = find_switcher(&widget) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// The ▶ button, named rather than searched for by icon: the icon changes to ⏸ while a run works,
+/// and an unnamed busy button would then be findable no more.
+pub fn play_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "play-button")?.downcast().ok()
+}
+
+/// The tooltip ▶ carries, which is how a test reads §2's wording without reaching into the button.
+pub fn play_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
+    play_button(window)?.tooltip_text().map(|text| text.to_string())
+}
+
+/// The first widget under `root` carrying `name`, found the same walk as [`find_status`].
+fn find_widget_by_name(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    if root.widget_name() == name {
+        return Some(root.clone());
+    }
+    for child in root.observe_children().iter::<glib::Object>() {
+        let Ok(child) = child else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        if let Some(found) = find_widget_by_name(&widget, name) {
             return Some(found);
         }
     }

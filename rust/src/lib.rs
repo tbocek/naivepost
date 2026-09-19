@@ -9,6 +9,7 @@ pub mod project;
 pub mod publish;
 pub mod requests;
 pub mod roles;
+pub mod run;
 pub mod services;
 pub mod settings;
 pub mod shell;
