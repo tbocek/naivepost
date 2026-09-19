@@ -10,6 +10,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use crate::add_sources;
 use crate::layout;
 use crate::new_project;
 use crate::project::Project;
@@ -23,7 +24,9 @@ use crate::PAGES;
 pub const APP_ID: &str = "ch.bocek.naivepost";
 
 /// One page of the window: its name and the state it shows.
-fn page_box(page: &str, project: &Project) -> gtk::Widget {
+/// Prepare's two widgets are handed back beside the page so `build_window` can wire *that* button —
+/// see [`build_window`] for why they are not found by name. On every other page both are `None`.
+fn page_box(page: &str, project: &Project) -> (gtk::Widget, Option<gtk::Button>, Option<gtk::CheckButton>) {
     let view = adw::ToolbarView::new();
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -37,6 +40,28 @@ fn page_box(page: &str, project: &Project) -> gtk::Widget {
     title.set_halign(gtk::Align::Start);
     box_.append(&title);
 
+    // §1's badge **9** is the visible tab's own page, so the way in belongs to Prepare and to no
+    // other page. Only its two widgets are here: the source rows with their camera and microphone
+    // icons, and the Freq / Original / Language / Style controls under them, are F1.x's — this item
+    // is how files get added, not what each row says about itself.
+    let mut prepare: Option<(gtk::Button, gtk::CheckButton)> = None;
+    if page == "Prepare" {
+        let add_ = gtk::Button::with_label(ADD_LABEL);
+        add_.set_widget_name("add-sources-button");
+        let copy_ = gtk::CheckButton::with_label(COPY_LABEL);
+        copy_.set_widget_name("copy-into-project");
+        // Tick on: the default is to bring the files inside the project, so the folder stays one
+        // thing to move (F0.12 S2).
+        copy_.set_active(!project.reference_sources);
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row.set_widget_name("add-sources-row");
+        row.append(&add_);
+        row.append(&copy_);
+        box_.append(&row);
+        prepare = Some((add_, copy_));
+    }
+
     let context = gtk::Label::new(Some(&project.context));
     context.set_wrap(true);
     context.set_xalign(0.0);
@@ -44,7 +69,12 @@ fn page_box(page: &str, project: &Project) -> gtk::Widget {
     box_.append(&context);
 
     view.set_content(Some(&box_));
-    view.upcast()
+    // The two widgets are handed back only for Prepare; every other page has none. `build_window`
+    // wires that button directly rather than finding it by name, because a window whose four pages
+    // each hold an "add-sources-button" makes `find_widget_by_name` return whichever one it reaches
+    // first — and wiring an arbitrary page's copy leaves the visible one doing nothing.
+    let (add_, copy_) = prepare.map_or((None, None), |(add_, copy_)| (Some(add_), Some(copy_)));
+    (view.upcast(), add_, copy_)
 }
 
 /// The tab row, drawn from [`Shell`].
@@ -140,9 +170,13 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let shell = Rc::new(RefCell::new(start_shell(page)));
 
     let stack = adw::ViewStack::new();
+    let mut prepare_add: Option<(gtk::Button, gtk::CheckButton)> = None;
     for name in PAGES {
-        let child = page_box(name, project);
+        let (child, add_, copy_) = page_box(name, project);
         stack.add_titled(&child, Some(name), name);
+        if let (Some(add_), Some(copy_)) = (add_, copy_) {
+            prepare_add = Some((add_, copy_));
+        }
     }
     if !page.is_empty() {
         stack.set_visible_child_name(page);
@@ -154,6 +188,12 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         .policy(adw::ViewSwitcherPolicy::Wide)
         .build();
     paint_tabs(&switcher, &shell.borrow(), project);
+
+    // The window is handed an immutable `&Project` and holds no live project yet, so the flows that
+    // change the session — Rescan (F0.11) and Add sources (F0.12) — work on one private copy shared
+    // between them. F0.9's live project state replaces this; until then it is what keeps the session
+    // each flow leaves behind for the next.
+    let session = Rc::new(RefCell::new(project.clone()));
 
     // Where ▶ is decided: the run bar's own state, beside the shell's. Nothing about which of
     // pause / transport / start applies is worked out here — run.rs does that (F0.2).
@@ -214,7 +254,15 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     rescan_.set_widget_name("rescan-button");
     rescan_.set_tooltip_text(Some(RESCAN_TIP));
     header.pack_end(&rescan_);
-    wire_rescan(&rescan_, &status, project);
+    wire_rescan(&rescan_, &status, &session);
+
+    // F0.12 lives on the Prepare page, so its handler gets the widgets that page built. They are
+    // handed over rather than found by name: `page_box` runs once per tab, and a window with four
+    // same-named buttons makes `find` return whichever one it reaches first — an arbitrary page's
+    // button, wired to nothing or wired twice.
+    if let Some((add_, copy_)) = prepare_add {
+        wire_add(&add_, &copy_, &bar, &status, &session);
+    }
 
     box_.append(&header);
     box_.append(&switcher);
@@ -413,6 +461,12 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path) {
     );
 }
 
+/// Prepare's own two widgets (F0.12): the button that adds files, and the tick that decides whether
+/// they come inside the project or stay where they are. The ellipsis is the single character §1's
+/// screenshot shows, not three dots.
+const ADD_LABEL: &str = "Add source files…";
+const COPY_LABEL: &str = "copy into project";
+
 /// The Rescan button's tooltip, §1's wording for badge **8**.
 const RESCAN_TIP: &str = "Rescan inputs and outputs";
 
@@ -421,14 +475,14 @@ const RESCAN_TIP: &str = "Rescan inputs and outputs";
 ///
 /// No run refusal here: S1 drops what has vanished whether or not a run is on, so unlike Save this
 /// handler never reads [`run::RunBar`].
-fn wire_rescan(button: &gtk::Button, status: &gtk::Label, project: &Project) {
+fn wire_rescan(button: &gtk::Button, status: &gtk::Label, session: &Rc<RefCell<Project>>) {
     let status = status.clone();
     // The window is handed an immutable `&Project` and holds no live project yet, so the scan works
-    // on a private copy. F0.9's live project state replaces this; until then it is what keeps the
-    // pruned list for whatever flow reads the session next. Which folder is open is the same
-    // stand-in New and Save use, so all three flows agree.
+    // on the private copy shared with Add sources. F0.9's live project state replaces this; until
+    // then it is what keeps the pruned list for whatever flow reads the session next. Which folder is
+    // open is the same stand-in New and Save use, so all three flows agree.
     let root = std::env::current_dir().unwrap_or_default();
-    let project = Rc::new(RefCell::new(project.clone()));
+    let project = session.clone();
     button.connect_clicked(move |_| {
         let dir = startup::session_dir(&root);
         let tree = layout::Tree::new(&dir).ok();
@@ -440,6 +494,93 @@ fn wire_rescan(button: &gtk::Button, status: &gtk::Label, project: &Project) {
         // startup, so repainting them belongs with F0.9's live project state — as does F0.5's log
         // expander, which is why these lines are not yet on screen.
         status.set_text(found.status);
+    });
+}
+
+/// Where a press of "Add source files…" goes: [`add_sources`] decides whether it may happen at all,
+/// which kinds the chooser offers, what is copied and what is only referenced, and what the status
+/// says. The button forwards (spec/00-principles.md §5).
+///
+/// The byte progress (`add_sources::Progress::fraction`) belongs to F0.5's progress bar, which is not
+/// built yet, so it is recorded by the module and not drawn; and the session that grows here is the
+/// window's private copy for the same reason [`wire_rescan`] spells out — the pages render the
+/// `&Project` handed to `build_window`, and a live project state is F0.9's.
+fn wire_add(
+    button: &gtk::Button,
+    copy_into: &gtk::CheckButton,
+    bar: &Rc<RefCell<run::RunBar>>,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+) {
+    let bar = bar.clone();
+    let status = status.clone();
+    let session = session.clone();
+    // The tick is read when the chooser is answered, not when it opened.
+    let copy_into = copy_into.clone();
+    button.connect_clicked(move |_| {
+        // S0 first: a copy is a run of its own, so no chooser opens while something else runs.
+        if let Err(reason) = add_sources::press(bar.borrow().running.is_some()) {
+            status.set_text(reason);
+            return;
+        }
+        ask_add_sources(&status, &session, &copy_into);
+    });
+}
+
+/// S1's chooser: titled for adding, filtered to audio and video, and willing to take a whole card at
+/// once. As in [`ask_save_project`] it is answered by nobody in a headless test, which is the point —
+/// what a test asserts is that the press got this far.
+///
+/// GTK 4.10 replaced the file chooser with `gtk::FileDialog` and deprecated everything below it; the
+/// replacement has no multiple-selection filter API that answers a *native* chooser, so this stays on
+/// the old calls and takes their warnings here rather than silencing them crate-wide.
+#[expect(
+    deprecated,
+    reason = "the 4.10 replacement cannot offer a filtered multi-select native chooser"
+)]
+fn ask_add_sources(status: &gtk::Label, session: &Rc<RefCell<Project>>, copy_into: &gtk::CheckButton) {
+    let chooser = gtk::FileChooserNative::builder()
+        .title(add_sources::CHOOSER_TITLE)
+        .modal(true)
+        .action(gtk::FileChooserAction::Open)
+        .build();
+    // The accept button says what it does. `add_choice` is not the three-label call it looks like —
+    // that one adds an extra combo — so the buttons are set where they belong.
+    chooser.set_accept_label(Some("Add"));
+    chooser.set_cancel_label(Some("Cancel"));
+    chooser.set_select_multiple(true);
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some(add_sources::FILTER_NAME));
+    for ext in add_sources::MEDIA_EXT {
+        filter.add_pattern(&format!("*{ext}"));
+    }
+    chooser.add_filter(&filter);
+
+    let status = status.clone();
+    let session = session.clone();
+    let copy_into = copy_into.clone();
+    // The same stand-in New, Save and Rescan use, so all four flows agree on which project is open.
+    let root = std::env::current_dir().unwrap_or_default();
+    chooser.connect_response(move |chooser, response| {
+        if response != gtk::ResponseType::Accept {
+            return;
+        }
+        let files: Vec<std::path::PathBuf> = chooser
+            .files()
+            .iter::<gio::File>()
+            .flatten()
+            .filter_map(|file| file.path())
+            .collect();
+        let copy = copy_into.is_active();
+        let dir = startup::session_dir(&root);
+        match add_sources::add(&mut session.borrow_mut(), &root, &dir, &files, copy) {
+            Ok(added) => status.set_text(&added.status),
+            // S0's abandonment: the log keeps the reason, the status line the sentence.
+            Err(err) => {
+                status.set_text(add_sources::NO_SOURCES_DIR);
+                log_line(&err);
+            }
+        }
     });
 }
 
@@ -608,6 +749,21 @@ pub fn rescan_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 /// The tooltip Rescan carries, which is how a test reads §1's wording for badge **8**.
 pub fn rescan_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
     rescan_button(window)?.tooltip_text().map(|text| text.to_string())
+}
+
+/// Prepare's "Add source files…" button, named so a test can press it the way a user does.
+pub fn add_sources_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "add-sources-button")?
+        .downcast()
+        .ok()
+}
+
+/// The "copy into project" tick beside it (F0.12 S2), which is what the press reads to decide
+/// between a copy and a reference.
+pub fn copy_into_project(window: &adw::ApplicationWindow) -> Option<gtk::CheckButton> {
+    find_widget_by_name(window.upcast_ref(), "copy-into-project")?
+        .downcast()
+        .ok()
 }
 
 /// The New button, named so a test can press it the way a user does.
