@@ -4,6 +4,7 @@ pub mod narration;
 pub mod project;
 pub mod publish;
 pub mod requests;
+pub mod settings;
 pub mod snapshot;
 pub mod textfmt;
 pub mod wave;
