@@ -5,6 +5,7 @@ pub mod narration;
 pub mod project;
 pub mod publish;
 pub mod requests;
+pub mod roles;
 pub mod services;
 pub mod settings;
 pub mod snapshot;
