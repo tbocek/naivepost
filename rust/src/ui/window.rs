@@ -4,13 +4,16 @@
 //! state it was handed, so every value on screen traces back to the model.
 
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use crate::new_project;
 use crate::project::Project;
 use crate::run;
+use crate::startup;
 use crate::shell::{self, Move, Outcome, Page, Shell};
 use crate::PAGES;
 
@@ -183,6 +186,20 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     wire_play(&play, &bar, &shell, &status, project);
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    // §1's header bar: **1** New. Only New belongs to F0.8 — Open is F0.9, Save F0.10, the project
+    // path label §1/F0.1, ⓘ F0.1's S4, Settings F0.13 and Rescan F0.11 — so nothing else goes in
+    // here yet. The window also holds no live project state (`build_window` is handed a `&Project`),
+    // so the blank project New creates is applied by F0.9's apply list, and its `>>>` log line needs
+    // F0.5's log expander: until that exists the flow reports on the status line, which is what it
+    // does below.
+    let header = adw::HeaderBar::new();
+    let new_ = gtk::Button::from_icon_name("document-new-symbolic");
+    new_.set_widget_name("new-button");
+    new_.set_tooltip_text(Some(NEW_TIP));
+    header.pack_start(&new_);
+    wire_new(&new_, &bar, &status);
+
+    box_.append(&header);
     box_.append(&switcher);
     box_.set_widget_name("page-tabs");
     box_.append(&stack);
@@ -286,6 +303,99 @@ fn wire_play(
     });
 }
 
+/// The New button's tooltip, §1's wording for badge **1**.
+const NEW_TIP: &str = "New project \u{2014} name it, put it where you want it, and start over";
+
+/// S3's confirmation, drawn from [`new_project`]'s strings and deciding nothing: the question, the
+/// two paragraphs, and the two answers. "Start new…" is destructive because what it does cannot be
+/// undone, and Cancel keeps the focus so a blind Enter does nothing (the prototype's `confirm`).
+pub fn new_project_confirm(
+    parent: Option<&adw::ApplicationWindow>,
+    detail: &str,
+) -> adw::MessageDialog {
+    let dialog = adw::MessageDialog::new(parent, Some(new_project::QUESTION), Some(detail));
+    // The × in the header bar answers exactly as Cancel does. `close-button` is adw::Window's own
+    // property (the response its × produces is `close-response`, which names Cancel), so both are
+    // set through the object rather than through a trait method this binding only has on Window.
+    dialog.set_property("close-response", "cancel");
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("start", new_project::BUTTON);
+    dialog.set_response_appearance("start", adw::ResponseAppearance::Destructive);
+    dialog.set_default_response(Some("cancel"));
+    dialog
+}
+
+/// Where a press of ＋ New goes: ask [`new_project::press`], then draw what it says. Every string the
+/// user sees comes from that module, including the refusal's and the confirmation's.
+///
+/// The session is never reported empty here because the window has no source list to ask — its
+/// project is the one it was built with, and the pages that own sources arrive with their own rounds.
+/// A run under way is read from F0.2's [`run::RunBar`], which is the same state ▶ answers for.
+fn wire_new(new_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, status: &gtk::Label) {
+    let bar = bar.clone();
+    let status = status.clone();
+    new_.connect_clicked(move |_| {
+        let root = std::env::current_dir().unwrap_or_default();
+        let open = startup::session_dir(&root);
+        match new_project::press(bar.borrow().running.is_some(), false, &open) {
+            new_project::Gate::Refused { reason } => status.set_text(reason),
+            new_project::Gate::Name => ask_new_project(&status, &root, &open),
+            new_project::Gate::Confirm { detail } => {
+                let dialog = new_project_confirm(None, &detail);
+                let status = status.clone();
+                let root = root.clone();
+                let open = open.clone();
+                dialog.connect_response(None, move |dialog: &adw::MessageDialog, response| {
+                    // Cancel is not pressing on: S3's whole point is that nothing was changed.
+                    if response == "start" {
+                        ask_new_project(&status, &root, &open);
+                    }
+                    dialog.destroy();
+                });
+                dialog.present();
+            }
+        }
+    });
+}
+
+/// S4: ask where the new project goes and what it is called. The name's date is taken here because
+/// [`new_project`] is handed the day rather than reading a clock, which is what keeps its tests off
+/// today; the folder chooser is the desktop's own sheet, so the folder it hands back *is* the new
+/// project, and S5's refusal or S6's sentence goes on the status line.
+fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path) {
+    // `%F` is the ISO date, which is what the spec's default name is.
+    let day = glib::DateTime::now_local()
+        .and_then(|today| today.format("%F").map(|day| day.to_string()))
+        .unwrap_or_else(|_| "new-project".to_string());
+    let dir = open.parent().map(Path::to_path_buf).unwrap_or_else(|| root.to_path_buf());
+    let dialog = gtk::FileDialog::builder()
+        .title(new_project::TITLE)
+        .accept_label("New project")
+        .build();
+    dialog.set_initial_folder(Some(&gio::File::for_path(&dir)));
+    dialog.set_initial_name(Some(&new_project::free_name(&dir, &day)));
+
+    let status = status.clone();
+    let root = root.to_path_buf();
+    dialog.select_folder(
+        None::<&gtk::Window>,
+        None::<&gio::Cancellable>,
+        move |chosen: Result<gio::File, glib::Error>| {
+            let Ok(file) = chosen else {
+                return; // dismissed: nothing was asked for, so nothing changed
+            };
+            // The folder the chooser hands back *is* the project (01 §1), and its own name is what
+            // S5 checked and S6 says in the status line.
+            let path = file.path().unwrap_or_default();
+            let named = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            match new_project::create(&root, &path, &named) {
+                Ok(created) => status.set_text(&created.status),
+                Err(reason) => status.set_text(&reason),
+            }
+        },
+    );
+}
+
 /// The switching state as the window currently shows it — for the tests that drive a real click.
 pub fn state(window: &adw::ApplicationWindow) -> UiState {
     let (Some(switcher), Some(status)) = (find_switcher(window.upcast_ref()), find_status(window.upcast_ref()))
@@ -341,6 +451,18 @@ fn find_switcher(root: &gtk::Widget) -> Option<adw::ViewSwitcher> {
         }
     }
     None
+}
+
+/// The New button, named so a test can press it the way a user does.
+pub fn new_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "new-button")?
+        .downcast()
+        .ok()
+}
+
+/// The tooltip ＋ New carries, which is how a test reads §1's wording for badge **1**.
+pub fn new_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
+    new_button(window)?.tooltip_text().map(|text| text.to_string())
 }
 
 /// The ▶ button, named rather than searched for by icon: the icon changes to ⏸ while a run works,

@@ -5,6 +5,7 @@ pub mod degraded;
 pub mod cut;
 pub mod layout;
 pub mod narration;
+pub mod new_project;
 pub mod project;
 pub mod publish;
 pub mod requests;

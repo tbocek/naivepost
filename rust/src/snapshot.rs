@@ -12,6 +12,7 @@ use adw::prelude::*;
 use glib::translate::ToGlibPtr;
 use gtk4 as gtk;
 
+use crate::new_project;
 use crate::project;
 use crate::ui;
 
@@ -30,15 +31,16 @@ fn screen_page(screen: &str) -> Option<&'static str> {
     }
 }
 
-/// Paint `window` into a PNG. Called once the first frame is ready.
+/// Paint `widget` into a PNG. Called once the first frame is ready.
 ///
 /// A cairo surface, not `gsk::Renderer::render_texture`: that one needs a realized
-/// renderer, i.e. a native surface, and the headless run has none to offer.
-fn write_png(window: &adw::ApplicationWindow, out: &Path) -> Result<(), String> {
-    let width = u32::try_from(window.width()).unwrap_or(1).max(1);
-    let height = u32::try_from(window.height()).unwrap_or(1).max(1);
+/// renderer, i.e. a native surface, and the headless run has none to offer. Any widget will do —
+/// the confirm dialog's screen paints the dialog, not the window behind it.
+fn write_png(widget: &gtk::Widget, out: &Path) -> Result<(), String> {
+    let width = u32::try_from(widget.width()).unwrap_or(1).max(1);
+    let height = u32::try_from(widget.height()).unwrap_or(1).max(1);
 
-    let paintable = gtk::WidgetPaintable::new(Some(window.upcast_ref::<gtk::Widget>()));
+    let paintable = gtk::WidgetPaintable::new(Some(widget.upcast_ref::<gtk::Widget>()));
     let snapshot = gtk::Snapshot::new();
     paintable.snapshot(&snapshot, width as f64, height as f64);
     let node = snapshot.to_node().ok_or("window produced no render node")?;
@@ -70,27 +72,47 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         .build();
 
     let out = out.to_path_buf();
+    // Copied for the closures below: `screen` decides which widget gets painted and a borrow of
+    // `run`'s argument cannot outlive this function's body.
+    let screen = screen.to_string();
+    // The dialog names the open project, which is the folder the snapshot was asked to render.
+    let dir = dir.to_path_buf();
     // Built when the app has no windows yet: they are added at startup, so the
     // handler runs after GTK has emitted it.
     app.connect_activate(move |app| {
         let window = ui::build_window(app, &model, page);
+        // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
+        // image shows, so it is what gets painted. The fixture is a named project folder, which is
+        // why its body carries the "stays on disk as it is" paragraph.
+        let subject: Option<gtk::Widget> = match screen.as_str() {
+            // No parent: a transient of the window is kept alive by it, and this run ends when the
+            // last window closes. Painted on its own, which is how the spec image shows it.
+            "03-new-confirm" => {
+                let shown = ui::new_project_confirm(None, &new_project::confirm_detail(&dir));
+                shown.set_default_size(560, 240);
+                shown.present();
+                Some(shown.upcast())
+            }
+            _ => None,
+        };
+        if subject.is_none() {
+            window.present();
+        }
+        let painted = subject.clone().unwrap_or_else(|| window.clone().upcast());
         let out = out.clone();
-        window.connect_map(move |window| {
-            let target = window.clone();
-            let out = out.clone();
-            // One more cycle: map happens before the first frame is drawn.
-            glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
-                match write_png(&target, &out) {
-                    Ok(()) => target.destroy(),
-                    Err(err) => {
-                        eprintln!("snapshot: {err}");
-                        OUT.with(|e| *e.borrow_mut() = Some(err));
-                        target.destroy();
-                    }
+        let app = app.clone();
+        // One more cycle after the map: the map happens before the first frame is drawn. The paint
+        // and the quit are synchronous here, so no second mapped window is ever waited on.
+        glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+            match write_png(&painted, &out) {
+                Ok(()) => (),
+                Err(err) => {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
-            });
+            }
+            app.quit();
         });
-        window.present();
     });
     // The handler closes the last window, which quits the main loop. A nested
     // block_on here would recurse on the context that already runs it.

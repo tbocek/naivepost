@@ -1,6 +1,9 @@
 pub mod window;
 
 pub use window::build_window;
+pub use window::new_button;
+pub use window::new_project_confirm;
+pub use window::new_tooltip;
 pub use window::play_button;
 pub use window::play_tooltip;
 pub use window::state;
