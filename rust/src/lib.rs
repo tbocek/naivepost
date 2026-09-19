@@ -11,6 +11,7 @@ pub mod publish;
 pub mod requests;
 pub mod roles;
 pub mod run;
+pub mod save_as;
 pub mod services;
 pub mod settings;
 pub mod startup;

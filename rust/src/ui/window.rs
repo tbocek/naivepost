@@ -13,6 +13,7 @@ use gtk4 as gtk;
 use crate::new_project;
 use crate::project::Project;
 use crate::run;
+use crate::save_as;
 use crate::startup;
 use crate::shell::{self, Move, Outcome, Page, Shell};
 use crate::PAGES;
@@ -186,18 +187,24 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     wire_play(&play, &bar, &shell, &status, project);
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    // §1's header bar: **1** New. Only New belongs to F0.8 — Open is F0.9, Save F0.10, the project
-    // path label §1/F0.1, ⓘ F0.1's S4, Settings F0.13 and Rescan F0.11 — so nothing else goes in
-    // here yet. The window also holds no live project state (`build_window` is handed a `&Project`),
-    // so the blank project New creates is applied by F0.9's apply list, and its `>>>` log line needs
-    // F0.5's log expander: until that exists the flow reports on the status line, which is what it
-    // does below.
+    // §1's header bar: **1** New · **3** Save. Only those two are here — New is F0.8, Save F0.10 —
+    // while Open (**2**) is F0.9, the project path label §1/F0.1, ⓘ F0.1's S4, Settings F0.13 and
+    // Rescan F0.11. The window also holds no live project state (`build_window` is handed a
+    // `&Project`), so both flows work off the working copy beside the root until F0.9 says which
+    // project is open, and their `>>>`/`!!!` log lines have no expander to go to until F0.5's;
+    // [`window_logs`] holds them meanwhile, and the status line carries what §1 shows there.
     let header = adw::HeaderBar::new();
     let new_ = gtk::Button::from_icon_name("document-new-symbolic");
     new_.set_widget_name("new-button");
     new_.set_tooltip_text(Some(NEW_TIP));
     header.pack_start(&new_);
     wire_new(&new_, &bar, &status);
+
+    let save_ = gtk::Button::from_icon_name("document-save-symbolic");
+    save_.set_widget_name("save-button");
+    save_.set_tooltip_text(Some(SAVE_TIP));
+    header.pack_start(&save_);
+    wire_save(&save_, &bar, &status, project);
 
     box_.append(&header);
     box_.append(&switcher);
@@ -396,6 +403,92 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path) {
     );
 }
 
+/// The Save button's tooltip, §1's wording for badge **3**.
+const SAVE_TIP: &str = "Save this project to a file";
+
+/// Where a press of Save goes: [`save_as::press`] decides whether it may happen at all, and the
+/// chooser only names the project. Every sentence the user reads comes from [`save_as`].
+///
+/// As in [`wire_new`], the open project is the working copy beside the root until F0.9 keeps the
+/// window's own project path; a run under way is F0.2's [`run::RunBar`] state.
+fn wire_save(save_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, status: &gtk::Label, project: &Project) {
+    let bar = bar.clone();
+    let status = status.clone();
+    let project = project.clone();
+    save_.connect_clicked(move |_| {
+        if let Err(reason) = save_as::press(bar.borrow().running.is_some()) {
+            status.set_text(reason);
+            log_line(reason);
+            return;
+        }
+        ask_save_project(&status, &project, &startup::session_dir(&std::env::current_dir().unwrap_or_default()));
+    });
+}
+
+/// S2: the dialog that names the project. `select_folder` rather than `save_folder` because a
+/// project is a folder (01 §1) and a file chooser would insist on a file; the name typed in the
+/// sheet is what S3 renames to, so it starts as the open folder's own name.
+fn ask_save_project(status: &gtk::Label, project: &Project, open: &Path) {
+    let dialog = gtk::FileDialog::builder()
+        .title(save_as::TITLE)
+        .accept_label("Save")
+        .build();
+    if let Some(dir) = open.parent() {
+        dialog.set_initial_folder(Some(&gio::File::for_path(dir)));
+    }
+    dialog.set_initial_name(open.file_name().and_then(|name| name.to_str()));
+
+    let status = status.clone();
+    let open = open.to_path_buf();
+    let project = project.clone();
+    dialog.select_folder(
+        None::<&gtk::Window>,
+        None::<&gio::Cancellable>,
+        move |chosen: Result<gio::File, glib::Error>| {
+            let Ok(file) = chosen else {
+                return; // dismissed: nothing was asked for, so nothing changed
+            };
+            let named = file
+                .path()
+                .unwrap_or_default()
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            match save_as::save_as(&project, &open, &named) {
+                Ok(saved) => {
+                    for line in &saved.logs {
+                        log_line(line);
+                    }
+                    status.set_text(&saved.status);
+                }
+                // The `!!!` sentence is a log line as much as the status line's: it says where the
+                // files still are, which is what F0.5's log will be for.
+                Err(reason) => {
+                    status.set_text(&reason);
+                    log_line(&reason);
+                }
+            }
+        },
+    );
+}
+
+thread_local! {
+    /// The window's log lines, standing in for F0.5's log expander: `>>> moved the output folder
+    /// to …` and the `!!!` refusals have nowhere to be drawn until that row exists, and a test has
+    /// to be able to see that they were said at all.
+    static LOGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+fn log_line(line: &str) {
+    LOGS.with(|logs| logs.borrow_mut().push(line.to_string()));
+}
+
+/// Every line the window has logged this session, oldest first.
+pub fn window_logs() -> Vec<String> {
+    LOGS.with(|logs| logs.borrow().clone())
+}
+
 /// The switching state as the window currently shows it — for the tests that drive a real click.
 pub fn state(window: &adw::ApplicationWindow) -> UiState {
     let (Some(switcher), Some(status)) = (find_switcher(window.upcast_ref()), find_status(window.upcast_ref()))
@@ -451,6 +544,18 @@ fn find_switcher(root: &gtk::Widget) -> Option<adw::ViewSwitcher> {
         }
     }
     None
+}
+
+/// The Save button, named so a test can press it the way a user does.
+pub fn save_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "save-button")?
+        .downcast()
+        .ok()
+}
+
+/// The tooltip Save carries, which is how a test reads §1's wording for badge **3**.
+pub fn save_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
+    save_button(window)?.tooltip_text().map(|text| text.to_string())
 }
 
 /// The New button, named so a test can press it the way a user does.
