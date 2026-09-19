@@ -1,4 +1,5 @@
 pub mod clock;
+pub mod degraded;
 pub mod cut;
 pub mod layout;
 pub mod narration;
