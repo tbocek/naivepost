@@ -10,6 +10,7 @@ pub mod services;
 pub mod settings;
 pub mod snapshot;
 pub mod textfmt;
+pub mod tools;
 pub mod wave;
 pub mod ui;
 
