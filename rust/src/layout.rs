@@ -151,6 +151,18 @@ impl Tree {
         self.prepare_dir().join("inputs/frames").join(source)
     }
 
+    /// `<grid>|<scene threshold>` — §6. Frames are always the video's own size, so
+    /// nothing else is stored; the prototype's `.interval` held `<interval>|<scale name>`
+    /// and had no scenes at all.
+    pub fn frames_marker(&self, source: &str) -> PathBuf {
+        self.frames_dir(source).join(".frames")
+    }
+
+    /// `time\tscore`, one row per scene change (§6).
+    pub fn scenes_tsv(&self, source: &str) -> PathBuf {
+        self.frames_dir(source).join("scenes.tsv")
+    }
+
     pub fn describe_dir(&self, source: &str) -> PathBuf {
         self.prepare_dir().join("describe").join(source)
     }
