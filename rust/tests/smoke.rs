@@ -36,6 +36,7 @@ fn project_round_trip() {
         no_narration: true,
         reference_sources: true,
         context: "a lecture with two cameras".to_string(),
+        ..Default::default()
     };
 
     project::save(&want, &dir).expect("save");
