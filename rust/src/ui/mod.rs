@@ -6,6 +6,8 @@ pub use window::new_project_confirm;
 pub use window::new_tooltip;
 pub use window::play_button;
 pub use window::play_tooltip;
+pub use window::rescan_button;
+pub use window::rescan_tooltip;
 pub use window::save_button;
 pub use window::save_tooltip;
 pub use window::state;

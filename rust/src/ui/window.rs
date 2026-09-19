@@ -10,8 +10,10 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use crate::layout;
 use crate::new_project;
 use crate::project::Project;
+use crate::rescan;
 use crate::run;
 use crate::save_as;
 use crate::startup;
@@ -187,8 +189,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     wire_play(&play, &bar, &shell, &status, project);
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    // §1's header bar: **1** New · **3** Save. Only those two are here — New is F0.8, Save F0.10 —
-    // while Open (**2**) is F0.9, the project path label §1/F0.1, ⓘ F0.1's S4, Settings F0.13 and
+    // §1's header bar: **1** New · **3** Save · **8** Rescan. Only those three are here — New is
+    // F0.8, Save F0.10, Rescan F0.11 — while Open (**2**) is F0.9, ⓘ F0.1's S4 and Settings F0.13 stay out
     // Rescan F0.11. The window also holds no live project state (`build_window` is handed a
     // `&Project`), so both flows work off the working copy beside the root until F0.9 says which
     // project is open, and their `>>>`/`!!!` log lines have no expander to go to until F0.5's;
@@ -205,6 +207,14 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     save_.set_tooltip_text(Some(SAVE_TIP));
     header.pack_start(&save_);
     wire_save(&save_, &bar, &status, project);
+
+    // **8** sits at the RIGHT end of the bar, next to where Settings goes — `pack_end`, not
+    // `pack_start`, so it does not join New and Save.
+    let rescan_ = gtk::Button::from_icon_name("view-refresh-symbolic");
+    rescan_.set_widget_name("rescan-button");
+    rescan_.set_tooltip_text(Some(RESCAN_TIP));
+    header.pack_end(&rescan_);
+    wire_rescan(&rescan_, &status, project);
 
     box_.append(&header);
     box_.append(&switcher);
@@ -403,6 +413,36 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path) {
     );
 }
 
+/// The Rescan button's tooltip, §1's wording for badge **8**.
+const RESCAN_TIP: &str = "Rescan inputs and outputs";
+
+/// Where a press of Rescan goes: [`rescan`] decides everything — which rows are gone, what was
+/// re-read, what the status says. The button forwards and draws the answer (spec/00-principles.md §5).
+///
+/// No run refusal here: S1 drops what has vanished whether or not a run is on, so unlike Save this
+/// handler never reads [`run::RunBar`].
+fn wire_rescan(button: &gtk::Button, status: &gtk::Label, project: &Project) {
+    let status = status.clone();
+    // The window is handed an immutable `&Project` and holds no live project yet, so the scan works
+    // on a private copy. F0.9's live project state replaces this; until then it is what keeps the
+    // pruned list for whatever flow reads the session next. Which folder is open is the same
+    // stand-in New and Save use, so all three flows agree.
+    let root = std::env::current_dir().unwrap_or_default();
+    let project = Rc::new(RefCell::new(project.clone()));
+    button.connect_clicked(move |_| {
+        let dir = startup::session_dir(&root);
+        let tree = layout::Tree::new(&dir).ok();
+        let found = rescan::rescan(&mut project.borrow_mut(), &root, &dir, tree.as_ref());
+        for line in &found.logs {
+            log_line(line);
+        }
+        // Only the status and the log: the pages render the `&Project` handed to `build_window` at
+        // startup, so repainting them belongs with F0.9's live project state — as does F0.5's log
+        // expander, which is why these lines are not yet on screen.
+        status.set_text(found.status);
+    });
+}
+
 /// The Save button's tooltip, §1's wording for badge **3**.
 const SAVE_TIP: &str = "Save this project to a file";
 
@@ -556,6 +596,18 @@ pub fn save_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 /// The tooltip Save carries, which is how a test reads §1's wording for badge **3**.
 pub fn save_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
     save_button(window)?.tooltip_text().map(|text| text.to_string())
+}
+
+/// The Rescan button, named so a test can press it the way a user does.
+pub fn rescan_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "rescan-button")?
+        .downcast()
+        .ok()
+}
+
+/// The tooltip Rescan carries, which is how a test reads §1's wording for badge **8**.
+pub fn rescan_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
+    rescan_button(window)?.tooltip_text().map(|text| text.to_string())
 }
 
 /// The New button, named so a test can press it the way a user does.

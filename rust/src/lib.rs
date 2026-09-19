@@ -8,6 +8,7 @@ pub mod narration;
 pub mod new_project;
 pub mod project;
 pub mod publish;
+pub mod rescan;
 pub mod requests;
 pub mod roles;
 pub mod run;
