@@ -11,6 +11,7 @@ pub mod requests;
 pub mod roles;
 pub mod services;
 pub mod settings;
+pub mod shell;
 pub mod snapshot;
 pub mod textfmt;
 pub mod tools;

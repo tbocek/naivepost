@@ -3,8 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
-use glib::{self};
+use glib;
 use naivepost::project::{self, Project, Source};
+use naivepost::shell::{self, Page};
 
 /// A directory under the temp dir that no other test run shares.
 fn temp_dir(tag: &str) -> PathBuf {
@@ -70,39 +71,127 @@ fn fixture_project_loads() {
     assert!(!loaded.context.is_empty());
 }
 
-/// GTK links and the window builds on a real display (the justfile runs tests
-/// under `xvfb-run`). The four pages are there and show the project's state.
-#[test]
-fn window_shows_the_four_pages() {
-    let app = adw::Application::builder()
-        .application_id(naivepost::ui::APP_ID)
-        .flags(gio::ApplicationFlags::NON_UNIQUE)
-        .build();
-    let model = project::load(&fixture_dir()).expect("fixture loads");
-
-    let done = std::rc::Rc::new(std::cell::Cell::new(false));
-    {
-        let app = app.clone();
-        let done = done.clone();
-        app.connect_activate(move |app| {
-            let window = naivepost::ui::build_window(app, &model, "Prepare");
-            window.present();
-
-            let names = page_names(&window);
-            let text = context_label(&window);
-
-            assert_eq!(names, naivepost::PAGES, "page labels on screen");
-            assert!(
-                text.contains("blockchain lecture"),
-                "user context missing from the window: {text}"
-            );
-            done.set(true);
+/// One running GTK application per test binary, taken in turn by the window tests.
+///
+/// `g_application_run` claims the process's default main context and refuses a second claimant ("it
+/// is already acquired"), and an application that has run cannot be run again — so a test binary gets
+/// exactly one. All three window checks therefore happen inside its single `activate`, in order, and
+/// each records that it ran; the `#[test]`s below assert on those flags, so a check that never
+/// happened is a failure rather than a quiet pass. The application is run by the first test to ask,
+/// and `window_round`'s `Once` makes every other test wait for it, which is what keeps GTK's own
+/// single-main-loop rule out of the tests' way.
+fn window_round() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let app = adw::Application::builder()
+            .application_id(naivepost::ui::APP_ID)
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.connect_activate(|app| {
+            // Each check records itself only if it got that far, so the first one to fail does not
+            // leave the other two reported as never having run.
+            check_four_pages(app);
+            RAN_FOUR_PAGES.store(true, std::sync::atomic::Ordering::SeqCst);
+            check_locked_tab(app);
+            RAN_LOCKED.store(true, std::sync::atomic::Ordering::SeqCst);
+            check_unlocked_tab(app);
+            RAN_UNLOCKED.store(true, std::sync::atomic::Ordering::SeqCst);
             app.quit();
         });
-    }
+        app.run_with_args::<String>(&[]);
+    });
+}
 
-    app.run_with_args::<String>(&[]);
-    assert!(done.get(), "the activate handler never ran");
+static RAN_FOUR_PAGES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_LOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_UNLOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn ran(flag: &std::sync::atomic::AtomicBool, what: &str) {
+    window_round();
+    assert!(flag.load(std::sync::atomic::Ordering::SeqCst), "{what} never ran");
+}
+
+#[test]
+fn window_shows_the_four_pages() {
+    ran(&RAN_FOUR_PAGES, "the four-page check");
+}
+
+/// F0.1 through the widgets: clicking a tab goes through the shell, so a locked one bounces and the
+/// status line says why.
+#[test]
+fn clicking_a_locked_tab_bounces_and_says_why() {
+    ran(&RAN_LOCKED, "the locked-tab check");
+}
+
+/// And an unlocked tab does move, with the status line left saying nothing.
+#[test]
+fn clicking_an_unlocked_tab_shows_its_page() {
+    ran(&RAN_UNLOCKED, "the unlocked-tab check");
+}
+
+/// GTK links and the window builds on a real display (the justfile runs tests under `xvfb-run`).
+/// The four pages are there and show the project's state.
+fn check_four_pages(app: &adw::Application) {
+    let model = project::load(&fixture_dir()).expect("fixture loads");
+    let window = naivepost::ui::build_window(app, &model, "Prepare");
+    window.present();
+
+    let names = page_names(&window);
+    let text = context_label(&window);
+    assert_eq!(names, naivepost::PAGES, "page labels on screen");
+    assert!(
+        text.contains("blockchain lecture"),
+        "user context missing from the window: {text}"
+    );
+}
+
+/// F0.1 through the widgets: clicking a tab goes through the shell, so a locked one bounces and the
+/// status line says why. The click is real — `emit_clicked` is what a press on the tab does — and
+/// nothing about the decision is repeated here (spec/00-principles.md §5).
+fn check_locked_tab(app: &adw::Application) {
+    // No source is marked footage, which is the state that locks Cut (§1).
+    let model = Project {
+        sources: vec![Source { path: "voice.wav".to_string(), ..Default::default() }],
+        ..Default::default()
+    };
+    let window = naivepost::ui::build_window(app, &model, "Prepare");
+    window.present();
+
+    // Greyed and holding the reason, but still clickable — that is how a click gets to bounce at all.
+    assert!(naivepost::ui::tab_dimmed(&window, Page::Cut), "the Cut tab is greyed");
+    assert!(!naivepost::ui::tab_dimmed(&window, Page::Prepare));
+    assert_eq!(
+        naivepost::ui::tab_tooltip(&window, Page::Cut).as_deref(),
+        Some(shell::CUT_LOCK),
+        "tooltip = the reason"
+    );
+
+    let cut = naivepost::ui::tab_button(&window, Page::Cut).expect("a Cut tab");
+    assert!(cut.is_sensitive(), "greyed, not disabled");
+    cut.emit_clicked();
+
+    let state = naivepost::ui::state(&window);
+    assert_eq!(state.page, Page::Prepare, "the page did not move");
+    assert_eq!(state.status, shell::CUT_LOCK, "status = the lock reason");
+}
+
+/// And an unlocked tab does move, with the status line left saying nothing.
+fn check_unlocked_tab(app: &adw::Application) {
+    let model = project::load(&fixture_dir()).expect("fixture loads");
+    let window = naivepost::ui::build_window(app, &model, "Prepare");
+    window.present();
+
+    assert!(!naivepost::ui::tab_dimmed(&window, Page::Cut), "the fixture has footage");
+    assert_eq!(
+        naivepost::ui::tab_tooltip(&window, Page::Cut).as_deref(),
+        Some(Page::Cut.tip()),
+        "an unlocked tab describes its page instead"
+    );
+
+    naivepost::ui::tab_button(&window, Page::Cut).expect("a Cut tab").emit_clicked();
+    let state = naivepost::ui::state(&window);
+    assert_eq!(state.page, Page::Cut);
+    assert_eq!(state.status, "", "a switch that worked has nothing to report");
 }
 
 /// Depth-first walk of the window's widget tree.
