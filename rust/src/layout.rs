@@ -140,6 +140,12 @@ impl Tree {
         self.input_dir(source).join("asr")
     }
 
+    /// Forced alignment scratch: `w<ms>.wav` per window and its `.plan`. When it is removed is the
+    /// Prepare flows' rule (F1.x), not a layout question.
+    pub fn align_scratch(&self, source: &str) -> PathBuf {
+        self.input_dir(source).join("align")
+    }
+
     /// Diarization scratch: s.wav, a00.wav…, anchor.list, anchor.wav, seg.wav,
     /// cc.list, win.wav.
     pub fn diar_scratch(&self, source: &str) -> PathBuf {

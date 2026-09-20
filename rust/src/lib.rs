@@ -1,4 +1,5 @@
 pub mod add_sources;
+pub mod align;
 pub mod asr;
 pub mod bench;
 pub mod bodies;
