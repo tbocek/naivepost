@@ -455,6 +455,42 @@ pub fn save(paths: &Paths, conf: &Conf) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Where `llm.conf` used to be: beside the videos, under the folder the program was started from.
+///
+/// That placement was wrong twice over — the endpoints are the same for every session this machine
+/// ever cuts, and a session folder gets copied, zipped and handed around, so the API key went with
+/// it (03-shell.md §6's "legacy `<root>/llm.conf`").
+pub fn legacy_conf_path(root: &Path) -> PathBuf {
+    root.join("llm.conf")
+}
+
+/// Take over a pre-merge `llm.conf` still sitting beside the videos, once, and put it in the config
+/// folder. Returns the legacy path when a move happened, so the caller can log which file stopped
+/// being read.
+///
+/// Nothing happens while the config folder's own file exists: that one always wins, which is what
+/// makes "migrated once" true rather than a rule that has to be remembered (§6's precedence). The
+/// bytes are copied verbatim instead of parsed and re-rendered — a re-render would drop the comments
+/// a user or an older build left in the file, and every key in it is one [`parse`] already reads.
+/// Copied rather than moved: the old file is one line of documentation about a machine that has been
+/// working for months, and deleting somebody's config to tidy up is not this program's call.
+pub fn migrate_legacy(paths: &Paths, root: &Path) -> Result<Option<PathBuf>, String> {
+    let path = paths.conf_path();
+    if path.exists() {
+        return Ok(None);
+    }
+    let legacy = legacy_conf_path(root);
+    let bytes = match fs::read(&legacy) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("{}: {err}", legacy.display())),
+    };
+    // The same modes as `save`: what arrives is the machine's endpoints and its key.
+    write_mode(&paths.config_dir, 0o700)?;
+    write_bytes(&path, &bytes, 0o600)?;
+    Ok(Some(legacy))
+}
+
 /// The projects remembered by the legacy `settings.json`, which §7 keeps readable and never
 /// writable. `None` when the file is not there.
 pub fn legacy_projects(paths: &Paths) -> Result<Option<BTreeMap<String, String>>, String> {

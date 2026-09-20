@@ -51,6 +51,12 @@ fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
     // The environment is read here and handed to settings.rs as strings, which is how that module
     // keeps its own tests off the real `$HOME`. No config folder at all means no settings.
     let paths = settings_paths();
+    // §6's "legacy `<root>/llm.conf`, migrated once": a machine that has been cutting for months
+    // keeps its endpoints without retyping them. A migration that cannot be done must not cost the
+    // launch either, which is the same rule the read below states for an unreadable file.
+    if let Some(paths) = paths.as_ref() {
+        let _ = naivepost::settings::migrate_legacy(paths, &root);
+    }
     // A settings file that cannot be read must not cost the user their session: the fallback opens
     // the working copy like any other machine's, and the broken file stays for them to look at.
     let conf = paths
