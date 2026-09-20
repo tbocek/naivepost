@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::settings;
+use crate::{project, settings};
 
 /// The working copy's name: the session nobody has named yet. A constant because S3 and S4 both
 /// spell it, and they have to spell it the same or a launch opens one and saves into another
@@ -48,6 +48,22 @@ pub fn last_project(conf: &settings::Conf, root: &Path) -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+/// The project folder a path names. A double-clicked or handed `naivepost.json`
+/// is somebody asking for the project, and a project is a folder (§03-shell.md
+/// F0.9: "a path naming `naivepost.json` opens its folder"), so the file stands
+/// for its parent; anything else already is the folder.
+///
+/// Single-file adoption — `<root>/project.json` at start, or a file handed over,
+/// staged through `<name>.data` and `.adopting` — is prototype-only and dropped
+/// in this rewrite: §8 lists it under what the rewrite does not do, so a handed
+/// `project.json` stays the plain path it is.
+pub fn project_folder(path: &Path) -> PathBuf {
+    if path.file_name().and_then(|name| name.to_str()) == Some(project::PROJECT_FILE) {
+        return path.parent().map(Path::to_path_buf).unwrap_or_else(|| path.to_path_buf());
+    }
+    path.to_path_buf()
+}
+
 /// S1 → S2 → S3 → S4, in that precedence and no other.
 ///
 /// The first handed file wins even when it is not there: a double-click is somebody asking for
@@ -59,11 +75,11 @@ pub fn last_project(conf: &settings::Conf, root: &Path) -> Option<PathBuf> {
 /// Which project this launch opened is not recorded here either; that is F0.9's `rememberProject`.
 pub fn decide(root: &Path, conf: &settings::Conf, handed: &[PathBuf]) -> Opened {
     if let Some(path) = handed.first() {
-        return Opened::Desktop { path: path.clone() };
+        return Opened::Desktop { path: project_folder(path) };
     }
 
     if let Some(path) = last_project(conf, root) {
-        return Opened::Remembered { path };
+        return Opened::Remembered { path: project_folder(&path) };
     }
 
     let session = session_dir(root);

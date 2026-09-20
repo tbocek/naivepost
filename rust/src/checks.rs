@@ -215,16 +215,24 @@ pub fn tts_endpoint_verdict(models: &[AudioModel]) -> Result<String, String> {
 /// would fail a working setup over a field the server left blank (prototype: `m.Task != "" &&
 /// m.Task != task`, gui/setup.go:691). A *wrong* task is the interesting failure — a catalogue
 /// entry copied from another model with its task left as it was.
-pub fn model_verdict(models: &[AudioModel], wanted_id: &str, wanted_task: &str) -> Result<String, String> {
+/// The verdict for one model id against the server's own catalogue. `step` names who
+/// is asking, so the refusal says "Prepare needs \"asr\" there" rather than leaving the
+/// reader to work out which of the four servers was meant (§8).
+pub fn model_verdict(
+    models: &[AudioModel],
+    wanted_id: &str,
+    needed: services::Need<'_>,
+) -> Result<String, String> {
+    let services::Need { task: wanted_task, step } = needed;
     match models.iter().find(|model| model.id == wanted_id) {
         None => Err(services::missing_model(
             "the audio.cpp server",
             models,
             wanted_id,
-            wanted_task,
+            needed,
         )),
         Some(model) if !model.task.is_empty() && model.task != wanted_task => Err(format!(
-            "{wanted_id:?} is declared task {:?}, and cannot be used for {wanted_task:?}",
+            "{wanted_id:?} is declared task {:?}, and {step} needs {wanted_task:?}",
             model.task
         )),
         Some(model) => Ok(format!("{wanted_id:?} is served (task {:?})", model.task)),
@@ -675,5 +683,33 @@ impl TestRow {
             Phase::Finished(verdict) => Some(log_line(self.name, verdict)),
             Phase::Running | Phase::Idle => None,
         }
+    }
+}
+
+/// The Settings dialog's own log: what each test said, in order. It is the dialog's
+/// expander state — the UI draws it collapsed or open from [`TestLog::open`] and
+/// forwards every row's verdict into [`TestLog::push`], so the rule that opens it
+/// lives here where it can be tested (spec/03-shell.md §8).
+#[derive(Debug, Clone, Default)]
+pub struct TestLog {
+    pub lines: Vec<String>,
+    pub open: bool,
+}
+
+impl TestLog {
+    /// Collapsed: ten rows that have not been pressed say nothing worth taking the
+    /// dialog's height for.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// One verdict, and the first failure opening the log. It never closes again —
+    /// a log that shut itself while the reason is still on screen would hide it, and
+    /// the user can close it themselves.
+    pub fn push(&mut self, verdict: String, passed: bool) {
+        if !passed {
+            self.open = true;
+        }
+        self.lines.push(verdict);
     }
 }

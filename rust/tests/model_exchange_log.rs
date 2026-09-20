@@ -40,6 +40,7 @@ fn call(step: &str, text_bytes: usize, reply: &str) -> Call {
         model: "qwen3-32b".into(),
         mode: Mode::Thinking,
         took_secs: 0,
+        thinking_secs: None,
         messages: vec![Message {
             role: "user".into(),
             parts: text(&"x".repeat(text_bytes)),
@@ -61,16 +62,17 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s1_one_page_per_run_named_after_the
     assert_eq!(page.rel(), "llm/0307-142201-Describe.html");
     assert!(page.path().ends_with("llm/0307-142201-Describe.html"));
 
+    // A run that asked the model nothing leaves no empty page behind. Checked first:
+    // §8 writes the page as the request goes out, so a recorded call means a folder.
+    let mut quiet = Page::start(&tree, "0307-142201", "Describe");
+    assert_eq!(quiet.flush(), None);
+    assert!(!tree.dir().join("llm").exists());
+
     // A later step adds a section, it never renames the page.
     let mut second = call("Narrate", 10, "voiced");
     second.took_secs = 7;
     page.record(&second);
     assert_eq!(page.rel(), "llm/0307-142201-Describe.html");
-
-    // A run that asked the model nothing leaves no empty page behind.
-    let mut quiet = Page::start(&tree, "0307-142201", "Describe");
-    assert_eq!(quiet.flush(), None);
-    assert!(!tree.dir().join("llm").exists());
 }
 
 #[test]
@@ -115,7 +117,7 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s3_cut_off_and_empty_reply_are_call
         vec![
             ">>> Cut: 2.0 kB of text and 0 image(s) went to the LLM",
             ">>> Cut: 3 B came back in 0s",
-            ">>> Cut: the model sent nothing back",
+            ">>> Cut: the model answered nothing at all",
         ]
     );
 
@@ -127,7 +129,7 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s3_cut_off_and_empty_reply_are_call
         exchanges::log_lines(&failed),
         vec![
             ">>> Cut: 2.0 kB of text and 0 image(s) went to the LLM",
-            ">>> Cut: the call failed: connection refused",
+            ">>> Cut: the call failed after 0s: connection refused",
         ]
     );
 }
@@ -164,14 +166,14 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s5_the_page_link_appears_once_per_r
     let mut page = Page::start(&tree, "0307-142201", "Describe");
 
     let first = page.record(&call("Describe", 32, "described"));
-    assert_eq!(first.len(), 4);
+    assert_eq!(first.len(), 5, "{first:?}");
     assert_eq!(
-        first[3],
+        first[1],
         ">>>   this run's exchanges, images included: llm/0307-142201-Describe.html"
     );
 
     let second = page.record(&call("Narrate", 32, "voiced"));
-    assert_eq!(second.len(), 3);
+    assert_eq!(second.len(), 4, "{second:?}");
     assert!(
         !second.iter().any(|line| line.contains("this run's exchanges")),
         "{second:?}"
@@ -237,9 +239,108 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s7_recording_never_fails_the_call()
 
     let mut page = Page::start(&tree, "0307-142201", "Describe");
     let lines = page.record(&call("Describe", 32, "described"));
-    assert_eq!(lines.len(), 4);
+    assert_eq!(lines.len(), 5, "{lines:?}");
 
     let failure = page.flush().expect("a page that cannot be written must say so");
     assert!(failure.starts_with("could not keep the exchange: "), "{failure}");
     assert!(!project.join("llm/0307-142201-Describe.html").exists());
+}
+
+// §8 re-words two of §7's verdicts and asks for the page to appear as the call is
+// made rather than only at the end. Both live in `Page::begin`/`stream`/`complete`.
+
+#[test]
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_page_is_written_before_the_reply_arrives()
+{
+    let tree = tree("s8-progressive");
+    let mut page = Page::start(&tree, "0307-142201", "Describe");
+    assert!(!page.path().exists(), "naming the page writes nothing");
+
+    let mut call = call("Describe", 64, "");
+    call.took_secs = 5;
+    let lines = page.begin(&call);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_eq!(lines[0], ">>> Describe: 64 B of text and 0 image(s) went to the LLM");
+    assert_eq!(
+        lines[1],
+        ">>>   this run's exchanges, images included: llm/0307-142201-Describe.html"
+    );
+
+    // The prompt is on disk already — a run killed here still leaves what it asked.
+    let written = fs::read_to_string(page.path()).unwrap();
+    assert!(written.contains("<h2>1. Describe</h2>"), "{written}");
+    assert!(!written.contains("came back"), "no verdict before the reply");
+
+    page.stream("Split ").unwrap();
+    page.stream("at 12 s").unwrap();
+    let streamed = fs::read_to_string(page.path()).unwrap();
+    assert!(streamed.contains("Split at 12 s"), "{streamed}");
+
+    call.reply = "Split at 12 s".into();
+    let verdict = page.complete(&call);
+    assert_eq!(verdict[1], ">>> Describe: 13 B came back in 5s", "{verdict:?}");
+    let whole = fs::read_to_string(page.path()).unwrap();
+    assert_eq!(
+        whole.matches("Split at 12 s").count(),
+        1,
+        "the streamed fragment is replaced, not repeated:\n{whole}"
+    );
+    assert!(!whole.contains("<!--streamed"), "the marker is internal");
+
+    // Nothing is open any more, so a late chunk goes nowhere.
+    assert_eq!(page.stream("late"), None);
+    assert_eq!(page.flush(), None);
+}
+
+#[test]
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_verdict_says_how_long_and_what_it_cost()
+{
+    let mut long_thinker = call("Cut", 4_096, "cut at the word edges");
+    long_thinker.took_secs = 182;
+    long_thinker.thinking_secs = Some(62);
+    assert_eq!(
+        exchanges::log_lines(&long_thinker)[1],
+        ">>> Cut: 21 B came back in 3m02s, after 1m02s of thinking"
+    );
+
+    // A model that does not separate the two gets the plain verdict.
+    let plain = call("Cut", 4_096, "cut at the word edges");
+    assert_eq!(exchanges::log_lines(&plain)[1], ">>> Cut: 21 B came back in 0s");
+}
+
+#[test]
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_verdict_for_an_answer_of_nothing_and_a_failed_call()
+{
+    let nothing = call("Narrate", 128, "   ");
+    assert_eq!(
+        exchanges::log_lines(&nothing),
+        vec![
+            ">>> Narrate: 128 B of text and 0 image(s) went to the LLM",
+            ">>> Narrate: 3 B came back in 0s",
+            ">>> Narrate: the model answered nothing at all",
+        ]
+    );
+
+    let mut failed = Call {
+        error: Some("connection refused".into()),
+        ..call("Narrate", 128, "")
+    };
+    failed.took_secs = 90;
+    assert_eq!(
+        exchanges::log_lines(&failed),
+        vec![
+            ">>> Narrate: 128 B of text and 0 image(s) went to the LLM",
+            ">>> Narrate: the call failed after 1m30s: connection refused",
+        ]
+    );
+
+    // The page carries the same two notes.
+    let tree = tree("s8-notes");
+    let mut page = Page::start(&tree, "0307-142201", "Narrate");
+    page.record(&nothing);
+    page.record(&failed);
+    page.flush();
+    let html = fs::read_to_string(page.path()).unwrap();
+    assert!(html.contains("the model answered nothing at all"), "{html}");
+    assert!(html.contains("connection refused"), "{html}");
 }

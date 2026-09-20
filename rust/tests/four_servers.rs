@@ -390,7 +390,7 @@ fn sec_02_services_1_the_four_servers_s10_missing_model_names_the_server_and_its
 
     // A shipped default: the message carries the install command for its weights, and lists what
     // the server does serve so the user can see how far off they are.
-    let msg = svc::missing_model(url, &models, svc::SEP_MODEL, "sep");
+    let msg = svc::missing_model(url, &models, svc::SEP_MODEL, svc::Need { task: "sep", step: "Prepare" });
     assert!(msg.contains(url), "{msg}");
     assert!(msg.contains("nemotron-asr"), "{msg}");
     assert!(msg.contains("sortformer-diar"), "{msg}");
@@ -407,13 +407,13 @@ fn sec_02_services_1_the_four_servers_s10_missing_model_names_the_server_and_its
     );
 
     // A hand-picked id gets the same message with no command: its weights would be a guess.
-    let msg = svc::missing_model(url, &models, "my-separation-model", "sep");
+    let msg = svc::missing_model(url, &models, "my-separation-model", svc::Need { task: "sep", step: "Prepare" });
     assert!(msg.contains("my-separation-model"), "{msg}");
     assert!(!msg.contains("model_manager_v2.py"), "{msg}");
 
     // Present but declared for another task says so — the usual cause is a catalog entry copied
     // from another model with its task left as it was.
-    let msg = svc::missing_model(url, &models, "nemotron-asr", "sep");
+    let msg = svc::missing_model(url, &models, "nemotron-asr", svc::Need { task: "sep", step: "Prepare" });
     assert!(msg.contains("task"), "{msg}");
     assert!(msg.contains("\"asr\""), "{msg}");
     assert!(msg.contains("\"sep\""), "{msg}");

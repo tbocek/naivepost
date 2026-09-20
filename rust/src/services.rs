@@ -120,6 +120,46 @@ pub fn llm_endpoint(conf: &Conf) -> Endpoint {
     }
 }
 
+/// A server that refuses uploads at all (§03-shell#8-details-confirmed-against-the-code-verification-pass).
+/// `POST /v1/ui/upload` is part of audio.cpp's management API, and a build started without
+/// `--ui-management` answers 403 — or 401/405, which are the same misconfiguration in a
+/// different costume. The answer is the fix, not the status: nobody reads a 403 as "start
+/// that server differently". A path in the server's own message names the folder to mount.
+///
+/// Any other status answers `None` so the client's ordinary HTTP error stands.
+pub fn upload_refused(status: u16, body: &str) -> Option<String> {
+    if !matches!(status, 401 | 403 | 405) {
+        return None;
+    }
+    let mut fix = "the audio.cpp server refuses uploads -- start it with --ui-management".to_string();
+    if let Some(folder) = named_path(body) {
+        fix.push_str(&format!(", and mount {folder} into the container so it can read what is uploaded"));
+    }
+    Some(fix)
+}
+
+/// The first absolute path in a server's message. Paths are how audio.cpp explains a
+/// folder it was not given, and quoting one back is the only part of its sentence that
+/// survives translation into advice.
+fn named_path(body: &str) -> Option<&str> {
+    body.split_whitespace()
+        .map(|word| word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && !matches!(c, '/' | '.' | '_' | '-')))
+        .find(|word| word.starts_with('/') && word.len() > 1)
+}
+
+/// Where an uploaded file landed. A 200 with no usable `path` is a failure, not a success:
+/// every later request names the file by what this returned, so carrying on would fail
+/// minutes later in a step that no longer mentions the upload (§8). The raw reply is named
+/// because "it answered something unexpected" is not actionable.
+pub fn upload_path(reply: &serde_json::Value) -> Result<String, String> {
+    match reply.get("path").and_then(|value| value.as_str()) {
+        Some(path) if !path.is_empty() => Ok(path.to_string()),
+        _ => Err(format!(
+            "the audio.cpp server accepted the upload without naming where it put it: {reply}"
+        )),
+    }
+}
+
 /// audio.cpp's server: the settings box, then `NAIVEPOST_TTS_URL`, then `AUDIOCPP_SERVER`, then
 /// the loopback. The dialog wins over the environment because it is the one of the two a user
 /// can see and clear; `AUDIOCPP_SERVER` is audio.cpp's own variable, so setting it once points
@@ -354,17 +394,28 @@ pub fn install_package(id: &str) -> Option<&'static str> {
 /// Names the server, lists what it *does* serve (sorted, so the same server answers the same way
 /// twice), and adds the install command only for a shipped default: for a hand-picked id the
 /// weights would be a guess, and a wrong `model_manager_v2.py install` line is worse than none.
+/// What one step needs from the audio server: the task its request names, and the
+/// step that noticed (§03-shell#8-details-confirmed-against-the-code-verification-pass:
+/// "but **Prepare** needs Z there"). Naming the step is what makes a message about
+/// four servers actionable.
+#[derive(Debug, Clone, Copy)]
+pub struct Need<'a> {
+    pub task: &'a str,
+    pub step: &'a str,
+}
+
 pub fn missing_model(
     url: &str,
     models: &[AudioModel],
     wanted_id: &str,
-    wanted_task: &str,
+    needed: Need<'_>,
 ) -> String {
+    let Need { task: wanted_task, step } = needed;
     if let Some(model) = models.iter().find(|m| m.id == wanted_id) {
         // Present, declared for something else — the usual cause is a catalog entry copied from
         // another model with its task left as it was.
         return format!(
-            "{wanted_id:?} on {url} is declared task {:?}, but this step needs {wanted_task:?} there",
+            "{wanted_id:?} on {url} is declared task {:?}, but {step} needs {wanted_task:?} there",
             model.task
         );
     }

@@ -92,6 +92,9 @@ pub struct Call {
     pub model: String,
     pub mode: Mode,
     pub took_secs: u64,
+    /// How much of `took_secs` went to reasoning rather than answering. `None` when
+    /// the model does not separate them — §8 prints the cost only when it is known.
+    pub thinking_secs: Option<u64>,
     pub messages: Vec<Message>,
     pub reply: String,
     pub reasoning: Option<String>,
@@ -158,6 +161,25 @@ pub fn preview(reply: &str) -> String {
     collapsed
 }
 
+/// What a call that answered puts in the log: how much came back and how long it
+/// took, with the reasoning time when the model spent any — four minutes of thinking
+/// behind two sentences is the fact worth naming (§8).
+fn came_back(call: &Call) -> String {
+    let mut line = format!(
+        ">>> {}: {} came back in {}",
+        call.step,
+        size_of(call.reply.len()),
+        duration_of(call.took_secs)
+    );
+    if let Some(thinking) = call.thinking_secs {
+        line.push_str(&format!(", after {} of thinking", duration_of(thinking)));
+    }
+    if call.cut_off {
+        line.push_str(&format!(" {CUT_OFF}"));
+    }
+    line
+}
+
 /// The two lines one call puts in the app log, plus the reply preview.
 ///
 /// The `>>> ` prefixes are kept because §7 quotes these lines literally; §2's
@@ -172,23 +194,18 @@ pub fn log_lines(call: &Call) -> Vec<String> {
     )];
 
     if let Some(err) = &call.error {
-        lines.push(format!(">>> {}: the call failed: {err}", call.step));
+        lines.push(format!(
+            ">>> {}: the call failed after {}: {err}",
+            call.step,
+            duration_of(call.took_secs)
+        ));
         return lines;
     }
 
-    let mut came_back = format!(
-        ">>> {}: {} came back in {}",
-        call.step,
-        size_of(call.reply.len()),
-        duration_of(call.took_secs)
-    );
-    if call.cut_off {
-        came_back.push_str(&format!(" {CUT_OFF}"));
-    }
-    lines.push(came_back);
+    lines.push(came_back(call));
 
     if call.reply.trim().is_empty() {
-        lines.push(format!(">>> {}: the model sent nothing back", call.step));
+        lines.push(format!(">>> {}: the model answered nothing at all", call.step));
     } else {
         lines.push(format!(">>>   the reply begins: {}", preview(&call.reply)));
     }
@@ -269,7 +286,7 @@ pub fn section_html(seq: usize, call: &Call) -> String {
     }
 
     if call.reply.trim().is_empty() {
-        html.push_str("<p class=\"note\">the model sent nothing back</p>\n");
+        html.push_str("<p class=\"note\">the model answered nothing at all</p>\n");
     } else {
         html.push_str(&format!("<pre>{}</pre>\n", esc(&call.reply)));
     }
@@ -281,12 +298,16 @@ pub fn section_html(seq: usize, call: &Call) -> String {
     html
 }
 
-/// One run's page: sections in call order, written once at the end.
+/// One run's page: sections in call order, written when the request goes out, again
+/// as the reply streams, and whole at the end. Writing early is the point — a run
+/// killed mid-call still leaves the prompt it was stuck on.
 pub struct Page {
     name: String,
     dir: PathBuf,
     seq: usize,
     sections: Vec<String>,
+    /// The section of the call currently open, so `stream` can grow it in place.
+    open: Option<usize>,
 }
 
 impl Page {
@@ -298,6 +319,7 @@ impl Page {
             dir: tree.llm_dir(),
             seq: 0,
             sections: Vec::new(),
+            open: None,
         }
     }
 
@@ -317,13 +339,62 @@ impl Page {
     /// File one call and return what the app log should show for it: its own
     /// lines, then the page link the first time round only.
     pub fn record(&mut self, call: &Call) -> Vec<String> {
+        let mut lines = self.begin(call);
+        lines.extend(self.complete(call));
+        lines
+    }
+
+    /// The request half: filed as a section and on disk before the model has said a
+    /// word. Returns what went out, plus the page link — once per run, on this first
+    /// call of the run (§8).
+    pub fn begin(&mut self, call: &Call) -> Vec<String> {
         self.seq += 1;
         self.sections.push(section_html(self.seq, call));
-        let mut lines = log_lines(call);
+        self.open = Some(self.seq - 1);
+        self.write();
+
+        let (text, images) = call.sent();
+        let mut lines = vec![format!(
+            ">>> {}: {} of text and {images} image(s) went to the LLM",
+            call.step,
+            size_of(text)
+        )];
         if self.seq == 1 {
             lines.push(link_line(&self.rel()));
         }
         lines
+    }
+
+    /// Part of the reply arrived: append it to the open section and put the page back
+    /// on disk. `None` once the call is complete, or with nothing to add — a recorder
+    /// that is not recording is valid and inert.
+    pub fn stream(&mut self, text: &str) -> Option<String> {
+        let open = self.open?;
+        if text.is_empty() {
+            return None;
+        }
+        let section = &self.sections[open];
+        let head = match section.find(STREAM_MARK) {
+            Some(at) => &section[..at],
+            None => section.as_str(),
+        };
+        let streamed = match section.rfind(STREAM_MARK) {
+            Some(at) => format!("{}{}", &section[at + STREAM_MARK.len()..], text),
+            None => text.to_string(),
+        };
+        self.sections[open] = format!("{head}{STREAM_MARK}{streamed}");
+        self.write();
+        Some(streamed)
+    }
+
+    /// The call is over: rewrite its section whole from the finished call — the
+    /// streamed fragment is replaced, not repeated — and return the verdict lines.
+    pub fn complete(&mut self, call: &Call) -> Vec<String> {
+        if let Some(open) = self.open.take() {
+            self.sections[open] = section_html(open + 1, call);
+            self.write();
+        }
+        log_lines(call)
     }
 
     /// Write the page. `None` when there is nothing to write or it worked;
@@ -335,7 +406,19 @@ impl Page {
         }
         write_page(&self.dir, &self.name, &self.sections).err()
     }
+
+    /// Rewrite the page. A failure is dropped here on purpose: §8's "recording never
+    /// fails the call" means a half-written page is acceptable and an error handed to
+    /// the step is not. The final [`Page::flush`] is what reports it.
+    fn write(&mut self) {
+        let _ = write_page(&self.dir, &self.name, &self.sections);
+    }
 }
+
+/// Marks where a call's streamed reply begins inside its own section, so `stream` can
+/// grow it and `complete` replace it wholesale. An HTML comment: invisible in the page
+/// and never part of the model's text.
+const STREAM_MARK: &str = "<!--streamed:";
 
 /// The whole page in one write: a half-written file would look like an exchange
 /// that never happened.

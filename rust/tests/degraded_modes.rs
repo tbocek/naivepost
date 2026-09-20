@@ -302,11 +302,11 @@ fn sec_02_services_4_degraded_modes_s12_flatpak_keeps_everything_in_the_sandbox(
     // reused here rather than restated: one place decides where the voice library lives.
     let data = Path::new("/home/user/.var/app/ch.bocek.naivepost/data");
     assert_eq!(
-        settings::voices_folder("", true, data),
+        settings::voices_folder("", "", true, data),
         data.join("voices")
     );
     // Outside Flatpak it is the machine's model folder, not somewhere under the data dir.
-    let outside = settings::voices_folder("", false, data);
+    let outside = settings::voices_folder("", "", false, data);
     assert!(!outside.starts_with(data), "{outside:?}");
 
     // And the web tools route through one predicate, so there is no second Flatpak rule to drift from it.

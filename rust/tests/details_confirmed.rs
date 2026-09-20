@@ -332,15 +332,15 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_aud
 
     // One id per button, and the declared task is what decides.
     let catalogue = [model("nemotron-asr", "nemotron", "asr"), model("mislabelled", "x", "diar")];
-    let absent = checks::model_verdict(&catalogue, "nope-asr", "asr").expect_err("not served");
+    let absent = checks::model_verdict(&catalogue, "nope-asr", naivepost::services::Need { task: "asr", step: "Prepare" }).expect_err("not served");
     assert!(absent.contains("nope-asr"), "{absent}");
-    let wrong = checks::model_verdict(&catalogue, "mislabelled", "asr")
+    let wrong = checks::model_verdict(&catalogue, "mislabelled", naivepost::services::Need { task: "asr", step: "Prepare" })
         .expect_err("declared for another task");
     assert!(wrong.contains("diar"), "it says what the server declares: {wrong}");
-    assert!(checks::model_verdict(&catalogue, "nemotron-asr", "asr").is_ok());
+    assert!(checks::model_verdict(&catalogue, "nemotron-asr", naivepost::services::Need { task: "asr", step: "Prepare" }).is_ok());
     // A blank declared task passes: plenty of servers list ids with no task at all.
     let blank = [model("bs-roformer", "bs", "")];
-    assert!(checks::model_verdict(&blank, "bs-roformer", "sep").is_ok());
+    assert!(checks::model_verdict(&blank, "bs-roformer", naivepost::services::Need { task: "sep", step: "Prepare" }).is_ok());
     // The four buttons this covers, each with the task it checks.
     assert_eq!(AUDIO_ROWS.len(), 4);
 

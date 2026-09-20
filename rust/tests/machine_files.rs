@@ -309,33 +309,33 @@ fn sec_01_project_and_files_7_machine_files_s3_voices_folder_default_and_overrid
     let data = d.paths.data_dir.clone();
 
     assert_eq!(
-        settings::voices_folder("", true, &data),
+        settings::voices_folder("", "", true, &data),
         data.join("voices"),
         "inside Flatpak the default sits under the data dir"
     );
     assert_eq!(
-        settings::voices_folder("", false, &data),
+        settings::voices_folder("", "", false, &data),
         PathBuf::from("/mnt/models/audiocpp/voices"),
         "outside it the default is the dev box's folder"
     );
     assert_eq!(
-        settings::voices_folder("", false, &data),
+        settings::voices_folder("", "", false, &data),
         PathBuf::from("/mnt/models/audiocpp/voices"),
         "an empty setting is no setting"
     );
     assert_eq!(
-        settings::voices_folder("/fast/models/voices", true, &data),
+        settings::voices_folder("/fast/models/voices", "", true, &data),
         PathBuf::from("/fast/models/voices"),
         "the override wins in both sandbox and dev box"
     );
     assert_eq!(
-        settings::voices_folder("relative/voices", false, &data),
+        settings::voices_folder("relative/voices", "", false, &data),
         PathBuf::from("/mnt/models/audiocpp/voices"),
         "a relative setting would resolve against whatever the process was started from"
     );
 
     // Creating it is idempotent and leaves it at 0700 — nothing else writes here.
-    let folder = settings::voices_folder("", true, &data);
+    let folder = settings::voices_folder("", "", true, &data);
     settings::ensure_voices_folder(&folder).unwrap();
     settings::ensure_voices_folder(&folder).unwrap();
     assert!(folder.is_dir());

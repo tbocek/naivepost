@@ -226,7 +226,10 @@ pub fn render(conf: &Conf) -> String {
          # Bash-sourceable -- keep this file chmod 600, the key is a credential.\n",
     );
     for (key, get) in Conf::KEYS {
-        out.push_str(&format!("{key}={}\n", quote(get(conf))));
+        // A cleared box is written back as the shipped default for five keys only;
+        // everything else goes out as typed, empty included (§8).
+        let value = written_value(key, get(conf), shipped_default(key));
+        out.push_str(&format!("{key}={}\n", quote(&value)));
     }
     // Always written: an empty list is a setting the user can clear on the dialog, and a key
     // that vanished would read as "never asked about".
@@ -355,6 +358,10 @@ pub fn parse(text: &str) -> Result<Conf, String> {
                 Which::Root => drop(roots.insert(number, value)),
                 Which::File => drop(files.insert(number, value)),
             }
+            continue;
+        }
+        // A setting from an older build: read and dropped (§8).
+        if legacy_key(key) {
             continue;
         }
         // A setting from a newer build: carried through untouched.
@@ -527,7 +534,35 @@ pub fn recover_projects(conf: &mut Conf, paths: &Paths) -> Result<bool, String> 
     Ok(true)
 }
 
-/// The remembered projects, as numbered pairs (§7). A root with no file, or a file with no
+/// Keys an older build wrote that this one reads and then drops (§8). They parse
+/// without an error so a hand-edited conf still loads, and they are NOT kept in
+/// [`Conf::unknown`] — that list exists for a newer build's settings, and echoing a
+/// dead key back would make it permanent. `AUDIOCPP_MODELS` is the exception with
+/// a use: its `voices/` subfolder is the voices folder when `AUDIOCPP_VOICES` is
+/// absent, which [`read`] records as [`LEGACY_MODELS`].
+pub const IGNORED_KEYS: [&str; 4] = [
+    "AUDIOCPP_MODELS",
+    "SD_MODEL",
+    "AUDIOCPP_LANGUAGE",
+    "PROMPT_CUT",
+];
+
+/// Where the legacy `AUDIOCPP_MODELS` root is parked while a conf is being read, so
+/// a caller can hand it to [`voices_folder`] when `AUDIOCPP_VOICES` stayed empty.
+pub const LEGACY_MODELS: &str = "AUDIOCPP_MODELS";
+
+/// Whether this key belongs to an older build: one of the four named ones, or any
+/// `PROMPT_*` — the per-step prompt overrides §7 keeps as files instead.
+fn legacy_key(key: &str) -> bool {
+    IGNORED_KEYS.contains(&key) || key.starts_with("PROMPT_")
+}
+
+/// Whether this key belongs to an older build, so its value can be dropped (§8).
+pub fn is_legacy_key(key: &str) -> bool {
+    legacy_key(key)
+}
+
+
 /// root, is not a project at all — the prototype keeps only the pairs where both are set.
 pub fn remembered(projects: &BTreeMap<String, String>) -> Vec<ProjectRef> {
     // Sorted by folder, which is what makes an unchanged save byte-identical and the
@@ -543,16 +578,73 @@ pub fn remembered(projects: &BTreeMap<String, String>) -> Vec<ProjectRef> {
 /// dev box's `/mnt/models/audiocpp/voices` (§7). This is the one folder read outside a
 /// project and it has no settings box; the Flatpak rule exists because the dev-box path is
 /// simply not in the sandbox.
-pub fn voices_folder(conf_value: &str, flatpak: bool, data_dir: &Path) -> PathBuf {
+/// The boxes that go back to the shipped default when they are cleared, rather
+/// than to the empty string (§03-shell#8-details-confirmed-against-the-code-verification-pass).
+/// The five are names a server answers or a folder it reads: an empty one is not a
+/// usable value, unlike a URL, a key or a tool path, which are written as typed —
+/// including empty, because clearing `FFMPEG` is a real answer.
+pub const DEFAULTED_WHEN_CLEARED: [&str; 5] = [
+    "AUDIOCPP_VOICES",
+    "AUDIOCPP_ASR_MODEL",
+    "AUDIOCPP_DIAR_MODEL",
+    "AUDIOCPP_TTS_MODEL",
+    "AUDIOCPP_SEP_MODEL",
+];
+
+/// What one settings box writes. `shipped_default` is what this build means by an
+/// empty box for that key; every other key passes its own text straight through.
+pub fn written_value(key: &str, typed: &str, shipped_default: &str) -> String {
+    if typed.is_empty() && DEFAULTED_WHEN_CLEARED.contains(&key) {
+        return shipped_default.to_string();
+    }
+    typed.to_string()
+}
+
+/// The shipped default behind one settings key, so the write path can name what an
+/// empty box means without a second list beside it.
+fn shipped_default(key: &str) -> &'static str {
+    match key {
+        "AUDIOCPP_ASR_MODEL" => crate::services::ASR_MODEL,
+        "AUDIOCPP_DIAR_MODEL" => crate::services::DIAR_MODEL,
+        "AUDIOCPP_TTS_MODEL" => crate::services::TTS_MODEL,
+        "AUDIOCPP_SEP_MODEL" => crate::services::SEP_MODEL,
+        // The folder every other build of this stack mounts.
+        _ => crate::settings::DEFAULT_VOICES,
+    }
+}
+
+/// The five cleared boxes' shipped default, named here so the write path and §7's
+/// reader agree on what an empty value means.
+pub const DEFAULT_VOICES: &str = "/mnt/models/audiocpp/voices";
+
+/// The voice library: `AUDIOCPP_VOICES`, else the `voices/` subfolder of the legacy
+/// `AUDIOCPP_MODELS` root (§8: that key is read and ignored, except for exactly
+/// this), else the platform's own folder.
+pub fn voices_folder(conf_value: &str, models_dir: &str, flatpak: bool, data_dir: &Path) -> PathBuf {
     // An override that is not absolute is not a folder: it would resolve against whatever
-    // the process happens to be started from.
+    // the process happens to be started from. The legacy root is trusted the same way —
+    // `voices/` under a relative path would move with the process too.
     if !conf_value.is_empty() && Path::new(conf_value).is_absolute() {
         return PathBuf::from(conf_value);
+    }
+    if !models_dir.is_empty() && Path::new(models_dir).is_absolute() {
+        return Path::new(models_dir).join("voices");
     }
     if flatpak {
         return data_dir.join("voices");
     }
-    PathBuf::from("/mnt/models/audiocpp/voices")
+    PathBuf::from(DEFAULT_VOICES)
+}
+
+/// The legacy `AUDIOCPP_MODELS` spelling of the voices folder: its `voices/`
+/// subfolder, which is what the prototype implied (§8). Only an absolute root
+/// counts, for the same reason an override does — a relative one moves with the
+/// process. Anything else answers empty, meaning "no legacy folder".
+pub fn voices_under_models(models_dir: &str) -> String {
+    if models_dir.is_empty() || !Path::new(models_dir).is_absolute() {
+        return String::new();
+    }
+    format!("{}/voices", models_dir.trim_end_matches('/'))
 }
 
 /// Create the voices folder at 0700 and leave an existing one alone. Nothing reads it

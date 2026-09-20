@@ -65,6 +65,16 @@ pub struct Saved {
 /// into a name in use — nothing is written and the files stay where they are with the log saying
 /// where, because a save that silently moved work would be worse than one that did not happen. The
 /// spec draws that as a refusal: no "project saved" over a folder still sitting somewhere else.
+/// The line a failed move puts in the log. `save_as` builds it inline; naming it here
+/// lets §8's wording be asserted without a filesystem that refuses a rename (§8).
+pub fn move_failure(from: &Path, to: &Path, files: usize, err: &str) -> String {
+    format!(
+        "!!! could not move the output folder to {}: {err} -- the {files} file(s) are still in {}",
+        to.display(),
+        from.display()
+    )
+}
+
 pub fn save_as(project: &Project, from: &Path, named: &str) -> Result<Saved, String> {
     let to = from.parent().unwrap_or(from).join(new_project::with_suffix(named));
 
@@ -80,11 +90,7 @@ pub fn save_as(project: &Project, from: &Path, named: &str) -> Result<Saved, Str
     let n = count_files(from);
     if n > 0 {
         if let Err(err) = fs::rename(from, &to) {
-            return Err(format!(
-                "!!! could not move the output folder to {}: {err} -- the {n} file(s) are still in {}",
-                to.display(),
-                from.display()
-            ));
+            return Err(move_failure(from, &to, n, &err.to_string()));
         }
         logs.push(format!(">>> moved the output folder to {}", to.display()));
     }

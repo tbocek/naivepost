@@ -366,7 +366,7 @@ pub fn load_report(dir: &Path) -> Result<(Project, Vec<String>), String> {
         Err(err) => return Err(format!("{}: {err}", file.display())),
     };
     let raw: Raw = serde_json::from_str(&text).map_err(|err| format!("{}: {err}", file.display()))?;
-    Ok(migrate(raw))
+    Ok(migrate(raw, dir))
 }
 
 /// The file as written, current and legacy keys together. The current keys default
@@ -513,7 +513,10 @@ const HINT_FOLDS: [(&str, &str, &str); 4] = [
 /// Apply every migration §2 lists. The write path serialises only [`Project`], so a
 /// legacy key is gone at the next save — that is what "migrated once, never written"
 /// means in practice.
-fn migrate(mut raw: Raw) -> (Project, Vec<String>) {
+///
+/// `dir` is the project folder being loaded: only it can say whether a legacy
+/// `out_dir` named this folder or somewhere else (§03-shell.md §8).
+fn migrate(mut raw: Raw, dir: &Path) -> (Project, Vec<String>) {
     let mut report = Vec::new();
     // Taken before the moves below: each migration needs to know whether the file
     // carried the new key or only its legacy spelling.
@@ -539,7 +542,7 @@ fn migrate(mut raw: Raw) -> (Project, Vec<String>) {
     // file that never named one stays English without a report line.
 
     migrate_sources(&mut project, &raw, &mut report);
-    migrate_dirs(&mut project, &raw, &mut report);
+    migrate_dirs(&mut project, &raw, dir, &mut report);
     migrate_style(&mut project, has_policy, &raw, &mut report);
     migrate_hints(&raw, &mut report);
     migrate_prompts(&raw, &mut report);
@@ -580,7 +583,29 @@ fn migrate_sources(project: &mut Project, raw: &Raw, report: &mut Vec<String>) {
     ));
 }
 
-fn migrate_dirs(project: &mut Project, raw: &Raw, report: &mut Vec<String>) {
+/// A project that used to write somewhere else has to say so out loud
+/// (§03-shell.md §8): its outputs are still in the old folder, and nothing here
+/// is going to collect them.
+pub fn out_dir_note(from: &str, to: &str) -> String {
+    format!("!!! this project used to write into {from} and now writes into {to} -- the old folder is untouched")
+}
+
+/// Whether a stored `out_dir` means a folder other than the project itself. The
+/// project folder IS the output folder (§1), so `""`, `.`, its own name and its
+/// own path all describe where this project already writes — no line for those.
+fn writes_elsewhere(stored: &str, dir: &Path) -> bool {
+    let stored = stored.trim_end_matches('/');
+    if stored.is_empty() || stored == "." {
+        return false;
+    }
+    let name = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    !stored.is_empty() && stored != name && Path::new(stored) != dir
+}
+
+fn migrate_dirs(project: &mut Project, raw: &Raw, dir: &Path, report: &mut Vec<String>) {
     if project.vid_dir.is_none() {
         if let Some(dir) = &raw.in_dir {
             project.vid_dir = Some(dir.clone());
@@ -588,9 +613,14 @@ fn migrate_dirs(project: &mut Project, raw: &Raw, report: &mut Vec<String>) {
         }
     }
     if project.aud_dir.is_none() {
-        if let Some(dir) = &raw.out_dir {
-            project.aud_dir = Some(dir.clone());
-            report.push(format!("out_dir: now aud_dir ({dir})"));
+        if let Some(stored) = &raw.out_dir {
+            project.aud_dir = Some(stored.clone());
+            report.push(format!("out_dir: now aud_dir ({stored})"));
+            // The load line the shell shows, separate from the migration note
+            // above: one says what the field became, the other what did not move.
+            if writes_elsewhere(stored, dir) {
+                report.push(out_dir_note(stored, &dir.display().to_string()));
+            }
         }
     }
 }

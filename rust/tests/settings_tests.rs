@@ -206,12 +206,12 @@ fn f0_13_s8_audio_answers_with_its_health_its_catalogue_and_its_aligner() {
         [("TTS model", "clon"), ("ASR", "asr"), ("Diarization", "diar"), ("Separation", "sep")]
     );
     let catalogue = [model("whisper", "whisper", "asr"), model("punc", "", "diar")];
-    assert!(checks::model_verdict(&catalogue, "whisper", "asr").is_ok());
+    assert!(checks::model_verdict(&catalogue, "whisper", naivepost::services::Need { task: "asr", step: "Prepare" }).is_ok());
     // A wrong task is the interesting failure: a catalogue entry copied from another model.
-    let wrong = checks::model_verdict(&catalogue, "whisper", "clon").unwrap_err();
+    let wrong = checks::model_verdict(&catalogue, "whisper", naivepost::services::Need { task: "clon", step: "Prepare" }).unwrap_err();
     assert!(wrong.contains("asr") && wrong.contains("clon"), "{wrong}");
     // A blank declared task passes: many servers list an id with no task at all.
-    assert!(checks::model_verdict(&catalogue, "punc", "diar").is_ok());
+    assert!(checks::model_verdict(&catalogue, "punc", naivepost::services::Need { task: "diar", step: "Prepare" }).is_ok());
 
     // No aligner is a working setup, not a failure: the joins fall back to the waveform.
     let none = checks::aligner_verdict("", &[]).expect("none is a success");
