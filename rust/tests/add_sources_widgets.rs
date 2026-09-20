@@ -79,18 +79,12 @@ fn check_refused_during_a_run(app: &adw::Application) {
 #[test]
 fn f0_12_s1_the_add_button_and_the_copy_tick_are_on_prepare() {
     window_round();
-    assert!(
-        RAN_OFFER.load(Ordering::SeqCst),
-        "the Add check never ran"
-    );
+    assert!(RAN_OFFER.load(Ordering::SeqCst), "the Add check never ran");
 }
 
 /// S0 through the same widgets: refused during a run, with §1's sentence on the status line.
 #[test]
 fn f0_12_s0_adding_is_refused_while_a_run_is_on() {
     window_round();
-    assert!(
-        RAN_REFUSED.load(Ordering::SeqCst),
-        "the refusal check never ran"
-    );
+    assert!(RAN_REFUSED.load(Ordering::SeqCst), "the refusal check never ran");
 }

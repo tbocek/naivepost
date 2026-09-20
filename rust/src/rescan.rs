@@ -101,8 +101,9 @@ fn is_there(root: &Path, dir: &Path, written: &str) -> bool {
 /// already holds a slot is never moved — it is somebody the user named, and casting them as the
 /// narrator would re-cut the narration while silently freeing the slot they were in.
 ///
-/// Shared with F0.12 S3, which gives the same slot away to a row that has just arrived: one rule for
-/// "who is the narrator", asked at two moments.
+/// Shared with F0.12 S3 (an arriving row), §4's auto-fill after an add, a removal, a rescan that
+/// dropped a row, or a load that stripped a bad tag: one rule for "who is the narrator", asked at four
+/// moments.
 pub(crate) fn fill_slot_1(project: &mut Project) -> Option<String> {
     for prefer_recording in [true, false] {
         if let Some(source) = project
