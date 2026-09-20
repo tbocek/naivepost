@@ -182,6 +182,11 @@ impl Tree {
         self.describe_dir(source).join(".llmframes")
     }
 
+    /// The folder holding this run's model exchange pages (spec/03-shell.md §7).
+    pub fn llm_dir(&self) -> PathBuf {
+        self.dir().join(crate::exchanges::LLM_DIR)
+    }
+
     pub fn transcript_src_dir(&self, source: &str) -> PathBuf {
         self.prepare_dir().join("transcript").join(source)
     }

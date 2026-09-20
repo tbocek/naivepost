@@ -3,6 +3,7 @@ pub mod bodies;
 pub mod checks;
 pub mod clock;
 pub mod degraded;
+pub mod exchanges;
 pub mod cut;
 pub mod layout;
 pub mod narration;
