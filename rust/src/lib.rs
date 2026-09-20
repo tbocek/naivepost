@@ -10,6 +10,7 @@ pub mod cut;
 pub mod edges;
 pub mod exchanges;
 pub mod fix_transcripts;
+pub mod hand_edit;
 pub mod frames;
 pub mod icons;
 pub mod layout;
