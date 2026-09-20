@@ -19,6 +19,7 @@ pub mod narration;
 pub mod new_project;
 pub mod project;
 pub mod prepare;
+pub mod prepare_data;
 pub mod publish;
 pub mod probes;
 pub mod rescan;
