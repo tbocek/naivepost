@@ -217,6 +217,26 @@ impl Tree {
         self.transcript_dir().join("offsets.tsv")
     }
 
+    /// One source's own folder under `transcript/`, where its fixed transcript lives (§1).
+    pub fn transcript_source_dir(&self, source: &str) -> PathBuf {
+        self.transcript_dir().join(source)
+    }
+
+    /// The fixer's answer for one source (F1.8).
+    pub fn transcript_fixed_tsv(&self, source: &str) -> PathBuf {
+        self.transcript_source_dir(source).join("transcript.fixed.tsv")
+    }
+
+    /// …or the recorder's, which is commentary rather than somebody's speech (§1).
+    pub fn commentary_fixed_tsv(&self, source: &str) -> PathBuf {
+        self.transcript_source_dir(source).join("commentary.fixed.tsv")
+    }
+
+    /// Subtitles, for a video source only — an audio file has nothing to caption over.
+    pub fn subtitles_srt(&self, source: &str) -> PathBuf {
+        self.transcript_source_dir(source).join("subtitles.srt")
+    }
+
     /// The marks.
     pub fn retakes_tsv(&self) -> PathBuf {
         self.transcript_dir().join("retakes.tsv")

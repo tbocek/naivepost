@@ -8,6 +8,7 @@ pub mod clock;
 pub mod degraded;
 pub mod exchanges;
 pub mod cut;
+pub mod fix_transcripts;
 pub mod frames;
 pub mod icons;
 pub mod layout;
