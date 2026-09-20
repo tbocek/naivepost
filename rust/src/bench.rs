@@ -9,8 +9,11 @@
 //! that text equal to the shipped wording means "no override".
 
 use crate::{
+    prepare,
     project::Project,
+    roles,
     settings::{self, Paths},
+    tools::describe,
 };
 
 /// The mark on a row whose wording this machine holds (§1: "✎ = edited on this machine").
@@ -110,11 +113,14 @@ pub fn shows_reset(row: &Row, edited: bool) -> bool {
 /// "no" rather than failing the screen: the bench is a view of the project, and a
 /// directory this process cannot read must not stop it from opening. The write path
 /// still reports its errors.
+///
+/// Through [`settings::stored_prompt`], so an edit kept under the old folder-per-job layout
+/// still shows its mark here rather than looking untouched next to replaced wording.
 pub fn edited(paths: &Paths, row: &Row) -> bool {
     if is_context(row) {
         return false;
     }
-    settings::read_prompt(paths, row.key).ok().flatten().is_some()
+    settings::stored_prompt(paths, row.key).ok().flatten().is_some()
 }
 
 /// What the text box holds: the project's note for row 0, else this machine's text or
@@ -123,7 +129,10 @@ pub fn text(paths: &Paths, project: &Project, row: &Row) -> String {
     if is_context(row) {
         return project.context.clone();
     }
-    settings::prompt_text(paths, row.key, SHIPPED).unwrap_or_else(|_| SHIPPED.to_string())
+    settings::stored_prompt(paths, row.key)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| SHIPPED.to_string())
 }
 
 /// This build's shipped wording. Each step's round brings its own text — F1.7 the
@@ -165,4 +174,98 @@ pub fn picker_rows() -> Vec<(usize, String)> {
         .enumerate()
         .map(|(index, row)| (index, row.title.to_string()))
         .collect()
+}
+
+/// What the mark on a row means, spelled out because ✎ alone does not say where the
+/// text went — and where it went is the whole question when a newer build ships better
+/// wording (§04-prepare#6: "the mark's tooltip …"). Written on one line so the sentence
+/// a person reads matches §6 character for character.
+pub const KEPT_TIP: &str =
+    "Your wording is kept in ~/.config/naivepost/prompts, so a newer built-in prompt will not replace it. Reset puts it back.";
+
+/// Reset live: what the click will do, since the button is next to a box that may hold
+/// an hour of the editor's own tuning (§04-prepare#6).
+pub const RESET_TIP: &str = "Put the built-in wording back";
+
+/// Reset idle. A live button under no mark reads as "there is something stored", which
+/// is exactly what the empty mark is denying, so the tooltip says so instead.
+pub const UNCHANGED_TIP: &str = "This is the built-in wording, unchanged";
+
+/// Which of the two Reset tooltips this row carries. The User Context never gets the
+/// live one: it has no built-in wording to go back to, and a Reset that cleared the
+/// editor's notes about their session would be data loss rather than a restore.
+pub fn reset_tip(row: &Row, edited: bool) -> &'static str {
+    if shows_reset(row, edited) {
+        RESET_TIP
+    } else {
+        UNCHANGED_TIP
+    }
+}
+
+/// What the heading row's tooltip says about the selected row: what the job gets and
+/// what it answers (§04-prepare#6). The two rows whose wording is an arithmetic fact —
+/// how many frames, how many lines — read theirs out of the constants that build the
+/// request, so a retuned request cannot leave this text behind.
+pub fn tooltip(row: &Row) -> String {
+    match row.key {
+        "" => "What kind of video this is, who is in it, what they were doing, how names are \
+            spelled, how long it should run, what has to end up in it.\n\nSent with every \
+            request this project makes — the frame describer, the transcript fixer, the cut \
+            and its three passes, the narration, the upload text — and it outranks the prompts \
+            below, which are written to be true of any session. Left empty, nothing is sent."
+            .to_string(),
+        "system" => "The formats every job works to: the three kinds of line, which clock a \
+            request stamps them on, and that the answer is read by a machine.\n\nSent in front \
+            of every prompt below, so a fact about this tool is written once instead of in each \
+            of them."
+            .to_string(),
+        "describe" => format!(
+            "{} frames per request, plus the last {} descriptions and up to {} spoken lines \
+             either side as context. No frame is ever sent twice: those descriptions are the \
+             model's only memory of what it already saw.",
+            roles::VISION_FRAMES_PER_CALL,
+            describe::RECENT_EVENTS,
+            describe::CTX_SEGS
+        ),
+        "fix" => format!(
+            "The fixer: {} transcript lines per request, each block given what every other \
+             source showed or said at the same moment.",
+            prepare::FIX_BLOCK_LINES
+        ),
+        "retake" => "Last in Prepare, on the merged timeline: which stretches were said, broken \
+            off and said again. Marked, never deleted — the transcript keeps every word, and \
+            the cut is handed one line saying those seconds were an attempt. The user context's \
+            script, where there is one, says what was meant to be said."
+            .to_string(),
+        "textedit" => "The edit of a read to camera: one join between takes at a time, the last \
+            words of the take that was interrupted and the first words of the take that \
+            follows, answered with how many come off each side. The session's style decides \
+            whether this or Retakes runs."
+            .to_string(),
+        "cut" => "How ▶ Suggest chooses the moments: read what the session is, place what the \
+            context names, fill the rest, shape the whole. It assumes nothing about the kind of \
+            video — that is what the context above is for."
+            .to_string(),
+        "captions" => "The second pass, clip by clip: what was said over each kept clip, on \
+            screen as text effects. Cleaned as a subtitler would; the user context says fewer, \
+            or none."
+            .to_string(),
+        "speed" => "The third pass: how fast each kept clip plays, and the arithmetic that lands \
+            the cut on the target length. A clip with captions on it runs at 1."
+            .to_string(),
+        "effects" => "The last pass, over the kept clips: the zooms, stops and volume that make \
+            a moment land. Speed and captions are the passes before."
+            .to_string(),
+        "narrate" => "The craft the narration is written to: what a line is about, how it is \
+            placed, how a pause is made. Who the voice IS comes from the context above."
+            .to_string(),
+        "translate" => "The subtitle track in another language: the finished video's own lines, \
+            numbered, answered one for one with the times untouched. Which languages is chosen \
+            on the Produce page."
+            .to_string(),
+        "youtube" => "Gets the cut and the narration — no images — and answers with the YouTube \
+            title, the thumbnail instruction and the description."
+            .to_string(),
+        _ => row.title.to_string(),
+    }
 }

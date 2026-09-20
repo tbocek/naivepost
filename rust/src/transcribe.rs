@@ -287,6 +287,40 @@ pub fn write_transcript(tree: &Tree, source: &str, lines: &[Line]) -> Result<(),
     textfmt::write_rows(&tree.transcript_srt(source), &srt_text(lines))
 }
 
+/// S6: the words an answer sent back that cannot be placed on the clock. A word with no usable
+/// `start_sample`/`end_sample` is not a word with an unknown time — it is the answer having changed
+/// shape, and every cut point downstream is put on a word edge, so guessing here would move the video.
+pub fn unusable_words(words: &[Word]) -> usize {
+    words
+        .iter()
+        .filter(|word| word.end_sample <= word.start_sample)
+        .count()
+}
+
+/// S6: refusing a transcript whose words have no usable times, naming how many — "some" would leave a
+/// reader counting the file by hand.
+pub fn unusable_words_error(count: usize) -> String {
+    format!("{count} words carry no usable start_sample/end_sample -- the answer changed shape")
+}
+
+/// S4/S6: the recording was transcribed but nothing in it has a time, and there is no aligner to give
+/// them. Named by the model that answered, because the fix is a setting: register an aligner, or use an
+/// ASR that answers with word timings. The variant is for when an aligner *was* asked and left no times
+/// either — why is what the warning logged directly above this line says, so this one points at it
+/// instead of repeating it.
+pub fn no_word_times(asr: &str, aligner_left_none: bool) -> String {
+    if aligner_left_none {
+        return format!(
+            "{asr} transcribed this recording but timed no words, and the aligner left no times either, \
+             which the line above this one says why"
+        );
+    }
+    format!(
+        "{asr} transcribed this recording but timed no words, no aligner is registered to time them -- \
+         register one (task \"align\") -- or use an ASR that answers with word timings"
+    )
+}
+
 /// What one source's pass wrote down, in order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Passage {

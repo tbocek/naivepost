@@ -82,7 +82,7 @@ fn f1_8_s1_the_earliest_stamped_name_is_second_nought() {
         source(OTHER, "crowd.wav", starts[0], 60.0, false),
     ]);
     assert_eq!(rows, vec![(BASE.into(), OTHER.into(), -10.0)]);
-    assert_eq!(fix::offsets_log(BASE, OTHER, -10.0), ">> lecture is -10.00 s from crowd");
+    assert_eq!(fix::offsets_log(BASE, OTHER, -10.0), ">>> offset: lecture starts -10 s into crowd");
 
     // An all-audio session has nothing to pair.
     assert!(fix::offsets_rows(&[source(OTHER, "crowd.wav", 0.0, 60.0, false)]).is_empty());
@@ -445,7 +445,7 @@ fn f1_8_s7_a_marked_stretch_folds_to_one_line() {
     assert_eq!(
         fix::fold_marks(&rows, &[mark]),
         "00:00 (abandoned attempt to 00:10, said again at 00:20 -- already removed, read straight past it)\n\
-         00:20-00:22 SPEAKER_00: the take that stayed\n"
+         [20s-22s | 00:20] SPEAKER_00: the take that stayed\n"
     );
 
     // A mark with no second take says nothing about one; a row starting on the mark's end is outside it.
@@ -456,10 +456,10 @@ fn f1_8_s7_a_marked_stretch_folds_to_one_line() {
 
     // The narrator is named in the text the user opens as well as the text the cut reads.
     let narrated = vec![session(0.0, 2.0, OTHER, "SPEAKER_09", "the narration")];
-    assert_eq!(fix::fold_marks(&narrated, &[]), "00:00-00:02 SPEAKER_09: the narration\n");
+    assert_eq!(fix::fold_marks(&narrated, &[]), "[0s-2s | 00:00] SPEAKER_09: the narration\n");
     assert_eq!(
         fix::labelled(&narrated, OTHER, &[]),
-        "00:00-00:02 NARRATOR: the narration\n"
+        "[0s-2s | 00:00] NARRATOR: the narration\n"
     );
 }
 
@@ -470,7 +470,7 @@ fn f1_8_s7_session_txt_is_written_as_the_cut_reads_it() {
     fix::write_session_text(&tree, &fix::session_text(&rows, "", &[])).unwrap();
     assert_eq!(
         std::fs::read_to_string(tree.session_txt()).unwrap(),
-        "00:00-00:02 SPEAKER_00: one thing\n"
+        "[0s-2s | 00:00] SPEAKER_00: one thing\n"
     );
 }
 

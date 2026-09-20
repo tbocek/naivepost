@@ -7,6 +7,7 @@ pub mod checks;
 pub mod clock;
 pub mod degraded;
 pub mod cut;
+pub mod diarize;
 pub mod edges;
 pub mod exchanges;
 pub mod fix_transcripts;
@@ -39,6 +40,7 @@ pub mod subprocess;
 pub mod textfmt;
 pub mod transcribe;
 pub mod tools;
+pub mod word_list;
 pub mod wave;
 pub mod ui;
 

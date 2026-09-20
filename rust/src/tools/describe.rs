@@ -224,6 +224,68 @@ impl Batch {
     }
 }
 
+/// The three headings of the speech block, always all present. A model told about a section it cannot
+/// see answers better than one left to wonder, which is why an empty section carries a word for it —
+/// `(none)` before and after, `(no speech during these frames)` in the middle, where silence over the
+/// frames themselves is the fact that matters rather than an absence of data.
+pub const SPEECH_HEADINGS: [&str; 3] = [
+    "--- context before (do not describe) ---",
+    "--- spoken during these frames ---",
+    "--- context after (do not describe) ---",
+];
+
+/// What a section with nothing in it says, in the two places that use `(none)`.
+pub const NO_SPEECH: &str = "(none)";
+
+/// What the middle section says when nobody spoke over these frames. Different from [`NO_SPEECH`]
+/// because it is an observation about the video, not a hole in the transcript.
+pub const NO_SPEECH_DURING: &str = "(no speech during these frames)";
+
+/// The whole speech block, in §3.2's order: before, during, after — one heading per line, then its
+/// lines indented by nothing, so a reader of `llm/` sees the same shape the model did.
+///
+/// `during` is every line overlapping the batch, `before` and `after` what lies within
+/// [`CTX_WINDOW_SECONDS`] of it, at most [`CTX_SEGS`] per source: enough around the frames to name what
+/// was being talked about, not so much that the model describes the neighbours instead.
+pub fn speech_block(before: &[String], during: &[String], after: &[String]) -> String {
+    let section = |heading: &str, lines: &[String], empty: &str| {
+        let mut out = format!("{heading}\n");
+        if lines.is_empty() {
+            out.push_str(empty);
+            out.push('\n');
+        } else {
+            for line in lines {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        out
+    };
+    let mut out = section(SPEECH_HEADINGS[0], before, NO_SPEECH);
+    out.push_str(&section(SPEECH_HEADINGS[1], during, NO_SPEECH_DURING));
+    out.push_str(&section(SPEECH_HEADINGS[2], after, NO_SPEECH));
+    out
+}
+
+/// A reply with no label before it is filed as the description — that is what such a reply was every
+/// time it happened — but the file has to say so, or a reader of `events.tsv` takes it for an event line
+/// the stamp got lost from. `%s` is what came back, trimmed and shortened: enough to recognise the call.
+pub fn no_event_line(reply: &str) -> String {
+    let text = reply.split_whitespace().collect::<Vec<_>>().join(" ");
+    let head: String = text.chars().take(120).collect();
+    let head = if text.chars().count() > 120 {
+        format!("{}…", head.trim_end())
+    } else {
+        head
+    };
+    format!("(no event line: {head})")
+}
+
+/// An answer written in the prototype's old shape — one `EVENT` for the batch, no per-frame stamps. Its
+/// words belong to the batch's first frame: that is the only frame the answer can be about without
+/// inventing a second nobody described.
+pub const OLD_SHAPE_FRAME: usize = 1;
+
 /// One line of transcript from any recording, as `speech_around` sees it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spoken {

@@ -344,6 +344,28 @@ pub struct Total {
     pub marks: usize,
 }
 
+/// S1: what one marking pass that came back unusable says, and what the pass then does about it. The
+/// three runs are pooled because they cost one request each and answer one question; losing one is not
+/// a reason to lose the marks the other two agreed on — hence "going on with N" rather than a failure.
+/// `count` is the runs still standing after this one was set aside.
+pub fn run_set_aside_log(run: usize, reason: &str, count: usize) -> Vec<String> {
+    vec![
+        format!("!!! retakes: run {}: {reason} -- its answer is set aside", run + 1),
+        format!(">>> retakes: going on with {count}"),
+    ]
+}
+
+/// S1: how many of this session's pooled runs were read back from `cache/llm` instead of asked again.
+pub fn cached_runs_log(cached: usize, total: usize) -> String {
+    format!(">>> retakes: {cached} of {total} run(s) answered from the cache")
+}
+
+/// S1: a session with nothing said twice. Said out loud because silence looks like a pass that never
+/// ran, and "no retakes" is the answer the model gave — not an absence of one.
+pub fn no_retakes_log() -> &'static str {
+    ">>> retakes: none"
+}
+
 /// A line with the pause before it, as `get_lines` returns them.
 #[allow(dead_code, reason = "the method below is what a caller uses; this is the same rule once")]
 pub fn pause_before(lines: &[Line], n: u32) -> f64 {

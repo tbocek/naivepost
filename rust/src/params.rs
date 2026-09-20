@@ -18,6 +18,7 @@ use crate::roles;
 use crate::separate;
 use crate::tools::{describe, retakes, textedit};
 use crate::transcribe;
+use crate::word_list;
 
 /// One row of §10's table as Prepare uses it.
 #[derive(Debug, Clone, PartialEq)]
@@ -282,6 +283,27 @@ fn engineering() -> Vec<Param> {
             "frames::STORED_FRAME_JPEG_QUALITY",
         ),
         param("P.eng.keepReachWords", hand_edit::KEEP_REACH.to_string(), "hand_edit::KEEP_REACH"),
+        // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
+        param(
+            "P.machine.strayWordRatio",
+            word_list::STRAY_RATIO.to_string(),
+            "word_list::STRAY_RATIO",
+        ),
+        param(
+            "P.machine.strayWordGapSeconds",
+            num(word_list::STRAY_GAP_SECONDS),
+            "word_list::STRAY_GAP_SECONDS",
+        ),
+        param(
+            "P.eng.dressReachWords",
+            word_list::DRESS_REACH_WORDS.to_string(),
+            "word_list::DRESS_REACH_WORDS",
+        ),
+        param(
+            "P.eng.respellRunReachWords",
+            word_list::RESPPELL_REACH_WORDS.to_string(),
+            "word_list::RESPPELL_REACH_WORDS",
+        ),
     ]
 }
 

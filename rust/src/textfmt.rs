@@ -238,7 +238,12 @@ pub fn read_events(path: &Path) -> Result<Vec<FrameEvent>, String> {
 
 // --- retakes.tsv ---------------------------------------------------------------
 
-/// Write `retakes.tsv`: `S\tE\tAgain\tTo\tText`, plus a sixth column only when there is
+/// S1: the marks of a session whose words all survive — an empty `retakes.tsv`, written rather than
+/// skipped. The file's presence is what tells Cut "this pass ran and found nothing", so leaving it out
+/// makes a clean single-take recording indistinguishable from one that was never marked.
+pub const NO_MARKS: &str = "";
+
+/// S1: write `retakes.tsv`: `S\tE\tAgain\tTo\tText`, plus a sixth column only when there is
 /// something to say about whole takes (§6: "empty or absent when none").
 pub fn write_retakes(marks: &[Retake], path: &Path) -> Result<(), String> {
     let mut out = String::new();

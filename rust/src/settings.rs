@@ -707,6 +707,45 @@ pub fn prompt_text(paths: &Paths, key: &str, shipped: &str) -> Result<String, St
     Ok(read_prompt(paths, key)?.unwrap_or_else(|| shipped.to_string()))
 }
 
+/// The names the folder-per-wording era wrote a job's DEFAULT wording under — one folder
+/// per job, one file per wording, `General`/`Default` being the built-in one. Anything else
+/// in that folder was a style's wording, and the styles are gone, so only these two are read.
+pub const LEGACY_PROMPT_NAMES: [&str; 2] = ["General.txt", "Default.txt"];
+
+/// Where the old build kept one job's wording: `prompts/<key>/<name>`, a folder per job
+/// where this one keeps a file per job (§04-prepare#6).
+pub fn legacy_prompt_file(paths: &Paths, key: &str, name: &str) -> PathBuf {
+    paths.prompts_dir().join(key).join(name)
+}
+
+/// What this machine holds for one prompt, newest layout first: `prompts/<key>.txt`, then
+/// the two names the folder era wrote. An edit made under that build is otherwise invisible
+/// here, and its author would find their wording replaced with no mark to explain it.
+///
+/// A file that trims to nothing is NO prompt: a wording that says nothing would send the
+/// model no system prompt at all, which is not what an empty file looks like but exactly
+/// what it does. Such a file is skipped, so the shipped wording runs and the row stays unmarked.
+pub fn stored_prompt(paths: &Paths, key: &str) -> Result<Option<String>, String> {
+    let candidates = std::iter::once(paths.prompt_file(key)).chain(
+        LEGACY_PROMPT_NAMES
+            .iter()
+            .map(|name| legacy_prompt_file(paths, key, name)),
+    );
+    for path in candidates {
+        match fs::read_to_string(&path) {
+            Ok(text) => {
+                let text = text.trim();
+                if !text.is_empty() {
+                    return Ok(Some(text.to_string()));
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(format!("{}: {err}", path.display())),
+        }
+    }
+    Ok(None)
+}
+
 /// Drop an override so the shipped text applies again — the User Dialog's reset button.
 /// False when there was nothing to drop.
 pub fn clear_prompt(paths: &Paths, key: &str) -> Result<bool, String> {

@@ -219,6 +219,38 @@ pub fn one_stretch_at_join(before_runs: &[usize], after_runs: &[usize]) -> bool 
         .all(|length| *length > 0)
 }
 
+/// Whether a dropped stretch sits at the join, and what it says when it does not.
+///
+/// `gap` is how many shown words sit between the stretch and the join, counted from its near end, so an
+/// abutting stretch has none. Within [`SEAM_SNAP_WORDS`] it is still the join: a model that named one
+/// word too few left a word of the attempt behind, and that is a seam to snap over rather than a refusal
+/// (measured: refusals went from four to two once this bound existed). Past it the stretch is somebody
+/// else's sentence, and removing it takes words out of the middle of the video.
+pub fn seam_snap(side: Side, gap: usize) -> Result<(), String> {
+    if gap <= SEAM_SNAP_WORDS {
+        return Ok(());
+    }
+    // The refusal names which way the stretch missed the join, because the two mistakes are corrected in
+    // opposite directions — one has to reach further, the other fall short.
+    Err(match side {
+        Side::Before => format!("the stretch left out stops {gap} words short of the join"),
+        Side::After => format!("the stretch left out starts {gap} words past the join"),
+    })
+}
+
+/// What the join pass ends with: how many joins were repaired, and how many of those answers came back
+/// from the cache rather than from the model again.
+pub fn joins_repaired_log(repaired: usize, cached: usize) -> String {
+    format!(">>> text edit: {repaired} join(s) repaired, {cached} from the cache")
+}
+
+/// The note `dedupeJoins` leaves where the same words were said twice back to back. `seconds` is when the
+/// *later* copy begins — the moment a reader looks it up by — and it is the earlier one that goes, because
+/// what was said last is what the speaker meant to keep.
+pub fn dedupe_note(seconds: f64, text: &str) -> String {
+    format!("{seconds}: {text:?} said again straight after the cut -- the earlier one goes")
+}
+
 /// The side's name as the model wrote it in the table.
 fn name(side: Side) -> &'static str {
     match side {

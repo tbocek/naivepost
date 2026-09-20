@@ -18,6 +18,7 @@
 use std::fs;
 
 use crate::{
+    exchanges,
     layout::Tree,
     project::{self, Project, Source},
     roles,
@@ -51,6 +52,56 @@ pub const OUTPUTS_LABEL: &str = "Prepare:";
 pub const OUTPUTS_TIP: &str = "prepare/inputs/ \u{2014} what came out of each file (audio, transcripts, \
 frames); prepare/describe/ \u{2014} what was on screen; prepare/transcript/ \u{2014} everything on one \
 clock";
+
+/// The Inputs readout with nothing added yet (§04-prepare#6). It says where to go rather
+/// than "no sources", because the bottom bar is not where the Add button is.
+pub const NO_INPUTS: &str = "no input files \u{2014} add some above";
+
+/// The same sentence's tooltip: what the label's arithmetic counted, which is nothing.
+pub const NO_INPUTS_TIP: &str = "(no sources)";
+
+/// An Outputs readout over an empty folder. Not "0 files, 0 B": a step that has never run
+/// and one that ran and wrote nothing are different facts, and this is the first of them.
+pub const NO_OUTPUTS: &str = "nothing yet";
+
+/// How long ago a minute count is, in the fewest words that still date it (§04-prepare#6's
+/// `"newest <ago>"`). The ladder stops counting minutes at an hour and hours at a day
+/// because past those the question is which day, not how many.
+pub fn ago(minutes: u64) -> String {
+    if minutes < 1 {
+        return "just now".to_string();
+    }
+    if minutes < 60 {
+        return format!("{minutes} min ago");
+    }
+    if minutes < 24 * 60 {
+        return format!("{} h ago", minutes / 60);
+    }
+    if minutes < 48 * 60 {
+        return "yesterday".to_string();
+    }
+    format!("{} days ago", minutes / (24 * 60))
+}
+
+/// One of the three Outputs readings: how many files and how big, with when the newest was
+/// written on hover. The age is a tooltip because three of these sit side by side along the
+/// bottom of the page — three full sentences would be a paragraph across it (§04-prepare#6).
+///
+/// `newest_minutes` is what the caller's walk actually measured; `None` keeps the tooltip
+/// empty rather than inventing an age, since "newest just now" about a folder nobody timed
+/// is a fact the app does not have.
+pub fn outputs_readout(count: usize, bytes: u64, newest_minutes: Option<u64>) -> (String, String) {
+    if count == 0 {
+        return (NO_OUTPUTS.to_string(), String::new());
+    }
+    let one = if count == 1 { "file" } else { "files" };
+    let label = format!("{count} {one}, {}", exchanges::size_of(bytes as usize));
+    let tooltip = match newest_minutes {
+        Some(minutes) => format!("newest {}", ago(minutes)),
+        None => String::new(),
+    };
+    (label, tooltip)
+}
 
 /// Freq as a stop prints it: a fraction of a second as the bare number, a second and up
 /// with its unit.

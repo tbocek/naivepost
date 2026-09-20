@@ -80,9 +80,23 @@ pub fn offsets_rows(sources: &[Source]) -> Vec<(String, String, f64)> {
     rows
 }
 
-/// S1: what one pairing says.
+/// S1: what one pairing says — which recording starts how far into which, the sentence a reader of
+/// `offsets.tsv` needs beside the numbers.
 pub fn offsets_log(video: &str, audio: &str, offset: f64) -> String {
-    format!(">> {video} is {offset:.2} s from {audio}")
+    format!(">>> offset: {video} starts {} s into {audio}", fix_seconds(offset))
+}
+
+/// Seconds as §6 spells them in this log: whole numbers lose the `.0`, so a pairing that lands exactly
+/// on a second reads "starts 0 s into" rather than "0.00 s".
+fn fix_seconds(value: f64) -> String {
+    if value == value.trunc() {
+        return format!("{}", value as i64);
+    }
+    let mut text = format!("{value:.2}");
+    while text.ends_with('0') && !text.ends_with(".0") {
+        text.pop();
+    }
+    text.trim_end_matches('.').to_string()
 }
 
 /// S1: write `offsets.tsv`. Rows go out with two decimals like every other time in §6.
@@ -335,6 +349,20 @@ fn apply(block: &Block, lines: &[Line]) -> Vec<Line> {
         .collect()
 }
 
+/// S4: what a block that ran out of tries says. The originals standing is the outcome worth logging —
+/// a reader who sees only "failed" looks for a crash, and there was none: the answer would not validate
+/// twice, so this block keeps the ASR's own lines and every other block still gets fixed.
+pub fn block_failed_log(base: &str, index: usize, total: usize) -> String {
+    format!(">>> [{base}] block {}/{total} failed validation, keeping original lines", index + 1)
+}
+
+/// S3: how many of this source's blocks were read back from `cache/llm/fix` rather than asked again.
+/// Worth the line because a re-run that asks everything twice looks, from the outside, like a run that
+/// had forgotten it had already answered.
+pub fn cached_blocks_log(base: &str, cached: usize) -> String {
+    format!(">>> [{base}] {cached} block(s) answered from the cache")
+}
+
 /// S3: the cache key for a block — its rows, times and text included. Two runs of the same transcript
 /// ask the identical question, so they read the same answer; one changed line asks a different one.
 pub fn block_key(lines: &[Line]) -> String {
@@ -539,9 +567,13 @@ pub fn labelled(rows: &[SessionLine], narrator: &str, marks: &[Mark]) -> String 
                 ));
             }
             None => out.push_str(&format!(
-                "{} {}\n",
-                stamp_span(row.start, row.end),
-                one_line(&row.source, &row.who, narrator, &row.text)
+                "{}\n",
+                session_line(
+                    row.start,
+                    row.end,
+                    &label(&row.source, &row.who, narrator),
+                    &row.text
+                )
             )),
         }
     }
@@ -581,18 +613,48 @@ pub fn stamp(seconds: f64) -> String {
 }
 
 /// S7: a stretch, `mm:ss-mm:ss`.
+/// S7: one line of `session.txt` — `[<start>s-<end>s | mm:ss] LABEL: text`. The seconds are on the
+/// left because the model that reads this file answers in them (every cut point it proposes is a number
+/// of seconds); the `mm:ss` beside them is what a person scanning the same line for a moment recognises.
 pub fn stamp_span(start: f64, end: f64) -> String {
     format!("{}-{}", stamp(start), stamp(end))
 }
 
+/// S7: the whole of one `session.txt` line, both clocks in front of the label.
+pub fn session_line(start: f64, end: f64, label: &str, text: &str) -> String {
+    format!(
+        "[{}s-{}s | {}] {}: {}",
+        stamp_seconds(start),
+        stamp_seconds(end),
+        stamp(start),
+        label,
+        flatten(text)
+    )
+}
+
+/// A second as `session.txt` spells it: whole numbers lose the `.0`, fractions keep what they need.
+fn stamp_seconds(value: f64) -> String {
+    if value == value.trunc() {
+        return format!("{}", value as i64);
+    }
+    let mut text = format!("{value:.2}");
+    while text.ends_with('0') && !text.ends_with(".0") {
+        text.pop();
+    }
+    text.trim_end_matches('.').to_string()
+}
+
+/// The text of one row on one line: the block underneath this list is already a wall of lines, and a
+/// wrapped row reads as two rows.
+fn flatten(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// One line of the grounding text: `mm:ss-mm:ss label: text`, with the text on one line because the
 /// block underneath it is already a wall of lines and a wrapped row reads as two.
+#[allow(dead_code)]
 fn one_line(base: &str, speaker: &str, narrator: &str, text: &str) -> String {
-    format!(
-        "{}: {}",
-        label(base, speaker, narrator),
-        text.split_whitespace().collect::<Vec<_>>().join(" ")
-    )
+    format!("{}: {}", label(base, speaker, narrator), flatten(text))
 }
 
 /// S7: the timeline as the cut model reads it — one line each, stamped, marked stretches folded into a
