@@ -446,3 +446,142 @@ pub fn save(cut: &Cut, tree: &layout::Tree) -> Result<(), String> {
     let rel = file.strip_prefix(tree.dir()).unwrap_or(Path::new("cut/cut.json"));
     tree.write_file(rel, text.as_bytes())
 }
+
+// --- The edit history (§2's undo snapshots and base) ---------------------------------------------
+
+/// How many snapshots the history holds. spec/10-parameters.md:133's "undo depth 50"; a snapshot is a
+/// whole cut — every segment, effect and hand correction of it — so without a bound one long session
+/// of Add and Remove would quietly hold fifty megabytes of superseded timelines.
+pub const UNDO_DEPTH: usize = 50;
+
+/// One state the cut has been in: the seven editable things of §3, and nothing else.
+///
+/// `folds` is deliberately absent — spec/inventory/cut.md §B calls them "a view, not an edit", so
+/// undoing an Add must not unfold the stretch the person was watching when they made it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Snapshot {
+    pub segs: Vec<Seg>,
+    pub fx: Vec<Fx>,
+    pub aspect: String,
+    pub shift: BTreeMap<String, f64>,
+    pub rows: BTreeMap<String, i32>,
+    pub lanes: Vec<Lane>,
+    pub nrows: i32,
+}
+
+impl Snapshot {
+    /// What the cut holds right now, copied out so a later edit cannot reach back into it.
+    pub fn of(cut: &Cut) -> Snapshot {
+        Snapshot {
+            segs: cut.segs.clone(),
+            fx: cut.fx.clone(),
+            aspect: cut.aspect.clone(),
+            shift: cut.shift.clone(),
+            rows: cut.rows.clone(),
+            lanes: cut.lanes.clone(),
+            nrows: cut.nrows,
+        }
+    }
+
+    /// Put the seven back. `folds` is left as the target had them: a fold is where the person was
+    /// looking, not something they did (§B), and an undo that unfolded it would move the page under
+    /// them for a reason no status line could name.
+    pub fn restore(&self, cut: &mut Cut) {
+        cut.segs = self.segs.clone();
+        cut.fx = self.fx.clone();
+        cut.aspect = self.aspect.clone();
+        cut.shift = self.shift.clone();
+        cut.rows = self.rows.clone();
+        cut.lanes = self.lanes.clone();
+        cut.nrows = self.nrows;
+    }
+}
+
+/// The undo/redo stack and the state Revert returns to.
+///
+/// `at` is the index of what is on screen, so undo and redo move an index instead of throwing copies
+/// away — which is what lets redo survive as long as the branch it belongs to does.
+#[derive(Debug, Clone, PartialEq)]
+pub struct History {
+    snapshots: Vec<Snapshot>,
+    at: usize,
+    base: Snapshot,
+}
+
+impl History {
+    /// Open the page on a cut: what it was loaded with is both the first state and the base, since §2
+    /// makes the base "the last suggestion or what the page opened with".
+    pub fn open(cut: &Cut) -> History {
+        let now = Snapshot::of(cut);
+        History { snapshots: vec![now.clone()], at: 0, base: now }
+    }
+
+    /// Record an edit.
+    ///
+    /// Everything after `at` goes first: redoing into a branch the person has already left behind
+    /// would silently re-apply something they undid, and §A's "pushUndo clears redo" is that sentence
+    /// written as a rule. Then the oldest snapshot is dropped once the stack passes [`UNDO_DEPTH`], so
+    /// the bound costs the earliest edits rather than the whole history's usefulness.
+    pub fn push(&mut self, cut: &Cut) {
+        self.snapshots.truncate(self.at + 1);
+        self.snapshots.push(Snapshot::of(cut));
+        if self.snapshots.len() > UNDO_DEPTH + 1 {
+            self.snapshots.remove(0);
+        }
+        self.at = self.snapshots.len() - 1;
+    }
+
+    /// The state before this one, or `None` at the bottom — F2.13 words that refusal, this is the fact
+    /// it is a refusal about.
+    pub fn undo(&mut self) -> Option<Snapshot> {
+        if self.at == 0 {
+            return None;
+        }
+        self.at -= 1;
+        Some(self.snapshots[self.at].clone())
+    }
+
+    /// The state after this one, or `None` at the top.
+    pub fn redo(&mut self) -> Option<Snapshot> {
+        if self.at + 1 >= self.snapshots.len() {
+            return None;
+        }
+        self.at += 1;
+        Some(self.snapshots[self.at].clone())
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.at > 0
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.at + 1 < self.snapshots.len()
+    }
+
+    /// A suggestion is the new base: what Revert goes back to is now the model's answer, not whatever
+    /// was on disk an hour ago (§2). The undo stack stays where it is, because ↶ after a suggestion
+    /// that dropped a run is still wanted — losing one's own work to a suggestion is the failure this
+    /// keeps.
+    pub fn suggested(&mut self, cut: &Cut) {
+        self.base = Snapshot::of(cut);
+    }
+
+    /// Back to the base, and the stack rewinds with it so undo cannot walk into the edits Revert just
+    /// threw away — they are gone, and a history that still reached them would be a lie about it.
+    pub fn revert(&mut self) -> Snapshot {
+        self.snapshots = vec![self.base.clone()];
+        self.at = 0;
+        self.base.clone()
+    }
+
+    /// Whether Revert has anything to do (§A's "nothing to revert — the cut is as it was"; the sentence
+    /// itself is F2.13's).
+    pub fn base_is_the_screen(&self, cut: &Cut) -> bool {
+        self.base == Snapshot::of(cut)
+    }
+
+    /// How many snapshots are held, which is what [`UNDO_DEPTH`] bounds.
+    pub fn depth(&self) -> usize {
+        self.snapshots.len()
+    }
+}
