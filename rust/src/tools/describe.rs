@@ -12,6 +12,18 @@
 
 use serde_json::json;
 
+/// How many of the previous EVENT lines ride along with each request — what [`Batch::with_history`]
+/// stands for, and the reason a batch's first frame may be answered "same" at all.
+/// P.machine.describeRecentEvents
+pub const RECENT_EVENTS: usize = 3;
+
+/// Speech context per side per source: how many segments either side of the chunk join the brief.
+/// P.machine.describeCtxSegs
+pub const CTX_SEGS: usize = 2;
+
+/// …and how far back or forward each side looks for them. P.machine.describeCtxWindowSeconds
+pub const CTX_WINDOW_SECONDS: f64 = 10.0;
+
 /// One chunk of frames: the seconds the batch was stamped with, in order, and the interval between
 /// them (`P.project.frameInterval`, the same value the request's own stamps were built from).
 #[derive(Debug, Clone, PartialEq)]

@@ -17,6 +17,16 @@ pub const SEAM_MAX_WORDS: usize = 40;
 /// Most of the words shown that one join may remove. P.machine.seamCeil
 pub const SEAM_CEIL: f64 = 0.6;
 
+/// How far from the join a named stretch may sit and still count as at the join — measured: refusals
+/// went from four to two when this dropped to three. The counting itself is F1.10's round; the number
+/// is §10's and lives here with the rest of the seam family. P.machine.seamSnapWords
+pub const SEAM_SNAP_WORDS: usize = 3;
+
+/// A stretch this short somewhere else in the session is a respelling of the seam rather than a second
+/// copy, so it does not disqualify the join. Also F1.10's to apply; §10's number stated once.
+/// P.machine.seamNoiseWords
+pub const SEAM_NOISE_WORDS: usize = 2;
+
 /// Which side of the join a stretch is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {

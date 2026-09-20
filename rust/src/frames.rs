@@ -43,6 +43,19 @@ pub const WORKERS_MAX: usize = 8;
 /// file), so splitting twenty frames across four of them spends more on start-up than it saves. The
 /// spec says only "one for a tiny job"; twenty frames is under a second of extraction either way.
 pub const TINY_JOB_FRAMES: usize = 20;
+/// Frames per worker below which extraction is one ffmpeg however many cores there are. §10 states it as
+/// a rate; [`workers`] enforces the same thing through [`TINY_JOB_FRAMES`], which is that rate at the
+/// biggest legal worker count (4 × 8 = 32) rounded down to where start-up still dominates.
+/// P.eng.frameWorkersMinFrames
+pub const WORKER_MIN_FRAMES: usize = 4;
+/// The width the frames actually sent to the describe model are scaled to for `.llmframes/`: measured
+/// on the models Prepare uses, 896 px sits inside what they take. Only the copies sent are scaled —
+/// [`extract_plan`] keeps the delivered frames at the video's own size. P.machine.describeFrameWidth
+pub const LLM_FRAME_WIDTH: u32 = 896;
+/// …and written with `-q:v 2`, the prototype's JPEG quality for the frames a project keeps. §10 gives it
+/// no id of its own — its frame-width row covers the copies sent — and F1.7's scaled `.llmframes/` pass
+/// is where this value would be traded down if a model ever needed smaller images.
+pub const STORED_FRAME_JPEG_QUALITY: u32 = 2;
 
 /// S1: does the marker say these are the frames this grid and threshold would produce? Anything else
 /// — no marker, another grid, another threshold — means the pass runs again, because a frame set built
@@ -260,7 +273,7 @@ pub fn extract_plan(input: &str, seconds: &[f64], dir: &Path, start: f64) -> Vec
                 "-frames:v".to_string(),
                 "1".to_string(),
                 "-q:v".to_string(),
-                "2".to_string(),
+                STORED_FRAME_JPEG_QUALITY.to_string(),
                 out.to_string_lossy().into_owned(),
             ]
         })

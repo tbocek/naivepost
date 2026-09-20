@@ -16,6 +16,7 @@ pub mod icons;
 pub mod layout;
 pub mod migrate;
 pub mod narration;
+pub mod params;
 pub mod new_project;
 pub mod project;
 pub mod prepare;

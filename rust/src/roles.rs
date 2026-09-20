@@ -29,6 +29,14 @@ pub const DIAR_WINDOWS_SECONDS: [f64; 3] = [90.0, 45.0, 25.0];
 /// Frames per vision request — "four frames a call". P.machine.describeFramesPerReq
 pub const VISION_FRAMES_PER_CALL: u32 = 4;
 
+/// Pass 1's stride as a share of the diarization window: each voice need only be seen once, so the
+/// windows overlap by a third rather than not at all. P.machine.diarHopShare
+pub const DIAR_HOP_SHARE: (u32, u32) = (2, 3);
+
+/// Seconds of each voice in the anchor at the biggest window; the lower rungs of
+/// [`DIAR_WINDOWS_SECONDS`] take a quarter of their own window instead. P.machine.anchorPerSeconds
+pub const ANCHOR_PER_SECONDS: f64 = 12.0;
+
 /// Identical retake calls pooled. P.machine.retakeRuns
 pub const RETAKE_RUNS_POOLED: u32 = 3;
 

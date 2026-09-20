@@ -28,6 +28,14 @@ pub const RETAKE_PAUSE_SECONDS: f64 = 1.5;
 /// P.machine.retakeCeil
 pub const RETAKE_CEIL: f64 = 0.4;
 
+/// Longest line still a broken-off fragment rather than somebody starting a new thought — the retake
+/// brief keeps a tail this long with what came before it. P.machine.retakeFragmentSeconds
+pub const RETAKE_FRAGMENT_SECONDS: f64 = 6.0;
+
+/// How much of the later take is read for the repeat, so a mark's start can be pulled back to where the
+/// attempt stops being said again. P.machine.againReachSeconds
+pub const AGAIN_REACH_SECONDS: f64 = 25.0;
+
 /// One transcript line, as a mark sees it: its number and where it sits in time.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Line {
