@@ -269,17 +269,18 @@ fn f0_11_s2_the_refreshed_files_drive_the_tabs_readouts() {
     let found = run(&root, Some(&tree), &mut project);
 
     // Prepare counts the surviving rows; Cut and Narrate count what the scan re-read, each on its
-    // own page — `inputs` reads the page it is asked about.
+    // own page — `inputs` reads the page it is asked about. Prepare's row is §4-prepare §1's
+    // "N frames → M vision · L lines → K fixer", and this fixture has written neither yet.
     let cut = found.cut.clone().unwrap();
     let narration_file = found.narration.clone().unwrap();
     let on = |page: Page| Shell { page, ..Default::default() };
     assert_eq!(
-        on(Page::Prepare).inputs(&project, &cut, &narration_file),
-        "1 source(s), 1 of them footage"
+        on(Page::Prepare).inputs(Some(&tree), &project, &cut, &narration_file),
+        "0 frames \u{2192} 0 vision \u{b7} 0 lines \u{2192} 0 fixer"
     );
-    assert_eq!(on(Page::Cut).inputs(&project, &cut, &Narration::default()), "1 clip(s)");
+    assert_eq!(on(Page::Cut).inputs(Some(&tree), &project, &cut, &Narration::default()), "1 clip(s)");
     assert_eq!(
-        on(Page::Narrate).inputs(&project, &cut, &narration_file),
+        on(Page::Narrate).inputs(Some(&tree), &project, &cut, &narration_file),
         "1 line(s) over 1 clip(s)"
     );
 

@@ -89,7 +89,8 @@ impl Tree {
         self.prepare_dir().join("inputs/meta.env")
     }
 
-    fn prepare_dir(&self) -> PathBuf {
+    /// This page's own folder: what Prepare writes, and what its Outputs count counts.
+    pub fn prepare_dir(&self) -> PathBuf {
         self.dir.join("prepare")
     }
 

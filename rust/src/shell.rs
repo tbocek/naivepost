@@ -11,6 +11,7 @@ use std::time::Duration;
 use crate::cut::{self, Seg};
 use crate::layout::Tree;
 use crate::narration::{self, Entry};
+use crate::prepare;
 use crate::project::Project;
 use crate::publish;
 use crate::tools::mm_ss;
@@ -403,16 +404,28 @@ impl Shell {
     }
 
     /// The Inputs readout of the page shown (spec/03-shell.md §1: "the visible tab's `Inputs:` and
-    /// `Outputs:` readouts"). Produce's wording is spec/08-produce.md §1 verbatim; the other three
-    /// pages' rows are specified in 04/05/07, whose rounds have not come, so these are the rewrite's
-    /// own short sentences — one line each, naming what ▶ on that page would read.
-    pub fn inputs(&self, project: &Project, cut: &cut::Cut, narration: &narration::Narration) -> String {
-        match self.page {
-            Page::Prepare => format!(
-                "{} source(s), {} of them footage",
-                project.sources.len(),
-                project.sources.iter().filter(|source| source.footage).count()
-            ),
+    /// `Outputs:` readouts"). Prepare's and Produce's wording are spec/04-prepare.md §1 and
+    /// spec/08-produce.md §1 verbatim; Cut's and Narrate's rows are specified in 05/07, whose rounds
+    /// have not come, so those two are the rewrite's own short sentences — one line each, naming what
+    /// ▶ on that page would read.
+/// The tree the readouts count files in. Every page's Inputs and Outputs row is a
+/// number about disk, so the folder is passed to the read rather than remembered by the
+/// shell: which project is open is the window's business, and this way the shell cannot
+/// disagree with it after an Open.
+pub fn inputs(
+    &self,
+    tree: Option<&Tree>,
+    project: &Project,
+    cut: &cut::Cut,
+    narration: &narration::Narration,
+) -> String {
+    match self.page {
+        // Prepare's row is spec/04-prepare.md §1 verbatim; with no folder there is
+        // nothing counted yet, and "0 frames → 0 vision" would be a claim about files.
+        Page::Prepare => match tree {
+            Some(tree) => prepare::inputs_readout(&prepare::count(tree, project)),
+            None => "nothing read yet".to_string(),
+        },
             Page::Cut => format!("{} clip(s)", cut.segs.len()),
             Page::Narrate if project.no_narration => "no narration — captions only".to_string(),
             Page::Narrate => format!(

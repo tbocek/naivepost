@@ -1,4 +1,5 @@
 pub mod add_sources;
+pub mod bench;
 pub mod bodies;
 pub mod checks;
 pub mod clock;
@@ -11,6 +12,7 @@ pub mod migrate;
 pub mod narration;
 pub mod new_project;
 pub mod project;
+pub mod prepare;
 pub mod publish;
 pub mod probes;
 pub mod rescan;

@@ -193,7 +193,7 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
         // S4: the page, its readouts and ⓘ are one change.
         assert_eq!(shell.page, page);
         assert_eq!(shell.help_page, page, "ⓘ syncs with the page shown");
-        let inputs = shell.inputs(&project, &cut, &narration);
+        let inputs = shell.inputs(Some(&tree), &project, &cut, &narration);
         assert!(!inputs.is_empty(), "{} shows no Inputs", page.label());
         assert_ne!(inputs, "0", "{}'s Inputs row says something", page.label());
         seen_inputs.push(inputs);
@@ -208,8 +208,12 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
             shell.info_tip()
         );
     }
-    // The rows belong to their page: Prepare counts sources, Cut clips, Narrate lines.
-    assert_eq!(seen_inputs[0], "1 source(s), 1 of them footage");
+    // The rows belong to their page: Prepare counts frames and lines (spec/04-prepare.md §1),
+    // Cut clips, Narrate lines. Nothing has run here, so Prepare's two pairs are zero.
+    assert_eq!(
+        seen_inputs[0],
+        "0 frames \u{2192} 0 vision \u{b7} 0 lines \u{2192} 0 fixer"
+    );
     assert_eq!(seen_inputs[1], "1 clip(s)");
     assert_eq!(seen_inputs[2], "1 line(s) over 1 clip(s)");
     // Produce's row is spec/08-produce.md §1: "N clip(s) · mm:ss[ · no narration][ · no upload text]".
@@ -222,10 +226,10 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
     // Narration off is what says so, and it is the row that changes.
     let captions = Project { no_narration: true, ..with_footage() };
     go(&mut shell, Page::Narrate, Move::Click, &captions, Some(&tree));
-    assert_eq!(shell.inputs(&captions, &cut, &narration), "no narration — captions only");
+    assert_eq!(shell.inputs(Some(&tree), &captions, &cut, &narration), "no narration — captions only");
     go(&mut shell, Page::Produce, Move::Click, &captions, Some(&tree));
     assert!(
-        shell.inputs(&captions, &cut, &narration).contains("no narration"),
+        shell.inputs(Some(&tree), &captions, &cut, &narration).contains("no narration"),
         "the tail appears with nothing to speak"
     );
 
@@ -386,7 +390,7 @@ fn f0_1_s7_produce_refreshes_readouts_and_the_publish_panel() {
     // With the text written, the Inputs row stops saying otherwise.
     let project = Project { publish: Some(record), ..project };
     assert!(
-        !shell.inputs(&project, &cut::Cut::default(), &narration::Narration::default())
+        !shell.inputs(Some(&tree), &project, &cut::Cut::default(), &narration::Narration::default())
             .contains("no upload text")
     );
 

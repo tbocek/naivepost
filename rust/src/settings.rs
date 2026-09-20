@@ -49,6 +49,19 @@ pub fn paths_from(
     })
 }
 
+/// The two folders from this process's own environment — what a caller with no override of its
+/// own reads. `main::settings_paths` is the same three variables; a widget that has to reach a
+/// prompt file uses this rather than reaching into the binary's innards.
+pub fn from_environment() -> Option<Paths> {
+    let var = |name: &str| std::env::var(name).ok();
+    paths_from(
+        var("XDG_CONFIG_HOME").as_deref(),
+        var("HOME").as_deref(),
+        None,
+        var("XDG_DATA_HOME").as_deref(),
+    )
+}
+
 impl Paths {
     /// `llm.conf` — the one settings file, and the state that goes with it.
     pub fn conf_path(&self) -> PathBuf {

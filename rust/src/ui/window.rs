@@ -11,8 +11,10 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::add_sources;
+use crate::bench;
 use crate::layout;
 use crate::new_project;
+use crate::prepare;
 use crate::project::Project;
 use crate::rescan;
 use crate::run;
@@ -75,6 +77,17 @@ fn page_box(
         frame.set_child(Some(&list));
         box_.append(&frame);
 
+        // §1's badge **8**: Freq and Language under the list. Both are choices from a list rather
+        // than free text — an interval off the stops would be sent to the model as a claim about
+        // frames that were never picked.
+        box_.append(&frame_controls(&session));
+
+        // §1's badges **2**-**5**: the prompt bench, one heading row over one text box. The rows it
+        // offers and every sentence on it come from `bench`; the box only forwards what is typed.
+        let (heading, editor) = bench_box(&session, &bench_paths());
+        box_.append(&heading);
+        box_.append(&editor);
+
         prepare = Some((add_, copy_));
     }
 
@@ -110,6 +123,279 @@ fn sources_list(session: &Rc<RefCell<Project>>, status: &gtk::Label) -> gtk::Wid
         list.append(&source_row(session, status, index));
     }
     list.upcast()
+}
+
+/// §1's badge **8**: the two frame controls under the list. Freq is a dropdown of the stops
+/// ([`prepare::FREQ_STOPS`]) and Language an entry with the warning as its tooltip; both write
+/// through to the session, so the page holds no rule of its own.
+fn frame_controls(session: &Rc<RefCell<Project>>) -> gtk::Widget {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    row.set_widget_name("frame-controls");
+
+    row.append(&label("Freq"));
+    let freq = gtk::DropDown::from_strings(
+        &prepare::FREQ_STOPS
+            .iter()
+            .map(|secs| prepare::freq_label(*secs))
+            .collect::<Vec<_>>()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+    );
+    freq.set_widget_name("freq-control");
+    freq.set_selected(
+        prepare::FREQ_STOPS
+            .iter()
+            .position(|stop| *stop == session.borrow().interval)
+            .map(|index| index as u32)
+            .unwrap_or(gtk::INVALID_LIST_POSITION),
+    );
+    let held = session.clone();
+    freq.connect_selected_notify(move |picker| {
+        // `INVALID_LIST_POSITION` is the empty selection GTK gives before a choice exists; anything
+        // off the stops is `set_freq`'s refusal to make, not this handler's decision.
+        let index = picker.selected();
+        if index == gtk::INVALID_LIST_POSITION {
+            return;
+        }
+        let secs = prepare::FREQ_STOPS[usize::try_from(index).unwrap_or(0)];
+        prepare::set_freq(&mut held.borrow_mut(), secs);
+    });
+    row.append(&freq);
+
+    row.append(&label("Language"));
+    let language = gtk::Entry::new();
+    language.set_widget_name("language-entry");
+    language.set_tooltip_text(Some(prepare::LANGUAGE_TIP));
+    // The code as it will be used, so an empty box shows the "en" it means rather than a blank.
+    language.set_text(&prepare::language_label(&session.borrow().language));
+    let held = session.clone();
+    language.connect_changed(move |entry| {
+        held.borrow_mut().language = entry.text().to_string();
+    });
+    row.append(&language);
+
+    row.upcast()
+}
+
+/// A plain label beside a control, dimmed the way a field name is.
+fn label(text: &str) -> gtk::Label {
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("dim-label");
+    label
+}
+
+/// §1's badges **2**-**5**: the bench's heading row and its one text box. Everything the row says —
+/// title, mark, Reset's liveness — is asked of [`bench`]; the widgets only forward.
+fn bench_box(
+    session: &Rc<RefCell<Project>>,
+    paths: &Option<crate::settings::Paths>,
+) -> (gtk::Box, gtk::TextView) {
+    let row = Rc::new(RefCell::new(bench::Bench::new()));
+    // Each handler below holds its own handle on the same answer to "where does this machine keep a
+    // prompt", which is why it travels as an `Rc` rather than as a borrow of the caller's.
+    let paths = Rc::new(paths.clone());
+
+    let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    heading.set_widget_name("bench-heading");
+
+    let title = gtk::Label::new(None);
+    title.set_widget_name("prepare-title");
+    title.add_css_class("title-4");
+    title.set_halign(gtk::Align::Start);
+    heading.append(&title);
+
+    let mark = gtk::Label::new(Some(bench::EDITED_MARK));
+    mark.set_widget_name("bench-mark");
+    mark.set_tooltip_text(Some(bench::EDITED_TIP));
+    mark.add_css_class("dim-label");
+    heading.append(&mark);
+
+    // **3** the row picker: the thirteen rows in pipeline order, chosen from a menu. A DropDown is
+    // GTK's own menu of strings, which is what §1 asks for and what carries the selected index.
+    let titles: Vec<String> = bench::picker_rows()
+        .iter()
+        .map(|(_, title)| title.to_string())
+        .collect();
+    let picker = gtk::DropDown::from_strings(
+        &titles
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<&str>>(),
+    );
+    picker.set_widget_name("bench-picker");
+    picker.set_halign(gtk::Align::Start);
+
+    // **4** Reset, live only while this machine holds an edit.
+    let reset = gtk::Button::with_label("Reset");
+    reset.set_widget_name("bench-reset");
+    reset.set_tooltip_text(Some("Restore the shipped wording"));
+    heading.append(&picker);
+    heading.append(&reset);
+
+    // **5** the prompt or the User Context.
+    let editor = gtk::TextView::new();
+    editor.set_widget_name("bench-text");
+    editor.set_monospace(true);
+    editor.set_wrap_mode(gtk::WrapMode::WordChar);
+    editor.set_vexpand(true);
+    editor.set_top_margin(6);
+    editor.set_bottom_margin(6);
+    let scroller = gtk::ScrolledWindow::new();
+    scroller.set_child(Some(&editor));
+    scroller.set_vexpand(true);
+
+    // The box's contents are set when the row changes, never from its own `changed` handler: typing
+    // stores text and storing must not retype the buffer out from under the cursor.
+    let guard = Rc::new(RefCell::new(false));
+    paint_bench(&row, &title, &mark, &reset, &editor, &guard, session, &paths);
+
+    let session_for_picker = session.clone();
+    let paths_for_picker = paths.clone();
+    let row_for_picker = row.clone();
+    let guard_for_picker = guard.clone();
+    let title_for_picker = title.clone();
+    let mark_for_picker = mark.clone();
+    let reset_for_picker = reset.clone();
+    let editor_for_picker = editor.clone();
+    picker.connect_selected_notify(move |picker| {
+        let index = picker.selected();
+        if index == gtk::INVALID_LIST_POSITION {
+            return;
+        }
+        row_for_picker.borrow_mut().select(usize::try_from(index).unwrap_or(0));
+        paint_bench(
+            &row_for_picker,
+            &title_for_picker,
+            &mark_for_picker,
+            &reset_for_picker,
+            &editor_for_picker,
+            &guard_for_picker,
+            &session_for_picker,
+            &paths_for_picker,
+        );
+    });
+
+    // Reset (**4**) puts the shipped wording back and forgets this machine's file; the buffer then
+    // shows what is stored, which is why it is repainted rather than trusted to the click.
+    let session_for_reset = session.clone();
+    let paths_for_reset = paths.clone();
+    let title_for_reset = title.clone();
+    let mark_for_reset = mark.clone();
+    let editor_for_reset = editor.clone();
+    let reset_for_reset = reset.clone();
+    let row_for_reset = row.clone();
+    let guard_for_reset = guard.clone();
+    reset.connect_clicked(move |_| {
+        let current = row_for_reset.borrow().row().clone();
+        let Some(paths) = paths_for_reset.as_ref() else { return };
+        // User Context has no shipped wording to restore, and `bench::reset` says so with `None`.
+        if let Ok(Some(_)) = bench::reset(paths, &current) {
+            paint_bench(
+                &row_for_reset,
+                &title_for_reset,
+                &mark_for_reset,
+                &reset_for_reset,
+                &editor_for_reset,
+                &guard_for_reset,
+                &session_for_reset,
+                &paths_for_reset,
+            );
+        }
+    });
+
+    let buffer = editor.buffer();
+    let session_for_text = session.clone();
+    let paths_for_text = paths.clone();
+    let mark_for_text = mark;
+    let reset_for_text = reset;
+    let row_for_text = row;
+    buffer.connect_changed(move |buffer| {
+        if *guard.borrow() {
+            return;
+        }
+        let (start, end) = (buffer.bounds().0, buffer.bounds().1);
+        let text = buffer.text(&start, &end, false).to_string();
+        // Every keystroke is stored (§1): there is no Save button on this bench. The session takes
+        // the text whatever this machine's settings can do with it — User Context lives there, and a
+        // prompt that cannot be written must still not be thrown away.
+        let current = row_for_text.borrow().row().clone();
+        let mut held = session_for_text.borrow_mut();
+        match paths_for_text.as_ref() {
+            Some(paths) => {
+                let _ = bench::store(paths, &mut held, &current, &text);
+            }
+            // With no config folder a prompt has nowhere to go; the User Context still lands on the
+            // session, which is where it belongs.
+            None if bench::is_context(&current) => {
+                held.context = text.clone();
+            }
+            None => {}
+        }
+        let edited = match paths_for_text.as_ref() {
+            Some(paths) => bench::edited(paths, &current),
+            None => false,
+        };
+        mark_for_text.set_visible(bench::shows_mark(&current, edited));
+        reset_for_text.set_visible(bench::shows_reset(&current, edited));
+        reset_for_text.set_sensitive(bench::shows_reset(&current, edited));
+    });
+
+    // The heading and the box are returned together; `page_box` stacks them in §1's order. The
+    // scroller is dropped with its child still inside: GTK keeps what it was added to.
+    drop(scroller);
+    (heading, editor)
+}
+
+/// Where this machine keeps an edited prompt (§1's ✎). `None` — no config home at all — leaves the
+/// bench showing rows with no mark rather than pretending to hold edits it cannot write.
+fn bench_paths() -> Option<crate::settings::Paths> {
+    crate::settings::from_environment()
+}
+
+/// Where settings are not: no folder at all, so every read finds nothing and every shipped wording
+/// shows through. Used when this machine has no config home to write prompts into.
+const NO_SETTINGS: crate::settings::Paths = crate::settings::Paths {
+    config_dir: std::path::PathBuf::new(),
+    data_dir: std::path::PathBuf::new(),
+};
+
+/// Draw one row of the bench: its title, whether this machine holds it, and its text.
+fn paint_bench(
+    row: &Rc<RefCell<bench::Bench>>,
+    title: &gtk::Label,
+    mark: &gtk::Label,
+    reset: &gtk::Button,
+    editor: &gtk::TextView,
+    guard: &Rc<RefCell<bool>>,
+    session: &Rc<RefCell<Project>>,
+    paths: &Option<crate::settings::Paths>,
+) {
+    let held = row.borrow();
+    title.set_text(&bench::title(held.row()));
+    paint_bench_marks(mark, reset, paths.as_ref(), held.row());
+
+    // The text is set here and only here, with the store handler parked: writing into a buffer
+    // fires `changed`, and a `changed` that stores would repaint the buffer again.
+    *guard.borrow_mut() = true;
+    let buffer = editor.buffer();
+    // With no config folder there is nothing this machine could hold, so the box shows the shipped
+    // wording — which is what `bench::text` answers for a row nobody has touched.
+    buffer.set_text(&bench::text(paths.as_ref().unwrap_or(&NO_SETTINGS), &session.borrow(), held.row()));
+    *guard.borrow_mut() = false;
+}
+
+/// The mark and Reset, both live only while this machine holds the row's wording (§1).
+fn paint_bench_marks(
+    mark: &gtk::Label,
+    reset: &gtk::Button,
+    paths: Option<&crate::settings::Paths>,
+    row: &bench::Row,
+) {
+    let edited = paths.is_some_and(|paths| bench::edited(paths, row));
+    mark.set_visible(bench::shows_mark(row, edited));
+    reset.set_visible(bench::shows_reset(row, edited));
+    reset.set_sensitive(bench::shows_reset(row, edited));
 }
 
 /// A symbol control: an icon, flat so a row of them reads as one band rather than a row of boxes, and
@@ -948,6 +1234,17 @@ pub fn copy_into_project(window: &adw::ApplicationWindow) -> Option<gtk::CheckBu
         .downcast()
         .ok()
 }
+
+/// The ASR code the page's Language box holds (§1's badge **10**) — how a test sees that typing
+/// reached [`Project::language`] rather than stopping at the widget.
+pub fn bench_language(window: &adw::ApplicationWindow) -> Option<String> {
+    let entry = find_widget_by_name(window.upcast_ref(), "language-entry")?
+        .downcast::<gtk::Entry>()
+        .ok()?;
+    Some(entry.text().to_string())
+}
+
+
 
 /// The New button, named so a test can press it the way a user does.
 pub fn new_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
