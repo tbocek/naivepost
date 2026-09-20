@@ -521,3 +521,159 @@ impl Draft {
         true
     }
 }
+
+/// The LLM row's verdict: the answer and how long it took (§5's "<model> answered in X s: “ok”").
+///
+/// One completion is the whole test, so those two facts are the whole result. The wait is not
+/// decoration — it is what tells a cold server loading its model from one that has hung, which are
+/// fixed by waiting and by restarting respectively and look identical from a spinner (prototype
+/// `gui/setup.go:534`).
+pub fn llm_verdict(model: &str, seconds: f64, reply: &str) -> String {
+    format!("{model} answered in {seconds:.1} s: {reply:?}")
+}
+
+/// The audio.cpp endpoint row: the port answered `/health` (at [`HEALTH_SECONDS`]) and its
+/// catalogue names a voice — §5's "healthy in N ms, will narrate with <id>".
+///
+/// Health alone would green-light a server that cannot narrate, so the two are one sentence: the
+/// number says the address is right, the id says something on it can clone a voice. The voice half
+/// is [`tts_endpoint_verdict`], which the TTS endpoint's own button uses too.
+pub fn audio_health_verdict(health_ms: u64, models: &[AudioModel]) -> Result<String, String> {
+    if models.is_empty() {
+        return Err("healthy, but serving no models".to_string());
+    }
+    Ok(format!(
+        "healthy in {health_ms} ms, {}",
+        tts_endpoint_verdict(models)?
+    ))
+}
+
+/// The one thing the sd.cpp row reads out of `GET /sdcpp/v1/capabilities`: which weights the server
+/// has loaded. Everything else the reply carries (sizes, steps, samplers) is what a draw request may
+/// ask for, and this row only proves there is a model behind the port.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SdCaps {
+    pub weights: String,
+}
+
+/// How the capabilities call failed, since the two failures are fixed differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SdProbe {
+    /// `/v1/models` answered and `/sdcpp/v1/capabilities` did not: an OpenAI-shaped server, not
+    /// sd-server.
+    OpenAiOnly,
+    /// Nothing answered at all.
+    Unreachable,
+}
+
+/// The sd.cpp row's verdict: capabilities → "<weights> is loaded and can draw" (§5). `capabilities`
+/// is what the caller got back, `Err` when the call itself failed — the shape of the failure *is* the
+/// advice, because a port serving `/v1/models` and nothing else is an OpenAI-only tenant, which is a
+/// different server to start than the one Prepare draws through ([`crate::services::Endpoint`]’s own
+/// comment records that `/v1/models` is this row's fallback probe).
+pub fn sd_verdict(capabilities: Result<&SdCaps, SdProbe>) -> Result<String, String> {
+    match capabilities {
+        Ok(caps) if !caps.weights.trim().is_empty() => {
+            Ok(format!("{} is loaded and can draw", caps.weights.trim()))
+        }
+        Ok(_) => Err(
+            "it answers capabilities but names no weights -- nothing is loaded to draw with"
+                .to_string(),
+        ),
+        Err(SdProbe::OpenAiOnly) => Err(
+            "that port answers /v1/models and not /sdcpp/v1/capabilities -- it is an OpenAI-shaped \
+             server, not sd-server, and Prepare draws images through sd-server's own API"
+                .to_string(),
+        ),
+        Err(SdProbe::Unreachable) => Err(
+            "nothing answered /sdcpp/v1/capabilities -- sd-server is not up at that address"
+                .to_string(),
+        ),
+    }
+}
+
+/// The prefix every Test line takes in the main log (§5: "mirrors its lines into the main log as
+/// \"settings: …\""). The log is where a verdict is read after the dialog has closed, so the row's
+/// name is inside the line rather than only beside it on screen.
+pub const LOG_PREFIX: &str = "settings:";
+
+/// One Test line in the main log: `settings: <row>: <verdict>`, or `-- <reason>` when it failed so a
+/// failure reads like every other line in the log. The caller adds the `!!!` marker the run's own
+/// failures carry — this module does not own the log, only what it says.
+pub fn log_line(name: &str, verdict: &Result<String, String>) -> String {
+    match verdict {
+        Ok(detail) => format!("{LOG_PREFIX} {name}: {detail}"),
+        Err(reason) => format!("{LOG_PREFIX} {name} -- {reason}"),
+    }
+}
+
+/// What one Test button is doing.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Phase {
+    #[default]
+    Idle,
+    Running,
+    Finished(Result<String, String>),
+}
+
+/// One Test button: what its box said when it was pressed, and what came back.
+///
+/// `press` takes the value the box holds at that moment — §5's "reads what is TYPED" — because the
+/// file lags the keyboard by [`CONF_SAVE_WAIT`], so a test that read the file would report the health
+/// of the address the box had before this one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestRow {
+    pub name: &'static str,
+    pub typed: String,
+    pub phase: Phase,
+}
+
+impl TestRow {
+    /// A button for `name`, untouched.
+    pub fn new(name: &'static str) -> Self {
+        Self { name, typed: String::new(), phase: Phase::Idle }
+    }
+
+    /// The press: remember what was typed, drop any earlier verdict, start spinning. An old ✓ beside
+    /// a box that has since been edited would be a lie about the address now in it.
+    pub fn press(&mut self, typed: &str) {
+        self.typed = typed.to_string();
+        self.phase = Phase::Running;
+    }
+
+    /// The answer arrived, becoming the row's tooltip.
+    pub fn finish(&mut self, verdict: Result<String, String>) {
+        self.phase = Phase::Finished(verdict);
+    }
+
+    /// Whether the spinner is showing.
+    pub fn spinning(&self) -> bool {
+        matches!(self.phase, Phase::Running)
+    }
+
+    /// The ✓ / ✗ mark, or nothing while idle or spinning.
+    pub fn mark(&self) -> Option<char> {
+        match &self.phase {
+            Phase::Finished(Ok(_)) => Some('✓'),
+            Phase::Finished(Err(_)) => Some('✗'),
+            _ => None,
+        }
+    }
+
+    /// The tooltip: the verdict, which is the whole reason the mark is not enough (§5's "verdict as
+    /// tooltip") — ✗ says a row failed, only its sentence says which of the four reasons it failed.
+    pub fn tooltip(&self) -> Option<String> {
+        match &self.phase {
+            Phase::Finished(Ok(detail)) | Phase::Finished(Err(detail)) => Some(detail.clone()),
+            _ => None,
+        }
+    }
+
+    /// The line this row's verdict puts in the main log; nothing while spinning or idle.
+    pub fn log(&self) -> Option<String> {
+        match &self.phase {
+            Phase::Finished(verdict) => Some(log_line(self.name, verdict)),
+            Phase::Running | Phase::Idle => None,
+        }
+    }
+}
