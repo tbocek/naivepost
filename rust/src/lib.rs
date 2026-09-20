@@ -29,6 +29,7 @@ pub mod sources;
 pub mod startup;
 pub mod subprocess;
 pub mod textfmt;
+pub mod transcribe;
 pub mod tools;
 pub mod wave;
 pub mod ui;

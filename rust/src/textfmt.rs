@@ -75,7 +75,7 @@ fn read_to_string(path: &Path) -> Result<Option<String>, String> {
 /// are read and written by whatever step owns them, at paths that outlive one project
 /// folder; the mode is set after the write for the same reason §1 gives — a new file's
 /// creation mode is masked by the umask.
-fn write_rows(path: &Path, text: &str) -> Result<(), String> {
+pub(crate) fn write_rows(path: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
     }
