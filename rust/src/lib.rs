@@ -7,6 +7,7 @@ pub mod checks;
 pub mod clock;
 pub mod degraded;
 pub mod cut;
+pub mod cut_review;
 pub mod cut_screen;
 pub mod timeline;
 pub mod diarize;
