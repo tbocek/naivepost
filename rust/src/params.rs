@@ -16,6 +16,7 @@ use crate::degraded;
 use crate::frames;
 use crate::fx_aspect;
 use crate::fx_svg;
+use crate::fx_volume;
 use crate::hand_edit;
 use crate::prepare;
 use crate::requests;
@@ -426,6 +427,18 @@ pub fn cut() -> Vec<Param> {
             "effects.previewRasterPx",
             num(fx_svg::PREVIEW_RASTER_PX),
             "fx_svg::PREVIEW_RASTER_PX",
+        ),
+        // --- F3.6's own defaults: §F's "gain 2" and its `fxMinDur 0.1` for volume have no `P.` row, so both take the
+        // bare prefix of the rule that reads them — the same treatment as the three rows above.
+        param(
+            "effects.defaultGain",
+            num(fx_volume::DEFAULT_GAIN),
+            "fx_volume::DEFAULT_GAIN",
+        ),
+        param(
+            "effects.volumeMinSeconds",
+            num(fx_volume::MIN_SECONDS),
+            "fx_volume::MIN_SECONDS",
         ),
         // --- what the preview does (§6's preview group, §D's numbers) --------------------------------
         param("preview.playTickMs", format!("{} ms", preview::TICK_MS), "preview::TICK_MS"),

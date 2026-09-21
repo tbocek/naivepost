@@ -33,6 +33,7 @@ pub mod fx_lane;
 pub mod fx_record;
 pub mod fx_svg;
 pub mod fx_text;
+pub mod fx_volume;
 pub mod fx_zoom;
 pub mod icons;
 pub mod layout;
