@@ -19,7 +19,14 @@ use crate::prepare;
 use crate::requests;
 use crate::roles;
 use crate::separate;
-use crate::tools::{describe, retakes, textedit};
+use crate::cut;
+use crate::cut_line;
+use crate::cut_review;
+use crate::cut_screen;
+use crate::cut_trim;
+use crate::preview;
+use crate::tools::{cutpass, describe, retakes, textedit};
+use crate::wave;
 use crate::transcribe;
 use crate::word_list;
 
@@ -323,6 +330,102 @@ fn engineering() -> Vec<Param> {
             num(cut_insert::DEFAULT_SECONDS),
             "cut_insert::DEFAULT_SECONDS",
         ),
+    ]
+}
+
+/// §05-cut#6-parameters-used — every parameter the Cut page may be tuned by, in `spec/05-cut.md` §6's own
+/// order, built from the constant each rule already reads.
+///
+/// §6 is a list of ids, not of numbers, so this holds none either: move a bound in its module and this row
+/// moves with it. The rows split as §6 splits them — what bounds an edit, what the suggest pass and the target
+/// arithmetic compute on, what the preview does, then the engineering choices around pixels and formats.
+///
+/// Deliberately absent, because no rule in this tree reads them yet: `P.eng.talkPadSeconds`,
+/// `P.policy.deadAirMaxSeconds`, `P.policy.deadAirKeepSeconds`, `P.eng.seamMaxSeconds`,
+/// `P.machine.captionBatch`, `P.eng.preloadLeadSeconds`, and §D's `rateSeekGap` 250 ms and thumbnail batch 6.
+/// A number nothing reads has no module to live in, which is the rule this catalogue exists to keep — each of
+/// those appears here the round its rule is written. The Cut tints (§10's colour list) are absent for the same
+/// reason: no constant outside `src/ui`'s drawing holds one. §6 also groups the preview numbers under a heading, and
+/// §10 has no such family (they are listed in `spec/inventory/cut.md` §D), so those rows take a `preview.`
+/// prefix rather than inventing ids §10 does not carry — the same choice `machine.jpegQuality` made.
+pub fn cut() -> Vec<Param> {
+    vec![
+        // --- what bounds an edit -----------------------------------------------------------------
+        // Also catalogued for Prepare, which keeps a scene by the same bound: one constant, two sections
+        // naming it, so neither list can drift from the rule in cut_select.
+        param(
+            "P.policy.minSceneSeconds",
+            num(cut_select::MIN_SCENE_SECONDS),
+            "cut_select::MIN_SCENE_SECONDS",
+        ),
+        param("P.eng.minPieceSeconds", num(cut_select::MIN_SECONDS), "cut_select::MIN_SECONDS"),
+        param(
+            "P.policy.snapToleranceSeconds",
+            num(cutpass::SNAP_TOLERANCE_SECONDS),
+            "tools::cutpass::SNAP_TOLERANCE_SECONDS",
+        ),
+        // ▶✂✂ plays this much before and after each join; §6's review bound, held by the module that walks it.
+        param(
+            "P.policy.reviewPadSeconds",
+            num(cut_review::REVIEW_PAD_SECONDS),
+            "cut_review::REVIEW_PAD_SECONDS",
+        ),
+        // --- what the suggest pass and the target arithmetic compute on ---------------------------
+        param(
+            "P.policy.targetLengthSeconds",
+            format!("{} (none)", num(cutpass::NO_TARGET)),
+            "cutpass::NO_TARGET",
+        ),
+        param(
+            "P.policy.shortTargetSeconds",
+            num(cutpass::SHORT_TARGET_SECONDS),
+            "cutpass::SHORT_TARGET_SECONDS",
+        ),
+        param("P.policy.maxSpeedRate", num(cutpass::MAX_RATE), "cutpass::MAX_RATE"),
+        // Three formula rows: §10 gives these no number to spell, only the arithmetic, so what is catalogued
+        // is §10's own text and the function that computes it.
+        param(
+            "P.machine.suggestMinSegments",
+            "min(1 + \u{230a}target/30\u{230b}, 4)".to_string(),
+            "tools::cutpass::min_segments",
+        ),
+        param(
+            "P.machine.suggestMaxSegments",
+            "max(\u{230a}target/5\u{230b}, 40)".to_string(),
+            "tools::cutpass::max_segments",
+        ),
+        param(
+            "P.machine.footageWindow",
+            "target \u{00d7} [0.6, 1.2] (\u{2264} shortTargetSeconds) else [0.6, 1.5]; ceiling \u{00d7} maxSpeedRate"
+                .to_string(),
+            "tools::cutpass::footage_window",
+        ),
+        param(
+            "P.policy.insertDefaultSeconds",
+            num(cut_insert::DEFAULT_SECONDS),
+            "cut_insert::DEFAULT_SECONDS",
+        ),
+        // --- what the preview does (§6's preview group, §D's numbers) --------------------------------
+        param("preview.playTickMs", format!("{} ms", preview::TICK_MS), "preview::TICK_MS"),
+        param("preview.cardFps", num(cut_insert::PREVIEW_FPS), "cut_insert::PREVIEW_FPS"),
+        // --- engineering: pixel reaches, band heights, zoom, undo, the wave cache ------------------
+        // §6 lists these as a family and §10 gives them no `P.` ids of their own (§I's implicit constants),
+        // so each is spelled after §D's name for it — as `machine.jpegQuality` does for the JPEG quality.
+        param("layout.edgeGrabPx", num(cut_trim::EDGE_GRAB_PX), "cut_trim::EDGE_GRAB_PX"),
+        param("layout.snapPx", num(cut_select::SNAP_PX), "cut_select::SNAP_PX"),
+        param("layout.lineReachPx", num(cut_line::EDGE_REACH_PX), "cut_line::EDGE_REACH_PX"),
+        param("layout.rulerPx", num(cut_screen::RULER_PX), "cut_screen::RULER_PX"),
+        param("layout.selBandPx", num(cut_screen::SELECTION_BAND_PX), "cut_screen::SELECTION_BAND_PX"),
+        param("layout.effectRowPx", num(cut_screen::EFFECT_ROW_PX), "cut_screen::EFFECT_ROW_PX"),
+        param("layout.waveLanePx", num(cut_screen::WAVE_LANE_PX), "cut_screen::WAVE_LANE_PX"),
+        param("layout.laneGapPx", num(cut_screen::ROW_GAP_PX), "cut_screen::ROW_GAP_PX"),
+        param("layout.zoomAtOpen", num(cut_screen::ZOOM_AT_OPEN), "cut_screen::ZOOM_AT_OPEN"),
+        param("layout.zoomMaxPps", num(cut_screen::ZOOM_MAX), "cut_screen::ZOOM_MAX"),
+        param("layout.zoomStep", num(cut_screen::ZOOM_STEP), "cut_screen::ZOOM_STEP"),
+        param("layout.undoDepth", cut::UNDO_DEPTH.to_string(), "cut::UNDO_DEPTH"),
+        // The waveform cache's format is its magic: a file that does not start with these four bytes is read
+        // again rather than trusted, which is the whole reason it was renamed AWV2 → AWV3 → AWV4.
+        param("layout.waveCacheMagic", String::from_utf8_lossy(wave::MAGIC).to_string(), "wave::MAGIC"),
     ]
 }
 

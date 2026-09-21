@@ -36,6 +36,11 @@ pub const SNAP_TOLERANCE_SECONDS: f64 = 5.0;
 /// window widens. P.policy.shortTargetSeconds
 pub const SHORT_TARGET_SECONDS: f64 = 60.0;
 
+/// No target at all — §10's `P.policy.targetLengthSeconds` default, which it spells `0 (none)`. A length of
+/// zero is not a very short video, so the guard in [`footage_window`] reads this rather than a bare `0.0`: the
+/// whole window collapses to nothing there, and that is the one place "no target" is decided for the cut.
+pub const NO_TARGET: f64 = 0.0;
+
 /// Seconds as the model will read them — [`crate::tools::mm_ss`] under this module's name, so a cut
 /// message and one of these error sentences cannot drift into two readings of the same number. Past an
 /// hour the minutes keep counting: `clock(3725.0)` is `62:05`.
@@ -464,7 +469,7 @@ fn rate_reason(rate: f64, applied: f64, seconds: f64) -> Option<String> {
 /// of those seconds are worth keeping is the cut's judgement, and how many of them run fast is a later
 /// call's. P.machine.footageWindow, from `suggestWindow` × [`MAX_RATE`].
 pub fn footage_window(target: f64) -> (f64, f64) {
-    if target <= 0.0 {
+    if target <= NO_TARGET {
         return (0.0, 0.0);
     }
     // A long cut is a wish, so half under is allowed; under a minute it is a promise, and the ceiling is
