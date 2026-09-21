@@ -181,6 +181,14 @@ fn is_card(seg: &Seg) -> bool {
     !seg.ins.is_empty()
 }
 
+/// §7 (`Inserts are files: never trimmed`): a card has no edge to grab. Its seconds are its own — a spliced one
+/// carries a `dur`, an overwriting one runs for the footage it replaced — so trimming either end would be
+/// editing a file rather than the cut, and the render would then disagree with what the page drew. The merge
+/// half of the same rule is [`merge_pair`], which refuses a card for a partner.
+pub fn trimmable(seg: &Seg) -> bool {
+    !is_card(seg)
+}
+
 /// F2.8 S1 ("on release a neighbour within 0.04 s merges (same camera only, never an insert)"): the clip
 /// this one has come to touch, or nothing. [`crate::cut_select::MIN_SECONDS`] is that tolerance —
 /// `// P.eng.minPieceSeconds` — and it is a frame or two, not a visible gap: anything a hand can see at the

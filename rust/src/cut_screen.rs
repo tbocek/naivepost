@@ -407,3 +407,20 @@ pub const SCROLLBAR_DRAG_PX: f64 = 40.0;
 pub fn scrollbar_shown(total_px: f64, view_px: f64) -> bool {
     total_px > view_px
 }
+
+/// §7 (`the tracks are a window drawn under a translate`): the seconds the drawing is asked for. The band is
+/// laid out in pixels and the model holds seconds, so this converts what the translate puts on screen back into
+/// the range the tracks may be filled from — and it never asks for a frame. Nothing decodes inside a draw: the
+/// caller fills the window from what has already arrived, and the one place a draw may ask for work at all is
+/// throttled by [`crate::cut_trim::scrubs`].
+///
+/// `offset_px` is how far the translate has moved the band left (0 at its start) and is clamped into the band, so
+/// a drag past either end yields the edge rather than an empty track. The gutter is not subtracted here: it is
+/// drawn over the band's own first 30 px ([`GUTTER_PX`]) by the caller, which knows where its translate begins.
+pub fn visible_window(offset_px: f64, view_px: f64, pps: f64, filmed_px: f64) -> (f64, f64) {
+    if pps <= 0.0 || view_px <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let start = offset_px.clamp(0.0, filmed_px.max(0.0));
+    (start / pps, (start + view_px).min(filmed_px.max(0.0)) / pps)
+}

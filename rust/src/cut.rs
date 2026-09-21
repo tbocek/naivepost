@@ -447,6 +447,31 @@ pub fn save(cut: &Cut, tree: &layout::Tree) -> Result<(), String> {
     tree.write_file(rel, text.as_bytes())
 }
 
+/// §7 (`its existence unlocks Narrate and Produce`): the gate is the file being there, not its contents being
+/// good. A project whose first cut has not happened yet has no `cut/cut.json`, and [`load`] reads that as an
+/// empty cut — the same state, with nothing said about it. `shell::lock` deliberately keeps Narrate and Produce
+/// unlocked (§1: their ▶ refuses instead), so this is what those steps ask before running: a lock would hide the
+/// voice that explains itself, which is [`NO_CUT_YET`].
+pub fn exists(tree: &layout::Tree) -> bool {
+    tree.cut_json().is_file()
+}
+
+/// §7 (`Suggest replaces the footage half and the effects, keeps inserts`, and an insert is never
+/// `dropped by a re-suggest`): the model's answer for the footage, plus every card of the cut it replaces, in
+/// time order. A card is not footage — nobody filmed it, so nothing in a new suggestion can be its second
+/// version, and losing the title card of a talk to a re-run would be an edit nobody made.
+///
+/// Effects go with the footage half: they are placed on scenes, and scenes the model did not choose have
+/// nothing for them to sit on. The caller moves the base as well ([`History::suggested`]), since what Revert
+/// returns to after a suggestion is the model's answer and not whatever was on disk an hour ago.
+pub fn keep_inserts(suggested: &[Seg], current: &[Seg]) -> Vec<Seg> {
+    let mut kept: Vec<Seg> = suggested.to_vec();
+    kept.extend(current.iter().filter(|seg| !seg.ins.is_empty()).cloned());
+    // `total_cmp` so a fold's negative zero and a plain 0.0 cannot order two ways in one save.
+    kept.sort_by(|a, b| a.s.total_cmp(&b.s).then(a.e.total_cmp(&b.e)));
+    kept
+}
+
 // --- The edit history (§2's undo snapshots and base) ---------------------------------------------
 
 /// How many snapshots the history holds. spec/10-parameters.md:133's "undo depth 50"; a snapshot is a

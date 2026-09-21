@@ -220,3 +220,10 @@ pub fn floor_pps(runs: &[(f64, f64)], view_px: f64) -> f64 {
     let filmed = runs.iter().map(|(start, end)| end - start).sum::<f64>();
     cut_screen::fit_pps(filmed, view_px)
 }
+
+/// Do these two stretches of the timeline share any second? Half-open on the right, so **touching is not
+/// overlapping** — the same reading [`Span::t_at`] gives a press on a seam (§7's `preview and render agree on
+/// half-open ranges`), and the reason a cut pass may join two takes end to end without either being wrong.
+pub fn spans_overlap(a: (f64, f64), b: (f64, f64)) -> bool {
+    a.0 < b.1 && b.0 < a.1
+}
