@@ -31,6 +31,7 @@ pub mod frames;
 pub mod fx_aspect;
 pub mod fx_lane;
 pub mod fx_record;
+pub mod fx_text;
 pub mod fx_zoom;
 pub mod icons;
 pub mod layout;
