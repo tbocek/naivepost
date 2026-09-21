@@ -24,6 +24,7 @@ use crate::cut;
 use crate::cut_line;
 use crate::cut_review;
 use crate::cut_screen;
+use crate::cut_speed;
 use crate::cut_trim;
 use crate::preview;
 use crate::tools::{cutpass, describe, retakes, textedit};
@@ -411,6 +412,12 @@ pub fn cut() -> Vec<Param> {
             "effects.aspectHoldSeconds",
             num(fx_aspect::HOLD_SECONDS),
             "fx_aspect::HOLD_SECONDS",
+        ),
+        // F3.3's default rate: §06 §6 names it ("default rate 0.5") and §10 gives it no row, so the same bare prefix.
+        param(
+            "effects.defaultRate",
+            num(cut_speed::DEFAULT_RATE),
+            "cut_speed::DEFAULT_RATE",
         ),
         // --- what the preview does (§6's preview group, §D's numbers) --------------------------------
         param("preview.playTickMs", format!("{} ms", preview::TICK_MS), "preview::TICK_MS"),
