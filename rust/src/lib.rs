@@ -7,6 +7,7 @@ pub mod checks;
 pub mod clock;
 pub mod degraded;
 pub mod cut;
+pub mod cut_copy;
 pub mod cut_hear;
 pub mod cut_line;
 pub mod cut_review;

@@ -377,6 +377,13 @@ pub fn mm_ss(seconds: f64) -> String {
     format!("{:02}:{:02}", whole / 60, whole % 60)
 }
 
+/// A length of seconds the way the Cut page writes one: to a tenth (`8.0 s`, `8.5 s`). One spelling of a
+/// duration for every status line and tooltip that quotes one back, so a trim and a paste never disagree
+/// about whether 8 was measured or estimated.
+pub fn tenths(seconds: f64) -> String {
+    format!("{:.1} s", seconds)
+}
+
 pub mod describe;
 pub mod fix;
 pub mod retakes;

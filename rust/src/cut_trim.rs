@@ -154,12 +154,11 @@ pub fn picked_up_status(clip_no: usize, border: Border, t: f64) -> String {
     )
 }
 
-/// A length of seconds the way the page writes one: to a tenth, which is what `spec/inventory/cut.md`'s own
-/// status spells ("clip N: a – b (X s[, Y s in the video])" comes from the prototype's `%.1f`). Whole
-/// seconds therefore read `20.0 s` — the same reading at both ends of the range, not a whole number that
-/// quietly means "we did not measure".
+/// A length of seconds the way the page writes one — [`tools::tenths`], the app's single spelling of a
+/// duration (`spec/inventory/cut.md`'s own status spells it to a tenth). Kept as a name here because three of
+/// this module's sentences read better with "span" in them than with a formatter's.
 fn span(seconds: f64) -> String {
-    format!("{:.1} s", seconds)
+    tools::tenths(seconds)
 }
 
 /// F2.8 S1: what the page says when the border is let go — the clip, the span it now covers, and its length.
