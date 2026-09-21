@@ -9,6 +9,7 @@
 
 use crate::align;
 use crate::asr;
+use crate::cut_hear;
 use crate::degraded;
 use crate::frames;
 use crate::hand_edit;
@@ -304,6 +305,8 @@ fn engineering() -> Vec<Param> {
             word_list::RESPPELL_REACH_WORDS.to_string(),
             "word_list::RESPPELL_REACH_WORDS",
         ),
+        // F2.5's mix: the ceiling every gain is held to, an effect's own and the slider's alike.
+        param("P.eng.maxGain", num(cut_hear::MAX_GAIN), "cut_hear::MAX_GAIN"),
     ]
 }
 
