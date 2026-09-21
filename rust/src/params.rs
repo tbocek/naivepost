@@ -15,6 +15,7 @@ use crate::cut_select;
 use crate::degraded;
 use crate::frames;
 use crate::fx_aspect;
+use crate::fx_svg;
 use crate::hand_edit;
 use crate::prepare;
 use crate::requests;
@@ -418,6 +419,13 @@ pub fn cut() -> Vec<Param> {
             "effects.defaultRate",
             num(cut_speed::DEFAULT_RATE),
             "cut_speed::DEFAULT_RATE",
+        ),
+        // F3.5's preview raster: §10 lists 512 as an implicit constant (`svgPreviewPx`) with no `P.` row, so the id
+        // takes the bare prefix of the rule that reads it — the same treatment as the two rows above.
+        param(
+            "effects.previewRasterPx",
+            num(fx_svg::PREVIEW_RASTER_PX),
+            "fx_svg::PREVIEW_RASTER_PX",
         ),
         // --- what the preview does (§6's preview group, §D's numbers) --------------------------------
         param("preview.playTickMs", format!("{} ms", preview::TICK_MS), "preview::TICK_MS"),
