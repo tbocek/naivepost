@@ -15,6 +15,7 @@ pub mod cut_select;
 pub mod cut_trim;
 pub mod cut_cam;
 pub mod cut_fold;
+pub mod cut_insert;
 pub mod cut_screen;
 pub mod timeline;
 pub mod diarize;

@@ -10,6 +10,7 @@
 use crate::align;
 use crate::asr;
 use crate::cut_hear;
+use crate::cut_insert;
 use crate::cut_select;
 use crate::degraded;
 use crate::frames;
@@ -315,6 +316,12 @@ fn engineering() -> Vec<Param> {
             "P.policy.minSceneSeconds",
             num(cut_select::MIN_SCENE_SECONDS),
             "cut_select::MIN_SCENE_SECONDS",
+        ),
+        // F2.12's fallback: how long a still or card runs when nothing in the file says.
+        param(
+            "P.policy.insertDefaultSeconds",
+            num(cut_insert::DEFAULT_SECONDS),
+            "cut_insert::DEFAULT_SECONDS",
         ),
     ]
 }
