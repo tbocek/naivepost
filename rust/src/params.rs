@@ -14,6 +14,7 @@ use crate::cut_insert;
 use crate::cut_select;
 use crate::degraded;
 use crate::frames;
+use crate::fx_aspect;
 use crate::hand_edit;
 use crate::prepare;
 use crate::requests;
@@ -404,6 +405,12 @@ pub fn cut() -> Vec<Param> {
             "P.policy.insertDefaultSeconds",
             num(cut_insert::DEFAULT_SECONDS),
             "cut_insert::DEFAULT_SECONDS",
+        ),
+        // F3.2's framing zoom: §10 has no row for it, so the id takes the bare prefix of the rule that reads it.
+        param(
+            "effects.aspectHoldSeconds",
+            num(fx_aspect::HOLD_SECONDS),
+            "fx_aspect::HOLD_SECONDS",
         ),
         // --- what the preview does (§6's preview group, §D's numbers) --------------------------------
         param("preview.playTickMs", format!("{} ms", preview::TICK_MS), "preview::TICK_MS"),
