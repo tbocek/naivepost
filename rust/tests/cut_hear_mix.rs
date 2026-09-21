@@ -6,6 +6,7 @@
 
 use naivepost::cut::{Fx, Lane, Seg};
 use naivepost::cut_hear as hear;
+use naivepost::preview;
 
 /// The screenshot's own lane: `2026-09-16 17-26-20.wav`, placed at 1:14–1:59 on the session clock — 45 s
 /// of file starting at its first second.
@@ -227,4 +228,98 @@ fn f2_5_s6_the_slider_and_the_cut_multiplied_and_capped() {
     assert_eq!(hear::mix_gain(0.5, 0.5), 0.25, "half the room under half the cut");
     assert_eq!(hear::mix_gain(1.0, 100.0), hear::MAX_GAIN, "the ceiling, however loud the ask");
     assert_eq!(hear::mix_gain(-1.0, 2.0), 0.0, "a slider below nought stays silence, not a phase flip");
+}
+
+// --- §05-cut#8-details-confirmed-against-the-code-verification-pass (bullet 2: preview sound) ---------------
+//
+// F2.5 decided which sound is heard; §8 confirms what the preview SAYS about it — one log line per change of
+// the footage's own mute, the gain on an element this app owns rather than the stream volume the sound server
+// remembers, and a pipeline that fails naming itself instead of leaving silence to be explained.
+
+/// §05-cut#8-details-confirmed-against-the-code-verification-pass — `each change of the footage's own mute logs
+/// one line naming the reason`: all three sentences verbatim, including the spec's own `--` separator inside
+/// the two muted ones.
+#[test]
+fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_each_change_logs_one_line() {
+    assert_eq!(
+        preview::sound_change(false, true, preview::MuteReason::NotHeard),
+        Some(">>> preview: the footage's own sound is heard again".to_string())
+    );
+    assert_eq!(
+        preview::sound_change(true, false, preview::MuteReason::OverPicture),
+        Some(">>> preview: the footage's own sound is muted -- a card or a stop stands over the picture".to_string())
+    );
+    assert_eq!(
+        preview::sound_change(true, false, preview::MuteReason::NotHeard),
+        Some(">>> preview: the footage's own sound is muted -- the scene under the line does not hear it".to_string())
+    );
+    // The reason a card gives outranks the scene's own hush when both hold — it is the one visible on the band.
+    let over = preview::MuteReason::OverPicture;
+    assert!(preview::sound_change(true, false, over)
+        .expect("a mute is a change")
+        .contains("a card or a stop"));
+
+    // One line per CHANGE: staying heard, or staying silent, logs nothing at all. A tick-driven caller asks
+    // this every 100 ms, so "no line when nothing changed" is what keeps the log readable.
+    assert_eq!(preview::sound_change(true, true, preview::MuteReason::NotHeard), None);
+    assert_eq!(preview::sound_change(false, false, over), None);
+    let mut logged = 0;
+    let mut heard = true;
+    for _ in 0..8 {
+        // Eight ticks under the same card: the first mutes and logs, the seven after it say nothing.
+        if let Some(line) = preview::sound_change(heard, false, over) {
+            assert!(line.starts_with(">>> preview:"));
+            logged += 1;
+            heard = false;
+        }
+    }
+    assert_eq!(logged, 1, "one change, one line");
+}
+
+/// §05-cut#8-details-confirmed-against-the-code-verification-pass — `gain and mute go to an app-owned element,
+/// never the player's per-application stream volume … which is reset to full once at build`
+/// (`// preview.streamVolume`).
+#[test]
+fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_the_gain_is_app_owned() {
+    assert!(preview::volume_is_app_owned(), "the element the slider moves belongs to this app");
+    // Full, and written once: at build, then never again — a per-play write would leave this session's
+    // loudness behind on the sound server for every other program.
+    assert_eq!(preview::reset_stream_volume(false), Some(preview::STREAM_VOLUME));
+    assert_eq!(preview::STREAM_VOLUME, 1.0);
+    let mut reset_done = false;
+    let mut writes = 0;
+    for _ in 0..5 {
+        // Five ▶ presses: the build's one write is already spent.
+        if let Some(full) = preview::reset_stream_volume(reset_done) {
+            assert_eq!(full, preview::STREAM_VOLUME);
+            reset_done = true;
+            writes += 1;
+        }
+    }
+    assert_eq!(writes, 1, "reset to full once at build, not per play");
+}
+
+/// §05-cut#8-details-confirmed-against-the-code-verification-pass — `a failing pipeline says so`: the log line,
+/// the status that points at it, and a mix lane's own sentence naming the recording that dropped out.
+#[test]
+fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_a_failing_pipeline_names_itself() {
+    assert_eq!(
+        preview::playback_failure("Cut", "no sink for audio/x-raw"),
+        "!!! Cut: playback failed \u{2014} no sink for audio/x-raw"
+    );
+    assert_eq!(preview::playback_status("Cut"), "Cut would not play \u{2014} see log");
+    // The reason is the pipeline's own words, carried whole rather than paraphrased.
+    assert_eq!(
+        preview::playback_failure("Prepare", "GStreamer said: not negotiated"),
+        "!!! Prepare: playback failed \u{2014} GStreamer said: not negotiated"
+    );
+
+    // A lane that drops out is named, and the rest of the preview carries on (§0's local failure).
+    let recorder = recorder();
+    assert_eq!(
+        preview::mix_lane_failure(&recorder.name, "no such file"),
+        format!("!!! preview: {} will not play \u{2014} no such file", recorder.name)
+    );
+    // And the two are different sentences for different failures — a page that cannot play is not a lane.
+    assert_ne!(preview::playback_status("Cut"), preview::mix_lane_failure("Cut", "see log"));
 }

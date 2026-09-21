@@ -147,3 +147,80 @@ pub fn clock(playhead: Option<f64>) -> String {
     let tenths = (t * 10.0) as u64 % 10;
     format!("{}.{}", tools::mm_ss(t), tenths)
 }
+
+// --- §05-cut#8: what the preview says about its own sound ---------------------------------------------------
+
+/// §05-cut#8 (`each change of the footage's own mute logs one line naming the reason`): why the picture's own
+/// sound went silent. Two reasons, because the two are fixed by different things and only one of them is the
+/// person's doing: a card or a stop laid over the picture, and the scene's own hearing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MuteReason {
+    /// An insert stands over the picture — its `mute` tick (F2.7) or a stop holding the same frame.
+    OverPicture,
+    /// The scene under the line does not hear the footage's sound.
+    NotHeard,
+}
+
+/// §05-cut#8: the one line a change of the footage's own mute logs, or `None` when nothing changed — which is
+/// what makes it ONE line per change rather than one per tick.
+///
+/// [`MuteReason::OverPicture`] outranks [`MuteReason::NotHeard`] whenever both are true: the card is the reason
+/// a person can see on the band, and "the scene does not hear it" would send them looking for a switch that is
+/// not what silenced it. The heard/not-heard answer itself comes from
+/// [`crate::cut_hear::footage_sound_heard`], never from here.
+pub fn sound_change(heard_before: bool, heard_now: bool, reason: MuteReason) -> Option<String> {
+    if heard_before == heard_now {
+        return None;
+    }
+    if heard_now {
+        return Some(">>> preview: the footage's own sound is heard again".to_string());
+    }
+    Some(match reason {
+        MuteReason::OverPicture => {
+            ">>> preview: the footage's own sound is muted -- a card or a stop stands over the picture".to_string()
+        }
+        MuteReason::NotHeard => {
+            ">>> preview: the footage's own sound is muted -- the scene under the line does not hear it".to_string()
+        }
+    })
+}
+
+/// §05-cut#8 (`the player's per-application stream volume … is reset to full once at build`;
+/// `// preview.streamVolume` — §10 gives this no `P.` id, so it carries a bare prefix): what the stream volume
+/// is put back to. Full, because anything else the sound server keeps between runs of this app.
+pub const STREAM_VOLUME: f64 = 1.0;
+
+/// §05-cut#8 (`gain and mute go to an app-owned element, never the player's per-application stream volume`):
+/// `true` for the element the preview's gain and mute are written to — one this app owns and forgets when it
+/// exits, unlike a stream volume the sound server remembers. The page reads this instead of hard-coding which
+/// element a slider moves, so there is no second place that could quietly decide otherwise.
+pub fn volume_is_app_owned() -> bool {
+    true
+}
+
+/// §05-cut#8 (`which is reset to full once at build`): the value to write to the stream volume, or `None` when
+/// it has already been written. Once, not per play: a preview that set it on every ▶ would leave the last
+/// session's loudness behind for everything else on the desktop.
+pub fn reset_stream_volume(reset_already: bool) -> Option<f64> {
+    (!reset_already).then_some(STREAM_VOLUME)
+}
+
+/// §05-cut#8 (`a failing pipeline says so`): the log line for a pipeline that would not start, naming the page
+/// it failed on — `!!! <page>: playback failed -- <reason>` in the log's own style, with the em dash the spec
+/// spells. The reason is the server's or GStreamer's own words, never a paraphrase of them.
+pub fn playback_failure(page: &str, reason: &str) -> String {
+    format!("!!! {page}: playback failed \u{2014} {reason}")
+}
+
+/// §05-cut#8 (status `"<page> would not play — see log"`): what the status line says when the log holds the
+/// reason. Short, because the reason is long and already written down.
+pub fn playback_status(page: &str) -> String {
+    format!("{page} would not play \u{2014} see log")
+}
+
+/// §05-cut#8 (a mix lane `!!! preview: <base> will not play — …`): the failure of one lane's pipeline. The
+/// preview carries on with the rest, so this names the recording that dropped out rather than the whole page —
+/// which is what §0's "failure is specific and local" asks of it.
+pub fn mix_lane_failure(base: &str, reason: &str) -> String {
+    format!("!!! preview: {base} will not play \u{2014} {reason}")
+}

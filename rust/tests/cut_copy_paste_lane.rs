@@ -165,7 +165,7 @@ fn f2_9_s2_pasting_footage_lengthens_the_cut_and_names_both_totals() {
     assert!(is_close(cut_seconds(&cut), 60.0), "the two stretches are a minute");
 
     let mut hand: Option<cp::Hand> = Some(taken(&footage_selection(12.0, 20.0)));
-    let said = cp::paste(&mut cut, &mut hand, Some(35.0), FILE, 12.0).expect("a footage paste needs only a line");
+    let said = cp::paste(&mut cut, &mut hand, Some(35.0), FILE, 12.0, &[REC.to_string()]).expect("a footage paste needs only a line");
     assert_eq!(said, "pasted 8.0 s from 00:12 at 00:35 \u{2014} the cut is 01:08, was 01:00");
 
     assert_eq!(cut.segs.iter().filter(|seg| seg.copy_seconds().is_some()).count(), 1, "the card is in the cut");
@@ -178,7 +178,7 @@ fn f2_9_s2_pasting_footage_lengthens_the_cut_and_names_both_totals() {
 fn f2_9_s2_a_paste_needs_a_line_first() {
     let mut cut = kept(&[(0.0, 30.0)]);
     let mut hand: Option<cp::Hand> = Some(taken(&footage_selection(12.0, 20.0)));
-    assert_eq!(cp::paste(&mut cut, &mut hand, None, FILE, 12.0).unwrap_err(), cp::NO_LINE_YET);
+    assert_eq!(cp::paste(&mut cut, &mut hand, None, FILE, 12.0, &[REC.to_string()]).unwrap_err(), cp::NO_LINE_YET);
     assert!(matches!(hand.as_ref(), Some(_)), "the seconds are still in hand for when the line exists");
     assert_eq!(cut.segs.len(), 1, "and nothing was placed at zero");
 }
@@ -251,7 +251,7 @@ fn f2_9_s2_a_sound_with_no_picture_under_it_is_refused_and_stays_in_hand() {
     let before = cut.segs.clone();
 
     assert_eq!(cp::no_footage_status(50.0), format!("the cut keeps no footage at 00:50 \u{2014} a sound needs a picture under it"));
-    assert_eq!(cp::paste(&mut cut, &mut hand, Some(50.0), FILE, 12.0).unwrap_err(), cp::no_footage_status(50.0));
+    assert_eq!(cp::paste(&mut cut, &mut hand, Some(50.0), FILE, 12.0, &[REC.to_string()]).unwrap_err(), cp::no_footage_status(50.0));
 
     assert!(matches!(hand.as_ref(), Some(_)), "the copy survives a paste that missed");
     assert_eq!(cut.segs, before, "and the miss changed nothing");
@@ -267,7 +267,7 @@ fn f2_9_s2_an_insert_is_not_a_picture_under_a_sound() {
     assert!(cp::footage_stretches(&cut, 38.0, 44.0).is_empty(), "an insert stands over no footage");
 
     let mut hand: Option<cp::Hand> = Some(taken(&sound_selection(12.0, 20.0)));
-    assert_eq!(cp::paste(&mut cut, &mut hand, Some(40.0), FILE, 12.0).unwrap_err(), cp::no_footage_status(40.0));
+    assert_eq!(cp::paste(&mut cut, &mut hand, Some(40.0), FILE, 12.0, &[REC.to_string()]).unwrap_err(), cp::no_footage_status(40.0));
     assert_eq!(cut.segs.len(), 1, "nothing was laid over the card");
 }
 
@@ -277,10 +277,10 @@ fn f2_9_s2_an_insert_is_not_a_picture_under_a_sound() {
 fn f2_9_s2_pasting_consumes_the_copy_once() {
     let mut cut = kept(&[(0.0, 30.0)]);
     let mut hand: Option<cp::Hand> = Some(taken(&footage_selection(12.0, 20.0)));
-    cp::paste(&mut cut, &mut hand, Some(10.0), FILE, 12.0).expect("a line was placed");
+    cp::paste(&mut cut, &mut hand, Some(10.0), FILE, 12.0, &[REC.to_string()]).expect("a line was placed");
     assert!(matches!(hand.as_ref(), None), "the paste consumed it");
 
-    let second = cp::paste(&mut cut, &mut hand, Some(20.0), FILE, 12.0);
+    let second = cp::paste(&mut cut, &mut hand, Some(20.0), FILE, 12.0, &[REC.to_string()]);
     assert!(second.is_err(), "with nothing in hand there is nothing to paste");
     assert_eq!(cut.segs.iter().filter(|seg| seg.copy_seconds().is_some()).count(), 1, "and no second card appeared");
     assert!(!cp::drop(&mut hand), "nothing was left in hand for Esc to drop");

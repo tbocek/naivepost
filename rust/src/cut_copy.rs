@@ -208,8 +208,9 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
 /// F2.9 S2 (`Pasting consumes the copy; Esc drops it`): the whole paste in one call, so "consumed only when
 /// it happened" is a rule with one home rather than three callers agreeing about it.
 ///
-/// `Err` for a page with no line yet ([`NO_LINE_YET`]) and for a sound with no picture under it
-/// ([`no_footage_status`]) — in both cases the copy STAYS in hand, because "the paste did not fail so much as
+/// `Err` for a page with no line yet ([`NO_LINE_YET`]), for a sound whose recording has left the session
+/// ([`no_source`]) and for a sound with no picture under it ([`no_footage_status`]) — in every case the copy
+/// STAYS in hand, because "the paste did not fail so much as
 /// miss: the answer to missing is to move the red line and press again, not to go and copy the same seconds a
 /// second time". `Ok(status)` consumes it.
 ///
@@ -217,7 +218,14 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
 /// `file_seconds` the file second the span starts at: converting session→file seconds is the caller's job, and
 /// it clamps to the lane's own beginning (`max(from, recording start)`), because a selection that began before
 /// the recording did has nothing earlier on that lane to play. A footage paste ignores both.
-pub fn paste(cut: &mut Cut, hand: &mut Option<Hand>, at: Option<f64>, path: &str, file_seconds: f64) -> Result<String, String> {
+pub fn paste(
+    cut: &mut Cut,
+    hand: &mut Option<Hand>,
+    at: Option<f64>,
+    path: &str,
+    file_seconds: f64,
+    session: &[String],
+) -> Result<String, String> {
     let Some(at) = at else { return Err(NO_LINE_YET.to_string()) };
     let Some(held) = hand.as_ref() else {
         // Nothing in hand: the button on the page is ⧉ Insert, not ⧉ Paste, so this is a call that should
@@ -233,6 +241,11 @@ pub fn paste(cut: &mut Cut, hand: &mut Option<Hand>, at: Option<f64>, path: &str
         return Ok(pasted_status(length, from, at, cut_length(cut), was));
     }
     let recording = held.recording().unwrap_or_default().to_string();
+    // Asked before anything is laid: a copy of a file the session no longer has must leave the cut as it was
+    // AND stay in hand, so the person can still aim it at a recording that does exist.
+    if !session.iter().any(|base| base == &recording) {
+        return Err(no_source(&recording));
+    }
     let length = held.length;
     let pieces = lay_over(cut, path, held, at, file_seconds);
     if pieces == 0 {
@@ -287,10 +300,28 @@ pub fn drop(hand: &mut Option<Hand>) -> bool {
 
 // --- S3: ⇲ Lane ------------------------------------------------------------------------------------------
 
+/// §05-cut#8 (`Lane refuses "click the timeline where the new lane starts first"`): ⇲ Lane's own sentence for a
+/// page never clicked. ⧉ Paste says the same thing differently ([`NO_LINE_YET`]) because it asks where the copy
+/// GOES; a lane asks where it STARTS, and the two buttons must not answer one question with the other's words.
+pub const NO_LANE_LINE_YET: &str = "click the timeline where the new lane starts first";
+
 /// F2.9 S3: what a lane refuses a copy too short to be a window on — a row under [`MIN_SCENE_SECONDS`] is a
 /// band no handle can be grabbed on, and a lane nobody can resize is not a row of its own.
 pub fn too_short() -> &'static str {
     "that copy is too short to be a lane of its own"
+}
+
+/// §05-cut#8 (`Lane refuses "nothing is rolling at m:ss any more"`): the refusal when the second the new row
+/// would start at lies outside every recording — a lane windowing a file from a minute nothing filmed has
+/// nothing to window, and starting the row anyway would be a row of silence nobody asked for.
+pub fn not_rolling(at: f64) -> String {
+    format!("nothing is rolling at {} any more", tools::mm_ss(at))
+}
+
+/// §05-cut#8 (`Paste refuses "<base> is not in the session any more — the copied sound has nowhere to come
+/// from"`): the refusal when the recording the copy was taken from is no longer one of the session's files.
+pub fn no_source(base: &str) -> String {
+    format!("{base} is not in the session any more \u{2014} the copied sound has nowhere to come from")
 }
 
 /// F2.9 S3: a name for the new lane that nothing already uses — `want`, then `want-2`, `want-3`… The name is
@@ -308,6 +339,27 @@ pub fn lane_name(want: &str, taken: &[String]) -> String {
         }
         n += 1;
     }
+}
+
+/// F2.9 S3 (`footage copy on its own row (a cut lane windowing the file), nothing cut yet`): where ⇲ Lane may
+/// put the new row, decided from the seconds alone so the two refusals have one home: no line yet
+/// ([`NO_LANE_LINE_YET`]), a line no recording is running at ([`not_rolling`]), or a copy too short for a row
+/// of its own ([`too_short`]). `filmed` is the session's filmed runs — the same list the band is laid out from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LaneStart {
+    Start(f64),
+    Refusal(String),
+}
+
+pub fn lane_start(at: Option<f64>, hand: &Hand, filmed: &[(f64, f64)]) -> LaneStart {
+    let Some(at) = at else { return LaneStart::Refusal(NO_LANE_LINE_YET.to_string()) };
+    if !filmed.iter().any(|(from, to)| *from <= at && at < *to) {
+        return LaneStart::Refusal(not_rolling(at));
+    }
+    if hand.length < MIN_SCENE_SECONDS {
+        return LaneStart::Refusal(too_short().to_string());
+    }
+    LaneStart::Start(at)
 }
 
 /// F2.9 S3 (`footage copy on its own row (a cut lane windowing the file), nothing cut yet`): the lane this
