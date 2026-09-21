@@ -27,6 +27,7 @@ pub mod exchanges;
 pub mod fix_transcripts;
 pub mod hand_edit;
 pub mod frames;
+pub mod fx_lane;
 pub mod fx_record;
 pub mod icons;
 pub mod layout;
