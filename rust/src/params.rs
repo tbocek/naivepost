@@ -28,6 +28,7 @@ use crate::cut_line;
 use crate::cut_review;
 use crate::cut_screen;
 use crate::cut_speed;
+use crate::cut_speed_pass;
 use crate::cut_trim;
 use crate::preview;
 use crate::tools::{clips, cutpass, describe, retakes, textedit};
@@ -395,6 +396,26 @@ pub fn cut() -> Vec<Param> {
             "P.policy.captionMinSeconds",
             num(clips::CAPTION_MIN_SECONDS),
             "tools::clips::CAPTION_MIN_SECONDS",
+        ),
+        // F3.10 S4: how near two runs at one rate may come before they are one run. Read from the speed pass, which is
+        // the only rule that folds stretches — the by-hand page (§F3.3) never merges what a person placed.
+        param(
+            "P.policy.speedGapSeconds",
+            num(cut_speed_pass::GAP_SECONDS),
+            "cut_speed_pass::GAP_SECONDS",
+        ),
+        // F3.10 S3/S4: the two numbers that decide whether a proposed rate says anything and what its ramps cost. §10
+        // gives them no `P.` row, so both take the bare prefix of the rule that reads them — as F3.9's and F3.6's rows
+        // above do.
+        param(
+            "effects.proposedRampSeconds",
+            num(cut_speed_pass::PROPOSED_RAMP_SECONDS),
+            "cut_speed_pass::PROPOSED_RAMP_SECONDS",
+        ),
+        param(
+            "effects.neutralRateTolerance",
+            num(cut_speed_pass::NEUTRAL_TOLERANCE),
+            "cut_speed_pass::NEUTRAL_TOLERANCE",
         ),
         // Three formula rows: §10 gives these no number to spell, only the arithmetic, so what is catalogued
         // is §10's own text and the function that computes it.
