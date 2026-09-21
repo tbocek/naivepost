@@ -10,6 +10,7 @@ pub mod cut;
 pub mod cut_hear;
 pub mod cut_line;
 pub mod cut_review;
+pub mod cut_select;
 pub mod cut_screen;
 pub mod timeline;
 pub mod diarize;

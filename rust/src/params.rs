@@ -10,6 +10,7 @@
 use crate::align;
 use crate::asr;
 use crate::cut_hear;
+use crate::cut_select;
 use crate::degraded;
 use crate::frames;
 use crate::hand_edit;
@@ -307,6 +308,14 @@ fn engineering() -> Vec<Param> {
         ),
         // F2.5's mix: the ceiling every gain is held to, an effect's own and the slider's alike.
         param("P.eng.maxGain", num(cut_hear::MAX_GAIN), "cut_hear::MAX_GAIN"),
+        // F2.6's two floors, each held by the rule that reads it: a resize may not close the band, and
+        // ＋ Add / ⧉ Copy will not take a region too short to be a scene.
+        param("P.eng.minPieceSeconds", num(cut_select::MIN_SECONDS), "cut_select::MIN_SECONDS"),
+        param(
+            "P.policy.minSceneSeconds",
+            num(cut_select::MIN_SCENE_SECONDS),
+            "cut_select::MIN_SCENE_SECONDS",
+        ),
     ]
 }
 
