@@ -14,7 +14,7 @@
 //! here for the same reason) — what is testable is the arithmetic those pipelines are handed: which
 //! lanes start, at what second, stopping where, and how loud.
 
-use crate::cut::{Fx, Lane, Seg};
+use crate::cut::{Cut, Fx, Lane, Seg};
 
 /// F2.5 S5 (`P.eng.maxGain`, `spec/10-parameters.md`: "volume effect ceiling (playbin's own)"): the
 /// loudest any gain — an effect's own, or the mix of slider and effect — may be asked for, because that
@@ -283,4 +283,107 @@ pub fn scene_clock(t: f64) -> String {
 pub fn hush_status(base: &str, heard: bool, scene_start: f64) -> String {
     let word = if heard { "heard in" } else { "silent in" };
     format!("{base} is {word} the scene at {}", scene_clock(scene_start))
+}
+
+// --- F2.10 S2: the badges and the gutter switch ----------------------------------------------------------
+
+/// F2.10 S2 (`🔈 speaker badge per lane: does this scene hear that lane`): flip it, and return what the page
+/// says. `None` for a scene index the cut does not hold — a press aimed at nothing changes nothing; an insert
+/// answers with what is already true and changes nothing either, since [`hush`] reads it as hearing everything
+/// and a list written there would silence nothing while looking as if it did.
+///
+/// `quiet` is treated as a SET (`spec/10-parameters.md` §5 rule 10: "compared as a set; fresh slices per
+/// toggle"): the list is rebuilt rather than poked, so re-silencing a lane that was already listed cannot
+/// duplicate it and un-listing one leaves no hole. An insert's `quiet` is not this badge's business — [`hush`]
+/// answers empty for one, and writing to it would silence a lane through a scene that has no say over any — so
+/// an insert reports the change as made on nothing: its hearing is F2.5 S1's rule.
+pub fn toggle_heard(cut: &mut Cut, scene: usize, lane: &str) -> Option<String> {
+    let seg = cut.segs.get_mut(scene)?;
+    // An insert's hearing is F2.5 S1's rule and this badge does not move it, so the answer it reports is the
+    // one already true — nothing about the scene changes.
+    if !seg.ins.is_empty() {
+        return Some(hush_status(lane, seg.hears(lane), seg.s));
+    }
+    let heard = !seg.hears(lane);
+    // A fresh slice, built from what is still silent: the pressed lane in or out, everything else as it was.
+    let silenced: Vec<String> = if heard { vec![] } else { vec![lane.to_string()] };
+    let quiet: Vec<String> = seg
+        .quiet
+        .iter()
+        .filter(|held| held.as_str() != lane)
+        .cloned()
+        .chain(silenced)
+        .collect();
+    seg.quiet = quiet;
+    Some(hush_status(lane, heard, seg.s))
+}
+
+/// Is every one of these lanes silent in EVERY kept scene — the state a row's switch sits in before a press
+/// brings it back on? A scene that says nothing about a lane hears it, so silence has to be LISTED for this to
+/// hold; one unsaid lane anywhere makes the row heard.
+pub fn all_silent(cut: &Cut, lanes: &[&str]) -> bool {
+    let speaks: Vec<&Seg> = cut.segs.iter().filter(|seg| seg.ins.is_empty()).collect();
+    // Every kept scene has to LIST every one of the row's recordings. A scene that says nothing about a lane
+    // hears it, so silence is only ever what was written down — which is also why a recording no scene was cut
+    // with reads as heard rather than silent: nothing lists it.
+    !speaks.is_empty() && lanes.iter().all(|lane| speaks.iter().all(|seg| !seg.hears(lane)))
+}
+
+/// F2.10 S2 (`the gutter switch toggles a lane for the whole cut`): does ANY scene still hear any of these
+/// lanes? A row's switch stands for every recording on that row, so it reads as OFF only when none of them is
+/// heard anywhere — a half-silenced row still reads as heard, and pressing it finishes the job.
+pub fn lane_is_heard_anywhere(cut: &Cut, lanes: &[&str]) -> bool {
+    // An insert is not a scene with a say about lanes — it brings its own sound — so it can neither make a row
+    // heard nor keep one silent. `any` rather than `all`: one scene still hearing the row is enough to read the
+    // switch as ON, which is what lets a half-silenced row finish its job on the next press.
+    cut.segs
+        .iter()
+        .any(|seg| seg.ins.is_empty() && lanes.iter().any(|lane| seg.hears(lane)))
+}
+
+/// F2.10 S2 (`the gutter switch toggles a lane for the whole cut`): silence these lanes in every scene that
+/// could hear them, or bring them all back, and say which happened. `lanes` is every recording on the row the
+/// switch stands for; `name` is what the status calls them.
+///
+/// Three answers, per `spec/inventory/cut.md` §A: nothing to cut with yet ("… is in no scene yet — cut something
+/// first") when the cut holds no scene at all, then off and on with how many scenes moved. The direction is read
+/// from [`lane_is_heard_anywhere`] — a row half-silenced by hand goes fully silent rather than flipping back on.
+/// An insert's hearing is F2.5 S1's rule and stays as it was: [`hush`] answers empty for one, and its own sound
+/// replaces the lane it was laid in rather than choosing which lanes are heard.
+pub fn toggle_lane_all(cut: &mut Cut, lanes: &[&str], name: &str) -> String {
+    // Every kept scene answers for a lane, including one that says nothing about it yet: silence means LISTING
+    // the lane there too. An insert is the exception (`an insert brings its own sound; no scene silences it`).
+    let speaks = |seg: &Seg| seg.ins.is_empty();
+    if cut.segs.is_empty() {
+        return format!("{name} is in no scene yet \u{2014} cut something first");
+    }
+    // The switch reads as ON while any scene still hears any of the row's recordings — `off if ANY of them is
+    // still heard anywhere, so a half-silenced row finishes the job` — and only a row silent in every scene that
+    // could speak for it comes back on.
+    let on = !all_silent(cut, lanes);
+    let mut changed = 0usize;
+    for seg in cut.segs.iter_mut() {
+        if !speaks(seg) {
+            continue;
+        }
+        // A fresh slice again (rule 10), and only the row's own lanes move: another camera keeps its say.
+        // Pressing an ON switch silences the row; pressing an OFF one clears it back to hearing everything.
+        let silenced: Vec<String> = if on { lanes.iter().map(|lane| lane.to_string()).collect() } else { vec![] };
+        let quiet: Vec<String> = seg
+            .quiet
+            .iter()
+            .filter(|held| !lanes.iter().any(|lane| held.as_str() == *lane))
+            .cloned()
+            .chain(silenced)
+            .collect();
+        if quiet != seg.quiet {
+            changed += 1;
+        }
+        seg.quiet = quiet;
+    }
+    if on {
+        format!("{name} off for the whole cut \u{2014} {changed} scene(s) changed")
+    } else {
+        format!("{name} is on for the whole cut \u{2014} every scene hears it ({changed} changed)")
+    }
 }
