@@ -12,6 +12,7 @@ use crate::asr;
 use crate::cut_hear;
 use crate::cut_insert;
 use crate::cut_select;
+use crate::cut_captions;
 use crate::degraded;
 use crate::frames;
 use crate::fx_aspect;
@@ -29,7 +30,7 @@ use crate::cut_screen;
 use crate::cut_speed;
 use crate::cut_trim;
 use crate::preview;
-use crate::tools::{cutpass, describe, retakes, textedit};
+use crate::tools::{clips, cutpass, describe, retakes, textedit};
 use crate::wave;
 use crate::transcribe;
 use crate::word_list;
@@ -175,6 +176,8 @@ pub fn prepare() -> Vec<Param> {
             prepare::FIX_BLOCK_LINES.to_string(),
             "prepare::FIX_BLOCK_LINES",
         ),
+        // F3.9 S1: how many clips one caption request carries, read from the pass that builds the batches.
+        param("P.machine.captionBatch", cut_captions::BATCH.to_string(), "cut_captions::BATCH"),
     ];
     params.extend(audio());
     params.extend(engineering());
@@ -346,7 +349,7 @@ fn engineering() -> Vec<Param> {
 ///
 /// Deliberately absent, because no rule in this tree reads them yet: `P.eng.talkPadSeconds`,
 /// `P.policy.deadAirMaxSeconds`, `P.policy.deadAirKeepSeconds`, `P.eng.seamMaxSeconds`,
-/// `P.machine.captionBatch`, `P.eng.preloadLeadSeconds`, and §D's `rateSeekGap` 250 ms and thumbnail batch 6.
+/// `P.eng.preloadLeadSeconds`, and §D's `rateSeekGap` 250 ms and thumbnail batch 6.
 /// A number nothing reads has no module to live in, which is the rule this catalogue exists to keep — each of
 /// those appears here the round its rule is written. The Cut tints (§10's colour list) are absent for the same
 /// reason: no constant outside `src/ui`'s drawing holds one. §6 also groups the preview numbers under a heading, and
@@ -386,6 +389,13 @@ pub fn cut() -> Vec<Param> {
             "cutpass::SHORT_TARGET_SECONDS",
         ),
         param("P.policy.maxSpeedRate", num(cutpass::MAX_RATE), "cutpass::MAX_RATE"),
+        // F3.9 S5: the floor a proposed caption has to clear before it is worth placing, read from §3.7's tool —
+        // the one place 0.3 is written for this rule, so the pass and the tool cannot disagree about what is short.
+        param(
+            "P.policy.captionMinSeconds",
+            num(clips::CAPTION_MIN_SECONDS),
+            "tools::clips::CAPTION_MIN_SECONDS",
+        ),
         // Three formula rows: §10 gives these no number to spell, only the arithmetic, so what is catalogued
         // is §10's own text and the function that computes it.
         param(

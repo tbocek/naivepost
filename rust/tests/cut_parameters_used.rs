@@ -155,7 +155,7 @@ fn sec_05_cut_6_parameters_used_s4_the_engineering_group_is_the_constants_the_pa
 // --- S5: what is deferred ------------------------------------------------------------------------------------
 
 /// §05-cut#6-parameters-used — the ids §6 names that have no row here, and why: `talkPadSeconds (0.2)`,
-/// `deadAirMaxSeconds (8)`, `deadAirKeepSeconds (0.5)`, `seamMaxSeconds (1.5)`, `captionBatch (5)`, §6's preview
+/// `deadAirMaxSeconds (8)`, `deadAirKeepSeconds (0.5)`, `seamMaxSeconds (1.5)`, §6's preview
 /// `preloadLead 3 s` / `rateSeekGap 250 ms` / `thumb batch 6`, plus the two items with no constant at all (§I's
 /// 10 px hit reach and §10's colour list). A number nothing reads has no module to live in, which is the rule
 /// this catalogue exists to keep — so each appears the round its rule is written, and asserting their absence is
@@ -167,7 +167,6 @@ fn sec_05_cut_6_parameters_used_s5_what_is_deferred_is_absent_and_said_so() {
         "talkPad",      // P.eng.talkPadSeconds 0.2 — no word-edge rule reads a pad yet
         "deadAir",      // P.policy.deadAirMax/KeepSeconds — the speed pass carries seconds, not bounds
         "seamMax",      // P.eng.seamMaxSeconds (the words family has its own rows in §4)
-        "captionBatch", // P.machine.captionBatch 5 — clips are captioned one request per clip so far
         "preload",      // preview: nothing opens the next clip ahead of the playhead yet
         "seekGap",      // preview: rateSeekGap 250 ms
         "thumbBatch",   // preview: thumbnail batch 6
