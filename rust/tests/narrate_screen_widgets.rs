@@ -535,5 +535,21 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
     // button's 3 s (§1 gives it no row) and the ＋'s half-second gap is F4.7's, so neither pretends to be tuned.
     let ids: Vec<&str> = params::narrate().iter().map(|param| param.id).collect();
     assert!(!ids.contains(&"P.eng.narrationLeadSeconds"), "{ids:?}");
-    assert!(ids.iter().all(|id| id.starts_with("P.eng.") || id.starts_with("narrate.")), "{ids:?}");
+    // The page's own rows are `P.eng.` or `narrate.`; the four extra ones are F4.2's call, which §10 puts in
+    // §1's machine table and §2's policy table rather than among the engineering constants (§10:60, 87, 89, 90).
+    let foreign: Vec<&str> = ids
+        .iter()
+        .filter(|id| !id.starts_with("P.eng.") && !id.starts_with("narrate."))
+        .copied()
+        .collect();
+    assert_eq!(
+        foreign,
+        [
+            "P.machine.narrationContextSeconds",
+            "P.policy.narrationMinWords",
+            "P.policy.narrationMaxWords",
+            "P.policy.narrationWordsPerSecond"
+        ],
+        "{foreign:?}"
+    );
 }

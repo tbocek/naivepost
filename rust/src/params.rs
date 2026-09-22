@@ -25,6 +25,7 @@ use crate::fx_volume;
 use crate::fx_zoom;
 use crate::render_fx;
 use crate::hand_edit;
+use crate::narrate_pass;
 use crate::narrate_screen;
 use crate::prepare;
 use crate::requests;
@@ -692,6 +693,13 @@ pub fn narrate() -> Vec<Param> {
         param("narrate.speechCharsPerSecond", num(narrate_screen::SPEECH_CHARS_PER_SECOND), "narrate_screen::SPEECH_CHARS_PER_SECOND"),
         // F4.7's "within 1 s of a line": the window in which ＋ jumps to a line instead of adding one.
         param("narrate.addNearSeconds", num(narrate_screen::ADD_NEAR_SECONDS), "narrate_screen::ADD_NEAR_SECONDS"),
+        // --- what F4.2's call asks for (§10 puts these in §1's machine table and §2's policy table, and the
+        // narration call is the only reader of all four: how far a clip's block reaches, and the word budget
+        // it prints) -----------------------------------------------------------------------------------------------
+        param("P.machine.narrationContextSeconds", num(narrate_pass::CONTEXT_SECONDS), "narrate_pass::CONTEXT_SECONDS"),
+        param("P.policy.narrationMinWords", num(narrate_pass::MIN_WORDS as f64), "narrate_pass::MIN_WORDS"),
+        param("P.policy.narrationMaxWords", num(narrate_pass::MAX_WORDS as f64), "narrate_pass::MAX_WORDS"),
+        param("P.policy.narrationWordsPerSecond", num(narrate_pass::WORDS_PER_SECOND), "narrate_pass::WORDS_PER_SECOND"),
     ]
 }
 
