@@ -26,6 +26,7 @@ use crate::fx_zoom;
 use crate::render_fx;
 use crate::hand_edit;
 use crate::narrate_pass;
+use crate::narrate_preview;
 use crate::narrate_screen;
 use crate::narrate_tts;
 use crate::prepare;
@@ -705,6 +706,10 @@ pub fn narrate() -> Vec<Param> {
         // §10 spells this default as "project language", so the row spells that; the constant named is the
         // fallback the prototype hard-coded, which is all a project without a language can be given.
         param("P.policy.ttsLanguage", "project language".to_string(), narrate_tts::LANGUAGE_SOURCE),
+        // --- what the preview holds and how far it looks ahead (§10 lines 191 and 193; F4.5 is the flow that
+        // reads both: a boundary held while a line speaks, and where ▶ drops the picture for a line) -----
+        param("P.eng.narrationMaxExtendSeconds", num(narrate_preview::MAX_EXTEND_SECONDS), "narrate_preview::MAX_EXTEND_SECONDS"),
+        param("P.eng.narrationRunInSeconds", num(narrate_screen::AUDITION_LEAD_SECONDS), "narrate_screen::AUDITION_LEAD_SECONDS"),
     ]
 }
 
