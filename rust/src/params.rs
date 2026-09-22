@@ -18,7 +18,9 @@ use crate::degraded;
 use crate::frames;
 use crate::fx_aspect;
 use crate::fx_svg;
+use crate::fx_lane;
 use crate::fx_volume;
+use crate::render_fx;
 use crate::hand_edit;
 use crate::prepare;
 use crate::requests;
@@ -326,6 +328,13 @@ fn engineering() -> Vec<Param> {
         ),
         // F2.5's mix: the ceiling every gain is held to, an effect's own and the slider's alike.
         param("P.eng.maxGain", num(cut_hear::MAX_GAIN), "cut_hear::MAX_GAIN"),
+        // §10's own row for the rejoin dip, catalogued from the module that fades it: the lane draws it and the render
+        // plans its read head around the same number.
+        param(
+            "P.eng.soundDipSeconds",
+            num(fx_lane::SOUND_DIP_SECONDS),
+            "fx_lane::SOUND_DIP_SECONDS",
+        ),
         // F3.12: how much of an effect band has to survive the final cut for it to be worth keeping. Read by the clamp
         // pass, which runs after snapping, dead-air and mark removal, and coalescing.
         param(
@@ -492,6 +501,23 @@ pub fn cut() -> Vec<Param> {
             "effects.volumeMinSeconds",
             num(fx_volume::MIN_SECONDS),
             "fx_volume::MIN_SECONDS",
+        ),
+        // §06-effects#4's three render numbers. §10 names them in prose ("Engineering: ... bake fps") but gives no `P.`
+        // id, so each takes the bare prefix of the rule that reads it, like the two rows above.
+        param(
+            "effects.renderZoomFps",
+            num(render_fx::ZOOM_GRID_FPS),
+            "render_fx::ZOOM_GRID_FPS",
+        ),
+        param(
+            "effects.renderZoomDepthCap",
+            num(render_fx::ZOOM_DEPTH_CAP),
+            "render_fx::ZOOM_DEPTH_CAP",
+        ),
+        param(
+            "effects.renderTierShortSide",
+            render_fx::TIER_SHORT_SIDE.to_string(),
+            "render_fx::TIER_SHORT_SIDE",
         ),
         // --- what the preview does (§6's preview group, §D's numbers) --------------------------------
         param("preview.playTickMs", format!("{} ms", preview::TICK_MS), "preview::TICK_MS"),
