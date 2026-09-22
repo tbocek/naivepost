@@ -19,6 +19,7 @@ pub mod cut_trim;
 pub mod cut_cam;
 pub mod cut_clamp;
 pub mod cut_fold;
+pub mod cut_cards;
 pub mod cut_insert;
 pub mod cut_rules;
 pub mod cut_suggest;

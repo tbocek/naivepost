@@ -9,6 +9,7 @@
 
 use crate::align;
 use crate::asr;
+use crate::cut_cards;
 use crate::cut_hear;
 use crate::cut_clamp;
 use crate::cut_insert;
@@ -518,6 +519,23 @@ pub fn cut() -> Vec<Param> {
             "effects.renderTierShortSide",
             render_fx::TIER_SHORT_SIDE.to_string(),
             "render_fx::TIER_SHORT_SIDE",
+        ),
+        // §06-effects#5's card numbers. §10 writes them in prose ("card canvas 1920×1080 and timings, bake 25 fps")
+        // without `P.` ids, so they take the bare `card.` prefix of the rules that read them.
+        param(
+            "card.stillnessSeconds",
+            num(cut_cards::STILLNESS_SECONDS),
+            "cut_cards::STILLNESS_SECONDS",
+        ),
+        param("card.bakeFps", num(cut_cards::BAKE_FPS), "cut_cards::BAKE_FPS"),
+        param(
+            "card.canvas",
+            format!(
+                "{}\u{00d7}{}",
+                cut_cards::CANVAS.0,
+                cut_cards::CANVAS.1
+            ),
+            "cut_cards::CANVAS",
         ),
         // --- what the preview does (§6's preview group, §D's numbers) --------------------------------
         param("preview.playTickMs", format!("{} ms", preview::TICK_MS), "preview::TICK_MS"),
