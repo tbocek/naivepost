@@ -95,6 +95,16 @@ pub const CARD_GUIDE: &str = concat!(
     "means the value is a file rather than words. The dialog comes out of the file, so a\n",
     "hand-written SVG gets a form; what you type is kept on the end of the path\n",
     "(`card.svg?title=Best maps`), so one file is a different card every time.\n",
+    "\n",
+    "The file has to travel on its own. The render writes each frame of an animated\n",
+    "card into a temporary folder and reads it back from there, so a relative `href`\n",
+    "resolves against nothing and an absolute one is refused. Put an image in the\n",
+    "document instead: `href=\"data:image/png;base64,...\"`.\n",
+    "\n",
+    "Fonts are the ones installed on the machine, named as a family list --\n",
+    "\"DejaVu Sans, Liberation Sans, Helvetica, Arial, sans-serif\". No `@font-face`\n",
+    "with a URL, no webfont. Nothing can measure text before it is drawn, so err\n",
+    "small: about 0.58em of advance per character is a safe estimate for these faces.\n",
 );
 
 /// F2.12 S2: write the built-in cards and [`CARD_GUIDE`] into `dir`, returning what was actually written —

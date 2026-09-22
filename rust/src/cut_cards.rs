@@ -788,3 +788,106 @@ pub fn card_length(animations: &[Anim]) -> Option<f64> {
     }
     Some(last)
 }
+// --- §8: how a card was arrived at ---------------------------------------------------------------------------------
+
+/// §8 (`a shipped card carries `data-naivepost=<kind>` and `data-naivepost-args=<defaults>` on its root`): the two
+/// attributes that make a file one of the app's own cards rather than somebody's SVG. They are read off the root
+/// tag, which is where [`badge_svg`] and [`tier_svg`] write them; nothing else in a document is a stamp, because a
+/// card that could be stamped by an author's comment would also be stamped by a mistake.
+pub const STAMP: &str = "data-naivepost";
+
+/// §8: the second half of the pair — the arguments the card was drawn with last time, so an insert redraws it with
+/// the path's parameters merged over those defaults rather than over nothing.
+pub const STAMP_ARGS: &str = "data-naivepost-args";
+
+/// The root tag's `data-naivepost="<kind>" data-naivepost-args="<defaults>"`, as written — both attributes or no
+/// stamp. Only the root is looked at: a nested element carrying them would be a document talking about itself. An
+/// empty value is still a value, which is how a card drawn with no arguments spells `data-naivepost-args=""`.
+pub fn stamped(doc: &str) -> Option<(&str, &str)> {
+    let open = doc.find("<svg")?;
+    let close = doc[open..].find('>')? + open;
+    let root = &doc[open..close];
+    let kind = stamp_value(root, STAMP)?;
+    let args = stamp_value(root, STAMP_ARGS)?;
+    Some((kind, args))
+}
+
+/// One quoted attribute of the root tag. Written here rather than reusing the bake's [`attribute`], which returns an
+/// owned `String` and reads double quotes only — a stamp is borrowed out of the document, and a single-quoted one is
+/// somebody else's document that gets read as unstamped: filling its holes is still right, drawing it as a card of
+/// ours would be guessing.
+fn stamp_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    for quote in ['"', '\''] {
+        let key = format!("{name}={quote}");
+        if let Some(at) = tag.find(&key) {
+            let from = at + key.len();
+            let end = tag[from..].find(quote)?;
+            return Some(&tag[from..from + end]);
+        }
+    }
+    None
+}
+
+/// §8 (`"filled in"`): an unstamped file whose holes were filled and nothing else.
+pub const FILLED_IN: &str = "filled in";
+
+/// §8, verbatim including the doubled braces — those are a hole's own syntax quoted inside a sentence about it, and
+/// flattening them would make the line describe something the filler never looks for.
+pub const IGNORED: &str =
+    "has no {{placeholders}} and was not drawn by a card, so its parameters were ignored";
+
+/// §8 (`"drawn by the built-in <name> card[, except that <note>]"`): a stamped file redrawn from its generator. The
+/// `except` half is for the arguments the person changed on the path — the card still drew the picture, but not the
+/// one it shipped with, and a log line that said only "drawn by" would hide which of the two they are watching.
+pub fn drawn_by(name: &str, except: Option<&str>) -> String {
+    match except {
+        Some(note) => format!("drawn by the built-in {name} card, except that {note}"),
+        None => format!("drawn by the built-in {name} card"),
+    }
+}
+
+/// §8 (`Logged per render, how a card was arrived at`): which of its three notes one insert earns. A stamped file is
+/// drawn again by its card whatever the path asks for; an unstamped one only gets its holes filled; and an
+/// unstamped file with no holes to fill takes no notice of the parameters at all, which is said rather than
+/// swallowed because a path asking for a title the picture has nowhere for is otherwise a change nobody sees —
+/// either in the video or in the absence of one.
+pub fn arrived_at(doc: &str, args: &[(String, String)]) -> String {
+    if let Some((kind, _)) = stamped(doc) {
+        return drawn_by(kind, None);
+    }
+    if !holes(doc).is_empty() {
+        return FILLED_IN.to_string();
+    }
+    if args.is_empty() {
+        return FILLED_IN.to_string();
+    }
+    IGNORED.to_string()
+}
+
+/// §8's contract (`self-contained … the render folder resolves no relative href, refuses an absolute one`): both
+/// halves as one check. A baked card is written to a temporary folder and read from there, so an `href` naming a
+/// file — relative, absolute or a URL — points somewhere that reader cannot reach: an absolute one is refused
+/// outright and a relative one resolves against nothing. Only a `data:` URL travels with the document, which is what
+/// "self-contained" means here. The empty value is left alone: it is how an attribute declares "no image here"
+/// without breaking the shape of the tag.
+pub fn absolute_href(doc: &str) -> Option<String> {
+    let mut rest = doc;
+    while let Some(at) = rest.find("href=\"") {
+        let from = at + "href=\"".len();
+        let value = &rest[from..];
+        let Some(end) = value.find('"') else { return None };
+        let value = &value[..end];
+        if !value.is_empty() && !value.starts_with("data:") {
+            return Some(value.to_string());
+        }
+        rest = &rest[from + end..];
+    }
+    None
+}
+
+/// §8's contract (`machine fonts as a family list, no @font-face`): a card that pulls a webfont asks the render for
+/// a network it does not have and gets whatever fallback the machine feels like. Fonts are named as a list and left
+/// to the machine.
+pub fn uses_font_face(doc: &str) -> bool {
+    doc.contains("@font-face")
+}
