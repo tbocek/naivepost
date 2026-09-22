@@ -10,6 +10,7 @@ pub mod cut;
 pub mod cut_captions;
 pub mod cut_copy;
 pub mod cut_delete;
+pub mod cut_effects_pass;
 pub mod cut_hear;
 pub mod cut_line;
 pub mod cut_review;

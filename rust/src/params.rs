@@ -29,6 +29,7 @@ use crate::cut_review;
 use crate::cut_screen;
 use crate::cut_speed;
 use crate::cut_speed_pass;
+use crate::cut_effects_pass;
 use crate::cut_trim;
 use crate::preview;
 use crate::tools::{clips, cutpass, describe, retakes, textedit};
@@ -416,6 +417,19 @@ pub fn cut() -> Vec<Param> {
             "effects.neutralRateTolerance",
             num(cut_speed_pass::NEUTRAL_TOLERANCE),
             "cut_speed_pass::NEUTRAL_TOLERANCE",
+        ),
+        // F3.11 S4: the two numbers §F3.11 gives a proposed decoration that §10 leaves unrowed — how tall a model's zoom
+        // is, and how soft a model's stop lands. Both read from this pass; the glide and the volume ramp are already
+        // catalogued above as P.policy.effectDefaultFades' zoom value and F3.10's proposed-ramp row.
+        param(
+            "effects.proposedZoomHeight",
+            num(cut_effects_pass::ZOOM_HEIGHT),
+            "cut_effects_pass::ZOOM_HEIGHT",
+        ),
+        param(
+            "effects.proposedStopFadeSeconds",
+            num(cut_effects_pass::STOP_FADE_CAP_SECONDS),
+            "cut_effects_pass::STOP_FADE_CAP_SECONDS",
         ),
         // Three formula rows: §10 gives these no number to spell, only the arithmetic, so what is catalogued
         // is §10's own text and the function that computes it.
