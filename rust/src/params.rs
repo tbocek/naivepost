@@ -20,7 +20,9 @@ use crate::frames;
 use crate::fx_aspect;
 use crate::fx_svg;
 use crate::fx_lane;
+use crate::fx_text;
 use crate::fx_volume;
+use crate::fx_zoom;
 use crate::render_fx;
 use crate::hand_edit;
 use crate::prepare;
@@ -558,6 +560,88 @@ pub fn cut() -> Vec<Param> {
         // The waveform cache's format is its magic: a file that does not start with these four bytes is read
         // again rather than trusted, which is the whole reason it was renamed AWV2 → AWV3 → AWV4.
         param("layout.waveCacheMagic", String::from_utf8_lossy(wave::MAGIC).to_string(), "wave::MAGIC"),
+    ]
+}
+
+/// §06-effects#6-parameters-used — every parameter an effect may be tuned by, in `spec/06-effects.md` §6's own
+/// order, built from the constant each rule already reads.
+///
+/// A list of ids, not of numbers, so this holds none: move a bound in its module and the row moves with it. The
+/// ids §05 §6 names as well — `P.eng.maxGain`, `P.policy.speedGapSeconds`, `P.machine.captionBatch`,
+/// `P.policy.captionMinSeconds`, `P.eng.effectMinSurvivingSeconds`, and this flow's own defaults
+/// (`effects.defaultGain`, `effects.defaultRate`, `effects.volumeMinSeconds`, `effects.proposedZoomHeight`) and
+/// drawing numbers (`layout.effectRowPx`, `layout.snapPx`, `effects.previewRasterPx`, the `card.*` rows) — keep
+/// their single row in [`cut`]: one row, one home, so this list is the rest of §06's rather than a copy of it.
+///
+/// Two of §06's items have no row and are absent on purpose. The label form's typed floor (0.4) belongs to §F3.7,
+/// whose form has no constant in this tree yet — a number nothing reads has no module to live in. So is the
+/// decorations density: §F3.11 keeps it as the prompt's own wording ("few and deliberate: three or four across
+/// five minutes"), which is wording, not a value the app multiplies anything by. §I's `killMin` 32, `fxMinBand` 30
+/// and `fxGrab` 9 are absent for the same reason — no constant here holds them.
+pub fn effects() -> Vec<Param> {
+    vec![
+        // --- what a speed or volume effect may be asked to do --------------------------------------
+        param("P.eng.minRate", num(cut_speed::MIN_RATE), "cut_speed::MIN_RATE"),
+        param("P.eng.maxRate", num(cut_speed::MAX_RATE), "cut_speed::MAX_RATE"),
+        // §10's own cell says this is "also the speed clamp floor", and `cut_speed::apply` reads it as exactly
+        // that: the 0.5 a stop's Length must reach is the 0.5 the render will not go under, so one row serves both
+        // of §6's mentions and the two cannot be tuned apart.
+        param("P.eng.minClipSeconds", num(cutpass::MIN_CLIP_SECONDS), "tools::cutpass::MIN_CLIP_SECONDS"),
+        param("P.eng.rampStepSeconds", num(cut_speed::RAMP_STEP_SECONDS), "cut_speed::RAMP_STEP_SECONDS"),
+        // --- the lengths and fades an effect placed by hand starts with ------------------------------
+        // §10 gives one row to a family of kinds, so the row spells the whole cell and names every constant behind
+        // it: the only way a reader can see that the "2" is three rules' default rather than one.
+        param(
+            "P.policy.effectDefaultSeconds",
+            format!(
+                "zoom/text/svg {}; stop/speed/volume/label {}",
+                num(fx_zoom::DEFAULT_SECONDS),
+                num(fx_volume::LINE_SECONDS)
+            ),
+            "fx_zoom::DEFAULT_SECONDS + fx_volume::LINE_SECONDS",
+        ),
+        param(
+            "P.policy.effectDefaultFades",
+            format!(
+                "zoom {}; text/svg {}; volume {}; stop {}",
+                num(fx_zoom::GLIDE_SECONDS),
+                num(fx_text::FADE_SECONDS),
+                num(fx_volume::FADE_SECONDS),
+                num(cut_speed::STOP_FADE_SECONDS)
+            ),
+            "fx_zoom::GLIDE_SECONDS + fx_text::FADE_SECONDS + fx_volume::FADE_SECONDS + cut_speed::STOP_FADE_SECONDS",
+        ),
+        // The height a proposed zoom is given, spelled twice on purpose: §10 has this row and §F3.11 names the same
+        // number under `effects.proposedZoomHeight`, which [`cut`] already carries. Both rows read one constant, so
+        // the two spellings cannot disagree about what 0.6 is.
+        param(
+            "P.policy.suggestedZoomHeight",
+            num(cut_effects_pass::ZOOM_HEIGHT),
+            "cut_effects_pass::ZOOM_HEIGHT",
+        ),
+        // --- the floors each form holds to when Apply is pressed --------------------------------------
+        param("effects.zoomFloorSeconds", num(fx_zoom::MIN_SECONDS), "fx_zoom::MIN_SECONDS"),
+        param("effects.textMinSeconds", num(fx_text::MIN_SECONDS), "fx_text::MIN_SECONDS"),
+        // Not a form floor but the one §6 names outright ("the 0.2 s floor under which a band is not a marked
+        // stretch"): below it a drag is a slipped click, and ⏩ Speed falls through to the line.
+        param("effects.markedBandMinSeconds", num(cut_speed::MIN_MARKED_SECONDS), "cut_speed::MIN_MARKED_SECONDS"),
+        // --- what the lane and the picture are drawn with ---------------------------------------------
+        // §6's "grip/kill widths" is one pair here and not two: only the grip has a constant in this tree, and the
+        // kill width is part of §I's implicit list that nothing reads. The "snap 8/10 px" pair is split across the
+        // two lists for the same reason as its name — 8 px pulls a lane band onto a word edge ([`cut`]'s
+        // `layout.snapPx`) and 10 px drags a text box over a picture.
+        param("layout.gripPx", num(cut_select::GRIP_PX), "cut_select::GRIP_PX"),
+        param("effects.snapPx", num(fx_text::SNAP_PX), "fx_text::SNAP_PX"),
+        // The fitting rule's own arithmetic: a caption is measured in em, so these three are what decide whether
+        // the words fit the box the hand drew.
+        param("effects.textAdvance", num(fx_text::CHAR_ADVANCE_EM), "fx_text::CHAR_ADVANCE_EM"),
+        param("effects.textLineHeight", num(fx_text::LINE_HEIGHT_EM), "fx_text::LINE_HEIGHT_EM"),
+        param("effects.textAscent", num(fx_text::ASCENT_EM), "fx_text::ASCENT_EM"),
+        param("effects.textMinPoints", num(fx_text::MIN_POINTS), "fx_text::MIN_POINTS"),
+        param("effects.textMaxLines", fx_text::MAX_LINES.to_string(), "fx_text::MAX_LINES"),
+        // §6's "edge dilation" is the radius; how dark and in how many directions it is drawn are the same rule's
+        // shape rather than a tuning value, so they stay uncatalogued.
+        param("effects.edgeRadius", num(fx_text::EDGE_RADIUS_EM), "fx_text::EDGE_RADIUS_EM"),
     ]
 }
 
