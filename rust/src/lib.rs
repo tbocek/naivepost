@@ -22,6 +22,7 @@ pub mod cut_fold;
 pub mod cut_cards;
 pub mod cut_insert;
 pub mod cut_rules;
+pub mod effect_rules;
 pub mod cut_suggest;
 pub mod cut_speed;
 pub mod cut_speed_pass;

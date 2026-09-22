@@ -197,7 +197,8 @@ pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
 
 /// F3.10 S4 (`same-rate stretches nearer than P.policy.speedGapSeconds merged`): fold runs at ONE rate that come
 /// within [`GAP_SECONDS`] of each other into a single run, taking the later stretch's fade out. Only speeds are folded
-/// and only same-rate ones — a ×2 and a ×4 two seconds apart are two decisions, not one — and everything else in the
+/// and only same-rate ones — a ×2 and a ×4 two seconds apart are two decisions, not one — and only ones that hear
+/// the same thing (§7: sound answers do not merge), and everything else in the
 /// list survives untouched and in its own order, so this can be handed a whole cut's effects.
 ///
 /// The bound is "nearer than", so a gap of exactly four seconds does NOT merge; compared with `<` rather than `<=`.
@@ -215,7 +216,11 @@ pub fn merge(fxs: &[Fx]) -> Vec<Fx> {
     for fx in speeds {
         match out.last_mut() {
             Some(prev)
-                if prev.rate == fx.rate && fx.t - (prev.t + prev.dur) < GAP_SECONDS =>
+                // §7: sound answers do not merge. Two stretches at one rate whose sound differs are two decisions —
+                // ×2 with the footage's own pitch and ×2 reading the room at 1× do not become one stretch.
+                if prev.rate == fx.rate
+                    && prev.snd == fx.snd
+                    && fx.t - (prev.t + prev.dur) < GAP_SECONDS =>
             {
                 let end = (prev.t + prev.dur).max(fx.t + fx.dur);
                 prev.dur = end - prev.t;
