@@ -25,6 +25,7 @@ use crate::fx_volume;
 use crate::fx_zoom;
 use crate::render_fx;
 use crate::hand_edit;
+use crate::narrate_screen;
 use crate::prepare;
 use crate::requests;
 use crate::roles;
@@ -642,6 +643,55 @@ pub fn effects() -> Vec<Param> {
         // §6's "edge dilation" is the radius; how dark and in how many directions it is drawn are the same rule's
         // shape rather than a tuning value, so they stay uncatalogued.
         param("effects.edgeRadius", num(fx_text::EDGE_RADIUS_EM), "fx_text::EDGE_RADIUS_EM"),
+    ]
+}
+
+/// Every number the Narrate page draws or waits with, in §1's order: the take band first (its floor, its label
+/// bound, its geometry), then the pitch slider, then the two clocks and the two debounces.
+///
+/// The ids are of two kinds, and each says so. `P.eng.*` rows are §10's own; the bare `narrate.*` ones are the
+/// numbers §10 lists only inside its prose line (`Narrate take band: ruler 12, lane 56, max 200 px/s, click slop 3
+/// px`, and §07's `Engineering: tick 100 ms · seek debounce 120 ms · autosave 400 ms`), which have no `P.` row to
+/// inherit — the same bare-prefix rule §06-effects#6 took for `machine.` and `preview.` values. They are spelled as
+/// §10 spells them so a reader comparing this list against that line is comparing the same words.
+pub fn narrate() -> Vec<Param> {
+    vec![
+        // --- the take band (§1's number 10) ---------------------------------------------------------
+        param("P.eng.takeMinSeconds", num(narrate_screen::TAKE_MIN_SECONDS), "narrate_screen::TAKE_MIN_SECONDS"),
+        param("narrate.takeLabelPx", num(narrate_screen::TAKE_LABEL_MIN_PX), "narrate_screen::TAKE_LABEL_MIN_PX"),
+        // §10:133 lists the band's geometry by area rather than as rows, so these four carry no `P.` id.
+        param("narrate.bandRulerPx", num(narrate_screen::BAND_RULER_PX), "narrate_screen::BAND_RULER_PX"),
+        param("narrate.bandLanePx", num(narrate_screen::BAND_LANE_PX), "narrate_screen::BAND_LANE_PX"),
+        param("narrate.bandMaxPps", num(narrate_screen::BAND_MAX_PPS), "narrate_screen::BAND_MAX_PPS"),
+        param("narrate.clickSlopPx", num(narrate_screen::CLICK_SLOP_PX), "narrate_screen::CLICK_SLOP_PX"),
+        // --- the pitch slider (§1's number 13) ------------------------------------------------------
+        // §10 gives one row to the whole range, so the row spells both ends and the step between them.
+        param(
+            "P.eng.pitchRangeSemitones",
+            format!(
+                "{}..+{}, step {}",
+                num(narrate_screen::PITCH_MIN_SEMITONES),
+                num(narrate_screen::PITCH_MAX_SEMITONES),
+                num(narrate_screen::PITCH_STEP)
+            ),
+            "narrate_screen::PITCH_MIN_SEMITONES + PITCH_MAX_SEMITONES + PITCH_STEP",
+        ),
+        // --- what the page waits for (§1's numbers 5, 9, 20) -----------------------------------------
+        param("narrate.tickMs", narrate_screen::TICK_MS.to_string(), "narrate_screen::TICK_MS"),
+        param("narrate.seekDebounceMs", narrate_screen::SEEK_DEBOUNCE_MS.to_string(), "narrate_screen::SEEK_DEBOUNCE_MS"),
+        // The autosave is §10:133's `typing debounce 400 ms`, and the timer itself is the shell's.
+        param(
+            "narrate.autosaveMs",
+            crate::shell::NARRATION_AUTOSAVE.as_millis().to_string(),
+            "shell::NARRATION_AUTOSAVE",
+        ),
+        // --- what a row says about a line that is not spoken yet (§1's numbers 15, 21) -----------------
+        param("P.eng.narrationTailSeconds", num(narrate_screen::SPEECH_TAIL_SECONDS), "narrate_screen::SPEECH_TAIL_SECONDS"),
+        // §C.2's fallback rate: the only measure of a line before its take exists, so it is what both the row's
+        // estimate and the transport ＋'s refusal are built on.
+        param("narrate.speechCharsPerSecond", num(narrate_screen::SPEECH_CHARS_PER_SECOND), "narrate_screen::SPEECH_CHARS_PER_SECOND"),
+        // F4.7's "within 1 s of a line": the window in which ＋ jumps to a line instead of adding one.
+        param("narrate.addNearSeconds", num(narrate_screen::ADD_NEAR_SECONDS), "narrate_screen::ADD_NEAR_SECONDS"),
     ]
 }
 

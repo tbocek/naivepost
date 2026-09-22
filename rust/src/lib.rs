@@ -25,6 +25,7 @@ pub mod cut_rules;
 pub mod effect_details;
 pub mod effect_overlap;
 pub mod effect_rules;
+pub mod narrate_screen;
 pub mod cut_suggest;
 pub mod cut_speed;
 pub mod cut_speed_pass;
