@@ -27,6 +27,7 @@ use crate::render_fx;
 use crate::hand_edit;
 use crate::narrate_pass;
 use crate::narrate_screen;
+use crate::narrate_tts;
 use crate::prepare;
 use crate::requests;
 use crate::roles;
@@ -700,6 +701,10 @@ pub fn narrate() -> Vec<Param> {
         param("P.policy.narrationMinWords", num(narrate_pass::MIN_WORDS as f64), "narrate_pass::MIN_WORDS"),
         param("P.policy.narrationMaxWords", num(narrate_pass::MAX_WORDS as f64), "narrate_pass::MAX_WORDS"),
         param("P.policy.narrationWordsPerSecond", num(narrate_pass::WORDS_PER_SECOND), "narrate_pass::WORDS_PER_SECOND"),
+        // --- what one line is spoken with -----------------------------------------------------------------------
+        // §10 spells this default as "project language", so the row spells that; the constant named is the
+        // fallback the prototype hard-coded, which is all a project without a language can be given.
+        param("P.policy.ttsLanguage", "project language".to_string(), narrate_tts::LANGUAGE_SOURCE),
     ]
 }
 

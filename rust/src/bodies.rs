@@ -94,12 +94,27 @@ pub fn speech_body(
     emotion: &[f64],
     seed: i64,
 ) -> Value {
+    speech_request(model, text, voice_ref, language, json!({ "emotion": emotion, "seed": seed }))
+}
+
+/// The one envelope `POST /v1/audio/speech` takes: `{"model","input","voice_ref","language","options"}`.
+///
+/// Split from [`speech_body`] because what belongs in `options` is a flow of its own (F4.4's two emotion
+/// branches), while these five keys and their names never change — the endpoint drops anything it does not
+/// know, so a field sent at the top level is simply lost.
+pub fn speech_request(
+    model: &str,
+    text: &str,
+    voice_ref: &ServerPath,
+    language: &str,
+    options: Value,
+) -> Value {
     json!({
         "model": model,
         "input": text,
         "voice_ref": voice_ref.as_str(),
         "language": language,
-        "options": { "emotion": emotion, "seed": seed },
+        "options": options,
     })
 }
 

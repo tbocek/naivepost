@@ -27,6 +27,7 @@ pub mod effect_overlap;
 pub mod effect_rules;
 pub mod narrate_pass;
 pub mod narrate_screen;
+pub mod narrate_tts;
 pub mod cut_suggest;
 pub mod cut_speed;
 pub mod cut_speed_pass;
