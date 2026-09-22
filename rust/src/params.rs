@@ -10,6 +10,7 @@
 use crate::align;
 use crate::asr;
 use crate::cut_hear;
+use crate::cut_clamp;
 use crate::cut_insert;
 use crate::cut_select;
 use crate::cut_captions;
@@ -325,6 +326,13 @@ fn engineering() -> Vec<Param> {
         ),
         // F2.5's mix: the ceiling every gain is held to, an effect's own and the slider's alike.
         param("P.eng.maxGain", num(cut_hear::MAX_GAIN), "cut_hear::MAX_GAIN"),
+        // F3.12: how much of an effect band has to survive the final cut for it to be worth keeping. Read by the clamp
+        // pass, which runs after snapping, dead-air and mark removal, and coalescing.
+        param(
+            "P.eng.effectMinSurvivingSeconds",
+            cut_clamp::MIN_SURVIVING_SECONDS.to_string(),
+            "cut_clamp::MIN_SURVIVING_SECONDS",
+        ),
         // F2.6's two floors, each held by the rule that reads it: a resize may not close the band, and
         // ＋ Add / ⧉ Copy will not take a region too short to be a scene.
         param("P.eng.minPieceSeconds", num(cut_select::MIN_SECONDS), "cut_select::MIN_SECONDS"),

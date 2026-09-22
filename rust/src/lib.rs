@@ -17,6 +17,7 @@ pub mod cut_review;
 pub mod cut_select;
 pub mod cut_trim;
 pub mod cut_cam;
+pub mod cut_clamp;
 pub mod cut_fold;
 pub mod cut_insert;
 pub mod cut_rules;
