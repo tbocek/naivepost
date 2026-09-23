@@ -25,6 +25,7 @@ use crate::fx_volume;
 use crate::fx_zoom;
 use crate::render_fx;
 use crate::hand_edit;
+use crate::llm_retry;
 use crate::narrate_pass;
 use crate::narrate_preview;
 use crate::narrate_screen;
@@ -368,6 +369,15 @@ fn engineering() -> Vec<Param> {
             num(cut_insert::DEFAULT_SECONDS),
             "cut_insert::DEFAULT_SECONDS",
         ),
+        // §09 §3's two patiences. §10 lists them only in its by-area line ("backoff 5 s–4 min"), with no `P.`
+        // row of their own, so they carry the bare `llm.` prefix. The ladder is one string because it is one
+        // decision — five waits that together outlast a container restart and a weight load.
+        param(
+            "llm.backoffSeconds",
+            llm_retry::BACKOFF_SECONDS.iter().map(|s| s.to_string()).collect::<Vec<String>>().join(", "),
+            "llm_retry::BACKOFF_SECONDS",
+        ),
+        param("llm.retrySeconds", llm_retry::RETRY_SECONDS.to_string(), "llm_retry::RETRY_SECONDS"),
     ]
 }
 

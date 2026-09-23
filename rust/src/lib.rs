@@ -90,6 +90,7 @@ pub mod subprocess;
 pub mod textfmt;
 pub mod transcribe;
 pub mod tool_loop;
+pub mod llm_retry;
 pub mod web_tools;
 pub mod tools;
 pub mod word_list;
