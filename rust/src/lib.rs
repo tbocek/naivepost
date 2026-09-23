@@ -63,6 +63,7 @@ pub mod project;
 pub mod prepare;
 pub mod prepare_data;
 pub mod preview;
+pub mod produce_render;
 pub mod produce_screen;
 pub mod publish;
 pub mod probes;
