@@ -30,6 +30,7 @@ pub mod narrate_preview;
 pub mod narrate_screen;
 pub mod narrate_data;
 pub mod narrate_off;
+pub mod narrate_rules;
 pub mod narrate_tts;
 pub mod cut_suggest;
 pub mod cut_speed;
