@@ -42,6 +42,9 @@ use crate::cut_speed_pass;
 use crate::cut_effects_pass;
 use crate::cut_trim;
 use crate::preview;
+use crate::project;
+use crate::produce_render;
+use crate::produce_screen;
 use crate::produce_subtitles;
 use crate::produce_runs;
 use crate::tools::{clips, cutpass, describe, retakes, textedit};
@@ -745,9 +748,62 @@ pub fn produce() -> Vec<Param> {
         // --- one translation request's size (§10: new; the prototype sent the whole track) ---------------
         param("P.machine.translateBatch", produce_subtitles::BATCH.to_string(), "produce_subtitles::BATCH"),
         // --- §F5.7's page runs: the cap an upload puts on a picture, and the snap grid its words box stops on.
-        param("P.eng.jpegMaxBytes", produce_runs::JPEG_MAX_BYTES.to_string(), "produce_runs::JPEG_MAX_BYTES"),
+        param("P.eng.thumbnailJPEGMax", produce_runs::JPEG_MAX_BYTES.to_string(), "produce_runs::JPEG_MAX_BYTES"),
         param("P.policy.publishWordsSnapPx", produce_runs::words_snap_px().to_string(), "produce_runs::words_snap_px"),
+        // --- §08 §4's mix: the bed under the narration, and the two targets the final audio is set to ------
+        param("P.policy.gameVolume", num(project::Produce::default().game_volume), "project::Produce::default — game_volume"),
+        param("P.eng.loudness", loudness_spelled(), "produce_render::LOUDNORM"),
+        param("P.eng.clipLimiter", limiter_spelled(), "produce_render::LIMITER"),
+        // --- §08 §4's fitting bound, read where the render applies it (the rest of F4.3 lives in §7) -------
+        param("P.eng.narrationMaxTempo", num(produce_render::MAX_TEMPO), "produce_render::MAX_TEMPO"),
+        // --- §08 §4's thumbnail: its size, its band, and how many frames the row holds ---------------------
+        param("P.machine.thumbnailLongSide", produce_screen::THUMB_LONG_SIDE.to_string(), "produce_screen::THUMB_LONG_SIDE"),
+        param("P.eng.titleBand", title_band_spelled(), "project::TitleBox::default"),
+        param("P.policy.publishFrames", produce_screen::FIRST_IMAGES.to_string(), "produce_screen::FIRST_IMAGES"),
+        param("P.eng.publishMaxFrames", produce_screen::MAX_IMAGES.to_string(), "produce_screen::MAX_IMAGES"),
     ]
+}
+
+/// §10 spells `P.eng.loudness` as `I -14, TP -1.5, LRA 11`, which is the filter string read backwards: the
+/// three numbers are taken out of [`produce_render::LOUDNORM`] so the row cannot disagree with what ffmpeg
+/// is actually sent, and only their spelling lives here.
+fn loudness_spelled() -> String {
+    let tail = produce_render::LOUDNORM.split("loudnorm=").nth(1).unwrap_or_default();
+    // `I=-14:TP=-1.5:LRA=11` → `I -14, TP -1.5, LRA 11`: pairs apart on commas, each value off its key.
+    tail.split(':')
+        .map(|pair| pair.replace('=', " "))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// §10 spells `P.eng.clipLimiter` as `−1 dBFS (0.891)`: the decibels are what a person reads, the amplitude
+/// is what `alimiter` takes. Both come out of [`produce_render::LIMITER`] — −1 dBFS is the amplitude 0.891,
+/// so spelling one from the other keeps them one fact.
+fn limiter_spelled() -> String {
+    let amplitude = produce_render::LIMITER
+        .split("limit=")
+        .nth(1)
+        .unwrap_or_default()
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    // 20·log10(0.891) = −1 dBFS, rounded to the whole decibel §10 writes.
+    let db = (20.0 * amplitude.parse::<f64>().unwrap_or(1.0).log10()).round();
+    format!("{db} dBFS ({amplitude})")
+}
+
+/// §10's `P.eng.titleBand` spelling, `{0.5, 0.25, 1, 0.4}` — the same four numbers [`project::TitleBox`]
+/// holds, printed without trailing zeros so the row reads as the spec writes it.
+fn title_band_spelled() -> String {
+    let band = project::TitleBox::default();
+    format!(
+        "{{{}, {}, {}, {}}}",
+        num(band.cx),
+        num(band.cy),
+        num(band.wf),
+        num(band.hf)
+    )
 }
 
 /// One parameter by its §10 id.

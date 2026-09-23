@@ -6,7 +6,7 @@
 //! and "the reprint drew a second picture" are both invisible in the finished file and visible only here.
 //!
 //! Ids used, each asserted against its §10 row in `params::produce()` (`params::find` searches Prepare's rows
-//! only): P.eng.jpegMaxBytes (2097152), P.policy.publishWordsSnapPx (30 — the plan asked for a
+//! only): P.eng.thumbnailJPEGMax (2097152), P.policy.publishWordsSnapPx (30 — the plan asked for a
 //! `P.policy.publishWordsSafeFraction`; no safe-area fraction exists anywhere in the app, so what the words box
 //! actually stops on is the snap grid). Tools cited: `tool:ffmpeg.encode` — ↻ Transcode is ffmpeg with the
 //! render's own settings and no model call.
@@ -325,8 +325,8 @@ fn f5_7_s6_the_quality_ladder_drops_before_anything_else() {
 #[test]
 fn f5_7_s6_the_cap_is_youtubes_own_and_is_reported_after_three_tries() {
     assert_eq!(ITEM, "F5.7");
-    // P.eng.jpegMaxBytes — §10's row and the rule read one number, so a change to either is visible in the other.
-    assert_eq!(row("P.eng.jpegMaxBytes"), runs::JPEG_MAX_BYTES.to_string());
+    // P.eng.thumbnailJPEGMax — §10's row and the rule read one number, so a change to either is visible in the other.
+    assert_eq!(row("P.eng.thumbnailJPEGMax"), runs::JPEG_MAX_BYTES.to_string());
     assert_eq!(runs::JPEG_MAX_BYTES, 2 * 1024 * 1024);
     // tool:ffmpeg.encode wrote the picture; this only judges its weight.
 
@@ -508,10 +508,10 @@ fn f5_7_s8_both_pages_numbers_are_catalogued_where_they_are_used() {
     assert_eq!(ITEM, "F5.7");
     // §10's ids exist and answer. `params::find` searches Prepare's rows only (its own doc says so), so these
     // two are read out of the Produce section — which is also what makes them findable at all.
-    assert_eq!(params::family("P.eng.jpegMaxBytes"), params::Family::Eng);
+    assert_eq!(params::family("P.eng.thumbnailJPEGMax"), params::Family::Eng);
     assert_eq!(params::family("P.policy.publishWordsSnapPx"), params::Family::Policy);
     assert!(params::find("P.machine.asrChunkQwenSeconds").is_some(), "find answers Prepare's rows");
-    assert_eq!(row("P.eng.jpegMaxBytes"), "2097152");
+    assert_eq!(row("P.eng.thumbnailJPEGMax"), "2097152");
     assert_eq!(row("P.policy.publishWordsSnapPx"), "30");
     // Every row's value is read from the module that uses it, never retyped here.
     assert_eq!(runs::JPEG_MAX_BYTES, 2 * 1024 * 1024);
@@ -521,9 +521,10 @@ fn f5_7_s8_both_pages_numbers_are_catalogued_where_they_are_used() {
 fn f5_7_s8_the_produce_rows_stay_few_and_all_named() {
     assert_eq!(ITEM, "F5.7");
     let rows = params::produce();
-    // Five cue numbers and one batch size are §F5.4's; the two this item adds are the JPEG cap and the words
-    // box's snap grid. A ninth row would mean a number was added somewhere in §08 without being written into
-    // §10 first.
+    // Five cue numbers and one batch size are §F5.4's; the JPEG cap and the words box's snap grid are this
+    // item's (§F5.7); the eight after them are §08 §4's — the mix's two targets, the bed under the narration,
+    // the fitting ceiling, and the thumbnail's size, band and frame counts. A row past these would mean a
+    // number was added somewhere in §08 without being written into §10 first.
     assert_eq!(
         ids(&rows),
         [
@@ -533,8 +534,16 @@ fn f5_7_s8_the_produce_rows_stay_few_and_all_named() {
             "P.policy.subtitleHoldSeconds",
             "P.policy.subtitleMinSeconds",
             "P.machine.translateBatch",
-            "P.eng.jpegMaxBytes",
+            "P.eng.thumbnailJPEGMax",
             "P.policy.publishWordsSnapPx",
+            "P.policy.gameVolume",
+            "P.eng.loudness",
+            "P.eng.clipLimiter",
+            "P.eng.narrationMaxTempo",
+            "P.machine.thumbnailLongSide",
+            "P.eng.titleBand",
+            "P.policy.publishFrames",
+            "P.eng.publishMaxFrames",
         ]
     );
     for param in &rows {

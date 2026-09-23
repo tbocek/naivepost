@@ -504,6 +504,12 @@ pub fn stale_sidecars(stem: &str, languages: &[&str]) -> Vec<String> {
 
 // ---- S5: encode one clip ---------------------------------------------------------
 
+/// S5's "limiter −1 dBFS" (`P.eng.clipLimiter`): ffmpeg takes an amplitude, and 0.891 is the amplitude of
+/// −1 dBFS. Written as the number rather than a dB expression because that is what `alimiter` accepts, and
+/// named because §4 lists it as one of the page's two mix targets — the catalogue reads it off this string
+/// rather than carrying a third copy of the figure.
+pub const LIMITER: &str = "alimiter=limit=0.891:level=disabled";
+
 /// S5 / inventory §B (`stems c%03d_<stamp>`): the per-clip file's name. The stamp is in it because the
 /// concat list is rebuilt from the scratch folder and a leftover `c000.mp4` of an older cut would join into
 /// this one by name alone.
@@ -638,9 +644,7 @@ pub fn audio_chain(clip: &Clip, settings: &Produce, lanes: usize, hush: &[(f64, 
         chain.push(format!("adelay={}ms|{}ms", (line.at * 1000.0).round() as i64, (line.at * 1000.0).round() as i64));
     }
     chain.push("amix=duration=first:normalize=0".into());
-    // S5's "limiter −1 dBFS": ffmpeg takes an amplitude, and 0.891 is the amplitude of −1 dBFS. Written as
-    // the number rather than a dB expression because that is what `alimiter` accepts.
-    chain.push("alimiter=limit=0.891:level=disabled".into());
+    chain.push(LIMITER.into());
     let layout = if settings.mono { "mono" } else { "stereo" };
     chain.push(format!(
         "format=sample_fmts=fltp:sample_rates=48000:channel_layouts={layout}"

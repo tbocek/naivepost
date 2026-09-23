@@ -182,6 +182,64 @@ pub fn add_image(frames: &mut Vec<String>, path: &str) -> bool {
     true
 }
 
+/// §10's `P.policy.publishFrames` (prototype `defPubFrames`): the first run hands the model three of the
+/// frames Prepare extracted rather than none — a thumbnail drawn from an instruction alone is recognisably
+/// not this video. Three is a start, not a cap: [`MAX_IMAGES`] stays the row's ceiling, and the first of
+/// these three is the base the model edits ([`crate::publish::base`]).
+pub const FIRST_IMAGES: usize = 3;
+
+/// The first run's frames: up to [`FIRST_IMAGES`] of what the session offers, in the order offered, so the
+/// earliest is the base. Fewer available means fewer taken; none means an empty row, which is the state
+/// [`EMPTY_IMAGES`] describes rather than a reason to draw from nothing by default.
+pub fn seed_frames(available: &[String]) -> Vec<String> {
+    available.iter().take(FIRST_IMAGES).cloned().collect()
+}
+
+// ---- the thumbnail's own box --------------------------------------------------------
+
+/// §10's `P.machine.thumbnailLongSide` (prototype `pubLongSide`): 1280 because that is the size every
+/// uploader displays a thumbnail at, so a bigger picture is rescaled by someone else with worse settings.
+/// The *long* side — a 9:16 thumbnail is 720×1280, not 1280 turned sideways.
+pub const THUMB_LONG_SIDE: u32 = 1280;
+
+/// §2's frame-box rule for the thumbnail: no aspect (or the row's `source`) means the video's own shape,
+/// which with nothing to read it off is 16:9; otherwise the picture's own ratio. The longer edge stops at
+/// [`THUMB_LONG_SIDE`] and both sides come out even — a chosen picture keeps its shape rather than being
+/// cropped to the project's, since choosing it *is* the choice of shape.
+///
+/// `aspect` is `"w:h"`, or empty / `source` for "the picture's own", in which case `wide`/`high` — the
+/// picture ffprobe reported — decide the shape and 16:9 is only the last resort when even those are unknown.
+pub fn thumb_box(aspect: &str, wide: u32, high: u32) -> (u32, u32) {
+    let own = (wide.max(1), high.max(1));
+    let (w, h) = match ratio(aspect) {
+        Some(shape) => shape,
+        // "source", empty, or an unparseable shape: the picture's own edges, and 16:9 if nothing is known.
+        None if wide > 0 && high > 0 => own,
+        None => (16, 9),
+    };
+    let (w, h) = (w.max(1), h.max(1));
+    // Scale from the longer edge so neither side is ever asked to exceed the tier.
+    if w >= h {
+        (THUMB_LONG_SIDE, even(THUMB_LONG_SIDE * h / w))
+    } else {
+        (even(THUMB_LONG_SIDE * w / h), THUMB_LONG_SIDE)
+    }
+}
+
+/// `w:h` as two whole numbers, or `None` for the row's non-shapes.
+fn ratio(aspect: &str) -> Option<(u32, u32)> {
+    let (w, h) = aspect.split_once(':')?;
+    let w: u32 = w.trim().parse().ok()?;
+    let h: u32 = h.trim().parse().ok()?;
+    (w > 0 && h > 0).then_some((w, h))
+}
+
+/// Rounded down to even: the encoders this page offers are all 4:2:0, which refuses a chroma sample on an
+/// odd edge, and rounding up would push the long side past [`THUMB_LONG_SIDE`].
+fn even(side: u32) -> u32 {
+    side - side % 2
+}
+
 /// §1: `Make base` on every non-base slot. The chosen reference goes to the front and what was the base
 /// joins the references behind it, so no picture is lost by re-pointing the edit. Slot 0 has no such
 /// button and out-of-range slots are refused.
