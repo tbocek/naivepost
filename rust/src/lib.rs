@@ -65,6 +65,7 @@ pub mod prepare_data;
 pub mod preview;
 pub mod produce_embed;
 pub mod produce_data;
+pub mod produce_details;
 pub mod produce_render;
 pub mod produce_runs;
 pub mod produce_screen;
