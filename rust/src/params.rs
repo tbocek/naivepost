@@ -42,6 +42,7 @@ use crate::cut_speed_pass;
 use crate::cut_effects_pass;
 use crate::cut_trim;
 use crate::preview;
+use crate::produce_subtitles;
 use crate::tools::{clips, cutpass, describe, retakes, textedit};
 use crate::wave;
 use crate::transcribe;
@@ -725,6 +726,23 @@ pub fn narrate() -> Vec<Param> {
         // reads both: a boundary held while a line speaks, and where ▶ drops the picture for a line) -----
         param("P.eng.narrationMaxExtendSeconds", num(narrate_preview::MAX_EXTEND_SECONDS), "narrate_preview::MAX_EXTEND_SECONDS"),
         param("P.eng.narrationRunInSeconds", num(narrate_screen::AUDITION_LEAD_SECONDS), "narrate_screen::AUDITION_LEAD_SECONDS"),
+    ]
+}
+
+/// §08 Produce's own rows (§10): the five numbers that build a cue and the size of one translation request.
+/// They live in `produce_subtitles`, which is the module whose rules read them, so this only catalogues them
+/// — the same split as every other section here.
+pub fn produce() -> Vec<Param> {
+    vec![
+        // --- cue building (§10's four `sub*` rows) ------------------------------------------------------
+        param("P.policy.subtitleBreakSeconds", num(produce_subtitles::SUBBREAK_SECONDS), "produce_subtitles::SUBBREAK_SECONDS"),
+        param("P.policy.subtitleRowChars", produce_subtitles::ROW_CHARS.to_string(), "produce_subtitles::ROW_CHARS"),
+        param("P.policy.subtitleMaxSeconds", num(produce_subtitles::MAX_SECONDS), "produce_subtitles::MAX_SECONDS"),
+        // §10 lists the hold and the floor beside the other three; both are S2's tidy, not S1's grouping.
+        param("P.policy.subtitleHoldSeconds", num(produce_subtitles::HOLD_SECONDS), "produce_subtitles::HOLD_SECONDS"),
+        param("P.policy.subtitleMinSeconds", num(produce_subtitles::MIN_SECONDS), "produce_subtitles::MIN_SECONDS"),
+        // --- one translation request's size (§10: new; the prototype sent the whole track) ---------------
+        param("P.machine.translateBatch", produce_subtitles::BATCH.to_string(), "produce_subtitles::BATCH"),
     ]
 }
 

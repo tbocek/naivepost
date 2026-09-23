@@ -266,7 +266,7 @@ pub fn srt_text(lines: &[Line]) -> String {
 
 /// A subtitle timecode: `HH:MM:SS,mmm`. Negative times clamp to zero — a word whose end was clamped
 /// below its start is corrupt input, and a negative timecode would not parse downstream.
-fn timecode(secs: f64) -> String {
+pub fn timecode(secs: f64) -> String {
     let secs = secs.max(0.0);
     let whole = secs as u64;
     let millis = ((secs - secs.floor()) * 1000.0 + 0.5) as u64;
