@@ -657,6 +657,17 @@ pub fn effects() -> Vec<Param> {
 /// px`, and §07's `Engineering: tick 100 ms · seek debounce 120 ms · autosave 400 ms`), which have no `P.` row to
 /// inherit — the same bare-prefix rule §06-effects#6 took for `machine.` and `preview.` values. They are spelled as
 /// §10 spells them so a reader comparing this list against that line is comparing the same words.
+///
+/// Two of §4's items have no row here, and each says why rather than being quietly skipped.
+/// `P.eng.speechCharsPerSecond` (§10:194, "15 (8..28)") is catalogued under the id §07-narrate#1-screen
+/// chose, `narrate.speechCharsPerSecond`, and its 8..28 floor and ceiling are absent because nothing corrects
+/// the estimate yet — [`narrate_screen::SPEECH_CHARS_PER_SECOND`] is the only one of the three a rule reads.
+/// `P.eng.narrationLeadSeconds`, `P.eng.narrationGapSeconds` and `P.eng.narrationMaxTempo` (F4.3's packing,
+/// growing and speeding) and the five automatic-reference values (`P.eng.refMinTakeSeconds`,
+/// `P.eng.refPadSeconds`, `P.machine.refWantSeconds`, `P.machine.refTakeMax`, `P.eng.refMinWordsPerSecond`,
+/// F4.6/F4.7's reference builder) have no rows because no rule in this tree reads them yet — the reason
+/// [`effects`] gives for the label form's floor and the decorations density: a number nothing reads has no
+/// module to live in.
 pub fn narrate() -> Vec<Param> {
     vec![
         // --- the take band (§1's number 10) ---------------------------------------------------------
@@ -706,6 +717,10 @@ pub fn narrate() -> Vec<Param> {
         // §10 spells this default as "project language", so the row spells that; the constant named is the
         // fallback the prototype hard-coded, which is all a project without a language can be given.
         param("P.policy.ttsLanguage", "project language".to_string(), narrate_tts::LANGUAGE_SOURCE),
+        // --- P.eng.emotionAlpha (§4, and the same alpha the frozen cache key spells) ------------------------
+        // F4.4 sends it for every take that is not an exact emotion vector; it rides in the request's
+        // `options`, and §4 lists it among the parameters this page's narration uses.
+        param("P.eng.emotionAlpha", narrate_tts::EMOTION_ALPHA.to_string(), "narrate_tts::EMOTION_ALPHA"),
         // --- what the preview holds and how far it looks ahead (§10 lines 191 and 193; F4.5 is the flow that
         // reads both: a boundary held while a line speaks, and where ▶ drops the picture for a line) -----
         param("P.eng.narrationMaxExtendSeconds", num(narrate_preview::MAX_EXTEND_SECONDS), "narrate_preview::MAX_EXTEND_SECONDS"),
