@@ -753,6 +753,15 @@ pub fn re_roll_refusal(clip_no: usize, has_line: bool) -> Option<String> {
     (!has_line).then(|| format!("clip {clip_no} has no line to re-roll"))
 }
 
+/// §6 (`re-rolling an already heard or edited narration needs the Replace tick`): ▶ refuses to overwrite a
+/// take somebody has listened to or changed until the page is told that is what it is for. The refusal says
+/// what to click, because nothing else clears it — and the tick never defaults on ([`crate::narrate_details`]).
+pub fn replace_refusal(heard_or_edited: bool, replace_ticked: bool) -> Option<&'static str> {
+    (heard_or_edited && !replace_ticked).then_some(
+        "this narration was already heard or edited \u{2014} tick \u{201c}Replace\u{201d} to write another take over it",
+    )
+}
+
 /// §1's time entry (`mm:ss.s, session clock`): the face is [`preview::clock`]'s, so a row and the transport agree.
 pub fn time_field(shown: f64) -> String {
     preview::clock(Some(shown))
