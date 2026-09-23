@@ -43,6 +43,7 @@ use crate::cut_effects_pass;
 use crate::cut_trim;
 use crate::preview;
 use crate::produce_subtitles;
+use crate::produce_runs;
 use crate::tools::{clips, cutpass, describe, retakes, textedit};
 use crate::wave;
 use crate::transcribe;
@@ -743,6 +744,9 @@ pub fn produce() -> Vec<Param> {
         param("P.policy.subtitleMinSeconds", num(produce_subtitles::MIN_SECONDS), "produce_subtitles::MIN_SECONDS"),
         // --- one translation request's size (§10: new; the prototype sent the whole track) ---------------
         param("P.machine.translateBatch", produce_subtitles::BATCH.to_string(), "produce_subtitles::BATCH"),
+        // --- §F5.7's page runs: the cap an upload puts on a picture, and the snap grid its words box stops on.
+        param("P.eng.jpegMaxBytes", produce_runs::JPEG_MAX_BYTES.to_string(), "produce_runs::JPEG_MAX_BYTES"),
+        param("P.policy.publishWordsSnapPx", produce_runs::words_snap_px().to_string(), "produce_runs::words_snap_px"),
     ]
 }
 
