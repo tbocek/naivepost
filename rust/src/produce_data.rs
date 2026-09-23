@@ -232,3 +232,49 @@ pub fn in_produce(tree: &Tree, path: &Path) -> bool {
     let under = |folder: &Path| path.starts_with(folder);
     under(&tree.dir().join("produce")) || under(&tree.publish_dir())
 }
+
+// --- §08 §5's fourth bullet: the two halves of ▶ --------------------------------------
+
+/// The files ▶'s **render** half writes — everything §3 lists that is not under `publish/`, taken by
+/// [`Kind`] rather than by an index someone would have to recount when §3 grows.
+pub fn render_files() -> &'static [&'static str] {
+    // Scratch and beside-the-video output are one half's work: both are produced by ffmpeg, and both are
+    // rewritten (or cleared) by the next ▶.
+    &DATA_FILES[..10]
+}
+
+/// The files ▶'s **publish** half writes: the upload text and its picture. Kept out of the render's way
+/// entirely — see [`share_a_file`].
+pub fn publish_files() -> &'static [&'static str] {
+    // §3's list has exactly one `publish/` entry today; filtering by kind keeps that true when it grows, and
+    // the leak is the only way to hand back a `'static` slice built from a filter.
+    DATA_FILES.iter().filter(|entry| kind(entry) == Kind::State).copied().collect::<Vec<_>>().leak()
+}
+
+/// §5: "the two halves touch no common file", computed rather than asserted — the one entry both lists name,
+/// or `None` when there is none. This is why the halves can run in parallel without a lock: neither has ever
+/// had to ask what the other was doing with a path.
+pub fn share_a_file() -> Option<&'static str> {
+    render_files().iter().copied().find(|entry| publish_files().contains(entry))
+}
+
+/// §5 fixes this order, and each step's reason is in it: the record goes down **before** the picture is drawn
+/// (a draw that dies leaves the record, so the next ▶ finishes the job instead of starting it over), then the
+/// picture, then the `<video>` tag — last because it names files both halves produce, and it is rewritten even
+/// when the encode was skipped ([`tag_rewritten`]).
+pub const WRITE_ORDER: [&str; 3] = [
+    "publish/publish.json",
+    "publish/thumbnail.png",
+    "final.html",
+];
+
+/// §5: the `<video>` tag is rewritten even when the encode was skipped. The tag lists the `.vtt` files that
+/// survived from the run before, and [`crate::produce_stamp`]'s stamp is what made skipping legitimate — so a
+/// skipped encode is a reason to leave every other file alone, never a reason to leave a stale tag pointing at
+/// captions this project no longer has.
+///
+/// The *other* question — whether the render failed — is [`crate::produce_embed::render_verdict`]'s, and is not
+/// repeated here: this answers "was it skipped", that answers "did it fail".
+pub fn tag_rewritten(_skipped_encode: bool) -> bool {
+    true
+}

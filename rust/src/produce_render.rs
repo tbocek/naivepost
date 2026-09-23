@@ -726,6 +726,21 @@ pub fn audio_codec(container: project::Container) -> &'static str {
 ///
 /// `inputs` is what the caller resolved: `(kind, path_or_none)` pairs in that order, where a `None` path is
 /// the silent `anullsrc` source. Nothing here is executed; [`command_log`] prints it.
+/// §5 (`-t` on the output for inserts, sounds, freezes, rated clips): how long this clip's file runs, when
+/// its input's own clock does not already answer that.
+///
+/// An insert or a pasted stretch names an asset in [`Clip::source`] whose length is its own; a rated clip
+/// must stop when the cut says, not when the recording does. A **freeze** is covered by the rate arm: §5's
+/// stop reaches here as `rate == 0.0` with [`Clip::on_screen`] holding the still's length
+/// ([`crate::narrate_pass::on_screen`]), and 0.0 differs from 1.0, so it is trimmed like any other rated clip.
+///
+/// Plain footage at 1× answers `None`: the recording's remaining length is already the right length, and a
+/// `-t` computed from session seconds would trim a frame off the end for no reason.
+pub fn output_limit(clip: &Clip) -> Option<String> {
+    let rated = (clip.rate - 1.0).abs() > f64::EPSILON;
+    (!clip.source.is_empty() || rated).then(|| format!("{:.3}", clip.on_screen))
+}
+
 pub fn encode_command(
     clip: &Clip,
     settings: &Produce,
@@ -772,6 +787,11 @@ pub fn encode_command(
         "-ac".into(),
         if settings.mono { "1" } else { "2" }.into(),
     ]);
+    // §5: the length goes on the output, after every input and filter argument — never before `-i`, where it
+    // would trim what the filters were built from.
+    if let Some(limit) = output_limit(clip) {
+        argv.extend(["-t".into(), limit]);
+    }
     argv.push(out.display().to_string());
     let _ = filter_inputs;
     argv
