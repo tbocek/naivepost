@@ -25,6 +25,7 @@ use crate::fx_volume;
 use crate::fx_zoom;
 use crate::render_fx;
 use crate::hand_edit;
+use crate::llm_liveness;
 use crate::llm_retry;
 use crate::narrate_pass;
 use crate::narrate_preview;
@@ -378,6 +379,13 @@ fn engineering() -> Vec<Param> {
             "llm_retry::BACKOFF_SECONDS",
         ),
         param("llm.retrySeconds", llm_retry::RETRY_SECONDS.to_string(), "llm_retry::RETRY_SECONDS"),
+        // §09 §4's liveness bounds and the gate's default. These three DO have rows of their own in §10, so they
+        // carry real `P.` ids (unlike the two above). One `P.machine.slots` row covers all seven models: each keeps
+        // its own count in `settings::Slots`, and one value per model is what makes two models on one GPU two
+        // slot counts rather than one shared number.
+        param("P.eng.llmStallMinutes", llm_liveness::STALL_MINUTES.to_string(), "llm_liveness::STALL_MINUTES"),
+        param("P.eng.llmWholeMinutes", llm_liveness::WHOLE_MINUTES.to_string(), "llm_liveness::WHOLE_MINUTES"),
+        param("P.machine.slots", llm_liveness::DEFAULT_SLOTS.to_string(), "llm_liveness::DEFAULT_SLOTS"),
     ]
 }
 
