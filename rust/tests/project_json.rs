@@ -65,6 +65,10 @@ fn sec_01_project_and_files_2_naivepostjson_empty_file_holds_the_table_defaults(
     assert!(p.produce.translate.is_empty());
     assert_eq!(p.produce.game_volume, 0.22);
     assert_eq!(p.produce.crf, 24);
+    // §A's ticks: frame timing and mono start off, frame edges start blurred.
+    assert!(!p.produce.vfr);
+    assert!(!p.produce.mono);
+    assert!(p.produce.blurred_edges);
 
     // Upload text is absent until it is written.
     assert_eq!(p.publish, None);
@@ -109,6 +113,11 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
             translate: vec!["de".to_string()],
             game_volume: 0.5,
             crf: 18,
+            // §A's three ticks, all away from their defaults so a round trip proves they are stored:
+            // frame timing off -> on, mono off -> on, blurred edges on -> off.
+            vfr: true,
+            mono: true,
+            blurred_edges: false,
         },
         publish: Some(Publish {
             frames: vec!["project:prepare/inputs/frames/a/f.jpg".to_string()],

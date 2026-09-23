@@ -180,6 +180,17 @@ pub struct Produce {
     /// narration is off, which is `no_narration`, not this value.
     pub game_volume: f64,
     pub crf: u32,
+    /// §A "Frame timing", the tick `peak rate (VFR)`: the frame rate above is a ceiling rather than a
+    /// target, so the encoder only reaches for it when a frame would otherwise be dropped. Off by default.
+    /// Part of the render's stamp — flipping a tick makes the encode stale, since it changes the file.
+    pub vfr: bool,
+    /// §A "Channels", the tick `mono`: mix the finished audio down to a single channel. Off by default,
+    /// and part of the render's stamp for the same reason as [`Produce::vfr`].
+    pub mono: bool,
+    /// §A "Frame edges", the tick `blurred`: fill the empty edges of the frame with a blown-up, blurred
+    /// copy of the picture itself instead of black. ON by default — the only tick that is — and part of
+    /// the render's stamp, as every other setting here is.
+    pub blurred_edges: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -262,6 +273,9 @@ impl Default for Produce {
             translate: Vec::new(),
             game_volume: 0.22,
             crf: 24,
+            vfr: false,
+            mono: false,
+            blurred_edges: true,
         }
     }
 }
