@@ -85,6 +85,7 @@ pub mod publish;
 pub mod probes;
 pub mod rescan;
 pub mod requests;
+pub mod request_timing;
 pub mod roles;
 pub mod run;
 pub mod save_as;
