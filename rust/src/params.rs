@@ -316,6 +316,14 @@ fn audio() -> Vec<Param> {
             num(align::PAD),
             "align::PAD",
         ),
+        // §10's row for the sanity ceiling on a returned "second": one constant answers both this row
+        // and `time()`'s bare-key branch, so the catalogue cannot drift from the rule. A bare number
+        // past it was a sample count that did not say so.
+        param(
+            "P.eng.alignClipMaxSeconds",
+            num(align::PLAIN_AS_SAMPLES),
+            "align::PLAIN_AS_SAMPLES",
+        ),
     ]
 }
 

@@ -38,7 +38,9 @@ pub const PAD: f64 = 0.25;
 pub const BARE_WARN: f64 = 10.0;
 pub const BARE_SHARE: f64 = 0.08;
 /// S4: comfortably past the longest clip this sends ([`WINDOW`]) — a "second" beyond it did not mean
-/// seconds, it meant samples that forgot to say so (gui/align.go:230 `alignClipMax`).
+/// seconds, it meant samples that forgot to say so (gui/align.go:230 `alignClipMax`). §10 files this
+/// bound as `P.eng.alignClipMaxSeconds` (120, "sanity ceiling on a returned second"), and
+/// `params::prepare()` rows it from this constant.
 pub const PLAIN_AS_SAMPLES: f64 = 120.0;
 
 /// S1: the aligners to try, best first — a list and not a choice, because a catalog entry is a claim
