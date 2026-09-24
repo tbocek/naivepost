@@ -34,6 +34,7 @@ use crate::narrate_preview;
 use crate::narrate_screen;
 use crate::narrate_tts;
 use crate::prepare;
+use crate::prepare_decisions;
 use crate::requests;
 use crate::roles;
 use crate::separate;
@@ -325,6 +326,14 @@ fn engineering() -> Vec<Param> {
             "frames::STORED_FRAME_JPEG_QUALITY",
         ),
         param("P.eng.keepReachWords", hand_edit::KEEP_REACH.to_string(), "hand_edit::KEEP_REACH"),
+        // §10's row for the fuzzy repeat matcher's step-over: how many words of the later take may be skipped
+        // while looking for the next tail word. One constant answers both this row and `run_from`'s loop, so the
+        // catalogue cannot drift from the rule that reads it.
+        param(
+            "P.eng.repeatSkip",
+            prepare_decisions::TAIL_SKIP_MAX.to_string(),
+            "prepare_decisions::TAIL_SKIP_MAX",
+        ),
         // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
         param(
             "P.machine.strayWordRatio",

@@ -20,8 +20,9 @@ pub const TAIL_MATCH_MIN: f64 = 0.7;
 
 /// How many words of the later take may be stepped over while looking for the next tail word.
 ///
-/// Also §12 S1's number ("≤ 3 words skipped"), no `P.` id. It bounds the step-over in [`suffix_match`]
-/// directly; the prototype's own skip constant is the same three (`gui/retake.go`, `repeatSkip`).
+/// §10 files this bound as `P.eng.repeatSkip` (3, "fuzzy repeat match: words skipped"; prototype
+/// `repeatSkip`, gui/retake.go), and §12 S1 gives the same number in words ("≤ 3 words skipped").
+/// `params::prepare()` rows it from this constant. It bounds the step-over in [`suffix_match`] directly.
 pub const TAIL_SKIP_MAX: usize = 3;
 
 /// How many words may match imperfectly — heard differently, one edit away — before the run is refused.
