@@ -658,6 +658,15 @@ pub fn effects() -> Vec<Param> {
             num(cut_effects_pass::ZOOM_HEIGHT),
             "cut_effects_pass::ZOOM_HEIGHT",
         ),
+        // The cap on effects per cut reply. §10 spells its own qualification into the row — "effectively
+        // none: the prompt decides" — and that is what the constant says too: this bounds a runaway
+        // answer, it does not curate the edit. Counted through `counts_against_effect_cap`, which
+        // exempts a whole-segment rate per 05-cut#8.
+        param(
+            "P.machine.maxProposedEffects",
+            cut_effects_pass::MAX_PROPOSED_EFFECTS.to_string(),
+            "cut_effects_pass::MAX_PROPOSED_EFFECTS",
+        ),
         // --- the floors each form holds to when Apply is pressed --------------------------------------
         param("effects.zoomFloorSeconds", num(fx_zoom::MIN_SECONDS), "fx_zoom::MIN_SECONDS"),
         param("effects.textMinSeconds", num(fx_text::MIN_SECONDS), "fx_text::MIN_SECONDS"),

@@ -262,6 +262,54 @@ pub fn defaults(kind: &str, at: f64, span: (f64, f64), gain: Option<f64>) -> Fx 
 
 // --- S5: what the log says ------------------------------------------------------------------------------------------------
 
+// --- the cap on what one reply may propose -------------------------------------------------------
+
+/// P.machine.maxProposedEffects — the ceiling on how many effects one cut reply may propose.
+/// `cut_effects_pass::MAX_PROPOSED_EFFECTS`, the prototype's `fxMaxProposed`.
+///
+/// A thousand is deliberately not a shape: §10 says so itself ("effectively none: the prompt decides"),
+/// and §F3.11 keeps the real limit as the prompt's own wording, "few and deliberate: three or four
+/// across five minutes". So this number never curates an edit — it bounds a runaway reply, the answer
+/// that streams ten thousand zooms because the model lost the thread. That is also why it lives here
+/// rather than in the policy home: nobody tunes it per project.
+pub const MAX_PROPOSED_EFFECTS: usize = 1000;
+
+/// How much one kind of effect counts against [`MAX_PROPOSED_EFFECTS`].
+///
+/// Zero for a speed, one for everything else. The exemption is [`cut_suggest::exempt_from_decorations_cap`]
+/// and its reason is 05-cut#8: a rate the cut asked for decides *how long the segment runs*, so letting
+/// the caption count decide whether the cap is blown would let the decoration pass hold the cut's shape
+/// to ransom. Every other kind adds something on top and is charged one.
+pub fn counts_against_effect_cap(kind: crate::cut::EffectKind) -> usize {
+    if crate::cut_suggest::exempt_from_decorations_cap(kind) {
+        0
+    } else {
+        1
+    }
+}
+
+/// What a proposed list counts against the cap.
+///
+/// An effect whose `kind` string this build does not recognise is charged one rather than waved through:
+/// a cap that cannot see a kind is no cap at all, and charging the unknown is the conservative side of
+/// the mistake — it trims a decoration nobody can name instead of silently lifting the bound.
+pub fn proposed_effect_count(fx: &[crate::cut::Fx]) -> usize {
+    fx.iter()
+        .map(|effect| match effect.effect_kind() {
+            Some(kind) => counts_against_effect_cap(kind),
+            None => 1,
+        })
+        .sum()
+}
+
+/// Whether a counted reply fits under the cap.
+///
+/// Inclusive: a reply of exactly the cap is a reply the cap permits, which is the reading §10's word
+/// "cap" carries and the boundary a retune must not shift by accident.
+pub fn effect_cap_allows(count: usize) -> bool {
+    count <= MAX_PROPOSED_EFFECTS
+}
+
 /// F3.11 S5 (`"!!! effects: no usable answer -- the cut stands without them"`): the pass gave up after its one retry and
 /// the cut keeps no decorations. ASCII `--` this time, verified against `spec/06-effects.md`'s bytes — as in F3.9's
 /// captions line and unlike F3.10's two, which use an em dash; each flow quotes its own punctuation and this file does
