@@ -53,7 +53,10 @@ pub const EDGE_TAIL_DB: f64 = 12.0;
 
 /// How far past the aligner's edge a word's own sound is followed. The aligner is within a fiftieth on
 /// an onset and can be a touch early on a trailing `s` or `k`; a quarter second is that, and not the
-/// breath after.
+/// breath after. §10 files it as `P.eng.edgeTailMaxSeconds` (0.25, "word-fenced edge placement:
+/// longest tail"; prototype `edgeTailMax`, gui/retake_edge.go), and `params::prepare()` rows it from
+/// this constant. The level bound beside it is `P.eng.edgeTailDB`: twelve decibels says which sound
+/// is still the word, this says how far to keep chasing it.
 pub const EDGE_TAIL_MAX: f64 = 0.25;
 
 /// How far into the gap the quietest moment is looked for. Past the word's own tail the gap is breath

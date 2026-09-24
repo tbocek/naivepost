@@ -380,6 +380,14 @@ fn engineering() -> Vec<Param> {
             num(edges::EDGE_TAIL_DB),
             "edges::EDGE_TAIL_DB",
         ),
+        // §10's row for how long a word's tail is followed at most: one constant answers both this row
+        // and `Edges::end_after`/`start_before`, so the catalogue cannot drift from the rule that
+        // reads it.
+        param(
+            "P.eng.edgeTailMaxSeconds",
+            num(edges::EDGE_TAIL_MAX),
+            "edges::EDGE_TAIL_MAX",
+        ),
         // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
         param(
             "P.machine.strayWordRatio",
