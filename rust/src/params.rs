@@ -67,11 +67,15 @@ pub struct Param {
     pub from: &'static str,
 }
 
-/// Which of §10's three homes an id belongs to.
+/// Which of §10's homes an id belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     /// Set per project by the User Context.
     Policy,
+    /// §3's fourth home: the project's own tab controls. §10 spells `P.` for one row
+    /// only (`P.project.frameInterval`); the rest of that section's values carry a bare
+    /// `project.` prefix and land in [`Family::Other`], as every unrowed id here does.
+    Project,
     /// The Settings dialog / `llm.conf`.
     Machine,
     /// Fixed in code.
@@ -842,6 +846,8 @@ pub fn find(id: &str) -> Option<Param> {
 pub fn family(id: &str) -> Family {
     if id.starts_with("P.policy.") {
         Family::Policy
+    } else if id.starts_with("P.project.") {
+        Family::Project
     } else if id.starts_with("P.machine.") {
         Family::Machine
     } else if id.starts_with("P.eng.") {
