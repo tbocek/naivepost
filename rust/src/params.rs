@@ -338,6 +338,14 @@ fn audio() -> Vec<Param> {
             num(align::BARE_SHARE),
             "align::BARE_SHARE",
         ),
+        // §10's row for the lop-sided split note: one constant answers both this row and
+        // `lopsided()`, so the catalogue cannot drift from the rule. The note is what lets the user
+        // drop the empty half by hand; the app never discards a stem on its own.
+        param(
+            "P.eng.sepLopsidedDB",
+            num(separate::LOPSIDED_DB),
+            "separate::LOPSIDED_DB",
+        ),
     ]
 }
 

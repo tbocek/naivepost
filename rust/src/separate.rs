@@ -32,7 +32,10 @@ pub const SEEK_WINDOW: f64 = 20.0;
 
 /// S6: how far under the mix the rest has to sit before it is worth saying so. A residual 13 dB down
 /// is a recording the model heard as voice from end to end — other players talking in game chat, say
-/// — and the half named for the room then has next to nothing in it.
+/// — and the half named for the room then has next to nothing in it. §10 files this bound as
+/// `P.eng.sepLopsidedDB` (10, "a stem this much quieter is dropped"), and `params::prepare()` rows it
+/// from this constant. What §10 calls "dropped" is the user's decision, made on reading the note: the
+/// app marks the split and leaves both halves on disk rather than deleting one.
 pub const LOPSIDED_DB: f64 = 10.0;
 
 /// S3's mix of "everything that isn't the voice": `normalize=0` because these stems were one
