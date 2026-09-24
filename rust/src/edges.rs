@@ -31,7 +31,9 @@ pub const EDGE_REACH: f64 = 0.8;
 pub const EDGE_PAD: f64 = 0.05;
 
 /// How far behind its sound a stamp may run and still be that sound's — half a second was measured on a
-/// take's opening word.
+/// take's opening word. §10 files it as `P.eng.lateStampSeconds` (0.6, "envelope-only edge placement:
+/// how late a stamp may be"; prototype `lateStamp`, gui/retake_edge.go), and `params::prepare()` rows
+/// it from this constant.
 pub const LATE_STAMP: f64 = 0.6;
 
 /// With aligned words, how far below a word's own level its tail still counts as the word. On the meter

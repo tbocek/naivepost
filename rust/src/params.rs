@@ -358,6 +358,13 @@ fn engineering() -> Vec<Param> {
             num(edges::EDGE_REACH),
             "edges::EDGE_REACH",
         ),
+        // §10's row for how late a stamp may be behind its sound: one constant answers both this row
+        // and `Edges::start_at`, so the catalogue cannot drift from the rule that reads it.
+        param(
+            "P.eng.lateStampSeconds",
+            num(edges::LATE_STAMP),
+            "edges::LATE_STAMP",
+        ),
         // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
         param(
             "P.machine.strayWordRatio",
