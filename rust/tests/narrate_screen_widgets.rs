@@ -550,7 +550,10 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
             "P.policy.narrationMinWords",
             "P.policy.narrationMaxWords",
             "P.policy.narrationWordsPerSecond",
-            "P.policy.ttsLanguage"
+            "P.policy.ttsLanguage",
+            // F4.1 S4's toggle: §07 names it in the flow diagram, not in its own §4 list, so it is
+            // carried here with that reason rather than being read as a row from another chapter.
+            "P.policy.narrationRewrite"
         ],
         "{foreign:?}"
     );

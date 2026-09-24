@@ -145,6 +145,11 @@ pub struct Policy {
     pub marking_pass: Field<MarkingPass>,
     #[serde(rename = "cutMode")]
     pub cut_mode: Field<CutMode>,
+    /// `P.policy.narrationRewrite`: ▶ on Narrate rewrites the lines that already exist too.
+    /// Off (the default) only clips without a line get one — the promise the Readme made and the
+    /// prototype broke by always rewriting every line.
+    #[serde(rename = "narrationRewrite")]
+    pub narration_rewrite: Field<bool>,
 }
 
 impl Default for Policy {
@@ -152,6 +157,7 @@ impl Default for Policy {
         Self {
             marking_pass: Field { value: MarkingPass::Retakes, origin: Origin::Default },
             cut_mode: Field { value: CutMode::Model, origin: Origin::Default },
+            narration_rewrite: Field { value: false, origin: Origin::Default },
         }
     }
 }

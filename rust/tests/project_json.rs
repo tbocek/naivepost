@@ -101,6 +101,7 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
                 value: project::CutMode::Words,
                 origin: project::Origin::Model,
             },
+            ..project::Policy::default()
         },
         produce: project::Produce {
             container: project::Container::Mkv,

@@ -769,6 +769,19 @@ pub fn narrate() -> Vec<Param> {
         // reads both: a boundary held while a line speaks, and where ▶ drops the picture for a line) -----
         param("P.eng.narrationMaxExtendSeconds", num(narrate_preview::MAX_EXTEND_SECONDS), "narrate_preview::MAX_EXTEND_SECONDS"),
         param("P.eng.narrationRunInSeconds", num(narrate_screen::AUDITION_LEAD_SECONDS), "narrate_screen::AUDITION_LEAD_SECONDS"),
+        // --- F4.1 S4's toggle: off (the default) ▶ writes a line only for clips that have none; on,
+        // every clip's line is rewritten. Spelled as §10 spells it, read from the project's own
+        // default. §07's own §4 list does not name this id — it appears in that chapter only in F4.1's
+        // flow diagram — so `narrate_parameters.rs`'s foreign-row whitelist carries it with that note.
+        param(
+            "P.policy.narrationRewrite",
+            if project::Policy::default().narration_rewrite.value {
+                "on".to_string()
+            } else {
+                "off".to_string()
+            },
+            "project::Policy::default — narration_rewrite",
+        ),
     ]
 }
 

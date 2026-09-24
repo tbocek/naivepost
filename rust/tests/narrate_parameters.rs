@@ -408,7 +408,10 @@ fn sec_07_narrate_4_parameters_used_s7_every_row_names_where_its_value_lives() {
             "P.policy.narrationMinWords",
             "P.policy.narrationMaxWords",
             "P.policy.narrationWordsPerSecond",
-            "P.policy.ttsLanguage"
+            "P.policy.ttsLanguage",
+            // F4.1 S4's toggle: §07 names it in the flow diagram, not in its own §4 list, so it is
+            // carried here with that reason rather than being read as a row from another chapter.
+            "P.policy.narrationRewrite"
         ],
         "{foreign:?} — anything else this section carries belongs in another chapter's table"
     );
