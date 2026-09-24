@@ -28,7 +28,9 @@ pub const MIN_PIECE: f64 = 15.0;
 /// §10 files it as `P.eng.alignCutSeekSeconds` (4) and `params::prepare()` rows it from here.
 pub const CUT_SEEK: f64 = 4.0;
 /// S3: how much of the quiet either side of a window's speech goes with it — a word fades out below
-/// the silence threshold before it is over (gui/align.go:674 `alignSoundPad`).
+/// the silence threshold before it is over (gui/align.go:674 `alignSoundPad`). §10 files this bound as
+/// `P.eng.alignSoundPadSeconds` (0.25, "sound kept around an alignment piece"), and
+/// `params::prepare()` rows it from this constant.
 pub const PAD: f64 = 0.25;
 /// S6: bare talking worth saying out loud, in seconds and as a share of the talking. Both, because ten
 /// bare seconds of a four-hour session is rounding and ten bare seconds of a twenty-second clip is the

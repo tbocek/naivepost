@@ -309,6 +309,13 @@ fn audio() -> Vec<Param> {
             num(align::CUT_SEEK),
             "align::CUT_SEEK",
         ),
+        // §10's row for the sound kept on each side of an alignment piece: one constant answers both
+        // this row and `trim()`/`bare_voiced()`, so the catalogue cannot drift from the rule.
+        param(
+            "P.eng.alignSoundPadSeconds",
+            num(align::PAD),
+            "align::PAD",
+        ),
     ]
 }
 
