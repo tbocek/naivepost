@@ -71,6 +71,7 @@ pub mod project_settings;
 pub mod prompts;
 pub mod prepare;
 pub mod prepare_data;
+pub mod prepare_decisions;
 pub mod preview;
 pub mod prompt_assembly;
 pub mod produce_embed;
