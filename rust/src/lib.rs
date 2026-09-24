@@ -91,6 +91,7 @@ pub mod snapshot;
 pub mod sources;
 pub mod startup;
 pub mod subprocess;
+pub mod tab_states;
 pub mod textfmt;
 pub mod transcribe;
 pub mod tool_loop;
