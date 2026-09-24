@@ -350,6 +350,14 @@ fn engineering() -> Vec<Param> {
             num(edges::WORD_PAD),
             "edges::WORD_PAD",
         ),
+        // §10's row for the reach of the envelope-only edge walk: how far off its stamp an edge may be
+        // moved when there are no word times to fence it. One constant answers both this row and
+        // `Edges::end_before`/`start_at`, so the catalogue cannot drift from the rule that reads it.
+        param(
+            "P.eng.edgeReachSeconds",
+            num(edges::EDGE_REACH),
+            "edges::EDGE_REACH",
+        ),
         // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
         param(
             "P.machine.strayWordRatio",

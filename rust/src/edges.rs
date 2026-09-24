@@ -21,7 +21,10 @@ use crate::wave::Wave;
 pub const WORD_PAD: f64 = 0.08;
 
 /// How far an edge may be moved off its stamp. A stamp half a second late is what was measured; a sound
-/// a whole second away is a different sound.
+/// a whole second away is a different sound. This is the reach of the ENVELOPE-ONLY placement — with
+/// aligned word times the words fence the edge and this bound is never consulted. §10 files it as
+/// `P.eng.edgeReachSeconds` (0.8, "envelope-only edge placement: search reach"; prototype
+/// `retake_edge`, gui/retake_edge.go), and `params::prepare()` rows it from this constant.
 pub const EDGE_REACH: f64 = 0.8;
 
 /// What is left of a sound at a cut once the envelope has placed it, in seconds.

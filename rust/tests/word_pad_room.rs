@@ -149,12 +149,11 @@ fn p_eng_wordpadseconds_s4_a_room_not_a_minimum_and_not_its_neighbours() {
     let (marks, _) = edge::place_edges(vec![mark(1.52, 4.0, 0.0, 4.0)], &[w], none, &[]);
     assert_eq!(marks[0].s, 1.52, "the pad does not override where the mark already sat");
 
-    // The stamp's word is the one starting within one pad of it. `word_at` is private, so this is exercised
-    // through `place_edges`, which holds the resume at `again - WORD_PAD` when nothing was said between the
-    // mark and its retake: a stamp one pad off the word keeps that room (4.92), while a stamp 0.2 s off —
-    // outside the pad — finds no named word and the edge stays where the mark put it.
+    // A stamp ON the retake's first word's own start opens the resume to the room the pad leaves before
+    // that word (`again - WORD_PAD`); a stamp anywhere past the start sits beyond a word spoken between
+    // the mark's end and itself, so the fence holds and the resume does not open there at all.
     let words = [word("first", 5.0, 5.4)];
-    let (marks, _) = edge::place_edges(vec![mark(1.0, 4.6, 5.08, 4.0)], &words, none, &[]);
+    let (marks, _) = edge::place_edges(vec![mark(1.0, 4.6, 5.0, 4.0)], &words, none, &[]);
     assert_eq!(marks[0].to, 4.92, "a stamp one pad off keeps the room in front of its word");
     assert_eq!(marks[0].to, 5.0 - edge::WORD_PAD, "and that room is exactly P.eng.wordPadSeconds");
 
