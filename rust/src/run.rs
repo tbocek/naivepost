@@ -94,8 +94,35 @@ pub fn step(page: Page) -> Step {
     }
 }
 
-/// How many narrator slots a project has (prototype `narratorSlots`, gui/sources.go:28).
+/// How many narrator slots a project has. `P.policy.narratorSlots` (default 4; prototype
+/// `narratorSlots`, gui/sources.go:28), whose meaning column §10 leaves blank — the prototype's own
+/// comment says what the number is for: "how many people a session can name. Four, because that is
+/// what fits on a row as a digit and what a group recording tends to hold; the rest of the voices
+/// stay untagged and are still transcribed."
+///
+/// Deliberately not a [`crate::params`] row: §04#4 does not name this id among the parameters it
+/// lists (and `rust/tests/prepare_parameters.rs` pins that list by ORDER), nor does §07#4 (whose
+/// foreign-row whitelist `narrate_parameters.rs` / `narrate_screen_widgets.rs` check). The value
+/// lives with the rule that reads it, as every `P.*` value must;
+/// [`crate::params::family`] still answers `Family::Policy` from the prefix.
 pub const NARRATOR_SLOTS: usize = 4;
+
+/// Whether `slot` names one of this project's slots. 0 means untagged and is not a slot, and neither
+/// is anything past the last one — a project file carrying `narrator5` when there are four slots is
+/// stripped on load ([`crate::sources::clean_on_load`]), not silently honoured.
+pub fn is_slot(slot: u32) -> bool {
+    (1..=NARRATOR_SLOTS as u32).contains(&slot)
+}
+
+/// A slot as its 0-based index into the snapshot's `narrators` list, or `None` for a value that is
+/// not a slot — so no caller indexes that list with a wild number from a project file.
+pub fn slot_index(slot: u32) -> Option<usize> {
+    if is_slot(slot) {
+        Some(slot as usize - 1)
+    } else {
+        None
+    }
+}
 
 /// The sources as they were when ▶ was pressed.
 ///
@@ -126,8 +153,8 @@ pub fn snapshot_sources(project: &Project) -> Snapshot {
             snap.voice.push(source.path.clone());
         }
         let slot = source.narrator;
-        if (1..=NARRATOR_SLOTS as u32).contains(&slot) {
-            snap.narrators[slot as usize - 1] = Some(source.path.clone());
+        if let Some(index) = slot_index(slot) {
+            snap.narrators[index] = Some(source.path.clone());
         }
     }
     snap
