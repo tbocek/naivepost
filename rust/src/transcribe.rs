@@ -32,6 +32,14 @@ pub const MERGE_NEAR: f64 = 1.0;
 
 /// S5/S6: same-speaker turns closer than this are one turn (`diarTurnGap`). Gluing them first is what
 /// stops a speaker who paused from being two people for one word each.
+///
+/// §10 files it as `P.eng.turnGapSeconds` (0.5, "gap that ends a turn"; prototype `diarTurnGap`,
+/// gui/pipeline.go), and `params::prepare()` rows it from this constant. The bound is INCLUSIVE
+/// (`<=`): exactly this much of a gap still leaves one turn, so a breath of precisely 0.5 s does not
+/// end it. Two further things the comparison in `glue_turns` assumes: it looks only at the LAST kept
+/// turn, so the diarizer's answer must arrive in time order — which it does, and is why gluing is
+/// idempotent over what was already written; and a later turn ending before the kept one does not
+/// shorten it (`end > previous.1`), so a turn keeps the widest span it has been shown.
 pub const TURN_GLUE: f64 = 0.5;
 
 /// S6: a word no turn covers and none is near. Kept as the running speaker while a segment is open,

@@ -288,6 +288,14 @@ fn audio() -> Vec<Param> {
             num(transcribe::MERGE_NEAR),
             "transcribe::MERGE_NEAR",
         ),
+        // §10's row for the gap that ends a turn: one constant answers both this row and
+        // `transcribe::glue_turns`' comparison, so the catalogue cannot drift from the rule that
+        // reads it.
+        param(
+            "P.eng.turnGapSeconds",
+            num(transcribe::TURN_GLUE),
+            "transcribe::TURN_GLUE",
+        ),
         param(
             "P.eng.asrSampleRate",
             transcribe::SAMPLE_RATE.to_string(),
