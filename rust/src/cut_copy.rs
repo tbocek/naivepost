@@ -114,8 +114,7 @@ pub fn copied_status(hand: &Hand) -> String {
 /// "the red line" is not yet a second (F2.4 owns where the line comes from).
 pub const NO_LINE_YET: &str = "click the timeline where the copy goes first";
 
-/// F2.9 S2 (`footage → spliced insert copy:<seconds> · the video gets longer`): the card a footage paste
-/// puts in the cut. `s == e` with a `dur` is what makes it SPLICED — the cut is opened there, those seconds
+/// F2.9 S2 (`footage → spliced insert copy:<seconds> · the video gets longer`): the card a footage paste/// puts in the cut. `s == e` with a `dur` is what makes it SPLICED — the cut is opened there, those seconds
 /// play again, and the footage carries on from the very next frame, so nothing filmed is lost.
 ///
 /// The "file" is the session itself: `copy:<seconds>`, read back by [`Seg::copy_seconds`]. Three decimals,
@@ -129,6 +128,11 @@ pub fn spliced(hand: &Hand, at: f64) -> Seg {
 /// F2.9 S2 (`sound → laid over the kept footage at the line, one piece per kept stretch`): the kept footage
 /// spans overlapping `[from, to)`, in time order. An insert is not a picture under a sound — only footage is
 /// — which is what the refusal below asks for.
+///
+/// This is the generic "what kept footage lies under this span" query and deliberately applies no minimum: the
+/// sound-over floor lives in [`sound_piece_overlap`], which is what the laying path filters through. Leaving it
+/// unfiltered keeps this usable as a plain read (F2.10's hearing checks ask it that way) instead of quietly
+/// answering two different questions with one function.
 pub fn footage_stretches(cut: &Cut, from: f64, to: f64) -> Vec<(f64, f64)> {
     let mut spans: Vec<(f64, f64)> = cut
         .segs
@@ -139,6 +143,45 @@ pub fn footage_stretches(cut: &Cut, from: f64, to: f64) -> Vec<(f64, f64)> {
         .collect();
     spans.sort_by(|a, b| a.0.total_cmp(&b.0));
     spans
+}
+
+/// `P.eng.soundMinPieceSeconds` (spec/10-parameters.md §5.1: 0.05, "under this a sound-over piece is not worth
+/// a segment of its own"; prototype `sndMinLn`, gui/cut.go). The floor a piece of laid-over sound has to clear
+/// before it earns a segment: below it the sound would be a blink, and the footage either side of it would have
+/// been split for nothing.
+///
+/// Three floors look alike here and answer three different questions; this is only the third:
+/// * [`crate::cut_select::MIN_SECONDS`] (`P.eng.minPieceSeconds`, 0.04) — is a remainder left by a REMOVAL
+///   worth keeping at all;
+/// * [`crate::fx_lane::MIN_BAND_SECONDS`] (`P.eng.effectMinSeconds`, 0.1) — how short an effect band may be
+///   DRAGGED down to without vanishing from under the hand;
+/// * this one — is a stretch of kept footage under a sound long enough that laying a piece over it buys
+///   something rather than costing a split.
+pub const MIN_SOUND_PIECE_SECONDS: f64 = 0.05;
+
+/// F2.9 S2: the part of `[from, to)` that a segment offers to a laid-over sound, or `None` when there is
+/// nothing worth laying. Two reasons for `None`, matching the prototype's one condition
+/// (`if f.isInsert() || t1-t0 < sndMinLn`):
+/// * the segment is an insert — a card or a spliced copy covers no footage of its own, so a sound cannot lie
+///   over it and take the place of a recording;
+/// * the clipped overlap is under [`MIN_SOUND_PIECE_SECONDS`] — a blink of sound, with a split of the picture
+///   bought for it.
+///
+/// The boundary is tested as "not below" rather than "at or above": 0.05 is not representable in binary, so an
+/// overlap clipped to exactly the floor can come out a ulp under it and would be thrown away as a blink. Same
+/// shape as [`crate::cut_speed::press`]'s tolerance on `MIN_MARKED_SECONDS`.
+pub fn sound_piece_overlap(seg: &Seg, from: f64, to: f64) -> Option<(f64, f64)> {
+    if !seg.ins.is_empty() {
+        return None;
+    }
+    let start = seg.s.max(from);
+    let stop = seg.e.min(to);
+    let overlap = stop - start;
+    if overlap > MIN_SOUND_PIECE_SECONDS || (overlap - MIN_SOUND_PIECE_SECONDS).abs() < 1e-9 {
+        Some((start, stop))
+    } else {
+        None
+    }
 }
 
 /// F2.9 S2 (`sound → laid over the kept footage at the line, one piece per kept stretch`): the copied sound cut
@@ -153,8 +196,12 @@ pub fn footage_stretches(cut: &Cut, from: f64, to: f64) -> Vec<(f64, f64)> {
 /// all, which is what the refusal below says.
 pub fn lay_pieces(cut: &Cut, path: &str, hand: &Hand, at: f64, file_seconds: f64) -> Vec<Seg> {
     let to = at + hand.length;
-    footage_stretches(cut, at, to)
-        .into_iter()
+    // Filtered through the floor rather than straight off `footage_stretches`: a kept stretch shorter than
+    // MIN_SOUND_PIECE_SECONDS is not worth a piece, and laying none over it means no split either (see
+    // [`lay_over`], which asks the same helper for the same answer).
+    cut.segs
+        .iter()
+        .filter_map(|seg| sound_piece_overlap(seg, at, to))
         .map(|(start, stop)| Seg {
             s: start,
             e: stop,
@@ -183,6 +230,14 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
     let mut out: Vec<Seg> = Vec::with_capacity(cut.segs.len() + pieces.len() * 2);
     for seg in &cut.segs {
         if !seg.ins.is_empty() || seg.e <= at || seg.s >= to {
+            out.push(seg.clone());
+            continue;
+        }
+        // The important half of `P.eng.soundMinPieceSeconds`: an overlap under the floor lays no piece, and so
+        // must not split anything either. Asked before head/tail are computed, because a split around a piece that
+        // was never laid is exactly the cost the floor exists to avoid — the footage would come back in two
+        // pieces with nothing heard over the join.
+        if sound_piece_overlap(seg, at, to).is_none() {
             out.push(seg.clone());
             continue;
         }

@@ -14,6 +14,7 @@ use crate::cut_hear;
 use crate::cut_clamp;
 use crate::cut_insert;
 use crate::cut_select;
+use crate::cut_copy;
 use crate::cut_captions;
 use crate::degraded;
 use crate::frames;
@@ -513,6 +514,14 @@ pub fn cut() -> Vec<Param> {
             "P.policy.insertDefaultSeconds",
             num(cut_insert::DEFAULT_SECONDS),
             "cut_insert::DEFAULT_SECONDS",
+        ),
+        // F2.9 S2's floor on the sound-over path: a piece of laid-over sound shorter than this is not worth a
+        // segment of its own, so `cut_copy::sound_piece_overlap` lays none and `lay_over` splits nothing. §10
+        // rows it as an engineering constant; the rule that reads it lives in cut_copy.
+        param(
+            "P.eng.soundMinPieceSeconds",
+            num(cut_copy::MIN_SOUND_PIECE_SECONDS),
+            "cut_copy::MIN_SOUND_PIECE_SECONDS",
         ),
         // F3.2's framing zoom, under the bare name §F gave it; §10 rows the same value as
         // `P.eng.aspectStaySeconds` right below, both reading this one constant.
