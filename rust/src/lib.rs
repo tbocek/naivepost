@@ -59,6 +59,7 @@ pub mod llm_budget;
 pub mod llm_cache;
 pub mod llm_request;
 pub mod migrate;
+pub mod model_calls;
 pub mod narration;
 pub mod params;
 pub mod new_project;
