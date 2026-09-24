@@ -35,3 +35,5 @@
 
 # the rewrite's build output
 /rust/target/
+/rust/shots/
+.codehalter/
