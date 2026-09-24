@@ -983,6 +983,13 @@ pub fn narrate() -> Vec<Param> {
             narrate_data::REF_SAMPLE_RATE.to_string(),
             "narrate_data::REF_SAMPLE_RATE",
         ),
+        // §10's row for the level the voice reference is written at: spelled straight out of the
+        // filter the reference write applies, so the row cannot drift from what ffmpeg is sent.
+        param(
+            "P.eng.refLoudness",
+            loudnorm_spelled(narrate_data::REF_LOUDNESS),
+            "narrate_data::REF_LOUDNESS",
+        ),
     ]
 }
 
@@ -1005,7 +1012,7 @@ pub fn produce() -> Vec<Param> {
         param("P.policy.publishWordsSnapPx", produce_runs::words_snap_px().to_string(), "produce_runs::words_snap_px"),
         // --- §08 §4's mix: the bed under the narration, and the two targets the final audio is set to ------
         param("P.policy.gameVolume", num(project::Produce::default().game_volume), "project::Produce::default — game_volume"),
-        param("P.eng.loudness", loudness_spelled(), "produce_render::LOUDNORM"),
+        param("P.eng.loudness", loudnorm_spelled(produce_render::LOUDNORM), "produce_render::LOUDNORM"),
         param("P.eng.clipLimiter", limiter_spelled(), "produce_render::LIMITER"),
         // --- §08 §4's fitting bound, read where the render applies it (the rest of F4.3 lives in §7) -------
         param("P.eng.narrationMaxTempo", num(produce_render::MAX_TEMPO), "produce_render::MAX_TEMPO"),
@@ -1020,8 +1027,10 @@ pub fn produce() -> Vec<Param> {
 /// §10 spells `P.eng.loudness` as `I -14, TP -1.5, LRA 11`, which is the filter string read backwards: the
 /// three numbers are taken out of [`produce_render::LOUDNORM`] so the row cannot disagree with what ffmpeg
 /// is actually sent, and only their spelling lives here.
-fn loudness_spelled() -> String {
-    let tail = produce_render::LOUDNORM.split("loudnorm=").nth(1).unwrap_or_default();
+/// §10's spelling of a `loudnorm` target: the three numbers taken out of the filter string the
+/// renderer is actually sent, so a row cannot disagree with the command line.
+fn loudnorm_spelled(filter: &str) -> String {
+    let tail = filter.split("loudnorm=").nth(1).unwrap_or_default();
     // `I=-14:TP=-1.5:LRA=11` → `I -14, TP -1.5, LRA 11`: pairs apart on commas, each value off its key.
     tail.split(':')
         .map(|pair| pair.replace('=', " "))

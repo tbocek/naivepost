@@ -230,6 +230,15 @@ pub fn clean_takes(takes: &[Take]) -> Vec<Take> {
 /// is thrown away to get there. (Prototype `refRate`, gui/narrate_voice.go:214.)
 pub const REF_SAMPLE_RATE: &str = "48000";
 
+/// The level the voice reference is written at, so the model hears the narrator at a sane
+/// loudness: a clone is only as loud as its source, and a quietly spoken take level-matched
+/// against loudnorm'd game audio comes back as somebody murmuring. Single-pass (dynamic)
+/// `loudnorm`, because the takes come from different minutes of the session, and a tight LRA
+/// because it is one person talking. §10 files this as `P.eng.refLoudness`
+/// ("I -16, TP -1.5, LRA 7"), and `params::narrate()` rows it from this constant.
+/// (Prototype `refLoud`, gui/narrate_voice.go:208.)
+pub const REF_LOUDNESS: &str = "loudnorm=I=-16:TP=-1.5:LRA=7";
+
 /// §07-narrate#3-data: the file the audio server is handed. One fixed path for every request,
 /// which is why the unshifted base is never given to it and why a pitch shift writes a copy
 /// here instead — at 0 semitones the copy is byte-identical to the base (prototype `shiftRef`).
