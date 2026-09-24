@@ -213,8 +213,10 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s6_the_page_numbers_its_sections_an
     let html = fs::read_to_string(page.path()).unwrap();
 
     assert!(html.contains("<title>0307-142201-Describe.html -- Naivepost run</title>"));
-    assert!(html.contains("<h2>1. Describe</h2>"));
-    assert!(html.contains("<h2>2. Narrate</h2>"));
+    // The section title is an `h1` per §09-llm-and-tools.md §7's "an `h1` \"N. step\"" — the §03
+    // text left the tag unspecified, and each message role is the `h2` below it.
+    assert!(html.contains("<h1>1. Describe</h1>"));
+    assert!(html.contains("<h1>2. Narrate</h1>"));
     assert!(html.contains("qwen3-32b"));
     assert!(html.contains("thinking"));
     assert!(html.contains("execute"));
@@ -268,7 +270,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_pa
 
     // The prompt is on disk already — a run killed here still leaves what it asked.
     let written = fs::read_to_string(page.path()).unwrap();
-    assert!(written.contains("<h2>1. Describe</h2>"), "{written}");
+    assert!(written.contains("<h1>1. Describe</h1>"), "{written}");
     assert!(!written.contains("came back"), "no verdict before the reply");
 
     page.stream("Split ").unwrap();
