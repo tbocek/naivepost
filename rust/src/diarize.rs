@@ -26,6 +26,13 @@ pub const ANCHOR_CUT_SECONDS: f64 = 0.3;
 
 /// Anchor-block overlap that claims a slot. Below it two voices merely happen to be near each other.
 /// `P.eng.minAnchorOverlap`
+///
+/// The bound is INCLUSIVE (`>=`), as spec/04-prepare.md words it: "matches slots to anchor blocks
+/// one-to-one by overlap >= 0.5 s". `match_slots` reads it twice, and both readings matter — once to
+/// let a claim take an unclaimed block, and once to let a slot that lost the contest for a block still
+/// be *named* after that voice. So a thin overlap never claims anything, while a real match that lost
+/// to a stronger claim is still recognised rather than counted as a new speaker.
+/// Prototype `minAnchorOv`, gui/pipeline.go.
 pub const MIN_ANCHOR_OVERLAP: f64 = 0.5;
 
 /// The window pass 1 never shrinks below, however short the recording: a window under this holds too

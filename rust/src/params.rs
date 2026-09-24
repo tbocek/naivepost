@@ -36,6 +36,7 @@ use crate::narrate_screen;
 use crate::narrate_tts;
 use crate::prepare;
 use crate::prepare_decisions;
+use crate::diarize;
 use crate::requests;
 use crate::roles;
 use crate::separate;
@@ -262,6 +263,14 @@ fn audio() -> Vec<Param> {
             "P.machine.anchorPerSeconds",
             num(roles::ANCHOR_PER_SECONDS),
             "roles::ANCHOR_PER_SECONDS",
+        ),
+        // §10's row for how far a slot's voice must reach into an anchor block to claim it: one
+        // constant answers both this row and `diarize::match_slots`' two bound checks, so the
+        // catalogue cannot drift from the rule that reads it.
+        param(
+            "P.eng.minAnchorOverlap",
+            num(diarize::MIN_ANCHOR_OVERLAP),
+            "diarize::MIN_ANCHOR_OVERLAP",
         ),
         param("P.eng.mergeGapSeconds", num(transcribe::MERGE_GAP), "transcribe::MERGE_GAP"),
         param(
