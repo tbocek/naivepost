@@ -510,6 +510,26 @@ pub fn stale_sidecars(stem: &str, languages: &[&str]) -> Vec<String> {
 /// rather than carrying a third copy of the figure.
 pub const LIMITER: &str = "alimiter=limit=0.891:level=disabled";
 
+/// §4's frame-edge blur: how far the blown-up backdrop is smeared, as a fraction of the finished
+/// frame's height. Enough that no detail survives to be read as a second picture, not so much
+/// that a bright scene turns into one flat glow. (Prototype `blurSigma`, gui/produce.go:1310.)
+/// §10 files the pair as `P.eng.blurSigma` ("0.02·height, min 4").
+pub const BLUR_SIGMA_FRACTION: f64 = 0.02;
+
+/// The floor on the derived sigma. Below 200 px of frame height `0.02 * height` drops under 4, and at
+/// that size the smear stops hiding the edge seam at all — so a small frame still gets a blur wide
+/// enough to read as intentional rather than as a hard border.
+pub const BLUR_SIGMA_MIN: f64 = 4.0;
+
+/// The sigma `gblur` is asked for at a given frame height: [`BLUR_SIGMA_FRACTION`] of it, floored at
+/// [`BLUR_SIGMA_MIN`], rounded up to a whole pixel. Ceil rather than round so the blur is never
+/// thinner than the rule asked for; a sub-pixel sigma would only make the seam cheaper to see.
+pub fn blur_sigma(frame_height: i32) -> i32 {
+    (f64::from(frame_height) * BLUR_SIGMA_FRACTION)
+        .max(BLUR_SIGMA_MIN)
+        .ceil() as i32
+}
+
 /// S5 / inventory §B (`stems c%03d_<stamp>`): the per-clip file's name. The stamp is in it because the
 /// concat list is rebuilt from the scratch folder and a leftover `c000.mp4` of an older cut would join into
 /// this one by name alone.
@@ -575,8 +595,10 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
     }
     chain.extend(frame_rate_filter(frame_rate_name(settings.frame_rate), settings.vfr));
     if settings.blurred_edges {
-        // §4's "blurred": a blown-up, blurred copy of the picture centred behind the frame. The sigma is
-        // the one render_fx already derives from the height, so the two cannot drift apart.
+        // §4's "blurred": a blown-up, blurred copy of the picture centred behind the frame. The sigma
+        // is derived here by [`blur_sigma`] from the finished height — [`BLUR_SIGMA_FRACTION`] of it,
+        // floored at [`BLUR_SIGMA_MIN`] — so one rule owns both numbers and the catalogue reads them
+        // off the same pair. (It does not come from `render_fx`: nothing there derives a sigma.)
         chain.push(format!("split=2[bg][fg]"));
         chain.push(format!(
             "[bg]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},gblur=sigma={}[bg]",
@@ -584,7 +606,7 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
             clip.frame.1,
             clip.frame.0,
             clip.frame.1,
-            (clip.frame.1 as f64 * 0.02).max(4.0).ceil() as i32
+            blur_sigma(clip.frame.1)
         ));
         chain.push("[fg][bg]overlay=(W-w)/2:(H-h)/2".into());
     }

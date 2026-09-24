@@ -19,7 +19,7 @@ use naivepost::tools::cutpass;
 const ITEM: &str = "f5_2";
 
 fn temp(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("np-f5-{tag}"));
+    let dir = std::env::temp_dir().join(format!("np-f5-{}-{tag}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -75,10 +75,10 @@ fn f5_2_s1_clears_the_scratch_folder() {
     assert!(dir.is_dir(), "the folder itself survives its own clearing");
 
     // Nothing there yet is not an error: the render creates it when it writes.
-    let missing = std::env::temp_dir().join("np-f5-s1-absent/clips");
+    let missing = std::env::temp_dir().join(format!("np-f5-{}-s1-absent/clips", std::process::id()));
     assert_eq!(r::clear_scratch(&missing).unwrap(), 0);
     assert!(!missing.exists());
-    std::fs::remove_dir_all(std::env::temp_dir().join("np-f5-s1")).ok();
+    std::fs::remove_dir_all(std::env::temp_dir().join(format!("np-f5-{}-s1", std::process::id()))).ok();
 }
 
 // ---- S2 ---------------------------------------------------------------------------

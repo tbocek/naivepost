@@ -1014,6 +1014,13 @@ pub fn produce() -> Vec<Param> {
         param("P.policy.gameVolume", num(project::Produce::default().game_volume), "project::Produce::default — game_volume"),
         param("P.eng.loudness", loudnorm_spelled(produce_render::LOUDNORM), "produce_render::LOUDNORM"),
         param("P.eng.clipLimiter", limiter_spelled(), "produce_render::LIMITER"),
+        // §10's row for the frame-edge blur: spelled out of the two constants `blur_sigma` reads, so a
+        // change to either shows up in the catalogue without a hand edit.
+        param(
+            "P.eng.blurSigma",
+            num(produce_render::BLUR_SIGMA_FRACTION),
+            "produce_render::blur_sigma",
+        ),
         // --- §08 §4's fitting bound, read where the render applies it (the rest of F4.3 lives in §7) -------
         param("P.eng.narrationMaxTempo", num(produce_render::MAX_TEMPO), "produce_render::MAX_TEMPO"),
         // --- §08 §4's thumbnail: its size, its band, and how many frames the row holds ---------------------
