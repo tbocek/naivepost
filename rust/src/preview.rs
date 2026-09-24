@@ -116,6 +116,53 @@ pub fn walk_on(runs: &[(f64, f64)], t: f64) -> Option<f64> {
     runs.iter().find(|(start, _)| *start > t).map(|(start, _)| *start)
 }
 
+// --- how far ahead the next clip is opened (P.eng.preloadLeadSeconds) ---------------------------
+
+/// `P.eng.preloadLeadSeconds`: how far ahead of a jump the next clip is opened. A jump the transport
+/// will make — a gap skipped, a review walking on, a recording ending — is known this many seconds
+/// early, and telling the player's spare pipeline that early makes the jump a swap rather than a reload,
+/// so the cut lands without a hitch (prototype `preloadLead`, gui/cut_preload.go).
+pub const PRELOAD_LEAD_SECONDS: f64 = 3.0;
+
+/// The tolerance §10 names with it: which side of "now" a clip start falls on. A start inside this
+/// slack is the second we are already in, not a jump to prepare for (the prototype's `t - 0.01`).
+pub const PRELOAD_TOLERANCE_SECONDS: f64 = 0.01;
+
+/// The next run start worth preparing from `t` — the earliest one strictly ahead of the tolerance.
+///
+/// Same `runs` contract as [`walk_on`]: merged, sorted, disjoint spans from
+/// [`crate::timeline::filmed_runs`]. Past the last run there is nothing ahead to open.
+pub fn next_jump_ahead(runs: &[(f64, f64)], t: f64) -> Option<f64> {
+    runs.iter()
+        .find(|(start, _)| *start > t + PRELOAD_TOLERANCE_SECONDS)
+        .map(|(start, _)| *start)
+}
+
+/// Which second to hand the spare pipeline from `t`, if any.
+///
+/// Only a jump within [`PRELOAD_LEAD_SECONDS`] is worth opening now, inclusive at exactly the lead:
+/// three seconds is the amount asked for, so three seconds is enough. Farther off, nothing opens —
+/// the spare would sit idle on a clip while the playhead is still elsewhere.
+pub fn preload_target(runs: &[(f64, f64)], t: f64) -> Option<f64> {
+    let next = next_jump_ahead(runs, t)?;
+    if next - t <= PRELOAD_LEAD_SECONDS {
+        Some(next)
+    } else {
+        None
+    }
+}
+
+/// Whether the time left on the clip being watched is short enough that the next one should already be
+/// open — the same question from the current clip's end rather than the next clip's start (the
+/// prototype's `end - t < preloadLead`).
+///
+/// Inclusive at the lead, so a clip with exactly three seconds left preloads rather than risking the
+/// reload: the cost of opening one clip too early is an idle pipeline, the cost of one too late is a
+/// visible stall on every cut.
+pub fn opens_ahead(remaining_seconds: f64) -> bool {
+    remaining_seconds <= PRELOAD_LEAD_SECONDS
+}
+
 // --- S4: the clock and the line ------------------------------------------------------------------------
 
 /// How often the line follows the player: spec/10-parameters.md:133's "tick 100 ms" (no `P.*` row of its

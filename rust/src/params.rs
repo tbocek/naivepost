@@ -409,8 +409,9 @@ fn engineering() -> Vec<Param> {
 /// arithmetic compute on, what the preview does, then the engineering choices around pixels and formats.
 ///
 /// Deliberately absent, because no rule in this tree reads them yet: `P.eng.talkPadSeconds`,
-/// `P.policy.deadAirMaxSeconds`, `P.policy.deadAirKeepSeconds`, `P.eng.seamMaxSeconds`,
-/// `P.eng.preloadLeadSeconds`, and §D's `rateSeekGap` 250 ms and thumbnail batch 6.
+/// `P.policy.deadAirMaxSeconds`, `P.policy.deadAirKeepSeconds`, `P.eng.seamMaxSeconds`, and §D's
+/// `rateSeekGap` 250 ms and thumbnail batch 6. (`P.eng.preloadLeadSeconds` is no longer one of them:
+/// `preview::PRELOAD_LEAD_SECONDS` reads it, so its row is in `cut()`.)
 /// A number nothing reads has no module to live in, which is the rule this catalogue exists to keep — each of
 /// those appears here the round its rule is written. The Cut tints (§10's colour list) are absent for the same
 /// reason: no constant outside `src/ui`'s drawing holds one. §6 also groups the preview numbers under a heading, and
@@ -580,6 +581,12 @@ pub fn cut() -> Vec<Param> {
         ),
         // --- what the preview does (§6's preview group, §D's numbers) --------------------------------
         param("preview.playTickMs", format!("{} ms", preview::TICK_MS), "preview::TICK_MS"),
+        // F2.1's preview: how far ahead the next clip is opened, so a known jump is a swap not a reload.
+        param(
+            "P.eng.preloadLeadSeconds",
+            num(preview::PRELOAD_LEAD_SECONDS),
+            "preview::PRELOAD_LEAD_SECONDS",
+        ),
         param("preview.cardFps", num(cut_insert::PREVIEW_FPS), "cut_insert::PREVIEW_FPS"),
         // --- engineering: pixel reaches, band heights, zoom, undo, the wave cache ------------------
         // §6 lists these as a family and §10 gives them no `P.` ids of their own (§I's implicit constants),

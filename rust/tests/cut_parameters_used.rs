@@ -167,7 +167,8 @@ fn sec_05_cut_6_parameters_used_s5_what_is_deferred_is_absent_and_said_so() {
         "talkPad",      // P.eng.talkPadSeconds 0.2 — no word-edge rule reads a pad yet
         "deadAir",      // P.policy.deadAirMax/KeepSeconds — the speed pass carries seconds, not bounds
         "seamMax",      // P.eng.seamMaxSeconds (the words family has its own rows in §4)
-        "preload",      // preview: nothing opens the next clip ahead of the playhead yet
+        // `preload` left this list: preview::PRELOAD_LEAD_SECONDS now reads P.eng.preloadLeadSeconds,
+        // so the id has a rule behind it and is catalogued in cut()'s preview group.
         "seekGap",      // preview: rateSeekGap 250 ms
         "thumbBatch",   // preview: thumbnail batch 6
     ] {
