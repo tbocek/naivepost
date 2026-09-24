@@ -93,6 +93,7 @@ pub mod request_timing;
 pub mod roles;
 pub mod run;
 pub mod save_as;
+pub mod seam_retries;
 pub mod separate;
 pub mod services;
 pub mod settings;
