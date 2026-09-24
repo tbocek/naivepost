@@ -25,10 +25,48 @@ use crate::tools::fix::{Block, FIX_CONTEXT_SECONDS};
 /// The cache/step key for these replies, so a re-run reads its own answers back.
 pub const FIX_STEP: &str = "fix";
 
-/// Tries per block before the ASR original is kept. F1.8 keeps the prototype's two — the difference
-/// is not the count but that the second try is told what was wrong, because [`Block::fix_line`]
-/// refuses by name rather than voiding the block.
+/// Tries per block before the ASR original is kept. `P.machine.fixTries` (default 2), the count the
+/// prototype wrote as `try < 2`. F1.8 keeps those two — the difference is not the count but that the
+/// second try is told what was wrong, because [`Block::fix_line`] refuses by name rather than voiding
+/// the block.
+///
+/// §10's row for this id is deliberately absent from [`crate::params::prepare`]: §04#4 does not name
+/// it among the parameters it lists, and `rust/tests/prepare_parameters.rs` pins that list by ORDER,
+/// so a row inserted here would break that assertion. The number lives with the rule that reads it, as
+/// every `P.*` value must; [`crate::params::family`] still answers `Family::Machine` from the prefix.
 pub const BLOCK_TRIES: u32 = 2;
+
+/// How many asks one block gets in all — the first plus the retries. `P.machine.fixTries`
+pub fn attempts() -> u32 {
+    BLOCK_TRIES
+}
+
+/// Whether another ask is still owed after `asked` have been made. This is the prototype's
+/// `try < 2` condition lifted out of the loop so the bound can be read and tested on its own.
+pub fn more_tries_left(asked: u32) -> bool {
+    asked < BLOCK_TRIES
+}
+
+/// Whether this attempt's answer may go in `cache/llm/fix`. Only the first one does: an answer
+/// repaired after a refusal depends on the refusal it was shown, so replaying it from disk would
+/// skip the validation that made it right. Delegated to [`crate::llm_cache::fixer_caches`] so the
+/// rule is stated once (§6's second irregularity) rather than twice.
+pub fn caches_attempt(attempt: u32) -> bool {
+    crate::llm_cache::fixer_caches(attempt)
+}
+
+/// What a block that ran out of tries says. Naming the refusal is the point: a reader who sees only
+/// "failed" looks for a crash, and there was none — the answer would not validate twice, so this
+/// block keeps the ASR's own lines and every other block still gets fixed.
+pub fn give_up_log(base: &str, index: usize, total: usize) -> String {
+    format!(
+        "!!! {} block {}/{} kept its ASR text -- the fixer's answer was refused \
+         {BLOCK_TRIES} times",
+        base,
+        index + 1,
+        total
+    )
+}
 
 /// One source as this step sees it: where it sits on the session clock and what kind of recording it
 /// is, since a video gets subtitles and a recorder gets `commentary.fixed.tsv`.
@@ -792,13 +830,7 @@ where
                 out.logs.push(format!(">>> {} line {n}: {why}", source.base));
             }
             if !outcome.valid {
-                out.logs.push(format!(
-                    "!!! {} block {}/{} kept its ASR text -- the fixer's answer was refused \
-                     {BLOCK_TRIES} times",
-                    source.base,
-                    index + 1,
-                    total
-                ));
+                out.logs.push(give_up_log(&source.base, index, total));
             } else if let Err(err) = store_block(tree, &block, &outcome.lines) {
                 // A cache that will not write is not a reason to lose the fix.
                 out.logs.push(format!("!!! could not keep the fix: {err}"));
