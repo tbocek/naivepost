@@ -32,7 +32,7 @@
 //! `P.eng.llmTailChars` (90 shown, 360 kept) → [`TAIL_BYTES`] and [`TAIL_KEPT_BYTES`], `P.machine.slots`
 //! (default 1, one count per model) → [`DEFAULT_SLOTS`] with the seven counts in [`crate::settings::Slots`].
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// A streamed call may say nothing for this long before it is given up on (`P.eng.llmStallMinutes`, §4's first
 /// bullet). Generous because the silence before the first token is real work, not a hang.
@@ -149,10 +149,13 @@ pub fn tail_of(text: &str) -> String {
     if text.len() <= TAIL_BYTES {
         return collapsed;
     }
-    // The last TAIL_BYTES bytes, then forward to a boundary: slicing at len-90 would panic mid-character. Cut in
-    // the collapsed text rather than in the original, because the collapsed text is what gets shown — cutting the
-    // original can start past the end of the string once its runs of spaces have gone.
+    // The last TAIL_BYTES bytes, then forward to a boundary: slicing at the raw number would panic mid-character.
+    // Cut in the collapsed text rather than in the original, because the collapsed text is what gets shown —
+    // cutting the original can start past the end of the string once its runs of spaces have gone.
     let mut start = collapsed.len() - TAIL_BYTES;
+    while start < collapsed.len() && !collapsed.is_char_boundary(start) {
+        start += 1;
+    }
     while start < collapsed.len() && !collapsed.is_char_boundary(start) {
         start += 1;
     }
@@ -412,6 +415,15 @@ pub struct Gate {
     queue: Vec<String>,
     /// Which steps have already been told they are waiting, so the line is said once per queueing spell.
     spoke: HashSet<String>,
+    /// How many slots each holder owes a release. A step may hold several (a gate of four, two held by `describe`),
+    /// so "is this step still on the wire?" is a count and not a yes/no — and the hand-off decision below depends
+    /// on it exactly: handing over to a step that already holds one would give it a second slot for one queued
+    /// request, and leave the first unaccounted for.
+    held_count: HashMap<String, usize>,
+    /// The steps a [`Gate::release`] has handed a slot to but has not yet been collected. The promise stands for
+    /// exactly one collect, and a step's own `release` voids it: an uncollected promise from a hand-off that has
+    /// since been served would otherwise make a *later* ask come back `Taken` when it should be a new wait.
+    admitted: HashSet<String>,
 }
 
 impl Gate {
@@ -424,17 +436,26 @@ impl Gate {
             held: Vec::new(),
             queue: Vec::new(),
             spoke: HashSet::new(),
+            held_count: HashMap::new(),
+            admitted: HashSet::new(),
         }
     }
 
     /// Ask for a slot. Free, with nobody ahead in the queue → [`Acquisition::Taken`] and nothing to log; otherwise
     /// the step joins (or stays where it already was) and gets its once-only sentence.
     pub fn acquire(&mut self, step: &str) -> Acquisition {
+        // A slot handed over by a release is collected here rather than re-bought below. The ordinary path
+        // cannot see the hand-off: the asker already sits in `held`, which the gate reads as "waiting for
+        // myself" and answers silently, so a step whose turn had arrived would wait forever behind itself.
+        if self.admitted.remove(step) {
+            return Acquisition::Taken;
+        }
         // A free slot is only taken when nobody is in front of the asker: a step that arrived earlier keeps its
         // place against anyone who asks later, which is what "first come first served" has to mean when several
         // steps share one model.
         if self.queue.is_empty() && self.held.len() < self.slots as usize {
             self.held.push(step.to_string());
+            *self.held_count.entry(step.to_string()).or_insert(0) += 1;
             return Acquisition::Taken;
         }
         if !self.queue.iter().any(|waiting| waiting == step) {
@@ -458,8 +479,20 @@ impl Gate {
     pub fn release(&mut self, step: &str) {
         let at = self.held.iter().position(|holder| holder == step);
         let freed = at.is_some();
+        // The released step's own uncollected promise is void: it got on the wire and is finished, so nothing
+        // is owed to it. Without this a step served long ago would keep an old hand-off that its next ask could
+        // spend as `Taken` when the gate is actually full again.
+        self.admitted.remove(step);
         if let Some(at) = at {
             self.held.remove(at);
+            // The count goes with the entry it counted. A step that still holds another slot stays on the wire
+            // for the hand-off rule below — it is not "someone who finished".
+            if let Some(n) = self.held_count.get_mut(step) {
+                *n -= 1;
+                if *n == 0 {
+                    self.held_count.remove(step);
+                }
+            }
         }
         // Cleared only for whoever actually held a slot: a step still queued behind others has not finished being
         // told it waits, and clearing its flag here would let the same line print again on the next poll.
@@ -470,7 +503,24 @@ impl Gate {
             if !self.queue.is_empty() {
                 let next = self.queue.remove(0);
                 self.spoke.remove(&next);
-                self.held.push(next);
+                // The hand-off is only a promise when there is somewhere to put it. At the last slot the queue's
+                // head IS the only holder, so naming it in a later log would read "narrate is waiting for
+                // narrate" — and the step cannot be given a second slot it never asked for. It learns of its
+                // turn by finding itself holding the slot, which is what `holders()` already shows.
+                // The hand-off goes to the queue's head only when that step is not already on the wire. If it
+                // holds a slot, handing it another would give one queued request two slots and leave the first
+                // unaccounted for; if the gate is clamped to zero there is no room at all. Both go back to the
+                // front of the queue, where the next release (or a grown slot count) tries again — so nobody is
+                // ever handed a slot that does not exist, and nobody loses their place in line.
+                let already_ours = self.held_count.contains_key(&next);
+                if !already_ours && self.held.len() < self.slots as usize {
+                    self.held.push(next.clone());
+                    *self.held_count.entry(next.clone()).or_insert(0) += 1;
+                    // Promised, not yet collected: the next ask from this step takes THAT slot.
+                    self.admitted.insert(next);
+                } else {
+                    self.queue.insert(0, next);
+                }
             }
         }
     }
@@ -545,9 +595,10 @@ pub fn in_flight(independent: bool, slots: u32) -> usize {
 /// Do these two models live on one server? A caller warns with this; it never merges slot counts, because §5 says
 /// plainly that two models on one GPU share it however the boxes are set.
 ///
-/// Compared on host and port of the two servers' URLs — after [`crate::services::server_url`] has done its
-/// scheme/slash work, so `llama:8080` and `http://llama:8080/` are one machine. A path is part of an address but
-/// not of a machine, so it is dropped; two sd.cpp-style prefixes on one host still share the hardware.
+/// Compared on scheme, host and port of the two servers' URLs — after [`crate::services::server_url`] has done
+/// its scheme/slash work. A bare host reads as `https` (02 §20), so `llama:8080` and `http://llama:8080` are
+/// two addresses, one reached over TLS and one not, and conflating them would point a warning's reader at the
+/// wrong box.
 pub fn shares_a_server(a: &str, b: &str) -> bool {
     // Compared on host *and* port. Two ports on one machine are two servers by agreement — the arrangement §1
     // describes — so they need no warning; one address wearing two prefixes is one server, and that is the case
@@ -559,16 +610,19 @@ pub fn shares_a_server(a: &str, b: &str) -> bool {
         // its scheme's default — `http://host` and `http://host:80` are one server, and missing that would let the
         // common case slip past a warning that exists to be read.
         let url = crate::services::server_url(raw)?;
-        let after_scheme = url.split_once("://").map_or(url.as_str(), |rest| rest.0);
+        // The scheme is part of the address kept below: a bare host reads as `https` (02 §20), so `llama:8080`
+        // and `http://llama:8080` really are two addresses — one reached over TLS, one not — and conflating
+        // them would send a warning's reader to the wrong box.
+        let (scheme, after_scheme) = url.split_once("://")?;
         let host_and_maybe_port = after_scheme.split(['/', '?', '#']).next().unwrap_or("");
         if host_and_maybe_port.is_empty() {
             return None;
         }
         let with_port = match host_and_maybe_port.rsplit_once(':') {
             Some((host, port)) if !port.is_empty() => host_and_maybe_port.to_string(),
-            _ => format!("{}:{}", host_and_maybe_port, if url.starts_with("https") { 443 } else { 80 }),
+            _ => format!("{}:{}", host_and_maybe_port, if scheme == "https" { 443 } else { 80 }),
         };
-        Some(with_port)
+        Some(format!("{scheme}://{with_port}"))
     };
     match (host_and_port(a), host_and_port(b)) {
         (Some(one), Some(other)) => one == other,

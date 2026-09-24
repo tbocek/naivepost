@@ -463,11 +463,16 @@ fn f6_3_s5_the_three_numbers_are_catalogued_and_have_one_home() {
     let body = |name: &str| -> String {
         // The free function, not the method of the same name where there are two.
         let at = source
-            .find(&format!("pub fn {name}("))
+            .match_indices(&format!("pub fn {name}("))
+            .map(|(at, _)| at)
+            // The free function, not a method of the same name: a method's signature line carries `&self`.
+            .find(|at| !source[*at..].split('\n').next().unwrap_or("").contains("&self"))
             .unwrap_or_else(|| panic!("{name}'s body"));
         let rest = &source[at..];
-        // A function's own closing brace sits at four spaces; anything nested closes deeper than that.
-        let end = rest.find("\n    }").unwrap_or(rest.len());
+        // A function's own closing brace sits at four spaces; a guard clause inside it closes deeper, so the end
+        // is the LAST such line rather than the first — otherwise the slice stops at the first `return` and the
+        // bound the test looks for falls outside it.
+        let end = rest.rfind("\n    }").unwrap_or(rest.len());
         rest[..end].to_string()
     };
     let poll = body("poll");
