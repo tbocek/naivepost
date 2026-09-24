@@ -61,6 +61,10 @@ pub const EDGE_TAIL_MAX: f64 = 0.25;
 
 /// How far into the gap the quietest moment is looked for. Past the word's own tail the gap is breath
 /// and room; the cut goes where that is lowest, and a trough further off than this is a different gap.
+/// §10 files it as `P.eng.troughReachSeconds` (0.4, "word-fenced edge placement: trough search";
+/// prototype `troughReach`, gui/retake_edge.go), and `params::prepare()` rows it from this constant.
+/// It starts where [`EDGE_TAIL_MAX`] leaves off: the tail bound follows the word's own sound, this
+/// searches the gap behind it for the quietest place to cut.
 pub const TROUGH_REACH: f64 = 0.4;
 
 /// One aligned word on the session clock. Seconds rather than samples so placing an edge needs nothing
