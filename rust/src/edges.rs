@@ -15,7 +15,9 @@ use crate::tools::mm_ss;
 use crate::wave::Wave;
 
 /// What is left of a sound at a cut when there is no envelope to ask: a hair, so the last consonant is
-/// not shaved and the first is not clipped. `P.machine.wordPad` in the prototype.
+/// not shaved and the first is not clipped. §10 files this bound as `P.eng.wordPadSeconds` (0.08, "room a
+/// cut leaves a word"; prototype `wordPad`, gui/retake.go), and `params::prepare()` rows it from this
+/// constant.
 pub const WORD_PAD: f64 = 0.08;
 
 /// How far an edge may be moved off its stamp. A stamp half a second late is what was measured; a sound

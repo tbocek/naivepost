@@ -17,6 +17,7 @@ use crate::cut_select;
 use crate::cut_copy;
 use crate::cut_captions;
 use crate::degraded;
+use crate::edges;
 use crate::frames;
 use crate::fx_aspect;
 use crate::fx_svg;
@@ -340,6 +341,14 @@ fn engineering() -> Vec<Param> {
             "P.eng.repeatShare",
             num(prepare_decisions::TAIL_MATCH_MIN),
             "prepare_decisions::TAIL_MATCH_MIN",
+        ),
+        // §10's row for the room a cut leaves a word. One constant answers both this row and every pad in
+        // `edges` — `place_edges`, `end_after`/`start_before` and the word a stamp names — so the catalogue
+        // cannot drift from the rule that reads it.
+        param(
+            "P.eng.wordPadSeconds",
+            num(edges::WORD_PAD),
+            "edges::WORD_PAD",
         ),
         // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
         param(
