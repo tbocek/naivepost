@@ -20,6 +20,14 @@ use crate::wave::Wave;
 /// constant.
 pub const WORD_PAD: f64 = 0.08;
 
+/// How wide a stretch of the recording is looked at to find its room: this many seconds each side of
+/// the second being placed at. §10 files it as `P.eng.envelopeWindowSeconds` (4, "envelope searched
+/// each side of a stamp (±400 buckets)"; prototype 400 buckets at the 100 Hz envelope of
+/// gui/retake_edge.go:163), and `params::prepare()` rows it from this constant. The 20th percentile
+/// of this window is the room; a window too narrow to hold the room raises the floor and hides sound,
+/// one too wide lets a far-loud stretch pull it down.
+pub const ENVELOPE_WINDOW: f64 = 4.0;
+
 /// How far an edge may be moved off its stamp. A stamp half a second late is what was measured; a sound
 /// a whole second away is a different sound. This is the reach of the ENVELOPE-ONLY placement — with
 /// aligned word times the words fence the edge and this bound is never consulted. §10 files it as
@@ -99,7 +107,7 @@ impl Edges {
             return u8::MAX;
         }
         let peaks = self.peaks();
-        let reach = (4.0 * self.wave.hz) as usize;
+        let reach = (ENVELOPE_WINDOW * self.wave.hz) as usize;
         let (lo, hi) = (i as usize - (i as usize).min(reach), (i as usize + reach).min(peaks.len()));
         let mut window: Vec<u8> = peaks[lo..hi].to_vec();
         window.sort_unstable();

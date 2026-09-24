@@ -365,6 +365,13 @@ fn engineering() -> Vec<Param> {
             num(edges::LATE_STAMP),
             "edges::LATE_STAMP",
         ),
+        // §10's row for the window the room is measured over: one constant answers both this row and
+        // `Edges::floor`, so the catalogue cannot drift from the rule that reads it.
+        param(
+            "P.eng.envelopeWindowSeconds",
+            num(edges::ENVELOPE_WINDOW),
+            "edges::ENVELOPE_WINDOW",
+        ),
         // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
         param(
             "P.machine.strayWordRatio",
