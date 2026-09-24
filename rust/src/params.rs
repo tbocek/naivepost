@@ -327,6 +327,14 @@ fn engineering() -> Vec<Param> {
             "frames::STORED_FRAME_JPEG_QUALITY",
         ),
         param("P.eng.keepReachWords", hand_edit::KEEP_REACH.to_string(), "hand_edit::KEEP_REACH"),
+        // §10's row for how many kept words either side of a join are compared for a doubled saying.
+        // One constant answers both this row and `textedit::dedupe_joins`' cap, so the catalogue
+        // cannot drift from the rule that reads it.
+        param(
+            "P.eng.joinReachWords",
+            textedit::JOIN_REACH_WORDS.to_string(),
+            "tools::textedit::JOIN_REACH_WORDS",
+        ),
         // §10's row for the fuzzy repeat matcher's step-over: how many words of the later take may be skipped
         // while looking for the next tail word. One constant answers both this row and `run_from`'s loop, so the
         // catalogue cannot drift from the rule that reads it.

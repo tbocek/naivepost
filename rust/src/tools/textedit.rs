@@ -6,6 +6,7 @@
 //! backwards, so a respelled word anywhere in the seam lost the join entirely. Now the count is stated
 //! and the app re-derives the *stretch* only to check it is one stretch at the join.
 
+use crate::prepare_decisions;
 use serde_json::json;
 
 /// How many words each side of the join is shown at. P.machine.seamReachWords
@@ -26,6 +27,12 @@ pub const SEAM_SNAP_WORDS: usize = 3;
 /// copy, so it does not disqualify the join. Also F1.10's to apply; §10's number stated once.
 /// P.machine.seamNoiseWords
 pub const SEAM_NOISE_WORDS: usize = 2;
+
+/// How many kept words either side of a join are compared for a doubled saying. A doubled word or two
+/// is a join's own stumble; a whole sentence twice is a retake, and the retake matcher (F1.9), not
+/// this pass, owns that. §10 files it as `P.eng.joinReachWords` (3; prototype `joinReach`,
+/// gui/textedit.go), and `params::prepare()` rows it from this constant.
+pub const JOIN_REACH_WORDS: usize = 3;
 
 /// Which side of the join a stretch is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +256,81 @@ pub fn joins_repaired_log(repaired: usize, cached: usize) -> String {
 /// what was said last is what the speaker meant to keep.
 pub fn dedupe_note(seconds: f64, text: &str) -> String {
     format!("{seconds}: {text:?} said again straight after the cut -- the earlier one goes")
+}
+
+/// Drop the kept words before a cut that the kept words after it begin with, up to
+/// [`JOIN_REACH_WORDS`] of them, and name each copy dropped. The LATER saying stays: the match that
+/// decided `kept` cannot see this duplication because the model kept both sides of the repeat, so it
+/// survives as two sayings until this pass notices.
+///
+/// `words`, `times` and `kept` are the same length, one entry per spoken word — the caller's contract,
+/// the same one `hand_edit::marks_from` works under. Mutates `kept`; returns one note per join fixed.
+///
+/// Only the first dropped word of each run starts a join: inside a run there is no kept word on the near
+/// side to have been repeated. A run with nothing kept after it ends the scan, as in the prototype —
+/// past it there is no far side for any further join either.
+pub fn dedupe_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -> Vec<String> {
+    let mut notes = Vec::new();
+    // From 1: index 0 has nothing before it, so it can never be the head of a doubled saying.
+    for j in 1..words.len() {
+        if kept[j] || !kept[j - 1] {
+            continue; // not the first dropped word of a run
+        }
+        let mut k = j;
+        while k < words.len() && !kept[k] {
+            k += 1;
+        }
+        if k >= words.len() {
+            break; // the drop runs to the end: no far side to duplicate
+        }
+
+        // The kept words nearest the join on each side, at most the reach, ascending. The cap counts
+        // KEPT words and stops at the first dropped one, so neither side offers more than this.
+        let mut before: Vec<usize> = Vec::new();
+        let mut i = j - 1;
+        loop {
+            if kept[i] {
+                before.insert(0, i);
+                if before.len() == JOIN_REACH_WORDS {
+                    break;
+                }
+            }
+            if i == 0 {
+                break;
+            }
+            i -= 1;
+        }
+        let mut after: Vec<usize> = Vec::new();
+        let mut i = k;
+        while i < words.len() && kept[i] && after.len() < JOIN_REACH_WORDS {
+            after.push(i);
+            i += 1;
+        }
+
+        // Longest first: the whole doubled tail is what went, and taking the longest match keeps the
+        // later copy whole rather than leaving half of the earlier copy behind.
+        for n in (1..=before.len().min(after.len())).rev() {
+            let same = (0..n)
+                .all(|x| prepare_decisions::same_word(&words[before[before.len() - n + x]], &words[after[x]]));
+            if !same {
+                continue;
+            }
+            let go = &before[before.len() - n..];
+            for &idx in go {
+                kept[idx] = false;
+            }
+            let text = go.iter().map(|&idx| words[idx].as_str()).collect::<Vec<_>>().join(" ");
+            // The EARLIER copy's own start second, as the prototype stamps it (`mmss(...)` of the
+            // first dropped word): the note reads as the line the reader looks up by. `dedupe_note`'s
+            // docstring says "the later copy begins", which disagrees; the wording of that string is
+            // another item's ground, so only the call site records which second is passed here.
+            // No clipping either: n <= JOIN_REACH_WORDS = 3 words can never reach the prototype's
+            // 60-byte `shortWords` bound, so adding a second tunable would guard nothing.
+            notes.push(dedupe_note(times[go[0]].0, &text));
+            break; // one fix per join, the longest match only
+        }
+    }
+    notes
 }
 
 /// The side's name as the model wrote it in the table.

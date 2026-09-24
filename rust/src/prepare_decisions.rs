@@ -53,7 +53,10 @@ pub struct SuffixMatch {
 /// Exact first, then a shared prefix or a single edit: ASR hears one word three ways across three
 /// passes, and a matcher that demanded equality would refuse most real repeats. Short words are held
 /// to exactness because "to" and "two" differ by one edit and are not the same word.
-fn same_word(a: &str, b: &str) -> bool {
+///
+/// Crate-visible so the join dedupe ([`crate::tools::textedit::dedupe_joins`]) compares words with
+/// the *same* equality this matcher uses rather than a second, stricter version of its own.
+pub(crate) fn same_word(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
