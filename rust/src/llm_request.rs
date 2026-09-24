@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 
 use crate::checks;
 use crate::exchanges::{Message, Mode, Part, ToolCall};
+use crate::llm_budget;
 use crate::services::{self, Kind};
 use crate::tools::Tool;
 
@@ -137,6 +138,12 @@ pub fn body(
     streaming: bool,
 ) -> Result<Value, String> {
     let model = model_required(model)?;
+    // §09 §5: the cap is judged at the one place every chat request is built, so no call site can
+    // forget it. A tool conversation that has grown past it means the job should have been batched —
+    // each individual tool result is already bounded (`tools::WEB_READ_MAX_BYTES` for a page read,
+    // a window for get_lines/get_events), so refusing here is the right answer rather than a
+    // surprise partway through a run that has already cost minutes.
+    llm_budget::check(llm_budget::chars(messages))?;
     let (temperature, max_tokens) = match mode {
         Mode::Thinking => (THINKING_TEMPERATURE, THINKING_MAX_TOKENS),
         Mode::Execute => (EXECUTE_TEMPERATURE, EXECUTE_MAX_TOKENS),

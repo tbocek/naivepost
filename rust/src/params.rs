@@ -25,6 +25,7 @@ use crate::fx_volume;
 use crate::fx_zoom;
 use crate::render_fx;
 use crate::hand_edit;
+use crate::llm_budget;
 use crate::llm_liveness;
 use crate::llm_retry;
 use crate::narrate_pass;
@@ -386,6 +387,13 @@ fn engineering() -> Vec<Param> {
         param("P.eng.llmStallMinutes", llm_liveness::STALL_MINUTES.to_string(), "llm_liveness::STALL_MINUTES"),
         param("P.eng.llmWholeMinutes", llm_liveness::WHOLE_MINUTES.to_string(), "llm_liveness::WHOLE_MINUTES"),
         param("P.machine.slots", llm_liveness::DEFAULT_SLOTS.to_string(), "llm_liveness::DEFAULT_SLOTS"),
+        // §09 §5: the most one request may carry. Spelled plain (no thousands separator), the way
+        // P.eng.thumbnailJPEGMax spells its 2 MiB cap.
+        param(
+            "P.machine.promptMaxChars",
+            llm_budget::PROMPT_MAX_CHARS.to_string(),
+            "llm_budget::PROMPT_MAX_CHARS",
+        ),
     ]
 }
 
