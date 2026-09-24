@@ -626,7 +626,10 @@ pub fn cut() -> Vec<Param> {
 /// and `fxGrab` 9 are absent for the same reason — no constant here holds them. Note that §I's `fxMinBand` (30) is
 /// the PIXEL width from which a bar's ends become handles at all, and stays unowned; `P.eng.effectMinSeconds`, the
 /// SECONDS floor a drag may shrink a band down to, is owned by [`fx_lane::MIN_BAND_SECONDS`] and has its row
-/// below. The prototype's two similarly-named constants (`fxMinBand`, `fxMinDur`) are different rules, not one.
+/// below. The prototype's two similarly-named constants (`fxMinBand`, `fxMinDur`) are different rules, not one —
+/// and its third, `fxMinSel` (0.2), is likewise a SECONDS floor rather than a pixel width: it is
+/// `P.eng.effectMinSelectionSeconds`, held by [`cut_speed::MIN_MARKED_SECONDS`] and rowed twice on purpose
+/// under that id and §06's own `effects.markedBandMinSeconds`.
 pub fn effects() -> Vec<Param> {
     vec![
         // --- what a speed or volume effect may be asked to do --------------------------------------
@@ -683,6 +686,16 @@ pub fn effects() -> Vec<Param> {
         // Not a form floor but the one §6 names outright ("the 0.2 s floor under which a band is not a marked
         // stretch"): below it a drag is a slipped click, and ⏩ Speed falls through to the line.
         param("effects.markedBandMinSeconds", num(cut_speed::MIN_MARKED_SECONDS), "cut_speed::MIN_MARKED_SECONDS"),
+        // §10's own row for that same 0.2 s, spelled with its `P.` id: "timeline needed under the band before ⏩
+        // Speed treats it as a chosen stretch". One constant answers both ids — `cut_speed::press` reads
+        // MIN_MARKED_SECONDS once — so the two spellings cannot be tuned apart, which is why this row points at
+        // the same place rather than holding a second copy of 0.2. (Same shape as the
+        // `P.policy.suggestedZoomHeight` / `effects.proposedZoomHeight` pair above.)
+        param(
+            "P.eng.effectMinSelectionSeconds",
+            num(cut_speed::MIN_MARKED_SECONDS),
+            "cut_speed::MIN_MARKED_SECONDS",
+        ),
         // The lane's own drag floor: however hard the hand shrinks a band from either end, `fx_lane::drag_end` will
         // not return less than this. §10 files it as an engineering constant; the rule that reads it is here.
         param("P.eng.effectMinSeconds", num(fx_lane::MIN_BAND_SECONDS), "fx_lane::MIN_BAND_SECONDS"),

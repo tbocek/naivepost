@@ -20,10 +20,13 @@ const MIN_CLIP_SECONDS: f64 = cutpass::MIN_CLIP_SECONDS;
 
 // --- S1: where the effect goes -------------------------------------------------------------------------------
 
-/// F3.3 S1 (`a selection ≥ 0.2 s?`; `// effects.markedBandMinSeconds` — §10 gives this no `P.` id, only §06 §6's
-/// "the 0.2 s floor under which a band is not a marked stretch"): a fifth of a second under the pointer is a click
-/// that slipped, not a dragged band. This is NOT [`crate::cut_select::MIN_SECONDS`] (0.04), which asks whether a
-/// remainder of footage is worth keeping; this asks whether the hand meant to drag.
+/// F3.3 S1 (`a selection ≥ 0.2 s?`): a fifth of a second under the pointer is a click that slipped, not a
+/// dragged band. §10 files this bound as `P.eng.effectMinSelectionSeconds` (0.2, "timeline needed under the band
+/// before ⏩ Speed treats it as a chosen stretch"; prototype `fxMinSel`, gui/cut_fx.go), and §06 §6 names the
+/// same bound "the 0.2 s floor under which a band is not a marked stretch" — two ids for one rule, so both rows
+/// in [`crate::params::effects`] read this one constant and neither spelling can drift from the other or from
+/// the rule. This is NOT [`crate::cut_select::MIN_SECONDS`] (0.04), which asks whether a remainder of footage
+/// is worth keeping; this asks whether the hand meant to drag.
 pub const MIN_MARKED_SECONDS: f64 = 0.2;
 
 /// F3.3 S1 (`neither → "click a track or mark a stretch first — speed needs seconds to work on"`): ⏩ Speed's own
