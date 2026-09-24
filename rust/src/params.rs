@@ -302,6 +302,13 @@ fn audio() -> Vec<Param> {
             "transcribe::SAMPLE_RATE",
         ),
         param("P.eng.asrCutSeekSeconds", num(asr::SEEK_MAX), "asr::SEEK_MAX"),
+        // §10's row for the alignment cut's own reach: one constant answers both this row and
+        // `align::pieces`' call into the shared cutter, so the catalogue cannot drift from the rule.
+        param(
+            "P.eng.alignCutSeekSeconds",
+            num(align::CUT_SEEK),
+            "align::CUT_SEEK",
+        ),
     ]
 }
 

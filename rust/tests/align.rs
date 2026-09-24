@@ -307,9 +307,10 @@ fn f1_5_s2_otherwise_windows_are_cut_at_silences_and_text_shared_by_voiced_secon
     let pieces = align::pieces(&[], &[], duration, &silences, WINDOW);
     assert_eq!(pieces[0].0, 0.0);
     assert_eq!(pieces.last().unwrap().1, duration);
-    // The windows are the ASR's own ceiling: F1.4 cut the recording at these same edges, so an
-    // align request carries the words its audio holds.
-    let asr_edges = asr::cut_points(duration, &silences, asr::CHUNK_QWEN, asr::SEEK_MAX);
+    // The windows use the ASR's ceiling (so a request carries the words its audio holds) but the
+    // aligner's OWN reach -- `P.eng.alignCutSeekSeconds` (4 s, prototype `alignCutSeek`), not the
+    // chunker's 20 s. Compared like with like: the same cutter, the same limit, the align reach.
+    let asr_edges = asr::cut_points(duration, &silences, asr::CHUNK_QWEN, align::CUT_SEEK);
     for pair in asr_edges.windows(2) {
         assert!(pieces.contains(&(pair[0], pair[1])), "{pieces:?} vs {asr_edges:?}");
     }
@@ -317,11 +318,22 @@ fn f1_5_s2_otherwise_windows_are_cut_at_silences_and_text_shared_by_voiced_secon
         assert!(to > from, "no empty piece: {pieces:?}");
         assert!(to - from <= WINDOW + 1e-9, "over the window: {pieces:?}");
     }
-    // A silence near one of those cuts is where that cut went — the same reach F1.4 gives a cut.
-    let midpoints: Vec<f64> = pieces.iter().map(|(from, to)| (from + to) / 2.0).collect();
+    // With the new reach the step is 640 / ceil(640/(60-8)) = 640/13 = 49.2307.., so the nominal
+    // wants are 49.23, 98.46, 147.69, 196.92... The fixture's silence [200,210] has midpoint 205.0,
+    // which is 8.08 past the nearest want -- outside the 4 s reach (`cut_points` compares strictly
+    // `<`), so nothing slid and every edge sits on its nominal multiple. Under the borrowed 20 s reach
+    // (trimmed to 10) this silence WOULD have been taken; that is exactly what §10's 4 s replaces.
+    let step = duration / 13.0;
+    for piece in 1..13 {
+        let want = step * piece as f64;
+        assert!(
+            pieces.iter().any(|(from, _)| (*from - want).abs() < 1e-9),
+            "edge {piece} stayed at its nominal {want}: {pieces:?}"
+        );
+    }
     assert!(
-        midpoints.iter().any(|at| (*at - 205.0).abs() <= asr::SEEK_MAX),
-        "a silence within reach of a cut is taken: {pieces:?}"
+        !pieces.iter().any(|(from, _)| (*from - 205.0).abs() < 1e-9),
+        "the silence midpoint 205.0 is out of the align reach and was not slid onto: {pieces:?}"
     );
 
     // The share each window was asked to align: proportional to the sound in it, and together the
@@ -427,26 +439,37 @@ fn f1_5_s3_an_over_long_window_is_cut_at_the_quietest_moment_nearest_the_middle(
     )
     .expect("three windows");
     let clips = agent.clips();
-    // The middle window is nothing but the silence, so it asks nothing: four edges, three clips.
-    assert_eq!(clips.len(), 3, "{clips:?}");
+    // With the aligner's own reach (P.eng.alignCutSeekSeconds = 4) the count is
+    // ceil(100/(60-2*4)) = ceil(1.923) = 2 pieces of 50.0 each. The one interior edge lands on the
+    // nominal 50.0, which is also the silence's midpoint, so the cut is in the quiet either way.
+    // The clip does NOT start at that edge: the window is first trimmed to its sound plus PAD
+    // (`trim`, S3), and this window [50,100] has its first sounding stretch starting at 52 (the end
+    // of the 48-52 silence), padded back by 0.25 -> 51.75. Hence [0.0, 51.75].
+    assert_eq!(clips, vec![0.0, 51.75], "{clips:?}");
     assert_eq!(clips[0], 0.0);
     // The pieces are the recording's own edges, and a clip starts where its sound does — an edge
     // reached back into the quiet by exactly PAD, except at the recording's own start.
     let silence = Silence { start: 48.0, end: 52.0 };
-    let edges = asr::cut_points(100.0, &[silence], WINDOW, asr::SEEK_MAX);
-    assert_eq!(edges.len(), 4, "{edges:?}");
+    // The reference edges are the ones `pieces` actually built with: the aligner's own reach, not the
+    // chunker's. Same cutter, same limit, same seek -- so this stays a like-for-like check that every
+    // clip starts on a real edge of the recording.
+    let edges = asr::cut_points(100.0, &[silence], WINDOW, align::CUT_SEEK);
+    assert_eq!(edges.len(), 3, "{edges:?}");
     // The clip name carries the start in milliseconds, so it reads back to three decimals — which is
     // how ffmpeg is told where the window begins.
     let as_ms = |edge: f64| (edge * 1000.0).round() / 1000.0;
-    // A clip starts where its window's sound starts — padded back into the quiet by PAD only when
-    // there is quiet inside that window to reach into. Here each window's sound begins at its own
-    // edge (the 48–52 silence sits inside the middle window, which has speech either side of it), so
-    // every clip starts on one of the recording's own edges. Where a pad does bite is asserted by
-    // f1_5_s3_a_window_is_trimmed_to_its_sound_plus_a_quarter_second.
+    // The count still matches: one clip per piece. But a clip starts where its window's SOUND starts,
+    // padded back into the quiet by PAD (`trim`, S3) -- not at the piece boundary. Piece one [0,50]
+    // holds sound from 0 up to the silence at 48, whose end 52 lies outside it, so nothing is trimmed
+    // and the clip starts at 0.0. Piece two [50,100] has no sound before the silence ends at 52, so
+    // its first stretch starts there and pads back to 51.75. Under the borrowed wider reach there was
+    // a middle piece sitting over the silence, which is why this used to read as clips == edges.
     assert_eq!(clips.len(), edges.len() - 1, "{clips:?} vs {edges:?}");
-    for (index, clip) in clips.iter().enumerate() {
-        assert_eq!(clip, &as_ms(edges[index]), "{clips:?} vs {edges:?}");
-    }
+    assert_eq!(clips[0], as_ms(edges[0]), "the first clip starts at the recording's start");
+    assert!(
+        clips[1] > edges[1],
+        "the second clip starts past its piece edge, where the sound resumes: {clips:?} vs {edges:?}"
+    );
 
     // At or under the floor a window is sent as it stands: no split, so no recursion that never ends.
     let halved = align::halve(SOURCE, MIN_PIECE);
@@ -527,11 +550,12 @@ fn f1_5_s3_out_of_memory_halves_the_window_and_never_goes_under_fifteen_seconds(
 #[test]
 fn f1_5_s5_the_aligned_words_are_written_whole_at_the_end() {
     let (_root, tree) = project("s5-once");
-    // Three windows, each answering with one word of its own so their order is checkable.
+    // One window per piece, each answering with a word of its own so their order is checkable. The
+    // silent-free fixture gives 2 pieces under the aligner's own reach (see the count below), so two
+    // answers -- one more than pieces would have been dropped as "nothing heard here".
     let answers = vec![
         json!({"words": [word("one", 0.5, 1.0)]}),
-        json!({"words": [word("two", 0.5, 1.0)]}),
-        json!({"words": [word("three", 0.5, 1.0)]}),
+        json!({"words": [word("two", 40.5, 41.0)]}),
     ];
     let mut agent = Box_::new(tree.words_aligned_json(SOURCE)).scripted(answers);
     let outcome = align::run(
@@ -549,8 +573,12 @@ fn f1_5_s5_the_aligned_words_are_written_whole_at_the_end() {
     .expect("three windows");
 
     // Every window was asked before the file existed: nothing on disk until the pass was over.
+    // The fixture is silent-free (`loud()` returns no silences), so with the aligner's own 4 s reach
+    // there is nothing to slide onto: ceil(100/(60-8)) = 2 pieces of 50.0, hence two asks. Under the
+    // borrowed 20 s reach (trimmed to 10) the count was 3 -- only the piece count moved, not the
+    // property under test, which is that none of these asks saw the marker.
     let mid_run = agent.mid_run();
-    assert_eq!(mid_run.len(), 3, "{mid_run:?}");
+    assert_eq!(mid_run.len(), 2, "{mid_run:?}");
     assert!(
         mid_run.iter().all(|existed| !*existed),
         "the marker appeared mid-run: {mid_run:?}"
@@ -562,19 +590,19 @@ fn f1_5_s5_the_aligned_words_are_written_whole_at_the_end() {
         .unwrap()
         .expect("written whole");
     let placed: Vec<&str> = saved.words.iter().map(|word| word.word.as_str()).collect();
-    assert_eq!(placed, vec!["one", "two", "three"]);
+    assert_eq!(placed, vec!["one", "two"], "every word of every piece, in piece order");
     let starts: Vec<f64> = saved
         .words
         .iter()
         .map(|word| seconds(word.start_sample))
         .collect();
-    assert_eq!(starts.len(), 3);
+    assert_eq!(starts.len(), 2);
     for pair in starts.windows(2) {
         assert!(pair[1] > pair[0], "in order across the pieces: {starts:?}");
     }
     assert!((starts[0] - 0.5).abs() < 1e-9, "{starts:?}");
     // The outcome carries the same words, dressed from the transcript.
-    assert_eq!(outcome.words.len(), 3);
+    assert_eq!(outcome.words.len(), 2);
 }
 
 /// S4: what an aligner is asked with, and how its answer is read however it spells it.

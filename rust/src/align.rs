@@ -20,6 +20,13 @@ use crate::transcribe::SAMPLE_RATE;
 pub const WINDOW: f64 = asr::CHUNK_QWEN;
 /// S3: below this a piece cannot be made smaller, for either reason (gui/align.go:660 `alignChunkMin`).
 pub const MIN_PIECE: f64 = 15.0;
+/// S2: how far a cut between two align windows may slide to land in a silence — much less than F1.4's
+/// chunker ([`asr::SEEK_MAX`], 20 s): a chunk cut that moves costs only a join, while an alignment cut
+/// moves the whole window a stretch of words is timed against, so the nominal edge stands unless a
+/// silence is close. Small enough to keep sliding when the window halves down to [`MIN_PIECE`] (the
+/// cutter stops at half the window) (gui/align.go:670 `alignCutSeek`, floor note gui/align.go:668).
+/// §10 files it as `P.eng.alignCutSeekSeconds` (4) and `params::prepare()` rows it from here.
+pub const CUT_SEEK: f64 = 4.0;
 /// S3: how much of the quiet either side of a window's speech goes with it — a word fades out below
 /// the silence threshold before it is over (gui/align.go:674 `alignSoundPad`).
 pub const PAD: f64 = 0.25;
@@ -144,7 +151,7 @@ pub fn pieces(
     if counts_agree(chunks, words) {
         return chunks.iter().map(|chunk| (chunk.s, chunk.e)).collect();
     }
-    let edges = asr::cut_points(duration, silences, window, asr::SEEK_MAX);
+    let edges = asr::cut_points(duration, silences, window, CUT_SEEK);
     edges
         .windows(2)
         .map(|pair| (pair[0], pair[1]))
