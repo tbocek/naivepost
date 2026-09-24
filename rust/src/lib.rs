@@ -56,6 +56,7 @@ pub mod fx_zoom;
 pub mod icons;
 pub mod layout;
 pub mod llm_budget;
+pub mod llm_cache;
 pub mod llm_request;
 pub mod migrate;
 pub mod narration;
