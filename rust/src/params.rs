@@ -372,6 +372,14 @@ fn engineering() -> Vec<Param> {
             num(edges::ENVELOPE_WINDOW),
             "edges::ENVELOPE_WINDOW",
         ),
+        // §10's row for how far below a word's own peak its tail still counts as the word: one
+        // constant answers both this row and `Edges::tail_level`, so the catalogue cannot drift from
+        // the rule that reads it.
+        param(
+            "P.eng.edgeTailDB",
+            num(edges::EDGE_TAIL_DB),
+            "edges::EDGE_TAIL_DB",
+        ),
         // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
         param(
             "P.machine.strayWordRatio",

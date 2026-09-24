@@ -46,7 +46,9 @@ pub const LATE_STAMP: f64 = 0.6;
 
 /// With aligned words, how far below a word's own level its tail still counts as the word. On the meter
 /// scale the envelope is drawn in (−70…0 dBFS over 0…255) a breath sits 20 dB or more under the word it
-/// follows and a trailing consonant a few dB under; twelve tells them apart.
+/// follows and a trailing consonant a few dB under; twelve tells them apart. §10 files it as
+/// `P.eng.edgeTailDB` (12, "word-fenced edge placement: tail threshold"; prototype `edgeTailDB`,
+/// gui/retake_edge.go), and `params::prepare()` rows it from this constant.
 pub const EDGE_TAIL_DB: f64 = 12.0;
 
 /// How far past the aligner's edge a word's own sound is followed. The aligner is within a fiftieth on
