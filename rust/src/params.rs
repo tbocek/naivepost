@@ -324,6 +324,14 @@ fn audio() -> Vec<Param> {
             num(align::PLAIN_AS_SAMPLES),
             "align::PLAIN_AS_SAMPLES",
         ),
+        // §10's row for the absolute floor under the bare-audio warning: one constant answers both this
+        // row and `bare_warns()`, so the catalogue cannot drift from the rule. The share test beside it
+        // (`align::BARE_SHARE`) gets its own row in its own round.
+        param(
+            "P.eng.alignBareWarnSeconds",
+            num(align::BARE_WARN),
+            "align::BARE_WARN",
+        ),
     ]
 }
 

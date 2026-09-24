@@ -34,7 +34,9 @@ pub const CUT_SEEK: f64 = 4.0;
 pub const PAD: f64 = 0.25;
 /// S6: bare talking worth saying out loud, in seconds and as a share of the talking. Both, because ten
 /// bare seconds of a four-hour session is rounding and ten bare seconds of a twenty-second clip is the
-/// whole clip (gui/align.go:679-680).
+/// whole clip (gui/align.go:679-680). §10 files the seconds bound as `P.eng.alignBareWarnSeconds`
+/// (10, "voiced audio under no word before a warning"), and `params::prepare()` rows it from this
+/// constant.
 pub const BARE_WARN: f64 = 10.0;
 pub const BARE_SHARE: f64 = 0.08;
 /// S4: comfortably past the longest clip this sends ([`WINDOW`]) — a "second" beyond it did not mean
