@@ -514,9 +514,20 @@ pub fn cut() -> Vec<Param> {
             num(cut_insert::DEFAULT_SECONDS),
             "cut_insert::DEFAULT_SECONDS",
         ),
-        // F3.2's framing zoom: §10 has no row for it, so the id takes the bare prefix of the rule that reads it.
+        // F3.2's framing zoom, under the bare name §F gave it; §10 rows the same value as
+        // `P.eng.aspectStaySeconds` right below, both reading this one constant.
         param(
             "effects.aspectHoldSeconds",
+            num(fx_aspect::HOLD_SECONDS),
+            "fx_aspect::HOLD_SECONDS",
+        ),
+        // §10's own row for that same second: "length of the staying zoom an aspect change places". One
+        // constant answers both ids — `fx_aspect::choose` reads HOLD_SECONDS once when it builds the zoom a
+        // shape brings — so the two spellings cannot be tuned apart, which is why this row points at the same
+        // place rather than holding a second copy of 1.0. (Same shape as `P.policy.suggestedZoomHeight` /
+        // `effects.proposedZoomHeight` and `P.eng.effectMinSelectionSeconds` / `effects.markedBandMinSeconds`.)
+        param(
+            "P.eng.aspectStaySeconds",
             num(fx_aspect::HOLD_SECONDS),
             "fx_aspect::HOLD_SECONDS",
         ),

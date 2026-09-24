@@ -182,11 +182,12 @@ fn f3_2_s5_aspect_and_zoom_are_one_undo_step() {
     assert!(!fx_zoom::stays_by_default(false, false));
 }
 
-/// F3.2 — the one number this flow holds is catalogued once, under the bare prefix §10 leaves it.
+/// F3.2 — the one number this flow holds is catalogued once under its bare name, beside §10's `P.` row for it.
 #[test]
 fn f3_2_s6_the_hold_is_catalogued_once() {
-    // effects.aspectHoldSeconds — no `P.` row in spec/10-parameters.md, so no invented family (§05-cut#6's
-    // preview and layout rows made the same choice).
+    // effects.aspectHoldSeconds — F3.2's own bare name, catalogued once inside `cut()`; §10 now files the same
+    // value as `P.eng.aspectStaySeconds`, rowed beside it and reading the same constant (pinned in
+    // tests/aspect_stay_length.rs). This id keeps Family::Other: the bare name has no `P.` prefix to inherit.
     let listed: Vec<&str> = params::cut().iter().map(|row| row.id).collect();
     assert_eq!(listed.iter().filter(|id| **id == "effects.aspectHoldSeconds").count(), 1);
 

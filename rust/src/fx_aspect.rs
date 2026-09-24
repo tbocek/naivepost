@@ -31,9 +31,10 @@ pub const DROPDOWN_HELP: &str = concat!(
 
 // --- what a pick stores ------------------------------------------------------------------------------------------
 
-/// F3.2 (`holds the whole frame for 1 s`): how long the framing zoom holds. `// effects.aspectHoldSeconds` — §10
-/// gives this no `P.` id, so it takes the bare prefix of the rule that uses it (AGENT.md's tuning-number rule), and
-/// `params::cut()` catalogues it under the same name.
+/// F3.2 (`holds the whole frame for 1 s`): how long the framing zoom holds. §10 files this as
+/// `P.eng.aspectStaySeconds` (1.0, "length of the staying zoom an aspect change places"; prototype `cut_fx.go`
+/// 1.0), and F3.2's own name `effects.aspectHoldSeconds` covers the same value — both rows in
+/// [`crate::params::cut`] read this one constant, so neither spelling can drift from the other or from the rule.
 ///
 /// This is NOT [`crate::fx_zoom::DEFAULT_SECONDS`]: that is an effect someone placed by hand and named in
 /// `P.policy.effectDefaultSeconds` (zoom 3). This one is a side-effect of choosing a shape, exists to give the
