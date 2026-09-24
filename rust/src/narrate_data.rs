@@ -223,6 +223,13 @@ pub fn clean_takes(takes: &[Take]) -> Vec<Take> {
 
 // --- voice_ref_base.wav, voice_ref.wav ---------------------------------------
 
+/// The rate a voice reference is written at. `loudnorm` resamples to 192 kHz, and above 48 kHz
+/// ffmpeg writes `WAVE_FORMAT_EXTENSIBLE` (format tag 0xFFFE) instead of a plain PCM header —
+/// which the audio server refuses as "unsupported WAV encoding". 48 kHz keeps the header plain
+/// and is at or above the rate of anything the reference is cut from, so no sample of the take
+/// is thrown away to get there. (Prototype `refRate`, gui/narrate_voice.go:214.)
+pub const REF_SAMPLE_RATE: &str = "48000";
+
 /// §07-narrate#3-data: the file the audio server is handed. One fixed path for every request,
 /// which is why the unshifted base is never given to it and why a pitch shift writes a copy
 /// here instead — at 0 semitones the copy is byte-identical to the base (prototype `shiftRef`).

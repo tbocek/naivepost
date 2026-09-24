@@ -30,6 +30,7 @@ use crate::hand_edit;
 use crate::llm_budget;
 use crate::llm_liveness;
 use crate::llm_retry;
+use crate::narrate_data;
 use crate::narrate_pass;
 use crate::narrate_preview;
 use crate::narrate_screen;
@@ -974,6 +975,13 @@ pub fn narrate() -> Vec<Param> {
                 "off".to_string()
             },
             "project::Policy::default — narration_rewrite",
+        ),
+        // §10's row for the rate the voice reference is written at: one constant answers both this row
+        // and the write, so the catalogue cannot drift from what the server will accept.
+        param(
+            "P.eng.refSampleRate",
+            narrate_data::REF_SAMPLE_RATE.to_string(),
+            "narrate_data::REF_SAMPLE_RATE",
         ),
     ]
 }
