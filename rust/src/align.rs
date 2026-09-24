@@ -38,6 +38,10 @@ pub const PAD: f64 = 0.25;
 /// (10, "voiced audio under no word before a warning"), and `params::prepare()` rows it from this
 /// constant.
 pub const BARE_WARN: f64 = 10.0;
+/// S6: the relative companion to [`BARE_WARN`] — a bare stretch only counts against a long session in
+/// proportion, because mis-transcribing a few percent of a four-hour recording is rounding and says
+/// nothing worth interrupting for. §10 files this bound as `P.eng.alignBareShare` (0.08, "share of
+/// voiced audio under no word before a warning"), and `params::prepare()` rows it from this constant.
 pub const BARE_SHARE: f64 = 0.08;
 /// S4: comfortably past the longest clip this sends ([`WINDOW`]) — a "second" beyond it did not mean
 /// seconds, it meant samples that forgot to say so (gui/align.go:230 `alignClipMax`). §10 files this
