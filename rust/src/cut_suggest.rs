@@ -71,6 +71,41 @@ pub fn place_progress(last_closed_end: f64, shown: f64) -> f64 {
     last_closed_end.max(PROGRESS_FLOOR_SECONDS).max(shown)
 }
 
+/// `P.eng.suggestFallbackSegments`: the denominator for a reply whose segments have no readable end.
+/// Progress only — it judges nothing and rejects nothing (prototype `suggestMaxSegs`, gui/cut.go:108).
+///
+/// Twenty is roughly the shape of a normal cut list, so N moments counted against it reads as "N of the
+/// way through a plausible answer" when there is no position to place the bar on.
+///
+/// Deliberately not a [`crate::params`] row and not a field on [`crate::project::Policy`]: §05's own §6
+/// does not name a fallback denominator among the parameters the Cut page is tuned by, and
+/// `rust/tests/cut_parameters_used.rs` pins that section's row list. The value lives with the rule that
+/// reads it, as every `P.*` value must; [`crate::params::family`] still answers `Family::Eng` from the
+/// prefix — the same choice made for `P.machine.seamRetries` and `P.policy.narratorSlots`.
+pub const SUGGEST_FALLBACK_SEGMENTS: usize = 20;
+
+/// The count-only progress: how far through a plausible answer N moments look.
+///
+/// Clamped into the same band the placed progress uses — the floor is [`PROGRESS_FLOOR_SECONDS`]
+/// (`suggest.progressFloorSeconds`) because a bar reading exactly 0% is indistinguishable from one that
+/// never started, which is how a stuck run gets waited on.
+pub fn fallback_fraction(moments: usize) -> f64 {
+    (moments as f64 / SUGGEST_FALLBACK_SEGMENTS as f64).clamp(PROGRESS_FLOOR_SECONDS, 1.0)
+}
+
+/// What fraction of the way through the suggest call the bar should read.
+///
+/// A real position always wins: with a session span and somewhere reached, `through / span` says more than
+/// any count could. The count over [`SUGGEST_FALLBACK_SEGMENTS`] is only the stand-in while the streamed
+/// reply has no readable `end` to place against — no timeline yet, so counting is all there is. Both are
+/// progress: neither one accepts or rejects the answer.
+pub fn progress_fraction(moments: usize, through: f64, span: f64) -> f64 {
+    if span > 0.0 && through > 0.0 {
+        return (through / span).clamp(PROGRESS_FLOOR_SECONDS, 1.0);
+    }
+    fallback_fraction(moments)
+}
+
 /// §05-cut#8 (`pulsing under "thinking over the whole session" until the first segment closes`): the pulse is
 /// the "something is happening" signal for a call with no position to report, so it ends exactly when there is
 /// one.
