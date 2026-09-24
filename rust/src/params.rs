@@ -623,7 +623,10 @@ pub fn cut() -> Vec<Param> {
 /// whose form has no constant in this tree yet — a number nothing reads has no module to live in. So is the
 /// decorations density: §F3.11 keeps it as the prompt's own wording ("few and deliberate: three or four across
 /// five minutes"), which is wording, not a value the app multiplies anything by. §I's `killMin` 32, `fxMinBand` 30
-/// and `fxGrab` 9 are absent for the same reason — no constant here holds them.
+/// and `fxGrab` 9 are absent for the same reason — no constant here holds them. Note that §I's `fxMinBand` (30) is
+/// the PIXEL width from which a bar's ends become handles at all, and stays unowned; `P.eng.effectMinSeconds`, the
+/// SECONDS floor a drag may shrink a band down to, is owned by [`fx_lane::MIN_BAND_SECONDS`] and has its row
+/// below. The prototype's two similarly-named constants (`fxMinBand`, `fxMinDur`) are different rules, not one.
 pub fn effects() -> Vec<Param> {
     vec![
         // --- what a speed or volume effect may be asked to do --------------------------------------
@@ -680,6 +683,9 @@ pub fn effects() -> Vec<Param> {
         // Not a form floor but the one §6 names outright ("the 0.2 s floor under which a band is not a marked
         // stretch"): below it a drag is a slipped click, and ⏩ Speed falls through to the line.
         param("effects.markedBandMinSeconds", num(cut_speed::MIN_MARKED_SECONDS), "cut_speed::MIN_MARKED_SECONDS"),
+        // The lane's own drag floor: however hard the hand shrinks a band from either end, `fx_lane::drag_end` will
+        // not return less than this. §10 files it as an engineering constant; the rule that reads it is here.
+        param("P.eng.effectMinSeconds", num(fx_lane::MIN_BAND_SECONDS), "fx_lane::MIN_BAND_SECONDS"),
         // --- what the lane and the picture are drawn with ---------------------------------------------
         // §6's "grip/kill widths" is one pair here and not two: only the grip has a constant in this tree, and the
         // kill width is part of §I's implicit list that nothing reads. The "snap 8/10 px" pair is split across the

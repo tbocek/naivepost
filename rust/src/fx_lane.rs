@@ -313,3 +313,44 @@ pub const SOUND_DIP_SECONDS: f64 = 0.15;
 pub fn rejoin_dip() -> f64 {
     SOUND_DIP_SECONDS
 }
+
+/// `P.eng.effectMinSeconds` (spec/10-parameters.md §5.1: 0.1, "shortest an effect band may be dragged down
+/// to"; prototype `fxMinDur` in gui/cut_fx.go). The floor a hand dragging either end of a band runs into.
+///
+/// Why there is a floor at all is the prototype's reason, unchanged: a band of no length does nothing, cannot be
+/// grabbed again, and so silently destroys the very thing the hand was adjusting. 0.1 s is short enough that a
+/// deliberate tiny effect still exists on screen at the deepest zoom yet cannot be shrunk out of reach.
+///
+/// Not to be confused with the two neighbours that also bound a band's length from below:
+/// [`crate::cut_clamp::MIN_SURVIVING_SECONDS`] (`P.eng.effectMinSurvivingSeconds`, 1.0) is what a CLAMPED band
+/// must have left or it is dropped outright, and [`crate::cut_select::MIN_SECONDS`]
+/// (`P.eng.minPieceSeconds`, 0.04) is the SELECTION band's floor. This one is the EFFECTS lane's drag floor.
+pub const MIN_BAND_SECONDS: f64 = 0.1;
+
+/// §06-effects#7-rules (`effects cannot leave the timeline`) plus `P.eng.effectMinSeconds`: where a band lands
+/// when one of its ends is dragged to `to`. Returns the new `(t, dur)`; the original is never shorter than
+/// [`MIN_BAND_SECONDS`] whichever end moves, and the start never goes before second 0.
+///
+/// What this function deliberately does NOT do, because the spec keeps those rules elsewhere:
+/// * **snapping** — the pixel rule lives in [`crate::cut_select::snap`] / [`crate::cut_select::snap_span`], so
+///   the caller snaps `to` (offering it to clip borders, recording ends, other effects' ends and the red line)
+///   and hands the snapped second here. Mixing the two would put a pixel constant inside a seconds rule.
+/// * **the fades** — a shorter band may no longer fit its two fades, so the caller routes the result through the
+///   one fade rule [`crate::cut_speed::clamp_fades`] exactly as every kind's `apply` already does. It stays the
+///   caller's job rather than being called here because `drag_end` answers in `(t, dur)` pairs, not `Fx` records,
+///   and folding the record in would make this the second place that knows a band's field layout.
+///
+/// Mirrors gui/cut_fx.go `dragFx` minus its `snapFx` call: each end is clamped from the STATIONARY end, so an
+/// end dragged past its own still stops at the floor instead of crossing over and inverting the band.
+pub fn drag_end(t: f64, dur: f64, end: bool, to: f64) -> (f64, f64) {
+    if end {
+        // Trailing end: the start holds, so the LENGTH is what the drag answers with, clamped at the floor.
+        (t, (to - t).max(MIN_BAND_SECONDS))
+    } else {
+        // Leading end: the stop holds and the START is what moves. Two clamps — never before second 0
+        // (§06#7 `effects cannot leave the timeline`), and never within the floor of the stationary stop.
+        let stop = t + dur;
+        let start = to.min(stop - MIN_BAND_SECONDS).max(0.0);
+        (start, stop - start)
+    }
+}
