@@ -14,6 +14,7 @@ pub mod cut_copy;
 pub mod cut_delete;
 pub mod cut_effect_decisions;
 pub mod hands_off;
+pub mod audit_gaps;
 pub mod cut_effects_pass;
 pub mod cut_hear;
 pub mod cut_line;
