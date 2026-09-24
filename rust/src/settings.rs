@@ -203,8 +203,16 @@ impl Conf {
         ("SD_API_KEY", |c| &c.sd_key),
     ];
 
+    /// The fifteen keys this store holds, read off [`Conf::KEYS`] so a key added there is listed
+    /// here without a second list to forget. Mirrors [`Slots::KEY_NAMES`]; used by anything that
+    /// has to say which ids are machine settings (directive A, 11 §5).
+    pub fn key_names() -> Vec<&'static str> {
+        Self::KEYS.iter().map(|(key, _)| *key).collect()
+    }
+
     /// The remembered projects, ordered by folder — the order `PROJECT_<n>` is numbered in.
     pub fn projects(&self) -> Vec<ProjectRef> {
+
         remembered(&self.projects)
     }
 
