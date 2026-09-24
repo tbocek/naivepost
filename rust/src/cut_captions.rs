@@ -44,6 +44,36 @@ pub fn batches(count: usize) -> Vec<(u32, u32)> {
     ranges
 }
 
+// --- the cleaning rule the captions pass is told (P.policy.keepSwearing) -------------------------
+
+/// `P.policy.keepSwearing` (default true): the captions pass keeps the speaker's swearing. The
+/// prototype carried this as part of `captionSystem` — the whole captions prompt — because the rule
+/// rides in the wording rather than in any arithmetic (§10 names that constant for exactly this row).
+pub const KEEP_SWEARING_DEFAULT: bool = true;
+
+/// The cleaning sentence as the shipped prompt states it (`spec/prompts/captions.md`), copied so a
+/// test can pin the two against each other and neither can drift.
+pub const CLEANING_RULE: &str = "Clean the words as a subtitler would: no ehm, no ehh, no stutters \
+                                (\"I I\" is \"I\"), no repeated words, sentence case, the swearing kept.";
+
+/// The clause the toggle moves. Kept separate from [`CLEANING_RULE`] so turning the policy off removes
+/// one promise rather than rewriting the sentence by hand at the call site.
+const SWEARING_CLAUSE: &str = ", the swearing kept";
+
+/// What the model is told about cleaning the words.
+///
+/// On (the default): the whole rule, including that the swearing stays. Off: the same sentence with
+/// only that clause dropped — the stutter, repeat and sentence-case cleaning are untouched, because the
+/// policy says nothing about them. Decided here because §10 leaves what "off" does unstated: the only
+/// honest off is the app no longer promising the model the words stay. Inventing a censor style would
+/// put a rule in the app that no spec asked for.
+pub fn cleaning_rule(keep_swearing: bool) -> String {
+    if keep_swearing {
+        return CLEANING_RULE.to_string();
+    }
+    CLEANING_RULE.replace(SWEARING_CLAUSE, "")
+}
+
 // --- S2: the message -----------------------------------------------------------------------------------------------
 
 /// F3.9 S2 (`"CLIP n: X s long"`): one clip, in its own seconds. One decimal because that is §F3.9's example

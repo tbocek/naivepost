@@ -150,6 +150,12 @@ pub struct Policy {
     /// prototype broke by always rewriting every line.
     #[serde(rename = "narrationRewrite")]
     pub narration_rewrite: Field<bool>,
+    /// `P.policy.keepSwearing`: the captions pass keeps the speaker's swearing (default). Off stops
+    /// the app promising the model that the words stay — §10 gives no censor style, so the toggle
+    /// changes what the model is told rather than inventing a bleep scheme. The rule itself lives in
+    /// the shipped captions prompt (`cut_captions::CLEANING_RULE`).
+    #[serde(rename = "keepSwearing")]
+    pub keep_swearing: Field<bool>,
 }
 
 impl Default for Policy {
@@ -158,6 +164,7 @@ impl Default for Policy {
             marking_pass: Field { value: MarkingPass::Retakes, origin: Origin::Default },
             cut_mode: Field { value: CutMode::Model, origin: Origin::Default },
             narration_rewrite: Field { value: false, origin: Origin::Default },
+            keep_swearing: Field { value: true, origin: Origin::Default },
         }
     }
 }

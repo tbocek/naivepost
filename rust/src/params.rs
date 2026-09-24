@@ -690,6 +690,13 @@ pub fn effects() -> Vec<Param> {
         // §6's "edge dilation" is the radius; how dark and in how many directions it is drawn are the same rule's
         // shape rather than a tuning value, so they stay uncatalogued.
         param("effects.edgeRadius", num(fx_text::EDGE_RADIUS_EM), "fx_text::EDGE_RADIUS_EM"),
+        // F3.9's cleaning rule as the captions prompt states it ("the swearing kept"): a policy the
+        // model reads as wording, not a number the app applies. Read from the project's own default.
+        param(
+            "P.policy.keepSwearing",
+            project::Policy::default().keep_swearing.value.to_string(),
+            "project::Policy::default — keep_swearing",
+        ),
     ]
 }
 
