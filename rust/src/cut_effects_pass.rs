@@ -330,3 +330,50 @@ pub fn placed(count: usize) -> String {
 pub fn rejected(problem: &str) -> String {
     format!(">>> effects rejected: {problem}")
 }
+
+// --- the density the prompt asks for (P.policy.decorationDensity) -------------------------------
+
+/// `P.policy.decorationDensity`, whose §10 default is spelled "three or four per five minutes" and
+/// whose prototype constant is `fxRules` — the whole effects prompt. The rule rides in that wording, so
+/// this is the clause as the shipped prompt states it (`spec/prompts/effects.md`: "Few and deliberate:
+/// three or four across five minutes of finished video"), copied here so a test can pin the two
+/// against each other and neither can drift.
+///
+/// Deliberately NOT a [`crate::params`] row and not a field on [`crate::project::Policy`]:
+/// `rust/tests/effect_parameters.rs` s5 asserts no catalogued id contains "density" ("the density
+/// lives in prompts/effects.md as wording, not as a number"), `params::effects`' doc says the same,
+/// and `spec/12-decisions.md` row 37 puts the home at "density (prompt)". The id stays unrowed;
+/// [`crate::params::family`] still answers `Family::Policy` from the prefix.
+pub const DENSITY_GUIDE: &str = "three or four across five minutes of finished video";
+
+/// The same guide as its band: low and high decorations per [`FIVE_MINUTES_SECONDS`] of finished video.
+pub const DENSITY_PER_FIVE_MINUTES: (u32, u32) = (3, 4);
+
+/// The length the band is quoted against — the "five minutes" of [`DENSITY_GUIDE`].
+pub const FIVE_MINUTES_SECONDS: f64 = 300.0;
+
+/// What the guide expects of an edit this long, scaled from [`DENSITY_PER_FIVE_MINUTES`]: 300 s →
+/// `(3, 4)`, 600 s → `(6, 8)`, 60 s → `(1, 1)`, nothing rendered → `(0, 0)`.
+///
+/// The floor never falls below one while there is a picture: the prompt's own sentence ends "Not one on
+/// every clip, and not none", so a short video is still expected to carry a decoration rather than zero.
+pub fn expected_decorations(finished_seconds: f64) -> (u32, u32) {
+    if finished_seconds <= 0.0 {
+        return (0, 0);
+    }
+    let scale = finished_seconds / FIVE_MINUTES_SECONDS;
+    let low = (DENSITY_PER_FIVE_MINUTES.0 as f64 * scale).floor() as u32;
+    let high = (DENSITY_PER_FIVE_MINUTES.1 as f64 * scale).ceil() as u32;
+    (low.max(1), high.max(low.max(1)))
+}
+
+/// Whether this many decorations is past the top of the guide for an edit this long.
+///
+/// Nothing trims on it. The app's bound is [`MAX_PROPOSED_EFFECTS`] (`P.machine.maxProposedEffects`),
+/// which catches a runaway reply; being over the guide only means the number is worth saying out loud.
+/// Silently cutting here would be wrong twice over: the User Context outranks the default ("Asked for
+/// more, write more" — `spec/prompts/effects.md`), and the standing rule is that a proposal gets
+/// reported, not quietly discarded.
+pub fn above_density_guide(count: usize, finished_seconds: f64) -> bool {
+    count > expected_decorations(finished_seconds).1 as usize
+}
