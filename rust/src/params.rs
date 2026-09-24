@@ -334,6 +334,13 @@ fn engineering() -> Vec<Param> {
             prepare_decisions::TAIL_SKIP_MAX.to_string(),
             "prepare_decisions::TAIL_SKIP_MAX",
         ),
+        // §10's row for the share of the marked tail that has to turn up again. One constant answers both this
+        // row and `suffix_match`'s share test, so the catalogue cannot drift from the rule that reads it.
+        param(
+            "P.eng.repeatShare",
+            num(prepare_decisions::TAIL_MATCH_MIN),
+            "prepare_decisions::TAIL_MATCH_MIN",
+        ),
         // F1.13's word list: how a word is caught being on no sound, and how far the two dressings look.
         param(
             "P.machine.strayWordRatio",

@@ -14,8 +14,11 @@
 
 /// At least this share of the marked tail has to turn up again for the cut to count as a repeat.
 ///
-/// §12 S1 gives the number ("≥ 70 % of the tail matching") but no `P.` id, so it stays a bare
-/// module constant rather than being catalogued under an id the spec never set.
+/// §10 files this bound as `P.eng.repeatShare` (0.7, "fuzzy repeat match: share that must match"; prototype
+/// 0.7), and §12 S1 gives the same number in words ("≥ 70 % of the tail matching"). `params::prepare()` rows
+/// it from this constant. The share is applied as `ceil(share × tail_len)`, so a word is never counted in
+/// halves: a 5-word tail's bar is 4 matched words (0.8 effective) and a 3-word tail must be found whole, i.e.
+/// short tails clear a stricter bar than the stated 0.7.
 pub const TAIL_MATCH_MIN: f64 = 0.7;
 
 /// How many words of the later take may be stepped over while looking for the next tail word.
