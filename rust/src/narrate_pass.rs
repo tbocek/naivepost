@@ -61,7 +61,9 @@ pub const CAPTIONS_ADDENDUM: &str = "THIS VIDEO HAS NO VOICE-OVER. Nobody speaks
 
 /// The heading of the User Context block: what it is, and how far it outranks the job's own rules. Only the
 /// mechanics of the answer are not its to change, which is why the sentence says so before the text does.
-const CTX_INTRO: &str = "USER CONTEXT -- written by the person who made this recording and is editing it. It outranks anything you infer from the material, and it outranks the rules of the job you were given wherever the two disagree; only the mechanics of the answer -- its shape, its clock, what may be invented -- are not its to change:";
+/// outranks the rules of the job you were given wherever the two disagree; only the mechanics of the
+/// answer -- its shape, its clock, what may be invented -- are not its to change:
+pub const CTX_INTRO: &str = "USER CONTEXT -- written by the person who made this recording and is editing it. It outranks anything you infer from the material, and it outranks the rules of the job you were given wherever the two disagree; only the mechanics of the answer -- its shape, its clock, what may be invented -- are not its to change:";
 
 /// F4.2 (`at most W words`): how many words a clip is offered — [`WORDS_PER_SECOND`] per second of what the
 /// viewer watches, between the floor and the ceiling. The seconds are the on-screen ones, because that is
