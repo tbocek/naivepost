@@ -291,6 +291,11 @@ pub struct RunBar {
     pub cancelled: bool,
     /// F0.3 S5: a stop landed inside Describe, so the next Prepare run describes from the start.
     pub describe_from_start: bool,
+    /// F0.5 S1: the generation of the current cancel context. `start_run` bumps it, so a call that
+    /// started in an earlier run can be told apart from one in this run — see
+    /// [`crate::runqueue::is_cancelled`]. A channel would tie the bar to whoever holds the receiver;
+    /// a counter lets every model and audio call ask the same question without owning anything.
+    pub run_epoch: u64,
 }
 
 impl RunBar {

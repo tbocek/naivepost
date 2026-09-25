@@ -26,6 +26,7 @@ use crate::fx_text;
 use crate::fx_volume;
 use crate::fx_zoom;
 use crate::render_fx;
+use crate::runqueue;
 use crate::hand_edit;
 use crate::llm_budget;
 use crate::llm_liveness;
@@ -207,6 +208,19 @@ pub fn prepare() -> Vec<Param> {
         ),
         // F3.9 S1: how many clips one caption request carries, read from the pass that builds the batches.
         param("P.machine.captionBatch", cut_captions::BATCH.to_string(), "cut_captions::BATCH"),
+        // F0.5's two clocks. §10 lists them only inside its prose line ("progress pulse 150 ms;
+        // checkpoint poll 200 ms") and gives neither a `P.` id, so they take the bare `machine.`
+        // prefix — the same choice `machine.jpegQuality` made over inventing ids §10 does not carry.
+        param(
+            "machine.checkpointPollMs",
+            format!("{} ms", runqueue::CHECKPOINT_POLL.as_millis()),
+            "runqueue::CHECKPOINT_POLL",
+        ),
+        param(
+            "machine.progressPulseMs",
+            format!("{} ms", runqueue::PROGRESS_PULSE.as_millis()),
+            "runqueue::PROGRESS_PULSE",
+        ),
     ];
     params.extend(audio());
     params.extend(engineering());

@@ -19,6 +19,8 @@ use crate::project::Project;
 use crate::rescan;
 use crate::lucky;
 use crate::run;
+use crate::runqueue;
+use crate::exchanges;
 use crate::save_as;
 use crate::sources::{self, Control};
 use crate::startup;
@@ -619,6 +621,11 @@ fn descendants(root: &gtk::Widget) -> Vec<gtk::Widget> {
 pub struct UiState {
     pub page: Page,
     pub status: String,
+    /// F0.5 S1: whether the log expander is open — read from the widget, so a test checks the same
+    /// thing the user sees rather than a flag that might not have been drawn.
+    pub log_expanded: bool,
+    /// F0.5 S2: how far the run's progress bar has got, 0 when idle.
+    pub progress: f64,
 }
 
 /// Build the window showing `project`. `page` selects the visible tab.
@@ -681,8 +688,44 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let guard = Rc::new(RefCell::new(false));
     wire_switching(&stack, &switcher, &status, &shell, &guard, project);
 
+    // F0.5's bookkeeping, drawn: the bar that says how far the run has got and the log it writes
+    // into. Both are window-level (built once here, not per page), so a name lookup cannot land on a
+    // second copy the way a same-named page button could.
+    let queue = Rc::new(RefCell::new(runqueue::Queue::new()));
+    let exchange_log = Rc::new(RefCell::new(exchanges::RunLog::new()));
+
+    // The progress bar sits between ⏹ and the status line: §2's bar reads play, stop, gears, then
+    // the run's fraction and its words. Idle is 0 rather than hidden — a bar that vanishes makes the
+    // row jump when a run starts.
+    let progress = gtk::ProgressBar::new();
+    progress.set_widget_name("run-progress");
+    progress.set_hexpand(true);
+    progress.set_valign(gtk::Align::Center);
+
+    // §1: "the log expander, its header carrying the status line". The status label therefore lives
+    // in the expander's header rather than in the run row, and `state()` still reads it by name, so
+    // every existing assertion on `state().status` keeps working unchanged.
+    let log_view = gtk::TextView::new();
+    log_view.set_widget_name("log-view");
+    log_view.set_editable(false);
+    log_view.set_cursor_visible(false);
+    log_view.set_monospace(true);
+    log_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    log_view.set_vexpand(true);
+    // §10 lists the log's heights only in prose ("log heights 220/110") and gives no `P.` id, so the
+    // numbers go on the widget with this note rather than as invented parameter rows.
+    log_view.set_height_request(LOG_OPEN_PX);
+
+    let log = gtk::Expander::new(Some("Log"));
+    log.set_widget_name("log-expander");
+    // §1: "the log expander, its header carrying the status line". The label is replaced by the
+    // status label itself, so `state().status` reads what sits in the header.
+    log.set_label_widget(Some(&status));
+    log.set_child(Some(&log_view));
+    log.set_expanded(false);
+
     // §2's run bar: ▶ at the left of the row above the log, ⏹ next to it (F0.3), then the "I'm
-    // feeling lucky" gears (F0.4). The progress bar and the log expander are F0.5 and are not here yet.
+    // feeling lucky" gears (F0.4), then the progress bar F0.5 adds.
     let play = gtk::Button::from_icon_name(run::PLAY_ICON);
     play.set_widget_name("play-button");
     play.add_css_class("suggested-action");
@@ -707,11 +750,46 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     run_row.append(&play);
     run_row.append(&stop_);
     run_row.append(&lucky);
-    run_row.append(&status);
-    wire_play(&play, &stop_, &bar, &shell, &status, project);
-    wire_stop(&stop_, &play, &bar, &shell, &status, &procs);
+    run_row.append(&progress);
+    wire_play(
+        &play,
+        &stop_,
+        &bar,
+        &shell,
+        &status,
+        &progress,
+        &log,
+        &log_view,
+        &queue,
+        &exchange_log,
+        project,
+    );
+    wire_stop(
+        &stop_,
+        &play,
+        &bar,
+        &shell,
+        &status,
+        &progress,
+        &log,
+        &log_view,
+        &queue,
+        &procs,
+    );
     wire_lucky(
-        &lucky, &bar, &shell, &stack, &guard, &status, &procs,
+        &lucky,
+        &bar,
+        &shell,
+        &stack,
+        &guard,
+        &status,
+        &progress,
+        &log,
+        &log_view,
+        &queue,
+        &exchange_log,
+        &procs,
+        project.clone(),
     );
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -756,6 +834,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     box_.append(&stack);
     stack.set_vexpand(true);
     box_.append(&run_row);
+    // The log goes under the run bar, as §1 lists them. A `gtk::Paned` divider (the "two halves of a
+    // draggable divider" line) is the window's own item, not F0.5's bookkeeping, so the box layout
+    // stays and the expander simply takes its height back when collapsed.
+    box_.append(&log);
 
     window.set_content(Some(&box_));
     window
@@ -831,6 +913,41 @@ fn paint_run_bar(
     stop_.set_sensitive(drawn.stop_sensitive);
 }
 
+/// §10's prose log heights: 220 px open, 110 px collapsed. No `P.` id exists for them, so they are
+/// bare constants here with the note rather than invented parameter rows.
+const LOG_OPEN_PX: i32 = 220;
+
+/// Draw F0.5's two widgets from the bookkeeping state: the bar's fraction and tooltip come from the
+/// queue, the expander's openness from the run's `log_expanded`, and its body from the lines logged
+/// so far. No decisions here — [`runqueue`] decided them, this paints them.
+fn paint_progress(
+    progress: &gtk::ProgressBar,
+    log: &gtk::Expander,
+    log_view: &gtk::TextView,
+    queue: &runqueue::Queue,
+    expanded: bool,
+) {
+    let (_text, tip) = queue.text_and_tip();
+    progress.set_fraction(queue.fraction());
+    // A run with nothing queued yet leaves the standing tooltip rather than blanking it (§2).
+    if !tip.is_empty() {
+        progress.set_tooltip_text(Some(&tip));
+    }
+    log.set_expanded(expanded);
+    if expanded {
+        let mut body = String::new();
+        for line in window_logs() {
+            body.push_str(&line);
+            body.push('\n');
+        }
+        let buffer = log_view.buffer();
+        buffer.set_text(&body);
+        // The newest line is the one worth seeing.
+        let mut end = buffer.end_iter();
+        log_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 1.0);
+    }
+}
+
 /// Where a press of ▶ is decided: ask [`run::RunBar::press`], then redraw the button and put the
 /// bar's sentence on the status line. Same shape as [`wire_switching`] — one handler, one job.
 ///
@@ -843,6 +960,11 @@ fn wire_play(
     bar: &Rc<RefCell<run::RunBar>>,
     shell: &Rc<RefCell<Shell>>,
     status: &gtk::Label,
+    progress: &gtk::ProgressBar,
+    log: &gtk::Expander,
+    log_view: &gtk::TextView,
+    queue: &Rc<RefCell<runqueue::Queue>>,
+    exchange_log: &Rc<RefCell<exchanges::RunLog>>,
     project: &Project,
 ) {
     let bar = bar.clone();
@@ -850,11 +972,25 @@ fn wire_play(
     let status = status.clone();
     let project = project.clone();
     let stop_ = stop_.clone();
+    let progress = progress.clone();
+    let log = log.clone();
+    let log_view = log_view.clone();
+    let queue = queue.clone();
+    let exchange_log = exchange_log.clone();
     play.connect_clicked(move |play| {
         let pressed = bar.borrow_mut().press(shell.borrow().page, run::Transport::default(), &project);
-        // A press that started a step has the page's own work to do (F1.1/F2.14/F4.1/F5.1), and that
-        // is those flows' round; the bar only records the run it opened.
-        let _ = pressed;
+        // F0.5 S1: a press that opened a run also opened the bookkeeping — fresh cancel context,
+        // empty queue, model log closed, log expander open. A pause or a transport toggle is not a
+        // new run, so only `Started` goes through `start_run`.
+        if matches!(pressed, run::Pressed::Started { .. }) {
+            runqueue::start_run(
+                &mut bar.borrow_mut(),
+                &mut queue.borrow_mut(),
+                &mut exchange_log.borrow_mut(),
+                run::step(shell.borrow().page),
+                run::snapshot_sources(&project),
+            );
+        }
         paint_run_bar(
             play,
             &stop_,
@@ -863,6 +999,13 @@ fn wire_play(
             run::Transport::default(),
         );
         status.set_text(&bar.borrow().status);
+        paint_progress(
+            &progress,
+            &log,
+            &log_view,
+            &queue.borrow(),
+            bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+        );
     });
 }
 
@@ -878,6 +1021,10 @@ fn wire_stop(
     bar: &Rc<RefCell<run::RunBar>>,
     shell: &Rc<RefCell<Shell>>,
     status: &gtk::Label,
+    progress: &gtk::ProgressBar,
+    log: &gtk::Expander,
+    log_view: &gtk::TextView,
+    queue: &Rc<RefCell<runqueue::Queue>>,
     procs: &Rc<RefCell<run::Subprocesses>>,
 ) {
     let bar = bar.clone();
@@ -885,6 +1032,10 @@ fn wire_stop(
     let status = status.clone();
     let procs = procs.clone();
     let play = play.clone();
+    let progress = progress.clone();
+    let log = log.clone();
+    let log_view = log_view.clone();
+    let queue = queue.clone();
     stop_.connect_clicked(move |stop_| {
         let stopped = bar.borrow_mut().press_stop(
             shell.borrow().page,
@@ -905,6 +1056,13 @@ fn wire_stop(
         if !stopped.status().is_empty() {
             status.set_text(stopped.status());
         }
+        paint_progress(
+            &progress,
+            &log,
+            &log_view,
+            &queue.borrow(),
+            bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+        );
     });
 }
 
@@ -927,7 +1085,13 @@ fn wire_lucky(
     stack: &adw::ViewStack,
     guard: &Rc<RefCell<bool>>,
     status: &gtk::Label,
+    progress: &gtk::ProgressBar,
+    log: &gtk::Expander,
+    log_view: &gtk::TextView,
+    queue: &Rc<RefCell<runqueue::Queue>>,
+    exchange_log: &Rc<RefCell<exchanges::RunLog>>,
     procs: &Rc<RefCell<run::Subprocesses>>,
+    project: Project,
 ) {
     let lucky_button = lucky_button.clone();
     let bar = bar.clone();
@@ -936,6 +1100,11 @@ fn wire_lucky(
     let guard = guard.clone();
     let status = status.clone();
     let procs = procs.clone();
+    let progress = progress.clone();
+    let log = log.clone();
+    let log_view = log_view.clone();
+    let queue = queue.clone();
+    let exchange_log = exchange_log.clone();
     lucky_button.connect_clicked(move |button| {
         // S1: busy is read from the same bar state ▶ and ⏹ answer for, so the three buttons cannot
         // disagree about whether something is going.
@@ -948,6 +1117,17 @@ fn wire_lucky(
             }
         };
         log_line(&opening);
+
+        // F0.5 S1: the chain is a run like any other, so it opens the bookkeeping the same way —
+        // fresh cancel context, empty queue, model log closed, log expanded.
+        runqueue::start_run(
+            &mut bar.borrow_mut(),
+            &mut queue.borrow_mut(),
+            &mut exchange_log.borrow_mut(),
+            run::step(shell.borrow().page),
+            run::snapshot_sources(&project),
+        );
+        paint_progress(&progress, &log, &log_view, &queue.borrow(), true);
 
         // S2: the gears turn while the chain runs. Animation itself is cosmetic; what matters is that
         // the button cannot be pressed a second time mid-chain, which S1 would also refuse.
@@ -973,6 +1153,9 @@ fn wire_lucky(
                 lucky::Advance::End { line, status: short } => {
                     log_line(&line);
                     status.set_text(&short);
+                    // F0.5 S4: the chain ended, so its bookkeeping ends with it and the bar stops.
+                    runqueue::end_run(&mut bar.borrow_mut(), None);
+                    queue.borrow_mut().reset();
                     break;
                 }
                 lucky::Advance::Idle => break,
@@ -984,6 +1167,8 @@ fn wire_lucky(
                 if let lucky::Advance::End { line, status: short } = stopped {
                     log_line(&line);
                     status.set_text(&short);
+                    runqueue::end_run(&mut bar.borrow_mut(), None);
+                    queue.borrow_mut().reset();
                 }
                 break;
             }
@@ -992,6 +1177,13 @@ fn wire_lucky(
         // The chain is over either way: give the button back.
         button.set_sensitive(true);
         button.remove_css_class("lucky-running");
+        paint_progress(
+            &progress,
+            &log,
+            &log_view,
+            &queue.borrow(),
+            bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+        );
         let _ = procs.borrow();
     });
 }
@@ -1314,6 +1506,10 @@ pub fn state(window: &adw::ApplicationWindow) -> UiState {
             .find(|candidate| candidate.label() == page)
             .unwrap_or(Page::Prepare),
         status: status.text().to_string(),
+        log_expanded: log_expander(window).is_some_and(|expander| expander.is_expanded()),
+        progress: progress_bar(window)
+            .map(|bar| bar.fraction())
+            .unwrap_or(0.0),
     }
 }
 
@@ -1380,6 +1576,27 @@ pub fn rescan_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 /// `remove-7` of a two-row session gets `None`, which is the honest answer.
 pub fn find_source_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     find_widget_by_name(window.upcast_ref(), name)
+}
+
+/// The run's progress bar (F0.5 S2), found the same way as [`play_button`]. Window-level, so a name
+/// lookup cannot land on a per-page copy.
+pub fn progress_bar(window: &adw::ApplicationWindow) -> Option<gtk::ProgressBar> {
+    find_widget_by_name(window.upcast_ref(), "run-progress")?
+        .downcast()
+        .ok()
+}
+
+/// The log expander (F0.5 S1), whose header carries the status line and whose body holds the run's
+/// lines. `is_expanded()` is what `state().log_expanded` reports.
+pub fn log_expander(window: &adw::ApplicationWindow) -> Option<gtk::Expander> {
+    find_widget_by_name(window.upcast_ref(), "log-expander")?
+        .downcast()
+        .ok()
+}
+
+/// The tooltip the progress bar carries — where F0.5 puts the counting ("task 4 of 12, 8 waiting").
+pub fn progress_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
+    progress_bar(window)?.tooltip_text().map(|text| text.to_string())
 }
 
 /// The tooltip Rescan carries, which is how a test reads §1's wording for badge **8**.

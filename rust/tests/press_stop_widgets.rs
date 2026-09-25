@@ -72,7 +72,8 @@ fn stops_a_run(app: &adw::Application) {
     // ▶ keeps the ⏸ face after the stop: `press_stop` marks the run stopped but leaves `running` in
     // place — clearing it is the stopping flow's own job once it has unwound (F0.5), so `controls`
     // still sees a run and keeps both buttons' faces as busy. Asserted as-is rather than as an
-    // "idle face" claim; F0.5's round owns the teardown that would reset it.
+    // "idle face" claim; F0.5's teardown lives on the step's own finish (`run::RunBar::finish`), not
+    // on the ⏹ press, which only sets the flag.
     window.close();
 }
 
