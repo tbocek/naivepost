@@ -17,6 +17,7 @@ use crate::new_project;
 use crate::prepare;
 use crate::project::Project;
 use crate::rescan;
+use crate::lucky;
 use crate::run;
 use crate::save_as;
 use crate::sources::{self, Control};
@@ -680,15 +681,19 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let guard = Rc::new(RefCell::new(false));
     wire_switching(&stack, &switcher, &status, &shell, &guard, project);
 
-    // §2's run bar: ▶ at the left of the row above the log. Only ▶ belongs to F0.2 — the "I'm
-    // feeling lucky" gears are F0.4, ⏹ is F0.3, and the progress bar with the log expander is F0.5,
-    // so none of those widgets go in here yet.
+    // §2's run bar: ▶ at the left of the row above the log, ⏹ next to it (F0.3), then the "I'm
+    // feeling lucky" gears (F0.4). The progress bar and the log expander are F0.5 and are not here yet.
     let play = gtk::Button::from_icon_name(run::PLAY_ICON);
     play.set_widget_name("play-button");
     play.add_css_class("suggested-action");
     // ⏹ beside ▶, in the order §2's run bar reads: play, stop, then the status line.
     let stop_ = gtk::Button::from_icon_name(run::STOP_ICON);
     stop_.set_widget_name("stop-button");
+    // The gears after ⏹: labelled rather than icon-only, because §03 names the control by its words and
+    // the spec's run-bar image shows the phrase on the button.
+    let lucky = gtk::Button::with_label(lucky::LUCKY_LABEL);
+    lucky.set_widget_name("lucky-button");
+    lucky.set_tooltip_text(Some(lucky::LUCKY_TOOLTIP));
     paint_run_bar(
         &play,
         &stop_,
@@ -701,9 +706,13 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     run_row.set_widget_name("run-bar");
     run_row.append(&play);
     run_row.append(&stop_);
+    run_row.append(&lucky);
     run_row.append(&status);
     wire_play(&play, &stop_, &bar, &shell, &status, project);
     wire_stop(&stop_, &play, &bar, &shell, &status, &procs);
+    wire_lucky(
+        &lucky, &bar, &shell, &stack, &guard, &status, &procs,
+    );
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
     // §1's header bar: **1** New · **3** Save · **8** Rescan. Only those three are here — New is
@@ -896,6 +905,94 @@ fn wire_stop(
         if !stopped.status().is_empty() {
             status.set_text(stopped.status());
         }
+    });
+}
+
+/// Where a press of the "I'm feeling lucky" gears is decided: ask [`lucky::Chain::start`] whether the
+/// bar will allow it, then walk the chain one step at a time. The handler forwards and decides nothing
+/// (spec/00-principles.md §5) — S1's refusal, S3's opening line, S4's skips and S6's end sentence all
+/// come from `lucky.rs`.
+///
+/// Each step is handed over by switching to its page synchronously through the same `stack`/`guard`
+/// path F0.1 uses (a step's own work belongs to the widgets of the page it runs on), logging
+/// `>>> run: <Name>`, and then reporting the outcome back with [`lucky::Chain::next`]. **The real
+/// outcomes arrive with F1.1/F2.14/F4.1/F5.1's rounds** — those step bodies are not implemented yet,
+/// so every step reports [`lucky::StepOutcome::Declined`] here. What this item pins is the wire and the
+/// state machine, not the work behind each step; when a flow lands it replaces that one call with its
+/// own outcome and the chain needs no other change.
+fn wire_lucky(
+    lucky_button: &gtk::Button,
+    bar: &Rc<RefCell<run::RunBar>>,
+    shell: &Rc<RefCell<Shell>>,
+    stack: &adw::ViewStack,
+    guard: &Rc<RefCell<bool>>,
+    status: &gtk::Label,
+    procs: &Rc<RefCell<run::Subprocesses>>,
+) {
+    let lucky_button = lucky_button.clone();
+    let bar = bar.clone();
+    let shell = shell.clone();
+    let stack = stack.clone();
+    let guard = guard.clone();
+    let status = status.clone();
+    let procs = procs.clone();
+    lucky_button.connect_clicked(move |button| {
+        // S1: busy is read from the same bar state ▶ and ⏹ answer for, so the three buttons cannot
+        // disagree about whether something is going.
+        let busy = bar.borrow().running.is_some() || bar.borrow().stop_flag;
+        let (mut chain, opening) = match lucky::Chain::start(busy) {
+            Ok(started) => started,
+            Err(refusal) => {
+                status.set_text(refusal);
+                return;
+            }
+        };
+        log_line(&opening);
+
+        // S2: the gears turn while the chain runs. Animation itself is cosmetic; what matters is that
+        // the button cannot be pressed a second time mid-chain, which S1 would also refuse.
+        button.set_sensitive(false);
+        button.add_css_class("lucky-running");
+
+        loop {
+            let advance = chain.next(lucky::StepOutcome::Declined);
+            match advance {
+                lucky::Advance::Run { page, name } => {
+                    // F0.1's synchronous move: show the page so the step has its widgets. `guard`
+                    // keeps the stack's own write-back from re-entering the tab handler.
+                    *guard.borrow_mut() = true;
+                    stack.set_visible_child_name(page.label());
+                    *guard.borrow_mut() = false;
+                    shell.borrow_mut().page = page;
+                    log_line(&lucky::step_line(name));
+                }
+                lucky::Advance::Skipped { line } => {
+                    log_line(&line);
+                    // A skip closes no running step; keep walking.
+                }
+                lucky::Advance::End { line, status: short } => {
+                    log_line(&line);
+                    status.set_text(&short);
+                    break;
+                }
+                lucky::Advance::Idle => break,
+            }
+            // A Declined outcome never blocks, but a stop flag set from elsewhere (⏹ during the chain)
+            // must end it rather than spin.
+            if bar.borrow().stop_flag {
+                let stopped = chain.next(lucky::StepOutcome::Stopped);
+                if let lucky::Advance::End { line, status: short } = stopped {
+                    log_line(&line);
+                    status.set_text(&short);
+                }
+                break;
+            }
+        }
+
+        // The chain is over either way: give the button back.
+        button.set_sensitive(true);
+        button.remove_css_class("lucky-running");
+        let _ = procs.borrow();
     });
 }
 
@@ -1337,6 +1434,11 @@ pub fn play_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 /// The ⏹ button (F0.3), found the same way as [`play_button`].
 pub fn stop_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "stop-button")?.downcast().ok()
+}
+
+/// The "I'm feeling lucky" button (F0.4), found the same way as [`play_button`].
+pub fn lucky_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "lucky-button")?.downcast().ok()
 }
 
 /// The tooltip ▶ carries, which is how a test reads §2's wording without reaching into the button.

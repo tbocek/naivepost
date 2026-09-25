@@ -5,6 +5,7 @@ pub use window::bench_language;
 pub use window::build_window;
 pub use window::copy_into_project;
 pub use window::find_source_widget;
+pub use window::lucky_button;
 pub use window::new_button;
 pub use window::new_project_confirm;
 pub use window::new_tooltip;

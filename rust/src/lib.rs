@@ -92,6 +92,7 @@ pub mod rescan;
 pub mod requests;
 pub mod request_timing;
 pub mod roles;
+pub mod lucky;
 pub mod run;
 pub mod save_as;
 pub mod seam_retries;
