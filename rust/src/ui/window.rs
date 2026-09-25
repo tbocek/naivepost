@@ -669,6 +669,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // pause / transport / start applies is worked out here — run.rs does that (F0.2).
     let bar = Rc::new(RefCell::new(run::RunBar::default()));
 
+    // The children a run has out there, so ⏹ can reach them (F0.3 S3). Held here rather than inside
+    // the bar because the flows that spawn register into it and the bar is what decides to stop;
+    // nothing spawns yet, so this stays empty until the runner's round arrives.
+    let procs = Rc::new(RefCell::new(run::Subprocesses::default()));
+
     // The tab row is a click; the stack is where that click is decided. `guard` keeps the bounce's
     // own write-back from re-entering this handler, which would otherwise recurse through two more
     // notify signals (the prototype does the same with tabGuard, gui/main.go:1209-1224).
@@ -681,13 +686,24 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let play = gtk::Button::from_icon_name(run::PLAY_ICON);
     play.set_widget_name("play-button");
     play.add_css_class("suggested-action");
-    paint_run_bar(&play, &bar.borrow(), shell.borrow().page, run::Transport::default());
+    // ⏹ beside ▶, in the order §2's run bar reads: play, stop, then the status line.
+    let stop_ = gtk::Button::from_icon_name(run::STOP_ICON);
+    stop_.set_widget_name("stop-button");
+    paint_run_bar(
+        &play,
+        &stop_,
+        &bar.borrow(),
+        shell.borrow().page,
+        run::Transport::default(),
+    );
 
     let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     run_row.set_widget_name("run-bar");
     run_row.append(&play);
+    run_row.append(&stop_);
     run_row.append(&status);
-    wire_play(&play, &bar, &shell, &status, project);
+    wire_play(&play, &stop_, &bar, &shell, &status, project);
+    wire_stop(&stop_, &play, &bar, &shell, &status, &procs);
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
     // §1's header bar: **1** New · **3** Save · **8** Rescan. Only those three are here — New is
@@ -791,10 +807,19 @@ fn wire_switching(
 /// The run bar's icon and tooltip are the whole of what F0.2 puts on screen. `transport` is the
 /// visible page's preview, which only Cut and Narrate have — [`run::transport_for`] answers `None`
 /// for the other two, and that is why their ▶ runs the step while a preview plays.
-fn paint_run_bar(play: &gtk::Button, bar: &run::RunBar, page: Page, transport: run::Transport) {
+fn paint_run_bar(
+    play: &gtk::Button,
+    stop_: &gtk::Button,
+    bar: &run::RunBar,
+    page: Page,
+    transport: run::Transport,
+) {
     let drawn = run::controls(&bar.running, run::transport_for(page, transport));
     play.set_icon_name(drawn.icon);
     play.set_tooltip_text(Some(drawn.tooltip));
+    // ⏹ is sensitive whenever there is something to end — a run, a playing preview, or one parked
+    // part way through. `controls` already decides that; this only draws it.
+    stop_.set_sensitive(drawn.stop_sensitive);
 }
 
 /// Where a press of ▶ is decided: ask [`run::RunBar::press`], then redraw the button and put the
@@ -805,6 +830,7 @@ fn paint_run_bar(play: &gtk::Button, bar: &run::RunBar, page: Page, transport: r
 /// be toggled; ⏹, which would end a preview, is F0.3.
 fn wire_play(
     play: &gtk::Button,
+    stop_: &gtk::Button,
     bar: &Rc<RefCell<run::RunBar>>,
     shell: &Rc<RefCell<Shell>>,
     status: &gtk::Label,
@@ -814,6 +840,7 @@ fn wire_play(
     let shell = shell.clone();
     let status = status.clone();
     let project = project.clone();
+    let stop_ = stop_.clone();
     play.connect_clicked(move |play| {
         let pressed = bar.borrow_mut().press(shell.borrow().page, run::Transport::default(), &project);
         // A press that started a step has the page's own work to do (F1.1/F2.14/F4.1/F5.1), and that
@@ -821,11 +848,54 @@ fn wire_play(
         let _ = pressed;
         paint_run_bar(
             play,
+            &stop_,
             &bar.borrow(),
             shell.borrow().page,
             run::Transport::default(),
         );
         status.set_text(&bar.borrow().status);
+    });
+}
+
+/// Where a press of ⏹ is decided: ask [`run::RunBar::press_stop`], then redraw both buttons and put
+/// the bar's sentence on the status line. The handler forwards and decides nothing
+/// (spec/00-principles.md §5) — which of S1/S2/S3 applies, and what each one stops, is run.rs's rule.
+///
+/// `in_describe` is `false` here because the shell does not know which stage is running; F1.7's own
+/// round passes the real value when it drives Describe (S5 arms "describe from the start").
+fn wire_stop(
+    stop_: &gtk::Button,
+    play: &gtk::Button,
+    bar: &Rc<RefCell<run::RunBar>>,
+    shell: &Rc<RefCell<Shell>>,
+    status: &gtk::Label,
+    procs: &Rc<RefCell<run::Subprocesses>>,
+) {
+    let bar = bar.clone();
+    let shell = shell.clone();
+    let status = status.clone();
+    let procs = procs.clone();
+    let play = play.clone();
+    stop_.connect_clicked(move |stop_| {
+        let stopped = bar.borrow_mut().press_stop(
+            shell.borrow().page,
+            run::Transport::default(),
+            false,
+            &mut procs.borrow_mut(),
+        );
+        // Repaint both: stopping a run changes ▶'s face as well as ⏹'s sensitivity.
+        paint_run_bar(
+            &play,
+            stop_,
+            &bar.borrow(),
+            shell.borrow().page,
+            run::Transport::default(),
+        );
+        // Only write a sentence when there is one: S2's "nothing more" must leave an existing status
+        // alone rather than blanking it.
+        if !stopped.status().is_empty() {
+            status.set_text(stopped.status());
+        }
     });
 }
 
@@ -1262,6 +1332,11 @@ pub fn new_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
 /// and an unnamed busy button would then be findable no more.
 pub fn play_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "play-button")?.downcast().ok()
+}
+
+/// The ⏹ button (F0.3), found the same way as [`play_button`].
+pub fn stop_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "stop-button")?.downcast().ok()
 }
 
 /// The tooltip ▶ carries, which is how a test reads §2's wording without reaching into the button.

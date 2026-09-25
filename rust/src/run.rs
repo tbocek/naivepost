@@ -22,6 +22,14 @@ pub const PAUSE_TOOLTIP: &str = "Pause";
 pub const PLAY_ICON: &str = "media-playback-start-symbolic";
 pub const PAUSE_ICON: &str = "media-playback-pause-symbolic";
 
+/// F0.3 S1's sentence once the page's preview has been stopped.
+pub const PLAYBACK_STOPPED: &str = "playback stopped";
+/// F0.3 S3's sentence while a run is being brought down. The ellipsis is the spec's, and it is
+/// honest: the stop only lands between subprocesses (S4), so the run is still going when this shows.
+pub const STOPPING: &str = "stopping\u{2026}";
+/// ⏹'s icon. The prototype uses the same GTK icon name for its stop button.
+pub const STOP_ICON: &str = "media-playback-stop-symbolic";
+
 /// The page's own preview: the recording on Cut, the voice sample on Narrate.
 ///
 /// Only those two pages have one (§2). `started` is not `playing`: on both pages the player is
@@ -160,6 +168,83 @@ pub fn snapshot_sources(project: &Project) -> Snapshot {
     snap
 }
 
+/// The subprocesses a run has out there right now.
+///
+/// This registry **records**; it does not signal. Nothing in this tree spawns a process — `align`,
+/// `asr`, `frames` and friends return their ffmpeg invocations as argv for the runner to execute
+/// (src/align.rs:6, src/asr.rs:8, src/frames.rs:7), so the `kill()` belongs to whichever flow owns
+/// the child. What ⏹ needs from here is the list of what to kill and the fact that it was asked, so
+/// the stop rule can be tested without a live process; the runner drains [`Subprocesses::kill_all`]
+/// and signals each pid itself.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Subprocesses {
+    pids: Vec<u32>,
+}
+
+impl Subprocesses {
+    /// Note a child the run has started, so a stop can reach it.
+    pub fn register(&mut self, pid: u32) {
+        self.pids.push(pid);
+    }
+
+    /// How many children are outstanding.
+    pub fn len(&self) -> usize {
+        self.pids.len()
+    }
+
+    /// Whether anything is registered. Required beside `len`.
+    pub fn is_empty(&self) -> bool {
+        self.pids.is_empty()
+    }
+
+    /// Empty the registry and hand back what was in it. Emptied rather than left standing because a
+    /// stopped child that stays listed gets killed twice by the next ⏹, and the second kill lands on
+    /// a recycled pid.
+    pub fn kill_all(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.pids)
+    }
+}
+
+/// What one press of ⏹ did. Like [`Pressed`], the UI draws from this and decides nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stopped {
+    /// S1 with no run behind it: only the page's preview was going.
+    TransportOnly,
+    /// S2: neither a preview nor a run, so the press is ignored.
+    NothingToDo,
+    /// S3: the run was brought down, and these are the children handed off to be killed.
+    RunStopped { killed: Vec<u32> },
+}
+
+impl Stopped {
+    /// The sentence the status line shows after the press. An empty string means "say nothing" —
+    /// S2 must not blank a status line that already carries something.
+    pub fn status(&self) -> &'static str {
+        match self {
+            Self::TransportOnly => PLAYBACK_STOPPED,
+            Self::NothingToDo => "",
+            Self::RunStopped { .. } => STOPPING,
+        }
+    }
+}
+
+/// S4: whether a subprocess that died should be read as stopped rather than as a failure.
+///
+/// Only when the stop flag was set: a child killed by ⏹ is the user asking for it, while the same
+/// exit code with the flag clear is a real crash and has to be reported as one.
+pub fn stopped_is_not_failure(stop_flag: bool, exit_killed: bool) -> bool {
+    stop_flag && exit_killed
+}
+
+/// S4: whether a stop takes effect right now.
+///
+/// True only in the gap between subprocesses. Mid-call the flag is set but does nothing yet —
+/// interrupting a stage halfway is how a half-written output file gets left behind, which is the
+/// same reason ▶ pauses "after the current stage" ([`PAUSING`]).
+pub fn stop_takes_effect_between_subprocesses(stop_flag: bool, subprocess_running: bool) -> bool {
+    stop_flag && !subprocess_running
+}
+
 /// A run under way: which step, whether it is paused, and what it is working on.
 ///
 /// F0.5's queue (`qJob`/`qPush`/`qTake`/`prog`/`qDone`) and its 200 ms checkpoint are deliberately
@@ -198,9 +283,73 @@ pub enum Pressed {
 pub struct RunBar {
     pub running: Option<Run>,
     pub status: String,
+    /// F0.3 S3: set by ⏹ and read by every loop between subprocesses. Not cleared here — the flow
+    /// that was stopped clears it when it has finished unwinding, so a later run cannot inherit it.
+    pub stop_flag: bool,
+    /// F0.3 S3: the run context was cancelled. Model and audio calls check this to abort in place;
+    /// they are HTTP, not children, so `kill_all` cannot reach them.
+    pub cancelled: bool,
+    /// F0.3 S5: a stop landed inside Describe, so the next Prepare run describes from the start.
+    pub describe_from_start: bool,
 }
 
 impl RunBar {
+    /// S1 → S2 → S3 (+S5), in that precedence and no other.
+    ///
+    /// `in_describe` says whether the stage running when ⏹ was pressed was F1.7's Describe; the
+    /// caller knows it because it is the one driving the stages.
+    pub fn press_stop(
+        &mut self,
+        page: Page,
+        transport: Transport,
+        in_describe: bool,
+        procs: &mut Subprocesses,
+    ) -> Stopped {
+        // S1: stop the page's preview if it is going or cued. Deliberately NOT an early return —
+        // the spec says one press ends both, so after killing playback the code falls through to the
+        // run below and the status ends on "stopping…", not "playback stopped". Turning this into
+        // `return Stopped::TransportOnly` here would make ⏹ take two presses to stop a run.
+        let stopped_playback = transport_for(page, transport)
+            .is_some_and(|t| t.playing || t.cued());
+        if stopped_playback {
+            self.status = PLAYBACK_STOPPED.to_string();
+        }
+
+        // S2: nothing under way, so nothing more happens. The run state is untouched, the flag is
+        // not set, and the status keeps whatever S1 left — which is the empty string when there was
+        // no playback either, meaning the press said nothing at all.
+        let Some(run) = self.running.as_mut() else {
+            return if stopped_playback {
+                Stopped::TransportOnly
+            } else {
+                Stopped::NothingToDo
+            };
+        };
+
+        // S3: bring the run down. Unpause first — a stop is not a pause, and leaving `paused` true
+        // would let a resumed run look like it was still only paused (prototype stores false into
+        // `pauseFlag` for the same reason). Then cancel the context and hand off the children.
+        run.paused = false;
+        self.stop_flag = true;
+        self.cancelled = true;
+        let killed = procs.kill_all();
+        self.status = STOPPING.to_string();
+
+        // S5: a stop inside Describe arms a restart. Read back with [`RunBar::describe_restarts`].
+        if in_describe {
+            self.describe_from_start = true;
+        }
+        Stopped::RunStopped { killed }
+    }
+
+    /// Whether the next Prepare run must describe from the start — and clear the arming, so one stop
+    /// affects exactly one run. F1.7 describes per chunk of frames, so a stop part-way through
+    /// leaves the stored chunks unable to be trusted as contiguous: the safe move is to redo them
+    /// rather than resume a description whose middle is unknown.
+    pub fn describe_restarts(&mut self) -> bool {
+        std::mem::replace(&mut self.describe_from_start, false)
+    }
+
     /// S1 → S2 → S3+S4, in that precedence and no other.
     pub fn press(&mut self, page: Page, transport: Transport, project: &Project) -> Pressed {
         // S1: a run under way, so ▶ is the pause button and says so. Nothing else happens —

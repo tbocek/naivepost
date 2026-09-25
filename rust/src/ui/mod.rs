@@ -15,6 +15,7 @@ pub use window::rescan_tooltip;
 pub use window::save_button;
 pub use window::save_tooltip;
 pub use window::state;
+pub use window::stop_button;
 pub use window::tab_button;
 pub use window::tab_dimmed;
 pub use window::tab_tooltip;
