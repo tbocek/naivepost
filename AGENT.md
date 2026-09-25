@@ -36,11 +36,14 @@ prototype `spec/` was written from: read it for observed behaviour, put new work
 
 ## Commands (from `rust/`)
 
+    just build                 # cargo build --release -> rust/target/release/naivepost
+                               # (GTK 4 app: runs on a host with a display, not in this container)
     just test                  # xvfb-run, GSK_RENDERER=cairo; several tests build real widgets
-                               # ~4 min: run detached to a log, a piped run dies at ~2 min idle
+                               # ~4 min: run it once into a file, then grep/tail the file
     just snapshot 03-window    # -> rust/shots/03-window.png (03-sources, 04-prepare, 05-cut, …)
-                               # names are accepted for every page, but only Prepare draws widgets;
-                               # so no Cut/Narrate/Produce screen can be compared with spec/img yet
+                               # every page draws its spec screen; compare each with spec/img.
+                               # Every interactive widget has a name (set_widget_name, from the
+                               # spec's label) and a test that fires it and checks the effect.
 
 ## Rules the code holds to
 

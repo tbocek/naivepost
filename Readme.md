@@ -159,9 +159,10 @@ and each editable by hand.
 
 An editable line per clip: what is said over it, in which voice, with what
 emotion. ▶ writes the lines the cut does not have and speaks the ones not
-already in the cache. A clip grows, or the speech speeds up, when a line does
-not quite fit — both are logged. Turn the narration off entirely and everything
-that exists to carry one disappears from the page.
+already in the cache; rewriting every existing line too is a choice you turn on
+(`P.policy.narrationRewrite`), never the default. A clip grows, or the speech
+speeds up, when a line does not quite fit — both are logged. Turn the narration
+off entirely and everything that exists to carry one disappears from the page.
 
 ### Produce
 
@@ -658,3 +659,14 @@ same way, where `<screen>` is named after a spec image (`03-window`, `03-sources
 `04-prepare`, `05-cut`, ...) and the window is built from the fixture project at
 `rust/fixtures/demo.naivepost`. There is no host display in this container, so
 both recipes are how the app is seen here.
+
+`just build` (or `cargo build --release`) produces the standalone binary at
+`rust/target/release/naivepost`, and prints the triple it is building for first.
+There is nothing to choose per machine: the libc follows the toolchain, so the same
+recipe links musl on Alpine and glibc on a Debian/Ubuntu host — only the system
+packages differ by name (`gtk4.0-dev libadwaita-dev` on Alpine,
+`libgtk-4-dev libadwaita-1-dev` on Debian/Ubuntu). The binary is not static: it
+links that libc plus GTK 4, libadwaita and cairo, so run it on a matching system
+rather than copying it across. Against a real display it opens the project in the
+current folder; inside the container there is nothing to draw to, so use
+`just snapshot` to see it.

@@ -2,6 +2,18 @@
 # driver this container has not got. GTK_A11Y/GSETTINGS_BACKEND keep the log clean.
 set dotenv-load := false
 
+# just build -> target/release/naivepost, for the libc this machine's rustc already targets.
+# Nothing to choose here: libc follows the toolchain, not a flag, so the same recipe links musl on Alpine
+# and glibc on a Debian/Ubuntu host. Do NOT add a `just` os() branch to pick a libc — it would select
+# nothing. Cross-compiling (glibc host wanting a musl binary, or the reverse) needs a second toolchain
+# (`rustup target add x86_64-unknown-linux-musl` + a matching linker), and this image has no rustup:
+# rustc is installed from apk. Both kinds of host need the same system libraries under different names:
+# Alpine's gtk4.0-dev and libadwaita-dev, or Debian+Ubuntu's libgtk-4-dev and libadwaita-1-dev.
+build:
+    @rustc -vV | grep '^host:'
+    cargo build --release
+    @echo '-> target/release/naivepost'
+
 # Tests, on a virtual display: several tests build real widgets.
 test:
     xvfb-run -a env GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory cargo test
