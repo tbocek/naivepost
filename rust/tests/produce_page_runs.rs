@@ -539,6 +539,8 @@ fn f5_7_s8_the_produce_rows_stay_few_and_all_named() {
             "P.policy.gameVolume",
             "P.eng.loudness",
             "P.eng.clipLimiter",
+            // §08 §4's frame-edge blur, catalogued between the limiter and the fitting ceiling.
+            "P.eng.blurSigma",
             "P.eng.narrationMaxTempo",
             "P.machine.thumbnailLongSide",
             "P.eng.titleBand",

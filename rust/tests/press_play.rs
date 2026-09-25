@@ -69,6 +69,7 @@ fn bar_with_run(step: Step) -> RunBar {
     RunBar {
         running: Some(running(step)),
         status: "describe 1/2: chunk 4/12".to_string(),
+        ..Default::default()
     }
 }
 

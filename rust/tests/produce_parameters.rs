@@ -411,6 +411,8 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
             "P.policy.gameVolume",
             "P.eng.loudness",
             "P.eng.clipLimiter",
+            // §4's frame-edge blur.
+            "P.eng.blurSigma",
             "P.eng.narrationMaxTempo",
             "P.machine.thumbnailLongSide",
             "P.eng.titleBand",
