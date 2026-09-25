@@ -70,6 +70,7 @@ pub mod model_list;
 pub mod narration;
 pub mod params;
 pub mod new_project;
+pub mod open_project;
 pub mod project;
 pub mod project_settings;
 pub mod prompts;

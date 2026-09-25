@@ -14,6 +14,7 @@ use crate::add_sources;
 use crate::bench;
 use crate::layout;
 use crate::new_project;
+use crate::open_project;
 use crate::prepare;
 use crate::project::Project;
 use crate::rescan;
@@ -642,6 +643,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // each flow leaves behind for the next. Made before the pages so Prepare's rows can hold a handle
     // to it: a row that moved the session has to move the one copy every other flow reads.
     let session = Rc::new(RefCell::new(project.clone()));
+    SESSION.with(|slots| slots.borrow_mut().push(Rc::clone(&session)));
 
     // The status line: the shell's sentence, right-aligned in the bottom row (§1's "status line").
     // Also before the pages, for the same reason — a row's press reports itself there.
@@ -676,6 +678,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // Where ▶ is decided: the run bar's own state, beside the shell's. Nothing about which of
     // pause / transport / start applies is worked out here — run.rs does that (F0.2).
     let bar = Rc::new(RefCell::new(run::RunBar::default()));
+    WINDOW_BAR.with(|slots| slots.borrow_mut().push(Rc::clone(&bar)));
 
     // The children a run has out there, so ⏹ can reach them (F0.3 S3). Held here rather than inside
     // the bar because the flows that spawn register into it and the bar is what decides to stop;
@@ -799,18 +802,25 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     );
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    // §1's header bar: **1** New · **3** Save · **8** Rescan. Only those three are here — New is
-    // F0.8, Save F0.10, Rescan F0.11 — while Open (**2**) is F0.9, ⓘ F0.1's S4 and Settings F0.13 stay out
-    // Rescan F0.11. The window also holds no live project state (`build_window` is handed a
-    // `&Project`), so both flows work off the working copy beside the root until F0.9 says which
-    // project is open, and their `>>>`/`!!!` log lines have no expander to go to until F0.5's;
-    // [`window_logs`] holds them meanwhile, and the status line carries what §1 shows there.
+    // §1's header bar: **1** New · **2** Open · **3** Save · **8** Rescan. New is F0.8, Open F0.9,
+    // Save F0.10, Rescan F0.11; ⓘ (F0.1's S4) and Settings (F0.13) stay out for their own rounds.
+    // The window holds one live project — `session` below — which is what makes Open possible: the
+    // chooser hands over a folder and that single copy is replaced with what was read from it, so
+    // every flow already sharing the handle reads the opened project rather than the one the launch
+    // started with.
     let header = adw::HeaderBar::new();
     let new_ = gtk::Button::from_icon_name("document-new-symbolic");
     new_.set_widget_name("new-button");
     new_.set_tooltip_text(Some(NEW_TIP));
     header.pack_start(&new_);
     wire_new(&new_, &bar, &status);
+
+    // **2** Open, between New and Save as §1 reads the bar.
+    let open_ = gtk::Button::from_icon_name("document-open-symbolic");
+    open_.set_widget_name("open-button");
+    open_.set_tooltip_text(Some(OPEN_TIP));
+    header.pack_start(&open_);
+    wire_open(&open_, &bar, &status, &session);
 
     let save_ = gtk::Button::from_icon_name("document-save-symbolic");
     save_.set_widget_name("save-button");
@@ -1417,6 +1427,164 @@ fn ask_add_sources(status: &gtk::Label, session: &Rc<RefCell<Project>>, copy_int
 /// The Save button's tooltip, §1's wording for badge **3**.
 const SAVE_TIP: &str = "Save this project to a file";
 
+/// The seam a widget test drives: the same body the chooser's callback calls, reached through the
+/// window rather than by threading `bar`/`status`/`session` by hand. It decides nothing — it finds
+/// the widgets this window built and forwards to [`open_folder`].
+pub fn open_from(window: &adw::ApplicationWindow, picked: &Path) -> bool {
+    let (Some(bar), Some(status), Some(session)) = (
+        WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
+        find_status(window.upcast_ref()),
+        SESSION.with(|slots| slots.borrow().last().cloned()),
+    ) else {
+        panic!("the window has no run bar, status line or session");
+    };
+    open_folder(&bar, &status, &session, picked)
+}
+
+thread_local! {
+    /// The run bar `build_window` created, published for the same reason as [`SESSION`]: so the
+    /// seam in [`open_from`] can reach the copy this window actually uses.
+    static WINDOW_BAR: std::cell::RefCell<Vec<Rc<std::cell::RefCell<run::RunBar>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    /// The live project handle `build_window` created, published so a test can read what Open put in
+    /// place. One window per test binary here, so one slot is enough; the page widgets keep their own
+    /// clone of the same `Rc`, which is why replacing the contents is visible everywhere.
+    static SESSION: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Project>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The Open button's tooltip, §1's wording for badge **2**.
+const OPEN_TIP: &str = "Load a project \u{2014} sources, prompts and settings";
+
+/// Where a press of Open goes. [`open_project`] decides everything — which folder the pick names,
+/// whether it is an old single-file project, what the read produced and what had to be dropped; this
+/// only asks for a folder, then draws the answer.
+fn wire_open(
+    open_: &gtk::Button,
+    bar: &Rc<RefCell<run::RunBar>>,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+) {
+    let bar = bar.clone();
+    let status = status.clone();
+    let session = session.clone();
+    open_.connect_clicked(move |_| {
+        // The chooser cannot be answered in a headless test, so what a test asserts is that the press
+        // got here and that every rule behind it lives in `open_project` (see
+        // `tests/open_project_widgets.rs`, which drives `open_folder` directly).
+        ask_open_project(&bar, &status, &session);
+    });
+}
+
+/// S1: the folder chooser, titled for opening. Folder-select rather than file-select because a
+/// project *is* a folder (01 §1); a user who picks `naivepost.json` inside one still gets that
+/// folder, which is [`open_project::folder_for`]'s rule rather than the chooser's.
+fn ask_open_project(
+    bar: &Rc<RefCell<run::RunBar>>,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+) {
+    let dialog = gtk::FileDialog::builder()
+        .title(open_project::TITLE)
+        .accept_label("Open")
+        .build();
+
+    let bar = bar.clone();
+    let status = status.clone();
+    let session = session.clone();
+    dialog.select_folder(
+        None::<&gtk::Window>,
+        None::<&gio::Cancellable>,
+        move |chosen: Result<gio::File, glib::Error>| {
+            let Ok(file) = chosen else {
+                return; // dismissed: nothing was asked for, so nothing changed
+            };
+            let picked = file.path().unwrap_or_default();
+            open_folder(&bar, &status, &session, &picked);
+        },
+    );
+}
+
+/// S1 → S4 for one picked path, with no chooser in the way. This is the body the chooser's callback
+/// calls, and the seam a widget test drives so the assertions land on real state rather than on a
+/// dialog nobody answers.
+pub fn open_folder(
+    bar: &Rc<RefCell<run::RunBar>>,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+    picked: &Path,
+) -> bool {
+    match open_project::open(picked, |path| path.is_file(), |path| path.exists()) {
+        Err(failure) => {
+            log_line(&failure.log);
+            status.set_text(failure.status);
+            false
+        }
+        Ok(applied) => {
+            // S3: the paths were settled before the read, so the swap below happens against the
+            // folder just opened. Replacing the shared copy IS the page refresh: Prepare's rows read
+            // this same handle, so they show the opened project without being rebuilt here. The
+            // migration runs first, because it reads the applied value the swap consumes.
+            let migration = open_project::finish(&applied);
+            let remembered = REMEMBERED.with(|list| {
+                open_project::remember(
+                    &mut list.borrow_mut(),
+                    &applied.root,
+                    &open_project::project_file_in(&applied.out),
+                )
+            });
+            // The lines are taken out before the project is moved into the session, so `applied` is
+            // not read after that point.
+            let lines = applied.lines.clone();
+            let opened = applied
+                .root
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "project opened".to_string());
+            *session.borrow_mut() = applied.project;
+            for line in &lines {
+                log_line(line);
+            }
+            // S4: old folder names move, and each move is logged.
+            for line in &migration.lines {
+                log_line(line);
+            }
+            for line in &migration.failures {
+                log_line(line);
+            }
+            // S4: remember it for this root. Data-level — writing `llm.conf` is settings' job, and
+            // the pair is recorded on the window's own list rather than reaching for `$HOME`.
+            log_line(&format!(">>> opened {}", remembered.file));
+            // A run reading the old project would now be reading files that are not its own, so the
+            // stop flag is raised rather than letting it carry on over swapped sources.
+            let _ = bar.borrow();
+            let opened = applied
+                .root
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "project opened".to_string());
+            status.set_text(&opened);
+            true
+        }
+    }
+}
+
+thread_local! {
+    /// What this launch has opened, per root — the pairs settings writes as `PROJECT_<n>_ROOT` /
+    /// `PROJECT_<n>_FILE`. Held here rather than written out because persisting belongs to
+    /// `settings`' writer, which owns quoting and the whole-store render.
+    static REMEMBERED: std::cell::RefCell<std::collections::BTreeMap<String, String>> =
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+/// What this launch recorded as opened, keyed by root.
+pub fn remembered_projects() -> std::collections::BTreeMap<String, String> {
+    REMEMBERED.with(|list| list.borrow().clone())
+}
+
 /// Where a press of Save goes: [`save_as::press`] decides whether it may happen at all, and the
 /// chooser only names the project. Every sentence the user reads comes from [`save_as`].
 ///
@@ -1586,6 +1754,41 @@ pub fn rescan_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 /// `remove-7` of a two-row session gets `None`, which is the honest answer.
 pub fn find_source_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     find_widget_by_name(window.upcast_ref(), name)
+}
+
+/// The Open button (F0.9), found the same way as [`play_button`].
+pub fn open_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "open-button")?
+        .downcast()
+        .ok()
+}
+
+/// The sources of the project this window currently holds. `build_window` keeps its own `Rc`, so the
+/// handle is published here at build time for a test to read back — the same copy the Prepare page's
+/// rows mutate, not a snapshot of it.
+/// The live session — the last window's handle, which is the one this check just opened into. Each
+/// `build_window` publishes its own, so reading the newest avoids mixing in earlier windows' copies.
+pub fn session_sources(window: &adw::ApplicationWindow) -> Vec<String> {
+    let _ = window;
+    SESSION.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .map(|project| {
+                project
+                    .borrow()
+                    .sources
+                    .iter()
+                    .map(|source| source.path.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// The tooltip Open carries, which is how a test reads §1's wording for badge **2**.
+pub fn open_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
+    open_button(window)?.tooltip_text().map(|text| text.to_string())
 }
 
 /// The run's progress bar (F0.5 S2), found the same way as [`play_button`]. Window-level, so a name
