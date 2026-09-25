@@ -695,6 +695,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // into. Both are window-level (built once here, not per page), so a name lookup cannot land on a
     // second copy the way a same-named page button could.
     let queue = Rc::new(RefCell::new(runqueue::Queue::new()));
+    WINDOW_QUEUE.with(|slots| slots.borrow_mut().push(Rc::clone(&queue)));
     let exchange_log = Rc::new(RefCell::new(exchanges::RunLog::new()));
 
     // The progress bar sits between ⏹ and the status line: §2's bar reads play, stop, gears, then
@@ -841,7 +842,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // same-named buttons makes `find` return whichever one it reaches first — an arbitrary page's
     // button, wired to nothing or wired twice.
     if let Some((add_, copy_)) = prepare_add {
-        wire_add(&add_, &copy_, &bar, &status, &session);
+        wire_add(&window, &add_, &copy_, &bar, &status, &session);
     }
 
     box_.append(&header);
@@ -1341,17 +1342,20 @@ fn wire_rescan(button: &gtk::Button, status: &gtk::Label, session: &Rc<RefCell<P
 /// which kinds the chooser offers, what is copied and what is only referenced, and what the status
 /// says. The button forwards (spec/00-principles.md §5).
 ///
-/// The byte progress (`add_sources::Progress::fraction`) belongs to F0.5's progress bar, which is not
-/// built yet, so it is recorded by the module and not drawn; and the session that grows here is the
-/// window's private copy for the same reason [`wire_rescan`] spells out — the pages render the
-/// `&Project` handed to `build_window`, and a live project state is F0.9's.
+/// The copy's bytes are drawn on F0.5's bar: a copy is a run of its own (F0.12 S0), so it reports
+/// through the same bookkeeping ▶'s run uses ([`add_files`], which feeds `runqueue::Queue`) rather
+/// than painting a second bar. The session that grows here is the window's private copy for the
+/// same reason [`wire_rescan`] spells out — the pages render the `&Project` handed to
+/// `build_window`, and a live project state is F0.9's.
 fn wire_add(
+    window: &adw::ApplicationWindow,
     button: &gtk::Button,
     copy_into: &gtk::CheckButton,
     bar: &Rc<RefCell<run::RunBar>>,
     status: &gtk::Label,
     session: &Rc<RefCell<Project>>,
 ) {
+    let window = window.clone();
     let bar = bar.clone();
     let status = status.clone();
     let session = session.clone();
@@ -1363,7 +1367,7 @@ fn wire_add(
             status.set_text(reason);
             return;
         }
-        ask_add_sources(&status, &session, &copy_into);
+        ask_add_sources(&window, &status, &session, &copy_into);
     });
 }
 
@@ -1378,9 +1382,13 @@ fn wire_add(
     deprecated,
     reason = "the 4.10 replacement cannot offer a filtered multi-select native chooser"
 )]
-fn ask_add_sources(status: &gtk::Label, session: &Rc<RefCell<Project>>, copy_into: &gtk::CheckButton) {
-    let chooser = gtk::FileChooserNative::builder()
-        .title(add_sources::CHOOSER_TITLE)
+fn ask_add_sources(
+    window: &adw::ApplicationWindow,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+    copy_into: &gtk::CheckButton,
+) {
+    let chooser = gtk::FileChooserNative::builder()        .title(add_sources::CHOOSER_TITLE)
         .modal(true)
         .action(gtk::FileChooserAction::Open)
         .build();
@@ -1401,6 +1409,7 @@ fn ask_add_sources(status: &gtk::Label, session: &Rc<RefCell<Project>>, copy_int
     let copy_into = copy_into.clone();
     // The same stand-in New, Save and Rescan use, so all four flows agree on which project is open.
     let root = std::env::current_dir().unwrap_or_default();
+    let window = window.clone();
     chooser.connect_response(move |chooser, response| {
         if response != gtk::ResponseType::Accept {
             return;
@@ -1411,16 +1420,8 @@ fn ask_add_sources(status: &gtk::Label, session: &Rc<RefCell<Project>>, copy_int
             .flatten()
             .filter_map(|file| file.path())
             .collect();
-        let copy = copy_into.is_active();
-        let dir = startup::session_dir(&root);
-        match add_sources::add(&mut session.borrow_mut(), &root, &dir, &files, copy) {
-            Ok(added) => status.set_text(&added.status),
-            // S0's abandonment: the log keeps the reason, the status line the sentence.
-            Err(err) => {
-                status.set_text(add_sources::NO_SOURCES_DIR);
-                log_line(&err);
-            }
-        }
+        // The same body a widget test drives, so the chooser and the seam cannot drift apart.
+        add_files(&window, &files);
     });
 }
 
@@ -1441,10 +1442,178 @@ pub fn open_from(window: &adw::ApplicationWindow, picked: &Path) -> bool {
     open_folder(&bar, &status, &session, picked)
 }
 
+/// The seam a widget test drives for F0.12: the same body the "Add source files…" chooser's response
+/// calls, reached through the window rather than by threading `bar`/`status`/`session`/`queue`/
+/// `progress` by hand. It decides nothing — [`add_sources`] does — but it is where the copy's bytes
+/// reach the bar.
+///
+/// A copy is a run of its own (F0.12 S0), so it borrows F0.5's bookkeeping instead of painting a
+/// second bar: the copy owns one track, each file asked for is one task on it, and each file's byte
+/// fraction inside that task is what `prog` reports. That is why the bar moves in proportion to the
+/// bytes actually copied rather than to the number of rows added — a slow card is what the bar is
+/// waiting on, and `add_sources::Progress` already carries those bytes.
+///
+/// Returns whether anything was added. Refused while another run is on (S0): the session is not
+/// touched, so a refused press cannot half-apply.
+pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) -> bool {
+    let (Some(bar), Some(status), Some(session), Some(queue), Some(progress)) = (
+        WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
+        find_status(window.upcast_ref()),
+        SESSION.with(|slots| slots.borrow().last().cloned()),
+        WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned()),
+        progress_bar(window),
+    ) else {
+        panic!("the window has no run bar, status line, session, queue or progress bar");
+    };
+    let copy = copy_into_project(window).is_some_and(|tick| tick.is_active());
+    let root = std::env::current_dir().unwrap_or_default();
+    let dir = startup::session_dir(&root);
+    // S0 first, again at the seam: pressed while a run is on, it says the sentence and stops before
+    // any byte moves. Nothing here clears a ▶ run's flag — ⏹ owns that.
+    if let Err(reason) = add_sources::press(bar.borrow().running.is_some()) {
+        status.set_text(reason);
+        return false;
+    }
+    // Ours alone: the import marks itself as *the* run so a ▶ press during a copy is refused the
+    // other way round, and only this call may take that flag away.
+    bar.borrow_mut().running = Some(run::Run {
+        step: run::Step::Prepare,
+        paused: false,
+        log_expanded: true,
+        sources: run::snapshot_sources(&session.borrow()),
+    });
+    let added = add_copy(
+        &mut session.borrow_mut(),
+        &queue,
+        &progress,
+        &root,
+        &dir,
+        files,
+        copy,
+    );
+    // End it through F0.5's own path, whatever the copy did: the import is over either way. The log
+    // expander's state is put back by hand rather than left to `end_run`'s clear — that clears the
+    // status line, which this flow needs for S5's sentence.
+    bar.borrow_mut().running = None;
+
+    match added {
+        Ok(answer) => {
+            status.set_text(&answer.status);
+            // The list drew its rows once at build time, so the new ones are appended here rather
+            // than the list being rebuilt — rows already on screen keep their own state (S3).
+            let total_rows = session.borrow().sources.len();
+            if let Some(list) = find_widget_by_name(window.upcast_ref(), "sources-list")
+                .and_then(|widget| widget.downcast::<gtk::ListBox>().ok())
+            {
+                // GTK's `ListBox` exposes its rows through the widget tree, so they are counted with
+                // the same iterator the rest of this module walks widgets with: that count is where
+                // the build-time drawing stopped, so everything past it is new.
+                let drawn = list
+                    .observe_children()
+                    .iter::<glib::Object>()
+                    .filter_map(|child| child.ok())
+                    .filter(|child| child.downcast_ref::<gtk::ListBoxRow>().is_some())
+                    .count();
+                for index in drawn..total_rows {
+                    list.append(&source_row(&session, &status, index));
+                }
+            }
+            answer.added > 0
+        }
+        // S0's abandonment: the log keeps the reason, the status line the sentence.
+        Err(err) => {
+            status.set_text(add_sources::NO_SOURCES_DIR);
+            log_line(&err);
+            false
+        }
+    }
+}
+
+/// The copy half of a press, with the bar fed from the bytes as they land. Split out so the seam
+/// above stays about finding widgets and this stays about the run of its own.
+fn add_copy(
+    session: &mut Project,
+    queue: &std::cell::RefCell<runqueue::Queue>,
+    progress: &gtk::ProgressBar,
+    root: &Path,
+    dir: &Path,
+    files: &[std::path::PathBuf],
+    copy: bool,
+) -> Result<add_sources::Added, String> {
+    // One job on the first track; every file asked for is one task of it, so the tooltip counts the
+    // pick rather than what survived (`added N of M` is the status line's job, not the bar's).
+    queue.borrow_mut().job(TRACK_IMPORT, IMPORT_JOB, 0, 0);
+    queue.borrow_mut().push(TRACK_IMPORT, files.len(), "file");
+    // The folder a copy lands in has to exist before the first `.part` is renamed into it. `add`
+    // makes the same folder afterwards, but the byte-by-byte report runs first (F0.12 S2).
+    if copy {
+        std::fs::create_dir_all(dir.join("sources"))
+            .map_err(|_| add_sources::NO_SOURCES_DIR.to_string())?;
+    }
+    // The total is taken before the first byte moves, so the fraction never chases a growing sum.
+    let total: u64 = files
+        .iter()
+        .map(|file| file.metadata().map(|meta| meta.len()).unwrap_or(0))
+        .sum();
+    let mut done_bytes = 0u64;
+    for file in files {
+        let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+        queue.borrow_mut().take(TRACK_IMPORT);
+        if copy {
+            // `add_sources`' own copy rule — `.part` then rename, same name + same size skipped, a
+            // file already inside the project left where it is. Not reimplemented here.
+            add_sources::copy_one(file, dir).map_err(|err| err.to_string())?;
+        }
+        done_bytes += size;
+        // The bar means "how much of this import is on disk": the byte fraction, not the task count.
+        // Three tiny files beside one long recording should not read as mostly copied.
+        let fraction = if total == 0 {
+            1.0
+        } else {
+            done_bytes as f64 / total as f64
+        };
+        let name = file
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+        queue
+            .borrow_mut()
+            .prog(TRACK_IMPORT, fraction, &format!("copying {name}"));
+        paint_import(progress, queue);
+    }
+    queue.borrow_mut().done(TRACK_IMPORT, 1.0);
+    add_sources::add(session, root, dir, files, copy)
+}
+
+/// Draw the import on F0.5's bar. The fraction and the tooltip come from the queue exactly as
+/// [`paint_progress`] takes them for a ▶ run; only the expander's body is left alone, since an
+/// import writes no run lines of its own.
+fn paint_import(progress: &gtk::ProgressBar, queue: &std::cell::RefCell<runqueue::Queue>) {
+    let (_text, tip) = queue.borrow().text_and_tip();
+    progress.set_fraction(queue.borrow().fraction());
+    if !tip.is_empty() {
+        progress.set_tooltip_text(Some(&tip));
+    }
+}
+
+/// The import's own job name on the bar's line and tooltip.
+const IMPORT_JOB: &str = "import";
+/// The copy gets one track: the whole pick is a single run of its own, not work interleaved with a
+/// ▶ run (which is precisely why S0 refuses while one is on).
+const TRACK_IMPORT: usize = 0;
+
 thread_local! {
     /// The run bar `build_window` created, published for the same reason as [`SESSION`]: so the
     /// seam in [`open_from`] can reach the copy this window actually uses.
     static WINDOW_BAR: std::cell::RefCell<Vec<Rc<std::cell::RefCell<run::RunBar>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    /// The F0.5 queue `build_window` created, published for the same reason as [`WINDOW_BAR`]: so
+    /// the seam in [`add_files`] can drive the bar this window actually shows. A copy is a run of
+    /// its own (F0.12 S0), so it reports through the bookkeeping rather than painting its own bar.
+    static WINDOW_QUEUE: std::cell::RefCell<Vec<Rc<std::cell::RefCell<runqueue::Queue>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 

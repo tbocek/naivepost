@@ -1,5 +1,6 @@
 pub mod window;
 
+pub use window::add_files;
 pub use window::add_sources_button;
 pub use window::bench_language;
 pub use window::build_window;

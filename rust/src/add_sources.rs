@@ -207,9 +207,19 @@ fn inside(file: &Path, dir: &Path) -> bool {
     file.strip_prefix(dir).is_ok()
 }
 
-/// S2's copy of one file: `.part` then rename, so a copy interrupted by a pulled drive or a full
-/// disk never looks like a finished file. Skipped when the name is already there at the same size —
-/// that is the same file, re-picked — and when the file is the project's own.
+/// S2's copy of one file, per file rather than for the whole pick: F0.12's bar reports the bytes as
+/// they land, so the seam in `ui` needs to drive one file at a time and still use this rule alone.
+/// Same contract as [`add`]'s internal loop — `.part` then rename, same name + same size skipped, a
+/// file already inside the project left where it is, non-media ignored.
+pub fn copy_one(file: &Path, dir: &Path) -> Result<(), String> {
+    let tree = Tree::new(dir).ok();
+    let sources = dir.join("sources");
+    copy_in(file, &tree, dir, &sources)
+}
+
+/// `.part` then rename, so a copy interrupted by a pulled drive or a full disk never looks like a
+/// finished file. Skipped when the name is already there at the same size — that is the same file,
+/// re-picked — and when the file is the project's own.
 fn copy_in(file: &Path, tree: &Option<Tree>, dir: &Path, sources: &Path) -> Result<(), String> {
     if !is_media(file) || inside(file, dir) {
         return Ok(());
