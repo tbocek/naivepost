@@ -702,9 +702,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     progress.set_hexpand(true);
     progress.set_valign(gtk::Align::Center);
 
-    // §1: "the log expander, its header carrying the status line". The status label therefore lives
-    // in the expander's header rather than in the run row, and `state()` still reads it by name, so
-    // every existing assertion on `state().status` keeps working unchanged.
+    // §1: "the log expander, its header carrying the status line". The header is a row of two: the
+    // word "Log" so the control is never an unlabelled caret (at rest the status is empty), and the
+    // status label itself filling the rest. `state()` still reads the label by name, so every existing
+    // assertion on `state().status` keeps working unchanged — only its parent moved.
     let log_view = gtk::TextView::new();
     log_view.set_widget_name("log-view");
     log_view.set_editable(false);
@@ -716,11 +717,16 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // numbers go on the widget with this note rather than as invented parameter rows.
     log_view.set_height_request(LOG_OPEN_PX);
 
+    let log_header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    log_header.set_widget_name("log-header");
+    let log_title = gtk::Label::new(Some("Log"));
+    log_title.add_css_class("heading");
+    log_header.append(&log_title);
+    log_header.append(&status);
+
     let log = gtk::Expander::new(Some("Log"));
     log.set_widget_name("log-expander");
-    // §1: "the log expander, its header carrying the status line". The label is replaced by the
-    // status label itself, so `state().status` reads what sits in the header.
-    log.set_label_widget(Some(&status));
+    log.set_label_widget(Some(&log_header));
     log.set_child(Some(&log_view));
     log.set_expanded(false);
 
@@ -1174,7 +1180,11 @@ fn wire_lucky(
             }
         }
 
-        // The chain is over either way: give the button back.
+        // The chain is over either way: give the button back. F0.5 S4 closes its bookkeeping too —
+        // running off, so nothing downstream thinks a run still stands; the log's own state is kept
+        // as it was painted (open), because that is where the end line and any refusal were read.
+        runqueue::end_run(&mut bar.borrow_mut(), None);
+        queue.borrow_mut().reset();
         button.set_sensitive(true);
         button.remove_css_class("lucky-running");
         paint_progress(
@@ -1182,7 +1192,7 @@ fn wire_lucky(
             &log,
             &log_view,
             &queue.borrow(),
-            bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+            log.is_expanded(),
         );
         let _ = procs.borrow();
     });
