@@ -1,5 +1,16 @@
+pub mod settings;
 pub mod window;
 
+pub use settings::badge;
+pub use settings::dialog_log;
+pub use settings::dialog_log_open;
+pub use settings::dialog_open;
+pub use settings::entry;
+pub use settings::open_with as open_settings;
+pub use settings::press_all;
+pub use settings::press_test;
+pub use settings::settings_button;
+pub use settings::test_button;
 pub use window::add_files;
 pub use window::add_sources_button;
 pub use window::bench_language;

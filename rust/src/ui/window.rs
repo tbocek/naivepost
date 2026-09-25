@@ -23,6 +23,7 @@ use crate::run;
 use crate::runqueue;
 use crate::exchanges;
 use crate::save_as;
+use crate::ui::settings;
 use crate::sources::{self, Control};
 use crate::startup;
 use crate::shell::{self, Move, Outcome, Page, Shell};
@@ -804,7 +805,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
     // §1's header bar: **1** New · **2** Open · **3** Save · **8** Rescan. New is F0.8, Open F0.9,
-    // Save F0.10, Rescan F0.11; ⓘ (F0.1's S4) and Settings (F0.13) stay out for their own rounds.
+    // Save F0.10, Rescan F0.11 and Settings F0.13; ⓘ (F0.1's S4) stays out for its own round.
     // The window holds one live project — `session` below — which is what makes Open possible: the
     // chooser hands over a folder and that single copy is replaced with what was read from it, so
     // every flow already sharing the handle reads the opened project rather than the one the launch
@@ -837,6 +838,13 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     header.pack_end(&rescan_);
     wire_rescan(&rescan_, &status, &session);
 
+    // F0.13's Settings button, packed after Rescan so Rescan stays rightmost as §1 reads the bar.
+    // The dialog itself is built on the press, in `settings.rs`; nothing here decides anything.
+    let settings_ = gtk::Button::from_icon_name("emblem-system-symbolic");
+    settings_.set_widget_name("settings-button");
+    settings_.set_tooltip_text(Some(SETTINGS_TIP));
+    header.pack_end(&settings_);
+    wire_settings(&settings_, &window);
     // F0.12 lives on the Prepare page, so its handler gets the widgets that page built. They are
     // handed over rather than found by name: `page_box` runs once per tab, and a window with four
     // same-named buttons makes `find` return whichever one it reaches first — an arbitrary page's
@@ -1311,13 +1319,25 @@ const COPY_LABEL: &str = "copy into project";
 /// The Rescan button's tooltip, §1's wording for badge **8**.
 const RESCAN_TIP: &str = "Rescan inputs and outputs";
 
+/// §1's wording for the Settings badge: the two servers the dialog is about, named in the tooltip
+/// so the gear is never an unlabelled control.
+const SETTINGS_TIP: &str = "Settings \u{2014} the LLM and audio.cpp endpoints";
+
 /// Where a press of Rescan goes: [`rescan`] decides everything — which rows are gone, what was
 /// re-read, what the status says. The button forwards and draws the answer (spec/00-principles.md §5).
 ///
 /// No run refusal here: S1 drops what has vanished whether or not a run is on, so unlike Save this
 /// handler never reads [`run::RunBar`].
-fn wire_rescan(button: &gtk::Button, status: &gtk::Label, session: &Rc<RefCell<Project>>) {
-    let status = status.clone();
+/// F0.13: the gear opens the Settings dialog over this window. Nothing is decided here — the rows,
+/// their badges and Test All live in [`settings`], and every pass rule lives in [`crate::checks`].
+fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        settings::open_with(&window, settings::no_probe());
+    });
+}
+
+fn wire_rescan(button: &gtk::Button, status: &gtk::Label, session: &Rc<RefCell<Project>>) {    let status = status.clone();
     // The window is handed an immutable `&Project` and holds no live project yet, so the scan works
     // on the private copy shared with Add sources. F0.9's live project state replaces this; until
     // then it is what keeps the pruned list for whatever flow reads the session next. Which folder is
@@ -1828,7 +1848,7 @@ thread_local! {
     static LOGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
-fn log_line(line: &str) {
+pub(crate) fn log_line(line: &str) {
     LOGS.with(|logs| logs.borrow_mut().push(line.to_string()));
 }
 
@@ -2046,7 +2066,7 @@ pub fn play_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
 }
 
 /// The first widget under `root` carrying `name`, found the same walk as [`find_status`].
-fn find_widget_by_name(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+pub(crate) fn find_widget_by_name(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if root.widget_name() == name {
         return Some(root.clone());
     }
