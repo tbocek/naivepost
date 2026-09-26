@@ -304,10 +304,11 @@ fn f0_1_s2_locked_cut_bounces_the_click(app: &adw::Application, dir: &Path) {
 // S1's other door — a lucky run moving to a page — is F0.4's round; `Move::Run` is covered at the
 // shell level in tests/switch_tab.rs, so this file does not invent a seam for it.
 
-// S3's write-back is asserted at the flow level in tests/switch_tab.rs (`Pending::owe` → `flushed`,
-// and `narration::save`'s round-trip there). Through this window it cannot be asserted yet: nothing
-// on screen marks the pending flag — the Narrate page gets its text editor, and with it the mark, in
-// F4.7's round. Until then no switch here ever owes a write, so the file keeps its pre-refit bounds.
+// S3's write-back is asserted through this window too, in `f0_1_s5_narrate_refits_its_lines`: the
+// window holds its narration (`HELD_NARRATION` in src/ui/window.rs), so the refit S5 makes on
+// arrival survives to the switch that leaves, and the owed flush writes it to disk. What still comes
+// from the seam rather than from the page is the *mark*: F4.7 gives Narrate its text view, and typing
+// there will call `ui::mark_narration_owed` the way this test does.
 
 #[test]
 fn f0_1_switch_tab_through_the_widgets() {

@@ -849,6 +849,15 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // mark one owed. The Narrate page will call the same seam from its text view when F4.7 lands one.
     WINDOW_SHELLS.with(|shells| shells.borrow_mut().push(Rc::clone(&shell)));
 
+    // S5 refits the narration lines when the page is *entered*, and S3 writes that refit out when
+    // the page is *left* — two switches, so the lines have to survive between them. Reading them
+    // afresh on every switch (what `session_reads` does) makes the refit land in a local that is
+    // dropped at the end of the handler, and leaving Narrate then re-reads the pre-refit file: the
+    // flush would write back what the disk already had. This is the window's copy; F4.7's text view
+    // edits it too.
+    let held_narration = Rc::new(RefCell::new(session_reads().2));
+    HELD_NARRATION.with(|held| held.borrow_mut().push(Rc::clone(&held_narration)));
+
     // The window is handed an immutable `&Project` and holds no live project yet, so the flows that
     // change the session — Rescan (F0.11) and Add sources (F0.12) — work on one private copy shared
     // between them. F0.9's live project state replaces this; until then it is what keeps the session
@@ -938,6 +947,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         &inputs_readout,
         &outputs_folder,
         &outputs_readout,
+        &held_narration,
     );
 
     // S4 at startup: the row is drawn for the page the window opened on, not left blank until a tab
@@ -1315,6 +1325,7 @@ fn wire_switching(
     inputs_readout: &gtk::Label,
     outputs_folder: &gtk::Button,
     outputs_readout: &gtk::Label,
+    held_narration: &Rc<RefCell<Narration>>,
 ) {
     let stack = stack.clone();
     let switcher = switcher.clone();
@@ -1325,6 +1336,7 @@ fn wire_switching(
     let inputs_readout = inputs_readout.clone();
     let outputs_folder = outputs_folder.clone();
     let outputs_readout = outputs_readout.clone();
+    let held_narration = held_narration.clone();
     stack.connect_visible_child_name_notify(move |stack| {
         if *guard.borrow() {
             return;
@@ -1337,7 +1349,10 @@ fn wire_switching(
         // project is open is the window's business, and `session_dir` is the same stand-in Rescan
         // uses. A folder that is not a project leaves `tree` None — §1 wants the page to show what
         // it has rather than fail to open, so there is no error path out of the switch.
-        let (tree, cut, mut narration) = session_reads();
+        let (tree, cut, _) = session_reads();
+        // The lines themselves are the window's held copy, not a fresh read: S5 refits them on
+        // arrival and S3 writes that refit on leaving, and the two are separate switches.
+        let held = Rc::clone(&held_narration);
         // S3 asks whether a narration write is owed BEFORE the switch clears the flag: leaving the
         // tab writes what is half-typed even a beat early.
         let owed = shell.borrow().narration_pending.owe();
@@ -1348,14 +1363,14 @@ fn wire_switching(
             &project,
             tree.as_ref(),
             &cut.segs,
-            &mut narration.entries,
+            &mut held.borrow_mut().entries,
         );
 
         // S3: the half-typed lines reach disk before the page is left. Only a flush that was owed
         // writes, so a switch over an untouched narration costs no file.
         if owed {
             if let Some(tree) = tree.as_ref() {
-                let _ = narration::save(&narration, tree);
+                let _ = narration::save(&held.borrow(), tree);
             }
         }
         paint_tabs(&switcher, &shell.borrow(), &project);
@@ -1364,7 +1379,7 @@ fn wire_switching(
             &project,
             tree.as_ref(),
             &cut,
-            &narration,
+            &held.borrow(),
             inputs_readout.upcast_ref(),
             &outputs_folder,
             outputs_readout.upcast_ref(),
@@ -2075,6 +2090,12 @@ fn wire_rescan(
         let scanned = project.borrow().clone();
         if shell::lock(shell.borrow().page, &scanned).is_some() {
             let (tree, cut, mut narration) = session_reads();
+            // The scan rewrote the folder, so the window's held lines are re-seeded from it here:
+            // a refit over narration that no longer belongs to this project would write someone
+            // else's words back over the ones just scanned.
+            if let Some(held) = HELD_NARRATION.with(|held| held.borrow().last().cloned()) {
+                *held.borrow_mut() = narration.clone();
+            }
             let page = shell.borrow().page;
             shell.borrow_mut().switch(
                 page,
@@ -2392,6 +2413,14 @@ thread_local! {
     /// piece here uses. Held so the S3 pending-write seam can mark a write owed on the shell that is
     /// actually showing, instead of a copy the caller happens to have.
     static WINDOW_SHELLS: std::cell::RefCell<Vec<Rc<RefCell<Shell>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    /// The narration this window holds, newest last — the same newest-slot rule as [`WINDOW_SHELLS`].
+    /// S5's refit and S3's flush are two different switches over one set of lines, so the lines live
+    /// here rather than in whatever a single switch happened to read from disk.
+    static HELD_NARRATION: std::cell::RefCell<Vec<Rc<RefCell<Narration>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -4261,6 +4290,17 @@ pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
         // `now` is irrelevant here: leaving the tab writes whatever is owed, even a beat early.
         shell.borrow_mut().narration_pending.touched(std::time::Duration::from_secs(0));
     }
+}
+
+/// The narration this window is holding — newest slot wins, the same rule [`tab_info_button`] uses,
+/// so a test or a flow reaches the lines of the window that was built last rather than one left over
+/// from an earlier window in the same process. A window with nothing held reads as empty narration,
+/// which is what a project with no `narration.json` shows anyway.
+fn held_narration() -> Narration {
+    HELD_NARRATION
+        .with(|held| held.borrow().last().cloned())
+        .map(|held| held.borrow().clone())
+        .unwrap_or_default()
 }
 
 /// §1's badge **6** — the header ⓘ (not the per-page copies), newest slot wins so a test reads the
