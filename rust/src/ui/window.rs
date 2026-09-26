@@ -22,6 +22,7 @@ use crate::cut_verbs;
 use crate::cut_copy;
 use crate::cut_line;
 use crate::describe;
+use crate::joins;
 use crate::retakes;
 use crate::cut_screen;
 use crate::cut_trim;
@@ -1760,6 +1761,18 @@ fn wire_play(
                         // Marks come from the model, which is not contacted here; what lands without a
                         // server is S1's too-few-lines answer and the empty marks file it owes Cut.
                         for line in retakes::press_marking(
+                            &tree,
+                            &asked,
+                            crate::policy::marking_pass_of(&asked.policy),
+                        ) {
+                            log_line(&line);
+                        }
+                        // F1.10's join repair joins the same press through ONE entry point, gated the
+                        // same way: under Retakes or None it returns nothing at all, so one press
+                        // never speaks for two passes. The answers are the textedit model's and no
+                        // server is contacted here; what lands without one is S1's too-few-words
+                        // answer, S2's no-seam sentence, and the two files the pass owes Cut.
+                        for line in joins::press_joins(
                             &tree,
                             &asked,
                             crate::policy::marking_pass_of(&asked.policy),
