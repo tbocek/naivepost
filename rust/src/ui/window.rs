@@ -214,9 +214,12 @@ fn page_box(
         volume_row.set_halign(gtk::Align::Start);
         volume_row.set_size_request(-1, 24);
         // The slider belongs to the toolbar's volume group, not to the page column: §A puts it in group 2
-        // between the transport and the verbs. It is moved out of the row it was built in rather than
-        // rebuilt, so F2.5's sizing and its handler wiring (which finds it by name) are untouched.
-        volume.unparent();
+        // between the transport and the verbs. The labelled row is what moves -- the slider stays inside
+        // it, so F2.5's sizing and its handler wiring (which finds `preview-volume` by name) are
+        // untouched. Do NOT unparent the slider from this row on its way into the group: that leaves it
+        // attached to nothing, `find_widget_by_name("preview-volume")` returns None, and
+        // `cut_hear_mix_widgets` panics inside `connect_activate` -- which aborts the process with a
+        // SIGABRT rather than reporting a test failure.
         volume_group.append(&volume_row);
         // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
         // widget that is not yet inside the realized tree never fires (see the F2.1 note there).

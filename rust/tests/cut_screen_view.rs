@@ -316,3 +316,213 @@ fn sec_05_cut_1_screen_s14_the_idle_form_reads_eight_things_in_the_order_the_spe
     assert_eq!(value("Cut at 1\u{00d7}"), "00:13");
     assert_eq!(value("Segments"), "2");
 }
+
+// --- the two ladders and the history chords -----------------------------------------------------
+//
+// These three were in `tests/cut_screen_toolbar_widgets.rs` last round, where five areas shared one
+// `Application::run` and each area's leftover state tripped the next one's fixture. The rules are
+// pure arithmetic on `cut_screen`'s own constants, so they live here with the rest of the view
+// rules; the widget binary keeps only what needs a click to prove (the group order and the
+// split/undo/redo wire).
+
+/// §A's zoom ladder: every step is ×1.25, the ceiling is 240 px/s, and the floor is not a constant
+/// but the width of the whole session handed in by the caller — which is why `zoom_down` takes it as
+/// an argument rather than owning one.
+#[test]
+fn sec_05_cut_1_screen_s6_the_zoom_ladder_steps_by_the_ratio_and_clamps_both_ends() {
+    // P.layout.zoomStep 1.25 — one press in multiplies by this, one press out divides by it.
+    assert_eq!(cut_screen::ZOOM_STEP, 1.25);
+    let start = cut_screen::ZOOM_AT_OPEN; // P.layout.zoomAtOpen 4.0
+    let one_in = cut_screen::zoom_up(start, 0.0);
+    assert!(
+        (one_in - start * cut_screen::ZOOM_STEP).abs() < 1e-9,
+        "+ steps by the ratio: {start} -> {one_in}"
+    );
+    // And the step inverts: − after + lands back where you started, so the ladder never drifts.
+    assert!(
+        (cut_screen::zoom_down(one_in, 0.0) - start).abs() < 1e-9,
+        "− undoes + exactly"
+    );
+
+    // P.layout.zoomMaxPps 240 — the ceiling stops the ladder however long it is pushed.
+    let mut pps = start;
+    for _ in 0..80 {
+        pps = cut_screen::zoom_up(pps, 0.0);
+    }
+    assert_eq!(pps, cut_screen::ZOOM_MAX, "// P.layout.zoomMaxPps stops the ladder");
+
+    // The floor is the CALLER'S number, not a constant of its own: zooming out cannot pass "all of it
+    // fits". A page whose session is 100 s wide and 400 px across floors at 4 px/s; hand it a wider
+    // session and the floor moves with it. That is the rule the page relies on when it passes
+    // `ui::TRACK_STRIP_PPS` (which is itself `layout.zoomAtOpen`) as the floor.
+    let wide_floor = 1.0;
+    let mut pps = cut_screen::ZOOM_MAX;
+    for _ in 0..200 {
+        pps = cut_screen::zoom_down(pps, wide_floor);
+    }
+    assert_eq!(pps, wide_floor, "zoom_out stops at the floor it was handed, not below it");
+    // Same starting point, a floor ten times higher, and the ladder stops ten times sooner. Proves the
+    // floor is honoured rather than being decoration on the signature.
+    let mut pps = cut_screen::ZOOM_MAX;
+    for _ in 0..200 {
+        pps = cut_screen::zoom_down(pps, wide_floor * 10.0);
+    }
+    assert_eq!(pps, wide_floor * 10.0, "a higher floor stops the same ladder earlier");
+}
+
+/// §A's thumbnail ladder: 🖼+ is ×4/3 and 🖼− is ÷3/4, so the two invert, clamped at 40 and 160 px.
+/// The page opens at 64 px and that is the number the first press steps FROM — see `press_thumb`,
+/// which seeds its slot from `THUMB_AT_OPEN` rather than from 0, because stepping from 0 would make
+/// the first 🖼− land somewhere the form never showed.
+#[test]
+fn sec_05_cut_1_screen_s7_the_thumbnail_ladder_is_x4_3_and_div3_4_and_clamps_at_40_and_160() {
+    // The open-at size, and the two ends of the ladder.
+    assert_eq!(cut_screen::THUMB_AT_OPEN, 64, "the page meets you at 64 px");
+    assert_eq!(cut_screen::THUMB_MIN, 40, "P.layout.thumbMin 40 clamps the small end");
+    assert_eq!(cut_screen::THUMB_MAX, 160, "P.layout.thumbMax 160 clamps the large end");
+
+    // One step each way from the open-at size, and the round trip back.
+    assert_eq!(cut_screen::thumb_up(64), 85, "64 * 4/3 rounds to 85");
+    assert_eq!(cut_screen::thumb_down(85), 64, "85 * 3/4 rounds back to 64 -- the steps invert");
+    assert_eq!(cut_screen::thumb_down(64), 48, "64 * 3/4 = 48");
+    assert_eq!(cut_screen::thumb_up(48), 64, "and 48 * 4/3 = 64");
+
+    // Saturating at both ends: pushing further changes nothing, so a held key cannot run away.
+    let mut px = cut_screen::THUMB_AT_OPEN;
+    for _ in 0..40 {
+        px = cut_screen::thumb_up(px);
+    }
+    assert_eq!(px, cut_screen::THUMB_MAX, "the ladder holds at 160");
+    let mut px = cut_screen::THUMB_AT_OPEN;
+    for _ in 0..40 {
+        px = cut_screen::thumb_down(px);
+    }
+    assert_eq!(px, cut_screen::THUMB_MIN, "and at 40");
+}
+
+/// §1 items 18-19 spell TWO redo chords because both hands reach for one of them. All three chords
+/// drive the SAME history the buttons do, and an unmodified letter is left alone: the handler must not
+/// swallow a plain `z`, or a text field on the page could not be typed into.
+///
+/// This one needs a window, so it stands apart from the two ladders above: the chord handler lives on
+/// the window's key controller and prints through the status line, and the check reads what the user
+/// would read. The shape (one application, one activate, flags for the assertion) is the one every
+/// other widget test in this repo uses.
+#[test]
+fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history() {
+    use adw::prelude::*;
+    use gtk4 as gtk;
+    use naivepost::shell::Page;
+    use naivepost::ui;
+
+    static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static DONE: std::sync::Once = std::sync::Once::new();
+
+    DONE.call_once(|| {
+        let app = adw::Application::builder()
+            .application_id(ui::APP_ID)
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.connect_activate(|app| {
+            let root = std::env::temp_dir().join(format!("cut-chords-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).expect("temp root");
+            std::env::set_current_dir(&root).expect("cwd pinned away from rust/");
+
+            let model = naivepost::project::load(
+                &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost"),
+            )
+            .expect("fixture loads");
+            let window = ui::build_window(app, &model, "Prepare");
+            window.present();
+            ui::tab_button(&window, Page::Cut)
+                .expect("the shell has a Cut tab")
+                .emit_clicked();
+            settle();
+            let controller = ui::history_key_controller(&window).expect("history has a key controller");
+
+            // Each chord gets its OWN edit underneath it. One note_edit cannot serve all three: after the
+            // first undo there is exactly one redo step left, so the second chord would answer
+            // "nothing to redo" and prove nothing about which chord was read. Two edits give the
+            // history [open, e1, e2] -- undo lands on e1 with e2 still ahead, and each of the two
+            // redo chords then has that one step to take.
+            ui::note_edit(&window);
+            ui::note_edit(&window);
+            settle();
+
+            // Ctrl+Z undoes. The handler answers with `glib::Propagation`, which has no FromValue, so
+            // the signal is emitted for its side effect and the status line is what the check reads --
+            // the shape `tests/cut_copy_paste_lane_widgets.rs::press_key` uses for Esc.
+            let _ = controller.emit_by_name::<bool>(
+                "key-pressed",
+                &[&gtk::gdk::Key::z, &0u32, &gtk::gdk::ModifierType::CONTROL_MASK],
+            );
+            settle();
+            let z = status_line(&window);
+            assert!(z.contains("back to the previous state"), "Ctrl+Z reached the history: {z}");
+
+            // Ctrl+Y redoes -- the second chord §1 spells.
+            let _ = controller.emit_by_name::<bool>(
+                "key-pressed",
+                &[&gtk::gdk::Key::y, &0u32, &gtk::gdk::ModifierType::CONTROL_MASK],
+            );
+            settle();
+            let y = status_line(&window);
+            assert!(y.contains("forward again"), "Ctrl+Y reached the same history: {y}");
+
+            // Ctrl+Shift+Z redoes too, so either hand's habit works. Rewound first so it has a step
+            // of its own to take, rather than riding the previous chord's leftover.
+            let _ = controller.emit_by_name::<bool>(
+                "key-pressed",
+                &[&gtk::gdk::Key::z, &0u32, &gtk::gdk::ModifierType::CONTROL_MASK],
+            );
+            settle();
+            let _ = controller.emit_by_name::<bool>(
+                "key-pressed",
+                &[
+                    &gtk::gdk::Key::z,
+                    &0u32,
+                    &(gtk::gdk::ModifierType::CONTROL_MASK | gtk::gdk::ModifierType::SHIFT_MASK),
+                ],
+            );
+            settle();
+            let zs = status_line(&window);
+            assert!(zs.contains("forward again"), "Ctrl+Shift+Z also redoes: {zs}");
+
+            // An UNMODIFIED letter is not ours: plain `z` leaves the status line exactly where it was,
+            // which is what lets a focused Entry keep its keystrokes.
+            let before = status_line(&window);
+            let _ = controller.emit_by_name::<bool>(
+                "key-pressed",
+                &[&gtk::gdk::Key::z, &0u32, &gtk::gdk::ModifierType::empty()],
+            );
+            settle();
+            assert_eq!(status_line(&window), before, "plain z without Ctrl is not ours");
+
+            RAN.store(true, std::sync::atomic::Ordering::SeqCst);
+            app.quit();
+        });
+        app.run_with_args::<String>(&[]);
+    });
+
+    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the chord checks never ran");
+}
+
+/// Let GTK finish mapping and dispatching what was just shown or emitted.
+fn settle() {
+    let context = glib::MainContext::default();
+    for _ in 0..64 {
+        if !context.iteration(false) {
+            break;
+        }
+    }
+}
+
+/// The page's status line -- what the user reads after a press or a chord.
+fn status_line(window: &adw::ApplicationWindow) -> String {
+    use gtk4::prelude::Cast;
+    naivepost::ui::find_status(window.upcast_ref::<gtk4::Widget>())
+        .expect("the shell has a status line")
+        .text()
+        .to_string()
+}
