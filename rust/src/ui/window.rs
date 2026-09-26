@@ -22,6 +22,7 @@ use crate::cut_verbs;
 use crate::cut_copy;
 use crate::cut_line;
 use crate::describe;
+use crate::retakes;
 use crate::cut_screen;
 use crate::cut_trim;
 use crate::hand_edit;
@@ -31,6 +32,7 @@ use crate::open_project;
 use crate::prepare;
 use crate::prepare_run;
 use crate::preview::{self, Player, Press};
+use crate::project::MarkingPass;
 use crate::project::Origin;
 use crate::project::Project;
 use crate::rescan;
@@ -1751,6 +1753,18 @@ fn wire_play(
                             for line in describe::stage_log_for(&tree, &lane, freq, &[]) {
                                 log_line(&line);
                             }
+                        }
+                        // F1.9's retake marking pass speaks here as well, through ONE entry point and
+                        // only when the policy names this pass: under Joins or None the call returns
+                        // nothing at all, so one press never speaks twice for two different passes.
+                        // Marks come from the model, which is not contacted here; what lands without a
+                        // server is S1's too-few-lines answer and the empty marks file it owes Cut.
+                        for line in retakes::press_marking(
+                            &tree,
+                            &asked,
+                            crate::policy::marking_pass_of(&asked.policy),
+                        ) {
+                            log_line(&line);
                         }
                     }
                     // No project folder yet: nothing to clear and nothing to save into, so the press
@@ -4904,6 +4918,30 @@ pub fn running_step(window: &adw::ApplicationWindow) -> Option<crate::run::Step>
 /// two cannot drift apart.
 fn naivepost_interval_default() -> f64 {
     crate::project::Project::default().interval
+}
+
+/// The marking pass the LIVE session runs under — the same field `▶` reads when it decides whether
+/// F1.9's retake pass or F1.10's joins pass speaks. Read from `PLAY_SESSION`, not from a window
+/// widget: the policy has no control of its own on this page (it lives in the gear), so the session
+/// is the truth and a test that read anything else would be reading a copy.
+pub fn marking_pass(_window: &adw::ApplicationWindow) -> MarkingPass {
+    PLAY_SESSION
+        .with(|slots| slots.borrow().last().cloned())
+        .map(|session| session.borrow().policy.marking_pass.value)
+        .unwrap_or(MarkingPass::Retakes)
+}
+
+/// Move the live session's marking pass, as saving a project that names Joins would.
+///
+/// This is the seam a person's saved project arrives through: `build_window` publishes the argument
+/// into `PLAY_SESSION`, and F0.7's derive door may then replace it. A test that wants to know which
+/// pass a press will run changes it HERE, after the window exists, because changing the build-time
+/// argument can be overwritten before the handler ever sees it.
+pub fn set_marking_pass(window: &adw::ApplicationWindow, pass: MarkingPass) {
+    let _ = window;
+    if let Some(session) = PLAY_SESSION.with(|slots| slots.borrow().last().cloned()) {
+        session.borrow_mut().policy.marking_pass.value = pass;
+    }
 }
 
 
