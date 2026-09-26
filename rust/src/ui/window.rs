@@ -13,6 +13,7 @@ use gtk4 as gtk;
 use crate::add_sources;
 use crate::bench;
 use crate::cut::{self, Cut};
+use crate::cut_hear;
 use crate::cut_play;
 use crate::cut_review;
 use crate::cut_line;
@@ -151,6 +152,23 @@ fn page_box(
             box_.insert_child_after(&step, Some(&previous));
             previous = step;
         }
+
+        // F2.5 S6: the preview volume. One control for one number — `cut_hear::PreviewVolume` is the
+        // app's single loudness setting and every slider shown mirrors it, so this widget owns no copy of
+        // its own. 0..100 at step 1 because that is what a slider reads as, while the property under it
+        // is 0..1; the two meet in `PreviewVolume::set_percent`. Width 120 px per
+        // `spec/inventory/cut.md` §D item 2. The inventory asks for an icon beside it; none is drawn --
+        // a themed speaker icon does not render reliably in the headless snapshot (no icon theme), so the
+        // shared tooltip carries the wording instead and the slider stands alone. Value text off: the
+        // number means nothing to a person where the tooltip says what the control does.
+        let volume = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
+        volume.set_widget_name("preview-volume");
+        volume.set_tooltip_text(Some(cut_hear::VOLUME_TIP));
+        volume.set_draw_value(false);
+        volume.set_size_request(120, -1);
+        volume.set_halign(gtk::Align::Start);
+        volume.set_value(cut_hear::VOLUME_DEFAULT * 100.0);
+        box_.insert_child_after(&volume, Some(&previous));
         // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
         // widget that is not yet inside the realized tree never fires (see the F2.1 note there).
     }
@@ -929,6 +947,20 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
             slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(Player::default())))
         });
         wire_play_recording(&play_, &window);
+    }
+    // F2.5 S6: this window's one preview volume, pushed the way the player slot is — after
+    // `set_content`, so the slider being wired is the one inside the realized tree. Guarded by the
+    // same lookup as the slider itself rather than a page check: only the Cut page builds one, so a
+    // missing widget *is* "not this page", and every window still gets exactly one volume slot.
+    if preview_volume_scale(&window).is_some() {
+        PREVIEW_VOLUMES.with(|slots| {
+            slots
+                .borrow_mut()
+                .push(Rc::new(std::cell::RefCell::new(cut_hear::PreviewVolume::default())))
+        });
+        if let Some(scale) = preview_volume_scale(&window) {
+            wire_preview_volume(&scale, &window);
+        }
     }
     // F2.2: ▶✂ is wired to the same player slot ▶ moves, because they are two views of one preview —
     // pressing one switches what the other would show, never a second transport.
@@ -1817,6 +1849,69 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// The app's ONE preview volume (F2.5 S6), held per window beside [`PREVIEW_PLAYERS`] with the same
+/// newest-slot rule. It is a `PreviewVolume` and not a bare number because the type is what keeps the
+/// slider's 0..100 and the property's 0..1 from drifting apart, and because the tooltip promises every
+/// slider shows the same setting — two stored copies would be two answers.
+thread_local! {
+    static PREVIEW_VOLUMES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut_hear::PreviewVolume>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// F2.5 S6: set this window's one preview volume from a slider's percent (0..100) and push the result
+/// into the live player, so every preview of this window shares the one number. Returns the gain written
+/// (`0..=1`), which is what the caller would read back — the clamp lives in [`cut_hear::clamp_volume`],
+/// never here.
+pub fn set_preview_volume(window: &adw::ApplicationWindow, percent: f64) -> f64 {
+    let _ = window;
+    let volume = PREVIEW_VOLUMES.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .cloned()
+            .unwrap_or_else(|| Rc::new(std::cell::RefCell::new(cut_hear::PreviewVolume::new())))
+    });
+    volume.borrow_mut().set_percent(percent);
+    let gain = volume.borrow().value();
+    if let Some(player) = live_player(window) {
+        player.borrow_mut().volume = Some(gain);
+    }
+    gain
+}
+
+/// F2.5 S6: the one number, as a gain — what every preview multiplies its sound by, and the value
+/// [`cut_hear::mix_at`] is handed. A window that never showed a slider reads the default full.
+pub fn preview_volume(window: &adw::ApplicationWindow) -> f64 {
+    let _ = window;
+    PREVIEW_VOLUMES.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .map(|v| v.borrow().value())
+            .unwrap_or(cut_hear::VOLUME_DEFAULT)
+    })
+}
+
+/// F2.5: ask the hearing rules what this tick means and store the answer on this window's player.
+///
+/// The page calls this instead of computing anything: `cut_hear::mix_at` decides which lanes start,
+/// whether the footage's own sound is muted and how loud and fast to play, at this window's one
+/// preview volume. Nothing here re-decides a part of that answer; it only lands `footage_muted` where a
+/// later round's pipeline can read it.
+pub fn apply_mix(
+    window: &adw::ApplicationWindow,
+    segs: &[cut::Seg],
+    lanes: &[cut::Lane],
+    fx: &[cut::Fx],
+    t: f64,
+) -> cut_hear::Mix {
+    let mix = cut_hear::mix_at(segs, lanes, fx, t, preview_volume(window));
+    if let Some(player) = live_player(window) {
+        player.borrow_mut().footage_muted = mix.footage_muted;
+    }
+    mix
+}
+
 /// One window's cut, held beside [`PREVIEW_PLAYERS`] with the same newest-slot rule.
 ///
 /// The Cut page has no live cut model yet — that arrives with its own round — so this is what stands in
@@ -2161,6 +2256,24 @@ fn wire_play_recording(button: &gtk::Button, window: &adw::ApplicationWindow) {
         // takes real spans from any caller that does have them.
         let _ = press_play_recording(&window, &[]);
     });
+}
+
+/// F2.5 S6: hand the slider's number to [`set_preview_volume`] and nothing else. The widget decides no
+/// part of the rule — it does not clamp, scale or remember — because the one volume is owned by
+/// `cut_hear::PreviewVolume` and every preview reads that same value back.
+fn wire_preview_volume(scale: &gtk::Scale, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    scale.connect_value_changed(move |slider| {
+        set_preview_volume(&window, slider.value());
+    });
+}
+
+/// This window's preview-volume slider, by its stable name (F2.5 S6). The seam a test fires and the
+/// page reads; `None` on a page that drew none.
+pub fn preview_volume_scale(window: &adw::ApplicationWindow) -> Option<gtk::Scale> {
+    find_widget_by_name(window.upcast_ref(), "preview-volume")?
+        .downcast()
+        .ok()
 }
 
 /// The seam F2.2's ▶✂ calls: [`cut_play::pressed`] decides whether the press switches to the cut,

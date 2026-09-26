@@ -38,6 +38,8 @@ fn f2_1_s1_pressing_play_while_the_cut_is_previewed_switches_back_to_the_recordi
         reviewing: false,
         transport: Transport { playing: true, started: true },
         playhead: Some(30.0),
+        volume: None,
+        footage_muted: false,
     };
     assert_eq!(
         preview::press_recording(&mut running, &runs),

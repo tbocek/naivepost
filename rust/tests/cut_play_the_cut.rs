@@ -24,6 +24,8 @@ fn player(cut_only: bool, reviewing: bool, playing: bool, playhead: Option<f64>)
         cut_only,
         reviewing,
         playhead,
+        volume: None,
+        footage_muted: false,
     }
 }
 

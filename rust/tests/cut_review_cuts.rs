@@ -195,6 +195,8 @@ fn f2_3_s7_pressing_the_review_button_starts_refuses_and_ends() {
         cut_only: true,
         transport: naivepost::run::Transport { playing: true, started: true },
         playhead: Some(70.0),
+        volume: None,
+        footage_muted: false,
     };
     assert_eq!(
         cut_review::pressed(&mut running, &two),
@@ -214,6 +216,8 @@ fn f2_3_s8_the_other_two_buttons_switch_over_without_stopping() {
         cut_only: true,
         transport: naivepost::run::Transport { playing: true, started: true },
         playhead: Some(70.0),
+        volume: None,
+        footage_muted: false,
     };
 
     // ▶✂ during a review: the review ends, the cut plays on as the plain cut preview.
@@ -232,6 +236,8 @@ fn f2_3_s8_the_other_two_buttons_switch_over_without_stopping() {
         cut_only: true,
         transport: naivepost::run::Transport { playing: true, started: true },
         playhead: Some(70.0),
+        volume: None,
+        footage_muted: false,
     };
     assert_eq!(
         naivepost::preview::press_recording(&mut player, &[(0.0, 260.0)]),

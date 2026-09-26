@@ -12,13 +12,38 @@ use crate::tools;
 /// `cut_only` is ▶✂'s switch (F2.2) and `reviewing` ▶✂✂'s (F2.3); both are read here because ▶ has to
 /// know which one it is interrupting — the recording is not a fourth preview, it is what is left when
 /// neither is on.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Player {
     pub transport: run::Transport,
     pub cut_only: bool,
     pub reviewing: bool,
     /// The red line, in session seconds. `None` is a page that has never been clicked: §D's `--:--.-`.
     pub playhead: Option<f64>,
+    /// F2.5 S6: this preview's loudness — the app's ONE preview volume, mirrored here so the player
+    /// reads one number rather than reaching for the setting. Full by default (a preview nobody has set
+    /// is audible, not mute). `Option::default()` is `None`, which lets the pre-F2.5 literals that
+    /// build a `Player` without this field keep compiling — the reason it is an `Option` at all.
+    /// `Some(0.0)` is a slider deliberately dragged to silence; `None` is nobody having said anything.
+    pub volume: Option<f64>,
+    /// F2.5 S2: whether the footage's own sound is muted right now. Muted BY PROPERTY, never by
+    /// stopping the stream — the answer flips every tick as the line moves. False until a scene says
+    /// otherwise, which is what `Default` already gives.
+    pub footage_muted: bool,
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self {
+            transport: run::Transport::default(),
+            cut_only: false,
+            reviewing: false,
+            playhead: None,
+            // Full, not zero: an untouched slider means audible. `f64::default()` would start every
+            // preview silent and read as a broken speaker rather than an unset control.
+            volume: Some(crate::cut_hear::VOLUME_DEFAULT),
+            footage_muted: false,
+        }
+    }
 }
 
 /// S1's status, §D verbatim — the sentence that tells the person the clock just changed meaning.

@@ -8,11 +8,13 @@
 //! does, where each lane sits on the clock and when it is started, how rate and gain follow the effects
 //! under the line, and the one preview volume every preview shares.
 //!
-//! No UI lives here and none is wired to it: `rust/src/ui/window.rs` renders only the Prepare page, so
-//! there is no Cut screen to attach a badge or a slider to yet, and nothing to compare against
-//! `spec/img/05-lanes.png`. The GStreamer pipelines stay out too (F2.1/F2.2/F2.3 left their transport
-//! here for the same reason) — what is testable is the arithmetic those pipelines are handed: which
-//! lanes start, at what second, stopping where, and how loud.
+//! No UI lives here either: the Cut page's preview-volume control forwards to [`PreviewVolume`] through
+//! `ui::set_preview_volume` / `ui::preview_volume` (`rust/src/ui/window.rs`), and each tick asks this
+//! module for one answer with [`mix_at`] rather than deciding anything itself. What still lands with the
+//! lane rounds (F2.8/F2.10/F2.11) is the picture of it — the lanes drawn under the line, their speaker
+//! badges and gutter switches, and the GStreamer pipelines these numbers will drive. Until then the mix
+//! is computed and stored, not played: what is testable is the arithmetic those pipelines are handed,
+//! which lanes start, at what second, stopping where, and how loud.
 
 use crate::cut::{Cut, Fx, Lane, Seg};
 
@@ -260,6 +262,57 @@ impl PreviewVolume {
 /// under the line, multiplied and held to what the property will take ([`MAX_GAIN`]).
 pub fn mix_gain(volume: f64, fx_gain: f64) -> f64 {
     (clamp_volume(volume) * fx_gain).clamp(0.0, MAX_GAIN)
+}
+
+// --- the one answer a tick asks for ---------------------------------------------------------------------
+
+/// F2.5: everything one tick of the preview asks its players to do, in one value. The page reads this and
+/// forwards it; it decides none of the parts.
+///
+/// `lane_starts` keeps the lane's name with its answer because the caller addresses a pipeline by name —
+/// two lanes of the same file are two pipelines and must not be told "started" without being told which.
+/// `Vec` rather than a fixed array because the lane count is the project's, not a constant; that costs
+/// `Copy`, so `Mix` derives `Clone` only, and callers who want the old cheap copy clone the vec once per
+/// tick instead of copying five function results.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mix {
+    /// The footage's own sound at this second: muted BY PROPERTY, never by stopping a stream (S2).
+    pub footage_muted: bool,
+    /// Each lane's answer under the scene that decides here, in the order the lanes were given (S3/S4).
+    pub lane_starts: Vec<(String, LaneStart)>,
+    /// The gain every pipeline is asked for: slider × the cut's own (S5 + S6), capped at [`MAX_GAIN`].
+    pub gain: f64,
+    /// The rate the preview runs at (S5): the first speed effect over `t`, or 1.
+    pub rate: f64,
+}
+
+/// F2.5: the whole per-tick answer, composed in the spec's order — the scene under the line decides, the
+/// footage's own sound is muted by property, each separate recording is started or refused under that
+/// scene, and rate and gain follow the effects under the line.
+///
+/// A second the cut removed answers with no new say: `scene_at` returns `None` there, and a removed
+/// stretch has no hearing of its own, so nothing here changes what the caller already had —
+/// `footage_muted` stays false and no lane is refused, rather than inventing a silence nobody set.
+/// `volume` is the app's ONE preview volume ([`PreviewVolume::value`]), never a per-preview copy.
+pub fn mix_at(segs: &[Seg], lanes: &[Lane], fx: &[Fx], t: f64, volume: f64) -> Mix {
+    let Some(scene) = scene_at(segs, t) else {
+        return Mix {
+            footage_muted: false,
+            lane_starts: Vec::new(),
+            gain: mix_gain(volume, gain_under(fx, t)),
+            rate: rate_under(fx, t),
+        };
+    };
+    let deciding = &segs[scene];
+    Mix {
+        footage_muted: !footage_sound_heard(deciding),
+        lane_starts: lanes
+            .iter()
+            .map(|lane| (lane.name.clone(), lane_start(lane, deciding, t)))
+            .collect(),
+        gain: mix_gain(volume, gain_under(fx, t)),
+        rate: rate_under(fx, t),
+    }
 }
 
 // --- S7: saying what it did ----------------------------------------------------------------------------
