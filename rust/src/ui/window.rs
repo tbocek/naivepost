@@ -28,6 +28,7 @@ use crate::layout;
 use crate::new_project;
 use crate::open_project;
 use crate::prepare;
+use crate::prepare_run;
 use crate::preview::{self, Player, Press};
 use crate::project::Origin;
 use crate::project::Project;
@@ -915,6 +916,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // to it: a row that moved the session has to move the one copy every other flow reads.
     let session = Rc::new(RefCell::new(project.clone()));
     SESSION.with(|slots| slots.borrow_mut().push(Rc::clone(&session)));
+    // F1.1: the ▶ handler asks `prepare_run` about the LIVE session rather than the build-time
+    // `project` argument, so a source added or removed since the window opened is what gets asked
+    // about. Published here for the same reason `SESSION` is.
+    PLAY_SESSION.with(|slots| slots.borrow_mut().push(Rc::clone(&session)));
 
     // The status line: the shell's sentence, right-aligned in the bottom row (§1's "status line").
     // Also before the pages, for the same reason — a row's press reports itself there.
@@ -949,6 +954,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // Where ▶ is decided: the run bar's own state, beside the shell's. Nothing about which of
     // pause / transport / start applies is worked out here — run.rs does that (F0.2).
     let bar = Rc::new(RefCell::new(run::RunBar::default()));
+    // Published the same way `SESSION` is, so a test can read which step the bar holds instead of
+    // inferring it from a button's icon. One window per test binary here, so `last()` is this one.
+    RUN_BARS.with(|bars| bars.borrow_mut().push(Rc::clone(&bar)));
     WINDOW_BAR.with(|slots| slots.borrow_mut().push(Rc::clone(&bar)));
 
     // The children a run has out there, so ⏹ can reach them (F0.3 S3). Held here rather than inside
@@ -1603,11 +1611,35 @@ fn wire_play(
     let queue = queue.clone();
     let exchange_log = exchange_log.clone();
     play.connect_clicked(move |play| {
+        // F1.1 S1: Prepare refuses at its own start, BEFORE the bar is opened — a run that started
+        // and was then sorry would leave ⏸/⏹ showing for work that never began. So the refusal is
+        // asked first and short-circuits here; every other page (and every non-refused press) falls
+        // through to `press`, whose precedence F0.2 owns.
+        let prepare_asked = run::step(shell.borrow().page) == run::Step::Prepare;
+        let live = PLAY_SESSION.with(|slots| {
+            slots
+                .borrow()
+                .last()
+                .map(|held| held.borrow().clone())
+                .unwrap_or_else(|| project.clone())
+        });
+        if prepare_asked {
+            if let Some((log, sentence)) = prepare_run::refuse(&live) {
+                log_line(&log);
+                status.set_text(&sentence);
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, run::Transport::default());
+                return;
+            }
+        }
+
         let pressed = bar.borrow_mut().press(shell.borrow().page, run::Transport::default(), &project);
         // A refusal has to survive to the end of this handler: `run::RunBar::press` leaves its own
         // status empty when a run starts (the run is meant to overwrite it), and the tail below
         // copies that empty string onto the label. Writing the refusal earlier would erase it.
         let mut refusal: Option<String> = None;
+        // Whether this press may open a run. F1.1's refusals set it false so `start_run` is skipped
+        // and the bar never shows a run that was refused before starting.
+        let mut started = true;
         // F0.5 S1: a press that opened a run also opened the bookkeeping — fresh cancel context,
         // empty queue, model log closed, log expander open. A pause or a transport toggle is not a
         // new run, so only `Started` goes through `start_run`.
@@ -1655,6 +1687,55 @@ fn wire_play(
                         }
                     }
                 }
+            }
+            // F1.1 S1-S4: Prepare's own start flow, run BEFORE the bookkeeping opens a run on it.
+            // A refusal never becomes a run at all — `start_run` is not reached and the status line
+            // carries the sentence instead. Every rule lives in `prepare_run`; this block only finds
+            // the tree the window works in, prints what came back, and remembers a refusal for the
+            // tail below (which would otherwise blank the line with the bar's empty status).
+            if run::step(shell.borrow().page) == run::Step::Prepare {
+                let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
+                // Ask about the live session, not the argument this window was built with: sources get
+                // added and removed after that call, and a refusal about stale data is a wrong refusal.
+                let asked = PLAY_SESSION.with(|slots| {
+                    slots
+                        .borrow()
+                        .last()
+                        .map(|held| held.borrow().clone())
+                        .unwrap_or_else(|| project.clone())
+                });
+                match layout::Tree::new(&dir)
+                    .ok()
+                    .map(|tree| prepare_run::begin(&asked, &tree))
+                {
+                    Some(prepare_run::Start::Refused { log, status }) => {
+                        log_line(&log);
+                        refusal = Some(status);
+                        started = false;
+                    }
+                    Some(prepare_run::Start::SaveFailed { error }) => {
+                        log_line(&format!("!!! could not save the project -- {error}"));
+                        refusal = Some(prepare_run::failed_status(&error));
+                        started = false;
+                    }
+                    // The opening lines go out whether or not a runner follows them. Until F1.2/F1.3/
+                    // F1.6/F1.7-F1.10 land there is nothing to run after the log, so the run sits at
+                    // zero on the bar rather than pretending — which is why ⏹ still has something to
+                    // stop here.
+                    Some(prepare_run::Start::Started { lines, .. }) => {
+                        for line in &lines {
+                            log_line(line);
+                        }
+                    }
+                    // No project folder yet: nothing to clear and nothing to save into, so the press
+                    // starts the run on the empty session like any other page does.
+                    None => (),
+                }
+            }
+            if !started {
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, run::Transport::default());
+                status.set_text(refusal.as_deref().unwrap_or(""));
+                return;
             }
             runqueue::start_run(
                 &mut bar.borrow_mut(),
@@ -4764,6 +4845,32 @@ pub fn session_freq(window: &adw::ApplicationWindow) -> f64 {
             .last()
             .map(|project| project.borrow().interval)
             .unwrap_or(naivepost_interval_default())
+    })
+}
+
+thread_local! {
+    /// The run bar `build_window` created, published so a test can read the step it holds. Same
+    /// reason as [`SESSION`]: the bar lives inside the window's closure and nothing else can reach it.
+    static RUN_BARS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<crate::run::RunBar>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    /// The live session the newest window works on, handed to the ▶ handler so F1.1's refusal asks
+    /// about what the page holds now rather than what `build_window` was called with.
+    static PLAY_SESSION: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Project>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The step the run bar is holding, if any — read off `RunBar::running` rather than off a button's
+/// face. A widget test needs the same field `runqueue::start_run` writes and F1.1's refusal skips,
+/// otherwise it would only prove that ⏹ looked sensitive.
+pub fn running_step(window: &adw::ApplicationWindow) -> Option<crate::run::Step> {
+    let _ = window;
+    RUN_BARS.with(|bars| {
+        bars.borrow()
+            .last()
+            .and_then(|bar| bar.borrow().running.as_ref().map(|run| run.step))
     })
 }
 
