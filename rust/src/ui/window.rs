@@ -12,6 +12,9 @@ use gtk4 as gtk;
 
 use crate::add_sources;
 use crate::bench;
+use crate::cut::{self, Cut};
+use crate::cut_play;
+use crate::cut_screen;
 use crate::hand_edit;
 use crate::layout;
 use crate::new_project;
@@ -115,6 +118,16 @@ fn page_box(
         play_.set_tooltip_text(Some(RECORD_PLAY_TIP));
         play_.set_halign(gtk::Align::Start);
         box_.insert_child_after(&play_, Some(&title));
+
+        // F2.2: ▶✂ beside ▶, not below it — §A puts the two in one transport group and the person
+        // reads them as a pair ("the recording" / "the cut"). Greyed with no clips (S1) rather than
+        // dead: the same rule `cut_play::pressed` refuses with lives in `can_play_cut`, so the button
+        // cannot be clickable on a cut that has nothing to skip to.
+        let cut_ = gtk::Button::with_label(PLAY_CUT_LABEL);
+        cut_.set_widget_name("play-cut-button");
+        cut_.set_tooltip_text(Some(cut_screen::PLAY_CUT_TIP));
+        cut_.set_halign(gtk::Align::Start);
+        box_.insert_child_after(&cut_, Some(&play_));
     }
 
     view.set_content(Some(&box_));
@@ -891,6 +904,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
             slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(Player::default())))
         });
         wire_play_recording(&play_, &window);
+    }
+    // F2.2: ▶✂ is wired to the same player slot ▶ moves, because they are two views of one preview —
+    // pressing one switches what the other would show, never a second transport.
+    if let Some(cut_) = play_cut_button(&window) {
+        wire_play_cut(&cut_, &window);
     }
     window
 }
@@ -1718,6 +1736,10 @@ const OPEN_TIP: &str = "Load a project \u{2014} sources, prompts and settings";
 /// every second plays, cuts and all"). Kept apart so the widget test can pin the wording against the
 /// spec rather than against whatever was typed into the button.
 const RECORD_PLAY_LABEL: &str = "\u{25b6} Play the recording";
+
+/// F2.2's label. The glyph pair is the button's whole identity in §A (▶ vs ▶✂), so it leads the
+/// words rather than sitting alone as an icon a person has to memorise.
+const PLAY_CUT_LABEL: &str = "\u{25b6}\u{2702} Play the cut";
 const RECORD_PLAY_TIP: &str =
     "Play the recording from the red line \u{2014} every second of it, cuts and all";
 
@@ -1735,6 +1757,13 @@ thread_local! {
 /// The Cut page's ▶ (F2.1), found by name the way [`play_button`] finds the run bar's.
 pub fn play_recording_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "play-recording-button")?
+        .downcast()
+        .ok()
+}
+
+/// The Cut page's ▶✂ (F2.2), found by name the way [`play_recording_button`] finds ▶.
+pub fn play_cut_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "play-cut-button")?
         .downcast()
         .ok()
 }
@@ -1826,6 +1855,43 @@ fn wire_play_recording(button: &gtk::Button, window: &adw::ApplicationWindow) {
         // is reachable from here yet — so an empty list is what the window knows today, and the seam
         // takes real spans from any caller that does have them.
         let _ = press_play_recording(&window, &[]);
+    });
+}
+
+/// The seam F2.2's ▶✂ calls: [`cut_play::pressed`] decides whether the press switches to the cut,
+/// ends a review or toggles play/pause; this forwards it and paints only what the answer says.
+///
+/// `segs` are the cut's own segments ([`crate::cut::Cut::segs`]). Like ▶'s `runs`, they are not yet
+/// reachable from the window — the Cut page holds no live cut model until its own round — so an empty
+/// list is what the button knows today, which is exactly the S1 case: nothing to skip to, refused.
+pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_play::Pressed {
+    let Some(status) = find_status(window.upcast_ref()) else {
+        panic!("the window has no status line");
+    };
+    let Some(player) = live_player(window) else {
+        panic!("the window has no preview player");
+    };
+    let pressed = cut_play::pressed(&mut player.borrow_mut(), cut);
+    // The outer `status` is the status Label, so each arm binds its own name and paints from it.
+    match &pressed {
+        // S2/S3: both change what the clock means or what is playing, so both get their sentence.
+        cut_play::Pressed::SwitchedToCut { status: line, .. } => status.set_text(line),
+        cut_play::Pressed::ReviewEnded { status: ended } => status.set_text(*ended),
+        cut_play::Pressed::Refused(line) => status.set_text(line),
+        // S4: the toggle needs no sentence — the button's own face carries it.
+        cut_play::Pressed::Toggled(_) => {}
+    }
+    pressed
+}
+
+/// F2.2: the Cut page's ▶✂ forwards to [`press_play_cut`], taking the window cloned into the
+/// closure exactly as [`wire_play_recording`] does.
+fn wire_play_cut(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        // No live cut model reaches the page yet (the Cut page's own round owns it), so the empty cut
+        // is the honest input and S1's refusal is what a press answers with today.
+        let _ = press_play_cut(&window, &cut::Cut::default());
     });
 }
 

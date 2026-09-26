@@ -18,6 +18,7 @@ pub mod audit_gaps;
 pub mod cut_effects_pass;
 pub mod cut_hear;
 pub mod cut_line;
+pub mod cut_play;
 pub mod cut_review;
 pub mod cut_select;
 pub mod cut_trim;
