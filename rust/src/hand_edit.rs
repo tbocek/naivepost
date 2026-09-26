@@ -214,3 +214,139 @@ pub fn write_final(tree: &Tree, text: &str) -> Result<(), String> {
 pub fn write_marks(tree: &Tree, marks: &[Retake]) -> Result<(), String> {
     textfmt::write_retakes(marks, &tree.retakes_tsv())
 }
+
+/// S2 through the widgets and through the disk at once: ask the same question the Cut ▶ asks, but hand
+/// it the words directly instead of reading them back from each source's `words.json`. The widget test
+/// needs this because the folder it builds has no Prepare output to read — only what it seeded itself.
+pub fn before_cut_with_times(
+    tree: &Tree,
+    text: &str,
+    words: &[String],
+    times: &[(f64, f64)],
+) -> Option<Outcome> {
+    let final_mtime = mtime(&tree.final_txt());
+    let marks_mtime = mtime(&tree.retakes_tsv());
+    if !edited(final_mtime, marks_mtime) {
+        return None;
+    }
+    if times.is_empty() {
+        return Some(Outcome {
+            logs: vec![EDITED_NOTE.to_string()],
+            ..Default::default()
+        });
+    }
+    let outcome = remake(text, words, times, |_| None);
+    if !outcome.refused {
+        if let Err(reason) = write_marks(tree, &outcome.marks) {
+            let mut outcome = outcome;
+            outcome.logs.push(format!("!!! text edit: {reason}"));
+            outcome.refused = true;
+            return Some(outcome);
+        }
+    }
+    Some(outcome)
+}
+
+/// The per-source folder key: the base name without its extension, off whatever form the project stored
+/// (`project:sources/lecture.mkv`, `sources/lecture.mkv` or a bare `lecture.mkv`). Same rule as
+/// [`crate::prepare_data`]'s row name — the two have to agree or this reads a file Prepare never wrote.
+fn source_key(stored: &str) -> String {
+    let name = stored.rsplit('/').next().unwrap_or(stored);
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => name[..dot].to_string(),
+        _ => name.to_string(),
+    }
+}
+
+
+/// A file's own modification time, or `None` when there is no such file to ask. Both halves of §F1.12's
+/// question are answered off the disk rather than off a remembered flag, which is what makes an edit
+/// seen by *any* program (not only this one) count.
+fn mtime(path: &std::path::Path) -> Option<SystemTime> {
+    std::fs::metadata(path).ok().and_then(|meta| meta.modified().ok())
+}
+
+/// The session's spoken words and their seconds, read back from each source's `words.json` in the order
+/// the sources were added — the same order `final.txt` was written from, so word *n* of the list is
+/// word *n* of the text.
+///
+/// `start_sample`/`end_sample` are 16 kHz samples off the source's own start (§04 F1.3), turned into
+/// seconds through [`crate::transcribe::SAMPLE_RATE`]; the session offset is not added because
+/// hand-editing moves marks within the material that was marked, and the marks written here are read
+/// against the same list they were made from.
+///
+/// Spec silent on a source with no `words.json`: it contributes nothing and the rest carry on — the
+/// same reading as the ASR stage, where a missing sidecar means that source was never transcribed, and
+/// inventing words for it would mark silence.
+///
+/// Each stored path is turned into the folder key Prepare writes under — the base name without its
+/// extension (`project:sources/lecture.mkv` → `lecture`, landing on
+/// `prepare/inputs/lecture/words.json`) — which is what [`crate::prepare_data`] calls a recording's
+/// row name and what `prepare_data_written`'s expected listing shows. The bare form the logic tests
+/// pass (`"lecture.mkv"`) reduces to the same key, so both spellings read the same file.
+pub fn session_words(tree: &Tree, sources: &[String]) -> (Vec<String>, Vec<(f64, f64)>) {
+    let hz = crate::transcribe::SAMPLE_RATE as f64;
+    let mut words = Vec::new();
+    let mut times = Vec::new();
+    for source in sources {
+        let Ok(Some(doc)) = crate::requests::read_words(tree, &source_key(source)) else {
+            continue;
+        };
+        for word in doc.words {
+            if word.word.trim().is_empty() {
+                continue;
+            }
+            words.push(word.word.clone());
+            times.push((
+                word.start_sample as f64 / hz,
+                word.end_sample as f64 / hz,
+            ));
+        }
+    }
+    (words, times)
+}
+
+/// S2: the step the next Cut ▶ takes when the text has been edited since the marks were written.
+///
+/// Returns `None` when there is nothing to do — the text is not newer than `retakes.tsv`, so
+/// §F1.12's `N -- no` branch holds and the model's marks stand untouched. Otherwise the outcome
+/// carries the lines to show and the marks; the marks are already written out unless the edit crossed
+/// the ceiling (`P.machine.retakeCeil`, [`RETAKE_CEIL`]), in which case nothing was written and what
+/// is on disk stays.
+///
+/// No envelope is asked here: `remake` places its edges with `None` for every second, so the marks sit
+/// on the word times themselves. A caller holding a waveform may pass the real lookup to
+/// [`remake`] directly; this entry point is the one that needs no audio in hand.
+pub fn before_cut(tree: &Tree, sources: &[String]) -> Option<Outcome> {
+    let final_mtime = mtime(&tree.final_txt());
+    let marks_mtime = mtime(&tree.retakes_tsv());
+    if !edited(final_mtime, marks_mtime) {
+        return None;
+    }
+    let Ok(text) = std::fs::read_to_string(tree.final_txt()) else {
+        // Readable a moment ago and not now: treat it as no edit rather than failing the run over a
+        // file the user may still be saving.
+        return None;
+    };
+    let (words, times) = session_words(tree, sources);
+    // Nothing was ever spoken, so there is nothing to remake and nothing to refuse — the same shape
+    // `remake` returns for an empty session, kept here so no marks file is written over a good one.
+    if times.is_empty() {
+        return Some(Outcome {
+            logs: vec![EDITED_NOTE.to_string()],
+            ..Default::default()
+        });
+    }
+    let outcome = remake(&text, &words, &times, |_| None);
+    if !outcome.refused {
+        // Writing the marks is what ends the edit: the new file's mtime answers S2's question with
+        // "no" from here on, so the remake happens once without any flag to remember it by.
+        if let Err(reason) = write_marks(tree, &outcome.marks) {
+            let mut outcome = outcome;
+            outcome.logs.push(format!("!!! text edit: {reason}"));
+            outcome.refused = true;
+            return Some(outcome);
+        }
+    }
+    Some(outcome)
+}

@@ -316,3 +316,141 @@ fn f1_12_s2_the_sound_moves_an_edge_when_there_is_one_to_ask() {
     assert_eq!(placed.dropped, plain.dropped);
     assert_eq!(placed.logs.last(), plain.logs.last());
 }
+
+// --- S2 through the disk: what the next Cut ▶ finds when it asks -------------------------------
+
+/// A source's `words.json` with one word per second, as ASR writes it at 16 kHz.
+fn write_words(tree: &Tree, list: &[&str]) {
+    // Keyed as Prepare keys it (`prepare_data::base`): `lecture`, not `lecture.mkv`.
+    let source = "lecture";
+    use naivepost::requests::{Word, WordsDoc};
+    const ASR_HZ: u64 = 16_000;
+    let words = list
+        .iter()
+        .enumerate()
+        .map(|(n, word)| Word {
+            word: (*word).to_string(),
+            start_sample: (n as u64) * ASR_HZ,
+            end_sample: (n as u64 + 1) * ASR_HZ - (ASR_HZ / 10),
+        })
+        .collect();
+    naivepost::requests::write_words(
+        tree,
+        source,
+        &WordsDoc {
+            text: list.join(" "),
+            words,
+        },
+    )
+    .unwrap();
+}
+
+/// The marks that stand before the edit: one old stretch nobody is about to keep.
+fn seed_marks(tree: &Tree) -> String {
+    std::fs::write(
+        tree.retakes_tsv(),
+        "1.0\t2.0\t0.0\t2.0\tthe old mark\n",
+    )
+    .unwrap();
+    std::fs::read_to_string(tree.retakes_tsv()).unwrap()
+}
+
+/// Set a file's mtime by hand so the two files' order is fixed rather than raced.
+fn set_stamp(path: &Path, offset: u64) {
+    let when = SystemTime::now() - Duration::from_secs(offset);
+    let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.set_modified(when).unwrap();
+}
+
+const SRC: &str = "lecture.mkv";
+
+#[test]
+fn f1_12_s2_before_cut_remakes_and_writes_the_marks() {
+    let tree = tree("disk-remake");
+    transcript(tree.dir());
+    // P.machine.retakeCeil = 0.4: two of ten words removed is an edit, not a refusal.
+    write_words(&tree, &WORDS);
+    let before = seed_marks(&tree);
+    write_final(&tree, &text(&["so", "we", "take", "the", "clip", "and", "there", "twice"]));
+    set_stamp(&tree.retakes_tsv(), 60);
+    set_stamp(&tree.final_txt(), 0);
+
+    let outcome = edit::before_cut(&tree, &[SRC.to_string()]).expect("the edited text is newer");
+    assert!(!outcome.refused, "two of ten removed is under the ceiling");
+    assert_eq!(outcome.logs[0], edit::EDITED_NOTE);
+    assert_eq!(outcome.marks.len(), 1, "one deleted stretch");
+    assert_eq!(outcome.dropped, 2);
+
+    let on_disk = textfmt::read_retakes(&tree.retakes_tsv()).unwrap();
+    assert_eq!(on_disk.len(), 1, "the remade mark replaced the old one");
+    assert_ne!(
+        on_disk[0].text, "the old mark",
+        "what is on disk now came from the edited text"
+    );
+    // The marks file now answers S2's question with "no": stamped ahead of the text so the tie a
+    // coarse filesystem clock could leave cannot stand in for the rule being proved.
+    set_stamp(&tree.retakes_tsv(), 0);
+    assert!(
+        !edit::edited(
+            std::fs::metadata(tree.final_txt())
+                .unwrap()
+                .modified()
+                .ok(),
+            std::fs::metadata(tree.retakes_tsv())
+                .unwrap()
+                .modified()
+                .ok()
+        ),
+        "S2: the fresh marks stop the next press remaking the same edit"
+    );
+    assert_ne!(
+        std::fs::read_to_string(tree.retakes_tsv()).unwrap(),
+        before,
+        "the seeded marks are gone"
+    );
+    // Asking again changes nothing: no second remake, no second note.
+    assert!(edit::before_cut(&tree, &[SRC.to_string()]).is_none());
+}
+
+#[test]
+fn f1_12_s2_before_cut_refuses_and_leaves_the_marks_alone() {
+    let tree = tree("disk-refuse");
+    transcript(tree.dir());
+    write_words(&tree, &WORDS);
+    let before = seed_marks(&tree);
+    // Six of ten gone is over P.machine.retakeCeil (0.4), so nothing is marked.
+    write_final(&tree, &text(&["so", "we", "take", "the"]));
+    set_stamp(&tree.retakes_tsv(), 60);
+    set_stamp(&tree.final_txt(), 0);
+
+    let outcome = edit::before_cut(&tree, &[SRC.to_string()]).expect("the text is newer, so it is asked");
+    assert!(outcome.refused, "more than 40 % removed is refused");
+    assert!(
+        outcome.logs.iter().any(|line| line.contains("refused")),
+        "the refusal says so: {:?}",
+        outcome.logs
+    );
+    assert_eq!(
+        std::fs::read_to_string(tree.retakes_tsv()).unwrap(),
+        before,
+        "a refusal writes nothing -- the marks that were there still are"
+    );
+}
+
+#[test]
+fn f1_12_s2_before_cut_says_the_marks_stand_when_nothing_was_edited() {
+    let tree = tree("disk-stand");
+    transcript(tree.dir());
+    write_words(&tree, &WORDS);
+    let before = seed_marks(&tree);
+    write_final(&tree, &text(&WORDS));
+    // final.txt older than retakes.tsv: the N --no branch, the model's marks stand.
+    set_stamp(&tree.final_txt(), 120);
+    set_stamp(&tree.retakes_tsv(), 0);
+
+    assert!(
+        edit::before_cut(&tree, &[SRC.to_string()]).is_none(),
+        "S2: nothing newer than the marks is nothing to do"
+    );
+    assert_eq!(std::fs::read_to_string(tree.retakes_tsv()).unwrap(), before);
+}

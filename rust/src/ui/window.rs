@@ -12,6 +12,7 @@ use gtk4 as gtk;
 
 use crate::add_sources;
 use crate::bench;
+use crate::hand_edit;
 use crate::layout;
 use crate::new_project;
 use crate::open_project;
@@ -1004,10 +1005,44 @@ fn wire_play(
     let exchange_log = exchange_log.clone();
     play.connect_clicked(move |play| {
         let pressed = bar.borrow_mut().press(shell.borrow().page, run::Transport::default(), &project);
+        // A refusal has to survive to the end of this handler: `run::RunBar::press` leaves its own
+        // status empty when a run starts (the run is meant to overwrite it), and the tail below
+        // copies that empty string onto the label. Writing the refusal earlier would erase it.
+        let mut refusal: Option<String> = None;
         // F0.5 S1: a press that opened a run also opened the bookkeeping — fresh cancel context,
         // empty queue, model log closed, log expander open. A pause or a transport toggle is not a
         // new run, so only `Started` goes through `start_run`.
         if matches!(pressed, run::Pressed::Started { .. }) {
+            // F1.12 S2: the Cut step first asks whether `final.txt` was hand-edited since the marks
+            // were written. The rule is entirely in `hand_edit::before_cut`; this handler only runs
+            // it for the page that owns the marks and forwards what it says. Spec silent on a lucky
+            // all-steps run (F0.4), so it is checked here too — the same press, the same question.
+            if run::step(shell.borrow().page) == run::Step::Suggest {
+                let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
+                if let Ok(tree) = layout::Tree::new(&dir) {
+                    let sources: Vec<String> = project
+                        .sources
+                        .iter()
+                        .map(|source| source.path.clone())
+                        .collect();
+                    if let Some(outcome) = hand_edit::before_cut(&tree, &sources) {
+                        for line in &outcome.logs {
+                            log_line(line);
+                        }
+                        if outcome.refused {
+                            // The refusal sentence goes where a press's answer is read — held until
+                            // after the tail's own status write, which would otherwise blank it.
+                            refusal = Some(
+                                outcome
+                                    .logs
+                                    .last()
+                                    .map(|line| line.trim_start_matches('!').trim_start().to_string())
+                                    .unwrap_or_else(|| "the edit was refused".to_string()),
+                            );
+                        }
+                    }
+                }
+            }
             runqueue::start_run(
                 &mut bar.borrow_mut(),
                 &mut queue.borrow_mut(),
@@ -1031,6 +1066,11 @@ fn wire_play(
             &queue.borrow(),
             bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
         );
+        // Last write wins on the label: F1.12's refusal is why ▶ did not do what it was pressed for,
+        // so it goes on screen after the bar's own (empty) status rather than under it.
+        if let Some(reason) = refusal {
+            status.set_text(&reason);
+        }
     });
 }
 
