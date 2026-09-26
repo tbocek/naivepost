@@ -46,7 +46,7 @@ pub struct Token {
 }
 
 /// One word of the session list.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Word {
     /// Which recording it came off — the key every per-recording rule (median, cursor) groups by.
     pub source: String,
@@ -408,4 +408,278 @@ pub fn list(
         all.extend(mine);
     }
     (all, logs)
+}
+
+/// The whole session list, built and saved. `list` composed with [`save`], so a caller that has the
+/// sources in hand makes one call and every later reader finds the same words.
+///
+/// Saving is what makes the list the fix pass's resume marker (spec/00-principles: a step's own output
+/// file is what says it ran): a later ▶ reads this instead of re-gluing, and an interrupted run resumes
+/// rather than restarting. Returns the log lines S2 produced — the stray sentences — which the caller
+/// prints; they are said once, here, at the moment the times were set.
+pub fn build_session(
+    sources: &[(String, Vec<Token>)],
+    envelopes: impl FnMut(&str, f64, f64) -> Option<i32>,
+    transcripts: impl FnMut(&str) -> Option<String>,
+    fixed: impl FnMut(&str, f64, f64) -> Option<Vec<String>>,
+    tree: &crate::layout::Tree,
+) -> Result<(Vec<Word>, Vec<String>), String> {
+    let (words, logs) = list(sources, envelopes, transcripts, fixed);
+    save(tree, &words)?;
+    Ok((words, logs))
+}
+
+/// Write the list to `prepare/word_list.json`.
+///
+/// A JSON array of the words themselves: nothing derived is stored, because the list IS the derived
+/// thing and every field of it is load-bearing for some reader (`match_word` matches, `written` shows,
+/// `stray` tells a cut what the aligner did not really hear there). 0644 through `Tree::write_file`,
+/// the same mode every project file gets.
+pub fn save(tree: &crate::layout::Tree, words: &[Word]) -> Result<(), String> {
+    let text = serde_json::to_string(words).map_err(|err| format!("word list: {err}"))?;
+    let path = tree.session_word_list_json();
+    let rel = path
+        .strip_prefix(tree.dir())
+        .unwrap_or(path.as_path())
+        .to_path_buf();
+    tree.write_file(&rel, text.as_bytes())
+}
+
+/// Read the saved list: `None` when no list was ever written, which is the state before the fix pass
+/// finished and NOT an error. Callers fall back to their own ASR reading in that case rather than
+/// failing a run over a step that has not happened yet.
+pub fn load(tree: &crate::layout::Tree) -> Result<Option<Vec<Word>>, String> {
+    let path = tree.session_word_list_json();
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("{}: {err}", path.display())),
+    };
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|err| format!("{}: {err}", path.display()))
+}
+
+// ---- the ▶ entry point ---------------------------------------------------
+
+/// The one call the ▶ handler makes so the session's word list exists before retakes and joins read it.
+///
+/// Gated on [`MarkingPass::None`] alone, not on `Retakes`: F1.13's title says this list is shared by
+/// retakes, joins, `final.txt` and subtitles, so a Joins pass needs it exactly as much as a Retakes
+/// pass does. Building twice is stopped by the RESUME rule instead of by the pass name — the saved file
+/// IS the evidence the step ran (spec/00-principles), so a list already on disk is reported and left
+/// alone rather than re-glued over.
+///
+/// No model is contacted: every field here comes off files Prepare already wrote. What the wave cache
+/// contributes is S2's stray test, and today nothing in the repo calls [`crate::wave::write`], so a
+/// live session takes the uncached path — every envelope answer is `None`, no median exists per
+/// recording, and `retimed` correctly marks nothing rather than inventing loudness. When a producer
+/// lands, the same code starts finding strays with no change to it.
+///
+/// Failure is specific and local: one line naming what could not be read, and the run carries on
+/// elsewhere.
+pub fn press_word_list(
+    tree: &crate::layout::Tree,
+    project: &crate::project::Project,
+    pass: crate::project::MarkingPass,
+) -> Vec<String> {
+    if pass == crate::project::MarkingPass::None {
+        return Vec::new();
+    }
+    match resume_line(tree) {
+        Ok(Some(line)) => return vec![line],
+        Ok(None) => (),
+        Err(error) => return vec![format!("!!! words: could not read the saved list -- {error}")],
+    }
+    let sources = match gather(tree, project) {
+        Ok(sources) => sources,
+        Err(error) => {
+            return vec![format!("!!! words: could not build the session word list -- {error}")]
+        }
+    };
+    // One stat per lane up front: the closure runs once per word and must not touch the disk each time.
+    let lanes = lane_stats(tree, project);
+    let built = build_session(
+        &sources,
+        |lane, start, end| peak_in(&lanes, lane, start, end),
+        |lane| raw_transcript(tree, lane),
+        |lane, start, end| fixed_spelling(tree, lane, start, end),
+        tree,
+    );
+    let (words, mut logs) = match built {
+        Ok(pair) => pair,
+        Err(error) => {
+            return vec![format!("!!! words: could not build the session word list -- {error}")]
+        }
+    };
+    let retimed = words.iter().filter(|word| word.stray).count();
+    logs.push(summary_log(words.len(), retimed));
+    logs
+}
+
+/// The resume answer: one line when the list is already on disk, `None` when it has to be built.
+///
+/// Split out so the "second press changes nothing" claim is checkable without running the whole build.
+fn resume_line(tree: &crate::layout::Tree) -> Result<Option<String>, String> {
+    Ok(load(tree)?.map(|words| already_built_log(words.len())))
+}
+
+/// The line said when the list was already there, so a re-press reads as a resume and not a redo.
+pub fn already_built_log(count: usize) -> String {
+    format!(">>> words: session list already built -- {count} words, kept as it is")
+}
+
+/// The line said after a build: how many words the session has and how many S2 moved.
+pub fn summary_log(count: usize, retimed: usize) -> String {
+    format!(">>> words: {count} words in the session list, {retimed} retimed onto the word before")
+}
+
+/// Every source's tokens, keyed the way Prepare keys its files.
+fn gather(
+    tree: &crate::layout::Tree,
+    project: &crate::project::Project,
+) -> Result<Vec<(String, Vec<Token>)>, String> {
+    let hz = crate::transcribe::SAMPLE_RATE as f64;
+    let mut out: Vec<(String, Vec<Token>)> = Vec::new();
+    for source in &project.sources {
+        let lane = lane_of(source);
+        // The aligner's times first: they are what a cut point is measured against, and gluing off
+        // them keeps the list agreeing with the edges F1.11 will place. ASR's own samples are the
+        // fallback for a session that was never aligned (no aligner served, or alignment skipped),
+        // which is the "aligner or ASR tokens" the spec names — the OR is a preference, not a coin
+        // toss, and taking ASR where an aligner answered would put cuts on coarser times than the
+        // app computed.
+        let timed = match crate::requests::read_aligned(tree, &lane)? {
+            Some(doc) if !doc.words.is_empty() => doc.words,
+            _ => crate::requests::read_words(tree, &lane)?.map(|doc| doc.words).unwrap_or_default(),
+        };
+        if timed.is_empty() {
+            // Nothing transcribed for this source: it contributes no words, which is a real answer
+            // rather than a failure — a video with no speech still leaves the other lanes intact.
+            continue;
+        }
+        let tokens = timed
+            .into_iter()
+            .map(|word| Token {
+                word: word.word,
+                start: word.start_sample as f64 / hz,
+                end: word.end_sample as f64 / hz,
+            })
+            .collect();
+        out.push((lane, tokens));
+    }
+    Ok(out)
+}
+
+/// One lane's cached envelope plus where its recording sits on the session clock.
+struct LaneWave {
+    lane: String,
+    /// The session second this recording's first sample lands on, from [`crate::fix_transcripts::placement`].
+    off: f64,
+    wave: Option<crate::wave::Wave>,
+}
+
+/// Read every lane's wave ONCE. Per-word reads would be thousands of opens per press for one number.
+fn lane_stats(
+    tree: &crate::layout::Tree,
+    project: &crate::project::Project,
+) -> Vec<LaneWave> {
+    // The WHOLE session's stamped file names go into the clock together: leaving one out moves zero
+    // and slides every other recording to a different second, which would put each envelope at the
+    // wrong place on the timeline.
+    let names: Vec<&str> = project
+        .sources
+        .iter()
+        .map(|source| base_name(&source.path))
+        .collect();
+    let offsets = crate::fix_transcripts::placement(&names);
+    project
+        .sources
+        .iter()
+        .zip(offsets)
+        .map(|(source, off)| {
+            let lane = lane_of(source);
+            // size/mtime come from the RECORDING, never from the cache file: reading them back out of
+            // the file being checked makes wave::read's staleness test unable to fail.
+            let wave = match stat_recording(tree, &source.path) {
+                Some((size, mtime)) => crate::wave::read(tree, &lane, size, mtime).ok().flatten(),
+                None => None,
+            };
+            LaneWave { lane, off, wave }
+        })
+        .collect()
+}
+
+/// The loudest bucket whose centre falls inside a word's seconds: S2's "how much sound was this word
+/// put on". `None` when the lane has no usable cache or the span holds no bucket — absence of evidence,
+/// which `retimed` treats as unmeasurable rather than as silence.
+fn peak_in(lanes: &[LaneWave], lane: &str, start: f64, end: f64) -> Option<i32> {
+    let held = lanes.iter().find(|held| held.lane == lane)?;
+    let peaks = held.wave.as_ref()?.chans.first()?;
+    let lo = ((start - held.off) * held.wave.as_ref()?.hz).floor().max(0.0) as usize;
+    let hi = ((end - held.off) * held.wave.as_ref()?.hz).ceil().max(0.0) as usize;
+    let slice = peaks.get(lo..hi.min(peaks.len()))?;
+    slice.iter().map(|peak| i32::from(*peak)).max()
+}
+
+/// The raw transcript dressing reads (S3): the text the ASR was handed, absent means undressed.
+fn raw_transcript(tree: &crate::layout::Tree, lane: &str) -> Option<String> {
+    std::fs::read_to_string(tree.transcript_txt(lane)).ok()
+}
+
+/// The fix pass's spelling covering these seconds (S4), from either fixed file.
+///
+/// Answered strictly from the arguments: a closure that read a clock instead would send `list`'s while
+/// loop round forever, since every ask would succeed at the same window.
+fn fixed_spelling(
+    tree: &crate::layout::Tree,
+    lane: &str,
+    start: f64,
+    end: f64,
+) -> Option<Vec<String>> {
+    let paths = [tree.transcript_fixed_tsv(lane), tree.commentary_fixed_tsv(lane)];
+    for path in paths {
+        let Ok(lines) = crate::textfmt::read_lines(&path) else {
+            continue;
+        };
+        if let Some(line) = lines
+            .into_iter()
+            .find(|line| line.start <= start + 0.001 && line.end >= end - 0.001)
+        {
+            return Some(line.text.split_whitespace().map(str::to_string).collect());
+        }
+    }
+    None
+}
+
+/// The lane a source's files live under: base name minus extension. Same reduction `retakes::lane_of`,
+/// `joins::lane_of` and `prepare_run::lane` use — all private, hence this copy — and the two have to
+/// agree or this reads a `words.json` Prepare never wrote.
+fn lane_of(source: &crate::project::Source) -> String {
+    let name = base_name(&source.path);
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => name[..dot].to_string(),
+        _ => name.to_string(),
+    }
+}
+
+/// The path's last part.
+fn base_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// The recording's own size and mtime, off the stored path (`project:` resolves inside the project).
+fn stat_recording(tree: &crate::layout::Tree, stored: &str) -> Option<(i64, i64)> {
+    let path = match stored.strip_prefix("project:") {
+        Some(rel) => tree.dir().join(rel),
+        None => std::path::PathBuf::from(stored),
+    };
+    let meta = std::fs::metadata(&path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some((meta.len() as i64, mtime))
 }

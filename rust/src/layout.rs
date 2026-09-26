@@ -242,6 +242,13 @@ impl Tree {
         self.transcript_dir().join("retakes.tsv")
     }
 
+    /// F1.13's one session word list: the glued, re-timed, dressed and re-dressed words every later
+    /// pass reads (retakes, joins, `final.txt`, subtitles). Written once after the fix pass, so its
+    /// presence is that step's resume marker; see `word_list::save`/`load`.
+    pub fn session_word_list_json(&self) -> PathBuf {
+        self.prepare_dir().join("word_list.json")
+    }
+
     /// The words of the finished video (markingPass joins).
     pub fn final_txt(&self) -> PathBuf {
         self.transcript_dir().join("final.txt")
@@ -473,6 +480,8 @@ impl Tree {
             "prepare/inputs/frames",
             "prepare/describe",
             "prepare/transcript",
+            // F1.13's word list sits directly under prepare/, beside the transcript folder it dresses from.
+            "prepare",
             "cache/llm",
             "cache/waves",
             "cache/edges",

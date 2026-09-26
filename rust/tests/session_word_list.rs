@@ -437,3 +437,188 @@ fn f1_13_s6_one_list_for_the_whole_session_and_its_parameters() {
     assert_eq!(params::find("P.eng.dressReachWords").unwrap().spelled, "8");
     assert_eq!(params::find("P.eng.respellRunReachWords").unwrap().spelled, "6");
 }
+
+// --- S7: the ▶ entry point, which builds the list and says what it did ---------------------------
+//
+// The rules above are the list's own arithmetic. These check the door Prepare presses: that a press
+// builds once, resumes the second time, keeps its hands off the file when the policy names no marking
+// pass, and still writes a list when there is no wave cache to measure with.
+
+use naivepost::layout::Tree;
+use naivepost::project::{MarkingPass, Project, Source};
+use naivepost::requests::{self, AlignedDoc, Word as DocWord};
+use naivepost::wave::{self, Wave};
+
+/// A project folder in `/tmp`, unique per test so parallel runs cannot see each other's files.
+fn temp_project(tag: &str) -> Tree {
+    let dir = std::env::temp_dir().join(format!("wl-s7-{tag}-{}.naivepost", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    Tree::new(&dir).unwrap()
+}
+
+/// One source whose stored path is inside the project, plus the recording file itself so the lane's
+/// size/mtime (which `wave::read` checks the cache against) exist to be statted.
+fn add_recording(tree: &Tree, name: &str, bytes: usize) -> Source {
+    let path = tree.dir().join("sources").join(name);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, vec![7u8; bytes]).unwrap();
+    Source {
+        path: format!("project:sources/{name}"),
+        footage: true,
+        narrator: 0,
+        sepvoice: false,
+        tracks: vec![],
+    }
+}
+
+/// Hand the aligned doc F1.13 reads first: word timings in 16 kHz samples off the source's own start.
+fn write_aligned(tree: &Tree, lane: &str, pairs: &[(&str, f64, f64)]) {
+    let hz = naivepost::transcribe::SAMPLE_RATE as f64;
+    let words = pairs
+        .iter()
+        .map(|(word, start, end)| DocWord {
+            word: (*word).to_string(),
+            start_sample: (start * hz) as u64,
+            end_sample: (end * hz) as u64,
+        })
+        .collect();
+    requests::write_aligned(tree, lane, &AlignedDoc { words }).unwrap();
+}
+
+/// A 200 Hz envelope over one recording: loud everywhere except the spans handed in, which sit near
+/// zero — the breath a stray word was put on.
+fn quiet_spans(total: f64, quiet: &[(f64, f64)], level: u8) -> Wave {
+    const HZ: f64 = 200.0;
+    let count = (total * HZ) as usize;
+    let mut peaks = vec![90u8; count];
+    for (from, to) in quiet {
+        // Both bounds are BUCKET INDICES: clamping `to * HZ` against `total` (seconds) rather than
+        // `count` (buckets) cut every span down to the first six buckets and left the wave loud.
+        let stop = ((to * HZ) as usize).min(count);
+        for bucket in (from * HZ) as usize..stop {
+            peaks[bucket] = level;
+        }
+    }
+    Wave { hz: HZ, chans: vec![peaks] }
+}
+
+/// The recording's own stamps, exactly as the flow stats them: same file, same numbers.
+fn stamps(tree: &Tree, name: &str) -> (i64, i64) {
+    let meta = std::fs::metadata(tree.dir().join("sources").join(name)).unwrap();
+    let mtime = meta
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    (meta.len() as i64, mtime)
+}
+
+#[test]
+fn f1_13_s7_a_press_builds_the_list_once_and_the_next_press_resumes_off_it() {
+    let tree = temp_project("resume");
+    let mut project = Project::default();
+    project.sources.push(add_recording(&tree, "lecture.mkv", 4096));
+    write_aligned(
+        &tree,
+        "lecture",
+        &[("hello", 0.0, 0.4), ("world", 0.4, 0.8), ("again", 0.8, 1.2), ("here", 1.2, 1.6)],
+    );
+
+    let first = words::press_word_list(&tree, &project, MarkingPass::Retakes);
+    assert!(
+        first.iter().any(|line| line.starts_with(">>> words: 4 words in the session list")),
+        "the build line reports the session's own count: {first:?}"
+    );
+    assert!(tree.session_word_list_json().exists(), "the press wrote the list");
+    let written = std::fs::read(tree.session_word_list_json()).unwrap();
+
+    // Second press: the file IS the evidence the step ran, so nothing is re-glued over it.
+    let again = words::press_word_list(&tree, &project, MarkingPass::Retakes);
+    assert_eq!(again.len(), 1, "a resume says one thing: {again:?}");
+    assert!(again[0].starts_with(">>> words: session list already built -- 4 words"), "{}", again[0]);
+    assert_eq!(
+        std::fs::read(tree.session_word_list_json()).unwrap(),
+        written,
+        "resuming leaves the file byte-for-byte alone"
+    );
+}
+
+#[test]
+fn f1_13_s7_a_stray_word_is_found_from_the_wave_cache_and_said_at_that_moment() {
+    let tree = temp_project("stray");
+    let mut project = Project::default();
+    project.sources.push(add_recording(&tree, "lecture.mkv", 8192));
+    // Three words: two loud ones, then "Geld." four seconds after the last, where the envelope is flat.
+    write_aligned(
+        &tree,
+        "lecture",
+        &[("geld", 0.0, 0.4), ("und", 0.4, 0.8), ("spat", 4.8, 5.2)],
+    );
+    let (size, mtime) = stamps(&tree, "lecture.mkv");
+    // Loud across the body, near-silent under the late word: 4 < 90/10 fails only if measured wrong.
+    let envelope = quiet_spans(6.0, &[(4.8, 5.2)], 1);
+    wave::write(&tree, "lecture", &envelope, size, mtime).unwrap();
+
+    let log = words::press_word_list(&tree, &project, MarkingPass::Joins);
+    let stray = log
+        .iter()
+        .find(|line| line.contains("was placed on almost no sound"))
+        .unwrap_or_else(|| panic!("the cached envelope should have made one stray: {log:?}"));
+    assert!(stray.starts_with(">>> words: \u{201c}"), "spec wording, quoted: {stray}");
+    assert!(stray.contains("\u{201d} spat \u{201d}") || stray.contains("spat"), "{stray}");
+    assert!(stray.contains("(00:00"), "timed at the end of the word before, 0.8 s -> 00:00: {stray}");
+    assert!(
+        log.iter().any(|line| line.contains("1 retimed onto the word before")),
+        "the summary counts exactly the one moved word: {log:?}"
+    );
+
+    let saved = words::load(&tree).unwrap().expect("saved");
+    let late = saved.iter().find(|word| word.match_word == "spat").unwrap();
+    assert!(late.stray, "the flag travels with the word into the saved list");
+    assert_eq!((late.start, late.end), (0.8, 0.8), "collapsed onto the previous word's end");
+    // The untouched words keep their glued seconds: only the stray moved.
+    let geld = saved.iter().find(|word| word.match_word == "geld").unwrap();
+    assert_eq!((geld.start, geld.end), (0.0, 0.4));
+}
+
+#[test]
+fn f1_13_s7_no_marking_pass_means_the_list_is_never_written() {
+    let tree = temp_project("none");
+    let mut project = Project::default();
+    project.sources.push(add_recording(&tree, "lecture.mkv", 4096));
+    write_aligned(&tree, "lecture", &[("one", 0.0, 0.4), ("two", 0.4, 0.8)]);
+
+    let log = words::press_word_list(&tree, &project, MarkingPass::None);
+    assert!(log.is_empty(), "the policy named no pass, so nothing is said: {log:?}");
+    assert!(
+        !tree.session_word_list_json().exists(),
+        "and nothing is written: a pass that was not asked for leaves no resume marker behind"
+    );
+}
+
+#[test]
+fn f1_13_s7_without_a_wave_cache_the_list_is_still_built_and_no_stray_is_claimed() {
+    let tree = temp_project("uncached");
+    let mut project = Project::default();
+    project.sources.push(add_recording(&tree, "lecture.mkv", 4096));
+    // A word four seconds late would be a stray IF there were an envelope. With none, absence of
+    // evidence is not evidence of silence: no median, so no claim.
+    write_aligned(
+        &tree,
+        "lecture",
+        &[("hello", 0.0, 0.4), ("world", 0.4, 0.8), ("late", 4.8, 5.2)],
+    );
+
+    let log = words::press_word_list(&tree, &project, MarkingPass::Retakes);
+    assert!(
+        !log.iter().any(|line| line.contains("almost no sound")),
+        "no cache means nothing measurable, so no stray may be claimed: {log:?}"
+    );
+    assert!(log.iter().any(|line| line.contains("0 retimed onto the word before")), "{log:?}");
+    let saved = words::load(&tree).unwrap().expect("the list is still owed");
+    assert_eq!(saved.len(), 3, "every word is in the list even though none could be measured");
+    assert!(saved.iter().all(|word| !word.stray));
+    assert_eq!((saved[2].start, saved[2].end), (4.8, 5.2), "times stand where they were glued");
+}
