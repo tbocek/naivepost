@@ -17,6 +17,7 @@ use crate::layout;
 use crate::new_project;
 use crate::open_project;
 use crate::prepare;
+use crate::preview::{self, Player, Press};
 use crate::project::Project;
 use crate::rescan;
 use crate::lucky;
@@ -102,6 +103,18 @@ fn page_box(
     context.set_xalign(0.0);
     context.add_css_class("body");
     box_.append(&context);
+
+    // F2.1: the Cut page's own transport. The page's ▶ is not the run bar's — that one runs the
+    // step (Suggest), this one plays the recording, every second of it, cuts and all. One button,
+    // named so a test and the snapshot can find it; `press_play_recording` decides what the press
+    // means and this box decides nothing.
+    if page == Page::Cut.label() {
+        let play_ = gtk::Button::with_label(RECORD_PLAY_LABEL);
+        play_.set_widget_name("play-recording-button");
+        play_.set_tooltip_text(Some(RECORD_PLAY_TIP));
+        play_.set_halign(gtk::Align::Start);
+        box_.append(&play_);
+    }
 
     view.set_content(Some(&box_));
     // The two widgets are handed back only for Prepare; every other page has none. `build_window`
@@ -866,6 +879,18 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     box_.append(&log);
 
     window.set_content(Some(&box_));
+
+    // F2.1: this window's preview is registered only now that the content tree exists. A `Rc` clone of
+    // a GTK widget handed out earlier keeps the ref floating outside the tree, and GTK then hands the
+    // button's own strong reference back to the caller — which leaves the click handler never reached,
+    // because nothing inside the realized window is the object the test fires. Registering after
+    // `set_content` puts the wired button in the tree and makes the newest slot the live one.
+    if let Some(play_) = play_recording_button(&window) {
+        PREVIEW_PLAYERS.with(|slots| {
+            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(Player::default())))
+        });
+        wire_play_recording(&play_, &window);
+    }
     window
 }
 
@@ -1687,6 +1712,121 @@ thread_local! {
 
 /// The Open button's tooltip, §1's wording for badge **2**.
 const OPEN_TIP: &str = "Load a project \u{2014} sources, prompts and settings";
+
+/// F2.1's own ▶ on the Cut page: the label and the tooltip §F2.1 S2 gives ("play from the red line ·
+/// every second plays, cuts and all"). Kept apart so the widget test can pin the wording against the
+/// spec rather than against whatever was typed into the button.
+const RECORD_PLAY_LABEL: &str = "\u{25b6} Play the recording";
+const RECORD_PLAY_TIP: &str =
+    "Play the recording from the red line \u{2014} every second of it, cuts and all";
+
+/// The reason ▶ had nothing to play. Spec silent on a session with no filmed stretch; §0 asks for a
+/// named, local reason rather than a silent button.
+pub const NO_RECORDING_STATUS: &str = "nothing was filmed \u{2014} there is no recording to play";
+
+/// One window's preview state, pushed beside [`SESSION`] so each window owns its own and the newest
+/// one wins — the same arrangement `session_sources` reads.
+thread_local! {
+    static PREVIEW_PLAYERS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Player>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The Cut page's ▶ (F2.1), found by name the way [`play_button`] finds the run bar's.
+pub fn play_recording_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "play-recording-button")?
+        .downcast()
+        .ok()
+}
+
+/// This window's preview as it currently stands — for a test that fired the real button and wants to
+/// check the same state the logic test checks rather than a painted pixel.
+pub fn preview_player(window: &adw::ApplicationWindow) -> Player {
+    let _ = window;
+    PREVIEW_PLAYERS.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .map(|player| *player.borrow())
+            .unwrap_or_default()
+    })
+}
+
+/// This window's live preview handle — the newest registered player, which is the one this window's
+/// button moves. Shared by every accessor below so they all read and write the same object.
+fn live_player(window: &adw::ApplicationWindow) -> Option<Rc<RefCell<Player>>> {
+    let _ = window;
+    PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned())
+}
+
+/// Put the red line somewhere before a press, which is what placing the cursor on the timeline does in
+/// the finished page. F2.1 S2 plays from here, so a test seeds it rather than depending on a click
+/// landing on a track that this round does not draw.
+pub fn set_playhead(window: &adw::ApplicationWindow, at: f64) {
+    if let Some(player) = live_player(window) {
+        player.borrow_mut().playhead = Some(at);
+    }
+}
+
+/// Stand the preview in one of its three modes (recording / ✂ cut / ▶✂✂ review), playing or not,
+/// before a press — which is what the ✂ toggles and the transport itself do on the finished page.
+pub fn set_preview_state(
+    window: &adw::ApplicationWindow,
+    cut_only: bool,
+    reviewing: bool,
+    transport: run::Transport,
+) {
+    if let Some(player) = live_player(window) {
+        let mut held = player.borrow_mut();
+        held.cut_only = cut_only;
+        held.reviewing = reviewing;
+        held.transport = transport;
+    }
+}
+
+/// The seam F2.1's button calls: [`preview::press_recording`] decides which of switch-to-the-
+/// recording, pause or play-from-the-red-line the press means; this forwards it and paints only what
+/// the answer says.
+///
+/// `runs` are the filmed stretches ([`crate::timeline::filmed_runs`]) — needed because a session
+/// with nothing filmed has nothing to start at, and starting at 0 would pretend otherwise.
+///
+/// The player's own `Transport` is deliberately NOT pushed into the shell's [`run::RunBar`]: the bar
+/// tracks a *run* (`Run { step, paused, .. }`), not a preview transport, and folding one into the
+/// other would mean changing its API for a state it has no rule about. The two stay separate until a
+/// round owns both.
+pub fn press_play_recording(window: &adw::ApplicationWindow, runs: &[(f64, f64)]) -> Press {
+    let Some(status) = find_status(window.upcast_ref()) else {
+        panic!("the window has no status line");
+    };
+    let Some(player) = PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned()) else {
+        panic!("the window has no preview player");
+    };
+    let pressed = preview::press_recording(&mut player.borrow_mut(), runs);
+    match pressed {
+        // S1: the clock just changed meaning, so the sentence that says so goes where a press's
+        // answer is read.
+        Press::SwitchedToRecording { .. } => status.set_text(preview::RECORDING_STATUS),
+        // S2: playing and pausing need no sentence — the bar's own progress owns the line while a
+        // preview runs, and a pause leaves the previous one standing.
+        Press::Playing { .. } | Press::Paused => {}
+        Press::NoFootage => status.set_text(NO_RECORDING_STATUS),
+    }
+    pressed
+}
+
+/// F2.1: the Cut page's ▶ forwards to [`press_play_recording`], which forwards to
+/// [`preview::press_recording`] and paints. The handler takes the window it was wired on, cloned into
+/// the closure the way [`wire_settings`] does, so `build_window` needs nothing threaded through.
+fn wire_play_recording(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        // The filmed stretches come from Prepare's output (`timeline::filmed_runs` over the
+        // session's recordings), which belongs to the Cut page's own round — no `Recording` model
+        // is reachable from here yet — so an empty list is what the window knows today, and the seam
+        // takes real spans from any caller that does have them.
+        let _ = press_play_recording(&window, &[]);
+    });
+}
 
 /// Where a press of Open goes. [`open_project`] decides everything — which folder the pick names,
 /// whether it is an old single-file project, what the read produced and what had to be dropped; this
