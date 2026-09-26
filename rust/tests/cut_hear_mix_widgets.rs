@@ -9,6 +9,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
+use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx, Lane, Seg};
 use naivepost::cut_hear::{self, LaneStart};
 use naivepost::shell::Page;
@@ -81,6 +82,34 @@ fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Applicat
         scale.tooltip_text().map(|t| t.to_string()),
         Some(cut_hear::VOLUME_TIP.to_string()),
         "the tooltip is the shared sentence, verbatim, so it cannot drift from the module's"
+    );
+    // The label beside the trough, read off the widget tree. A tooltip only says what a control is to a
+    // pointer that already found it; the word next to the slider is what makes it findable, and this
+    // checks that word is in the tree AND drawn -- not merely constructed somewhere.
+    let row = scale
+        .parent()
+        .expect("the slider sits in a labelled row, not loose in the page column");
+    let row = row.downcast::<gtk::Box>().expect("the volume row is a horizontal Box");
+    let label = row
+        .first_child()
+        .and_then(|c| c.downcast::<gtk::Label>().ok())
+        .expect("the first thing in the volume row is the label");
+    println!(
+        "LABEL {} mapped={}",
+        label.text(),
+        label.is_mapped()
+    );
+    assert_eq!(
+        label.text().as_str(),
+        cut_hear::VOLUME_LABEL,
+        "the word beside the slider is the module's own, so the two cannot disagree"
+    );
+    assert!(label.is_mapped(), "the label is actually drawn, not just built");
+    println!("ROW height={}", row.height());
+    assert!(
+        row.height() >= 24,
+        "the row holds the 24 px floor so it reads as a control, got {} px",
+        row.height()
     );
     assert_eq!((scale.adjustment().upper(), scale.adjustment().step_increment()), (100.0, 1.0),
         "0..100 at step 1 — what a slider reads as, while the property under it is 0..1");

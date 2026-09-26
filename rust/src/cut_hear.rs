@@ -213,6 +213,12 @@ pub const VOLUME_DEFAULT: f64 = 1.0;
 /// tells a person why moving it changed nothing they rendered.
 pub const VOLUME_TIP: &str = "preview volume — the players only; nothing that is rendered, and the same setting wherever it is shown";
 
+/// F2.5 S6: the word beside the slider, so the trough is identifiable without hovering. The inventory
+/// asks for "icon + 0..100, 120 px, shared tooltip" (`spec/inventory/cut.md` §D item 2) and the
+/// prototype draws a speaker glyph there; this one spells the icon as a WORD because the headless
+/// container has no icon theme, where a themed icon renders as a blank box — a word always draws.
+pub const VOLUME_LABEL: &str = "preview volume";
+
 /// F2.5 S6: the slider's 0..100 held to what a gain means. Below nought is silence, not a phase flip,
 /// and above full travel is full travel.
 pub fn clamp_volume(v: f64) -> f64 {

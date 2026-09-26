@@ -168,7 +168,16 @@ fn page_box(
         volume.set_size_request(120, -1);
         volume.set_halign(gtk::Align::Start);
         volume.set_value(cut_hear::VOLUME_DEFAULT * 100.0);
-        box_.insert_child_after(&volume, Some(&previous));
+        // The trough alone read as an anonymous blue line: only a hover tooltip said what it was, where
+        // the prototype's speaker glyph makes it obvious at a glance. A row with the word beside it puts
+        // that back without a theme dependency, and the 24 px floor keeps it reading as a control next to
+        // the ~34 px buttons instead of a hairline under them.
+        let volume_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        volume_row.append(&gtk::Label::new(Some(cut_hear::VOLUME_LABEL)));
+        volume_row.append(&volume);
+        volume_row.set_halign(gtk::Align::Start);
+        volume_row.set_size_request(-1, 24);
+        box_.insert_child_after(&volume_row, Some(&previous));
         // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
         // widget that is not yet inside the realized tree never fires (see the F2.1 note there).
     }
