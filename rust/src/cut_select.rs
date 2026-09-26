@@ -157,6 +157,106 @@ pub fn is_drag(moved_px: f64) -> bool {
 /// removal may leave (about a frame)"), held here because F2.6's resize is the rule that reads it first.
 pub const MIN_SECONDS: f64 = 0.04;
 
+/// F2.6 S1: the vertical layout a drag's y is read against. The page draws its tracks in bands — ruler,
+/// then one picture row with its wave strip under it per camera row, then the effects lane — and which
+/// band a press lands in is what decides the selection's scope, so the mapping lives here as data plus a
+/// pure function rather than inside a gesture callback.
+///
+/// PLACEHOLDER GEOMETRY: until F2.8/F2.10/F2.11 draw the real picture rows, wave strips and lane rows,
+/// these numbers describe the 240x48 placeholder surface only (`select-surface`, `set_size_request(240,
+/// 48)`). THE SEAM IS THE DELIVERABLE, NOT THE NUMBERS: when the real surfaces arrive they pass their own
+/// bands into [`surface_at`] and every rule above stays untouched.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfaceBands {
+    /// y range of the ruler — ground that belongs to no row.
+    pub ruler: (f64, f64),
+    /// y range of the empty selection band, where a drag starts a new band.
+    pub selection: (f64, f64),
+    /// y range of the effects lane — the only ground that refuses a selection.
+    pub fx: (f64, f64),
+    /// y where the first picture row begins.
+    pub first_picture: f64,
+    /// Height of one row's picture band.
+    pub row_height: f64,
+    /// Height of the wave strip under a row.
+    pub wave_height: f64,
+}
+
+/// F2.6 S1: the placeholder bands for the surface drawn today. A 48 px area split ruler 8 / one picture
+/// row 20 + its wave strip 12 / effects lane 8, so all six surfaces are reachable by y on the box the
+/// page actually shows. Chosen to fill the drawn height exactly; see [`SurfaceBands`]' placeholder note.
+pub const PLACEHOLDER_BANDS: SurfaceBands = SurfaceBands {
+    ruler: (0.0, 8.0),
+    selection: (8.0, 8.0),
+    fx: (40.0, 48.0),
+    first_picture: 8.0,
+    row_height: 20.0,
+    wave_height: 12.0,
+};
+
+impl SurfaceBands {
+    /// y at the bottom of row `index`'s wave strip — where the next row (or the lanes) would start.
+    fn row_bottom(&self, index: usize) -> f64 {
+        self.first_picture + (index as f64 + 1.0) * (self.row_height + self.wave_height)
+    }
+}
+
+/// F2.6 S1: which ground a press at `y` was drawn on. Ruler band → [`Surface::Ruler`]; the empty
+/// selection band → [`Surface::SelectionBand`]; the effects lane → [`Surface::FxLane`]; below
+/// `first_picture` the y falls in row `i`'s picture half → [`Surface::PictureRow(i)`] or its wave half
+/// → [`Surface::WaveStrip`]; past the last of `row_count` rows the ground is a separate recording's
+/// lane → [`Surface::Lane`].
+///
+/// An unknown y answers [`Surface::SelectionBand`] rather than panicking: the spec lists the empty band as
+/// legal ground for a drag, so falling back there keeps a press meaningful instead of killing the page.
+pub fn surface_at(y: f64, bands: &SurfaceBands, row_count: usize) -> Surface {
+    if y >= bands.ruler.0 && y < bands.ruler.1 {
+        return Surface::Ruler;
+    }
+    if y >= bands.fx.0 && y < bands.fx.1 {
+        return Surface::FxLane;
+    }
+    if y >= bands.selection.0 && y < bands.selection.1 {
+        return Surface::SelectionBand;
+    }
+    // The effects lane is checked above, so a y past it answers the band rather than "a lane below the
+    // last row" -- there is no lane under the fx lane.
+    if y >= bands.fx.1 {
+        return Surface::SelectionBand;
+    }
+    if y >= bands.first_picture {
+        // Each row occupies picture then wave; the halves are decided by where y sits inside the pair.
+        let pitch = bands.row_height + bands.wave_height;
+        if pitch > 0.0 {
+            let index = ((y - bands.first_picture) / pitch).floor();
+            if index.is_finite() && index >= 0.0 {
+                let idx = index as usize;
+                if idx < row_count {
+                    let within = y - bands.first_picture - index * pitch;
+                    return if within < bands.row_height {
+                        Surface::PictureRow(idx)
+                    } else {
+                        Surface::WaveStrip
+                    };
+                }
+                // Past every drawn row: a separate recording's lane.
+                return Surface::Lane;
+            }
+        }
+        // Zero-height rows: nothing to land on but the band.
+        return Surface::SelectionBand;
+    }
+    Surface::SelectionBand
+}
+
+/// F2.6 S1: a drag keeps the ground it STARTED on. Once the hand is down on a wave strip, dragging the
+/// pointer across a picture row must not re-scope the band mid-drag — the person chose that recording's
+/// sound at the press, and having the scope change under them would make the readout lie about what they
+/// drew. Returns `started` when there is one, else `now`.
+pub fn keep_started_surface(started: Option<Surface>, now: Surface) -> Surface {
+    started.unwrap_or(now)
+}
+
 // --- S2: the band as an object ------------------------------------------------------------------------
 
 /// F2.6 S2 (`✕ clears`): throw the band away. The answer is nothing, and the marks and the Selection

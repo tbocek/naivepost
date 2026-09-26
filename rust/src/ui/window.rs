@@ -3342,6 +3342,56 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// F2.6 S1: what ground the current drag started on, or `None` when no press has been remembered yet.
+pub fn pressed_surface(window: &adw::ApplicationWindow) -> Option<cut_select::Surface> {
+    let _ = window;
+    SELECT_SURFACES.with(|slots| slots.borrow().last().and_then(|s| s.borrow().clone()))
+}
+
+/// F2.6 S1: remember the surface a press landed on for this window's drag.
+fn set_pressed_surface(surface: cut_select::Surface) {
+    SELECT_SURFACES.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            *slot.borrow_mut() = Some(surface);
+        }
+    });
+}
+
+/// F2.6 S1: a press on the effects lane -- the only ground that refuses a selection. With an effect in
+/// hand the press PUTS IT DOWN (that is what the lane is for); with nothing held it does nothing. Either
+/// way NO band is drawn, so the existing selection stays exactly as it was. Callable without a widget so
+/// the rule is testable on its own; the gesture handler just calls this when `surface_at` says `FxLane`.
+pub fn press_fx_lane(window: &adw::ApplicationWindow) -> cut_select::FxLanePress {
+    let _ = window;
+    let answer = cut_select::fx_lane_press(held_effect().is_some());
+    match answer {
+        cut_select::FxLanePress::PutsHeldEffectDown => {
+            set_held_effect(None);
+            log_line("effect put down on the effects lane");
+        }
+        cut_select::FxLanePress::Nothing => {}
+    }
+    answer
+}
+
+/// The surface the placeholder track area draws today, and how many rows of it exist. Until F2.8/F2.10/
+/// F2.11 own the real surfaces this answers the placeholder geometry (`cut_select::PLACEHOLDER_BANDS`)
+/// with one camera row -- the same single row the page shows -- so every band is reachable by y.
+fn placeholder_surface_bands() -> (cut_select::SurfaceBands, usize) {
+    (cut_select::PLACEHOLDER_BANDS, 1)
+}
+
+/// The recording name a wave-strip or lane selection is scoped to. `draw` takes `Option<&str>` and refuses
+/// (returns `None`) for a sound scope with no name, so the page must name one: until F2.11 owns the lane
+/// names this answers the placeholder camera the single drawn row stands for, matching
+/// `timeline::kept_footage_recordings`' `cam<N>` naming rather than inventing a second scheme.
+fn recording_for_surface(surface: cut_select::Surface) -> Option<&'static str> {
+    match surface {
+        cut_select::Surface::WaveStrip | cut_select::Surface::Lane => Some("cam0"),
+        _ => None,
+    }
+}
+
 /// This window's ✕ Clear selection button (F2.6 S2), looked up by its stable name.
 pub fn clear_selection_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "clear-selection")?
@@ -3916,10 +3966,34 @@ fn wire_select_surface(window: &adw::ApplicationWindow) {
     let Some(area) = select_surface(window) else { return };
     let gesture = gtk::GestureDrag::new();
     let win = window.clone();
-    gesture.connect_drag_update(move |_g, x, _y| {
+    // F2.6 S1: the press decides the scope, once. Which band the y fell in (ruler / picture row / wave
+    // strip / lane / selection band / effects lane) is answered by `cut_select::surface_at` -- a pure
+    // function over the drawn bands -- and remembered, so the drag below never re-decides it.
+    gesture.connect_drag_begin(move |_g, _sx, sy| {
+        let (bands, rows) = placeholder_surface_bands();
+        set_pressed_surface(cut_select::surface_at(sy, &bands, rows));
+    });
+    let fx_win = window.clone();
+    gesture.connect_drag_update(move |_g, x, y| {
+        let surface = pressed_surface(&fx_win).unwrap_or_else(|| {
+            let (bands, rows) = placeholder_surface_bands();
+            cut_select::surface_at(y, &bands, rows)
+        });
+        // The effects lane takes nothing back: it puts a held effect down and draws no band, so the
+        // selection that was there stays exactly as it was.
+        if surface == cut_select::Surface::FxLane {
+            press_fx_lane(&fx_win);
+            return;
+        }
         // Pixels to seconds at the page's current zoom; until the tracks exist the placeholder runs at
         // the open-at zoom so a drag still lands on real session seconds.
-        draw_selection(&win, cut_select::Surface::Ruler, None, 0.0, x / SELECT_SURFACE_PPS);
+        draw_selection(
+            &win,
+            surface,
+            recording_for_surface(surface),
+            0.0,
+            x / SELECT_SURFACE_PPS,
+        );
     });
     area.add_controller(gesture.clone());
     SELECT_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));

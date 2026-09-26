@@ -75,7 +75,215 @@ fn f2_6_s1_only_the_effects_lane_refuses() {
     assert_eq!(sel::fx_lane_press(false), sel::FxLanePress::Nothing, "with nothing held, nothing happens");
 }
 
-/// F2.6 (Select) S1: below the drag slop a press is a click — it clears the selection and moves the line
+// F2.6 S1: a drag on a picture row / a wave strip or a lane / the effects lane / the ruler -- which
+// band the press's y fell in is what decides the scope, so the mapping is data plus a pure function and
+// gets tested here rather than inside a gesture callback.
+#[test]
+fn f2_6_s1_surface_at_maps_each_y_band_to_its_surface() {
+    // A two-row table so PictureRow(0) AND PictureRow(1) are both reachable: ruler 0-8, then per row
+    // 20 px of picture + 12 px of wave, then the effects lane at the bottom.
+    let bands = sel::SurfaceBands {
+        ruler: (0.0, 8.0),
+        selection: (8.0, 8.0),
+        fx: (52.0, 60.0),
+        first_picture: 8.0,
+        row_height: 20.0,
+        wave_height: 12.0,
+    };
+    assert_eq!(sel::surface_at(4.0, &bands, 2), sel::Surface::Ruler, "the ruler band");
+    assert_eq!(
+        sel::surface_at(10.0, &bands, 2),
+        sel::Surface::PictureRow(0),
+        "the first 20 px under `first_picture` is row 0's picture"
+    );
+    assert_eq!(
+        sel::surface_at(28.0, &bands, 2),
+        sel::Surface::WaveStrip,
+        "the 12 px after it is that row's wave strip"
+    );
+    assert_eq!(
+        sel::surface_at(42.0, &bands, 2),
+        sel::Surface::PictureRow(1),
+        "the next pitch down is row 1's picture"
+    );
+    assert_eq!(
+        sel::surface_at(56.0, &bands, 2),
+        sel::Surface::FxLane,
+        "the bottom band is the effects lane"
+    );
+    // Past every drawn row -- but still above the effects lane -- the ground belongs to a separate
+    // recording, not to a camera row. Rows are 16 px (12 picture + 4 wave) from y=8: rows 0 and 1 end
+    // at 40, so y=40 is already past `row_count` = 2 while fx still sits above it.
+    let bands_above_fx = sel::SurfaceBands {
+        ruler: (0.0, 8.0),
+        selection: (8.0, 8.0),
+        fx: (60.0, 68.0),
+        first_picture: 8.0,
+        row_height: 12.0,
+        wave_height: 4.0,
+    };
+    assert_eq!(
+        sel::surface_at(39.0, &bands_above_fx, 2),
+        sel::Surface::WaveStrip,
+        "y=39 is still inside row 1's wave"
+    );
+    assert_eq!(
+        sel::surface_at(40.0, &bands_above_fx, 2),
+        sel::Surface::Lane,
+        "past `row_count` rows comes a lane"
+    );
+    assert_eq!(
+        sel::surface_at(40.0, &bands_above_fx, 3),
+        sel::Surface::PictureRow(2),
+        "the same y IS row 2's picture when three rows are drawn"
+    );
+    // And with no rows drawn at all, anything below `first_picture` is already past them.
+    assert_eq!(
+        sel::surface_at(9.0, &bands, 0),
+        sel::Surface::Lane,
+        "zero rows -> nothing but lanes below the ruler"
+    );
+
+    // The scope each surface produces, through the rule that already exists (`draw`).
+    let row1 = sel::draw(sel::Surface::PictureRow(1), None, 0.0, 5.0).expect("a row selects footage");
+    assert_eq!(row1.scope, sel::Scope::Footage { row: 1 }, "row 1's own footage");
+    assert!(sel::scoped_to_row(&row1.scope, 1), "and it IS row 1");
+    assert!(!sel::scoped_to_row(&row1.scope, 0), "not row 0's");
+
+    for surface in [sel::Surface::WaveStrip, sel::Surface::Lane] {
+        let sound = sel::draw(surface, Some("mic"), 0.0, 5.0).expect("a sound scope needs a name");
+        assert_eq!(
+            sound.scope,
+            sel::Scope::Sound { recording: "mic".to_string() },
+            "{surface:?} is one recording's sound, named by its base"
+        );
+        assert!(
+            !sel::scoped_to_row(&sound.scope, 1),
+            "a sound selection belongs to no camera row"
+        );
+    }
+    // Ruler and empty band are ground that belongs to no row: the whole timeline's footage.
+    for surface in [sel::Surface::Ruler, sel::Surface::SelectionBand] {
+        let whole = sel::draw(surface, None, 0.0, 5.0).expect("timeline-wide footage");
+        assert_eq!(
+            whole.scope,
+            sel::Scope::Footage { row: sel::ANY_ROW },
+            "{surface:?} selects the whole timeline's footage"
+        );
+    }
+}
+
+/// F2.6 S1: only the effects lane refuses, and what it does instead is put the held effect DOWN. No other
+/// ground answers a put-down -- `fx_lane_press` is asked ONLY for `Surface::FxLane`.
+#[test]
+fn f2_6_s1_only_the_effects_lane_refuses_a_selection_and_puts_a_held_effect_down() {
+    assert_eq!(
+        sel::fx_lane_press(true),
+        sel::FxLanePress::PutsHeldEffectDown,
+        "an effect in hand goes down on the lane"
+    );
+    assert_eq!(
+        sel::fx_lane_press(false),
+        sel::FxLanePress::Nothing,
+        "with nothing held the lane still takes no selection"
+    );
+    // Nothing else puts an effect down: every non-fx surface still draws a band.
+    for surface in [
+        sel::Surface::Ruler,
+        sel::Surface::SelectionBand,
+        sel::Surface::PictureRow(0),
+        sel::Surface::WaveStrip,
+        sel::Surface::Lane,
+    ] {
+        let band = sel::draw(surface, Some("mic"), 1.0, 4.0);
+        assert!(
+            band.is_some(),
+            "{surface:?} draws a band -- only FxLane refuses, so only FxLane has a put-down to answer"
+        );
+    }
+    // And the lane itself never yields a band, whatever it does with the hand.
+    assert!(
+        sel::draw(sel::Surface::FxLane, Some("mic"), 1.0, 4.0).is_none(),
+        "the effects lane draws no selection either way"
+    );
+}
+
+/// F2.6 S1: a drag keeps the ground it STARTED on. Spec: a selection is scoped to what it was DRAWN ON,
+/// so a drag begun on a wave strip stays that recording's sound even when the pointer crosses into a
+/// picture row mid-drag -- re-scoping under the hand would make the readout lie about what was drawn.
+#[test]
+fn f2_6_s1_a_drag_keeps_the_surface_it_started_on() {
+    assert_eq!(
+        sel::keep_started_surface(
+            Some(sel::Surface::WaveStrip),
+            sel::Surface::PictureRow(0)
+        ),
+        sel::Surface::WaveStrip,
+        "started on the wave strip -> crossing a picture row changes nothing"
+    );
+    assert_eq!(
+        sel::keep_started_surface(
+            Some(sel::Surface::PictureRow(1)),
+            sel::Surface::Ruler
+        ),
+        sel::Surface::PictureRow(1),
+        "same the other way: a row drag stays on its row"
+    );
+    assert_eq!(
+        sel::keep_started_surface(None, sel::Surface::Lane),
+        sel::Surface::Lane,
+        "with nothing remembered yet the current surface is used"
+    );
+    // The kept surface keeps its scope too, which is the point of remembering it.
+    let kept = sel::keep_started_surface(
+        Some(sel::Surface::WaveStrip),
+        sel::Surface::PictureRow(0),
+    );
+    let band = sel::draw(kept, Some("mic"), 0.0, 3.0).expect("the kept surface still draws");
+    assert_eq!(
+        band.scope,
+        sel::Scope::Sound { recording: "mic".to_string() },
+        "the band is still the sound it started as, not footage"
+    );
+}
+
+/// F2.6 S1: a y outside every band answers a surface instead of panicking. The empty selection band is
+/// legal drag ground per the spec, so falling back there keeps the press meaningful.
+#[test]
+fn f2_6_s1_an_unknown_y_still_answers_a_surface_instead_of_panicking() {
+    let bands = sel::PLACEHOLDER_BANDS;
+    assert_eq!(
+        sel::surface_at(-500.0, &bands, 1),
+        sel::Surface::SelectionBand,
+        "far above everything -> the band, not a panic"
+    );
+    assert_eq!(
+        sel::surface_at(100_000.0, &bands, 1),
+        sel::Surface::SelectionBand,
+        "far below everything: past the last row and past fx, so the band"
+    );
+    assert_eq!(
+        sel::surface_at(f64::NAN, &bands, 1),
+        sel::Surface::SelectionBand,
+        "a NaN y is not a crash either"
+    );
+    // Degenerate geometry (no height per row) must not divide into nonsense either.
+    let flat = sel::SurfaceBands {
+        ruler: (0.0, 0.0),
+        selection: (0.0, 0.0),
+        fx: (0.0, 0.0),
+        first_picture: 0.0,
+        row_height: 0.0,
+        wave_height: 0.0,
+    };
+    assert_eq!(
+        sel::surface_at(5.0, &flat, 3),
+        sel::Surface::SelectionBand,
+        "zero-height rows fall back to the band rather than an index"
+    );
+}
+
+/// F2.6 S1: below the drag slop a press is a click — it clears the selection and moves the line
 /// (F2.4 S1) instead of drawing a band, so the slop is asked before anything is drawn.
 #[test]
 fn f2_6_s1_under_the_drag_slop_a_press_is_a_click() {

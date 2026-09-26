@@ -12,7 +12,16 @@ struct Dirs {
 
 impl Dirs {
     fn new(name: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("np-prompts-{name}"));
+        // Unique per process AND per call, the way tests/machine_files.rs does it. A fixed path here is a
+        // race: two binaries (or two threads) that both call `new("store")` hit one directory, and one's
+        // `remove_dir_all` lands between the other's `write_prompt` and its `read_prompt`, which reads
+        // back empty -- exactly the "this machine's wording wins" failure with left: "".
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "np-prompts-{name}-{pid}-{n}",
+            pid = std::process::id(),
+            n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
         std::fs::remove_dir_all(&root).ok();
         std::fs::create_dir_all(&root).unwrap();
         Self {

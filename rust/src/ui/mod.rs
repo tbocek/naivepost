@@ -85,6 +85,8 @@ pub use window::preview_volume;
 pub use window::apply_mix;
 pub use window::preview_volume_scale;
 pub use window::draw_selection;
+pub use window::press_fx_lane;
+pub use window::pressed_surface;
 pub use window::selection;
 pub use window::clear_selection;
 pub use window::nudge_selection;
