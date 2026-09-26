@@ -161,44 +161,33 @@ fn page_box(
     // the context paragraph sits below a tall label and reads as an unrelated control; the spec puts
     // the transport at the head of the page, so it goes there.
     if page == Page::Cut.label() {
-        let play_ = gtk::Button::with_label(RECORD_PLAY_LABEL);
-        play_.set_widget_name("play-recording-button");
-        play_.set_tooltip_text(Some(RECORD_PLAY_TIP));
-        play_.set_halign(gtk::Align::Start);
-        box_.insert_child_after(&play_, Some(&title_row));
+        // §05-cut#1-screen: the toolbar is ONE row of six groups, in `cut_screen::TOOLBAR_GROUPS`'
+        // order — transport, volume, verbs, effects, history, zoom — each group a linked Box filled from
+        // its own table so the control set and its order live in one place that a test can read. The
+        // widgets keep the names every flow's tests already find them by; what changed is that they are
+        // grouped rather than stacked, and that the groups the earlier rounds had not reached (effects,
+        // history, zoom) are now on the page at all.
+        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        toolbar.set_widget_name("cut-toolbar");
+        toolbar.set_halign(gtk::Align::Start);
+        box_.insert_child_after(&toolbar, Some(&title_row));
+        // Every control lands in the groups appended below; `previous` threads the placeholder bands
+        // after the toolbar, exactly as it threaded them through the old stack of buttons.
+        let mut previous: gtk::Widget = toolbar.clone().upcast();
 
-        // F2.2: ▶✂ beside ▶, not below it — §A puts the two in one transport group and the person
-        // reads them as a pair ("the recording" / "the cut"). Greyed with no clips (S1) rather than
-        // dead: the same rule `cut_play::pressed` refuses with lives in `can_play_cut`, so the button
-        // cannot be clickable on a cut that has nothing to skip to.
-        let cut_ = gtk::Button::with_label(PLAY_CUT_LABEL);
-        cut_.set_widget_name("play-cut-button");
-        cut_.set_tooltip_text(Some(cut_screen::PLAY_CUT_TIP));
-        cut_.set_halign(gtk::Align::Start);
-        box_.insert_child_after(&cut_, Some(&play_));
+        // Transport group (§1 items 5-8), built from `cut_screen::TRANSPORT_BUTTONS` so the seven
+        // controls and their order are one table rather than seven blocks of packing code. Each keeps
+        // the name its flow's test finds it by.
+        // Transport starts live: ▶ Play the recording and the frame steps have a job the moment the page
+        // opens, whatever the cut holds.
+        let transport = cut_tool_group("transport", &cut_screen::TRANSPORT_BUTTONS, false);
+        toolbar.append(&transport);
 
-        // F2.3: ▶✂✂ last of the three, so the group reads recording → cut → review (§A's order).
-        let review_ = gtk::Button::with_label(REVIEW_CUTS_LABEL);
-        review_.set_widget_name("review-cuts-button");
-        review_.set_tooltip_text(Some(cut_screen::REVIEW_TIP));
-        review_.set_halign(gtk::Align::Start);
-        box_.insert_child_after(&review_, Some(&cut_));
+        // Volume group (§1 item 9) — see F2.5 below for why one slider owns no copy of the number.
+        let volume_group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        volume_group.set_widget_name("group-volume");
+        toolbar.append(&volume_group);
 
-        // F2.4: the line-step buttons, ‹‹f ‹f f› ››. §A puts them in the same toolbar row as the
-        // transport controls; that full toolbar is a later round's page, so these are the line-step
-        // half of it, sitting on after ▶✂✂ until the real bar arrives. Shift is five frames, plain is
-        // one — `cut_line::step_frames` owns that, and FRAME_TIP already says so.
-        // Widened to `gtk::Widget` rather than staying a Button: F2.6 appends a DrawingArea, a
-        // Button and a Label after the step buttons, and `insert_child_after` only needs a Widget.
-        let mut previous: gtk::Widget = review_.clone().upcast();
-        for (name, label, _shift) in LINE_STEP_BUTTONS {
-            let step = gtk::Button::with_label(label);
-            step.set_widget_name(name);
-            step.set_tooltip_text(Some(cut_screen::FRAME_TIP));
-            step.set_halign(gtk::Align::Start);
-            box_.insert_child_after(&step, Some(&previous));
-            previous = step.upcast();
-        }
 
         // F2.5 S6: the preview volume. One control for one number — `cut_hear::PreviewVolume` is the
         // app's single loudness setting and every slider shown mirrors it, so this widget owns no copy of
@@ -224,10 +213,19 @@ fn page_box(
         volume_row.append(&volume);
         volume_row.set_halign(gtk::Align::Start);
         volume_row.set_size_request(-1, 24);
-        box_.insert_child_after(&volume_row, Some(&previous));
+        // The slider belongs to the toolbar's volume group, not to the page column: §A puts it in group 2
+        // between the transport and the verbs. It is moved out of the row it was built in rather than
+        // rebuilt, so F2.5's sizing and its handler wiring (which finds it by name) are untouched.
+        volume.unparent();
+        volume_group.append(&volume_row);
         // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
         // widget that is not yet inside the realized tree never fires (see the F2.1 note there).
 
+        // The selection band's controls are NOT part of the toolbar: §A puts the drag surface, its ✕
+        // and its readout with the tracks, under the bar. They stay placeholders — the gutter, ruler,
+        // green bars, picture rows and scrollbar are F2.10/F2.11's work, and nothing here invents them.
+        let surface_group = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        surface_group.set_widget_name("selection-row");
         // F2.6 S1: the drag surface. A left-drag on any track area no control claims draws a band
         // scoped to what it was drawn on. The real picture rows, wave strips, lanes and ruler are later
         // items (F2.8/F2.10/F2.11), so this placeholder carries NO invented tracks: it is scoped
@@ -243,8 +241,7 @@ fn page_box(
         surface.set_size_request(240, 48);
         surface.set_halign(gtk::Align::Start);
         surface.set_tooltip_text(Some(cut_select::SURFACE_TIP));
-        box_.insert_child_after(&surface, Some(&previous));
-        previous = surface.upcast();
+        surface_group.append(&surface);
 
         // F2.6 S2: the cross that clears the band, and S3: the readout that follows it. Both start
         // insensitive/empty because a fresh window has no selection -- the sensitivity is the visible
@@ -252,46 +249,68 @@ fn page_box(
         let clear_ = gtk::Button::with_label(cut_select::CLEAR_LABEL);
         clear_.set_widget_name("clear-selection");
         clear_.set_tooltip_text(Some(cut_select::CLEAR_TIP));
+        // Greyed at rest: a fresh window has nothing to clear. `refresh_selection_readout` sets it from
+        // the live band on every draw, nudge and clear — a button that starts live would be lying about
+        // having something to clear until the first refresh ran, which is after the page is shown.
         clear_.set_sensitive(false);
         clear_.set_halign(gtk::Align::Start);
-        box_.insert_child_after(&clear_, Some(&previous));
-        previous = clear_.upcast();
+        surface_group.append(&clear_);
 
         let readout = gtk::Label::new(Some(cut_select::READOUT_NONE));
         readout.set_widget_name("selection-readout");
         readout.set_xalign(0.0);
         readout.add_css_class("dim-label");
-        box_.insert_child_after(&readout, Some(&previous));
-        previous = readout.upcast();
+        surface_group.append(&readout);
 
-        // F2.7: the three verbs that act on the band, in the spec's order, right under it. Each starts
-        // insensitive because a fresh window holds no selection; `refresh_verb_buttons` sets them from
-        // `selection_verbs` on every draw, nudge and clear, so a greyed button is always today's answer
-        // and never a leftover. | Split is the exception at rest: with no band it splits at the red line,
-        // so it stays live — see `verb_buttons_state`.
-        for (name, label, tip) in cut_verbs::BUTTONS {
-            let verb = gtk::Button::with_label(label);
-            verb.set_widget_name(name);
-            verb.set_tooltip_text(Some(tip));
-            verb.set_sensitive(false);
-            verb.set_halign(gtk::Align::Start);
-            box_.insert_child_after(&verb, Some(&previous));
-            previous = verb.upcast();
-        }
+        // Verbs, effects, history and zoom (§1 items 10-22), each group a linked Box off its own table
+        // in `cut_screen`, appended in TOOLBAR_GROUPS' order. They land in the toolbar rather than in the
+        // page column so the row reads as one bar: transport, volume, verbs, effects, history, zoom.
+        //
+        // The verb buttons start insensitive because a fresh window holds no selection;
+        // `refresh_verb_buttons` sets them from `selection_verbs` on every draw, nudge and clear, so a
+        // greyed button is always today's answer and never a leftover. | Split is the exception at rest:
+        // with no band it splits at the red line, so it stays live — see `verb_buttons_state`.
+        // Verbs start greyed: with no band there is nothing to add, remove, copy or paste, and the refresh
+        // path lights them from the live selection. `insert-button` rests greyed with its siblings on
+        // purpose — with no line placed and no seconds chosen there is nothing to insert over, and
+        // F2.12 lights it when a target exists; leaving it live because no test covers it would put a
+        // working-looking control in a row of greyed ones.
+        let verbs = cut_tool_group("verbs", &cut_screen::VERB_BUTTONS, true);
+        toolbar.append(&verbs);
 
-        // F2.9: the copy buttons, right after the F2.7 verbs and before the strip they act on, in the
-        // spec's order. All three start insensitive: a fresh window holds neither a selection to copy
-        // nor a copy to paste, and `refresh_copy_buttons` sets them from live state on every draw — so a
-        // greyed one is today's answer and never a leftover.
-        for (name, label, tip) in cut_copy::BUTTONS {
-            let button = gtk::Button::with_label(label);
-            button.set_widget_name(name);
-            button.set_tooltip_text(Some(tip));
-            button.set_sensitive(false);
-            button.set_halign(gtk::Align::Start);
-            box_.insert_child_after(&button, Some(&previous));
-            previous = button.upcast();
-        }
+        // Effects dropdown (§1 item 17). A MenuButton whose popover holds the six effects §A lists. If a
+        // popover cannot be built headless the fallback is a flat Box named `effect-menu` holding the
+        // same six named buttons, which keeps every test's lookup working either way.
+        let effect_button = gtk::MenuButton::new();
+        effect_button.set_widget_name("effect-button");
+        effect_button.set_label("\u{271a} Effect");
+        effect_button.set_tooltip_text(Some(cut_screen::EFFECT_MENU_TIP));
+        let effect_menu = cut_effect_menu();
+        effect_button.set_popover(Some(&effect_menu));
+        let effects = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        effects.set_widget_name("group-effects");
+        effects.append(&effect_button);
+        toolbar.append(&effects);
+
+        // History (§1 items 18-21) and zoom (item 22). Their sensitivity comes from
+        // `cut_screen::history_buttons_enabled` through `refresh_history_buttons`, called from the
+        // same refresh path the verbs use, so nothing here decides who is clickable.
+        // History starts greyed: nothing to undo, redo, revert or clear on a page that has not been edited.
+        let history = cut_tool_group("history", &cut_screen::HISTORY_BUTTONS, true);
+        toolbar.append(&history);
+        // Zoom starts live: −/+ act on any timeline immediately.
+        let zoom = cut_tool_group("zoom", &cut_screen::ZOOM_BUTTONS, false);
+        toolbar.append(&zoom);
+
+        // Form column (§1's "Form column", §A's idle rows). Until a form is open for something being
+        // placed or edited, this holds the eight readings: thumbnail size (with its −/+ ladder), aspect
+        // ratio, playhead, selection, cut, cut at 1×, source, segments — each value label named off
+        // `cut_screen::readout_widget(label)` so the label is spelled once and the name follows.
+        let form = cut_form_column();
+        box_.insert_child_after(&form, Some(&previous));
+        previous = form.upcast();
+
+
 
         // F2.8: the strip that carries trim and move. A PLACEHOLDER standing in for the picture rows,
         // green bars and wave strips F2.10/F2.11 draw, scoped the way `select-surface` above is — no
@@ -311,6 +330,8 @@ fn page_box(
             cut_trim::TRIM_TIP,
             cut_trim::MOVE_TIP
         )));
+        box_.insert_child_after(&surface_group, Some(&previous));
+        previous = surface_group.upcast();
         box_.insert_child_after(&strip, Some(&previous));
         let _ = previous;
     }
@@ -322,6 +343,128 @@ fn page_box(
     // first — and wiring an arbitrary page's copy leaves the visible one doing nothing.
     let (add_, copy_) = prepare.map_or((None, None), |(add_, copy_)| (Some(add_), Some(copy_)));
     (view.upcast(), add_, copy_)
+}
+
+/// One toolbar group: a linked horizontal Box named `group-<name>` holding one button per entry in
+/// `tools`, in the table's order. Every control gets its stable widget name and its tooltip here, so
+/// no group is assembled differently from any other and a test that reads a table knows what the page
+/// holds (§1's groups, §A's tooltips).
+///
+/// `rests_insensitive` is how the group starts before any refresh has run. The rule for who is live
+/// lives in the refresh path (`refresh_verb_buttons`, `refresh_copy_buttons`,
+/// `refresh_history_buttons`), but the page is shown before the first of those runs, so a button that
+/// started sensitive would be claiming it has work to do when it has none. Groups whose controls act on
+/// nothing (verbs with no band, history with no edit) start greyed; groups that always have a job
+/// (transport, zoom) start live.
+fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insensitive: bool) -> gtk::Box {
+    let group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    group.set_widget_name(&format!("group-{name}"));
+    group.set_halign(gtk::Align::Start);
+    for tool in tools {
+        let button = gtk::Button::with_label(tool.label);
+        button.set_widget_name(tool.name);
+        button.set_tooltip_text(Some(tool.tip));
+        button.set_sensitive(!rests_insensitive);
+        group.append(&button);
+    }
+    group
+}
+
+/// The effects dropdown's contents: the six effects §1 item 17 lists, each a named row of the popover
+/// so a test finds `effect-item-zoom` whether or not the popover was ever popped. Built as a Box of
+/// buttons rather than a `PopoverMenu` because a menu model cannot be inspected by name under
+/// `GSK_RENDERER=cairo` — the flat rows keep the same names and the same order.
+fn cut_effect_menu() -> gtk::Popover {
+    let popover = gtk::Popover::new();
+    let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    list.set_widget_name("effect-menu");
+    for item in cut_screen::EFFECT_ITEMS {
+        // `tip` carries the effect kind id here, not a sentence: it is what the row means to the cut,
+        // and the label is what a person reads.
+        let row = gtk::Button::with_label(item.label);
+        row.set_widget_name(item.name);
+        row.set_tooltip_text(Some(&format!("add a {} effect", item.tip)));
+        list.append(&row);
+    }
+    popover.set_child(Some(&list));
+    popover
+}
+
+/// The form column as the page sits idle (§1's "Form column", §A's "Idle rows"). A Grid named
+/// `cut-form`: one row per reading, label in the left column and its value in the right, each value
+/// named off `cut_screen::readout_widget` so a test reads the same eight rows the spec lists.
+///
+/// Two of the rows carry controls rather than a plain value: Thumbnails has the 🖼− / 🖼+ ladder
+/// (40..160 px, one third at a step — `cut_screen::thumb_down`/`thumb_up`) and Aspect ratio has the
+/// dropdown seeded with `ASPECT_DEFAULT` first. Both write through the seams below (`set_thumb_px`,
+/// `set_aspect`) which repaint the row from the number they changed, so the readout is never a copy
+/// that drifted from the control.
+fn cut_form_column() -> gtk::Grid {
+    let form = gtk::Grid::new();
+    form.set_widget_name("cut-form");
+    form.set_row_spacing(2);
+    form.set_column_spacing(8);
+    form.set_halign(gtk::Align::Start);
+    // What the readings show for a page with no cut yet: zeros and the open-at thumbnail size. The
+    // real values arrive with the rounds that own them; this fills the rows so none is blank.
+    let cut_ = crate::cut::Cut::default();
+    let rows = cut_screen::idle_readouts(
+        cut_screen::THUMB_AT_OPEN,
+        cut_screen::ASPECT_DEFAULT,
+        0.0,
+        None,
+        &cut_,
+        0.0,
+    );
+    for (index, row) in rows.iter().enumerate() {
+        let name = cut_screen::readout_widget(row.label);
+        let key = gtk::Label::new(Some(&format!("{}:", row.label)));
+        key.set_xalign(0.0);
+        key.add_css_class("dim-label");
+        key.set_widget_name(&format!("{name}-key"));
+        let value = if row.tip.is_empty() {
+            // No control on this row: the value is the whole of it.
+            let value = gtk::Label::new(Some(&row.value));
+            value.set_xalign(0.0);
+            value.upcast::<gtk::Widget>()
+        } else {
+            // Thumbnails: the ladder sits beside the number it drives.
+            let line = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+            let minus = gtk::Button::with_label("\u{1f5bc}\u{2212}");
+            minus.set_widget_name("thumb-minus");
+            minus.set_tooltip_text(Some(row.tip));
+            let plus = gtk::Button::with_label("\u{1f5bc}+");
+            plus.set_widget_name("thumb-plus");
+            plus.set_tooltip_text(Some(row.tip));
+            let value = gtk::Label::new(Some(&row.value));
+            value.set_xalign(0.0);
+            line.append(&minus);
+            line.append(&value);
+            line.append(&plus);
+            line.upcast::<gtk::Widget>()
+        };
+        value.set_widget_name(&name);
+        form.attach(&key, 0, index as i32, 1, 1);
+        form.attach(&value, 1, index as i32, 1, 1);
+    }
+    // The aspect row gets its dropdown next to the shape it reads. §A spells the row as a dropdown
+    // rather than a number, so the default is listed first and stays what an unset project shows.
+    if let Some(aspect_row) = cut_screen::IDLE_FORM_ROWS
+        .iter()
+        .position(|l| *l == "Aspect ratio")
+    {
+        let choice = gtk::DropDown::from_strings(&[
+            cut_screen::ASPECT_DEFAULT,
+            "4:3",
+            "9:16",
+            "1:1",
+            "21:9",
+        ]);
+        choice.set_widget_name("aspect-choice");
+        choice.set_tooltip_text(Some("the shape the finished video is cut to"));
+        form.attach(&choice, 2, aspect_row as i32, 1, 1);
+    }
+    form
 }
 
 /// §4's list of rows, one per source file, drawn from the project and wired to [`crate::sources`].
@@ -1361,6 +1504,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     }
     // S2: Esc drops what is in hand, and only that key.
     wire_copy_esc(&window);
+    // §05-cut#1-screen: the history group (Undo / Redo / Revert / Clear), the zoom pair and their
+    // chords, wired after `set_content` like every other control on this page.
+    wire_history_and_zoom(&window);
+    wire_history_keys(&window);
     // F2.8: the trim and move gestures on `track-strip`, wired after `set_content` for the same reason.
     wire_track_strip(&window);
     window
@@ -3132,6 +3279,9 @@ fn refresh_selection_readout(window: &adw::ApplicationWindow) {
     // F2.9: the copy buttons ride the same refresh path, so a band drawn, nudged or cleared updates them
     // without a second place to remember.
     refresh_copy_buttons(window);
+    // §05-cut#1-screen: and so do the four history buttons — one refresh path sets every greyed
+    // control on the page, from the rule that owns each of them.
+    refresh_history_buttons(window);
 }
 
 
@@ -5034,4 +5184,317 @@ pub fn find_status(root: &gtk::Widget) -> Option<gtk::Label> {
         }
     }
     None
+}
+
+// --- §05-cut#1-screen: the history and zoom groups -----------------------------------------------
+//
+// The four history buttons and the −/+ pair live in the toolbar; the rules they consult are
+// `cut::History` (the stack, its depth bound `P.layout.undoDepth`) and `cut_screen`'s zoom ladder.
+// What this section adds is the door from a press to those rules and nothing else: each function takes
+// the window, calls one rule, prints what came back, and repaints from the answer.
+
+thread_local! {
+    /// This window's edit history (§2), newest slot last like [`REVIEW_CUTS`] so the newest window is
+    /// the live one. Opened on whatever cut the page was built with, which §2 makes both the first
+    /// state and the base Revert returns to.
+    static CUT_HISTORIES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut::History>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Record that the page has been edited, so Undo/Redo/Revert/Clear have something to answer about.
+/// The verb doors print and write segments but do not own the history (§2's snapshots are the edit
+/// record); this is the seam that pushes one, and the same one `note_edit` in the test stands for.
+pub fn note_edit(window: &adw::ApplicationWindow) {
+    let history = cut_history(window);
+    history.borrow_mut().push(&newest_review_cut());
+    refresh_history_buttons(window);
+}
+
+/// This window's history, opened on the cut it currently shows if none was opened yet.
+fn cut_history(window: &adw::ApplicationWindow) -> Rc<std::cell::RefCell<cut::History>> {
+    let held = CUT_HISTORIES.with(|slot| slot.borrow().last().cloned());
+    if let Some(held) = held {
+        return held;
+    }
+    let fresh = Rc::new(std::cell::RefCell::new(cut::History::open(&newest_review_cut())));
+    CUT_HISTORIES.with(|slot| slot.borrow_mut().push(fresh.clone()));
+    fresh
+}
+
+/// Undo (§1 item 18): take the page back one state. Returns the line for the status bar — either what
+/// the page went back to, or the fact that there was nothing behind it.
+pub fn press_undo(window: &adw::ApplicationWindow) -> String {
+    let history = cut_history(window);
+    let back = history.borrow_mut().undo();
+    match back {
+        Some(snapshot) => {
+            let mut cut_ = newest_review_cut();
+            snapshot.restore(&mut cut_);
+            publish_cut(&cut_);
+            let said = format!(
+                "\u{21b6} back to the previous state \u{2014} {} segment(s), {} \u{2014} Redo puts it forward again",
+                cut_.segs.len(),
+                crate::tools::mm_ss(cut_screen::cut_seconds(&cut_))
+            );
+            log_line(&said);
+            said
+        }
+        None => {
+            let said = "nothing to undo \u{2014} you are at the state this page opened with".to_string();
+            log_line(&said);
+            said
+        }
+    }
+}
+
+/// Redo (§1 item 19): put back what Undo took away.
+pub fn press_redo(window: &adw::ApplicationWindow) -> String {
+    let history = cut_history(window);
+    let forward = history.borrow_mut().redo();
+    match forward {
+        Some(snapshot) => {
+            let mut cut_ = newest_review_cut();
+            snapshot.restore(&mut cut_);
+            publish_cut(&cut_);
+            let said = format!(
+                "\u{21a7} forward again \u{2014} {} segment(s), {}",
+                cut_.segs.len(),
+                crate::tools::mm_ss(cut_screen::cut_seconds(&cut_))
+            );
+            log_line(&said);
+            said
+        }
+        None => {
+            let said = "nothing to redo \u{2014} a new edit threw that branch away".to_string();
+            log_line(&said);
+            said
+        }
+    }
+}
+
+/// Revert (§1 item 20): drop everything added or removed by hand and go back to the base — the last
+/// suggestion, or what the page opened with when there has been none.
+pub fn press_revert(window: &adw::ApplicationWindow) -> String {
+    let history = cut_history(window);
+    let already_base = history.borrow().base_is_the_screen(&newest_review_cut());
+    if already_base {
+        let said = "nothing to revert \u{2014} the cut is as it was".to_string();
+        log_line(&said);
+        return said;
+    }
+    let snapshot = history.borrow_mut().revert();
+    let mut cut_ = newest_review_cut();
+    snapshot.restore(&mut cut_);
+    publish_cut(&cut_);
+    let said = format!(
+        "back to where this page started \u{2014} {} segment(s). \u{21b6} Undo cannot reach the hand edits \
+         you just dropped: they are gone",
+        cut_.segs.len()
+    );
+    log_line(&said);
+    said
+}
+
+/// Clear (§1 item 21): every kept stretch and every effect off the timeline, recordings as loaded.
+/// It is itself an edit, so Undo brings them back — which is why the result is pushed rather than
+/// simply written.
+pub fn press_clear_cut(window: &adw::ApplicationWindow) -> String {
+    let had = newest_review_cut();
+    if had.segs.is_empty() && had.fx.is_empty() {
+        let said = "nothing to clear \u{2014} the timeline is already empty".to_string();
+        log_line(&said);
+        return said;
+    }
+    let cleared = crate::cut::cleared(&had);
+    let history = cut_history(window);
+    history.borrow_mut().push(&cleared);
+    publish_cut(&cleared);
+    let said = format!(
+        "cleared {} segment(s) and {} effect(s) \u{2014} the recordings stay as they were loaded, and \
+         \u{21b6} Undo brings them back",
+        had.segs.len(),
+        had.fx.len()
+    );
+    log_line(&said);
+    said
+}
+
+/// Write a cut back as the page's current one, so the readouts, the verbs and every later flow see it.
+fn publish_cut(cut_: &cut::Cut) {
+    REVIEW_CUTS.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            *slot.borrow_mut() = cut_.clone();
+        }
+    });
+}
+
+/// − / + (§1 item 22): one step of the zoom ladder. The floor is where the whole session fits, so
+/// zooming out stops there rather than at a number that would leave the timeline in a corner.
+pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
+    let pps = preview_pps();
+    let next = if inward {
+        cut_screen::zoom_up(pps, TRACK_STRIP_PPS)
+    } else {
+        cut_screen::zoom_down(pps, TRACK_STRIP_PPS)
+    };
+    set_preview_pps(next);
+    let said = format!("zoom {:.1} px a second", next);
+    log_line(&said);
+    said
+}
+
+thread_local! {
+    /// The page's pixels-per-second. Seeded at the placeholder strip's zoom so the toolbar's −/+ start
+    /// from where the page actually draws; F2.10/F2.11 move the real tracks onto this same number.
+    static PREVIEW_PPS: std::cell::RefCell<f64> = const { std::cell::RefCell::new(0.0) };
+}
+
+fn preview_pps() -> f64 {
+    PREVIEW_PPS.with(|cell| {
+        let held = *cell.borrow();
+        if held > 0.0 { held } else { TRACK_STRIP_PPS }
+    })
+}
+
+fn set_preview_pps(pps: f64) {
+    PREVIEW_PPS.with(|cell| *cell.borrow_mut() = pps);
+}
+
+/// Wire the four history buttons and the two zoom buttons. Same shape as the verb wiring: find by name,
+//  click forwards to the seam, the status line gets the sentence, and the sensitivity is refreshed
+/// from the rule rather than remembered.
+fn wire_history_and_zoom(window: &adw::ApplicationWindow) {
+    for (name, seam) in [
+        ("undo-button", press_undo as fn(&adw::ApplicationWindow) -> String),
+        ("redo-button", press_redo),
+        ("revert-button", press_revert),
+        ("clear-cut-button", press_clear_cut),
+    ] {
+        if let Some(button) = line_step_button(window, name) {
+            let win = window.clone();
+            button.connect_clicked(move |_| {
+                let status = seam(&win);
+                if let Some(status_line) = find_status(win.upcast_ref()) {
+                    status_line.set_text(&status);
+                }
+                refresh_history_buttons(&win);
+            });
+        }
+    }
+    for (name, inward) in [("zoom-out-button", false), ("zoom-in-button", true)] {
+        if let Some(button) = line_step_button(window, name) {
+            let win = window.clone();
+            button.connect_clicked(move |_| {
+                let status = press_zoom(&win, inward);
+                if let Some(status_line) = find_status(win.upcast_ref()) {
+                    status_line.set_text(&status);
+                }
+            });
+        }
+    }
+    // The thumbnail ladder (§A's "Thumbnails [🖼− 🖼+]") sits in the FORM column beside the number it
+    // drives, so its handler repaints that one label rather than a status line.
+    for (name, bigger) in [("thumb-minus", false), ("thumb-plus", true)] {
+        if let Some(button) = line_step_button(window, name) {
+            let win = window.clone();
+            button.connect_clicked(move |_| {
+                let px = press_thumb(&win, bigger);
+                if let Some(status_line) = find_status(win.upcast_ref()) {
+                    status_line.set_text(&format!("thumbnails {px} px"));
+                }
+            });
+        }
+    }
+}
+
+thread_local! {
+    /// The page's thumbnail height in px. Seeded at `THUMB_AT_OPEN` because that is what the form
+    /// column drew, so the first click steps from the number on screen rather than from zero.
+    static THUMB_PX: std::cell::RefCell<u32> = const { std::cell::RefCell::new(0) };
+}
+
+/// 🖼− / 🖼+ (§A): one third of a step, clamped 40..160 by `cut_screen::thumb_down`/`thumb_up`, and
+/// the `cut-readout-thumbnails` label is repainted from the new number so the readout can never drift
+/// from the control that owns it. Returns the new height.
+pub fn press_thumb(_window: &adw::ApplicationWindow, bigger: bool) -> u32 {
+    let now = THUMB_PX.with(|cell| {
+        let held = cell.borrow().clone();
+        let next = if bigger {
+            cut_screen::thumb_up(held.max(cut_screen::THUMB_AT_OPEN))
+        } else {
+            cut_screen::thumb_down(held.max(cut_screen::THUMB_AT_OPEN))
+        };
+        *cell.borrow_mut() = next;
+        next
+    });
+    if let Some(label) = find_widget_by_name(
+        _window.upcast_ref(),
+        &cut_screen::readout_widget("Thumbnails"),
+    )
+    .and_then(|w| w.downcast::<gtk::Label>().ok())
+    {
+        label.set_text(&format!("{now} px"));
+    }
+    now
+}
+
+/// Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (§1 items 18-19's chords). One controller on the window, following
+/// [`wire_line_keys`]' shape: the key decides, the shift decides which of the two directions, and an
+/// unheld letter is left to whatever widget has focus.
+fn wire_history_keys(window: &adw::ApplicationWindow) {
+    let controller = gtk::EventControllerKey::new();
+    let win = window.clone();
+    controller.connect_key_pressed(move |_ctrl, key, _code, mods| {
+        let ctrl = mods.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+        let shift = mods.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+        if !ctrl {
+            return glib::Propagation::Proceed;
+        }
+        let status = match key {
+            // Z alone undoes; Z with Shift redoes, and so does Y — §1 spells both, because both hands
+            // reach for one of them and a person should not have to remember which editor they opened.
+            gtk::gdk::Key::z | gtk::gdk::Key::Z if !shift => press_undo(&win),
+            gtk::gdk::Key::z | gtk::gdk::Key::Z if shift => press_redo(&win),
+            gtk::gdk::Key::y | gtk::gdk::Key::Y => press_redo(&win),
+            _ => return glib::Propagation::Proceed,
+        };
+        if let Some(status_line) = find_status(win.upcast_ref()) {
+            status_line.set_text(&status);
+        }
+        refresh_history_buttons(&win);
+        glib::Propagation::Stop
+    });
+    window.add_controller(controller.clone());
+    HISTORY_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
+}
+
+thread_local! {
+    static HISTORY_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// This window's history key controller, newest window winning like [`line_key_controller`].
+pub fn history_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
+    let _ = window;
+    HISTORY_KEYS.with(|cell| cell.borrow().clone())
+}
+
+/// Which of the four history buttons may be pressed right now, from the stack's own counts. Called
+/// from [`refresh_selection_readout`] so a greyed history button is today's answer along with every
+/// other greyed control on the page, never a leftover from the last draw.
+fn refresh_history_buttons(window: &adw::ApplicationWindow) {
+    let history = cut_history(window);
+    let held = history.borrow();
+    let depth = held.depth();
+    // `depth - at - 1` is what lies ahead of the pointer; `at` is private, so the two counts come from
+    // the questions the stack answers rather than from its insides.
+    let undo_left = usize::from(held.can_undo());
+    let redo_left = usize::from(held.can_redo());
+    let ever_edited = depth > 1 || !held.base_is_the_screen(&newest_review_cut());
+    let live = cut_screen::history_buttons_enabled(undo_left, redo_left, ever_edited);
+    for (tool, is_live) in cut_screen::HISTORY_BUTTONS.iter().zip(live) {
+        if let Some(button) = line_step_button(window, tool.name) {
+            button.set_sensitive(is_live);
+        }
+    }
 }

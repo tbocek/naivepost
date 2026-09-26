@@ -610,3 +610,12 @@ impl History {
         self.snapshots.len()
     }
 }
+
+/// The cut with every kept stretch and every effect taken off it, leaving the recordings as they were
+/// loaded (§A's Clear). Empty segment and effect lists are the whole of it: `shift` (the hand offsets
+/// per recording) and `rows` (which row a recording was put on) stay, because Clear takes work off the
+/// timeline rather than undoing where a person parked a file — and the rows are what the page is drawn
+/// from, so emptying them would blank the tracks rather than clear them.
+pub fn cleared(cut: &Cut) -> Cut {
+    Cut { segs: Vec::new(), fx: Vec::new(), ..cut.clone() }
+}

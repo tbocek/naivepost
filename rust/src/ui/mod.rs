@@ -111,6 +111,10 @@ pub use window::press_add;
 pub use window::press_delete_key;
 pub use window::press_remove;
 pub use window::press_split;
+pub use window::note_edit;
+pub use window::press_undo;
+pub use window::press_redo;
+pub use window::history_key_controller;
 pub use window::set_held_clip;
 pub use window::set_held_effect;
 // F2.8: the trim/move strip, its two gestures, and the seams that feed a right-press's ground.
