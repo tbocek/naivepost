@@ -83,6 +83,7 @@ pub mod prepare;
 pub mod prepare_data;
 pub mod prepare_decisions;
 pub mod prepare_run;
+pub mod describe;
 pub mod preview;
 pub mod prompt_assembly;
 pub mod produce_embed;

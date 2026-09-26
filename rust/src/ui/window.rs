@@ -21,6 +21,7 @@ use crate::cut_delete;
 use crate::cut_verbs;
 use crate::cut_copy;
 use crate::cut_line;
+use crate::describe;
 use crate::cut_screen;
 use crate::cut_trim;
 use crate::hand_edit;
@@ -1706,25 +1707,50 @@ fn wire_play(
                 });
                 match layout::Tree::new(&dir)
                     .ok()
-                    .map(|tree| prepare_run::begin(&asked, &tree))
+                    .map(|tree| (prepare_run::begin(&asked, &tree), tree))
                 {
-                    Some(prepare_run::Start::Refused { log, status }) => {
+                    Some((prepare_run::Start::Refused { log, status }, _)) => {
                         log_line(&log);
                         refusal = Some(status);
                         started = false;
                     }
-                    Some(prepare_run::Start::SaveFailed { error }) => {
+                    Some((prepare_run::Start::SaveFailed { error }, _)) => {
                         log_line(&format!("!!! could not save the project -- {error}"));
                         refusal = Some(prepare_run::failed_status(&error));
                         started = false;
                     }
-                    // The opening lines go out whether or not a runner follows them. Until F1.2/F1.3/
-                    // F1.6/F1.7-F1.10 land there is nothing to run after the log, so the run sits at
-                    // zero on the bar rather than pretending — which is why ⏹ still has something to
-                    // stop here.
-                    Some(prepare_run::Start::Started { lines, .. }) => {
+                    // The opening lines go out whether or not a runner follows them. F1.7's Describe
+                    // stage now speaks here too (see below), so the log is no longer the last word;
+                    // what still has no runner behind it are the stages of F1.2/F1.3/F1.8-F1.10, which
+                    // is why the bar sits at zero rather than pretending — and why ⏹ still has
+                    // something to stop here.
+                    Some((prepare_run::Start::Started { lines, .. }, tree)) => {
                         for line in &lines {
                             log_line(line);
+                        }
+                        // F1.7's Describe stage speaks here too: one forwarder per footage source,
+                        // which PLANS what would be sent and prints it. Nothing is spawned and no
+                        // vision server is contacted — the requests themselves arrive with the runner
+                        // rounds; what lands now is the plan the person can read while ▶ is pressed.
+                        let freq = asked.interval;
+                        for source in &asked.sources {
+                            if !source.footage {
+                                continue;
+                            }
+                            // The lane Describe files a source's work under is its file name minus the
+                            // extension — the same rule `prepare_run::lane` and `frames.rs` use, so
+                            // this stage reads exactly the folder F1.6 wrote.
+                            let lane = source
+                                .path
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(&source.path)
+                                .split_once('.')
+                                .map(|(stem, _)| stem.to_string())
+                                .unwrap_or_else(|| source.path.clone());
+                            for line in describe::stage_log_for(&tree, &lane, freq, &[]) {
+                                log_line(&line);
+                            }
                         }
                     }
                     // No project folder yet: nothing to clear and nothing to save into, so the press
