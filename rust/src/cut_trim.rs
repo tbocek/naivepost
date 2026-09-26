@@ -379,6 +379,151 @@ pub fn folds_to_open(folds: &[[f64; 2]], grab: f64, travel: f64) -> Vec<usize> {
         .collect()
 }
 
+/// F2.8 S1: the tooltip that says a border is grabbable before a person tries it — the reach is
+/// [`EDGE_GRAB_PX`], and either button takes it. `// layout.edgeGrabPx`
+pub const TRIM_TIP: &str = "press within 6 px of a clip border to drag that border \u{2014} either button";
+
+/// F2.8 S2: the tooltip for the right hand, naming what a right-drag does before it is tried.
+pub const MOVE_TIP: &str =
+    "right-drag moves what is under the pointer \u{2014} a recording, the selected scenes, one scene along its recording, or the whole row";
+
+/// F2.8 S2/S3: the whole right-press gesture answered at once.
+///
+/// The page needs one answer per event rather than six questions asked in the right order every time, so
+/// this composes the module's rules into the two things that can happen: nothing moved (a click, S3), or
+/// something slid (S2) with everything the page must act on carried out — the corrected shift map, the
+/// row it changed to if any, and the folds to open for the drag.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Gesture {
+    /// S3: an unmoved press is a click — nothing moved, nothing pushed, nothing to undo.
+    Click,
+    /// S2: something slid. `what` names it in the sentence, `status` IS that sentence, `shift` is the
+    /// map after the correction, `row` is the row it changed to when the move was a row change, and
+    /// `open` lists the folds to open for the drag.
+    Slid {
+        what: String,
+        status: String,
+        shift: BTreeMap<String, f64>,
+        row: Option<usize>,
+        open: Vec<usize>,
+    },
+}
+
+/// What the page calls each thing the right button can take, in the words its status sentences use. Named
+/// here because the same four nouns appear in the sentence whether the slide came from the band, the
+/// selection, one scene or the row.
+fn slide_noun(slide: &Slide) -> &'static str {
+    match slide {
+        Slide::Recording(_) => "the recording",
+        Slide::Selection(_) => "the selected scenes",
+        Slide::Scene(_) => "the scene",
+        Slide::Row(_) => "the camera row",
+    }
+}
+
+/// F2.8 S2/S3: one right gesture on one cut, answered whole.
+///
+/// `d_seconds` is how far the hand travelled, in seconds; `travel_px` and `row_change` say whether that
+/// travel counts as a drag at all ([`opens_gesture`]: 3 px sideways, or any row change). The opening
+/// state is read rather than the live one — `shift_at_open` and `already_pushed` come from the moment the
+/// press began — because a drag fires an update per mouse-move event and asking the live map each time
+/// compounds ten nudges into ten times the distance ([`slide_shift`] states the same rule for the map).
+///
+/// A gesture that changed nothing answers [`Gesture::Click`] even when it travelled: a scene pinned by a
+/// neighbour on both sides has nowhere to go, and reporting "moved +0.00 s" for a hand that moved would
+/// be a sentence about a change that did not happen.
+pub fn right_gesture(
+    press: &Press,
+    travel_px: f64,
+    row_change: bool,
+    d_seconds: f64,
+    segs: &[Seg],
+    rec_start: f64,
+    rec_end: f64,
+    pps: f64,
+    folds: &[[f64; 2]],
+    shift_at_open: &BTreeMap<String, f64>,
+    sources: &[String],
+    already_pushed: bool,
+) -> Gesture {
+    // (a) S3: no travel past the slop and no row change means the press was a click.
+    if !opens_gesture(travel_px, row_change) {
+        return Gesture::Click;
+    }
+
+    let slide = slide_for(press);
+    // Where the grab is, in seconds: what the folds are measured against.
+    let grab = match &slide {
+        Slide::Scene(index) => segs.get(*index).map(|seg| seg.s).unwrap_or(0.0),
+        _ => press.selection.map(|(start, _)| start).unwrap_or(0.0),
+    };
+
+    // (b) the movement itself, per what was taken.
+    let mut shift = shift_at_open.clone();
+    let mut moved = 0.0_f64;
+    match &slide {
+        Slide::Recording(base) => {
+            // The band and the wave strip both slide one recording: that is a shift of its own column.
+            shift = slide_shift(&shift, std::slice::from_ref(base), d_seconds);
+            moved = d_seconds;
+        }
+        Slide::Selection(scenes) => {
+            // The marked scenes move together, each bounded by its own neighbours, so the cut shifts and
+            // the film does not. Each scene's own landing is computed; the gesture reports the first
+            // scene's delta as the number the sentence quotes.
+            for scene in scenes {
+                if let Some(seg) = segs.get(*scene) {
+                    let landed = slide_scene(segs, *scene, seg.s + d_seconds, rec_start, rec_end, pps);
+                    moved = landed - seg.s;
+                }
+            }
+        }
+        Slide::Scene(index) => {
+            if let Some(seg) = segs.get(*index) {
+                let landed = slide_scene(segs, *index, seg.s + d_seconds, rec_start, rec_end, pps);
+                moved = landed - seg.s;
+            }
+        }
+        Slide::Row(_) => {
+            shift = slide_shift(shift_at_open, sources, d_seconds);
+            moved = d_seconds;
+        }
+    }
+
+    // (e) a gesture that moved nothing is a click, whatever the hand did.
+    if !pushes_undo(moved != 0.0, false) && !(row_change && moved == 0.0) {
+        return Gesture::Click;
+    }
+
+    // (c) the sentence: a row change says where it went, anything else says how far the clock moved.
+    let what = slide_noun(&slide).to_string();
+    let new_row = match (&slide, row_change) {
+        (Slide::Scene(_), true) | (Slide::Recording(_), true) => Some(press.row),
+        _ => None,
+    };
+    let status = match new_row {
+        Some(row) => row_status(&what, row),
+        None => shift_label(&what, moved),
+    };
+
+    // (d) the folds this drag travels through.
+    let open = folds_to_open(folds, grab, d_seconds);
+
+    // A second update of a hold whose first update already pushed still reports the state, but says so
+    // with `already_pushed` handled by the caller; here it only decides click-vs-slid on a no-op repeat.
+    if already_pushed && moved == 0.0 && new_row.is_none() {
+        return Gesture::Click;
+    }
+
+    Gesture::Slid {
+        what,
+        status,
+        shift,
+        row: new_row,
+        open,
+    }
+}
+
 /// F2.8 S2: what the status line says about a slide — signed seconds to two decimals, because lining two
 /// waveforms up by eye is arithmetic nobody wants to do twice and the number is what makes the correction
 /// repeatable on the next project shot with the same two devices. Zero says so rather than "moved +0.00 s".

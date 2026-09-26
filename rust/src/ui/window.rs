@@ -21,6 +21,7 @@ use crate::cut_delete;
 use crate::cut_verbs;
 use crate::cut_line;
 use crate::cut_screen;
+use crate::cut_trim;
 use crate::hand_edit;
 use crate::layout;
 use crate::new_project;
@@ -236,6 +237,23 @@ fn page_box(
             box_.insert_child_after(&verb, Some(&previous));
             previous = verb.upcast();
         }
+
+        // F2.8: the strip that carries trim and move. A PLACEHOLDER standing in for the picture rows,
+        // green bars and wave strips F2.10/F2.11 draw, scoped the way `select-surface` above is — no
+        // invented tracks. Two hands on one strip: a press within `cut_trim::EDGE_GRAB_PX` of a clip
+        // border drags that border (`// layout.edgeGrabPx`), and a right-press anywhere else moves what
+        // is under the pointer. The gestures are attached in `wire_track_strip`, after `set_content`,
+        // because a handler on a widget outside the realized tree never fires.
+        let strip = gtk::DrawingArea::new();
+        strip.set_widget_name("track-strip");
+        strip.set_size_request(240, 48);
+        strip.set_halign(gtk::Align::Start);
+        strip.set_tooltip_text(Some(&format!(
+            "{} / {}",
+            cut_trim::TRIM_TIP,
+            cut_trim::MOVE_TIP
+        )));
+        box_.insert_child_after(&strip, Some(&previous));
         let _ = previous;
     }
 
@@ -1094,6 +1112,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         }
     }
     wire_delete_keys(&window);
+    // F2.8: the trim and move gestures on `track-strip`, wired after `set_content` for the same reason.
+    wire_track_strip(&window);
     window
 }
 
@@ -2493,6 +2513,13 @@ pub fn review_cuts_button(window: &adw::ApplicationWindow) -> Option<gtk::Button
         .ok()
 }
 
+/// How many segments this window's cut holds right now — the read side of `seed_review_cut`, so a test can
+/// see whether a gesture changed the list.
+pub fn review_cut_segs_count(window: &adw::ApplicationWindow) -> usize {
+    let _ = window;
+    newest_review_cut().segs.len()
+}
+
 /// This window's preview as it currently stands — for a test that fired the real button and wants to
 /// check the same state the logic test checks rather than a painted pixel.
 pub fn preview_player(window: &adw::ApplicationWindow) -> Player {
@@ -2760,6 +2787,275 @@ thread_local! {
 pub fn delete_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
     let _ = window;
     DELETE_KEYS.with(|cell| cell.borrow().clone())
+}
+
+// --- F2.8: trim and move on the track strip -------------------------------------------------------------
+
+/// Pixels-per-second for the placeholder strip — the same zoom `select-surface` runs at, so a pixel the
+/// hand travels means the same number of seconds on both strips.
+pub const TRACK_STRIP_PPS: f64 = cut_screen::ZOOM_AT_OPEN;
+
+/// This window's `track-strip` (F2.8), by its stable name.
+pub fn track_strip(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
+    find_widget_by_name(window.upcast_ref(), "track-strip")?
+        .downcast()
+        .ok()
+}
+
+/// The left-button drag that trims a border, so a test can fire it the way GTK does.
+pub fn trim_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
+    let _ = window;
+    TRIM_GESTURES.with(|cell| cell.borrow().clone())
+}
+
+/// The right-button drag that moves. Same reason for existing as [`trim_gesture`].
+pub fn move_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
+    let _ = window;
+    MOVE_GESTURES.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static TRIM_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
+        const { std::cell::RefCell::new(None) };
+    static MOVE_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
+        const { std::cell::RefCell::new(None) };
+    /// The folds opened for the drag in flight, newest window first. Refolded when the gesture ends;
+    /// until the fold surface exists this only records what the rule asked to open.
+    static OPEN_FOLDS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Vec<usize>>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// What the right button was pressed on, where the page knows it: a recording on the recorders' band, or
+/// the scene under the pointer. Both are seams standing in until the real track rounds (F2.10/F2.11) set
+/// them from an actual press position, exactly as F2.7's held-effect/held-clip seams do.
+pub fn set_press_band(recording: Option<String>) {
+    PRESS_BAND.with(|cell| *cell.borrow_mut() = recording);
+}
+
+/// Read side of [`set_press_band`].
+pub fn press_band() -> Option<String> {
+    PRESS_BAND.with(|cell| cell.borrow().clone())
+}
+
+/// The scene index a press fell on, if it fell on one.
+pub fn set_press_scene(scene: Option<usize>) {
+    PRESS_SCENE.with(|cell| *cell.borrow_mut() = scene);
+}
+
+/// Read side of [`set_press_scene`].
+pub fn press_scene() -> Option<usize> {
+    PRESS_SCENE.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static PRESS_BAND: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+    static PRESS_SCENE: std::cell::RefCell<Option<usize>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// F2.8 S1: drag one clip's border to `to` (session seconds). [`cut_trim::clamp_edge`] decides where it
+/// may go — a scene's worth of length, the next clip, the recording's end — this writes that answer into
+/// the window's cut and prints the sentence it earned. No rule lives here.
+pub fn press_trim_border(
+    window: &adw::ApplicationWindow,
+    index: usize,
+    border: cut_trim::Border,
+    to: f64,
+) -> f64 {
+    let mut cut_ = newest_review_cut();
+    let clamped = cut_trim::clamp_edge(&cut_.segs, index, border, to, 0.0, TRACK_REC_END);
+    match border {
+        cut_trim::Border::Start => {
+            if let Some(seg) = cut_.segs.get_mut(index) {
+                seg.s = clamped;
+            }
+        }
+        cut_trim::Border::End => {
+            if let Some(seg) = cut_.segs.get_mut(index) {
+                seg.e = clamped;
+            }
+        }
+    }
+    // S1 on release: a neighbour landed against within a frame joins back into one scene, and the
+    // sentence says so because putting that border back is the thing a person may want most.
+    let status = if cut_trim::merge_pair(&cut_.segs, index).is_some() {
+        let joined = cut_trim::merge(&mut cut_.segs, index);
+        match joined {
+            Some((held, _)) => cut_.segs.get(held).map(|seg| {
+                cut_trim::joined_status(seg.s, seg.e)
+            }).unwrap_or_default(),
+            None => String::new(),
+        }
+    } else {
+        cut_.segs
+            .get(index)
+            .map(|seg| cut_trim::trim_status(index + 1, seg.s, seg.e))
+            .unwrap_or_default()
+    };
+    seed_review_cut(window, &cut_);
+    if !status.is_empty() {
+        if let Some(status_line) = find_status(window.upcast_ref()) {
+            status_line.set_text(&status);
+        }
+    }
+    clamped
+}
+
+/// The recording's own span the placeholder strip stands inside. A placeholder number for a placeholder
+/// track: the real bounds come with the tracks (F2.10/F2.11), and until then a trim needs *some* wall to
+/// stop at rather than none, which would let a clip be dragged off the end of a session.
+pub const TRACK_REC_END: f64 = 3600.0;
+
+/// F2.8 S2/S3: a right-drag moved. [`cut_trim::right_gesture`] answers the whole gesture; this applies
+/// the answer — the shift map, the row change, the folds to open — and prints the sentence.
+///
+/// S3 holds here absolutely: nothing on this path touches the red line. `cut_trim::right_press_moves_line()`
+/// is `false`, and there is deliberately no `set_playhead` / `move_line_and_save` call anywhere in this
+/// function or in the button-3 gesture that reaches it, so the page cannot drift into moving the line
+/// while the right hand is doing arithmetic on the clock.
+pub fn press_move(
+    window: &adw::ApplicationWindow,
+    travel_px: f64,
+    row_change: bool,
+    d_seconds: f64,
+) -> cut_trim::Gesture {
+    let cut_ = newest_review_cut();
+    let band = selection(window);
+    let band_name = press_band();
+    let selected: Vec<usize> = match (&band, &cut_) {
+        (Some(band), cut_) => cut_
+            .segs
+            .iter()
+            .enumerate()
+            .filter(|(_, seg)| seg.ins.is_empty() && seg.e > band.start && seg.s < band.end)
+            .map(|(index, _)| index)
+            .collect(),
+        (None, _) => Vec::new(),
+    };
+    let sources: Vec<String> = cut_
+        .shift
+        .keys()
+        .cloned()
+        .chain(band_name.clone())
+        .collect::<std::collections::BTreeSet<String>>()
+        .into_iter()
+        .collect();
+    let press = cut_trim::Press {
+        recorders_band: band_name.as_deref(),
+        wave_strip: None,
+        selection: band.as_ref().map(|b| (b.start, b.end)),
+        selected,
+        inside_selection: band
+            .as_ref()
+            .map(|b| crate::cut_select::MIN_SECONDS <= b.length())
+            .unwrap_or(false),
+        on_border: false,
+        scene: press_scene(),
+        row: press_row(window),
+    };
+    let gesture = cut_trim::right_gesture(
+        &press,
+        travel_px,
+        row_change,
+        d_seconds,
+        &cut_.segs,
+        0.0,
+        TRACK_REC_END,
+        TRACK_STRIP_PPS,
+        &cut_.folds,
+        &cut_.shift,
+        &sources,
+        false,
+    );
+    apply_gesture(window, &gesture);
+    gesture
+}
+
+/// Write a gesture's answer into this window's cut. A click writes nothing at all — S3's unmoved press
+/// leaves the project exactly as it was, including its status line.
+fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gesture) {
+    let cut_trim::Gesture::Slid {
+        status,
+        shift,
+        row,
+        open,
+        ..
+    } = gesture
+    else {
+        return;
+    };
+    let mut cut_ = newest_review_cut();
+    cut_.shift = shift.clone();
+    if let Some(row) = row {
+        // Rows are counted from 1 in the sentence and stored per source; the placeholder records the
+        // hand's target so the next draw reads it back.
+        cut_.nrows = (*row as i32) + 1;
+    }
+    seed_review_cut(window, &cut_);
+    OPEN_FOLDS.with(|slots| {
+        // The slot is created on first use rather than at window build: nothing else on this page needs
+        // it, and `seed_review_cut` shows a seam can write the newest slot without one. Pushed when
+        // empty so the newest window's folds are always the last entry, like SELECTED and REVIEW_CUTS.
+        let mut slots = slots.borrow_mut();
+        if slots.is_empty() {
+            slots.push(Rc::new(std::cell::RefCell::new(Vec::new())));
+        }
+        if let Some(slot) = slots.last() {
+            *slot.borrow_mut() = open.clone();
+        }
+    });
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(status);
+    }
+}
+
+/// The row a right-press would land on. Until the rows are drawn the strip sits on row 0; the seam keeps
+/// the page from inventing a row number of its own.
+fn press_row(_window: &adw::ApplicationWindow) -> usize {
+    0
+}
+
+/// The folds this window's drag in flight asked to open, newest write last. Read by the fold surface when
+/// it exists; exposed now so a test can assert the rule's answer reached the page.
+pub fn open_folds(window: &adw::ApplicationWindow) -> Vec<usize> {
+    let _ = window;
+    OPEN_FOLDS.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .map(|slot| slot.borrow().clone())
+            .unwrap_or_default()
+    })
+}
+
+/// Attach the two gestures to `track-strip`: the left button trims a border, the right button moves.
+/// Registered after `set_content` like every other control here, and kept in thread-locals so a test can
+/// fire them the way GTK does.
+fn wire_track_strip(window: &adw::ApplicationWindow) {
+    let Some(strip) = track_strip(window) else { return };
+
+    let trimmer = gtk::GestureDrag::new();
+    let win = window.clone();
+    trimmer.connect_drag_update(move |_g, x, _y| {
+        // The placeholder has no seeded border to chase yet; the seam stays reachable and the rule is
+        // exercised through `press_trim_border` directly until the tracks carry real edges.
+        let _ = (&win, x);
+    });
+    strip.add_controller(trimmer.clone());
+    TRIM_GESTURES.with(|cell| *cell.borrow_mut() = Some(trimmer));
+
+    // Button 3 is GTK's secondary button — the right hand, whose drags move and never trim.
+    let mover = gtk::GestureDrag::new();
+    mover.set_button(3);
+    let win = window.clone();
+    mover.connect_drag_update(move |_g, x, _y| {
+        // Seconds travelled since the press, at the strip's zoom. The gesture reports its own offset, so
+        // the page forwards it rather than re-deriving anything.
+        press_move(&win, x, false, x / TRACK_STRIP_PPS);
+    });
+    strip.add_controller(mover.clone());
+    MOVE_GESTURES.with(|cell| *cell.borrow_mut() = Some(mover));
 }
 
 thread_local! {

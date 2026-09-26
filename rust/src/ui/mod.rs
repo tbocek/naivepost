@@ -69,6 +69,10 @@ pub use window::selection_surface;
 pub use window::selection_gesture;
 pub use window::clear_selection_button;
 pub use window::selection_readout;
+// F2.8: the strip's recording bound, so a test compares against the same wall the seam used.
+pub use window::TRACK_REC_END;
+pub use window::TRACK_STRIP_PPS;
+pub use window::review_cut_segs_count;
 // F2.7: the three verb buttons, the ⌦ key and the two "what is in hand" seams.
 pub use window::delete_key_controller;
 pub use window::find_status;
@@ -80,6 +84,17 @@ pub use window::press_remove;
 pub use window::press_split;
 pub use window::set_held_clip;
 pub use window::set_held_effect;
+// F2.8: the trim/move strip, its two gestures, and the seams that feed a right-press's ground.
+pub use window::open_folds;
+pub use window::press_band;
+pub use window::press_move;
+pub use window::press_scene;
+pub use window::press_trim_border;
+pub use window::set_press_band;
+pub use window::set_press_scene;
+pub use window::track_strip;
+pub use window::trim_gesture;
+pub use window::move_gesture;
 pub use window::select_surface;
 pub use window::SELECT_SURFACE_PPS;
 pub use window::preview_player;
