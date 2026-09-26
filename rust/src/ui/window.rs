@@ -1429,6 +1429,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
                 .push(Rc::new(std::cell::RefCell::new(None::<cut_select::Surface>)))
         });
         wire_select_surface(&window);
+        // F2.4 S1: the click that places the red line, on the same surface. The drag above selects;
+        // this places and takes into hand. Both are needed — a page where only the drag fires has no way
+        // for a press to move the line at all.
+        wire_line_click_surface(&window);
         if let Some(cross) = clear_selection_button(&window) {
             wire_clear_selection(&cross, &window);
         }
@@ -1449,21 +1453,44 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // from this slot, so a project with cuts must show them and a project without one must show the
     // empty hint rather than a blank box. A missing or unreadable file is no cut today, which is what
     // `cut::load` already answers with `Cut::default`.
-    let opened_cut = layout::Tree::new(startup::session_dir(&std::env::current_dir().unwrap_or_default()))
-        .ok()
-        .and_then(|tree| cut::load(&tree).ok())
+    // F2.4 S4: this window's line slot, registered with the others so the newest window is the live
+    // one. The project root DOES reach the page -- `project_tree` above is what the cut was loaded
+    // from -- so the saved position is restored here rather than starting at zero: `cut_line::restore`
+    // keeps it only while some filmed span still covers it (the spans come from this same opened cut
+    // through `timeline::kept_footage_recordings` + `filmed_runs`, so nothing new is invented).
+    // One-shot per project open: it happens at build, never on re-entering the tab.
+    let project_tree = layout::Tree::new(startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ))
+    .ok();
+    let opened_cut = project_tree
+        .as_ref()
+        .and_then(|tree| cut::load(tree).ok())
         .unwrap_or_default();
+    let runs = crate::timeline::filmed_runs(&crate::timeline::kept_footage_recordings(&opened_cut));
     REVIEW_CUTS.with(|slots| slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(opened_cut))));
     if let Some(review_) = review_cuts_button(&window) {
         wire_review_cuts(&review_, &window);
     }
-    // F2.4: this window's line slot, registered with the others so the newest window is the live one.
-    // A project root does not reach the page yet (the cut-model round owns it), so nothing is restored
-    // here — `cut_line::restore(root, recordings)` is the seam that seeds this when a root exists, and
-    // until then the line starts at second zero.
+    // F2.4 S4: this window's line slot, registered with the others so the newest window is the live
+    // one. The project root DOES reach the page — `session_root` above is what the cut was loaded from —
+    // so the saved position is restored here rather than starting at zero: `cut_line::restore` keeps it
+    // only while some filmed span still covers it (the spans come from this same opened cut through
+    // `timeline::kept_footage_recordings` + `filmed_runs`, so nothing new is invented). One-shot per
+    // project open: it happens at build, never on re-entering the tab.
+    let project_root = project_tree.as_ref().map(|tree| tree.dir().to_path_buf());
+    if let Some(root) = project_root.clone() {
+        LINE_ROOTS.with(|slots| slots.borrow_mut().push(root));
+    }
+    let restored = project_root
+        .as_deref()
+        .and_then(|root| cut_line::restore(root, &runs));
+    if let Some(pos) = restored {
+        log_line(&format!("line restored to {}", crate::tools::mm_ss(pos.t)));
+    }
     LINE_STATES.with(|slots| {
         slots.borrow_mut().push(Rc::new(std::cell::RefCell::new((
-            cut_line::LinePos { t: 0.0 },
+            restored.unwrap_or(cut_line::LinePos { t: 0.0 }),
             cut_line::LineWriter::default(),
         ))))
     });
@@ -1474,6 +1501,15 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         }
     }
     wire_line_keys(&window);
+    // F2.4 S4: closing this window saves the line where it stands, whatever the rate limit says.
+    // `Propagation::Proceed` so the close still happens — same shape as policy_form.rs's own hook.
+    {
+        let closing = window.clone();
+        window.connect_close_request(move |_| {
+            flush_line_on_close(&closing);
+            glib::Propagation::Proceed
+        });
+    }
     // F2.7: the three verb buttons and ⌦ / Delete / BackSpace, wired after `set_content` like every
     // other control on this page.
     for (name, _, _) in cut_verbs::BUTTONS {
@@ -3400,6 +3436,14 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// The project root this window's line file sits under, newest slot winning like [`REVIEW_CUTS`]. Held
+/// beside [`LINE_STATES`] because the position without its root is a number with nowhere to be saved:
+/// `restore` needs it on open and `flush_line_on_close` needs it on close.
+thread_local! {
+    static LINE_ROOTS: std::cell::RefCell<Vec<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// What a frame step did (F2.4 S2/S3), so the caller paints the right thing and decides nothing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Step {
@@ -3409,6 +3453,13 @@ pub enum Step {
     SteppedTo { t: f64 },
     /// Nothing happened — S3's arrows with nothing held.
     Still,
+}
+
+/// The project root this window's line file lives under, or `None` when the page was built outside a
+/// project. Newest slot wins like every other per-window accessor here.
+pub fn line_root(window: &adw::ApplicationWindow) -> Option<std::path::PathBuf> {
+    let _ = window;
+    LINE_ROOTS.with(|slots| slots.borrow().last().cloned())
 }
 
 /// This window's red line position.
@@ -3451,6 +3502,26 @@ pub fn move_line_and_save(window: &adw::ApplicationWindow, pos: cut_line::LinePo
     })
 }
 
+/// F2.4 S4: the close path. Writes the line through the one-second rate limit — `LineWriter::flush`
+/// asks `may_write_line(.., closing: true)`, so a position reached 10 ms after the last save still lands
+/// (the prototype's `lineSaveMs` / `cut_line::LINE_WRITE_MS` caps MOVES, not the close). Returns
+/// whether bytes went out: `false` when this window has no root or no slot to write from.
+pub fn flush_line_on_close(window: &adw::ApplicationWindow) -> bool {
+    let Some(root) = line_root(window) else {
+        return false;
+    };
+    LINE_STATES.with(|slots| {
+        let Some(slot) = slots.borrow().last().cloned() else {
+            return false;
+        };
+        let pos = line_position(window);
+        // Bound to a `let` so the RefMut drops before `slot` does — as a bare tail expression its
+        // temporary outlives the binding and the borrow checker refuses it.
+        let wrote = slot.borrow_mut().1.flush(pos, &root, now_ms());
+        wrote
+    })
+}
+
 /// F2.4 S1 through the seam: a press on the tracks places the line, clears the selection and watches
 /// a row exactly as [`cut_line::click_outcome`] says — the page reports pixels and modifiers, this
 /// applies the rule and stores the result.
@@ -3468,9 +3539,19 @@ pub fn place_line_from_click(
     if outcome.line_moved {
         move_line_and_save(window, cut_line::LinePos { t: outcome.line_at }, now_ms);
     }
-    // The selection clear lands here because this is where the rule says it happens; the Cut page has no
-    // selection model until its own round, so there is nothing to clear yet — the call site stays so
-    // the wiring is already in place when that model arrives.
+    // S1's other two effects land here too, because this is the one place the rule is applied. The
+    // selection model exists (F2.6), so a track press really does clear it; and the watched row is
+    // stored so the page knows which picture row a later ▶ should open on.
+    if outcome.clears_selection {
+        clear_selection(window);
+    }
+    set_watched_row(outcome.watches);
+    // "the scene under the click taken in hand": only when `takes_scene` says the pointer was on that
+    // scene's own picture, and then it is the scene under the NEW line, from this window's cut.
+    if outcome.takes_scene {
+        let under = cut_delete::scene_under(&newest_review_cut().segs, outcome.line_at).cloned();
+        set_held_clip(under);
+    }
     outcome
 }
 
@@ -3591,7 +3672,9 @@ fn wire_line_keys(window: &adw::ApplicationWindow) {
     let win = window.clone();
     controller.connect_key_pressed(move |_ctrl, key, _code, mods| {
         let shift = mods.contains(gtk::gdk::ModifierType::SHIFT_MASK);
-        let held: Option<cut_line::Held> = None;
+        // S2/S3: the hold comes from the window's own held state, not a constant. With `None` hardcoded
+        // here a real key press could never take S2's nudge branch, however much was in hand.
+        let held = held_now();
         let response = match key {
             gtk::gdk::Key::Left => arrow_steps(&win, shift, held, DEFAULT_FPS, now_ms()),
             gtk::gdk::Key::Right => arrow_steps(&win, shift, held, DEFAULT_FPS, now_ms()),
@@ -3762,6 +3845,70 @@ fn wire_preview_volume(scale: &gtk::Scale, window: &adw::ApplicationWindow) {
 /// how a drag assertion starts disagreeing with the code it tests.
 pub const SELECT_SURFACE_PPS: f64 = cut_screen::ZOOM_AT_OPEN;
 
+/// F2.4 S1: the click gesture that places the red line, newest window winning like [`SELECT_GESTURES`].
+/// A test emits `released` on this and reads back what the rule stored.
+pub fn line_click_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureClick> {
+    let _ = window;
+    LINE_CLICKS.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static LINE_CLICKS: std::cell::RefCell<Option<gtk::GestureClick>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Attach a left-button click to this window's `select-surface` so a real press places the line.
+///
+/// The surface is the picture band's stand-in today (F2.8/F2.10 draw the real rows), so every click on
+/// it counts as a picture-band click: `on_picture` is true and the gutter never answers through here.
+/// Whether the pointer was on a scene's own PICTURE — the thing that decides if the hand closes — is
+/// read from this window's cut at the clicked second and handed to the rule, which decides; nothing is
+/// decided in this handler. Seconds come from `SELECT_SURFACE_PPS`, the same number the drag uses, so
+/// the two gestures cannot disagree about where a pixel is in time.
+fn wire_line_click_surface(window: &adw::ApplicationWindow) {
+    let Some(area) = select_surface(window) else { return };
+    let gesture = gtk::GestureClick::new();
+    // Left button only: the right button belongs to trim/move (F2.8) and must not move the line.
+    gesture.set_button(1);
+    let win = window.clone();
+    gesture.connect_released(move |_g, _n_press, x, _y| {
+        let at = x / SELECT_SURFACE_PPS;
+        let cut_ = newest_review_cut();
+        // "the scene under the click" means its picture, so ask whether a kept scene covers this second.
+        let on_scene_picture = cut_delete::scene_under(&cut_.segs, at).is_some();
+        place_line_from_click(
+            &win,
+            true,
+            on_scene_picture,
+            false,
+            true,
+            false,
+            at,
+            now_ms(),
+        );
+        // S1b: the same press also picks up by the wider 12 px reach. The distance to the nearer clip
+        // border is measured off the drawn geometry (`cut_trim::clip_boxes` at the same pps), so the
+        // reach is the one the page shows rather than a number invented here.
+        let boxes = cut_trim::clip_boxes(&cut_.segs, SELECT_SURFACE_PPS);
+        let x_px = x;
+        let nearest = boxes.iter().enumerate().map(|(i, b)| {
+            let d = (x_px - b.x).min((x_px - (b.x + b.w)).abs());
+            (d, i)
+        }).min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        if let Some((edge_px, i)) = nearest {
+            let inside = {
+                let b = &boxes[i];
+                x_px >= b.x && x_px <= b.x + b.w
+            };
+            let pick = cut_line::first_press_pick(edge_px, inside);
+            let seg = cut_.segs.get(i).cloned();
+            apply_pick(pick, seg);
+        }
+    });
+    area.add_controller(gesture.clone());
+    LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
+}
+
 /// Attach the drag gesture to this window's `select-surface` and remember it. The handler forwards the
 /// drag's end x (converted to seconds at the page's pixels-per-second) to [`draw_selection`] and
 /// decides nothing about scope — that is `cut_select::draw`'s call from the surface up.
@@ -3910,10 +4057,63 @@ pub fn held_clip() -> Option<cut::Seg> {
     HELD_CLIP.with(|cell| cell.borrow().clone())
 }
 
+/// F2.4 S1b: put a picked clip EDGE in the hand (the 12 px reach, `// layout.lineReachPx`).
+pub fn set_held_edge(seg: Option<cut::Seg>) {
+    HELD_EDGE.with(|cell| *cell.borrow_mut() = seg);
+}
+
+/// Read side of [`set_held_edge`].
+pub fn held_edge() -> Option<cut::Seg> {
+    HELD_EDGE.with(|cell| cell.borrow().clone())
+}
+
+/// F2.4 S2/S3: what the line is holding right now, in the order the spec steps them — edge first, then
+/// the whole clip, then an effect. This is what a frame-step or arrow press asks; with the hardcoded
+/// `None` that stood here before, a real key press could never take the nudge branch at all.
+pub fn held_now() -> Option<cut_line::Held> {
+    if held_edge().is_some() {
+        Some(cut_line::Held::Edge)
+    } else if held_clip().is_some() {
+        Some(cut_line::Held::Clip)
+    } else if held_effect().is_some() {
+        Some(cut_line::Held::Effect)
+    } else {
+        None
+    }
+}
+
+/// F2.4 S1b: turn what the first left press picked into the hold it means. Edge goes to the edge slot so
+/// a frame step moves only that border; a border or whole-clip pick takes the clip.
+pub fn apply_pick(pick: cut_line::PressPick, seg: Option<cut::Seg>) {
+    match pick {
+        cut_line::PressPick::Edge => set_held_edge(seg),
+        cut_line::PressPick::Border | cut_line::PressPick::Clip => set_held_clip(seg),
+    }
+}
+
+/// F2.4 S1: which picture row this window watches. Set by a picture-band click through
+/// [`place_line_from_click`]; read by whatever opens a row on the watched one.
+pub fn watched_row() -> Option<usize> {
+    WATCHED_ROW.with(|cell| *cell.borrow())
+}
+
+/// Write side of [`watched_row`].
+pub fn set_watched_row(row: Option<usize>) {
+    WATCHED_ROW.with(|cell| *cell.borrow_mut() = row);
+}
+
 thread_local! {
     static HELD_EFFECT: std::cell::RefCell<Option<cut::Fx>> =
         const { std::cell::RefCell::new(None) };
     static HELD_CLIP: std::cell::RefCell<Option<cut::Seg>> =
+        const { std::cell::RefCell::new(None) };
+    /// F2.4 S1b: the clip edge a first left press picked up within `layout.lineReachPx` (12 px).
+    /// Kept apart from the whole-clip hold because a frame step must move the edge, not the clip.
+    static HELD_EDGE: std::cell::RefCell<Option<cut::Seg>> =
+        const { std::cell::RefCell::new(None) };
+    /// F2.4 S1: which picture row this window is watching. Only a picture-band click sets it, and only
+    /// while nothing plays with sources loaded — `cut_line::watches_row` owns that; this just remembers.
+    static WATCHED_ROW: std::cell::RefCell<Option<usize>> =
         const { std::cell::RefCell::new(None) };
     /// The right half a band-less Split put in the hand (F2.7 S2). The paste round reads it.
     static VERB_HAND: std::cell::RefCell<Option<cut_select::Selection>> =

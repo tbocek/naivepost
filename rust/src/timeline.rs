@@ -17,6 +17,23 @@ pub struct Recording {
     pub end: f64,
 }
 
+/// The footage this project actually keeps, as recordings: every kept (non-insert) segment of its own
+/// `cut.json`, one row per camera. This only MAPS segments to spans — merging stays in
+/// [`filmed_runs`], so a caller asking "what was filmed and when" gets the same answer as every other
+/// caller. Until F2.11 owns the recording rows, this is where a project's filmed spans come from: the
+/// project's own kept footage on disk, rather than a second list someone has to keep in step.
+pub fn kept_footage_recordings(cut: &Cut) -> Vec<Recording> {
+    cut.segs
+        .iter()
+        .filter(|seg| !seg.is_insert() && seg.e > seg.s)
+        .map(|seg| Recording {
+            base: format!("cam{}", seg.cam),
+            start: seg.s,
+            end: seg.e,
+        })
+        .collect()
+}
+
 /// Which row each recording is drawn on: greedy interval colouring in start order, with the file's
 /// own pins applied first (spec/inventory/cut.md §B: "pins (cut.json rows) applied first").
 ///
