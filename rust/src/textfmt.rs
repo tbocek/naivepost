@@ -322,6 +322,24 @@ fn cut_mark(gone: usize) -> String {
     }
 }
 
+/// The join marker as a caller writes it, including the whole-take spelling §F1.10 requires when a
+/// join took out an entire recording: `|cut N|whole take|`, or `|cut|whole take|` where the count
+/// is nought.
+///
+/// Public because the joins pass builds its text from per-recording runs rather than one flat list
+/// (a marker belongs only at a change of recording), so it needs the marker itself and not the
+/// every-transition loop [`write_final`] runs. Both spellings round-trip through [`read_final`],
+/// whose [`marker_len`] already recognises the longer form; the count reads back as nought for the
+/// whole-take shape, which is honest — that marker carries words, not a number.
+pub fn cut_marker(gone: usize, whole: bool) -> String {
+    let base = cut_mark(gone);
+    if whole {
+        format!("{base}whole take|")
+    } else {
+        base
+    }
+}
+
 /// The words of the finished video as written, with a marker at every join (§6).
 ///
 /// `joins` is one entry per transition between the words passed — so its length is

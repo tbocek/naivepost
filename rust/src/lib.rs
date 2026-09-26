@@ -84,6 +84,7 @@ pub mod prepare_data;
 pub mod prepare_decisions;
 pub mod prepare_run;
 pub mod describe;
+pub mod joins;
 pub mod retakes;
 pub mod preview;
 pub mod prompt_assembly;
