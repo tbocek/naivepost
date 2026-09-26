@@ -104,16 +104,17 @@ fn page_box(
     context.add_css_class("body");
     box_.append(&context);
 
-    // F2.1: the Cut page's own transport. The page's ▶ is not the run bar's — that one runs the
-    // step (Suggest), this one plays the recording, every second of it, cuts and all. One button,
-    // named so a test and the snapshot can find it; `press_play_recording` decides what the press
-    // means and this box decides nothing.
+
+    // F2.1: the Cut page's own transport, first under the title rather than last in the box. The
+    // page's content box is top-packed and does not stretch its children, so anything appended after
+    // the context paragraph sits below a tall label and reads as an unrelated control; the spec puts
+    // the transport at the head of the page, so it goes there.
     if page == Page::Cut.label() {
         let play_ = gtk::Button::with_label(RECORD_PLAY_LABEL);
         play_.set_widget_name("play-recording-button");
         play_.set_tooltip_text(Some(RECORD_PLAY_TIP));
         play_.set_halign(gtk::Align::Start);
-        box_.append(&play_);
+        box_.insert_child_after(&play_, Some(&title));
     }
 
     view.set_content(Some(&box_));

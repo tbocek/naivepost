@@ -13,12 +13,14 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
+use gtk4 as gtk;
 use naivepost::preview::{self, Press};
 use naivepost::run::Transport;
 use naivepost::shell::Page;
 use naivepost::ui;
 
 static RAN_WIDGET: AtomicBool = AtomicBool::new(false);
+static RAN_LAYOUT: AtomicBool = AtomicBool::new(false);
 static RAN_S2: AtomicBool = AtomicBool::new(false);
 static RAN_S1: AtomicBool = AtomicBool::new(false);
 static RAN_REFUSAL: AtomicBool = AtomicBool::new(false);
@@ -33,6 +35,8 @@ fn window_round() {
         app.connect_activate(|app| {
             check_button_exists_with_the_specs_tooltip(app);
             RAN_WIDGET.store(true, Ordering::SeqCst);
+            check_the_button_is_laid_out_on_the_page(app);
+            RAN_LAYOUT.store(true, Ordering::SeqCst);
             check_s2_plays_from_the_red_line_through_the_click(app);
             RAN_S2.store(true, Ordering::SeqCst);
             check_s1_switches_back_to_the_recording_through_the_click(app);
@@ -85,6 +89,39 @@ fn check_button_exists_with_the_specs_tooltip(app: &adw::Application) {
         button.label().as_deref().is_some_and(|label| label.contains("Play the recording")),
         "the button says what it plays: {:?}",
         button.label()
+    );
+    window.close();
+}
+
+/// The button is not just in the tree — it is laid out and mapped where the page shows it. Measured
+/// rather than eyeballed: a widget that exists but collapses to 0x0, or never gets allocated because
+/// its page was left unmapped, would pass a `find_widget_by_name` check and still be invisible to the
+/// person using the app. These are the numbers "nothing is empty, overlapping or cut off" asks for.
+fn check_the_button_is_laid_out_on_the_page(app: &adw::Application) {
+    let window = cut_window(app);
+    // Let GTK run its size-allocate cycle: `present()` alone does not lay children out until an
+    // iteration runs, so without this every measurement below would read 0.
+    let context = glib::MainContext::default();
+    while context.pending() {
+        context.iteration(false);
+    }
+    let button = ui::play_recording_button(&window).expect("the Cut page's ▶");
+    println!(
+        "LAYOUT width={} height={} mapped={}",
+        button.width(),
+        button.height(),
+        button.is_mapped()
+    );
+    assert!(button.is_mapped(), "the button is mapped on the visible Cut page");
+    assert!(
+        button.width() > 40,
+        "wide enough for \"▶ Play the recording\", got {} px",
+        button.width()
+    );
+    assert!(
+        button.height() > 16,
+        "tall enough to click, got {} px",
+        button.height()
     );
     window.close();
 }
@@ -186,6 +223,10 @@ fn check_nothing_filmed_refuses_through_the_click(app: &adw::Application) {
 fn f2_1_s2_the_recording_button_plays_through_the_widget() {
     window_round();
     assert!(RAN_WIDGET.load(Ordering::SeqCst), "the widget-exists check never ran");
+    assert!(
+        RAN_LAYOUT.load(Ordering::SeqCst),
+        "the laid-out-on-the-page check never ran"
+    );
     assert!(RAN_S2.load(Ordering::SeqCst), "the S2 click check never ran");
     assert!(RAN_S1.load(Ordering::SeqCst), "the S1 click check never ran");
     assert!(
@@ -198,4 +239,3 @@ fn f2_1_s2_the_recording_button_plays_through_the_widget() {
     // into it" sentence are proven in tests/cut_play_recording.rs against the logic, and wiring them
     // needs the page's fold model, which is that round's work rather than a stub here.
 }
-
