@@ -42,8 +42,18 @@ use crate::ui::policy_form;
 use crate::ui::settings;
 use crate::sources::{self, Control};
 use crate::startup;
+use crate::narration::{self, Narration};
 use crate::shell::{self, Move, Outcome, Page, Shell};
 use crate::PAGES;
+
+/// §1's two readouts as the row draws them: each label is the word plus what `shell` computed, so
+/// the prefix is the only text this file adds to those two rows.
+const INPUTS_PREFIX: &str = "Inputs: ";
+const OUTPUTS_PREFIX: &str = "Outputs: ";
+/// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
+/// The page-specific wording §1 mentions lives in `Shell::outputs`' own doc — the button itself is
+/// one control for every page, so it gets one sentence here rather than four near-duplicates.
+const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
 
 pub const APP_ID: &str = "ch.bocek.naivepost";
 
@@ -835,6 +845,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
 
     // Where the window is and what it has to say: every rule behind a switch lives in shell.rs.
     let shell = Rc::new(RefCell::new(start_shell(page)));
+    // S3's pending write lives inside this shell; publishing the handle is what lets the seam below
+    // mark one owed. The Narrate page will call the same seam from its text view when F4.7 lands one.
+    WINDOW_SHELLS.with(|shells| shells.borrow_mut().push(Rc::clone(&shell)));
 
     // The window is handed an immutable `&Project` and holds no live project yet, so the flows that
     // change the session — Rescan (F0.11) and Add sources (F0.12) — work on one private copy shared
@@ -888,7 +901,60 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // own write-back from re-entering this handler, which would otherwise recurse through two more
     // notify signals (the prototype does the same with tabGuard, gui/main.go:1209-1224).
     let guard = Rc::new(RefCell::new(false));
-    wire_switching(&stack, &switcher, &status, &shell, &guard, project);
+
+    // §1's badges **14** and **15**: the visible tab's `Inputs:` readout, then its `Outputs:`
+    // count with the folder button beside it. They are built before the switch is wired because a
+    // tab click repaints them, and they are window-level rather than page-level so a switch updates
+    // one pair instead of four. Both texts come from `Shell::inputs` / `Shell::outputs`; nothing
+    // here composes a sentence.
+    let readout_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    readout_row.set_widget_name("readout-row");
+    readout_row.set_margin_start(8);
+    readout_row.set_margin_end(8);
+    let inputs_readout = gtk::Label::new(None);
+    inputs_readout.set_widget_name("inputs-readout");
+    inputs_readout.set_xalign(0.0);
+    inputs_readout.add_css_class("dim-label");
+    readout_row.append(&inputs_readout);
+    let outputs_folder = gtk::Button::from_icon_name("folder-symbolic");
+    outputs_folder.set_widget_name("outputs-folder-button");
+    outputs_folder.set_tooltip_text(Some(OUTPUTS_FOLDER_TIP));
+    outputs_folder.set_valign(gtk::Align::Center);
+    readout_row.append(&outputs_folder);
+    let outputs_readout = gtk::Label::new(None);
+    outputs_readout.set_widget_name("outputs-readout");
+    outputs_readout.set_xalign(0.0);
+    outputs_readout.set_hexpand(true);
+    outputs_readout.add_css_class("dim-label");
+    readout_row.append(&outputs_readout);
+
+    wire_switching(
+        &stack,
+        &switcher,
+        &status,
+        &shell,
+        &guard,
+        project,
+        &inputs_readout,
+        &outputs_folder,
+        &outputs_readout,
+    );
+
+    // S4 at startup: the row is drawn for the page the window opened on, not left blank until a tab
+    // is clicked. Same read and same painter as the switch handler, so the two can never disagree.
+    {
+        let (tree, cut, narration) = session_reads();
+        paint_readouts(
+            &shell.borrow(),
+            project,
+            tree.as_ref(),
+            &cut,
+            &narration,
+            &inputs_readout,
+            &outputs_folder,
+            &outputs_readout,
+        );
+    }
 
     // F0.5's bookkeeping, drawn: the bar that says how far the run has got and the log it writes
     // into. Both are window-level (built once here, not per page), so a name lookup cannot land on a
@@ -968,6 +1034,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     run_row.append(&policy_button);
     wire_policy(&policy_button, &window);
     run_row.append(&progress);
+
     wire_play(
         &play,
         &stop_,
@@ -1042,7 +1109,16 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     rescan_.set_widget_name("rescan-button");
     rescan_.set_tooltip_text(Some(RESCAN_TIP));
     header.pack_end(&rescan_);
-    wire_rescan(&rescan_, &status, &session);
+    wire_rescan(
+        &rescan_,
+        &status,
+        &session,
+        &shell,
+        &switcher,
+        &inputs_readout,
+        &outputs_folder,
+        &outputs_readout,
+    );
 
     // F0.13's Settings button, packed after Rescan so Rescan stays rightmost as §1 reads the bar.
     // The dialog itself is built on the press, in `settings.rs`; nothing here decides anything.
@@ -1051,6 +1127,27 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     settings_.set_tooltip_text(Some(SETTINGS_TIP));
     header.pack_end(&settings_);
     wire_settings(&settings_, &window);
+    // §1's badge **6**: ⓘ, once, at header position 6 — read left to right the bar ends ⓘ ⚙ ⟳, so
+    // it is packed after Settings (each `pack_end` lands left of the previous one). It opens the
+    // same policy form as the run bar's gear through [`press_policy`]; its tooltip follows
+    // `Shell::help_page`, which a switch syncs and a bounce leaves on the page still shown. The
+    // four per-page ⓘ buttons stay for now: `cut_policy_form_widgets` presses
+    // `tab-info-button-Cut`, and §1's header-only layout is not yet enforced.
+    readout_row.append(&outputs_readout);
+
+    // §1's badge **6**: ⓘ, once, at header position 6 — read left to right the bar ends ⓘ ⚙ ⟳, so
+    // it is packed after Settings (each `pack_end` lands left of the previous one). It opens the
+    // same policy form as the run bar's gear through [`press_policy`]; its tooltip follows
+    // `Shell::help_page`, which a switch syncs and a bounce leaves on the page still shown. The
+    // four per-page ⓘ buttons stay for now: `cut_policy_form_widgets` presses
+    // `tab-info-button-Cut`, and §1's header-only layout is not yet enforced.
+    let tab_info = gtk::Button::from_icon_name("help-about-symbolic");
+    tab_info.set_widget_name("tab-info-button");
+    tab_info.set_tooltip_text(Some(&shell.borrow().info_tip()));
+    INFO_BUTTON.with(|slots| slots.borrow_mut().push(tab_info.clone()));
+    header.pack_end(&tab_info);
+    wire_policy(&tab_info, &window);
+
     // F0.12 lives on the Prepare page, so its handler gets the widgets that page built. They are
     // handed over rather than found by name: `page_box` runs once per tab, and a window with four
     // same-named buttons makes `find` return whichever one it reaches first — an arbitrary page's
@@ -1065,6 +1162,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     box_.append(&stack);
     stack.set_vexpand(true);
     box_.append(&run_row);
+    box_.append(&readout_row);
     // The log goes under the run bar, as §1 lists them. A `gtk::Paned` divider (the "two halves of a
     // draggable divider" line) is the window's own item, not F0.5's bookkeeping, so the box layout
     // stays and the expander simply takes its height back when collapsed.
@@ -1214,6 +1312,9 @@ fn wire_switching(
     shell: &Rc<RefCell<Shell>>,
     guard: &Rc<RefCell<bool>>,
     project: &Project,
+    inputs_readout: &gtk::Label,
+    outputs_folder: &gtk::Button,
+    outputs_readout: &gtk::Label,
 ) {
     let stack = stack.clone();
     let switcher = switcher.clone();
@@ -1221,6 +1322,9 @@ fn wire_switching(
     let shell = shell.clone();
     let guard = guard.clone();
     let project = project.clone();
+    let inputs_readout = inputs_readout.clone();
+    let outputs_folder = outputs_folder.clone();
+    let outputs_readout = outputs_readout.clone();
     stack.connect_visible_child_name_notify(move |stack| {
         if *guard.borrow() {
             return;
@@ -1229,11 +1333,42 @@ fn wire_switching(
         let Some(target) = Page::all().into_iter().find(|page| page.label() == shown) else {
             return;
         };
-        // S1-S5, all of it in shell.rs; the tree is None and there are no clips or lines because the
-        // pages that read them have their own rounds — the switch itself must not depend on them.
-        let outcome =
-            shell.borrow_mut().switch(target, Move::Click, &project, None, &[], &mut Vec::new());
+        // S1-S5, all of it in shell.rs. The folder is read here rather than remembered: which
+        // project is open is the window's business, and `session_dir` is the same stand-in Rescan
+        // uses. A folder that is not a project leaves `tree` None — §1 wants the page to show what
+        // it has rather than fail to open, so there is no error path out of the switch.
+        let (tree, cut, mut narration) = session_reads();
+        // S3 asks whether a narration write is owed BEFORE the switch clears the flag: leaving the
+        // tab writes what is half-typed even a beat early.
+        let owed = shell.borrow().narration_pending.owe();
+
+        let outcome = shell.borrow_mut().switch(
+            target,
+            Move::Click,
+            &project,
+            tree.as_ref(),
+            &cut.segs,
+            &mut narration.entries,
+        );
+
+        // S3: the half-typed lines reach disk before the page is left. Only a flush that was owed
+        // writes, so a switch over an untouched narration costs no file.
+        if owed {
+            if let Some(tree) = tree.as_ref() {
+                let _ = narration::save(&narration, tree);
+            }
+        }
         paint_tabs(&switcher, &shell.borrow(), &project);
+        paint_readouts(
+            &shell.borrow(),
+            &project,
+            tree.as_ref(),
+            &cut,
+            &narration,
+            inputs_readout.upcast_ref(),
+            &outputs_folder,
+            outputs_readout.upcast_ref(),
+        );
         status.set_text(&shell.borrow().status);
 
         if let Outcome::Bounced { .. } = outcome {
@@ -1243,6 +1378,62 @@ fn wire_switching(
             *guard.borrow_mut() = false;
         }
     });
+}
+
+/// The folder this window is working on, with its cut and narration read from it.
+///
+/// Read fresh every time rather than remembered: which project is open is the window's business, and
+/// `session_dir` is the same stand-in Rescan, New and Save use, so the flows agree on what "this
+/// project" means. A folder that is not a project leaves `tree` None — §1 wants the page to show
+/// what it has rather than fail to open, so nothing here errors out. Both the tab switch (S3-S5) and
+/// the first paint call this, so the row cannot disagree with itself between them.
+fn session_reads() -> (Option<layout::Tree>, Cut, Narration) {
+    let root = std::env::current_dir().unwrap_or_default();
+    let dir = startup::session_dir(&root);
+    let tree = if dir.join(crate::project::PROJECT_FILE).is_file() {
+        layout::Tree::new(&dir).ok()
+    } else {
+        None
+    };
+    let cut = tree.as_ref().and_then(|tree| cut::load(tree).ok()).unwrap_or_default();
+    let narration = tree
+        .as_ref()
+        .and_then(|tree| narration::load(tree).ok())
+        .unwrap_or_default();
+    (tree, cut, narration)
+}
+
+/// S4's readout row, drawn from the shell. The two texts come from `Shell::inputs` and
+/// `Shell::outputs` alone — this function only prefixes and sets labels, so a sentence on that row
+/// always traces back to a rule in `shell.rs`. The folder button is insensitive while there is no
+/// project folder to open, which is the visible proof the row knows what it is counting.
+fn paint_readouts(
+    shell: &Shell,
+    project: &Project,
+    tree: Option<&layout::Tree>,
+    cut: &Cut,
+    narration: &Narration,
+    inputs_label: &gtk::Label,
+    outputs_folder: &gtk::Button,
+    outputs_label: &gtk::Label,
+) {
+    inputs_label.set_text(&format!("{INPUTS_PREFIX}{}", shell.inputs(tree, project, cut, narration)));
+    outputs_label.set_text(&format!("{OUTPUTS_PREFIX}{}", shell.outputs(tree)));
+    outputs_folder.set_sensitive(tree.is_some());
+    // §1: "Outputs: folder button and count" — the button points at the page's own output folder,
+    // which is the directory `Shell::outputs` just counted.
+    if let Some(tree) = tree {
+        outputs_folder.set_tooltip_text(Some(&format!(
+            "{OUTPUTS_FOLDER_TIP}: {}",
+            shell.output_dir(tree).display()
+        )));
+    }
+    // S4's ⓘ sync: the header button describes the page `help_page` names, which a switch sets and
+    // a bounce leaves alone. Repainting it here is what makes "sync ⓘ" happen on the same tick as the
+    // readouts rather than in a second pass over the window.
+    if let Some(info) = INFO_BUTTON.with(|slots| slots.borrow().last().cloned()) {
+        info.set_tooltip_text(Some(&shell.info_tip()));
+    }
 }
 
 /// The run bar as it should be drawn right now: the icon and tooltip [`run::controls`] says, and
@@ -1849,13 +2040,28 @@ fn wire_policy(button: &gtk::Button, window: &adw::ApplicationWindow) {
     button.connect_clicked(move |_| press_policy(&window));
 }
 
-fn wire_rescan(button: &gtk::Button, status: &gtk::Label, session: &Rc<RefCell<Project>>) {    let status = status.clone();
+fn wire_rescan(
+    button: &gtk::Button,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+    shell: &Rc<RefCell<Shell>>,
+    switcher: &adw::ViewSwitcher,
+    inputs_readout: &gtk::Label,
+    outputs_folder: &gtk::Button,
+    outputs_readout: &gtk::Label,
+) {
+    let status = status.clone();
     // The window is handed an immutable `&Project` and holds no live project yet, so the scan works
     // on the private copy shared with Add sources. F0.9's live project state replaces this; until
     // then it is what keeps the pruned list for whatever flow reads the session next. Which folder is
     // open is the same stand-in New and Save use, so all three flows agree.
     let root = std::env::current_dir().unwrap_or_default();
     let project = session.clone();
+    let shell = shell.clone();
+    let switcher = switcher.clone();
+    let inputs_readout = inputs_readout.clone();
+    let outputs_folder = outputs_folder.clone();
+    let outputs_readout = outputs_readout.clone();
     button.connect_clicked(move |_| {
         let dir = startup::session_dir(&root);
         let tree = layout::Tree::new(&dir).ok();
@@ -1863,9 +2069,33 @@ fn wire_rescan(button: &gtk::Button, status: &gtk::Label, session: &Rc<RefCell<P
         for line in &found.logs {
             log_line(line);
         }
-        // Only the status and the log: the pages render the `&Project` handed to `build_window` at
-        // startup, so repainting them belongs with F0.9's live project state — as does F0.5's log
-        // expander, which is why these lines are not yet on screen.
+        // §1's third case: a page whose prerequisites vanished while it was open goes back to Prepare
+        // in silence. The scan just rewrote `project`, so the lock is asked of THAT list — asking the
+        // immutable copy `build_window` was handed would answer about sources that are already gone.
+        let scanned = project.borrow().clone();
+        if shell::lock(shell.borrow().page, &scanned).is_some() {
+            let (tree, cut, mut narration) = session_reads();
+            let page = shell.borrow().page;
+            shell.borrow_mut().switch(
+                page,
+                Move::Vanished,
+                &scanned,
+                tree.as_ref(),
+                &cut.segs,
+                &mut narration.entries,
+            );
+            paint_tabs(&switcher, &shell.borrow(), &scanned);
+            paint_readouts(
+                &shell.borrow(),
+                &scanned,
+                tree.as_ref(),
+                &cut,
+                &narration,
+                &inputs_readout,
+                &outputs_folder,
+                &outputs_readout,
+            );
+        }
         status.set_text(found.status);
     });
 }
@@ -2150,11 +2380,26 @@ thread_local! {
 }
 
 thread_local! {
-    /// The policy form this window has open (F0.7 S5), newest last. Held so a second press on ⚙ or ⓘ
-    /// raises the form that is already there instead of stacking a third copy of the same screen, and so
-    /// `policy_form_open` can answer whether one is showing without searching the widget tree.
-    static POLICY_FORMS: std::cell::RefCell<Vec<adw::Window>> =
+    /// §1's badge **6** — the header ⓘ, newest last, the same newest-slot arrangement as
+    /// [`POLICY_FORMS`]. Held so a switch can repaint its tooltip from `Shell::help_page` without
+    /// searching the widget tree, and so a test reads the tooltip of the button that is on screen.
+    static INFO_BUTTON: std::cell::RefCell<Vec<gtk::Button>> =
         const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    /// The live `Shell` of each window, newest last — the newest-slot rule every other window-level
+    /// piece here uses. Held so the S3 pending-write seam can mark a write owed on the shell that is
+    /// actually showing, instead of a copy the caller happens to have.
+    static WINDOW_SHELLS: std::cell::RefCell<Vec<Rc<RefCell<Shell>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    /// The policy form this window has open (F0.7 S5), newest last. Held so a second press on ⚙ or ⓘ
+/// raises the form that is already there instead of stacking a third copy of the same screen, and so
+/// `policy_form_open` can answer whether one is showing without searching the widget tree.
+static POLICY_FORMS: std::cell::RefCell<Vec<adw::Window>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 thread_local! {
@@ -3981,6 +4226,48 @@ pub fn tab_button(window: &adw::ApplicationWindow, page: Page) -> Option<gtk::Bu
         .max_by_key(|button| depth(button))?
         .downcast()
         .ok()
+}
+
+/// §1's badge **14** — the visible tab's `Inputs:` readout, by its stable name.
+pub fn inputs_readout(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
+    find_widget_by_name(window.upcast_ref(), "inputs-readout")?
+        .downcast()
+        .ok()
+}
+
+/// §1's badge **15** — the `Outputs:` count beside its folder button.
+pub fn outputs_readout(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
+    find_widget_by_name(window.upcast_ref(), "outputs-readout")?
+        .downcast()
+        .ok()
+}
+
+/// §1's badge **15** — the folder button that goes with the Outputs count.
+pub fn outputs_folder_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "outputs-folder-button")?
+        .downcast()
+        .ok()
+}
+
+/// Mark this window's narration write as owed — the state a half-typed line leaves behind.
+///
+/// S3 owns the decision whether leaving the tab writes (`shell::Pending::owe`); this only raises
+/// the flag, through the same type the switch reads. The Narrate page has no text view yet, so that
+/// page's typing cannot raise it — this is the seam F4.7 will call, and what `switch_tab_widgets`
+/// drives in its place.
+pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
+    let _ = window;
+    if let Some(shell) = WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()) {
+        // `now` is irrelevant here: leaving the tab writes whatever is owed, even a beat early.
+        shell.borrow_mut().narration_pending.touched(std::time::Duration::from_secs(0));
+    }
+}
+
+/// §1's badge **6** — the header ⓘ (not the per-page copies), newest slot wins so a test reads the
+/// button this window built rather than one left over from an earlier window in the same process.
+pub fn tab_info_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    let _ = window;
+    INFO_BUTTON.with(|slots| slots.borrow().last().cloned())
 }
 
 /// The switcher inside the window: it is the one thing in here with a stack of its own.

@@ -21,7 +21,9 @@ use crate::ui;
 /// Screen names the window can render: the spec's images, mapped onto a page.
 fn screen_page(screen: &str) -> Option<&'static str> {
     match screen {
-        "03-window" | "03-settings" | "03-sources" | "03-new-confirm" => Some("Prepare"),
+        "03-window" | "03-settings" | "03-sources" | "03-new-confirm" | "03-policy-form" => {
+            Some("Prepare")
+        }
         "04-prepare" | "04-prompt-picker" => Some("Prepare"),
         "05-cut" | "05-add" | "05-fold" | "05-rows" | "05-split" | "05-trim" | "05-remove"
         | "05-lanes" => Some("Cut"),
@@ -100,6 +102,15 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             "03-new-confirm" => {
                 let shown = ui::new_project_confirm(None, &new_project::confirm_detail(&dir));
                 shown.set_default_size(560, 240);
+                shown.present();
+                Some(shown.upcast())
+            }
+            // F0.7's screen is the policy form itself, not the window behind it: §03's image shows
+            // only the table of fields, so this paints only the table. No parent for the same reason
+            // as the confirmation above — the run ends when the last window closes.
+            "03-policy-form" => {
+                let shown = ui::policy_form::build(None, &model.policy);
+                shown.set_default_size(720, 420);
                 shown.present();
                 Some(shown.upcast())
             }

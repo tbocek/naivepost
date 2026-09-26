@@ -402,24 +402,24 @@ impl Shell {
             }
         }
     }
+}
 
+impl Shell {
     /// The Inputs readout of the page shown (spec/03-shell.md §1: "the visible tab's `Inputs:` and
     /// `Outputs:` readouts"). Prepare's and Produce's wording are spec/04-prepare.md §1 and
     /// spec/08-produce.md §1 verbatim; Cut's and Narrate's rows are specified in 05/07, whose rounds
     /// have not come, so those two are the rewrite's own short sentences — one line each, naming what
-    /// ▶ on that page would read.
-/// The tree the readouts count files in. Every page's Inputs and Outputs row is a
-/// number about disk, so the folder is passed to the read rather than remembered by the
-/// shell: which project is open is the window's business, and this way the shell cannot
-/// disagree with it after an Open.
-pub fn inputs(
-    &self,
-    tree: Option<&Tree>,
-    project: &Project,
-    cut: &cut::Cut,
-    narration: &narration::Narration,
-) -> String {
-    match self.page {
+    /// ▶ on that page would read. The tree the readouts count files in is passed to the read rather
+    /// than remembered by the shell: which project is open is the window's business, so the shell
+    /// cannot disagree with it after an Open.
+    pub fn inputs(
+        &self,
+        tree: Option<&Tree>,
+        project: &Project,
+        cut: &cut::Cut,
+        narration: &narration::Narration,
+    ) -> String {
+        match self.page {
         // Prepare's row is spec/04-prepare.md §1 verbatim; with no folder there is
         // nothing counted yet, and "0 frames → 0 vision" would be a claim about files.
         Page::Prepare => match tree {
@@ -452,6 +452,18 @@ pub fn inputs(
         }
     }
 
+    /// The folder whose files `outputs` just counted, so the folder button beside the count points at
+    /// The folder whose files `outputs` just counted, so the folder button beside the count points at
+    /// exactly what that number means. One match for both, which is why the two cannot disagree.
+    pub fn output_dir(&self, tree: &Tree) -> std::path::PathBuf {
+        match self.page {
+            Page::Prepare => tree.dir().join("prepare"),
+            Page::Cut => tree.dir().join("cut"),
+            Page::Narrate => tree.dir().join("narrate"),
+            Page::Produce => tree.dir().join("produce"),
+        }
+    }
+
     /// The Outputs readout: a count, and the folder button's tooltip is the page's own (§1). Here
     /// only the count sentence, which is what the row draws.
     pub fn outputs(&self, tree: Option<&Tree>) -> String {
@@ -460,13 +472,7 @@ pub fn inputs(
         };
         // §1 asks for a count of what the page wrote; counting the page's own output folder is the
         // one number that cannot lie about a run that has not happened yet.
-        let dir = match self.page {
-            Page::Prepare => tree.dir().join("prepare"),
-            Page::Cut => tree.dir().join("cut"),
-            Page::Narrate => tree.dir().join("narrate"),
-            Page::Produce => tree.dir().join("produce"),
-        };
-        format!("{} file(s)", count_files(&dir))
+        format!("{} file(s)", count_files(&self.output_dir(tree)))
     }
 
     /// What ⓘ says: the current tab's label and help text (spec/03-shell.md §1). The long paragraph
