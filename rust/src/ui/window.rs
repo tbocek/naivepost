@@ -14,6 +14,7 @@ use crate::add_sources;
 use crate::bench;
 use crate::cut::{self, Cut};
 use crate::cut_play;
+use crate::cut_review;
 use crate::cut_screen;
 use crate::hand_edit;
 use crate::layout;
@@ -128,6 +129,13 @@ fn page_box(
         cut_.set_tooltip_text(Some(cut_screen::PLAY_CUT_TIP));
         cut_.set_halign(gtk::Align::Start);
         box_.insert_child_after(&cut_, Some(&play_));
+
+        // F2.3: ▶✂✂ last of the three, so the group reads recording → cut → review (§A's order).
+        let review_ = gtk::Button::with_label(REVIEW_CUTS_LABEL);
+        review_.set_widget_name("review-cuts-button");
+        review_.set_tooltip_text(Some(cut_screen::REVIEW_TIP));
+        review_.set_halign(gtk::Align::Start);
+        box_.insert_child_after(&review_, Some(&cut_));
     }
 
     view.set_content(Some(&box_));
@@ -909,6 +917,12 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // pressing one switches what the other would show, never a second transport.
     if let Some(cut_) = play_cut_button(&window) {
         wire_play_cut(&cut_, &window);
+    }
+    // F2.3: this window's cut slot is registered here for the same reason the player slot is — after
+    // `set_content`, so the button being wired is the one inside the realized tree.
+    REVIEW_CUTS.with(|slots| slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(cut::Cut::default()))));
+    if let Some(review_) = review_cuts_button(&window) {
+        wire_review_cuts(&review_, &window);
     }
     window
 }
@@ -1740,6 +1754,10 @@ const RECORD_PLAY_LABEL: &str = "\u{25b6} Play the recording";
 /// F2.2's label. The glyph pair is the button's whole identity in §A (▶ vs ▶✂), so it leads the
 /// words rather than sitting alone as an icon a person has to memorise.
 const PLAY_CUT_LABEL: &str = "\u{25b6}\u{2702} Play the cut";
+
+/// F2.3's label — the third of the transport group, spelled with two scissors so it cannot be
+/// mistaken for ▶✂ at a glance.
+const REVIEW_CUTS_LABEL: &str = "\u{25b6}\u{2702}\u{2702} Review every cut";
 const RECORD_PLAY_TIP: &str =
     "Play the recording from the red line \u{2014} every second of it, cuts and all";
 
@@ -1754,6 +1772,17 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// One window's cut, held beside [`PREVIEW_PLAYERS`] with the same newest-slot rule.
+///
+/// The Cut page has no live cut model yet — that arrives with its own round — so this is what stands in
+/// for it: `build_window` seeds a default (empty) cut and every press reads it back. A caller that DOES
+/// have a cut hands it over with [`seed_review_cut`], which is the seam the cut-model round plugs into
+/// instead of re-plumbing the button.
+thread_local! {
+    static REVIEW_CUTS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut::Cut>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// The Cut page's ▶ (F2.1), found by name the way [`play_button`] finds the run bar's.
 pub fn play_recording_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "play-recording-button")?
@@ -1764,6 +1793,13 @@ pub fn play_recording_button(window: &adw::ApplicationWindow) -> Option<gtk::But
 /// The Cut page's ▶✂ (F2.2), found by name the way [`play_recording_button`] finds ▶.
 pub fn play_cut_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "play-cut-button")?
+        .downcast()
+        .ok()
+}
+
+/// The Cut page's ▶✂✂ (F2.3), found by name the way [`play_cut_button`] finds ▶✂.
+pub fn review_cuts_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "review-cuts-button")?
         .downcast()
         .ok()
 }
@@ -1892,6 +1928,54 @@ fn wire_play_cut(button: &gtk::Button, window: &adw::ApplicationWindow) {
         // No live cut model reaches the page yet (the Cut page's own round owns it), so the empty cut
         // is the honest input and S1's refusal is what a press answers with today.
         let _ = press_play_cut(&window, &cut::Cut::default());
+    });
+}
+
+/// Put this window's cut where ▶✂✂ can read it — the seam the cut-model round plugs into. Until then
+/// `build_window` seeds an empty one and a press answers S1's refusal.
+pub fn seed_review_cut(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
+    let _ = window;
+    REVIEW_CUTS.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            *slot.borrow_mut() = cut_.clone();
+        }
+    });
+}
+
+/// The newest cut this window holds, or an empty one when nothing has been seeded.
+fn newest_review_cut() -> cut::Cut {
+    REVIEW_CUTS
+        .with(|slots| slots.borrow().last().map(|slot| slot.borrow().clone()))
+        .unwrap_or_default()
+}
+
+/// The seam F2.3's ▶✂✂ calls: [`cut_review::pressed`] decides whether the press starts the review from
+/// the red line, refuses for want of a join, or pauses-and-ends a running one; this forwards it and
+/// paints only what the answer says. Every sentence comes from `cut_review` itself.
+pub fn press_review_cuts(window: &adw::ApplicationWindow, cut_: &cut::Cut) -> cut_review::Pressed {
+    let Some(status_line) = find_status(window.upcast_ref()) else {
+        panic!("the window has no status line");
+    };
+    let Some(player) = live_player(window) else {
+        panic!("the window has no preview player");
+    };
+    let pressed = cut_review::pressed(&mut player.borrow_mut(), cut_);
+    match &pressed {
+        // S4: the status names which join out of how many is being heard.
+        cut_review::Pressed::Started { status, .. } => status_line.set_text(status),
+        // S5: pausing ends the review, and says so with the module's own short line.
+        cut_review::Pressed::PausedAndEnded { status } => status_line.set_text(*status),
+        // S1: fewer than two clips, in `refused`'s own words.
+        cut_review::Pressed::Refused(reason) => status_line.set_text(reason),
+    }
+    pressed
+}
+
+/// F2.3: the Cut page's ▶✂✂ forwards to [`press_review_cuts`], reading the cut this window holds.
+fn wire_review_cuts(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        let _ = press_review_cuts(&window, &newest_review_cut());
     });
 }
 
