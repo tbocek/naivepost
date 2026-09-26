@@ -213,3 +213,136 @@ fn f2_4_s4_a_write_is_owed_at_most_once_a_second_and_always_on_close() {
         assert!(!line::may_write_line(Some(0), tick * 100, false), "tick {tick} writes nothing");
     }
 }
+
+// --- S4: the file on disk (persistence half) -----------------------------------------------------
+
+/// A throwaway project root per test, so nothing collides and nothing outlives the test.
+fn temp_root(tag: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("naivepost-line-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp root");
+    root
+}
+
+/// F2.4 S4: writing the line puts it at `cut/line.json` under the project root, byte for byte as
+/// `line_json` formats it, and reading gives back exactly what was written.
+#[test]
+fn f2_4_s4_the_line_round_trips_through_cut_line_json() {
+    let root = temp_root("roundtrip");
+    let pos = line::LinePos { t: 123.5 };
+
+    line::write_line(&root, pos).expect("the write lands");
+
+    let file = root.join("cut").join("line.json");
+    assert!(file.is_file(), "the line lives at cut/line.json, not somewhere else");
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("readable"),
+        line::line_json(pos),
+        "the bytes on disk are exactly what line_json writes"
+    );
+    assert_eq!(line::read_line(&root), Some(pos), "and read back identically");
+
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// F2.4 S4 error paths: no file at all, and a file full of nonsense, both mean "nothing to restore"
+/// rather than an error — a project with no line yet is the normal case.
+#[test]
+fn f2_4_s4_a_missing_or_corrupt_line_file_reads_as_nothing() {
+    let empty = temp_root("missing");
+    assert_eq!(line::read_line(&empty), None, "no file is not an error, it is no position");
+
+    let corrupt = temp_root("corrupt");
+    std::fs::create_dir_all(corrupt.join("cut")).unwrap();
+    std::fs::write(corrupt.join("cut").join("line.json"), b"not json at all").unwrap();
+    assert_eq!(line::read_line(&corrupt), None, "bad bytes parse to nothing, same answer");
+
+    // ...and restore agrees: nothing comes back when there is nothing saved.
+    assert_eq!(line::restore(&corrupt, &[(0.0, 600.0)]), None);
+
+    std::fs::remove_dir_all(&empty).ok();
+    std::fs::remove_dir_all(&corrupt).ok();
+}
+
+/// F2.4 S4: while the line moves, at most one write a second (line::LINE_WRITE_MS = 1000). The file
+/// keeps the last WRITTEN position through the throttled ticks, then takes the new one a second on.
+#[test]
+fn f2_4_s4_the_writer_throttles_moves_to_one_write_a_second() {
+    let root = temp_root("throttle");
+    let mut writer = line::LineWriter::default();
+
+    assert!(writer.note_move(line::LinePos { t: 10.0 }, &root, 0), "the first move writes");
+    assert_eq!(line::read_line(&root), Some(line::LinePos { t: 10.0 }));
+
+    // Ten ticks over the next 900 ms: none of them reach the disk.
+    for tick in 1..10 {
+        assert!(
+            !writer.note_move(line::LinePos { t: 10.0 + tick as f64 }, &root, tick * 100),
+            "tick {tick} is inside the second and writes nothing"
+        );
+    }
+    assert_eq!(
+        line::read_line(&root),
+        Some(line::LinePos { t: 10.0 }),
+        "the file still holds the first position through the throttled ticks"
+    );
+
+    assert!(
+        writer.note_move(line::LinePos { t: 11.0 }, &root, 1000),
+        "a second on, the latest position lands"
+    );
+    assert_eq!(line::read_line(&root), Some(line::LinePos { t: 11.0 }));
+    assert_eq!(writer.last_write_ms(), Some(1000), "and the writer remembers when it wrote");
+
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// F2.4 S4: closing flushes whatever is owed, immediately, even inside the throttled second.
+#[test]
+fn f2_4_s4_flushing_on_close_beats_the_rate_limit() {
+    let root = temp_root("flush");
+    let mut writer = line::LineWriter::default();
+
+    writer.note_move(line::LinePos { t: 42.0 }, &root, 0);
+    assert!(
+        writer.flush(line::LinePos { t: 42.7 }, &root, 50),
+        "50 ms after a write is far inside the second, and close still writes"
+    );
+    assert_eq!(
+        line::read_line(&root),
+        Some(line::LinePos { t: 42.7 }),
+        "so the position closed on is the position on disk"
+    );
+
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// F2.4 S4: restoring keeps a line a recording still covers and drops one that sits in a gap — a cue to
+/// a second nobody filmed would leave the page showing nothing.
+#[test]
+fn f2_4_s4_restore_keeps_only_a_line_a_recording_still_covers() {
+    let covered = temp_root("covered");
+    line::write_line(&covered, line::LinePos { t: 30.0 }).unwrap();
+    assert_eq!(
+        line::restore(&covered, &[(0.0, 100.0), (200.0, 300.0)]),
+        Some(line::LinePos { t: 30.0 }),
+        "a recording covers second 30, so the line comes back"
+    );
+
+    let stranded = temp_root("stranded");
+    line::write_line(&stranded, line::LinePos { t: 150.0 }).unwrap();
+    assert_eq!(
+        line::restore(&stranded, &[(0.0, 100.0), (200.0, 300.0)]),
+        None,
+        "second 150 lies in the gap between recordings, so nothing is restored"
+    );
+
+    // The end of a span is exclusive, matching restores_line: standing ON the end is past it.
+    let edge = temp_root("edge");
+    line::write_line(&edge, line::LinePos { t: 100.0 }).unwrap();
+    assert_eq!(line::restore(&edge, &[(0.0, 100.0)]), None, "t == end is not covered");
+
+    std::fs::remove_dir_all(&covered).ok();
+    std::fs::remove_dir_all(&stranded).ok();
+    std::fs::remove_dir_all(&edge).ok();
+}

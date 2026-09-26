@@ -15,6 +15,7 @@ use crate::bench;
 use crate::cut::{self, Cut};
 use crate::cut_play;
 use crate::cut_review;
+use crate::cut_line;
 use crate::cut_screen;
 use crate::hand_edit;
 use crate::layout;
@@ -136,6 +137,22 @@ fn page_box(
         review_.set_tooltip_text(Some(cut_screen::REVIEW_TIP));
         review_.set_halign(gtk::Align::Start);
         box_.insert_child_after(&review_, Some(&cut_));
+
+        // F2.4: the line-step buttons, ‹‹f ‹f f› ››. §A puts them in the same toolbar row as the
+        // transport controls; that full toolbar is a later round's page, so these are the line-step
+        // half of it, sitting on after ▶✂✂ until the real bar arrives. Shift is five frames, plain is
+        // one — `cut_line::step_frames` owns that, and FRAME_TIP already says so.
+        let mut previous = review_.clone();
+        for (name, label, _shift) in LINE_STEP_BUTTONS {
+            let step = gtk::Button::with_label(label);
+            step.set_widget_name(name);
+            step.set_tooltip_text(Some(cut_screen::FRAME_TIP));
+            step.set_halign(gtk::Align::Start);
+            box_.insert_child_after(&step, Some(&previous));
+            previous = step;
+        }
+        // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
+        // widget that is not yet inside the realized tree never fires (see the F2.1 note there).
     }
 
     view.set_content(Some(&box_));
@@ -924,6 +941,23 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     if let Some(review_) = review_cuts_button(&window) {
         wire_review_cuts(&review_, &window);
     }
+    // F2.4: this window's line slot, registered with the others so the newest window is the live one.
+    // A project root does not reach the page yet (the cut-model round owns it), so nothing is restored
+    // here — `cut_line::restore(root, recordings)` is the seam that seeds this when a root exists, and
+    // until then the line starts at second zero.
+    LINE_STATES.with(|slots| {
+        slots.borrow_mut().push(Rc::new(std::cell::RefCell::new((
+            cut_line::LinePos { t: 0.0 },
+            cut_line::LineWriter::default(),
+        ))))
+    });
+    // F2.4: the four line-step buttons get their handlers now that they sit in the realized tree.
+    for (name, _label, frames) in LINE_STEP_BUTTONS {
+        if let Some(step) = line_step_button(&window, name) {
+            wire_line_step(&step, &window, frames);
+        }
+    }
+    wire_line_keys(&window);
     window
 }
 
@@ -1758,6 +1792,17 @@ const PLAY_CUT_LABEL: &str = "\u{25b6}\u{2702} Play the cut";
 /// F2.3's label — the third of the transport group, spelled with two scissors so it cannot be
 /// mistaken for ▶✂ at a glance.
 const REVIEW_CUTS_LABEL: &str = "\u{25b6}\u{2702}\u{2702} Review every cut";
+
+/// F2.4's four line-step buttons, in the spec's left-to-right order: `‹‹f ‹f f› ››`. Each entry is
+/// (widget name, label, signed frames) — the sign is the direction and the magnitude the count, so a
+/// button's own name cannot disagree with what it does. A `bool` could: wiring `shift=true` to
+/// `line-step-back-five` reads as "five" while saying nothing about which way.
+const LINE_STEP_BUTTONS: [(&str, &str, i64); 4] = [
+    ("line-step-back-five", "\u{2039}\u{2039} f  step back 5 frames", -5),
+    ("line-step-back", "\u{2039} f  step back 1 frame", -1),
+    ("line-step-forward", "f \u{203a}  step forward 1 frame", 1),
+    ("line-step-forward-five", "f \u{203a}\u{203a}  step forward 5 frames", 5),
+];
 const RECORD_PLAY_TIP: &str =
     "Play the recording from the red line \u{2014} every second of it, cuts and all";
 
@@ -1781,6 +1826,230 @@ thread_local! {
 thread_local! {
     static REVIEW_CUTS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut::Cut>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// One window's red line and the writer that throttles its saves, newest slot winning like
+/// [`PREVIEW_PLAYERS`]. The writer lives beside the position because the rate limit is a property of
+/// this window's moving line, not of the file.
+thread_local! {
+    static LINE_STATES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<(cut_line::LinePos, cut_line::LineWriter)>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// What a frame step did (F2.4 S2/S3), so the caller paints the right thing and decides nothing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Step {
+    /// Something was held: THAT moved by `frames` frames rather than the line.
+    Nudged { frames: i64 },
+    /// Nothing held: the recording under the line seeked to `t` and paused.
+    SteppedTo { t: f64 },
+    /// Nothing happened — S3's arrows with nothing held.
+    Still,
+}
+
+/// This window's red line position.
+pub fn line_position(window: &adw::ApplicationWindow) -> cut_line::LinePos {
+    let _ = window;
+    LINE_STATES
+        .with(|slots| slots.borrow().last().map(|slot| slot.borrow().0))
+        .unwrap_or(cut_line::LinePos { t: 0.0 })
+}
+
+/// Set this window's line WITHOUT saving -- the test/setup entry point. Saving is a side effect of a
+/// user moving the line, not of being told where it is, and a setup call that consumed the throttle
+/// would make the next real move silently unwritable for a second.
+pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos) {
+    let _ = window;
+    LINE_STATES.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            slot.borrow_mut().0 = pos;
+        }
+    });
+}
+
+/// A user moved the line: store it and let [`cut_line::LineWriter`] decide whether that is worth a
+/// save right now (at most one write a second, `cut_line::LINE_WRITE_MS`). Returns whether it wrote.
+///
+/// No project root reaches the page yet (the cut-model round owns it), so there is nowhere to write;
+/// the throttle is still advanced so the rate rule holds the moment a root exists.
+pub fn move_line_and_save(window: &adw::ApplicationWindow, pos: cut_line::LinePos, now_ms: u64) -> bool {
+    let _ = window;
+    LINE_STATES.with(|slots| {
+        let Some(slot) = slots.borrow().last().cloned() else {
+            return false;
+        };
+        slot.borrow_mut().0 = pos;
+        let wrote = cut_line::may_write_line(slot.borrow().1.last_write_ms(), now_ms, false);
+        if wrote {
+            slot.borrow_mut().1.note_throttled(now_ms);
+        }
+        wrote
+    })
+}
+
+/// F2.4 S1 through the seam: a press on the tracks places the line, clears the selection and watches
+/// a row exactly as [`cut_line::click_outcome`] says — the page reports pixels and modifiers, this
+/// applies the rule and stores the result.
+pub fn place_line_from_click(
+    window: &adw::ApplicationWindow,
+    on_picture: bool,
+    on_scene_picture: bool,
+    playing: bool,
+    sources: bool,
+    gutter: bool,
+    at: f64,
+    now_ms: u64,
+) -> cut_line::ClickOutcome {
+    let outcome = cut_line::click_outcome(at, on_picture, on_scene_picture, playing, sources, gutter);
+    if outcome.line_moved {
+        move_line_and_save(window, cut_line::LinePos { t: outcome.line_at }, now_ms);
+    }
+    // The selection clear lands here because this is where the rule says it happens; the Cut page has no
+    // selection model until its own round, so there is nothing to clear yet — the call site stays so
+    // the wiring is already in place when that model arrives.
+    outcome
+}
+
+/// F2.4 S1b: what a first left press picks up at the 12 px reach (`// layout.lineReachPx`,
+/// `cut_line::EDGE_REACH_PX`) — edge, then border, then the whole clip.
+pub fn pick_with_reach(window: &adw::ApplicationWindow, edge_px: f64, inside: bool) -> cut_line::PressPick {
+    let _ = window;
+    cut_line::first_press_pick(edge_px, inside)
+}
+
+/// F2.4 S2: ‹f / f› steps one frame (Shift five). With a hold, the HOLD moves; with nothing held the
+/// recording under the line seeks and pauses.
+pub fn step_the_line(
+    window: &adw::ApplicationWindow,
+    shift: bool,
+    held: Option<cut_line::Held>,
+    fps: f64,
+    now_ms: u64,
+) -> Step {
+    let frames = cut_line::step_frames(shift);
+    if held.is_some() {
+        // Nudging the held edge/clip/effect needs the held item's own geometry, which belongs to the
+        // cut-editing rounds; the returned frame count is what the caller acts on once that exists.
+        return Step::Nudged { frames };
+    }
+    let from = line_position(window).t;
+    let to = cut_line::step_line(from, frames, fps);
+    move_line_and_save(window, cut_line::LinePos { t: to }, now_ms);
+    // S2's "then pause": stepping is looking at a frame, not watching a run.
+    if let Some(player) = live_player(window) {
+        player.borrow_mut().transport.playing = false;
+    }
+    Step::SteppedTo { t: to }
+}
+
+/// F2.4 S3: ← / → step only while something is held; with nothing held they do nothing at all.
+pub fn arrow_steps(
+    window: &adw::ApplicationWindow,
+    shift: bool,
+    held: Option<cut_line::Held>,
+    fps: f64,
+    now_ms: u64,
+) -> Step {
+    if !cut_line::arrow_moves_line(held) {
+        return Step::Still;
+    }
+    step_the_line(window, shift, held, fps, now_ms)
+}
+
+/// F2.4 S3: Space toggles the preview unless a text box has the focus.
+pub fn space_toggles(window: &adw::ApplicationWindow, text_focus: bool) -> bool {
+    let toggle = cut_line::space_toggles_preview(text_focus);
+    if toggle && !text_focus {
+        if let Some(player) = live_player(window) {
+            let mut held = player.borrow_mut();
+            held.transport.playing = !held.transport.playing;
+            held.transport.started = held.transport.playing || held.transport.started;
+        }
+    }
+    toggle
+}
+
+/// Find one of the four named line-step buttons.
+pub fn line_step_button(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), name)?.downcast().ok()
+}
+
+/// This window's key controller for the line (F2.4 S2/S3): ‹‹f ‹f f› ›› step one or five frames,
+/// ← / → move only while something is held, Space toggles play.
+pub fn line_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
+    let _ = window;
+    LINE_KEYS.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static LINE_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Wire one step button to its signed frame count. A button press holds nothing, so this is always
+/// S2's seek-and-pause; the direction lives in `frames`, never inferred from the widget.
+fn wire_line_step(button: &gtk::Button, window: &adw::ApplicationWindow, frames: i64) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        let _ = step_frames_of(&window, frames);
+    });
+}
+
+/// Move the line by a signed number of frames and pause (F2.4 S2). The seam the buttons use; the
+/// keyboard path goes through `step_the_line`, which first asks whether a hold should be nudged.
+pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
+    let from = line_position(window).t;
+    let to = cut_line::step_line(from, frames, DEFAULT_FPS);
+    move_line_and_save(window, cut_line::LinePos { t: to }, now_ms());
+    if let Some(player) = live_player(window) {
+        player.borrow_mut().transport.playing = false;
+    }
+    Step::SteppedTo { t: to }
+}
+
+/// The frame rate the line steps at when no project has said otherwise. The spec gives no `P.*` row for
+/// it; 25 fps is what the prototype's session runs at, and a wrong rate moves the line by a wrong but
+/// still sub-second amount rather than breaking anything.
+const DEFAULT_FPS: f64 = 25.0;
+
+/// A monotone-ish millisecond clock for the write throttle. Coarse is fine: the rule it feeds only asks
+/// whether a second has passed.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Add the keyboard controller to the window. Called after `set_content`, like every other `wire_*`.
+fn wire_line_keys(window: &adw::ApplicationWindow) {
+    let controller = gtk::EventControllerKey::new();
+    let win = window.clone();
+    controller.connect_key_pressed(move |_ctrl, key, _code, mods| {
+        let shift = mods.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+        let held: Option<cut_line::Held> = None;
+        let response = match key {
+            gtk::gdk::Key::Left => arrow_steps(&win, shift, held, DEFAULT_FPS, now_ms()),
+            gtk::gdk::Key::Right => arrow_steps(&win, shift, held, DEFAULT_FPS, now_ms()),
+            gtk::gdk::Key::comma => step_the_line(&win, shift, held, DEFAULT_FPS, now_ms()),
+            gtk::gdk::Key::period => step_the_line(&win, shift, held, DEFAULT_FPS, now_ms()),
+            gtk::gdk::Key::space => {
+                // Space is not a line step, so it answers the propagation directly rather than with a
+                // `Step`; handled means the focused widget never sees it.
+                return if space_toggles(&win, false) {
+                    glib::Propagation::Stop
+                } else {
+                    glib::Propagation::Proceed
+                };
+            }
+            _ => return glib::Propagation::Proceed,
+        };
+        // Every handled key stops the default action; `Still` deliberately does not, so an unheld
+        // arrow keeps doing whatever the focused widget would have done.
+        if matches!(response, Step::Still) { glib::Propagation::Proceed } else { glib::Propagation::Stop }
+    });
+    window.add_controller(controller.clone());
+    LINE_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
 }
 
 /// The Cut page's ▶ (F2.1), found by name the way [`play_button`] finds the run bar's.

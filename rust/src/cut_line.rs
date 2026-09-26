@@ -16,6 +16,8 @@
 //! that: the line moves and the row is watched wherever §1 allows it, but the hand
 //! closes only on a scene's picture.
 
+use std::path::{Path, PathBuf};
+
 /// F2.4 S1b: the reach of an edge grab over a clip's own edge — `spec/10-parameters.md`'s "timeline:"
 /// block, "the reach of an edge grab over its own edge, px", cited as 12 px by
 /// `spec/inventory/cut.md` §A. The first press of the left button measures this
@@ -222,4 +224,93 @@ pub const LINE_WRITE_MS: u64 = 1000;
 /// the position you closed on is the one you open on.
 pub fn may_write_line(last_write_ms: Option<u64>, now_ms: u64, closing: bool) -> bool {
     closing || last_write_ms.is_none_or(|then| now_ms.saturating_sub(then) >= LINE_WRITE_MS)
+}
+
+// --- S4: the file itself ---------------------------------------------------------------------------
+
+/// The path S4 writes to, resolved off a project root without needing a [`crate::layout::Tree`]: the
+/// same `cut/line.json` the tree hands out, spelled once here so a caller that only has the root (the
+/// window, which holds no `Tree` yet) can still reach it.
+pub fn line_file(root: &Path) -> PathBuf {
+    root.join("cut/line.json")
+}
+
+/// S4: write the line to `<root>/cut/line.json`, creating `cut/` if it is not there.
+///
+/// Bytes exactly as [`line_json`] formats them — a restored line must read back what was written, and
+/// the prototype's `lineFile` is the format being matched. Errors are returned rather than swallowed:
+/// a line that could not be saved is worth knowing about, unlike a line that was never placed.
+pub fn write_line(root: &Path, pos: LinePos) -> std::io::Result<()> {
+    let file = line_file(root);
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&file, line_json(pos))
+}
+
+/// S4: read the saved line back. A missing or unreadable file is `None`, not an error — a project with
+/// no line yet is the normal case, and so is a half-written file from a crash; both mean "no position
+/// to restore", which is what [`parse_line_json`] already answers for bad bytes.
+pub fn read_line(root: &Path) -> Option<LinePos> {
+    let text = std::fs::read_to_string(line_file(root)).ok()?;
+    parse_line_json(&text)
+}
+
+/// S4: the rate limit with its memory. The line moves ten times a second while playing and only needs
+/// saving once a second, so something has to remember when the last write went out — that is this
+/// struct's whole job.
+#[derive(Debug, Default, Clone)]
+pub struct LineWriter {
+    last_write_ms: Option<u64>,
+}
+
+impl LineWriter {
+    /// One move of the line. Writes only when [`may_write_line`] allows it and records the timestamp
+    /// when it does. Returns whether a write happened, so a test sees the rate limit working rather
+    /// than inferring it from a file that might have been written by something else.
+    pub fn note_move(&mut self, pos: LinePos, root: &Path, now_ms: u64) -> bool {
+        if !may_write_line(self.last_write_ms, now_ms, false) {
+            return false;
+        }
+        // A failed write still counts as "tried at" this instant: retrying every tick after an ENOSPC
+        // would be the same wasted-write loop the rate limit exists to prevent.
+        self.last_write_ms = Some(now_ms);
+        write_line(root, pos).is_ok()
+    }
+
+    /// Closing the window: always writes, whatever the rate limit says, so the position you closed on
+    /// is the one you open on.
+    pub fn flush(&mut self, pos: LinePos, root: &Path, now_ms: u64) -> bool {
+        if !may_write_line(self.last_write_ms, now_ms, true) {
+            return false;
+        }
+        self.last_write_ms = Some(now_ms);
+        write_line(root, pos).is_ok()
+    }
+
+    /// When the last write went out, for a caller that wants to show or log it.
+    pub fn last_write_ms(&self) -> Option<u64> {
+        self.last_write_ms
+    }
+
+    /// Record a throttled write that happened somewhere else — used by a caller that has no filesystem
+    /// to write to yet but must keep the same one-second rule. Mirrors what [`note_move`] does to the
+    /// timestamp without touching a path.
+    pub fn note_throttled(&mut self, now_ms: u64) {
+        self.last_write_ms = Some(now_ms);
+    }
+}
+
+/// S4: the line to restore on opening a project, if any.
+///
+/// Kept only when some recording still covers it ([`restores_line`]): a saved position in a gap that no
+/// longer exists would cue the page to nothing. `recordings` is merged, sorted, disjoint session spans
+/// — the same contract [`crate::timeline::filmed_runs`] produces — so "some recording covers it" is
+/// one pass with no ambiguity about overlapping rows.
+pub fn restore(root: &Path, recordings: &[(f64, f64)]) -> Option<LinePos> {
+    let pos = read_line(root)?;
+    recordings
+        .iter()
+        .any(|(start, end)| restores_line(pos.t, *start, *end))
+        .then_some(pos)
 }
