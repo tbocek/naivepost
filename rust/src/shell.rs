@@ -452,7 +452,16 @@ impl Shell {
         }
     }
 
-    /// The folder whose files `outputs` just counted, so the folder button beside the count points at
+    /// The Inputs readout's TOOLTIP (§1 badge **6**: "per-file tooltip"). Prepare is the one page
+    /// whose row counts several files at once, so its tooltip breaks the same arithmetic down per
+    /// source through [`prepare::inputs_tip`]; every other page's row says all it has in the text.
+    pub fn inputs_tip(&self, tree: Option<&Tree>, project: &Project) -> Option<String> {
+        match self.page {
+            Page::Prepare => tree.map(|tree| prepare::inputs_tip(tree, project)),
+            _ => None,
+        }
+    }
+
     /// The folder whose files `outputs` just counted, so the folder button beside the count points at
     /// exactly what that number means. One match for both, which is why the two cannot disagree.
     pub fn output_dir(&self, tree: &Tree) -> std::path::PathBuf {
@@ -470,6 +479,18 @@ impl Shell {
         let Some(tree) = tree else {
             return String::new();
         };
+        // §04-prepare.md §1 spells this one page's label out — "Prepare:" plus the count — so it
+        // carries its own prefix rather than reading as a bare number. `outputs_count` counts the
+        // page's whole folder (all three subfolders at once), which is the figure the spec asks for;
+        // `prepare::outputs_readout`'s "N files, <size>" form is Produce's shape (§8), not this.
+        if self.page == Page::Prepare {
+            let count = prepare::outputs_count(tree);
+            return if count == 0 {
+                prepare::NO_OUTPUTS.to_string()
+            } else {
+                format!("{} {}", prepare::OUTPUTS_LABEL, count)
+            };
+        }
         // §1 asks for a count of what the page wrote; counting the page's own output folder is the
         // one number that cannot lie about a run that has not happened yet.
         format!("{} file(s)", count_files(&self.output_dir(tree)))

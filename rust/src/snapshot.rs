@@ -84,6 +84,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
     // Built when the app has no windows yet: they are added at startup, so the
     // handler runs after GTK has emitted it.
     app.connect_activate(move |app| {
+        // A screen that wants the bench to open somewhere other than row 0 must say so BEFORE the
+        // window is built: `bench_box` reads this once and paints from it, and a later call would
+        // arrive after the heading was already drawn.
+        if screen == "04-prompt-picker" {
+            ui::set_bench_open_row(2);
+        }
         let window = ui::build_window(app, &model, page);
         // The strip paints from this window's cut slot, so a snapshot must show the cut that lives in
         // the project it was asked to render — not whatever the working-copy folder happens to hold.
@@ -122,6 +128,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 shown.present();
                 Some(shown.upcast())
             }
+            // `spec/img/04-prompt-picker.png` pictures the row picker OPEN on a prompt, so this
+            // shot is the same Prepare window with the bench started on the Describe row instead of
+            // the User Context. The subject stays the window — the picker only makes sense in place,
+            // beside the title and Reset it drives — and the row itself was requested above, before
+            // `build_window`. Row 2 = "Describe", per `bench::ROWS`.
+            "04-prompt-picker" => None,
             _ => None,
         };
         if subject.is_none() {

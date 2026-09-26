@@ -43,6 +43,8 @@ pub use window::Step;
 pub use window::add_files;
 pub use window::add_sources_button;
 pub use window::bench_language;
+pub use window::session_freq;
+pub use window::set_bench_open_row;
 pub use window::build_window;
 pub use window::copy_into_project;
 pub use window::find_source_widget;

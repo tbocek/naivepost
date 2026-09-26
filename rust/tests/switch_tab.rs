@@ -198,9 +198,19 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
         assert_ne!(inputs, "0", "{}'s Inputs row says something", page.label());
         seen_inputs.push(inputs);
         // §1: Outputs is a count of what the page wrote. A fresh project has written nothing, and
-        // an empty folder is 0 file(s) — never blank, which would read as a broken row.
+        // an empty folder never reads blank — which would look like a broken row. Prepare spells its
+        // label out ("Prepare:" + count, spec/04-prepare.md §1) and says "nothing yet" at zero;
+        // the other three pages count their own folder as "<N> file(s)".
         let outputs = shell.outputs(Some(&tree));
-        assert!(outputs.ends_with("file(s)"), "{}: {outputs}", page.label());
+        if page == Page::Prepare {
+            assert_eq!(
+                outputs,
+                naivepost::prepare::NO_OUTPUTS,
+                "Prepare's empty state is its own words, not a bare zero"
+            );
+        } else {
+            assert!(outputs.ends_with("file(s)"), "{}: {outputs}", page.label());
+        }
         assert_eq!(shell.info_tip(), shell::info_tip(page));
         assert!(
             shell.info_tip().starts_with(page.label()),

@@ -400,11 +400,43 @@ fn label(text: &str) -> gtk::Label {
 
 /// §1's badges **2**-**5**: the bench's heading row and its one text box. Everything the row says —
 /// title, mark, Reset's liveness — is asked of [`bench`]; the widgets only forward.
+thread_local! {
+    /// The row the prompt bench opens on, when a caller says which one. `bench_box` reads this once,
+    /// before its first paint; nothing in the app ever sets it, so the ordinary state is `None` =
+    /// row 0, the User Context. It exists because `--snapshot 04-prompt-picker` has to show the
+    /// picker OPEN on a prompt row (that is what `spec/img/04-prompt-picker.png` pictures) and the
+    /// only other way would be to build a second bench for the snapshot — a copy of the page that
+    /// could drift from the real one.
+    static BENCH_OPEN_ROW: std::cell::RefCell<Option<usize>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Ask the next bench built in this thread to open on `index`. Snapshot-only seam; see
+/// [`BENCH_OPEN_ROW`].
+pub fn set_bench_open_row(index: usize) {
+    BENCH_OPEN_ROW.with(|slot| *slot.borrow_mut() = Some(index));
+}
+
+/// The row `bench_box` should start on: the requested one if it names a real row, else 0. A row
+/// index off the end falls back rather than panicking, because a stale snapshot name must still draw
+/// something rather than kill the run.
+fn bench_open_row(count: usize) -> usize {
+    BENCH_OPEN_ROW.with(|slot| {
+        slot.borrow()
+            .filter(|index| *index < count)
+            .unwrap_or(0)
+    })
+}
+
 fn bench_box(
     session: &Rc<RefCell<Project>>,
     paths: &Option<crate::settings::Paths>,
 ) -> (gtk::Box, gtk::TextView) {
-    let row = Rc::new(RefCell::new(bench::Bench::new()));
+    let mut bench_state = bench::Bench::new();
+    // The snapshot seam above; `select` ignores an index off the end, so this is a no-op unless a
+    // caller asked for a specific row.
+    bench_state.select(bench_open_row(bench::ROWS.len()));
+    let row = Rc::new(RefCell::new(bench_state));
     // Each handler below holds its own handle on the same answer to "where does this machine keep a
     // prompt", which is why it travels as an `Rc` rather than as a borrow of the caller's.
     let paths = Rc::new(paths.clone());
@@ -438,6 +470,10 @@ fn bench_box(
     );
     picker.set_widget_name("bench-picker");
     picker.set_halign(gtk::Align::Start);
+    // The dropdown's own face must agree with the row the bench opened on, or the shot would read
+    // "Describe prompt" beside a picker still showing "User Context". Set before `paint_bench` so
+    // no notify fires against a half-built heading.
+    picker.set_selected(u32::try_from(row.borrow().selected).unwrap_or(0));
 
     // **4** Reset, live only while this machine holds an edit.
     let reset = gtk::Button::with_label("Reset");
@@ -1447,13 +1483,29 @@ fn paint_readouts(
     outputs_label: &gtk::Label,
 ) {
     inputs_label.set_text(&format!("{INPUTS_PREFIX}{}", shell.inputs(tree, project, cut, narration)));
+    // §1 badge **6**: the Inputs row's tooltip is per-file. Prepare has one; every other page's
+    // row clears it rather than keeping a stale per-source list from the tab just left.
+    match shell.inputs_tip(tree, project) {
+        Some(tip) => {
+            inputs_label.set_tooltip_text(Some(&tip));
+            inputs_label.set_sensitive(true);
+        }
+        None => inputs_label.set_tooltip_text(None::<&str>),
+    }
     outputs_label.set_text(&format!("{OUTPUTS_PREFIX}{}", shell.outputs(tree)));
     outputs_folder.set_sensitive(tree.is_some());
     // §1: "Outputs: folder button and count" — the button points at the page's own output folder,
     // which is the directory `Shell::outputs` just counted.
     if let Some(tree) = tree {
+        // Prepare's tooltip goes further than "open this folder": §1 asks that it name the three
+        // subfolders the count covers, so the number says what is inside it.
+        let page_tip = if shell.page == crate::shell::Page::Prepare {
+            format!(" ({})", prepare::OUTPUTS_TIP)
+        } else {
+            String::new()
+        };
         outputs_folder.set_tooltip_text(Some(&format!(
-            "{OUTPUTS_FOLDER_TIP}: {}",
+            "{OUTPUTS_FOLDER_TIP}: {}{page_tip}",
             shell.output_dir(tree).display()
         )));
     }
@@ -4699,6 +4751,26 @@ pub fn bench_language(window: &adw::ApplicationWindow) -> Option<String> {
         .downcast::<gtk::Entry>()
         .ok()?;
     Some(entry.text().to_string())
+}
+
+/// Freq as the live session holds it, read off `Project::interval` rather than off the dropdown's
+/// selected index. A widget test needs the SAME field `prepare::set_freq` writes, otherwise it
+/// would only prove the dropdown remembers its own selection.
+pub fn session_freq(window: &adw::ApplicationWindow) -> f64 {
+    let _ = window;
+    SESSION.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .map(|project| project.borrow().interval)
+            .unwrap_or(naivepost_interval_default())
+    })
+}
+
+/// What a project with no opinion carries, reached through the type rather than retyped here so the
+/// two cannot drift apart.
+fn naivepost_interval_default() -> f64 {
+    crate::project::Project::default().interval
 }
 
 

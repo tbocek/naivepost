@@ -139,7 +139,11 @@ pub fn text(paths: &Paths, project: &Project, row: &Row) -> String {
 /// describe prompt, F1.8 the fixer's, and so on — so until that round lands an empty
 /// box is the shipped text and anything typed in is this machine's edit. Reset before
 /// then returns to empty, which is what it means for a step with no wording yet.
-const SHIPPED: &str = "";
+/// This build's shipped wording, published so a widget test can assert what Reset repaints the
+/// box with without retyping the constant.
+pub const SHIPPED_FOR_TESTS: &str = "";
+
+const SHIPPED: &str = SHIPPED_FOR_TESTS;
 
 /// Store what was typed. §1 asks for every keystroke to be stored: there is no Save
 /// button here, and one would be the only way to lose an edit by closing the window.
