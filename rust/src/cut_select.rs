@@ -6,13 +6,35 @@
 //! to the cut's own borders. The page's marks and the Selection readout follow it live. A sound selection
 //! greys ＋ Add, | Split and － Remove and re-aims ⧉ Copy and Insert at sound.
 //!
-//! No UI lives here and none is wired: `rust/src/ui/window.rs` renders only the Prepare page, so there is
-//! no Cut screen to attach a drag gesture to yet — as with F2.1–F2.5, the rules come first and the widget
-//! layer will only report pixels and forward what these return. The geometry constants of the tracks
-//! themselves live in [`crate::cut_screen`]; this module holds only the numbers F2.6 reads and no other
-//! module owns: the drag slop, the grip, the snap reach and the two length floors.
+//! The Cut page wires this: `rust/src/ui/window.rs` draws `select-surface` (the drag area),
+//! `clear-selection` (S2's cross) and `selection-readout` (S3), and forwards every one of them through
+//! `ui::draw_selection`, `ui::clear_selection`, `ui::nudge_selection` and `ui::selection_verbs` — the
+//! page reports state and forwards actions, it decides none of them. What has NOT arrived is the ground
+//! itself: the real picture rows, wave strips, lanes and ruler come with F2.8/F2.10/F2.11, so today's
+//! surface is scoped `Surface::Ruler` rather than inventing tracks, and the ＋ Add / | Split / － Remove /
+//! ⧉ Copy / Insert buttons whose greying S4 describes are F2.7's round. The geometry constants of the
+//! tracks themselves live in [`crate::cut_screen`]; this module holds only the numbers F2.6 reads and no
+//! other module owns: the drag slop, the grip, the snap reach and the two length floors.
 
 use crate::cut::{Cut, Lane};
+
+/// F2.6 S1: the tooltip on the drag area, naming what a press there does before a person tries it.
+pub const SURFACE_TIP: &str =
+    "drag across the tracks to select \u{2014} the band selects what it was drawn on";
+
+/// F2.6 S2: the cross's label. A bare ✕ says nothing about what pressing it costs; this says clear.
+pub const CLEAR_LABEL: &str = "\u{2715} Clear selection";
+
+/// F2.6 S2: the cross's tooltip, spelling out that only the selection goes, never the cut.
+pub const CLEAR_TIP: &str =
+    "clear the selection \u{2014} nothing is removed, the cut keeps every clip";
+
+/// F2.6 S3: what the Selection readout shows with no band -- the same unclicked face the clock uses
+/// (§D's `--:--.-`), so an empty field never reads as zero-length rather than absent.
+pub const READOUT_NONE: &str = "Selection: --:--.- \u{2013} --:--.-";
+
+/// F2.6 S3: the readout's prefix. Kept once here so the label and any later copy agree on the word.
+pub const READOUT_PREFIX: &str = "Selection:";
 
 // --- S1: what a drag was drawn on ---------------------------------------------------------------------
 

@@ -16,6 +16,7 @@ use crate::cut::{self, Cut};
 use crate::cut_hear;
 use crate::cut_play;
 use crate::cut_review;
+use crate::cut_select;
 use crate::cut_line;
 use crate::cut_screen;
 use crate::hand_edit;
@@ -143,14 +144,16 @@ fn page_box(
         // transport controls; that full toolbar is a later round's page, so these are the line-step
         // half of it, sitting on after ▶✂✂ until the real bar arrives. Shift is five frames, plain is
         // one — `cut_line::step_frames` owns that, and FRAME_TIP already says so.
-        let mut previous = review_.clone();
+        // Widened to `gtk::Widget` rather than staying a Button: F2.6 appends a DrawingArea, a
+        // Button and a Label after the step buttons, and `insert_child_after` only needs a Widget.
+        let mut previous: gtk::Widget = review_.clone().upcast();
         for (name, label, _shift) in LINE_STEP_BUTTONS {
             let step = gtk::Button::with_label(label);
             step.set_widget_name(name);
             step.set_tooltip_text(Some(cut_screen::FRAME_TIP));
             step.set_halign(gtk::Align::Start);
             box_.insert_child_after(&step, Some(&previous));
-            previous = step;
+            previous = step.upcast();
         }
 
         // F2.5 S6: the preview volume. One control for one number — `cut_hear::PreviewVolume` is the
@@ -180,6 +183,42 @@ fn page_box(
         box_.insert_child_after(&volume_row, Some(&previous));
         // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
         // widget that is not yet inside the realized tree never fires (see the F2.1 note there).
+
+        // F2.6 S1: the drag surface. A left-drag on any track area no control claims draws a band
+        // scoped to what it was drawn on. The real picture rows, wave strips, lanes and ruler are later
+        // items (F2.8/F2.10/F2.11), so this placeholder carries NO invented tracks: it is scoped
+        // `Surface::Ruler`, which S1 lists as ground belonging to no row and which selects the whole
+        // timeline's footage (`cut_select::ANY_ROW`). When the tracks arrive each one passes its own
+        // surface to the same seam; nothing downstream changes.
+        let surface = gtk::DrawingArea::new();
+        surface.set_widget_name("select-surface");
+        // Width must be asked for explicitly: a `DrawingArea` has no natural size and with
+        // `halign(Start)` inside this top-packed column it collapses to 0 px -- mapped but with nothing
+        // to drag on. 240 px is a reach a hand can actually drag across; the real track widths are
+        // later items' business.
+        surface.set_size_request(240, 48);
+        surface.set_halign(gtk::Align::Start);
+        surface.set_tooltip_text(Some(cut_select::SURFACE_TIP));
+        box_.insert_child_after(&surface, Some(&previous));
+        previous = surface.upcast();
+
+        // F2.6 S2: the cross that clears the band, and S3: the readout that follows it. Both start
+        // insensitive/empty because a fresh window has no selection -- the sensitivity is the visible
+        // proof the state is live rather than a button that lies about having something to clear.
+        let clear_ = gtk::Button::with_label(cut_select::CLEAR_LABEL);
+        clear_.set_widget_name("clear-selection");
+        clear_.set_tooltip_text(Some(cut_select::CLEAR_TIP));
+        clear_.set_sensitive(false);
+        clear_.set_halign(gtk::Align::Start);
+        box_.insert_child_after(&clear_, Some(&previous));
+        previous = clear_.upcast();
+
+        let readout = gtk::Label::new(Some(cut_select::READOUT_NONE));
+        readout.set_widget_name("selection-readout");
+        readout.set_xalign(0.0);
+        readout.add_css_class("dim-label");
+        box_.insert_child_after(&readout, Some(&previous));
+        let _ = previous;
     }
 
     view.set_content(Some(&box_));
@@ -969,6 +1008,26 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         });
         if let Some(scale) = preview_volume_scale(&window) {
             wire_preview_volume(&scale, &window);
+        }
+    }
+    // F2.6: the drag surface and the cross are wired here for the same reason ▶ is — a handler on a
+    // widget outside the realized tree never fires. The gesture's own press-to-drag slop is GTK's;
+    // `cut_select::is_drag` is what the page would consult for its own slop rule, and the seam below
+    // takes the drag's seconds directly so both paths meet in `draw_selection`.
+    if select_surface(&window).is_some() {
+        SELECTED.with(|slots| {
+            slots
+                .borrow_mut()
+                .push(Rc::new(std::cell::RefCell::new(None::<cut_select::Selection>)))
+        });
+        SELECT_SURFACES.with(|slots| {
+            slots
+                .borrow_mut()
+                .push(Rc::new(std::cell::RefCell::new(None::<cut_select::Surface>)))
+        });
+        wire_select_surface(&window);
+        if let Some(cross) = clear_selection_button(&window) {
+            wire_clear_selection(&cross, &window);
         }
     }
     // F2.2: ▶✂ is wired to the same player slot ▶ moves, because they are two views of one preview —
@@ -1867,6 +1926,190 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// This window's selection band (F2.6), newest-slot rule as everywhere else here. `None` is no band:
+/// the page then reads the empty marks and every verb that needs a selection is off.
+thread_local! {
+    static SELECTED: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Option<cut_select::Selection>>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The surface the current band was drawn on, kept beside [`SELECTED`] so a resize or a move stays on
+/// the ground it started from. S1 scopes a band by what it was drawn on, and a later drag on a lane
+/// must not silently turn a footage selection into a sound one (or the reverse) mid-adjust.
+thread_local! {
+    static SELECT_SURFACES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Option<cut_select::Surface>>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// F2.6 S1: a left-drag from `from` to `to` on `surface` selected what it was drawn on. The rule is
+/// [`cut_select::draw`]'s alone — including its refusal for the effects lane, which answers `None` and
+/// leaves this window with no band rather than a half-made one. Returns the same answer it stored.
+pub fn draw_selection(
+    window: &adw::ApplicationWindow,
+    surface: cut_select::Surface,
+    recording: Option<&str>,
+    from: f64,
+    to: f64,
+) -> Option<cut_select::Selection> {
+    let band = cut_select::draw(surface, recording, from, to);
+    SELECTED.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            *slot.borrow_mut() = band.clone();
+        }
+    });
+    SELECT_SURFACES.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            *slot.borrow_mut() = Some(surface);
+        }
+    });
+    refresh_selection_readout(window);
+    band
+}
+
+/// F2.6: this window's band, or `None`. Read by the readout, the verbs and every later flow that acts
+/// on a selection — all of them through this one value, so none can hold a stale copy.
+pub fn selection(window: &adw::ApplicationWindow) -> Option<cut_select::Selection> {
+    let _ = window;
+    SELECTED.with(|slots| slots.borrow().last().and_then(|s| s.borrow().clone()))
+}
+
+/// The surface the current band came from, defaulting to the ruler when nothing has been drawn yet.
+pub fn selection_surface(window: &adw::ApplicationWindow) -> cut_select::Surface {
+    let _ = window;
+    SELECT_SURFACES
+        .with(|slots| slots.borrow().last().and_then(|s| *s.borrow()))
+        .unwrap_or(cut_select::Surface::Ruler)
+}
+
+/// F2.6 S2: the cross. Routes through [`cut_select::clear`] and returns whether there was anything to
+/// clear, which is also what turns the button insensitive again — a press on nothing reports nothing.
+pub fn clear_selection(window: &adw::ApplicationWindow) -> bool {
+    let had = selection(window).is_some();
+    SELECTED.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            *slot.borrow_mut() = cut_select::clear(selection(window));
+        }
+    });
+    refresh_selection_readout(window);
+    had
+}
+
+/// F2.6 S2: drag one part of the band to `to` (session seconds) at `pps` pixels-per-second. The snap
+/// marks are rebuilt each call from this window's cut, its lanes and the playhead, because the borders a
+/// handle may snap to change as the cut changes — a cached list would go stale against an edit.
+///
+/// `Part::Outside` moves nothing: a press clear of the band starts a new selection instead, which is
+/// S1's job, not a nudge.
+pub fn nudge_selection(window: &adw::ApplicationWindow, part: cut_select::Part, to: f64, pps: f64) {
+    let Some(band) = selection(window) else { return };
+    let (cut_, lanes) = selection_snap_inputs(window);
+    let marks = cut_select::snap_marks(&cut_, &lanes, preview_playhead(window));
+    let moved = match part {
+        cut_select::Part::Start => cut_select::resize(&band, false, to, &marks, pps),
+        cut_select::Part::End => cut_select::resize(&band, true, to, &marks, pps),
+        cut_select::Part::Middle => cut_select::move_band(&band, to, &marks, pps),
+        cut_select::Part::Outside => return,
+    };
+    SELECTED.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            *slot.borrow_mut() = Some(moved);
+        }
+    });
+    refresh_selection_readout(window);
+}
+
+/// F2.6 S4: the verbs' state for the band there is now — Add/Split/Remove greyed for a sound selection,
+/// Copy and Insert re-aimed at it. NOTE: the ＋ Add / | Split / － Remove / ⧉ Copy / Insert BUTTONS are
+/// F2.7's round and are deliberately not created here; this seam exists so their round, and any test,
+/// reads the same `Verbs` the logic tests assert on.
+pub fn selection_verbs(window: &adw::ApplicationWindow) -> cut_select::Verbs {
+    let (cut_, _) = selection_snap_inputs(window);
+    // "is there a recording to cut": a cut with no segment has nothing to split, which is the only
+    // thing S4 asks of the page beyond the band itself.
+    let has_footage = !cut_.segs.is_empty();
+    cut_select::verbs(selection(window).as_ref(), has_footage)
+}
+
+/// What this window can offer the snap-mark builder. The cut model round owns where a real `Cut` comes
+/// from; until then the page's own review-cut slot stands in, so `nudge_selection` snaps against real
+/// borders whenever one has been seeded and against nothing otherwise.
+fn selection_snap_inputs(window: &adw::ApplicationWindow) -> (cut::Cut, Vec<cut::Lane>) {
+    let cut_ = REVIEW_CUTS.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .map(|slot| slot.borrow().clone())
+            .unwrap_or_default()
+    });
+    let lanes = cut_.lanes.clone();
+    (cut_, lanes)
+}
+
+/// F2.6 S3: write the band into the readout and set the cross's sensitivity. The readout IS the band's
+/// own marks (`cut_select::marks`), not a second copy, so the two cannot disagree with the handle being
+/// dragged. The tent-of-a-second form comes from `preview::clock`, the Cut page's one clock face.
+fn refresh_selection_readout(window: &adw::ApplicationWindow) {
+    let band = selection(window);
+    let text = match cut_select::marks(band.as_ref()) {
+        Some((start, end)) => format!(
+            "{} {} \u{2013} {}",
+            cut_select::READOUT_PREFIX,
+            preview::clock(Some(start)),
+            preview::clock(Some(end))
+        ),
+        None => cut_select::READOUT_NONE.to_string(),
+    };
+    if let Some(label) = find_widget_by_name(window.upcast_ref(), "selection-readout") {
+        if let Ok(label) = label.downcast::<gtk::Label>() {
+            label.set_text(&text);
+        }
+    }
+    if let Some(button) = find_widget_by_name(window.upcast_ref(), "clear-selection") {
+        if let Ok(button) = button.downcast::<gtk::Button>() {
+            button.set_sensitive(band.is_some());
+        }
+    }
+}
+
+/// The playhead the snap marks are built around (F2.6 S2 lists the line among the snap targets).
+fn preview_playhead(window: &adw::ApplicationWindow) -> f64 {
+    live_player(window)
+        .map(|player| player.borrow().playhead.unwrap_or(0.0))
+        .unwrap_or(0.0)
+}
+
+/// This window's drag gesture, so a test can fire it the way GTK does. `None` on a page that drew none.
+pub fn selection_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
+    let _ = window;
+    SELECT_GESTURES.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static SELECT_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// This window's ✕ Clear selection button (F2.6 S2), looked up by its stable name.
+pub fn clear_selection_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "clear-selection")?
+        .downcast()
+        .ok()
+}
+
+/// This window's Selection readout label (F2.6 S3).
+pub fn selection_readout(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
+    find_widget_by_name(window.upcast_ref(), "selection-readout")?
+        .downcast()
+        .ok()
+}
+
+/// This window's drag surface (F2.6 S1).
+pub fn select_surface(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
+    find_widget_by_name(window.upcast_ref(), "select-surface")?
+        .downcast()
+        .ok()
+}
+
 /// F2.5 S6: set this window's one preview volume from a slider's percent (0..100) and push the result
 /// into the live player, so every preview of this window shares the one number. Returns the gain written
 /// (`0..=1`), which is what the caller would read back — the clamp lives in [`cut_hear::clamp_volume`],
@@ -2274,6 +2517,36 @@ fn wire_preview_volume(scale: &gtk::Scale, window: &adw::ApplicationWindow) {
     let window = window.clone();
     scale.connect_value_changed(move |slider| {
         set_preview_volume(&window, slider.value());
+    });
+}
+
+/// The placeholder surface's pixels-per-second (F2.6). Named here rather than inlined so the widget
+/// test converts its drag with the SAME number the handler uses -- two copies of 4.0 in two files are
+/// how a drag assertion starts disagreeing with the code it tests.
+pub const SELECT_SURFACE_PPS: f64 = cut_screen::ZOOM_AT_OPEN;
+
+/// Attach the drag gesture to this window's `select-surface` and remember it. The handler forwards the
+/// drag's end x (converted to seconds at the page's pixels-per-second) to [`draw_selection`] and
+/// decides nothing about scope — that is `cut_select::draw`'s call from the surface up.
+fn wire_select_surface(window: &adw::ApplicationWindow) {
+    let Some(area) = select_surface(window) else { return };
+    let gesture = gtk::GestureDrag::new();
+    let win = window.clone();
+    gesture.connect_drag_update(move |_g, x, _y| {
+        // Pixels to seconds at the page's current zoom; until the tracks exist the placeholder runs at
+        // the open-at zoom so a drag still lands on real session seconds.
+        draw_selection(&win, cut_select::Surface::Ruler, None, 0.0, x / SELECT_SURFACE_PPS);
+    });
+    area.add_controller(gesture.clone());
+    SELECT_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
+}
+
+/// Wire the ✕ to [`clear_selection`] and nothing else: the rule for what clearing means (and that it
+/// clears only the selection, never the cut) lives in `cut_select::clear`.
+fn wire_clear_selection(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        clear_selection(&window);
     });
 }
 
