@@ -41,6 +41,16 @@ const OLD_MARK_ROW: &str = "1.0\t2.0\t0.0\t2.0\tthe old mark\n";
 
 static RAN_REMAKE: AtomicBool = AtomicBool::new(false);
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
+static RAN_MARKED: AtomicBool = AtomicBool::new(false);
+
+/// The edited file with its join markers LEFT IN and one word nobody ever spoke. Written straight over
+/// `final.txt` after `seed`, because `seed` builds plain text from a word list and the whole point here
+/// is that a real editor hands back markers and typos together.
+///
+/// Read against the ten spoken words this leaves: 6 survivors (`so we take and cut there`), one of
+/// them (`typo`) never said, so 4 went -- still under P.machine.retakeCeil (0.4), so it must be
+/// marked rather than refused. Three stretches: `the clip` (what `|cut 3|` names), `it`, and `twice`.
+const MARKED_WITH_TYPO: &str = "so we take |cut 3| and cut typo there\n";
 
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -54,6 +64,8 @@ fn window_round() {
             RAN_REMAKE.store(true, Ordering::SeqCst);
             check_refusal_reaches_the_status_line(app);
             RAN_REFUSED.store(true, Ordering::SeqCst);
+            check_marked_text_and_never_said_word_through_the_widgets(app);
+            RAN_MARKED.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -279,9 +291,76 @@ fn check_refusal_reaches_the_status_line(app: &adw::Application) {
     window.close();
 }
 
+/// CHECK 3: a hand edit that KEEPS its join markers and adds a word nobody spoke still goes through the
+/// real ▶ -- the markers are not read as words, the typo is dropped with a warning, and neither tips
+/// the edit over `P.machine.retakeCeil` (0.4) into a refusal.
+fn check_marked_text_and_never_said_word_through_the_widgets(app: &adw::Application) {
+    // Same fixture as CHECK 1; only final.txt differs, replaced with the marker-and-typo spelling.
+    let (_root, tree, _) = seed("marked", &["so", "we", "take", "and", "cut", "there", "twice"]);
+    fs::write(tree.final_txt(), MARKED_WITH_TYPO).unwrap();
+    stamp(&tree.final_txt(), Duration::from_secs(0));
+    stamp(&tree.retakes_tsv(), Duration::from_secs(60));
+    std::env::set_current_dir(&_root).unwrap();
+
+    let model = naivepost::project::load(&tree.dir()).expect("the saved project loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    go_to_cut(&window);
+
+    let before = ui::window_logs();
+    ui::play_button(&window)
+        .expect("the run bar has a ▶")
+        .emit_clicked();
+
+    let lines = added_since(&before);
+    assert!(
+        lines.iter().any(|line| line == hand_edit::EDITED_NOTE),
+        "the press logged the remake: {lines:?}"
+    );
+    assert!(
+        lines.iter().any(|line| line.contains("were never said")),
+        "the invented word was reported, not swallowed: {lines:?}"
+    );
+    assert!(
+        !lines.iter().any(|line| line.contains("refused")),
+        "markers plus one typo stay under P.machine.retakeCeil (0.4), so nothing refuses: {lines:?}"
+    );
+
+    // The marks written by the click are what before_cut yields for the same bytes on disk.
+    let expected = hand_edit::before_cut(&tree, &[STORED.to_string()]);
+    let expected = match expected {
+        Some(outcome) => outcome,
+        // Already remade by the click above, so ask the pure function instead over the same text.
+        None => {
+            let words: Vec<String> = WORDS.iter().map(|w| (*w).to_string()).collect();
+            let times: Vec<(f64, f64)> =
+                (0..WORDS.len()).map(|n| (n as f64, n as f64 + 0.9)).collect();
+            hand_edit::remake(MARKED_WITH_TYPO, &words, &times, |_| None)
+        }
+    };
+    assert_eq!(expected.extra, 1, "one word nobody spoke");
+    assert_eq!(expected.dropped, 4, "`the clip` under the marker, plus `it` and `twice`");
+    let on_disk = textfmt::read_retakes(&tree.retakes_tsv()).unwrap();
+    assert_eq!(
+        on_disk.len(),
+        expected.marks.len(),
+        "the click wrote as many marks as the rule decides"
+    );
+    for (got, want) in on_disk.iter().zip(expected.marks.iter()) {
+        assert_eq!((got.s, got.e, got.to), (want.s, want.e, want.to));
+        assert!(!got.text.contains('|'), "no marker leaked into a mark: {got:?}");
+        assert!(!got.text.contains("typo"), "{got:?}");
+    }
+    window.close();
+}
+
 #[test]
 fn f1_12_s2_the_next_cut_press_remakes_the_marks_through_the_widgets() {
     window_round();
     assert!(RAN_REMAKE.load(Ordering::SeqCst), "the remake check never ran");
     assert!(RAN_REFUSED.load(Ordering::SeqCst), "the refusal check never ran");
+    assert!(
+        RAN_MARKED.load(Ordering::SeqCst),
+        "the marked-text / never-said-word check never ran"
+    );
 }

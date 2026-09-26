@@ -100,6 +100,75 @@ fn f1_12_s1_the_file_round_trips_through_the_writer() {
     assert_eq!(joins.len(), 6);
 }
 
+// --- S1: the next Cut ▶ reads that same file, markers and all -------------------------------------
+
+/// The edited file with its join marks LEFT IN — the spelling `f1_12_s1_the_edited_file_is_read_back_as_words_and_joins`
+/// writes. Kept as a constant so all three tests here read the very same bytes a text editor would hand back.
+const MARKED: &str = "so we take |cut 3| and cut |cut|whole take| there twice\n";
+
+#[test]
+fn f1_12_s1_join_marks_left_in_the_text_are_not_read_as_words() {
+    // Derivation of the expected count. `read_final` strips every marker and contributes NO word for
+    // it (proven at line 79: `joins == [3, 0]`), so the words this text leaves are
+    //   so, we, take, and, cut, there, twice  = 7 of the 10 spoken.
+    // What goes is therefore 3 -- exactly what `|cut 3|` names; the whole-take field carries no number
+    // of its own and adds nothing to the count. P.machine.retakeCeil = 0.4 keeps 3/10 an edit.
+    let marked = edit::remake(MARKED, &words(&WORDS), &times(10), |_| None);
+    assert_eq!(marked.dropped, 3, "the three the |cut 3| marker stands for");
+    assert_eq!(marked.extra, 0, "a marker is a mark, never a never-said word");
+    assert!(!marked.refused, "3 of 10 is under the ceiling");
+    assert!(
+        marked.marks.iter().all(|mark| !mark.text.contains('|')),
+        "no marker survives into a mark's text: {:?}",
+        marked.marks
+    );
+}
+
+#[test]
+fn f1_12_s1_join_marks_removed_leaves_the_same_marks_as_keeping_them() {
+    // The spec's clause "join marks may stay or go": whether the user left them in cannot change what
+    // the cut reads, because the markers name the deletion rather than add to it.
+    let marked = edit::remake(MARKED, &words(&WORDS), &times(10), |_| None);
+    let plain = edit::remake(
+        &text(&["so", "we", "take", "and", "cut", "there", "twice"]),
+        &words(&WORDS),
+        &times(10),
+        |_| None,
+    );
+    assert_eq!(marked.dropped, plain.dropped);
+    assert_eq!(marked.extra, plain.extra);
+    assert_eq!(marked.marks.len(), plain.marks.len(), "same number of stretches");
+    for (kept, gone) in marked.marks.iter().zip(plain.marks.iter()) {
+        assert_eq!((kept.s, kept.e, kept.to), (gone.s, gone.e, gone.to));
+    }
+}
+
+#[test]
+fn f1_12_s1_before_cut_reads_a_marked_final_txt() {
+    let tree = tree("disk-marked");
+    transcript(tree.dir());
+    write_words(&tree, &WORDS);
+    seed_marks(&tree);
+    write_final(&tree, MARKED);
+    set_stamp(&tree.retakes_tsv(), 60);
+    set_stamp(&tree.final_txt(), 0);
+    let written = std::fs::read(tree.final_txt()).unwrap();
+
+    let outcome = edit::before_cut(&tree, &[SRC.to_string()]).expect("the edited text is newer");
+    assert_eq!(outcome.logs[0], edit::EDITED_NOTE);
+    assert_eq!(outcome.dropped, 3, "the markers were read as the deletion they name");
+
+    let on_disk = textfmt::read_retakes(&tree.retakes_tsv()).unwrap();
+    assert_eq!(on_disk.len(), outcome.marks.len(), "what was written is what was decided");
+    for (row, mark) in on_disk.iter().zip(outcome.marks.iter()) {
+        assert_eq!((row.s, row.e, row.to), (mark.s, mark.e, mark.to));
+        assert!(!row.text.contains('|'), "{row:?}");
+    }
+    // The remake writes `retakes.tsv` only: the user's edited file is left byte-for-byte alone,
+    // markers still in it, so re-opening it in an editor shows what they typed.
+    assert_eq!(std::fs::read(tree.final_txt()).unwrap(), written);
+}
+
 // --- S2: the next Cut ▶ notices, and remakes the marks from the text ------------------------------
 
 fn stamp(seconds_ago: u64) -> SystemTime {
@@ -455,6 +524,104 @@ fn f1_12_s2_before_cut_says_the_marks_stand_when_nothing_was_edited() {
     assert_eq!(std::fs::read_to_string(tree.retakes_tsv()).unwrap(), before);
 }
 
+#[test]
+fn f1_12_s2_no_model_is_asked_and_nothing_is_exchanged() {
+    let tree = tree("no-model");
+    transcript(tree.dir());
+    // P.machine.retakeCeil = 0.4: two of ten removed, so this is an edit that gets marked rather
+    // than refused -- and the marking happens without a single request leaving the machine.
+    write_words(&tree, &WORDS);
+    seed_marks(&tree);
+    write_final(&tree, &text(&["so", "we", "take", "the", "clip", "and", "there", "twice"]));
+    set_stamp(&tree.retakes_tsv(), 60);
+    set_stamp(&tree.final_txt(), 0);
+
+    // The two artefacts a model would leave behind, snapshotted BEFORE the remake: `llm/` holds the
+    // exchange pages (layout::llm_dir -> exchanges::LLM_DIR) and requests.tsv logs every call made
+    // outside. Neither may move.
+    fn listing(path: &std::path::Path) -> Vec<String> {
+        match std::fs::read_dir(path) {
+            Ok(entries) => {
+                let mut names: Vec<String> = entries
+                    .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                    .collect();
+                names.sort();
+                names
+            }
+            // Absent is its own state, kept distinct from "present but empty" so a directory created
+            // by the remake would show up as a change.
+            Err(_) => vec!["<absent>".to_string()],
+        }
+    }
+    let llm_before = listing(&tree.llm_dir());
+    let requests_before = listing(&tree.requests_tsv());
+
+    let outcome = edit::before_cut(&tree, &[SRC.to_string()]).expect("the text is newer");
+    assert_eq!(outcome.dropped, 2, "the edit was recognised");
+    assert_eq!(
+        outcome.logs[0],
+        edit::EDITED_NOTE,
+        "the line printed is the one that says no model was asked"
+    );
+    assert!(
+        listing(&tree.llm_dir()) == llm_before,
+        "no exchange page was written: {:?} -> {:?}",
+        llm_before,
+        listing(&tree.llm_dir())
+    );
+    assert!(
+        listing(&tree.requests_tsv()) == requests_before,
+        "nothing was logged as sent outside: {:?} -> {:?}",
+        requests_before,
+        listing(&tree.requests_tsv())
+    );
+    // And it did do its job locally: the marks are on disk.
+    assert_eq!(textfmt::read_retakes(&tree.retakes_tsv()).unwrap().len(), 1);
+}
+
+#[test]
+fn f1_12_s2_a_never_said_word_survives_the_disk_path() {
+    let tree = tree("disk-typo");
+    transcript(tree.dir());
+    write_words(&tree, &WORDS);
+    seed_marks(&tree);
+    // One invented word among the survivors. Through before_cut, not remake: the NS -- yes branch has
+    // only ever been proven against the pure function, never through the door the ▶ uses.
+    write_final(
+        &tree,
+        &text(&["so", "we", "take", "the", "clip", "and", "typo", "there", "twice"]),
+    );
+    set_stamp(&tree.retakes_tsv(), 60);
+    set_stamp(&tree.final_txt(), 0);
+
+    let outcome = edit::before_cut(&tree, &[SRC.to_string()]).expect("the edited text is newer");
+    assert_eq!(outcome.extra, 1, "one word nobody spoke");
+    // P.machine.retakeCeil = 0.4: with the typo left out, one of ten went, nowhere near the ceiling.
+    assert!(
+        !outcome.refused,
+        "an invented word is dropped, not a reason to refuse: {:?}",
+        outcome.logs
+    );
+    assert!(
+        outcome.logs.iter().any(|line| line.contains("were never said")),
+        "the warning reached the log: {:?}",
+        outcome.logs
+    );
+    assert!(
+        !outcome.logs.iter().any(|line| line.contains("refused")),
+        "no refusal line: {:?}",
+        outcome.logs
+    );
+    // The remaining deletion was still marked, and the typo is in no mark's text.
+    let on_disk = textfmt::read_retakes(&tree.retakes_tsv()).unwrap();
+    assert_eq!(on_disk.len(), 1, "the real deletion is still marked");
+    assert!(
+        on_disk.iter().all(|row| !row.text.contains("typo")),
+        "{on_disk:?}"
+    );
+    assert_eq!(outcome.dropped, 2, "'it' and 'cut' went -- the typo is extra, not a substitute");
+}
+
 // --- F1.11 through this door: does the Cut ▶ actually consult `cache/waves`? ---------------------
 
 /// The source file the project names, written for real so `stat_recording` has something to stat.
@@ -551,3 +718,4 @@ fn f1_11_s6_before_cut_without_a_cache_still_places_on_the_word_times() {
         outcome.logs
     );
 }
+
