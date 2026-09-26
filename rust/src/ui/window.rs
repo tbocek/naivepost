@@ -552,6 +552,14 @@ fn bench_box(
         mark_for_text.set_visible(bench::shows_mark(&current, edited));
         reset_for_text.set_visible(bench::shows_reset(&current, edited));
         reset_for_text.set_sensitive(bench::shows_reset(&current, edited));
+        // F0.7's first door: editing the User Context re-derives the policy — but debounced, so a
+        // paragraph typed costs one request rather than one per keystroke. Only the context row
+        // triggers it; every other bench row is prompt wording, which no policy depends on.
+        if bench::is_context(&current) {
+            if let Some(window) = POLICY_WATCH_WINDOW.with(|w| w.borrow().clone()) {
+                schedule_policy_derive(&window);
+            }
+        }
     });
 
     // The heading and the box are returned together; `page_box` stacks them in §1's order. The
@@ -857,6 +865,12 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // edits it too.
     let held_narration = Rc::new(RefCell::new(session_reads().2));
     HELD_NARRATION.with(|held| held.borrow_mut().push(Rc::clone(&held_narration)));
+
+    // F0.7's record of which User Context this window's policy answers to, pushed beside the other
+    // per-window slots so `derive_policy` reaches the newest one. Fresh: a window has derived nothing
+    // yet, which is exactly what makes the first ▶ ask.
+    POLICY_TRACKERS.with(|trackers| trackers.borrow_mut().push(Rc::new(RefCell::new(policy::Tracker::new()))));
+    POLICY_WATCH_WINDOW.with(|watch| *watch.borrow_mut() = Some(window.clone()));
 
     // The window is handed an immutable `&Project` and holds no live project yet, so the flows that
     // change the session — Rescan (F0.11) and Add sources (F0.12) — work on one private copy shared
@@ -1546,6 +1560,20 @@ fn wire_play(
         // empty queue, model log closed, log expander open. A pause or a transport toggle is not a
         // new run, so only `Started` goes through `start_run`.
         if matches!(pressed, run::Pressed::Started { .. }) {
+            // F0.7's second door: a context nobody has derived from yet is derived before the step
+            // reads it, so ▶ never runs on a policy that lags what the person just typed. Only when
+            // the tracker says so — an unchanged context costs nothing, and the LLM cache makes a
+            // repeated identical request free besides.
+            let context = user_context(&main_window());
+            if POLICY_TRACKERS
+                .with(|trackers| trackers.borrow().last().cloned())
+                .is_some_and(|tracker| tracker.borrow().needs_derive(&context))
+            {
+                let derived = derive_policy(&main_window());
+                if !derived.used_defaults {
+                    log_line(&format!("policy: {}", derived.status()));
+                }
+            }
             // F1.12 S2: the Cut step first asks whether `final.txt` was hand-edited since the marks
             // were written. The rule is entirely in `hand_edit::before_cut`; this handler only runs
             // it for the page that owns the marks and forwards what it says. Spec silent on a lucky
@@ -1918,11 +1946,21 @@ fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindow) {
 /// A form already open is raised rather than duplicated: pressing ⚙ twice should not put two copies of
 /// one screen on the desk.
 pub fn press_policy(window: &adw::ApplicationWindow) {
+    // F0.7's door into the form also closes the staleness gap: if this window has never derived from
+    // its User Context, derive now so the first thing the form paints is what the model said rather
+    // than a default nobody chose. The tracker makes this free on every later open.
+    let context = user_context(window);
+    if POLICY_TRACKERS
+        .with(|trackers| trackers.borrow().last().cloned())
+        .is_some_and(|tracker| tracker.borrow().needs_derive(&context))
+    {
+        derive_policy(window);
+    }
     if let Some(existing) = POLICY_FORMS.with(|forms| forms.borrow().last().cloned()) {
         // Rebuild the rows in place rather than only raising the old window: the policy may have changed
         // since this form was opened, and a form that shows last-opened values is exactly the staleness
         // S5 exists to avoid.
-        refresh_form(&existing);
+        refresh_policy_form(&existing);
         existing.present();
         return;
     }
@@ -1953,7 +1991,9 @@ pub fn open_policy_form() -> Option<adw::Window> {
 ///
 /// The row widgets are found by their stable names rather than kept in a struct, so a rebuild needs no
 /// bookkeeping and cannot hold a stale handle — the same reason the buttons are looked up per press.
-fn refresh_form(form: &adw::Window) {
+/// the form is showing. Public so `policy_form`'s Re-derive button repaints through exactly the same
+/// path a policy change already uses.
+pub fn refresh_policy_form(form: &adw::Window) {
     let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
         return;
     };
@@ -2036,15 +2076,239 @@ fn stamp_origin(policy: &mut crate::project::Policy, field: &str, origin: Origin
     }
 }
 
-/// Close every policy form this window opened, so the next check starts with none showing. Called by the
+/// Reset the live session's policy to the §2 defaults and repaint every open form.
+///
+/// The form asks for this; it does not decide anything. `policy::reset_to_defaults` owns the rule,
+/// this only reaches the newest session (the one Save writes) and refreshes what is showing, so a
+/// reset cannot leave a stale clone behind that overwrites the reset on the next save.
+pub fn reset_policy_to_defaults() {
+    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+        return;
+    };
+    policy::reset_to_defaults(&mut session.borrow_mut().policy);
+    POLICY_FORMS.with(|forms| {
+        for form in forms.borrow().iter() {
+            refresh_policy_form(form);
+        }
+    });
+}
+
+/// Drop one form from the open-forms slot, so `policy_form_open` stops reporting a window that is on
+/// its way out. Called from the form's own close path: the thread-local would otherwise keep a closed
+/// window alive and make `press_policy` raise something invisible.
+pub fn forget_policy_form(form: &adw::Window) {
+    // The index is found with the list only briefly borrowed, and removal goes through a queued idle
+    // rather than happening inside the close signal: `close()` runs the delete path synchronously and
+    // anything that reads this slot from there (a repaint, a re-entrant press) would meet a borrow held
+    // across the signal and panic "RefCell already borrowed".
+    let index = POLICY_FORMS.with(|forms| {
+        forms
+            .borrow()
+            .iter()
+            .position(|open| std::ptr::eq(open.as_ptr(), form.as_ptr()))
+    });
+    let Some(index) = index else { return };
+    glib::idle_add_local(move || {
+        POLICY_FORMS.with(|forms| {
+            let mut forms = forms.borrow_mut();
+            if index < forms.len() {
+                forms.remove(index);
+            }
+        });
+        glib::ControlFlow::Break
+    });
+}
+
+thread_local! {
+    /// Who answers a derivation's request, newest last — the same newest-slot rule as
+    /// [`WINDOW_SHELLS`]. Injected rather than hard-wired to the HTTP layer so the whole of F0.7 S2-S4
+    /// is testable with no server: a check installs a stub here and drives the real ⚙.
+    static POLICY_SENDERS: std::cell::RefCell<
+        Vec<Rc<std::cell::RefCell<dyn FnMut(&policy::DerivationRequest, &[String]) -> Vec<policy::Proposal>>>>,
+    > = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    /// Per-window record of which User Context the policy was derived from (F0.7). Newest last.
+    static POLICY_TRACKERS: std::cell::RefCell<Vec<Rc<RefCell<policy::Tracker>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    /// The pending debounced derivation, so a burst of keystrokes replaces one timer instead of
+    /// queueing one per letter. `policy::DEBOUNCE_MS` is the wait; without this slot every keystroke
+    /// would fire its own request and the last few would race.
+    static POLICY_DEBOUNCE: std::cell::RefCell<Vec<glib::SourceId>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Answer a derivation with nothing but a refusal naming why.
+///
+/// §00's "failure is specific and local": with no model answering, the policy keeps exactly what it
+/// had and the status line says who was not there, rather than pretending a derivation happened or
+/// silently falling back to defaults over a context that asked for something else.
+fn unanswered_model(
+    _req: &policy::DerivationRequest,
+    refusals: &[String],
+) -> Vec<policy::Proposal> {
+    if !refusals.is_empty() {
+        // A second round with nobody listening: say nothing new, so the loop's cap ends it quickly.
+        return Vec::new();
+    }
+    // An unknown field name is refused by `apply`, which is how "nothing was set" reaches the caller
+    // as a sentence rather than as a silent zero.
+    vec![policy::Proposal {
+        field: "llm".to_string(),
+        value: "unreachable".to_string(),
+        because: "the editing-policy derivation could not reach the model".to_string(),
+    }]
+}
+
+/// The newest window this process built. The run-bar handler is wired before the handle is in scope at
+/// the call site, so it reads the window back from [`POLICY_WATCH_WINDOW`] — the same newest-slot rule
+/// every other per-window piece here uses.
+pub fn main_window() -> adw::ApplicationWindow {
+    POLICY_WATCH_WINDOW
+        .with(|watch| watch.borrow().clone())
+        .expect("a policy request happens inside a built window")
+}
+
+thread_local! {
+    /// The window the bench's User Context editor belongs to, newest last. The bench is built before
+    /// the window handle reaches `wire_*`, so its keystroke hook reads the window back from here —
+    /// the same newest-slot rule as [`POLICY_TRACKERS`].
+    static POLICY_WATCH_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Install the answer used by later derivations in this process (a test seam). Newest wins, so a
+/// check can put its own model in front of whatever `build_window` installed.
+pub fn set_policy_sender_for_tests(
+    sender: impl FnMut(&policy::DerivationRequest, &[String]) -> Vec<policy::Proposal> + 'static,
+) {
+    POLICY_SENDERS.with(|senders| {
+        senders
+            .borrow_mut()
+            .push(Rc::new(std::cell::RefCell::new(sender)))
+    });
+}
+
+/// The window's User Context text, read through the session the bench writes.
+fn user_context(window: &adw::ApplicationWindow) -> String {
+    let _ = window;
+    SESSION
+        .with(|slots| slots.borrow().last().cloned())
+        .map(|session| session.borrow().context.clone())
+        .unwrap_or_default()
+}
+
+/// The window's User Context text, as the bench and `derive_policy` read it.
+pub fn set_session_context(window: &adw::ApplicationWindow, text: &str) {
+    let _ = window;
+    if let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) {
+        session.borrow_mut().context = text.to_string();
+    }
+}
+
+/// Whether this window's policy still matches its User Context (F0.7's "changed" question, published
+/// so a widget test asserts the same fact the ▶ path acted on).
+pub fn policy_is_current(window: &adw::ApplicationWindow, context: &str) -> bool {
+    let _ = window;
+    POLICY_TRACKERS
+        .with(|trackers| trackers.borrow().last().cloned())
+        .is_some_and(|tracker| !tracker.borrow().needs_derive(context))
+}
+
+/// Derive this window's editing policy from its User Context now (F0.7 S1-S4), and drop the marks a
+/// changed `markingPass` invalidates.
+///
+/// Thin on purpose: every rule is `policy::derive`'s. This reads the two things the rule needs (the
+/// context, the live policy), sends them through the installed answer, records the result on the
+/// tracker, and lets the caller print `Derived::status()` where it belongs.
+pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
+    let context = user_context(window);
+    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+        return policy::Derived {
+            used_defaults: true,
+            ..policy::Derived::default()
+        };
+    };
+    let before = session.borrow().policy.clone();
+    let mut derived = {
+        let mut policy = session.borrow().policy.clone();
+        let out = match POLICY_SENDERS.with(|senders| senders.borrow().last().cloned()) {
+            Some(sender) => policy::derive(&mut policy, &context, &mut *sender.borrow_mut()),
+            None => policy::derive(&mut policy, &context, &mut unanswered_model),
+        };
+        session.borrow_mut().policy = policy;
+        out
+    };
+    // Record even a defaults-only derivation: an empty context IS an answer, and remembering it is
+    // what stops every ▶ from re-asking about a context nobody intends to fill.
+    if let Some(tracker) = POLICY_TRACKERS.with(|trackers| trackers.borrow().last().cloned()) {
+        tracker.borrow_mut().mark_derived(&context);
+    }
+    // §03: a changed markingPass invalidates the marks, so Prepare re-runs its marking pass instead
+    // of resuming off output made under a different pass.
+    let dropped = policy::invalidated_marks(&before, &session.borrow().policy);
+    if !dropped.is_empty() {
+        let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
+        if let Ok(tree) = layout::Tree::new(&dir) {
+            for name in dropped {
+                let path = if name == "final.txt" {
+                    tree.final_txt()
+                } else {
+                    tree.retakes_tsv()
+                };
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    // Nothing refused and nothing landed but the model was reached: say so, rather than reporting a
+    // derivation of zero fields as if it were news.
+    let _ = &mut derived;
+    derived
+}
+
+/// Queue one debounced derivation (F0.7's "debounce"). Called from the User Context editor on every
+/// keystroke; a pending one is cancelled first, so typing a paragraph costs one request.
+fn schedule_policy_derive(window: &adw::ApplicationWindow) {
+    let held = window.clone();
+    POLICY_DEBOUNCE.with(|pending| {
+        if let Some(id) = pending.borrow_mut().pop() {
+            id.remove();
+        }
+        let id = glib::timeout_add_local(
+            std::time::Duration::from_millis(policy::DEBOUNCE_MS),
+            move || {
+                POLICY_DEBOUNCE.with(|p| p.borrow_mut().clear());
+                let derived = derive_policy(&held);
+                if let Some(status) = find_widget_by_name(held.upcast_ref(), "status-line")
+                    .and_then(|w| w.downcast::<gtk::Label>().ok())
+                {
+                    status.set_text(&derived.status());
+                }
+                POLICY_FORMS.with(|forms| {
+                    for form in forms.borrow().iter() {
+                        refresh_policy_form(form);
+                    }
+                });
+                glib::ControlFlow::Break
+            },
+        );
+        pending.borrow_mut().push(id);
+    });
+}
+
 /// test between rounds: the thread-local outlives a window, and a leftover form would make
 /// `press_policy`'s raise-instead-of-rebuild branch fire when the check wants a fresh build.
 pub fn close_policy_forms() {
-    POLICY_FORMS.with(|forms| {
-        for form in forms.borrow_mut().drain(..) {
-            form.close();
-        }
-    });
+    // Drained BEFORE any `close()` runs: closing now fires the form's own `close-request`, which calls
+    // `forget_policy_form`, and mutating this list while it is mutably borrowed would panic.
+    let open: Vec<adw::Window> = POLICY_FORMS.with(|forms| forms.borrow_mut().drain(..).collect());
+    for form in open {
+        form.close();
+    }
 }
 
 /// F0.7: the run bar's policy gear, wired after the widgets exist. Its sibling in the header is each

@@ -322,3 +322,145 @@ pub fn pass_runs(policy: &Policy, pass: Pass) -> bool {
 pub fn invalidated_by_marking_change(old: MarkingPass, new: MarkingPass) -> bool {
     old != new
 }
+
+/// S1/S5: put every derived field back at its §2 default, with `origin: Default` and no reason.
+///
+/// The origin is `Default`, not `User`, on purpose. A reset restores what the spec says a policy is
+/// when nobody has said anything about it, so it must stay as open to a later derivation as a fresh
+/// project is; stamping `User` would freeze the defaults against S4's never-overwritten rule and make
+/// the ⚙ reset silently dead-end every future User Context change. A value a person actually chose
+/// is what earns `User`, and that arrives through their own edit, not through "put it back".
+pub fn reset_to_defaults(policy: &mut Policy) {
+    *policy = defaults();
+}
+
+/// Whether the policy still matches the context it was derived from.
+///
+/// This makes §03's "runs after the User Context changed" a checkable fact rather than a hope: the
+/// debounce in the UI is only about *when* to ask, this is the truth about whether asking is needed at
+/// all. A never-derived project needs one even with an empty context — S1's defaults are themselves an
+/// answer worth having on record before the first ▶ reads them.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Tracker {
+    derived_from: Option<String>,
+}
+
+impl Tracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Does `context` need a derivation? True when none has happened yet, or the text is not what the
+    /// last derivation read. Compared byte-for-byte on purpose: whitespace changes are edits, and a
+    /// re-derivation over an unchanged context costs nothing because the LLM cache keys on the request.
+    pub fn needs_derive(&self, context: &str) -> bool {
+        self.derived_from.as_deref() != Some(context)
+    }
+
+    /// Record that `context` has been derived from.
+    pub fn mark_derived(&mut self, context: &str) {
+        self.derived_from = Some(context.to_string());
+    }
+
+    /// Forget what was derived, so the next question says yes. Used when a project is opened or
+    /// replaced: its policy came from somewhere else and tells us nothing about this context.
+    pub fn forget(&mut self) {
+        self.derived_from = None;
+    }
+}
+
+/// What one derivation did.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Derived {
+    /// S1: the context was empty, so the defaults stand and the model was never asked.
+    pub used_defaults: bool,
+    /// Each accepted or kept proposal, by field name, with what became of it (S3 / S4).
+    pub applied: Vec<(&'static str, Applied)>,
+    /// Every refusal the loop collected, oldest first — the sentences the model was handed back.
+    pub refusals: Vec<String>,
+}
+
+impl Derived {
+    /// The line the status bar prints for a whole derivation. A refusal is worth saying out loud:
+    /// it is the one case where the policy did not follow what the model proposed.
+    pub fn status(&self) -> String {
+        if self.used_defaults {
+            return "no User Context \u{2014} every field at its default".to_string();
+        }
+        if let Some(last) = self.refusals.last() {
+            return last.clone();
+        }
+        format!("policy derived \u{2014} {} field(s)", self.applied.len())
+    }
+}
+
+/// How many times a derivation lets the model answer before giving up on it.
+///
+/// Bare prefix (`machine.deriveRounds`), because §03 spells the loop ("error back to the model")
+/// without a bound. An unbounded one is not a retry, it is a hang: a model that keeps proposing a
+/// field it invented would spin against the server forever. Three gives it two chances to read the
+/// refusal and correct itself, then reports what it could not settle.
+pub const DERIVE_ROUNDS: u32 = 3;
+
+/// S1-S4 in one call. `answer` is the model: it is handed the request and the refusals so far, and
+/// returns the proposals for this round. Injected rather than sent here so the whole flow is testable
+/// with no server, no window and no display — the run layer owns the HTTP, exactly as [`request`] does.
+///
+/// S1 short-circuits before anything else: an empty context means there is nothing to derive, so
+/// `answer` is never called at all (a test counts the calls). Otherwise each round runs every
+/// proposal through [`apply`], which already holds both rules that matter: validation names the field
+/// and what was wrong with the value (S3), and a field whose origin is `user` comes back `KeptUser`
+/// through `decision_homes::overridable_by_derivation` without being touched (S4). Refusals are fed
+/// back into the next round's `answer`; accepted values stay put whatever the next round says.
+pub fn derive(
+    policy: &mut Policy,
+    context: &str,
+    answer: &mut dyn FnMut(&DerivationRequest, &[String]) -> Vec<Proposal>,
+) -> Derived {
+    if is_empty(context) {
+        // S1: stop here. The defaults are the answer, and asking a model to derive a style from
+        // nothing invents one.
+        return Derived {
+            used_defaults: true,
+            ..Derived::default()
+        };
+    }
+    let req = request(context);
+    let mut out = Derived::default();
+    for _ in 0..DERIVE_ROUNDS {
+        let proposals = answer(&req, &out.refusals);
+        let before = out.refusals.len();
+        for proposal in proposals {
+            match apply(policy, &proposal) {
+                Applied::Refused(say) => out.refusals.push(say),
+                other => {
+                    // The field name is `'static` in the catalogue, so handing it out costs nothing
+                    // and lets a test assert per-field outcomes without re-reading the policy.
+                    let name = lookup(&proposal.field)
+                        .map(|row| row.field)
+                        .unwrap_or("unknown");
+                    out.applied.push((name, other));
+                }
+            }
+        }
+        if out.refusals.len() == before {
+            // Nothing refused this round: the policy is settled, however many fields landed.
+            break;
+        }
+    }
+    out
+}
+
+/// Which marks a changed `markingPass` throws away (§03's closing paragraph): the retake marks and
+/// the marked text they were written into.
+///
+/// Pure — this answers the question, the caller drops the files. It follows §00's resume-marker rule:
+/// the file's existence IS the marker, so invalidating means the marker goes and Prepare's marking
+/// pass runs again rather than resuming off output made under a different pass.
+pub fn invalidated_marks(before: &Policy, after: &Policy) -> Vec<&'static str> {
+    if invalidated_by_marking_change(before.marking_pass.value, after.marking_pass.value) {
+        vec!["retakes.tsv", "final.txt"]
+    } else {
+        Vec::new()
+    }
+}

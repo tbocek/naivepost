@@ -23,6 +23,8 @@ static RAN_GEAR: AtomicBool = AtomicBool::new(false);
 static RAN_ROWS: AtomicBool = AtomicBool::new(false);
 static RAN_USER_STICKS: AtomicBool = AtomicBool::new(false);
 static RAN_INFO: AtomicBool = AtomicBool::new(false);
+static RAN_COLUMNS: AtomicBool = AtomicBool::new(false);
+static RAN_DERIVE: AtomicBool = AtomicBool::new(false);
 
 fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
@@ -51,6 +53,14 @@ fn fresh_window(app: &adw::Application) -> adw::ApplicationWindow {
 
 fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
     ui::line_step_button(window, name).unwrap_or_else(|| panic!("the shell carries {name}"))
+}
+
+/// A button inside the open form. `button` searches the main window's tree; the form is its own
+/// top-level, so its buttons come from here.
+fn form_button(name: &str) -> gtk::Button {
+    form_widget(name)
+        .and_then(|widget| widget.downcast::<gtk::Button>().ok())
+        .unwrap_or_else(|| panic!("the policy form carries {name}"))
 }
 
 /// Find a named widget anywhere under the open policy form — which is its own top-level, so it comes
@@ -271,10 +281,98 @@ fn window_round() {
             RAN_USER_STICKS.store(true, Ordering::SeqCst);
             check_the_tab_info_button_opens_the_same_form(app);
             RAN_INFO.store(true, Ordering::SeqCst);
+            check_the_four_columns_and_the_two_buttons(app);
+            RAN_COLUMNS.store(true, Ordering::SeqCst);
+            check_the_gear_derives_before_it_paints(app);
+            RAN_DERIVE.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
     });
+}
+
+/// S5: the form draws four columns, one per answer the spec's picture labels, and closes from its own
+/// button. The overlap this guards was real: the reason used to sit at `(1, row + 1)` while the caller
+/// advanced `row` by one, so each field's NAME landed on the PREVIOUS field's reason — `cutMode`
+/// printed over `default`. That is why the assertion below compares every reason against every other
+/// field's name rather than only checking the reason is non-empty.
+fn check_the_four_columns_and_the_two_buttons(app: &adw::Application) {
+    let window = fresh_window(app);
+    // A model-sourced field to reset away from, so "back to defaults" has something to undo.
+    ui::set_session_policy_field(
+        &window,
+        "cutMode",
+        "words",
+        "cut on the words, not the model",
+        Origin::Model,
+    );
+    button(&window, "policy-button").emit_clicked();
+    settle();
+
+    for caption in ["field", "value", "source", "because"] {
+        assert_eq!(
+            label_text(&format!("policy-caption-{caption}")),
+            caption,
+            "img/03-policy-form.svg spells the four captions lowercase"
+        );
+    }
+
+    let fields: Vec<&str> = policy::derived_fields().iter().map(|e| e.field).collect();
+    for entry in policy::derived_fields() {
+        let value = label_text(&format!("policy-value-{}", entry.field));
+        let source = label_text(&format!("policy-source-{}", entry.field));
+        let reason = label_text(&format!("policy-reason-{}", entry.field));
+        assert!(!value.is_empty(), "{} shows no value", entry.field);
+        assert!(!reason.is_empty(), "{} shows no reason", entry.field);
+        // The regression guard: a reason that reads as another field's name means two rows share a
+        // grid line again.
+        for other in &fields {
+            if *other != entry.field {
+                assert_ne!(
+                    reason, *other,
+                    "{}'s reason reads {:?}, which is another field's name — the rows overlap",
+                    entry.field, reason
+                );
+            }
+        }
+        assert!(
+            ["default", "model", "user"].contains(&source.as_str()),
+            "{} shows source {source:?}",
+            entry.field
+        );
+    }
+
+    assert_eq!(
+        label_text("policy-footer"),
+        "... every field of 10-parameters.md \u{a7}2",
+        "the footer says the page is the whole section 2 catalogue"
+    );
+
+    let reset = form_button("policy-reset-button");
+    let close = form_button("policy-close-button");
+    assert_eq!(reset.label().as_deref(), Some("Reset to defaults"));
+    assert_eq!(close.label().as_deref(), Some("Close"));
+
+    // Reset puts the derived fields back at their §2 defaults — with origin `default`, NOT `user`,
+    // so a later derivation can still speak to them (see policy::reset_to_defaults).
+    assert_eq!(label_text("policy-value-cutMode"), "words"); // P.policy.cutMode
+    reset.emit_clicked();
+    settle();
+    assert_eq!(label_text("policy-value-cutMode"), "model", "// P.policy.cutMode");
+    assert_eq!(label_text("policy-source-cutMode"), "default");
+    assert_eq!(label_text("policy-reason-cutMode"), "the default");
+    assert_eq!(
+        ui::session_policy(&window).cut_mode.origin,
+        Origin::Default,
+        "a reset leaves the field open to a later derivation"
+    );
+
+    close.emit_clicked();
+    settle();
+    assert!(
+        !ui::policy_form_open(&window),
+        "Close must dismiss the form"
+    );
 }
 
 #[test]
@@ -287,4 +385,63 @@ fn f0_7_s5_policy_form_reopens_from_the_menu_through_a_real_click() {
         "the hand-set-field check never ran"
     );
     assert!(RAN_INFO.load(Ordering::SeqCst), "the ⓘ check never ran");
+    assert!(
+        RAN_COLUMNS.load(Ordering::SeqCst),
+        "the four-column / buttons check never ran"
+    );
+    assert!(
+        RAN_DERIVE.load(Ordering::SeqCst),
+        "the derive-before-paint check never ran"
+    );
+}
+
+/// F0.7 S2-S4 through the wire: pressing ⚙ on a session whose User Context has never been derived
+/// runs the derivation BEFORE painting, so the labels a person reads are what the model just decided.
+///
+/// The stub sender stands in for the LLM (no server in this harness); everything else is the real
+/// path — the real button, `press_policy`, `derive_policy`, `policy::derive` and `policy::apply`.
+/// The assertion is deliberately made through the same widgets the logic test's state drives: if the
+/// click reached nothing, `cutMode` would still read its default.
+fn check_the_gear_derives_before_it_paints(app: &adw::Application) {
+    use naivepost::policy::{self, Proposal};
+    ui::close_policy_forms();
+    let window = fresh_window(app);
+    // A context set but never derived from: exactly the state a person leaves after typing.
+    ui::set_session_context(&window, "cut on the words, not the model");
+    assert!(
+        !ui::policy_is_current(&window, "cut on the words, not the model"),
+        "a fresh window has derived nothing"
+    );
+
+    // The model answers one field, with a reason we can look for on screen.
+    ui::set_policy_sender_for_tests(move |_req: &policy::DerivationRequest, refusals: &[String]| {
+        if !refusals.is_empty() {
+            return Vec::new();
+        }
+        vec![Proposal {
+            field: "cutMode".into(),
+            value: "words".into(),
+            because: "cut on the words, not the model".into(),
+        }]
+    });
+
+    button(&window, "policy-button").emit_clicked();
+    settle();
+
+    // P.policy.cutMode — derived, sourced to the model, carrying its reason.
+    assert_eq!(label_text("policy-value-cutMode"), "words", "// P.policy.cutMode");
+    assert_eq!(label_text("policy-source-cutMode"), "model");
+    assert_eq!(
+        label_text("policy-reason-cutMode"),
+        "cut on the words, not the model"
+    );
+    assert_eq!(
+        ui::session_policy(&window).cut_mode.origin,
+        Origin::Model,
+        "the stored policy says who set it"
+    );
+    assert!(
+        ui::policy_is_current(&window, "cut on the words, not the model"),
+        "the tracker now agrees the policy answers this context"
+    );
 }

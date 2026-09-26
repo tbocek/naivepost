@@ -7,7 +7,7 @@
 //! disk fails this test even when the in-memory value looks right.
 
 use naivepost::policy::{self, Applied, DerivationRequest, Pass, Proposal};
-use naivepost::project::{CutMode, MarkingPass, Origin, Policy};
+use naivepost::project::{self, CutMode, MarkingPass, Origin, Policy};
 
 /// A proposal as it arrives over `tool:set_policy`: three strings, unvalidated.
 fn proposal(field: &str, value: &str, because: &str) -> Proposal {
@@ -351,4 +351,159 @@ fn f0_7_a_changed_marking_pass_invalidates_the_marks_only_when_it_actually_chang
     assert!(policy::invalidated_by_marking_change(MarkingPass::None, MarkingPass::Retakes));
     assert!(!policy::invalidated_by_marking_change(MarkingPass::Retakes, MarkingPass::Retakes));
     assert!(!policy::invalidated_by_marking_change(MarkingPass::None, MarkingPass::None));
+}
+
+
+// ---- the derivation flow: S1's stop, S3's retry loop, S4's protection -------------------------
+//
+// `derive` takes its model as an argument, so these tests never touch a server: each installs a stub
+// that answers a fixed script and counts how many rounds it was asked. The count is what makes S1's
+// "stop" checkable — an empty context that quietly asked anyway would show up here.
+
+/// A scripted model. `asked` counts the rounds; each round pops one answer, and an exhausted script
+/// answers nothing so a test only sees the rounds it planned.
+struct Scripted {
+    asked: std::cell::Cell<usize>,
+    rounds: std::cell::RefCell<std::vec::IntoIter<Vec<Proposal>>>,
+}
+
+impl Scripted {
+    fn new(rounds: Vec<Vec<Proposal>>) -> Self {
+        Self {
+            asked: std::cell::Cell::new(0),
+            rounds: std::cell::RefCell::new(rounds.into_iter()),
+        }
+    }
+    /// Always refuses the same way — the stubborn-model case.
+    fn stubborn() -> Self {
+        Self::new(Vec::new())
+    }
+    fn call(&mut self, req: &policy::DerivationRequest, refusals: &[String]) -> Vec<Proposal> {
+        self.asked.set(self.asked.get() + 1);
+        if self.rounds.borrow().len() == 0 {
+            // No script left: keep refusing with the same bad value so the cap is what ends it.
+            return vec![proposal("markingPass", "sideways", "I insist")];
+        }
+        let _ = (req, refusals);
+        self.rounds.borrow_mut().next().unwrap_or_default()
+    }
+}
+
+#[test]
+fn f0_7_s1_an_empty_context_never_calls_the_model() {
+    let mut model = Scripted::new(vec![vec![proposal("cutMode", "words", "should not be asked")]]);
+    let mut policy = Policy::default();
+    let out = policy::derive(&mut policy, "   \n ", &mut |r, f| model.call(r, f));
+    assert_eq!(model.asked.get(), 0, "an empty context must not ask a model");
+    assert!(out.used_defaults, "S1 reports the defaults were used: {out:?}");
+    assert!(out.applied.is_empty() && out.refusals.is_empty(), "{out:?}");
+    // What stands is the whole default set, field by field.
+    assert_eq!(policy.marking_pass.value, MarkingPass::Retakes); // P.policy.markingPass
+    assert_eq!(policy.cut_mode.value, CutMode::Model); // P.policy.cutMode
+    assert!(policy.captions_pass.value); // P.policy.captionsPass
+    assert!(policy.speed_pass.value); // P.policy.speedPass
+    assert!(policy.decorations_pass.value); // P.policy.decorationsPass
+}
+
+#[test]
+fn f0_7_s3_a_refusal_is_handed_back_and_the_model_gets_another_round() {
+    let mut model = Scripted::new(vec![
+        vec![proposal("markingPass", "sideways", "as I read it")],
+        vec![proposal("markingPass", "joins", "the seams are what matter")],
+    ]);
+    let mut policy = Policy::default();
+    let out = policy::derive(&mut policy, "one take per slide", &mut |r, f| model.call(r, f));
+    assert_eq!(model.asked.get(), 2, "the refusal bought exactly one more round");
+    assert_eq!(out.refusals.len(), 1, "{:?}", out.refusals);
+    assert!(
+        out.refusals[0].contains("sideways") && out.refusals[0].contains("out of range"),
+        "the refusal names the bad value: {:?}",
+        out.refusals[0]
+    );
+    // The corrected proposal landed, with the model as its source. // P.policy.markingPass
+    assert_eq!(policy.marking_pass.value, MarkingPass::Joins);
+    assert_eq!(policy.marking_pass.origin, Origin::Model);
+    assert!(out.applied.contains(&("markingPass", Applied::Set)));
+}
+
+#[test]
+fn f0_7_s3_refusals_stop_at_the_round_cap() {
+    // A model that never corrects itself must end, not spin against the server forever.
+    let mut model = Scripted::stubborn();
+    let mut policy = Policy::default();
+    let out = policy::derive(&mut policy, "anything at all", &mut |r, f| model.call(r, f));
+    assert_eq!(
+        out.refusals.len(),
+        policy::DERIVE_ROUNDS as usize,
+        "the loop is bounded by DERIVE_ROUNDS, not open-ended"
+    );
+    assert!(out.applied.is_empty());
+    assert_eq!(
+        policy.marking_pass.value,
+        MarkingPass::Retakes,
+        "a refused derivation leaves the default standing" // P.policy.markingPass
+    );
+}
+
+#[test]
+fn f0_7_s4_a_user_field_survives_a_derivation_that_names_it() {
+    let mut policy = Policy::default();
+    policy.cut_mode = project::Field {
+        value: CutMode::Words,
+        origin: Origin::User,
+        because: None,
+    };
+    let mut model = Scripted::new(vec![vec![proposal("cutMode", "model", "it decides better")]]);
+    let out = policy::derive(&mut policy, "let the model choose", &mut |r, f| model.call(r, f));
+    assert!(
+        out.applied.contains(&("cutMode", Applied::KeptUser)),
+        "S4 reports the keep: {:?}",
+        out.applied
+    );
+    assert_eq!(
+        (policy.cut_mode.value, policy.cut_mode.origin),
+        (CutMode::Words, Origin::User),
+        "a hand-set field is untouched by a later derivation" // P.policy.cutMode
+    );
+    assert!(out.refusals.is_empty(), "a keep is not an error: {:?}", out.refusals);
+}
+
+#[test]
+fn f0_7_s5_a_changed_marking_pass_invalidates_the_marks() {
+    let before = Policy::default(); // markingPass retakes
+    let mut after = Policy::default();
+    assert!(
+        policy::invalidated_marks(&before, &after).is_empty(),
+        "an unchanged pass throws nothing away"
+    );
+    after.marking_pass = project::Field {
+        value: MarkingPass::None,
+        origin: Origin::Model,
+        because: Some("no retakes in this session".into()),
+    };
+    assert_eq!(
+        policy::invalidated_marks(&before, &after),
+        vec!["retakes.tsv", "final.txt"],
+        "// P.policy.markingPass changed: both marks go, so Prepare re-runs its marking pass"
+    );
+}
+
+#[test]
+fn f0_7_tracker_a_never_derived_context_needs_a_derivation() {
+    assert!(
+        policy::Tracker::new().needs_derive("anything"),
+        "nothing derived yet means the first question is yes"
+    );
+    let mut tracker = policy::Tracker::new();
+    tracker.mark_derived("one take per slide");
+    assert!(
+        !tracker.needs_derive("one take per slide"),
+        "the same context needs no second derivation"
+    );
+    assert!(
+        tracker.needs_derive("one take per slide "),
+        "an edited context — even by a trailing space — is a change"
+    );
+    tracker.forget();
+    assert!(tracker.needs_derive("one take per slide"), "forget resets it");
 }

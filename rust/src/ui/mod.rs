@@ -16,6 +16,14 @@ pub use settings::test_button;
 /// F0.7 S5 — the policy form and the two ways into it (the run bar's ⚙ and each tab's ⓘ).
 pub use window::close_policy_forms;
 pub use window::open_policy_form;
+pub use window::forget_policy_form;
+pub use window::derive_policy;
+pub use window::main_window;
+pub use window::policy_is_current;
+pub use window::refresh_policy_form;
+pub use window::set_policy_sender_for_tests;
+pub use window::set_session_context;
+pub use window::reset_policy_to_defaults;
 pub use window::policy_form_open;
 pub use window::press_policy;
 pub use window::session_policy;

@@ -75,6 +75,11 @@ fn pass_word(on: bool) -> String {
     if on { "on".to_string() } else { "off".to_string() }
 }
 
+/// The reason column's width, in characters. §10 spells the longest shipped `because` in about thirty
+/// characters ("three or four per five minutes"), so 36 wraps at a word rather than mid-sentence and
+/// keeps the form's height near the picture's.
+const BECAUSE_MAX_CHARS: i32 = 36;
+
 /// Build the form for this policy. `parent` is the main window, so the form rides with it and closes
 /// when dismissed.
 pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
@@ -82,7 +87,7 @@ pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
     window.set_title(Some(TITLE));
     window.set_modal(true);
     window.set_transient_for(parent);
-    window.set_default_width(680);
+    window.set_default_width(780);
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
     root.set_widget_name(&format!("{NAME_PREFIX}-form"));
@@ -112,9 +117,12 @@ pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
     grid.set_hexpand(true);
     root.append(&grid);
 
-    // Column captions, so the three columns read as three answers instead of three loose labels.
-    for (caption, col) in [("Field", 1i32), ("Value", 2), ("Source", 3)] {
+    // Column captions, so the four columns read as four answers instead of loose labels. Lowercase as
+    // `img/03-policy-form.svg` spells them.
+    for (caption, col) in [("field", 1i32), ("value", 2), ("source", 3), ("because", 4)] {
         let head = gtk::Label::new(Some(caption));
+        // Named so a test reads the four captions rather than scraping the grid's children.
+        head.set_widget_name(&format!("{NAME_PREFIX}-caption-{caption}"));
         head.add_css_class("heading");
         head.set_halign(gtk::Align::Start);
         grid.attach(&head, col, 0, 1, 1);
@@ -123,14 +131,49 @@ pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
     let mut row = 1i32;
     for entry in policy::derived_fields() {
         add_row(&grid, policy, entry, row);
+        wrap_row(&grid, entry.field, row);
         row += 1;
     }
+
+    // The picture's footer: this page is the whole §2 catalogue, of which F0.7 derives the five above.
+    let footer = gtk::Label::new(Some(
+        "... every field of 10-parameters.md \u{a7}2",
+    ));
+    footer.set_widget_name(&format!("{NAME_PREFIX}-footer"));
+    footer.add_css_class("dim-label");
+    footer.set_halign(gtk::Align::Start);
+    root.append(&footer);
+
+    // The two buttons the picture puts bottom-right. `Reset to defaults` goes through
+    // `policy::reset_to_defaults` and repaints in place rather than rebuilding, so a person sees the
+    // fields move back without the window flickering shut.
+    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    buttons.set_halign(gtk::Align::End);
+    // `Re-derive` is F0.7's third door — "on demand from the policy form". Without it a person who
+    // just edited the User Context and opened ⚙ has to wait for the debounce or press ▶ to see the
+    // answer.
+    let redrive = gtk::Button::with_label("Re-derive");
+    redrive.set_widget_name(&format!("{NAME_PREFIX}-redrive-button"));
+    let reset = gtk::Button::with_label("Reset to defaults");
+    reset.set_widget_name(&format!("{NAME_PREFIX}-reset-button"));
+    let close = gtk::Button::with_label("Close");
+    close.set_widget_name(&format!("{NAME_PREFIX}-close-button"));
+    buttons.append(&redrive);
+    buttons.append(&reset);
+    buttons.append(&close);
+    root.append(&buttons);
+
+    wire_buttons(&window, &redrive, &reset, &close);
 
     window.set_content(Some(&root));
     window
 }
 
-/// One field: its name and id, its value, its source, and the reason underneath spanning the row.
+/// One field: its name and id, its value, its source, and the reason beside them.
+///
+/// Four columns, as `img/03-policy-form.svg` draws them — one grid row per field. The reason used to
+/// sit under its row at `(1, row + 1)` while the caller advanced `row` by one, which stacked every
+/// field's name on top of the previous field's reason; the picture has always had four columns.
 fn add_row(grid: &gtk::Grid, policy: &Policy, entry: CatalogueRow, row: i32) {
     let name = gtk::Label::new(Some(entry.field));
     name.set_halign(gtk::Align::Start);
@@ -154,9 +197,9 @@ fn add_row(grid: &gtk::Grid, policy: &Policy, entry: CatalogueRow, row: i32) {
     }
     grid.attach(&source, 3, row, 1, 1);
 
-    // The reason sits under the row it belongs to, wrapped, because it is a sentence and a column of
-    // them would turn into unreadable ribbons. Blank for a default and for a hand-set field: neither has
-    // a reason to justify itself (§S3 stores `because` only for what the model set).
+    // The reason is the fourth column, wrapped: it is a sentence and a column of them would turn into
+    // unreadable ribbons. Blank for a default and for a hand-set field: neither has a reason to justify
+    // itself (§S3 stores `because` only for what the model set).
     let reason_text = reason_of(policy, entry.field).unwrap_or_else(|| match origin {
         Origin::Model => "(no reason given)".to_string(),
         Origin::User => "set by you".to_string(),
@@ -166,16 +209,44 @@ fn add_row(grid: &gtk::Grid, policy: &Policy, entry: CatalogueRow, row: i32) {
     reason.set_widget_name(&format!("{NAME_PREFIX}-reason-{}", entry.field));
     reason.set_halign(gtk::Align::Start);
     reason.set_wrap(true);
+    reason.set_max_width_chars(BECAUSE_MAX_CHARS);
     reason.add_css_class("dim-label");
-    grid.attach(&reason, 1, row + 1, 3, 1);
+    grid.attach(&reason, 4, row, 1, 1);
+}
 
-    // The row container itself, named per the plan so a test can find the whole row rather than
-    // assembling it from its three parts. GTK's Grid has no row widget, so the row is expressed as a
-    // named box holding the three cells and replacing them in place.
-    wrap_row(grid, entry.field, row);
-
-    // Two rows were used: the values and the reason underneath.
-    let _ = &reason;
+/// The reset and close buttons. Both act on the newest session's policy rather than on the copy this
+/// form was built from: the session is what Save writes, so a reset that only moved a stale clone
+/// would look applied and be lost.
+fn wire_buttons(
+    window: &adw::Window,
+    redrive: &gtk::Button,
+    reset: &gtk::Button,
+    close: &gtk::Button,
+) {
+    let form = window.clone();
+    close.connect_clicked(move |_| {
+        // `close()` runs the delete path, which unmaps the window right away; the slot that lets
+        // `press_policy` raise this same form instead of building a second one is dropped in the
+        // `close-request` handler below, because GTK emits that signal synchronously and would be
+        // re-entrant if the list were mutated from `close-request`'s own default handler.
+        form.close();
+    });
+    let forget = window.clone();
+    window.connect_close_request(move |_| {
+        crate::ui::forget_policy_form(&forget);
+        glib::Propagation::Proceed
+    });
+    let refresh = window.clone();
+    redrive.connect_clicked(move |_| {
+        // S2-S4 now, through the same seam ▶ uses; then repaint so the three columns show what the
+        // derivation just decided rather than what was on screen when the form opened.
+        let derived = crate::ui::derive_policy(&crate::ui::main_window());
+        crate::ui::refresh_policy_form(&refresh);
+        let _ = derived;
+    });
+    reset.connect_clicked(move |_| {
+        crate::ui::reset_policy_to_defaults();
+    });
 }
 
 /// Read the stored `because` for a field by name, so the form needs no knowledge of which arm holds it.
@@ -220,9 +291,16 @@ pub fn field_origin(policy: &Policy, field: &str) -> Origin {
 /// cells at column 0 — the one column nothing else uses. Naming that box is what makes
 /// `policy-row-markingPass` findable without rebuilding the grid as nested boxes, which would lose the
 /// column alignment the three answers depend on.
+/// Give the row a widget of its own to name.
+///
+/// `gtk::Grid` has no row object, so the row is carried by a CSS-free marker box attached beside the
+/// cells at column 0 — the one column nothing else uses. Naming that box is what makes
+/// `policy-row-markingPass` findable without rebuilding the grid as nested boxes, which would lose the
+/// column alignment the four answers depend on. It asks for zero width: the row's identity is the
+/// point, and a marker with a width of its own shoves the field names right out of their column.
 fn wrap_row(grid: &gtk::Grid, field: &str, row: i32) {
     let marker = gtk::Box::new(gtk::Orientation::Vertical, 0);
     marker.set_widget_name(&format!("{NAME_PREFIX}-row-{field}"));
-    marker.set_size_request(1, 1);
+    marker.set_size_request(0, 1);
     grid.attach(&marker, 0, row, 1, 1);
 }
