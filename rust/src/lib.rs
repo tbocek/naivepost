@@ -22,6 +22,7 @@ pub mod cut_play;
 pub mod cut_review;
 pub mod cut_select;
 pub mod cut_trim;
+pub mod cut_verbs;
 pub mod cut_cam;
 pub mod cut_clamp;
 pub mod cut_fold;

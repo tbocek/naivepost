@@ -12,7 +12,8 @@
 //! page reports state and forwards actions, it decides none of them. What has NOT arrived is the ground
 //! itself: the real picture rows, wave strips, lanes and ruler come with F2.8/F2.10/F2.11, so today's
 //! surface is scoped `Surface::Ruler` rather than inventing tracks, and the ＋ Add / | Split / － Remove /
-//! ⧉ Copy / Insert buttons whose greying S4 describes are F2.7's round. The geometry constants of the
+//! ⧉ Copy / Insert buttons whose greying S4 describes: F2.7 drew ＋ Add, | Split and － Remove (see
+//! `crate::cut_verbs`), while ⧉ Copy and Insert still wait for their own rounds. The geometry constants of
 //! tracks themselves live in [`crate::cut_screen`]; this module holds only the numbers F2.6 reads and no
 //! other module owns: the drag slop, the grip, the snap reach and the two length floors.
 
@@ -375,7 +376,8 @@ pub fn verbs(sel: Option<&Selection>, has_footage: bool) -> Verbs {
 
 /// F2.6 S4: the sentence ＋ Add wears when a sound selection makes it the wrong button — `spec/inventory/
 /// cut.md` §A's wording, naming the recording so the refusal says what was drawn on. `None` when there is
-/// nothing to say: the live button's own tooltip and the empty-selection sentences are F2.7's round.
+/// nothing to say: the live button's own tooltip and the empty-selection sentences come from
+/// `crate::cut_verbs`.
 pub fn add_tip(sel: Option<&Selection>) -> Option<String> {
     match &sel?.scope {
         Scope::Sound { recording } => Some(format!(

@@ -17,6 +17,8 @@ use crate::cut_hear;
 use crate::cut_play;
 use crate::cut_review;
 use crate::cut_select;
+use crate::cut_delete;
+use crate::cut_verbs;
 use crate::cut_line;
 use crate::cut_screen;
 use crate::hand_edit;
@@ -218,6 +220,22 @@ fn page_box(
         readout.set_xalign(0.0);
         readout.add_css_class("dim-label");
         box_.insert_child_after(&readout, Some(&previous));
+        previous = readout.upcast();
+
+        // F2.7: the three verbs that act on the band, in the spec's order, right under it. Each starts
+        // insensitive because a fresh window holds no selection; `refresh_verb_buttons` sets them from
+        // `selection_verbs` on every draw, nudge and clear, so a greyed button is always today's answer
+        // and never a leftover. | Split is the exception at rest: with no band it splits at the red line,
+        // so it stays live — see `verb_buttons_state`.
+        for (name, label, tip) in cut_verbs::BUTTONS {
+            let verb = gtk::Button::with_label(label);
+            verb.set_widget_name(name);
+            verb.set_tooltip_text(Some(tip));
+            verb.set_sensitive(false);
+            verb.set_halign(gtk::Align::Start);
+            box_.insert_child_after(&verb, Some(&previous));
+            previous = verb.upcast();
+        }
         let _ = previous;
     }
 
@@ -1029,6 +1047,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         if let Some(cross) = clear_selection_button(&window) {
             wire_clear_selection(&cross, &window);
         }
+        // The verb buttons exist on this page but were built insensitive. Nothing has been drawn yet, so
+        // read the state once here to put them in the state the rules actually give a window with no
+        // band — otherwise they would sit greyed until the first drag, and a greyed button that could
+        // have been live is exactly the button that lies about the state.
+        refresh_verb_buttons(&window);
     }
     // F2.2: ▶✂ is wired to the same player slot ▶ moves, because they are two views of one preview —
     // pressing one switches what the other would show, never a second transport.
@@ -1058,6 +1081,19 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         }
     }
     wire_line_keys(&window);
+    // F2.7: the three verb buttons and ⌦ / Delete / BackSpace, wired after `set_content` like every
+    // other control on this page.
+    for (name, _, _) in cut_verbs::BUTTONS {
+        if let Some(button) = line_step_button(&window, name) {
+            let seam: fn(&adw::ApplicationWindow) -> cut_verbs::Outcome = match name {
+                "add-button" => press_add,
+                "split-button" => press_split,
+                _ => press_remove,
+            };
+            wire_verb_button(&button, &window, seam);
+        }
+    }
+    wire_delete_keys(&window);
     window
 }
 
@@ -2019,9 +2055,9 @@ pub fn nudge_selection(window: &adw::ApplicationWindow, part: cut_select::Part, 
 }
 
 /// F2.6 S4: the verbs' state for the band there is now — Add/Split/Remove greyed for a sound selection,
-/// Copy and Insert re-aimed at it. NOTE: the ＋ Add / | Split / － Remove / ⧉ Copy / Insert BUTTONS are
-/// F2.7's round and are deliberately not created here; this seam exists so their round, and any test,
-/// reads the same `Verbs` the logic tests assert on.
+/// Copy and Insert re-aimed at it. The ＋ Add / | Split / － Remove buttons F2.7 added read THIS answer
+/// (`refresh_verb_buttons`), so the page's greying and the logic tests' assertions cannot drift apart;
+/// ⧉ Copy / Insert are still not drawn (F2.9/F0.6 rounds).
 pub fn selection_verbs(window: &adw::ApplicationWindow) -> cut_select::Verbs {
     let (cut_, _) = selection_snap_inputs(window);
     // "is there a recording to cut": a cut with no segment has nothing to split, which is the only
@@ -2045,7 +2081,42 @@ fn selection_snap_inputs(window: &adw::ApplicationWindow) -> (cut::Cut, Vec<cut:
     (cut_, lanes)
 }
 
-/// F2.6 S3: write the band into the readout and set the cross's sensitivity. The readout IS the band's
+/// F2.7: which of the three buttons is live right now, as (add, split, remove).
+///
+/// | Split stays live with no band on purpose: F2.6's `verbs()` answers `false` for everything when
+/// there is no selection, but F2.7 gives a band-less Split a real job — one border at the red line,
+/// right half in hand — so greying it would take away the verb the spec says works there. An empty case
+/// explains itself through the refusal sentence instead. With a band up, `verbs()` decides all three,
+/// which is what greys them for a recording's sound.
+pub fn verb_buttons_state(window: &adw::ApplicationWindow) -> (bool, bool, bool) {
+    let verbs = selection_verbs(window);
+    let split_live = match selection(window) {
+        Some(_) => verbs.split,
+        None => true,
+    };
+    (verbs.add, split_live, verbs.remove)
+}
+
+/// F2.7: set the three verb buttons from this window's live state, so a greyed button is always today's
+/// answer and never a leftover from an earlier band. Runs from `refresh_selection_readout`, which every
+/// draw, nudge and clear already calls — one refresh path for the whole selection row.
+fn refresh_verb_buttons(window: &adw::ApplicationWindow) {
+    let (add, split, remove) = verb_buttons_state(window);
+    let sensitivity = [add, split, remove];
+    for ((name, _, _), live) in cut_verbs::BUTTONS.iter().zip(sensitivity) {
+        if let Some(button) = line_step_button(window, name) {
+            button.set_sensitive(live);
+        }
+    }
+    // ＋ Add wears its sound warning as a tooltip while a sound band makes it the wrong button.
+    if let Some(button) = line_step_button(window, "add-button") {
+        let tip = cut_verbs::add_tip_now(selection(window).as_ref())
+            .unwrap_or_else(|| cut_verbs::BUTTONS[0].2.to_string());
+        button.set_tooltip_text(Some(&tip));
+    }
+}
+
+/// F2.7 S3: write the band into the readout and set the cross's sensitivity. The readout IS the band's
 /// own marks (`cut_select::marks`), not a second copy, so the two cannot disagree with the handle being
 /// dragged. The tent-of-a-second form comes from `preview::clock`, the Cut page's one clock face.
 fn refresh_selection_readout(window: &adw::ApplicationWindow) {
@@ -2069,7 +2140,9 @@ fn refresh_selection_readout(window: &adw::ApplicationWindow) {
             button.set_sensitive(band.is_some());
         }
     }
+    refresh_verb_buttons(window);
 }
+
 
 /// The playhead the snap marks are built around (F2.6 S2 lists the line among the snap targets).
 fn preview_playhead(window: &adw::ApplicationWindow) -> f64 {
@@ -2548,6 +2621,167 @@ fn wire_clear_selection(button: &gtk::Button, window: &adw::ApplicationWindow) {
     button.connect_clicked(move |_| {
         clear_selection(&window);
     });
+}
+
+/// F2.7: wire one verb button to its seam. The callback holds no rule — it presses, prints the answer
+/// and leaves the state where [`cut_verbs`] said to leave it.
+fn wire_verb_button(
+    button: &gtk::Button,
+    window: &adw::ApplicationWindow,
+    press: fn(&adw::ApplicationWindow) -> cut_verbs::Outcome,
+) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        press(&window);
+    });
+}
+
+/// F2.7 ⌦: a held effect, then a held clip, then the selection, then the scene under the line — in that
+/// order, decided by [`cut_verbs::delete_verb`]. The two "held" values come from the seams below: the
+/// real drag rounds (F2.8/F2.9/F0.6) will set them when a person actually picks something up, and until
+/// then a test can set them here so the ORDER is checkable now rather than asserted later.
+pub fn press_delete_key(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
+    let segs = newest_review_cut().segs;
+    let band = selection(window);
+    let scene = held_scene_under_line(window);
+    let outcome = cut_verbs::delete_verb(
+        held_effect().as_ref(),
+        held_clip().as_ref(),
+        band.as_ref(),
+        scene.as_ref(),
+        &segs,
+    );
+    report_verb(window, &outcome);
+    outcome
+}
+
+/// F2.7 ＋ Add: keep the band as scenes.
+pub fn press_add(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
+    let (cut_, _) = selection_snap_inputs(window);
+    let band = selection(window);
+    // No snap candidates of the page's own yet: word edges and silences arrive with the aligner round,
+    // so an empty list means the ends stay where they were drawn rather than inventing points.
+    let outcome = cut_verbs::add(band.as_ref(), &cut_.segs, &[]);
+    report_verb(window, &outcome);
+    outcome
+}
+
+/// F2.7 | Split: a border at each end of the band, or one at the red line when there is none.
+pub fn press_split(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
+    let (cut_, _) = selection_snap_inputs(window);
+    let band = selection(window);
+    let outcome = cut_verbs::split(band.as_ref(), preview_playhead(window), &cut_.segs);
+    report_verb(window, &outcome);
+    outcome
+}
+
+/// F2.7 － Remove: drop exactly the band.
+pub fn press_remove(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
+    let (cut_, _) = selection_snap_inputs(window);
+    let band = selection(window);
+    let outcome = cut_verbs::remove(band.as_ref(), &cut_.segs);
+    report_verb(window, &outcome);
+    outcome
+}
+
+/// Print the verb's sentence and honour what the answer says about the band. A refusal changes nothing at
+/// all — no status-free silence, and no edit either, which is the point of refusing.
+fn report_verb(window: &adw::ApplicationWindow, outcome: &cut_verbs::Outcome) {
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(outcome.status());
+    }
+    match outcome {
+        cut_verbs::Outcome::Applied {
+            segs,
+            keeps_selection,
+            into_hand,
+            ..
+        } => {
+            // Only a verb that produced segments rewrites the cut; ⌦ on a held card reports through the
+            // status and leaves the list to the round that owns removal of inserts.
+            if !segs.is_empty() {
+                REVIEW_CUTS.with(|slots| {
+                    if let Some(slot) = slots.borrow().last() {
+                        slot.borrow_mut().segs = segs.clone();
+                    }
+                });
+            }
+            if !keeps_selection {
+                clear_selection(window);
+            }
+            if *into_hand {
+                VERB_HAND.with(|cell| *cell.borrow_mut() = selection(window));
+            }
+        }
+        cut_verbs::Outcome::Refused(_) => {}
+    }
+}
+
+/// The scene under the red line, or `None` where the cut keeps nothing — [`cut_delete::scene_under`]'s
+/// answer, so ⌦ asks the same question every other ⌦-adjacent rule asks.
+fn held_scene_under_line(window: &adw::ApplicationWindow) -> Option<cut::Seg> {
+    let cut_ = newest_review_cut();
+    cut_delete::scene_under(&cut_.segs, preview_playhead(window)).cloned()
+}
+
+/// What ⌦ would take first: the effect in hand. Set by the effects-lane rounds when a person picks one
+/// up; a seam today so the delete order is testable before those pixels exist.
+pub fn set_held_effect(effect: Option<cut::Fx>) {
+    HELD_EFFECT.with(|cell| *cell.borrow_mut() = effect);
+}
+
+/// Read side of [`set_held_effect`].
+pub fn held_effect() -> Option<cut::Fx> {
+    HELD_EFFECT.with(|cell| cell.borrow().clone())
+}
+
+/// What ⌦ takes next: the clip in hand — `the only way to remove a spliced card` (§J rule 8). Same
+/// seam arrangement as the held effect: real drags set it from F2.8/F2.9 onward.
+pub fn set_held_clip(seg: Option<cut::Seg>) {
+    HELD_CLIP.with(|cell| *cell.borrow_mut() = seg);
+}
+
+/// Read side of [`set_held_clip`].
+pub fn held_clip() -> Option<cut::Seg> {
+    HELD_CLIP.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static HELD_EFFECT: std::cell::RefCell<Option<cut::Fx>> =
+        const { std::cell::RefCell::new(None) };
+    static HELD_CLIP: std::cell::RefCell<Option<cut::Seg>> =
+        const { std::cell::RefCell::new(None) };
+    /// The right half a band-less Split put in the hand (F2.7 S2). The paste round reads it.
+    static VERB_HAND: std::cell::RefCell<Option<cut_select::Selection>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// This window's ⌦ controller, so a test can see it is attached. `None` on a page that drew none.
+pub fn delete_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
+    let _ = window;
+    DELETE_KEYS.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static DELETE_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Add the ⌦ / Delete / BackSpace controller to the window. It claims ONLY those two keys: every other
+/// keypress is passed on untouched, so this cannot swallow typing in an entry field.
+fn wire_delete_keys(window: &adw::ApplicationWindow) {
+    let controller = gtk::EventControllerKey::new();
+    let win = window.clone();
+    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
+        if matches!(key, gtk::gdk::Key::Delete | gtk::gdk::Key::BackSpace) {
+            press_delete_key(&win);
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    });
+    window.add_controller(controller.clone());
+    DELETE_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
 }
 
 /// This window's preview-volume slider, by its stable name (F2.5 S6). The seam a test fires and the
@@ -3076,8 +3310,9 @@ pub(crate) fn find_widget_by_name(root: &gtk::Widget, name: &str) -> Option<gtk:
 }
 
 /// The status line, named rather than searched for by text: an empty label is the ordinary state and
-/// would match any label in the tree.
-fn find_status(root: &gtk::Widget) -> Option<gtk::Label> {
+/// would match any label in the tree. Public so a widget test can read the sentence a press printed —
+/// the page's one output channel, and the thing F2.7 pins.
+pub fn find_status(root: &gtk::Widget) -> Option<gtk::Label> {
     if root.widget_name() == "status-line" {
         return root.downcast_ref::<gtk::Label>().cloned();
     }

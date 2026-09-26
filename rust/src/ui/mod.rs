@@ -69,6 +69,17 @@ pub use window::selection_surface;
 pub use window::selection_gesture;
 pub use window::clear_selection_button;
 pub use window::selection_readout;
+// F2.7: the three verb buttons, the ⌦ key and the two "what is in hand" seams.
+pub use window::delete_key_controller;
+pub use window::find_status;
+pub use window::held_clip;
+pub use window::held_effect;
+pub use window::press_add;
+pub use window::press_delete_key;
+pub use window::press_remove;
+pub use window::press_split;
+pub use window::set_held_clip;
+pub use window::set_held_effect;
 pub use window::select_surface;
 pub use window::SELECT_SURFACE_PPS;
 pub use window::preview_player;
