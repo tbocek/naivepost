@@ -17,6 +17,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::checks;
+use crate::model_list;
 
 /// What a probe hands back for one row: the detail that goes on the ✓, or the reason that goes on ✗.
 pub type Answer = Result<String, String>;
@@ -108,6 +109,10 @@ struct Dialog {
     entries: RefCell<Vec<(String, gtk::Entry)>>,
     badges: RefCell<Vec<(String, gtk::Label)>>,
     buttons: RefCell<Vec<(String, gtk::Button)>>,
+    /// The ids the last Fetch brought back, kept so Use can check its pick against what the server
+    /// actually served rather than trusting the widget's memory.
+    fetched: RefCell<Vec<String>>,
+    list: gtk::DropDown,
     log_view: gtk::TextView,
     log_expander: gtk::Expander,
     test_log: RefCell<checks::TestLog>,
@@ -177,6 +182,69 @@ impl Dialog {
         let answer = (self.provider)(key, &typed);
         let phase = press_test(key, &typed, answer);
         self.report(key, &phase);
+    }
+
+    /// Fetch models: ask the server what it serves and fill the dropdown.
+    ///
+    /// Not a pass/fail service test like the six rows — it discovers an id rather than proving a
+    /// server healthy — but it reports through the same badge and log so an empty or unreachable
+    /// listing is visible in exactly one place (§5's mirroring rule). The address asked is the one
+    /// TYPED, not the one saved: the file lags the keyboard by `checks::CONF_SAVE_WAIT`.
+    fn fetch_models(&self) {
+        let typed = self.typed("llm");
+        match (self.provider)(FETCH_KEY, &typed) {
+            Ok(body) => {
+                let ids = model_list::parse_ids(
+                    &serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({})),
+                );
+                // The list is rebuilt wholesale from a `gtk::StringList`, which is what gives a
+                // clean replace: DropDown has no remove-all, and appending to the old model would
+                // leave last fetch's ids under this one's.
+                let strings = gtk::StringList::new(&[]);
+                for id in &ids {
+                    strings.append(id);
+                }
+                self.list.set_model(Some(&strings));
+                // Start on nothing chosen: adopting an id is a deliberate press of Use.
+                self.list.set_selected(gtk::INVALID_LIST_POSITION);
+                *self.fetched.borrow_mut() = ids;
+                let verdict = model_list::list_verdict(self.fetched.borrow().as_slice());
+                self.report(FETCH_KEY, &press_test(FETCH_KEY, &typed, verdict));
+            }
+            Err(reason) => {
+                self.report(FETCH_KEY, &press_test(FETCH_KEY, &typed, Err(reason)));
+            }
+        }
+    }
+
+    /// Use: copy the chosen id into Model, only if the server really listed it.
+    ///
+    /// Checked against [`Self::fetched`] rather than the widget, because the dropdown can hold a
+    /// selection from a listing that has since been replaced.
+    fn use_model(&self) {
+        let chosen = if self.list.selected() == gtk::INVALID_LIST_POSITION {
+            String::new()
+        } else {
+            // A `StringList` hands back a `StringObject`; `string()` is the only way to read it
+            // (`GStr` is unsized and cannot be a downcast target).
+            self.list
+                .selected_item()
+                .and_then(|item| item.downcast::<gtk::StringObject>().ok())
+                .map(|obj| obj.string().to_string())
+                .unwrap_or_default()
+        };
+        let ids = self.fetched.borrow().clone();
+        match model_list::use_choice(&ids, &chosen) {
+            Ok(id) => {
+                if let Some(entry) = self.entries.borrow().iter().find(|(k, _)| k == "llm").map(|(_, e)| e) {
+                    entry.set_text(&id);
+                }
+                self.report(USE_KEY, &press_test(USE_KEY, &chosen, Ok(format!("Model set to {id}"))));
+            }
+            Err(reason) => {
+                self.report(USE_KEY, &press_test(USE_KEY, &chosen, Err(reason)));
+            }
+        }
     }
 
     /// Test All: ask every kind, report each one. Nothing stops at a failure — one early ✗ hiding
@@ -318,6 +386,18 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     use_choice.set_widget_name("use-model-button");
     use_choice.set_tooltip_text(Some("Copy the chosen id into Model"));
     grid.attach(&use_choice, 4, row, 2, 1);
+    // These two verdicts are not `add(...)` rows, so their badges are made here. Without a named
+    // badge widget `Dialog::report` has nowhere to paint and a failed listing would show up only in
+    // the log — §5 wants the ✓/✗ with its verdict as tooltip on the dialog itself.
+    for key in [FETCH_KEY, USE_KEY] {
+        let badge = gtk::Label::new(None);
+        badge.set_widget_name(&format!("badge-{key}"));
+        badge.set_width_chars(2);
+        badge.set_valign(gtk::Align::Center);
+        // Column 0 is the section-label column and sits empty on this row; the dropdown starts at 2.
+        let column = if key == FETCH_KEY { 0 } else { 6 };
+        grid.attach(&badge, column, row, 1, 1);
+    }
     row += 1;
 
     // Cutting.
@@ -432,6 +512,10 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         entries: RefCell::new(vec![]),
         badges: RefCell::new(vec![]),
         buttons: RefCell::new(vec![]),
+        fetched: RefCell::new(vec![]),
+        list: find_in(window.upcast_ref(), "model-list")
+            .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+            .expect("the dialog builds model-list"),
         log_view,
         log_expander,
         test_log: RefCell::new(checks::TestLog::new()),
@@ -465,7 +549,38 @@ fn wire_buttons(dialog: &Rc<Dialog>) {
         let owned = Rc::clone(dialog);
         all.connect_clicked(move |_| owned.ask_all());
     }
+
+    // Fetch models and Use: the two buttons that share the Writing block. They are looked up by name
+    // like every other control, so neither can be drawn without being wired.
+    if let Some(fetch) = find_in(dialog.window.upcast_ref(), "fetch-models-button")
+        .and_then(|w| w.downcast::<gtk::Button>().ok())
+    {
+        let owned = Rc::clone(dialog);
+        fetch.connect_clicked(move |_| owned.fetch_models());
+    }
+    if let Some(use_choice_button) = find_in(dialog.window.upcast_ref(), "use-model-button")
+        .and_then(|w| w.downcast::<gtk::Button>().ok())
+    {
+        let owned = Rc::clone(dialog);
+        use_choice_button.connect_clicked(move |_| owned.use_model());
+    }
+    // The two badges drawn outside `add(...)` join the same key -> badge map, so `report` paints
+    // them exactly like a per-row verdict instead of dropping straight into the log.
+    for key in [FETCH_KEY, USE_KEY] {
+        if let Some(badge) = find_in(dialog.window.upcast_ref(), &format!("badge-{key}"))
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+        {
+            dialog.badges.borrow_mut().push((key.to_string(), badge));
+        }
+    }
 }
+
+/// The provider key for the model listing. Not one of [`KINDS`]: Test All proves services, while
+/// this looks up an id — it still reports through the same badge and the `settings:` log line.
+pub const FETCH_KEY: &str = "fetch-models";
+
+/// The provider key for adopting the chosen id into Model.
+pub const USE_KEY: &str = "use-model";
 
 /// Every key that has a Test button, in dialog order.
 fn test_keys() -> [&'static str; 11] {
@@ -507,6 +622,37 @@ pub fn settings_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_in(window.upcast_ref(), "settings-button")?
         .downcast()
         .ok()
+}
+
+/// The ids the open dialog's model list currently offers, newest first by fetch order.
+///
+/// A test reads the listing this way rather than reaching into the DropDown's `StringList`, so the
+/// widget shape stays private to this module.
+pub fn listed_models(_window: &adw::ApplicationWindow) -> Vec<String> {
+    let Some(list) = find_named("model-list")
+        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        .or_else(|| {
+            last_dialog()
+                .and_then(|d| find_in(d.window.upcast_ref(), "model-list"))
+                .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        })
+    else {
+        return Vec::new();
+    };
+    let Some(model) = list.model() else { return Vec::new() };
+    let strings = match model.downcast::<gtk::StringList>() {
+        Ok(strings) => strings,
+        Err(_) => return Vec::new(),
+    };
+    (0..strings.n_items())
+        .filter_map(|i| strings.string(i).map(|text| text.to_string()))
+        .collect()
+}
+
+/// The open settings dialog's window, for tests that need to reach a control inside it. Its own
+/// top-level, so the main window's tree does not contain it.
+pub fn open_settings_window() -> Option<adw::Window> {
+    last_dialog().map(|dialog| dialog.window.clone())
 }
 
 /// One row's Test button, by key (`test-<key>-button`).

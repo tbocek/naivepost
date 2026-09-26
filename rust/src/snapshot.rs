@@ -114,6 +114,14 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 shown.present();
                 Some(shown.upcast())
             }
+            // §03's image is the dialog, not the window behind it, so the dialog is the subject here
+            // too. `no_probe` answers every row, so the marks read ✗ — which is what makes this shot
+            // worth looking at: the grid, the badge column and the Fetch models row all show at once.
+            "03-settings" => {
+                let shown = ui::settings::build(None, ui::settings::no_probe());
+                shown.present();
+                Some(shown.upcast())
+            }
             _ => None,
         };
         if subject.is_none() {

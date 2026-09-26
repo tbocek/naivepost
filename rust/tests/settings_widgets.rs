@@ -13,12 +13,24 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
+use gtk4 as gtk;
 use naivepost::checks;
+use naivepost::ui::settings;
 use naivepost::ui;
 use naivepost::ui::settings::Provider;
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
+}
+
+/// Let the main context run whatever the emissions queued.
+fn settle() {
+    let context = glib::MainContext::default();
+    for _ in 0..64 {
+        if !context.iteration(false) {
+            break;
+        }
+    }
 }
 
 /// One running GTK application for this test binary — the same single-main-loop arrangement
@@ -40,6 +52,8 @@ fn window_round() {
             RAN_FAILED.store(true, Ordering::SeqCst);
             check_test_all_reports_every_kind(app);
             RAN_ALL.store(true, Ordering::SeqCst);
+            check_fetch_and_use(app);
+            RAN_FETCH.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -49,6 +63,7 @@ fn window_round() {
 static RAN_TYPED: AtomicBool = AtomicBool::new(false);
 static RAN_FAILED: AtomicBool = AtomicBool::new(false);
 static RAN_ALL: AtomicBool = AtomicBool::new(false);
+static RAN_FETCH: AtomicBool = AtomicBool::new(false);
 
 /// A provider whose every answer echoes what was typed, so a press that tested anything other than
 /// the box's own text shows up as a wrong verdict string.
@@ -76,6 +91,65 @@ fn one_failure(fails: &'static str, reason: &'static str) -> Provider {
 fn open_canned(window: &adw::ApplicationWindow, provider: Provider) {
     ui::open_settings(window, provider);
     assert!(ui::dialog_open(window), "the settings dialog is open");
+}
+
+
+/// A named widget inside the open dialog (Fetch / Use are not per-row Test buttons, so they carry no
+/// `test-<key>-button` name and come from the dialog's own tree).
+fn settings_button_named(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
+    find_dialog_widget(window, name)
+        .and_then(|w| w.downcast::<gtk::Button>().ok())
+        .unwrap_or_else(|| panic!("the settings dialog carries a button named {name}"))
+}
+
+/// The DropDown that lists what the last Fetch returned. Not a Button, so it comes straight from the
+/// walk rather than through `settings_button_named`.
+fn settings_dropdown(window: &adw::ApplicationWindow, name: &str) -> gtk::DropDown {
+    find_dialog_widget(window, name)
+        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        .unwrap_or_else(|| panic!("the settings dialog carries a dropdown named {name}"))
+}
+
+/// The open dialog's window — its own top-level, not a child of the main window.
+fn open_settings_dialog() -> Option<adw::Window> {
+    settings::open_settings_window()
+}
+
+/// A named widget inside the open dialog, whatever its type — `model-list` is a DropDown, Fetch and
+/// Use are Buttons, so the walk cannot hand back a `gtk::Button` for every name.
+fn find_dialog_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
+    open_settings_dialog().and_then(|dialog| walk(dialog.upcast_ref(), name))
+}
+
+fn walk(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    if root.widget_name() == name {
+        return Some(root.clone());
+    }
+    for child in root.observe_children().iter::<glib::Object>() {
+        let Ok(child) = child else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        if let Some(found) = walk(&widget, name) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// The badge's MARK for a key — the ✓ / … / ✗ glyph `paint_badge` sets.
+fn badge_mark(window: &adw::ApplicationWindow, key: &str) -> String {
+    ui::badge(window, key)
+        .unwrap_or_else(|| panic!("a badge for {key}"))
+        .text()
+        .to_string()
+}
+
+/// The badge's TOOLTIP for a key, which is where §5 puts the verdict sentence itself.
+fn badge_text(window: &adw::ApplicationWindow, key: &str) -> String {
+    ui::badge(window, key)
+        .unwrap_or_else(|| panic!("a badge for {key}"))
+        .tooltip_text()
+        .map(|text| text.to_string())
+        .unwrap_or_default()
 }
 
 /// S1 through the widgets: the press takes the value in the box, not the value in the file.
@@ -248,4 +322,85 @@ fn f0_13_s12_a_failure_marks_the_cross_keeps_the_reason_and_opens_the_log() {
 fn f0_13_s13_test_all_reports_every_kind_without_short_circuiting() {
     window_round();
     assert!(RAN_ALL.load(Ordering::SeqCst), "the Test All check never ran");
+}
+
+/// S5 through the widgets: Fetch models fills the dropdown from the server's listing and Use copies
+/// the chosen id into Model. Both buttons exist on the dialog today; this is the wire that makes them
+/// do what §5 says, checked against `model_list`'s own verdicts rather than a re-typed sentence.
+fn check_fetch_and_use(app: &adw::Application) {
+    use naivepost::ui::settings;
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    // A canned `/v1/models` body, shaped as an OpenAI-compatible server answers it.
+    let body = r#"{"data":[{"id":"qwen2.5vl:7b"},{"id":"llama3.2:3b"}]}"#.to_string();
+    let provider: Provider = Rc::new(move |key, _| match key {
+        settings::FETCH_KEY => Ok(body.clone()),
+        _ => Ok(format!("{key} is fine")),
+    });
+    open_canned(&window, provider);
+
+    let fetch = settings_button_named(&window, "fetch-models-button");
+    fetch.emit_clicked();
+    settle();
+
+    let listed = settings::listed_models(&window);
+    assert_eq!(
+        listed,
+        vec!["qwen2.5vl:7b".to_string(), "llama3.2:3b".to_string()],
+        "the dropdown offers exactly what the server listed, in its order"
+    );
+    assert_eq!(
+        badge_mark(&window, settings::FETCH_KEY),
+        "\u{2713}",
+        "a good listing marks the tick"
+    );
+    assert_eq!(
+        badge_text(&window, settings::FETCH_KEY),
+        "2 model(s) served",
+        "// model_list::list_verdict, as the tooltip (§5)"
+    );
+
+    // Adopt the second id: select it in the widget, then press Use.
+    let list = settings_dropdown(&window, "model-list");
+    list.set_selected(1);
+    let use_button = settings_button_named(&window, "use-model-button");
+    use_button.emit_clicked();
+    settle();
+
+    assert_eq!(
+        settings::entry(&window, "llm")
+            .expect("the LLM model box")
+            .text()
+            .as_str(),
+        "llama3.2:3b",
+        "Use wrote the chosen id into Model (§9)"
+    );
+    assert_eq!(
+        badge_mark(&window, settings::USE_KEY),
+        "\u{2713}",
+        "adopting a listed id marks the tick"
+    );
+    assert_eq!(
+        badge_text(&window, settings::USE_KEY),
+        "Model set to llama3.2:3b",
+        "the verdict names what was written into Model"
+    );
+
+    // A refused fetch marks the cross and reaches the main log with the reason.
+    let failing: Provider =
+        Rc::new(|key, _| Err("connection refused on the typed address".to_string()));
+    open_canned(&window, failing);
+    settings_button_named(&window, "fetch-models-button").emit_clicked();
+    settle();
+    assert_eq!(
+        badge_mark(&window, settings::FETCH_KEY),
+        "\u{2717}",
+        "a refused listing marks the cross"
+    );
+    assert!(
+        last_log().contains("connection refused on the typed address"),
+        "the reason is mirrored into the main log: {:?}",
+        last_log()
+    );
 }
