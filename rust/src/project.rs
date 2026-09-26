@@ -133,6 +133,12 @@ pub struct Field<T> {
     pub value: T,
     #[serde(rename = "source", default)]
     pub origin: Origin,
+    /// F0.7 S3: the reason the model gave when it set this (`tool:set_policy`'s `because`). The form
+    /// prints it beside the value so a proposal can be judged, not just read (§03-shell#f07). `None` for
+    /// a default and for a hand-set field — a person's own choice needs no justification to themselves.
+    /// Skipped when absent, so a project file written before F0.7 still loads unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub because: Option<String>,
 }
 
 /// The editing policy. Only the two fields §2 names are here; the rest of
@@ -156,15 +162,30 @@ pub struct Policy {
     /// the shipped captions prompt (`cut_captions::CLEANING_RULE`).
     #[serde(rename = "keepSwearing")]
     pub keep_swearing: Field<bool>,
+    /// `P.policy.captionsPass`: whether F3.9's caption pass is asked at all. The three switches below
+    /// are the pipeline choice §00-principles replaces the Style dropdown with — the User Context says
+    /// what kind of video this is, F0.7 derives these from it, and a pass that is off never runs rather
+    /// than running and being ignored. Default on: no context means the full set.
+    #[serde(rename = "captionsPass")]
+    pub captions_pass: Field<bool>,
+    /// `P.policy.speedPass`: whether F3.10's speed pass is asked at all.
+    #[serde(rename = "speedPass")]
+    pub speed_pass: Field<bool>,
+    /// `P.policy.decorationsPass`: whether F3.11's decoration pass is asked at all.
+    #[serde(rename = "decorationsPass")]
+    pub decorations_pass: Field<bool>,
 }
 
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            marking_pass: Field { value: MarkingPass::Retakes, origin: Origin::Default },
-            cut_mode: Field { value: CutMode::Model, origin: Origin::Default },
-            narration_rewrite: Field { value: false, origin: Origin::Default },
-            keep_swearing: Field { value: true, origin: Origin::Default },
+            marking_pass: Field { value: MarkingPass::Retakes, origin: Origin::Default, because: None },
+            cut_mode: Field { value: CutMode::Model, origin: Origin::Default, because: None },
+            narration_rewrite: Field { value: false, origin: Origin::Default, because: None },
+            keep_swearing: Field { value: true, origin: Origin::Default, because: None },
+            captions_pass: Field { value: true, origin: Origin::Default, because: None },
+            speed_pass: Field { value: true, origin: Origin::Default, because: None },
+            decorations_pass: Field { value: true, origin: Origin::Default, because: None },
         }
     }
 }
@@ -672,8 +693,8 @@ fn migrate_style(project: &mut Project, has_policy: bool, raw: &Raw, report: &mu
             return;
         }
     };
-    project.policy.marking_pass = Field { value: marking_pass, origin: Origin::Default };
-    project.policy.cut_mode = Field { value: cut_mode, origin: Origin::Default };
+    project.policy.marking_pass = Field { value: marking_pass, origin: Origin::Default, because: None };
+    project.policy.cut_mode = Field { value: cut_mode, origin: Origin::Default, because: None };
     report.push(format!(
         "style {style:?}: markingPass {}, cutMode {}",
         serde_json::to_value(marking_pass).unwrap_or_default(),

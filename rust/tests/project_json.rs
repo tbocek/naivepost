@@ -96,10 +96,14 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
             marking_pass: project::Field {
                 value: project::MarkingPass::Joins,
                 origin: project::Origin::User,
+                because: None,
             },
+            // F0.7 S3: a derived field carries the model's reason; this test round-trips it so the
+            // stored shape is pinned, not just the value and source.
             cut_mode: project::Field {
                 value: project::CutMode::Words,
                 origin: project::Origin::Model,
+                because: Some("the lecture reads from slides, so the marked words carry the cut".into()),
             },
             ..project::Policy::default()
         },

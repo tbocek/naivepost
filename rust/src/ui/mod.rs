@@ -1,4 +1,6 @@
 pub mod settings;
+/// F0.7 S5 — the policy form: every field with its value, source and reason.
+pub mod policy_form;
 pub mod window;
 
 pub use settings::badge;
@@ -11,6 +13,13 @@ pub use settings::press_all;
 pub use settings::press_test;
 pub use settings::settings_button;
 pub use settings::test_button;
+/// F0.7 S5 — the policy form and the two ways into it (the run bar's ⚙ and each tab's ⓘ).
+pub use window::close_policy_forms;
+pub use window::open_policy_form;
+pub use window::policy_form_open;
+pub use window::press_policy;
+pub use window::session_policy;
+pub use window::set_session_policy_field;
 pub use window::arrow_steps;
 pub use window::line_key_controller;
 pub use window::line_position;
@@ -73,6 +82,12 @@ pub use window::selection_readout;
 pub use window::TRACK_REC_END;
 pub use window::TRACK_STRIP_PPS;
 pub use window::review_cut_segs;
+pub use window::copy_hand;
+pub use window::review_lanes;
+pub use window::copy_esc_controller;
+pub use window::press_copy;
+pub use window::press_paste;
+pub use window::press_lane;
 pub use window::review_cut_segs_count;
 // F2.7: the three verb buttons, the ⌦ key and the two "what is in hand" seams.
 pub use window::delete_key_controller;

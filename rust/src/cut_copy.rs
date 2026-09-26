@@ -19,6 +19,21 @@ use crate::cut::{Cut, Lane, Seg};
 use crate::cut_select::{Scope, Selection, MIN_SCENE_SECONDS};
 use crate::tools;
 
+/// F2.9: the three buttons' labels and tooltips, spelled once here so the page's widgets and the tests
+/// that read them cannot drift apart — the same arrangement `cut_verbs::BUTTONS` sets for ＋ / | / －.
+/// Wording follows `spec/inventory/cut.md` §D item 4; the glyphs are part of the label because the
+/// headless container has no icon theme (the precedent F2.5's volume control sets).
+pub const COPY_LABEL: &str = "\u{29c9} Copy";
+pub const COPY_TIP: &str = "take the selection in hand \u{2014} a second at least; the band keeps showing it";
+pub const PASTE_LABEL: &str = "\u{29c9} Paste at the red line";
+pub const PASTE_TIP: &str = "put what is in hand where the red line is \u{2014} footage splices in, sound lays over kept footage";
+pub const LANE_LABEL: &str = "\u{21f2} Lane";
+pub const LANE_TIP: &str = "give the copy a row of its own \u{2014} nothing is cut to it yet";
+
+/// F2.9 S2: what Esc says when it drops the copy. Plain words, because the person asked for nothing to
+/// happen and the status line is where the app answers.
+pub const DROPPED: &str = "the copy is dropped";
+
 // --- S1: taking it in hand -------------------------------------------------------------------------------
 
 /// F2.9 S1: the copy in hand — where its seconds start, how long they are, and what they are of. "What was
@@ -53,7 +68,28 @@ impl Hand {
             Scope::Sound { .. } => 0,
         }
     }
+
+    /// F2.9: the same reading as [`Hand::recording`], public so the page can name the file a sound copy
+    /// came from without reaching through the private matching helpers.
+    pub fn recording_public(&self) -> Option<&str> {
+        self.recording()
+    }
+
+    /// F2.9 S3: what a footage copy is windowed *from* — the recording it was taken out of. Footage has
+    /// no single source in the hand (it is the timeline's own pictures), so the caller supplies one from
+    /// the session; this returns `None` for footage and the recording for a sound.
+    pub fn source_public(&self) -> Option<&str> {
+        self.recording()
+    }
 }
+
+/// F2.9: the three buttons as `(widget name, label, tooltip)`, in the order the spec lists them — the
+/// same shape `cut_verbs::BUTTONS` uses so the page builds them with one loop.
+pub const BUTTONS: [(&str, &str, &str); 3] = [
+    ("copy-button", COPY_LABEL, COPY_TIP),
+    ("paste-button", PASTE_LABEL, PASTE_TIP),
+    ("lane-button", LANE_LABEL, LANE_TIP),
+];
 
 /// F2.9 S1: what ⧉ Copy did — took the seconds, refused for length, or found nothing marked.
 #[derive(Debug, Clone, PartialEq)]

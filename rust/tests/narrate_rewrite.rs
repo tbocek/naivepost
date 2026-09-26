@@ -167,6 +167,9 @@ fn p_policy_narrationrewrite_s6_rowed_as_off_and_absent_reads_as_off() {
     policy.narration_rewrite = project::Field {
         value: true,
         origin: project::Origin::User,
+        // F0.7 S4: a hand-set field needs no reason of its own, and `because` is skipped when absent,
+        // so the stored key set stays what this test pins.
+        because: None,
     };
     let json = serde_json::to_string(&policy).unwrap();
     assert!(json.contains("\"narrationRewrite\""), "{json}");

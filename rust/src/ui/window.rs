@@ -19,6 +19,7 @@ use crate::cut_review;
 use crate::cut_select;
 use crate::cut_delete;
 use crate::cut_verbs;
+use crate::cut_copy;
 use crate::cut_line;
 use crate::cut_screen;
 use crate::cut_trim;
@@ -28,6 +29,7 @@ use crate::new_project;
 use crate::open_project;
 use crate::prepare;
 use crate::preview::{self, Player, Press};
+use crate::project::Origin;
 use crate::project::Project;
 use crate::rescan;
 use crate::lucky;
@@ -35,6 +37,8 @@ use crate::run;
 use crate::runqueue;
 use crate::exchanges;
 use crate::save_as;
+use crate::policy;
+use crate::ui::policy_form;
 use crate::ui::settings;
 use crate::sources::{self, Control};
 use crate::startup;
@@ -51,6 +55,7 @@ fn page_box(
     project: &Project,
     session: &Rc<RefCell<Project>>,
     status: &gtk::Label,
+    window: &adw::ApplicationWindow,
 ) -> (gtk::Widget, Option<gtk::Button>, Option<gtk::CheckButton>) {
     let view = adw::ToolbarView::new();
 
@@ -63,7 +68,28 @@ fn page_box(
     let title = gtk::Label::new(Some(page));
     title.add_css_class("title-1");
     title.set_halign(gtk::Align::Start);
-    box_.append(&title);
+
+    // F0.7 S5: each tab's ⓘ opens the policy form, beside the page title where a person looking for
+    // "why is the pipeline doing this?" would look. Every page gets one and they all call the same
+    // `press_policy`, so the form is reachable from here as well as from the run bar's ⚙ — two ways in,
+    // one implementation. The name carries the page because four widgets sharing `tab-info-button` in
+    // one window would make a lookup ambiguous (the reason `add-sources-button` is found by walking
+    // rather than by name elsewhere).
+    //
+    // §1 lists ⓘ once at position **6** of the header bar, not once per page, and F0.1 S4 owns keeping
+    // its tooltip synced to the visible tab ("current tab's label + help text"). That single header
+    // widget is F0.1's round; until it exists this per-page ⓘ is what makes the form reachable from a
+    // tab at all. When the header one lands, it calls the same `press_policy` and these become the
+    // per-page shortcuts rather than being replaced by a second mechanism.
+    let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let info = gtk::Button::from_icon_name("help-about-symbolic");
+    info.set_widget_name(&format!("tab-info-button-{page}"));
+    info.set_tooltip_text(Some(policy_form::OPEN_TIP));
+    info.set_valign(gtk::Align::Center);
+    wire_policy(&info, window);
+    title_row.append(&title);
+    title_row.append(&info);
+    box_.append(&title_row);
 
     // §1's badge **9** is the visible tab's own page, so the way in belongs to Prepare and to no
     // other page. Only its two widgets are here: the source rows with their camera and microphone
@@ -124,7 +150,7 @@ fn page_box(
         play_.set_widget_name("play-recording-button");
         play_.set_tooltip_text(Some(RECORD_PLAY_TIP));
         play_.set_halign(gtk::Align::Start);
-        box_.insert_child_after(&play_, Some(&title));
+        box_.insert_child_after(&play_, Some(&title_row));
 
         // F2.2: ▶✂ beside ▶, not below it — §A puts the two in one transport group and the person
         // reads them as a pair ("the recording" / "the cut"). Greyed with no clips (S1) rather than
@@ -236,6 +262,20 @@ fn page_box(
             verb.set_halign(gtk::Align::Start);
             box_.insert_child_after(&verb, Some(&previous));
             previous = verb.upcast();
+        }
+
+        // F2.9: the copy buttons, right after the F2.7 verbs and before the strip they act on, in the
+        // spec's order. All three start insensitive: a fresh window holds neither a selection to copy
+        // nor a copy to paste, and `refresh_copy_buttons` sets them from live state on every draw — so a
+        // greyed one is today's answer and never a leftover.
+        for (name, label, tip) in cut_copy::BUTTONS {
+            let button = gtk::Button::with_label(label);
+            button.set_widget_name(name);
+            button.set_tooltip_text(Some(tip));
+            button.set_sensitive(false);
+            button.set_halign(gtk::Align::Start);
+            box_.insert_child_after(&button, Some(&previous));
+            previous = button.upcast();
         }
 
         // F2.8: the strip that carries trim and move. A PLACEHOLDER standing in for the picture rows,
@@ -817,7 +857,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let stack = adw::ViewStack::new();
     let mut prepare_add: Option<(gtk::Button, gtk::CheckButton)> = None;
     for name in PAGES {
-        let (child, add_, copy_) = page_box(name, project, &session, &status);
+        let (child, add_, copy_) = page_box(name, project, &session, &status, &window);
         stack.add_titled(&child, Some(name), name);
         if let (Some(add_), Some(copy_)) = (add_, copy_) {
             prepare_add = Some((add_, copy_));
@@ -919,6 +959,14 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     run_row.append(&play);
     run_row.append(&stop_);
     run_row.append(&lucky);
+    // F0.7's policy gear, right beside the "I'm feeling lucky" gears rather than in a toolbar of its own:
+    // §03 puts both kinds of ⚙ on the same bar, and a second row of controls would read as a new area
+    // of the window that no spec page drew.
+    let policy_button = gtk::Button::from_icon_name("emblem-system-symbolic");
+    policy_button.set_widget_name("policy-button");
+    policy_button.set_tooltip_text(Some(policy_form::OPEN_TIP));
+    run_row.append(&policy_button);
+    wire_policy(&policy_button, &window);
     run_row.append(&progress);
     wire_play(
         &play,
@@ -1123,6 +1171,26 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         }
     }
     wire_delete_keys(&window);
+    // F2.9: ⧉ Copy / ⧉ Paste / ⇲ Lane, wired the same way — after `set_content`, so the buttons being
+    // wired are the ones inside the realized tree.
+    for (name, seam) in [
+        ("copy-button", press_copy as fn(&adw::ApplicationWindow) -> String),
+        ("paste-button", press_paste),
+        ("lane-button", press_lane),
+    ] {
+        if let Some(button) = line_step_button(&window, name) {
+            let win = window.clone();
+            button.connect_clicked(move |_| {
+                let status = seam(&win);
+                if let Some(status_line) = find_status(win.upcast_ref()) {
+                    status_line.set_text(&status);
+                }
+                refresh_copy_buttons(&win);
+            });
+        }
+    }
+    // S2: Esc drops what is in hand, and only that key.
+    wire_copy_esc(&window);
     // F2.8: the trim and move gestures on `track-strip`, wired after `set_content` for the same reason.
     wire_track_strip(&window);
     window
@@ -1636,6 +1704,151 @@ fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindow) {
     });
 }
 
+/// F0.7 S5: where a press of the policy control goes — build the form off this window's live policy and
+/// show it. The button decides nothing: [`policy_form::build`] reads every row from
+/// [`policy::derived_fields`] plus the [`Project`]'s `Policy`, so what shows is the current state and
+/// not a snapshot someone remembered to refresh.
+///
+/// A form already open is raised rather than duplicated: pressing ⚙ twice should not put two copies of
+/// one screen on the desk.
+pub fn press_policy(window: &adw::ApplicationWindow) {
+    if let Some(existing) = POLICY_FORMS.with(|forms| forms.borrow().last().cloned()) {
+        // Rebuild the rows in place rather than only raising the old window: the policy may have changed
+        // since this form was opened, and a form that shows last-opened values is exactly the staleness
+        // S5 exists to avoid.
+        refresh_form(&existing);
+        existing.present();
+        return;
+    }
+    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+        return;
+    };
+    // Read at open time, through the same handle Open/Rescan write, so the form cannot drift from the
+    // project it describes.
+    let policy = session.borrow().policy.clone();
+    let form = policy_form::build(Some(window.upcast_ref()), &policy);
+    POLICY_FORMS.with(|forms| forms.borrow_mut().push(form.clone()));
+    form.present();
+}
+
+/// Whether this window has a policy form showing.
+pub fn policy_form_open(_window: &adw::ApplicationWindow) -> bool {
+    POLICY_FORMS.with(|forms| !forms.borrow().is_empty())
+}
+
+/// The open policy form, newest first — the same handle `press_policy` raised. Published so a test can
+/// read the labels inside it without walking GTK's application window list (which needs a running
+/// `GApplication` registration this harness does not have).
+pub fn open_policy_form() -> Option<adw::Window> {
+    POLICY_FORMS.with(|forms| forms.borrow().last().cloned())
+}
+
+/// Re-read the live policy into an already-open form's labels, in place.
+///
+/// The row widgets are found by their stable names rather than kept in a struct, so a rebuild needs no
+/// bookkeeping and cannot hold a stale handle — the same reason the buttons are looked up per press.
+fn refresh_form(form: &adw::Window) {
+    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+        return;
+    };
+    let policy = session.borrow().policy.clone();
+    for entry in policy::derived_fields() {
+        if let Some(label) =
+            find_widget_by_name(form.upcast_ref(), &format!("policy-value-{}", entry.field))
+        {
+            if let Ok(label) = label.downcast::<gtk::Label>() {
+                label.set_text(&policy_form::value_word(&policy, entry.field));
+            }
+        }
+        if let Some(label) =
+            find_widget_by_name(form.upcast_ref(), &format!("policy-source-{}", entry.field))
+        {
+            if let Ok(label) = label.downcast::<gtk::Label>() {
+                label.set_text(policy_form::origin_word(policy_form::field_origin(&policy, entry.field)));
+            }
+        }
+        if let Some(label) =
+            find_widget_by_name(form.upcast_ref(), &format!("policy-reason-{}", entry.field))
+        {
+            if let Ok(label) = label.downcast::<gtk::Label>() {
+                label.set_text(&policy_form::reason_word(&policy, entry.field));
+            }
+        }
+    }
+}
+
+/// The live policy this window's session holds — the same `Rc` Open/Rescan write, read through the
+/// newest slot like [`session_sources`] does. Published so a test can set a field's origin to `User`
+/// and watch what the form then prints, rather than poking the thread-local from outside.
+pub fn session_policy(window: &adw::ApplicationWindow) -> crate::project::Policy {
+    let _ = window;
+    SESSION
+        .with(|slots| slots.borrow().last().cloned())
+        .map(|project| project.borrow().policy.clone())
+        .unwrap_or_default()
+}
+
+/// Put a value, source and reason on one policy field of this window's live session.
+///
+/// A test seam for S4/S5: it goes through `policy::apply`, so what lands is exactly what the derivation
+/// path would have written, and the caller only overrides the origin afterwards to stand in for "a
+/// person set this by hand".
+pub fn set_session_policy_field(
+    window: &adw::ApplicationWindow,
+    field: &str,
+    value: &str,
+    because: &str,
+    origin: Origin,
+) -> policy::Applied {
+    let _ = window;
+    let Some(project) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+        return policy::Applied::Refused("this window holds no session".to_string());
+    };
+    let proposal = policy::Proposal {
+        field: field.to_string(),
+        value: value.to_string(),
+        because: because.to_string(),
+    };
+    let outcome = policy::apply(&mut project.borrow_mut().policy, &proposal);
+    // Only after a Set does the origin override make sense: refusing first and stamping `User` onto an
+    // untouched field would show the form something that never happened.
+    if outcome == policy::Applied::Set {
+        stamp_origin(&mut project.borrow_mut().policy, field, origin);
+    }
+    outcome
+}
+
+/// Move one field's `source` to `origin` without touching its value or reason.
+fn stamp_origin(policy: &mut crate::project::Policy, field: &str, origin: Origin) {
+    match field {
+        "markingPass" => policy.marking_pass.origin = origin,
+        "cutMode" => policy.cut_mode.origin = origin,
+        "captionsPass" => policy.captions_pass.origin = origin,
+        "speedPass" => policy.speed_pass.origin = origin,
+        "decorationsPass" => policy.decorations_pass.origin = origin,
+        _ => {}
+    }
+}
+
+/// Close every policy form this window opened, so the next check starts with none showing. Called by the
+/// test between rounds: the thread-local outlives a window, and a leftover form would make
+/// `press_policy`'s raise-instead-of-rebuild branch fire when the check wants a fresh build.
+pub fn close_policy_forms() {
+    POLICY_FORMS.with(|forms| {
+        for form in forms.borrow_mut().drain(..) {
+            form.close();
+        }
+    });
+}
+
+/// F0.7: the run bar's policy gear, wired after the widgets exist. Its sibling in the header is each
+/// tab's ⓘ; both call the same [`press_policy`], so the form is reachable from the ⚙ AND from ⓘ with
+/// one implementation behind them.
+fn wire_policy(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    button.connect_clicked(move |_| press_policy(&window));
+}
+
 fn wire_rescan(button: &gtk::Button, status: &gtk::Label, session: &Rc<RefCell<Project>>) {    let status = status.clone();
     // The window is handed an immutable `&Project` and holds no live project yet, so the scan works
     // on the private copy shared with Add sources. F0.9's live project state replaces this; until
@@ -1937,6 +2150,14 @@ thread_local! {
 }
 
 thread_local! {
+    /// The policy form this window has open (F0.7 S5), newest last. Held so a second press on ⚙ or ⓘ
+    /// raises the form that is already there instead of stacking a third copy of the same screen, and so
+    /// `policy_form_open` can answer whether one is showing without searching the widget tree.
+    static POLICY_FORMS: std::cell::RefCell<Vec<adw::Window>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
     /// The live project handle `build_window` created, published so a test can read what Open put in
     /// place. One window per test binary here, so one slot is enough; the page widgets keep their own
     /// clone of the same `Rc`, which is why replacing the contents is visible everywhere.
@@ -2172,6 +2393,9 @@ fn refresh_selection_readout(window: &adw::ApplicationWindow) {
         }
     }
     refresh_verb_buttons(window);
+    // F2.9: the copy buttons ride the same refresh path, so a band drawn, nudged or cleared updates them
+    // without a second place to remember.
+    refresh_copy_buttons(window);
 }
 
 
@@ -2535,6 +2759,13 @@ pub fn review_cut_segs(window: &adw::ApplicationWindow) -> Vec<cut::Seg> {
 pub fn review_cut_segs_count(window: &adw::ApplicationWindow) -> usize {
     let _ = window;
     newest_review_cut().segs.len()
+}
+
+/// This window's lanes (F2.9 S3), by their stable read: ⇲ Lane adds one and cuts nothing, so a test
+/// asserts the lane arrived while `review_cut_segs_count` stayed put.
+pub fn review_lanes(window: &adw::ApplicationWindow) -> Vec<cut::Lane> {
+    let _ = window;
+    newest_review_cut().lanes
 }
 
 /// This window's preview as it currently stands — for a test that fired the real button and wants to
@@ -3048,6 +3279,166 @@ pub fn open_folds(window: &adw::ApplicationWindow) -> Vec<usize> {
             .map(|slot| slot.borrow().clone())
             .unwrap_or_default()
     })
+}
+
+// --- F2.9: copy, paste and lane --------------------------------------------------------------------------
+
+thread_local! {
+    /// The copy in hand (F2.9 S1), newest window first's rule not needed: one copy app-wide, because a
+    /// second one would leave the person unsure which ⧉ Paste answers.
+    static COPY_HAND: std::cell::RefCell<Option<cut_copy::Hand>> =
+        const { std::cell::RefCell::new(None) };
+    static COPY_ESC_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// What is in hand right now — the read side of [`press_copy`], so a test can assert the hand without
+/// reaching into thread-locals.
+pub fn copy_hand() -> Option<cut_copy::Hand> {
+    COPY_HAND.with(|cell| cell.borrow().clone())
+}
+
+/// This window's Esc controller (F2.9 S2), so a test can see it is attached. `None` on a page that drew none.
+pub fn copy_esc_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
+    let _ = window;
+    COPY_ESC_KEYS.with(|cell| cell.borrow().clone())
+}
+
+/// F2.9 S1: ⧉ Copy. [`cut_copy::copy`] decides everything — whether there is a band, whether it is a
+/// second long, what it is a stretch of; this only reads the band, keeps the answer if it took one, and
+/// hands back the sentence to print. A refusal leaves no hand, so ⧉ Paste stays greyed.
+pub fn press_copy(window: &adw::ApplicationWindow) -> String {
+    let taken = cut_copy::copy(selection(window).as_ref());
+    match &taken {
+        cut_copy::Take::Taken(hand) => {
+            COPY_HAND.with(|cell| *cell.borrow_mut() = Some(hand.clone()));
+            cut_copy::copied_status(hand)
+        }
+        cut_copy::Take::TooShort(say) => say.clone(),
+        cut_copy::Take::NothingSelected(say) => (*say).to_string(),
+    }
+}
+
+/// The line the copy lands on. The player's own playhead when one is running, otherwise the stored line:
+/// both are the same number while nothing plays, and the player is what the eye is watching.
+fn paste_line(window: &adw::ApplicationWindow) -> f64 {
+    live_player(window)
+        .map(|player| player.borrow().playhead.unwrap_or_else(|| line_position(window).t))
+        .unwrap_or_else(|| line_position(window).t)
+}
+
+/// F2.9 S2: ⧉ Paste at the red line. [`cut_copy::paste`] decides footage-vs-sound, splices or lays, and
+/// refuses with its own sentence; this supplies the three things only the page knows — the line, the
+/// copied recording's project path, and the file second the span starts at — then writes the mutated cut
+/// back and mirrors the hand so a refusal keeps the copy.
+pub fn press_paste(window: &adw::ApplicationWindow) -> String {
+    let at = paste_line(window);
+    let mut hand = copy_hand();
+    // The copied recording's path: a sound names itself by base, and until F2.10/F2.11 own the row/path
+    // mapping the base IS the project-relative path the cut uses, so an unmatched name passes through
+    // unchanged rather than inventing one.
+    let sources = session_sources(window);
+    let path = match hand.as_ref().and_then(|h| h.recording_public()) {
+        Some(recording) => sources
+            .iter()
+            .find(|source| source_base(source) == recording)
+            .cloned()
+            .unwrap_or_else(|| recording.to_string()),
+        None => String::new(),
+    };
+    // Session→file seconds for the copied span. No offset helper exists yet — the aligner round brings the
+    // two clocks together — so the span's own start, clamped at zero, is what the lane/file is asked for.
+    let file_seconds = hand.as_ref().map(|h| h.from.max(0.0)).unwrap_or(0.0);
+    let mut cut_ = newest_review_cut();
+    let outcome = cut_copy::paste(&mut cut_, &mut hand, Some(at), &path, file_seconds, &sources);
+    seed_review_cut(window, &cut_);
+    COPY_HAND.with(|cell| *cell.borrow_mut() = hand);
+    match outcome {
+        Ok(status) => status,
+        Err(refusal) => refusal,
+    }
+}
+
+/// The base name of a project path — what a `Scope::Sound { recording }` names.
+fn source_base(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+        .to_string()
+}
+
+/// F2.9 S3: ⇲ Lane. [`cut_copy::lane_start`] says whether the line may open a row there and
+/// [`cut_copy::lane`] builds it; this names it and files it. NOTHING is cut to the new row — no `Seg` is
+/// added here, because a lane that arrived already green would be a cut nobody made; ＋ Add lays scenes on
+/// it later. Name: `Copied`, then `Copied-2`, `Copied-3`… past every row already taken, since
+/// `Lane::name` keys `Cut::rows` and every scene's `quiet` list.
+pub fn press_lane(window: &adw::ApplicationWindow) -> String {
+    let Some(hand) = copy_hand() else {
+        return "nothing is in hand \u{2014} \u{29c9} Copy takes the selection first".to_string();
+    };
+    let at = paste_line(window);
+    let mut cut_ = newest_review_cut();
+    // The session's filmed runs, from the recordings the page draws its rows from. Until F2.11 owns them,
+    // the kept footage spans stand in: they are what was filmed and kept, which is the honest answer.
+    let filmed: Vec<(f64, f64)> = cut_copy::footage_stretches(&cut_, 0.0, f64::MAX);
+    match cut_copy::lane_start(Some(at), &hand, &filmed) {
+        cut_copy::LaneStart::Refusal(say) => say,
+        cut_copy::LaneStart::Start(at) => {
+            let taken: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
+            let name = cut_copy::lane_name("Copied", &taken);
+            let source = hand
+                .source_public()
+                .map(|src| src.to_string())
+                .unwrap_or_else(|| session_sources(window).first().cloned().unwrap_or_default());
+            let file_seconds = hand.from.max(0.0);
+            let Some(lane) = cut_copy::lane(&hand, &source, file_seconds, at, name.clone()) else {
+                return cut_copy::too_short().to_string();
+            };
+            cut_.lanes.push(lane);
+            seed_review_cut(window, &cut_);
+            cut_copy::lane_status(hand.length, hand.from, &name, at)
+        }
+    }
+}
+
+/// S2: Esc drops the copy. Claims ONLY Escape — every other key returns `Proceed`, so typing in an entry
+/// field is untouched, exactly as the ⌦ controller does for its two keys.
+fn wire_copy_esc(window: &adw::ApplicationWindow) {
+    let controller = gtk::EventControllerKey::new();
+    let win = window.clone();
+    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
+        if key == gtk::gdk::Key::Escape {
+            COPY_HAND.with(|cell| *cell.borrow_mut() = None);
+            if let Some(status_line) = find_status(win.upcast_ref()) {
+                status_line.set_text(cut_copy::DROPPED);
+            }
+            refresh_copy_buttons(&win);
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    });
+    window.add_controller(controller.clone());
+    COPY_ESC_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
+}
+
+/// F2.9: set the three copy buttons from live state. Copy is live with a band a second or longer; Paste
+/// and Lane only while a hand is held. Runs from `refresh_selection_readout`, which every draw, nudge and
+/// clear already calls, so a greyed button is always today's answer.
+fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
+    let copy_live = selection(window)
+        .map(|band| band.length() >= cut_select::MIN_SCENE_SECONDS)
+        .unwrap_or(false);
+    let held = copy_hand().is_some();
+    if let Some(button) = line_step_button(window, "copy-button") {
+        button.set_sensitive(copy_live);
+    }
+    for name in ["paste-button", "lane-button"] {
+        if let Some(button) = line_step_button(window, name) {
+            button.set_sensitive(held);
+        }
+    }
 }
 
 /// F2.8 S1: the strip's height — the ruler row plus the kept-bar row, one number the size request and
