@@ -5,9 +5,10 @@
 //! Envelopes are written by hand at 200 Hz — the timeline's own rate, so a bucket is the 5 ms the spec
 //! counts silence in. Levels are read off the byte scale as a −70…0 dBFS meter: room 8 bytes, a word 120.
 
-use naivepost::edges::{self as edge, AlignedWord, Edges};
+use naivepost::edges::{self as edge, AlignedWord, Edges, Lane};
+use naivepost::layout::Tree;
 use naivepost::textfmt::Retake;
-use naivepost::wave::Wave;
+use naivepost::wave::{self, Wave};
 
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
@@ -328,4 +329,153 @@ fn f1_11_s6_the_reach_and_the_pads_are_the_scored_numbers() {
     assert_eq!(edge::EDGE_TAIL_DB, 12.0);
     assert_eq!(edge::EDGE_TAIL_MAX, 0.25);
     assert_eq!(edge::TROUGH_REACH, 0.4);
+}
+
+// --- S6 through the disk: the envelope read out of `cache/waves` ---------------------------------
+
+/// A throwaway project folder, so a test can write and read a real cache file. Same shape as
+/// `tests/wave_cache.rs`: unique per process and tag, nothing shared between tests.
+fn temp_tree(tag: &str) -> Tree {
+    let dir = std::env::temp_dir().join(format!(
+        "naivepost-edges-{tag}-{}-{}.naivepost",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    Tree::new(&dir).unwrap()
+}
+
+const STAMPED_SIZE: i64 = 4_096;
+const STAMPED_MTIME: i64 = 1_700_000_000;
+
+#[test]
+fn f1_11_s6_a_cached_lane_is_read_and_a_missing_one_is_left_out() {
+    let tree = temp_tree("lane-present");
+    let w = wave(8.0, &[(2.0, 2.5, WORD)]);
+    wave::write(&tree, "lecture", &w, STAMPED_SIZE, STAMPED_MTIME).unwrap();
+
+    // The second lane has no cache file at all: it contributes nothing, and that is not an error —
+    // F1.11's "Without: mono envelope alone" case, where the word pad stands in.
+    let held = edge::load(
+        &tree,
+        &[
+            Lane { key: "lecture".into(), off: 0.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME },
+            Lane { key: "mic".into(), off: 30.0, size: 1, mtime: 1 },
+        ],
+    );
+    assert_eq!(held.len(), 1, "only the lane with a cache is held: {held:?}");
+    assert_eq!(held[0].0.key, "lecture");
+    assert_eq!(held[0].1.off, 0.0, "the lane keeps its own place on the session clock");
+}
+
+#[test]
+fn f1_11_s6_a_stale_cache_is_no_envelope_at_all() {
+    let tree = temp_tree("stale");
+    let w = wave(8.0, &[(2.0, 2.5, WORD)]);
+    wave::write(&tree, "lecture", &w, STAMPED_SIZE, STAMPED_MTIME).unwrap();
+
+    // The recording was replaced since the cache was made (size differs by one byte). `wave::read`
+    // answers None, so NOTHING is held — a stale envelope would move a cut onto sound that is no
+    // longer on the track, which is worse than asking nothing.
+    let held = edge::load(
+        &tree,
+        &[Lane { key: "lecture".into(), off: 0.0, size: STAMPED_SIZE + 1, mtime: STAMPED_MTIME }],
+    );
+    assert!(held.is_empty(), "a cache stamped against another file is not this recording's");
+
+    // And with nothing held, placement lands exactly where the no-envelope case does: P.machine.wordPad
+    // = 0.08 s past the last word that stays (1.5 -> 1.58), the same number as the `none` branch above.
+    let mut lookup = edge::finder(&held);
+    let (marks, notes) = edge::place_edges(
+        vec![mark(3.0, 4.0, 0.0, 4.0)],
+        &[word("stays", 1.0, 1.5)],
+        &mut lookup,
+        &[],
+    );
+    assert_eq!(marks[0].s, 1.58, "the word pad, not the discarded envelope, placed the edge");
+    assert!(!notes.iter().any(|n| n.contains("the sound before it stops")), "{notes:?}");
+}
+
+#[test]
+fn f1_11_s6_the_finder_picks_the_lane_that_is_actually_playing() {
+    let tree = temp_tree("two-lanes");
+    let first = wave(30.0, &[(2.0, 2.5, WORD)]);
+    let second = wave(30.0, &[(2.0, 2.5, 200)]);
+    wave::write(&tree, "cam-a", &first, STAMPED_SIZE, STAMPED_MTIME).unwrap();
+    wave::write(&tree, "cam-b", &second, STAMPED_SIZE, STAMPED_MTIME).unwrap();
+
+    let held = edge::load(
+        &tree,
+        &[
+            Lane { key: "cam-a".into(), off: 0.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME },
+            Lane { key: "cam-b".into(), off: 30.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME },
+        ],
+    );
+    assert_eq!(held.len(), 2);
+    let lookup = edge::finder(&held);
+
+    // Identified by the envelope's own offset rather than pointer identity.
+    let at = |t: f64| lookup(t).map(|e| e.off);
+    assert_eq!(at(10.0), Some(0.0), "midway through the first take");
+    // The boundary belongs to the take that STARTS then, not the one that started earlier.
+    assert_eq!(at(30.0), Some(30.0), "a take beginning at t owns t");
+    assert_eq!(at(31.5), Some(30.0), "and everything after it until the next lane");
+    // Before the first take there is no recording playing, so there is nothing to ask.
+    assert_eq!(at(-0.5), None);
+}
+
+#[test]
+fn f1_11_s6_a_live_envelope_moves_the_mark_earlier_through_the_cache() {
+    let tree = temp_tree("live-earlier");
+    // The last sound before the stamp stops at 5.9 s; the mark is stamped at 6.4 s with NO word times,
+    // so the envelope alone places it. P.eng.edgeReachSeconds = 0.8 covers the 0.5 s of quiet, and the
+    // edge pad of 0.05 s leaves the cut at 5.9 + 0.05 -- the same numbers S3 proves directly, now
+    // reached by way of the on-disk cache instead of a hand-passed envelope.
+    let w = wave(12.0, &[(5.0, 5.9, WORD)]);
+    wave::write(&tree, "lecture", &w, STAMPED_SIZE, STAMPED_MTIME).unwrap();
+
+    let held = edge::load(
+        &tree,
+        &[Lane { key: "lecture".into(), off: 0.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME }],
+    );
+    assert_eq!(held.len(), 1);
+    let mut lookup = edge::finder(&held);
+
+    let (marks, notes) = edge::place_edges(vec![mark(6.4, 7.0, 0.0, 7.0)], &[], &mut lookup, &[]);
+    assert_eq!(marks[0].s, 5.95, "off the last sound bucket plus the edge pad");
+    assert!(
+        notes.iter().any(|n| n.contains("the sound before it stops")),
+        "the envelope branch says so: {notes:?}"
+    );
+}
+
+#[test]
+fn f1_11_s6_a_live_envelope_moves_the_resume_edge_later_through_the_cache() {
+    let tree = temp_tree("live-resume");
+    // The retake's onset is at 10.0 s and its stamp is late by 0.4 s -- inside
+    // P.eng.lateStampSeconds = 0.6, so the stamp is read as naming THAT run, and the cut resumes at
+    // its onset less the 0.05 s edge pad: 9.95. The tail rules that bound the walk are
+    // P.eng.edgeTailDB = 12 dB below the run's peak, P.eng.edgeTailMaxSeconds = 0.25 of tail
+    // followed, and P.eng.troughReachSeconds = 0.4 of gap searched; none of them pull this edge back,
+    // because the run ahead of the stamp is a whole word, not a tail.
+    let w = wave(16.0, &[(10.0, 11.0, WORD)]);
+    wave::write(&tree, "lecture", &w, STAMPED_SIZE, STAMPED_MTIME).unwrap();
+
+    let held = edge::load(
+        &tree,
+        &[Lane { key: "lecture".into(), off: 0.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME }],
+    );
+    assert_eq!(held.len(), 1);
+    let mut lookup = edge::finder(&held);
+
+    // again = 10.4 (the late stamp), to starts at 8.0 -- the resume edge has to travel forward.
+    let (marks, notes) = edge::place_edges(vec![mark(2.0, 3.0, 10.4, 8.0)], &[], &mut lookup, &[]);
+    assert_eq!(marks[0].to, 9.95, "the cached onset less the edge pad");
+    assert!(
+        notes.iter().any(|n| n.contains("the cut resumes at")),
+        "the resume branch says so: {notes:?}"
+    );
 }

@@ -218,11 +218,17 @@ pub fn write_marks(tree: &Tree, marks: &[Retake]) -> Result<(), String> {
 /// S2 through the widgets and through the disk at once: ask the same question the Cut ▶ asks, but hand
 /// it the words directly instead of reading them back from each source's `words.json`. The widget test
 /// needs this because the folder it builds has no Prepare output to read — only what it seeded itself.
+///
+/// `sources` is the session's stored source paths, in the order they were added — the same list
+/// [`before_cut`] takes — so the lanes are laid out on the same clock and keyed the same way here as
+/// there. Pass `&[]` when nothing is known about the session: no lane loads and the edges land on the
+/// word times, which is F1.11's envelope-less case rather than a failure.
 pub fn before_cut_with_times(
     tree: &Tree,
     text: &str,
     words: &[String],
     times: &[(f64, f64)],
+    sources: &[String],
 ) -> Option<Outcome> {
     let final_mtime = mtime(&tree.final_txt());
     let marks_mtime = mtime(&tree.retakes_tsv());
@@ -235,7 +241,8 @@ pub fn before_cut_with_times(
             ..Default::default()
         });
     }
-    let outcome = remake(text, words, times, |_| None);
+    let held = edges::load(tree, &session_lanes(tree, sources));
+    let outcome = remake(text, words, times, edges::finder(&held));
     if !outcome.refused {
         if let Err(reason) = write_marks(tree, &outcome.marks) {
             let mut outcome = outcome;
@@ -256,6 +263,56 @@ fn source_key(stored: &str) -> String {
         Some(dot) if dot > 0 => name[..dot].to_string(),
         _ => name.to_string(),
     }
+}
+
+/// The session's lanes as F1.11's edge placement wants them: each source keyed as Prepare keys it,
+/// placed on the session clock by its OWN file name, and stamped with the recording's size/mtime so a
+/// cache made against a replaced file reads as a miss.
+///
+/// The offsets come from `clock::clock` through [`crate::fix_transcripts::placement`], which MUST be
+/// handed the WHOLE session: leaving a take out moves second nought and slides every other lane to a
+/// different second, which would place every edge in the wrong audio. A source whose file cannot be
+/// stat-ed contributes no lane at all — there is no recording to have an envelope of — and the word
+/// pad covers that second exactly as it did before this lookup existed.
+fn session_lanes(tree: &Tree, sources: &[String]) -> Vec<edges::Lane> {
+    // The clock is keyed on the file NAME, so take the base for it; but the stat needs the WHOLE
+    // stored path, since `project:sources/lecture.mkv` lives inside the project and a bare
+    // `lecture.mkv` resolves to nothing. Both travel together so neither is guessed at later.
+    let named: Vec<(&str, &str)> = sources
+        .iter()
+        .map(|stored| (stored.rsplit('/').next().unwrap_or(stored), stored.as_str()))
+        .collect();
+    let names: Vec<&str> = named.iter().map(|(name, _)| *name).collect();
+    let offsets = crate::fix_transcripts::placement(&names);
+    named
+        .iter()
+        .zip(offsets)
+        .filter_map(|((name, stored), off)| {
+            let (size, mtime) = stat_recording(tree, stored)?;
+            Some(edges::Lane { key: source_key(name), off, size, mtime })
+        })
+        .collect()
+}
+
+/// The recording's own size and mtime, off the path the project stored. `project:`-prefixed paths
+/// resolve inside the project folder; anything else is taken as it stands.
+///
+/// These are the stamps [`crate::wave::read`] checks the cache header against, so they must come from
+/// the recording and never from the cache file itself — reading them back out of the file being checked
+/// makes the staleness test unable to fail.
+fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
+    let path = match stored.strip_prefix("project:") {
+        Some(rel) => tree.dir().join(rel),
+        None => std::path::PathBuf::from(stored),
+    };
+    let meta = std::fs::metadata(&path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some((meta.len() as i64, mtime))
 }
 
 
@@ -314,9 +371,11 @@ pub fn session_words(tree: &Tree, sources: &[String]) -> (Vec<String>, Vec<(f64,
 /// the ceiling (`P.machine.retakeCeil`, [`RETAKE_CEIL`]), in which case nothing was written and what
 /// is on disk stays.
 ///
-/// No envelope is asked here: `remake` places its edges with `None` for every second, so the marks sit
-/// on the word times themselves. A caller holding a waveform may pass the real lookup to
-/// [`remake`] directly; this entry point is the one that needs no audio in hand.
+/// The edges are asked of the wave cache: each lane's `cache/waves/<key>.wave` is read and, when it is
+/// present and stamped against this very recording, its envelope moves the mark onto the sound. With no
+/// such cache the marks sit on the word times instead — a normal state, not an error, because nothing
+/// in `src/` writes that cache yet (the producer arrives with the audio-lane rounds). Either way the
+/// words fence the edge; the envelope only chooses inside the fence.
 pub fn before_cut(tree: &Tree, sources: &[String]) -> Option<Outcome> {
     let final_mtime = mtime(&tree.final_txt());
     let marks_mtime = mtime(&tree.retakes_tsv());
@@ -337,7 +396,8 @@ pub fn before_cut(tree: &Tree, sources: &[String]) -> Option<Outcome> {
             ..Default::default()
         });
     }
-    let outcome = remake(&text, &words, &times, |_| None);
+    let held = edges::load(tree, &session_lanes(tree, sources));
+    let outcome = remake(&text, &words, &times, edges::finder(&held));
     if !outcome.refused {
         // Writing the marks is what ends the edit: the new file's mtime answers S2's question with
         // "no" from here on, so the remake happens once without any flag to remember it by.

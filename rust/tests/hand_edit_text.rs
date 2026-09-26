@@ -454,3 +454,100 @@ fn f1_12_s2_before_cut_says_the_marks_stand_when_nothing_was_edited() {
     );
     assert_eq!(std::fs::read_to_string(tree.retakes_tsv()).unwrap(), before);
 }
+
+// --- F1.11 through this door: does the Cut ▶ actually consult `cache/waves`? ---------------------
+
+/// The source file the project names, written for real so `stat_recording` has something to stat.
+/// Returns the path and the stored form to hand `before_cut`.
+///
+/// The base name carries NO timestamp on purpose: an unstamped take sits at the session's start, offset
+/// 0.0, which is where this test's word times already run from. A stamp in the file name would place
+/// the lane on a different second than the words are counted from, and the envelope would be asked
+/// about audio that is not under the mark.
+fn make_source(tree: &Tree) -> (PathBuf, String) {
+    let dir = tree.dir().join("sources");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("lecture.mkv");
+    std::fs::write(&path, b"a recording, standing in for the real one").unwrap();
+    (path, "project:sources/lecture.mkv".to_string())
+}
+
+/// The recording's own `(size, mtime)` read back the way the app reads them — whole seconds since the
+/// epoch — so a cache written with these matches the file instead of matching by luck.
+fn stat_like_the_app(path: &Path) -> (i64, i64) {
+    let meta = std::fs::metadata(path).unwrap();
+    let mtime = meta
+        .modified()
+        .unwrap()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    (meta.len() as i64, mtime)
+}
+
+/// Two words deleted from the middle of ten, so the dropped run starts at second 5.
+const CUT_TWO: [&str; 8] = [
+    "so", "we", "take", "the", "clip", "and", "there", "twice",
+];
+
+#[test]
+fn f1_11_s6_before_cut_asks_the_wave_cache_and_the_sound_moves_the_edge() {
+    let tree = tree("f111-cache-hit");
+    transcript(tree.dir());
+    write_words(&tree, &WORDS);
+    seed_marks(&tree);
+    write_final(&tree, &text(&CUT_TWO));
+    set_stamp(&tree.retakes_tsv(), 60);
+    set_stamp(&tree.final_txt(), 0);
+
+    // The recording on disk, then a cache written against THAT file's own size/mtime.
+    let (src, stored) = make_source(&tree);
+    let (size, mtime) = stat_like_the_app(&src);
+    let mut peaks = vec![8u8; (20.0 * HZ) as usize];
+    // Sound up to 5.9 s, quiet after: the cut ends where the sound stops instead of at the word time.
+    for bucket in (5.0 * HZ) as usize..(5.9 * HZ) as usize {
+        peaks[bucket] = 120;
+    }
+    naivepost::wave::write(&tree, "lecture", &Wave { hz: HZ, chans: vec![peaks] }, size, mtime)
+        .unwrap();
+
+    let outcome = edit::before_cut(&tree, &[stored])
+        .expect("the text is newer, so the marks are remade");
+    assert_eq!(outcome.marks.len(), 1);
+    // WITHOUT the cache this edge would sit on the word time 6.0; the envelope put it at 5.95. That
+    // difference is the proof the live path read `cache/waves/lecture.wave`.
+    assert_eq!(outcome.marks[0].s, 5.95, "the cached envelope placed the edge, not the word time");
+    assert_ne!(outcome.marks[0].s, 6.0);
+    assert!(
+        outcome.logs.iter().any(|line| line.contains("the sound before it stops")),
+        "{:?}",
+        outcome.logs
+    );
+}
+
+#[test]
+fn f1_11_s6_before_cut_without_a_cache_still_places_on_the_word_times() {
+    let tree = tree("f111-no-cache");
+    transcript(tree.dir());
+    write_words(&tree, &WORDS);
+    seed_marks(&tree);
+    write_final(&tree, &text(&CUT_TWO));
+    set_stamp(&tree.retakes_tsv(), 60);
+    set_stamp(&tree.final_txt(), 0);
+
+    // The recording exists, but NOTHING was ever cached for it — the state every session is in today,
+    // since no code in src/ writes the wave cache yet. The run must carry on, not fail.
+    let (_src, _stored) = make_source(&tree);
+    assert!(!tree.wave("lecture").exists());
+
+    let outcome = edit::before_cut(&tree, &[_stored])
+        .expect("a missing cache is not a reason to refuse the remake");
+    assert_eq!(outcome.marks.len(), 1);
+    // With no envelope to ask, the edge stays on the aligner's own time.
+    assert_eq!(outcome.marks[0].s, 6.0, "no envelope, so the word time stands");
+    assert!(
+        outcome.logs.iter().all(|line| !line.contains("the sound before it stops")),
+        "nothing was asked, so nothing may claim the sound moved it: {:?}",
+        outcome.logs
+    );
+}

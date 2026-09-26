@@ -67,6 +67,59 @@ pub const EDGE_TAIL_MAX: f64 = 0.25;
 /// searches the gap behind it for the quietest place to cut.
 pub const TROUGH_REACH: f64 = 0.4;
 
+/// One lane of the session, as the edge placement needs it: the key Prepare keyed it under
+/// (`lecture` for `project:sources/lecture.mkv`), the session second its first sample lands on,
+/// and the recording's OWN size/mtime so the cache is checked against the file it was made from.
+#[derive(Debug, Clone)]
+pub struct Lane {
+    pub key: String,
+    pub off: f64,
+    pub size: i64,
+    pub mtime: i64,
+}
+
+/// The envelopes this session's `cache/waves` actually holds, in the lane order handed in.
+///
+/// A lane whose cache is missing, unreadable, or stamped against a DIFFERENT recording (the file was
+/// replaced since the cache was made) is left OUT rather than guessed at: [`finder`] then answers
+/// `None` there, which is spec F1.11's "Without: mono envelope alone" case — the word pad stands in
+/// ([`Edges::end_after`]). An invented or stale envelope would move a cut to sound that is not on
+/// the track any more, which is worse than no envelope at all.
+///
+/// The stamps come from the caller's stat of the real recording, never out of the cache file's own
+/// header: reading them back from the file being checked makes the staleness test unable to fail, and
+/// a cache that cannot be invalidated is a cache of the wrong audio waiting to happen.
+pub fn load(tree: &crate::layout::Tree, lanes: &[Lane]) -> Vec<(Lane, Edges)> {
+    lanes
+        .iter()
+        .filter_map(|lane| {
+            let wave = crate::wave::read(tree, &lane.key, lane.size, lane.mtime).ok()??;
+            Some((lane.clone(), Edges::new(wave, lane.off)))
+        })
+        .collect()
+}
+
+/// The lookup `place_edges` asks: which envelope covers this session second. The LAST lane starting
+/// at or before `t` is the recording playing then; a second before the first take has nothing to ask
+/// and answers `None`.
+///
+/// The answer is borrowed out of the slice the caller already owns and never mutates after this
+/// returns, which is why this is a plain reference and no interior mutability is involved. Build the
+/// envelopes with [`load`] BEFORE calling this; do not try to fill them lazily from inside the
+/// closure — handing out references while inserting into the same collection is the shape that
+/// cannot type.
+///
+/// `held` arrives in lane order (ascending by `off`) because that is the order the takes sit on the
+/// timeline, which is what makes "the last lane starting at or before `t`" the recording playing
+/// then rather than an arbitrary match.
+pub fn finder<'a>(held: &'a [(Lane, Edges)]) -> impl Fn(f64) -> Option<&'a Edges> + 'a {
+    move |t: f64| {
+        held.iter()
+            .rposition(|(lane, _)| lane.off <= t)
+            .map(|index| &held[index].1)
+    }
+}
+
 /// One aligned word on the session clock. Seconds rather than samples so placing an edge needs nothing
 /// but the envelope's own rate — the conversion belongs to whoever read `words.aligned.json`.
 #[derive(Debug, Clone, PartialEq)]
