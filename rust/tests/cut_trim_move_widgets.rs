@@ -18,6 +18,7 @@ use naivepost::ui;
 static RAN_MOVE: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_TRIM: AtomicBool = AtomicBool::new(false);
+static RAN_REAL_TRIM: AtomicBool = AtomicBool::new(false);
 
 fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
@@ -232,6 +233,100 @@ fn check_a_border_drag_lands_where_the_rule_says(app: &adw::Application) {
     window.close();
 }
 
+/// S1 through the real widget: a left-drag that begins within `cut_trim::EDGE_GRAB_PX` of a drawn clip
+/// border takes THAT border, lands where `cut_trim::clamp_edge` says, and prints the release sentence into
+/// the status line. An unmoved press on the same pixel changes no segment at all (S3).
+fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) {
+    let window = cut_window(app);
+    let strip = ui::track_strip(&window).expect("the Cut page carries track-strip");
+    let trimmer = ui::trim_gesture(&window).expect("the strip carries the trim gesture");
+    assert!(
+        trimmer
+            .upcast_ref::<gtk::EventController>()
+            .widget()
+            .is_some(),
+        "the trim gesture is attached to a widget, not floating unclaimed"
+    );
+
+    // The pixel the hand aims at: clip 2's END sits at 30 s * TRACK_STRIP_PPS, well inside the reach.
+    let boxes = trim::clip_boxes(&ui::review_cut_segs(&window), ui::TRACK_STRIP_PPS);
+    let end_px = boxes[1].x + boxes[1].w;
+    assert!(
+        trim::border_at(&boxes, end_px - 2.0) == Some((1, trim::Border::End)),
+        "the press x must fall on clip 2's end border, or this proves nothing"
+    );
+
+    // Drag it to 39.5 s — half a second short of the next clip, which starts at 40 — and see where the
+    // rule put it. A target past 40 would be clamped onto the neighbour's start and read as no movement
+    // at all, which proves nothing about the hand.
+    let target = 39.5;
+    let target_px = target * ui::TRACK_STRIP_PPS;
+    trimmer.emit_by_name::<()>("drag-begin", &[&end_px, &0.0f64]);
+    settle();
+    trimmer.emit_by_name::<()>("drag-update", &[&target_px, &0.0f64]);
+    settle();
+    trimmer.emit_by_name::<()>("drag-end", &[&target_px, &0.0f64]);
+    settle();
+
+    let after = ui::review_cut_segs(&window);
+    let expected = trim::clamp_edge(
+        &[clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)],
+        1,
+        trim::Border::End,
+        target,
+        0.0,
+        ui::TRACK_REC_END,
+    );
+    assert_eq!(
+        after[1].e, expected,
+        "the dragged end landed where the rule said, not where the pointer did"
+    );
+    assert_eq!(after.len(), 3, "a drop half a second clear of the neighbour joins nothing");
+    assert_eq!(
+        status_text(&window),
+        trim::trim_status(2, after[1].s, after[1].e),
+        "the status line IS the release sentence, spelled by the rule"
+    );
+    // The other clips never moved: only the border under the hand was touched.
+    assert_eq!((after[0].s, after[0].e), (0.0, 9.5));
+    assert_eq!((after[2].s, after[2].e), (40.0, 70.0));
+
+    // S1's plain trim, no join: drag the first clip's end to 5 s. The next clip starts at 10, so nothing
+    // comes within a frame and the release says only where the clip now runs.
+    let plain = ui::review_cut_segs(&window)[0].e * ui::TRACK_STRIP_PPS;
+    let plain_to = 5.0 * ui::TRACK_STRIP_PPS;
+    trimmer.emit_by_name::<()>("drag-begin", &[&plain, &0.0f64]);
+    settle();
+    trimmer.emit_by_name::<()>("drag-update", &[&plain_to, &0.0f64]);
+    settle();
+    trimmer.emit_by_name::<()>("drag-end", &[&plain_to, &0.0f64]);
+    settle();
+    let trimmed = ui::review_cut_segs(&window);
+    assert_eq!(trimmed.len(), 3, "a trim with room around it joins nothing");
+    assert_eq!(trimmed[0].e, 5.0);
+    assert_eq!(
+        status_text(&window),
+        trim::trim_status(1, trimmed[0].s, trimmed[0].e),
+        "the status line IS the release sentence, spelled by the rule"
+    );
+
+    // S3: an unmoved press on that very border is a click — the strip repaints, the cut does not.
+    let before_len = ui::review_cut_segs_count(&window);
+    let before_end = ui::review_cut_segs(&window)[0].e;
+    let grab_px = ui::review_cut_segs(&window)[0].e * ui::TRACK_STRIP_PPS;
+    trimmer.emit_by_name::<()>("drag-begin", &[&grab_px, &0.0f64]);
+    settle();
+    trimmer.emit_by_name::<()>("drag-end", &[&grab_px, &0.0f64]);
+    settle();
+    assert_eq!(
+        ui::review_cut_segs(&window)[0].e, before_end,
+        "a press that went nowhere trimmed nothing"
+    );
+    assert_eq!(ui::review_cut_segs_count(&window), before_len);
+    let _ = strip;
+    window.close();
+}
+
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -246,6 +341,8 @@ fn window_round() {
             RAN_CLICK.store(true, Ordering::SeqCst);
             check_a_border_drag_lands_where_the_rule_says(app);
             RAN_TRIM.store(true, Ordering::SeqCst);
+            check_a_border_drag_on_the_real_strip_trims_the_clip(app);
+            RAN_REAL_TRIM.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -266,5 +363,9 @@ fn f2_8_s2_a_right_drag_on_the_track_strip_moves_and_never_touches_the_line() {
     assert!(
         RAN_TRIM.load(Ordering::SeqCst),
         "the border-trim check never ran"
+    );
+    assert!(
+        RAN_REAL_TRIM.load(Ordering::SeqCst),
+        "the real-strip border-drag check never ran"
     );
 }

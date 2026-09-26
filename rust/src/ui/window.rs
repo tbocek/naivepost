@@ -246,8 +246,11 @@ fn page_box(
         // because a handler on a widget outside the realized tree never fires.
         let strip = gtk::DrawingArea::new();
         strip.set_widget_name("track-strip");
-        strip.set_size_request(240, 48);
+        strip.set_size_request(STRIP_WIDTH, STRIP_HEIGHT);
         strip.set_halign(gtk::Align::Start);
+        // The strip paints itself from this window's cut — the ruler, the kept bar and its borders, or
+        // `cut_trim::STRIP_EMPTY_HINT` when there is nothing to show. See `paint_track_strip`.
+        strip.set_draw_func(move |_, cr, w, h| paint_track_strip(cr, w, h));
         strip.set_tooltip_text(Some(&format!(
             "{} / {}",
             cut_trim::TRIM_TIP,
@@ -1077,8 +1080,16 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         wire_play_cut(&cut_, &window);
     }
     // F2.3: this window's cut slot is registered here for the same reason the player slot is — after
-    // `set_content`, so the button being wired is the one inside the realized tree.
-    REVIEW_CUTS.with(|slots| slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(cut::Cut::default()))));
+    // `set_content`, so the button being wired is the one inside the realized tree. Seeded from the
+    // project's own `cut/cut.json` when it has one, because that file IS the cut (§3): the strip paints
+    // from this slot, so a project with cuts must show them and a project without one must show the
+    // empty hint rather than a blank box. A missing or unreadable file is no cut today, which is what
+    // `cut::load` already answers with `Cut::default`.
+    let opened_cut = layout::Tree::new(startup::session_dir(&std::env::current_dir().unwrap_or_default()))
+        .ok()
+        .and_then(|tree| cut::load(&tree).ok())
+        .unwrap_or_default();
+    REVIEW_CUTS.with(|slots| slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(opened_cut))));
     if let Some(review_) = review_cuts_button(&window) {
         wire_review_cuts(&review_, &window);
     }
@@ -2513,6 +2524,12 @@ pub fn review_cuts_button(window: &adw::ApplicationWindow) -> Option<gtk::Button
         .ok()
 }
 
+/// F2.8 S1: the strip's own cut, read back — the visible state a trim writes and the painter reads.
+pub fn review_cut_segs(window: &adw::ApplicationWindow) -> Vec<cut::Seg> {
+    let _ = window;
+    newest_review_cut().segs
+}
+
 /// How many segments this window's cut holds right now — the read side of `seed_review_cut`, so a test can
 /// see whether a gesture changed the list.
 pub fn review_cut_segs_count(window: &adw::ApplicationWindow) -> usize {
@@ -2815,6 +2832,10 @@ pub fn move_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag>
 }
 
 thread_local! {
+    /// The trim drag in flight: which clip's which border the press took, and when it last scrubbed.
+    /// `None` means the press fell where no border was in reach, so the drag does nothing at all.
+    static TRIM_DRAGS: std::cell::RefCell<Option<TrimDrag>> =
+        const { std::cell::RefCell::new(None) };
     static TRIM_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
         const { std::cell::RefCell::new(None) };
     static MOVE_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
@@ -3029,6 +3050,109 @@ pub fn open_folds(window: &adw::ApplicationWindow) -> Vec<usize> {
     })
 }
 
+/// F2.8 S1: the strip's height — the ruler row plus the kept-bar row, one number the size request and
+/// the painter both read so they cannot drift apart.
+pub const STRIP_HEIGHT: i32 = (cut_trim::RULER_H + cut_trim::BAR_H) as i32;
+
+/// F2.8 S1: a ruler mark every 30 s at the open zoom is a mark every 120 px, which is what
+/// `spec/img/05-trim.png` prints (`0:00`, `0:30`, `1:00`). Zoomed far in the spacing would crowd, but
+/// the strip's zoom is fixed until F2.10/F2.11 own the real rows, so one constant covers it.
+pub const RULER_EVERY_SECONDS: f64 = 30.0;
+
+/// F2.8 S1: how wide the placeholder strip is drawn. The spec's picture runs the whole session across
+/// the window; this strip is a placeholder for the rows F2.10/F2.11 own, and its width has to stay a
+/// placeholder too — but wide enough that the ruler's first marks AND the clips they measure are both on
+/// screen. At [`TRACK_STRIP_PPS`] 480 px covers two minutes of the session, which is where the three
+/// seeded clips live; a narrower strip cut the third tick off at 240 px and left a label-less bar.
+pub const STRIP_WIDTH: i32 = 480;
+
+/// Paint `track-strip` from this window's own cut. The callback reads state and draws it: every mark comes
+/// from `cut_trim::ruler_ticks`, `cut_trim::clip_boxes` and `cut_trim::border_positions` at
+/// [`TRACK_STRIP_PPS`], so the border the eye sees is the same pixel the hand grabs. An empty cut draws
+/// the frame plus [`cut_trim::STRIP_EMPTY_HINT`] rather than a blank box, which would read as broken.
+fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
+    let w = width.max(1) as f64;
+    let h = height.max(1) as f64;
+    let cut_ = newest_review_cut();
+
+    // Ground first, so every mark after it sits on something.
+    cr.set_source_rgb(0.95, 0.95, 0.95);
+    cr.rectangle(0.0, 0.0, w, h);
+    let _ = cr.fill();
+
+    // The ruler row: whole-second ticks with their labels, then the kept bar under them.
+    let ticks = cut_trim::ruler_ticks(TRACK_REC_END, TRACK_STRIP_PPS, RULER_EVERY_SECONDS);
+    cr.set_source_rgb(0.45, 0.45, 0.45);
+    for (x, _) in &ticks {
+        if *x <= w {
+            cr.rectangle(*x, 0.0, 1.0, cut_trim::RULER_H);
+            let _ = cr.fill();
+        }
+    }
+    draw_strip_labels(cr, &ticks, w);
+
+    let boxes = cut_trim::clip_boxes(&cut_.segs, TRACK_STRIP_PPS);
+    if boxes.is_empty() {
+        cr.select_font_face("Sans", cairo::FontSlant::Normal, gtk::cairo::FontWeight::Normal);
+        cr.set_font_size(11.0);
+        cr.set_source_rgb(0.45, 0.45, 0.45);
+        let _ = cr.move_to(6.0, cut_trim::RULER_H + cut_trim::BAR_H * 0.6);
+        let _ = cr.show_text(cut_trim::STRIP_EMPTY_HINT);
+        return;
+    }
+
+    let top = cut_trim::RULER_H;
+    for b in &boxes {
+        // Violet for an insert, the kept green for footage — the two colours the inventory lists, told
+        // apart because only one of them may be trimmed.
+        if b.insert {
+            cr.set_source_rgba(0.55, 0.35, 0.75, 0.55);
+        } else {
+            cr.set_source_rgba(0.2, 0.8, 0.3, 0.3);
+        }
+        cr.rectangle(b.x, top, b.w.max(1.0), cut_trim::BAR_H);
+        let _ = cr.fill();
+    }
+    // Borders last and darker, so they read on top of the fill: these are the pixels a press takes.
+    cr.set_source_rgb(0.11, 0.42, 0.16);
+    for (x, _, _) in cut_trim::border_positions(&boxes) {
+        cr.rectangle(x - 0.5, top, 1.5, cut_trim::BAR_H);
+        let _ = cr.fill();
+    }
+}
+
+/// Draw the ruler's labels onto the strip's cairo context. Cairo text is best-effort in the headless
+/// container (no font config beyond what GTK brings up), so a failure here must never take the strip down
+/// with it: every call's result is ignored and the tick marks stay visible regardless.
+fn draw_strip_labels(cr: &cairo::Context, ticks: &[(f64, String)], w: f64) {
+    cr.set_source_rgb(0.35, 0.35, 0.35);
+    for (x, label) in ticks {
+        if *x <= w {
+            let _ = cr.move_to(x + 2.0, 11.0);
+            let _ = cr.show_text(label);
+        }
+    }
+}
+
+/// The trim drag in flight, as [`wire_track_strip`] holds it between the press and the release.
+struct TrimDrag {
+    /// The segment whose border is being dragged — the index into this window's cut.
+    index: usize,
+    /// Which of its two borders the press took.
+    border: cut_trim::Border,
+    /// When the last scrub happened, for `cut_trim::scrubs`' throttle.
+    scrubbed_ms: Option<u64>,
+}
+
+/// Milliseconds since an arbitrary origin, for the scrub throttle. Monotonic enough for a 90 ms gate; the
+/// app never compares these across a restart.
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 /// Attach the two gestures to `track-strip`: the left button trims a border, the right button moves.
 /// Registered after `set_content` like every other control here, and kept in thread-locals so a test can
 /// fire them the way GTK does.
@@ -3036,11 +3160,51 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
     let Some(strip) = track_strip(window) else { return };
 
     let trimmer = gtk::GestureDrag::new();
-    let win = window.clone();
+    // The border a drag chases, seeded from the press position over the drawn layout. Until F2.10/F2.11
+    // own the real rows, this strip's own geometry (`cut_trim::clip_boxes` at `TRACK_STRIP_PPS`) is what
+    // the pointer is pointing at — so the hand grabs exactly the pixel the eye saw, and no rule about
+    // where a border may go lives here: `press_trim_border` asks `cut_trim::clamp_edge` for that.
+    trimmer.connect_drag_begin(move |_g, px, _py| {
+        let boxes = cut_trim::clip_boxes(&newest_review_cut().segs, TRACK_STRIP_PPS);
+        let taken = cut_trim::border_at(&boxes, px);
+        TRIM_DRAGS.with(|cell| {
+            *cell.borrow_mut() = taken.map(|(index, border)| TrimDrag {
+                index,
+                border,
+                scrubbed_ms: None,
+            })
+        });
+    });
+    let win_upd = window.clone();
+    let strip_upd = strip.clone();
+    let strip_end = strip.clone();
     trimmer.connect_drag_update(move |_g, x, _y| {
-        // The placeholder has no seeded border to chase yet; the seam stays reachable and the rule is
-        // exercised through `press_trim_border` directly until the tracks carry real edges.
-        let _ = (&win, x);
+        TRIM_DRAGS.with(|cell| {
+            let Some(mut drag) = cell.borrow_mut().take() else { return };
+            // S1: the picture scrubs live, but at most every `SCRUB_MS` — an accurate seek per mouse-move
+            // event is a pipeline that never stops flushing. `// preview.scrubMs`
+            let now = now_millis();
+            if !cut_trim::scrubs(drag.scrubbed_ms, now) {
+                *cell.borrow_mut() = Some(drag);
+                return;
+            }
+            drag.scrubbed_ms = Some(now);
+            press_trim_border(&win_upd, drag.index, drag.border, x / TRACK_STRIP_PPS);
+            *cell.borrow_mut() = Some(drag);
+        });
+        // The border moved, so the strip has to be repainted or the hand drags something invisible.
+        strip_upd.queue_draw();
+    });
+    let win_end = window.clone();
+    trimmer.connect_drag_end(move |_g, x, _y| {
+        // Release lands the final edge and prints the sentence it earned (joined-into-one-scene when a
+        // neighbour came within a frame), through the same seam as every tick above.
+        let done = TRIM_DRAGS.with(|cell| cell.borrow_mut().take());
+        if let Some(drag) = done {
+            press_trim_border(&win_end, drag.index, drag.border, x / TRACK_STRIP_PPS);
+        }
+        TRIM_DRAGS.with(|cell| *cell.borrow_mut() = None);
+        strip_end.queue_draw();
     });
     strip.add_controller(trimmer.clone());
     TRIM_GESTURES.with(|cell| *cell.borrow_mut() = Some(trimmer));

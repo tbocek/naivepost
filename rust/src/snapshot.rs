@@ -12,6 +12,8 @@ use adw::prelude::*;
 use glib::translate::ToGlibPtr;
 use gtk4 as gtk;
 
+use crate::cut;
+use crate::layout;
 use crate::new_project;
 use crate::project;
 use crate::ui;
@@ -81,6 +83,14 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
     // handler runs after GTK has emitted it.
     app.connect_activate(move |app| {
         let window = ui::build_window(app, &model, page);
+        // The strip paints from this window's cut slot, so a snapshot must show the cut that lives in
+        // the project it was asked to render — not whatever the working-copy folder happens to hold.
+        // `--project` is that project, so its `cut/cut.json` is seeded over `build_window`'s
+        // session-dir default here, before the frame is drawn. A missing or unreadable file is no cut
+        // today (`cut::load` answers that with `Cut::default()`), which draws the empty hint.
+        if let Some(loaded) = layout::Tree::new(&dir).ok().and_then(|tree| cut::load(&tree).ok()) {
+            ui::seed_review_cut(&window, &loaded);
+        }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.

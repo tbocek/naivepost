@@ -540,6 +540,147 @@ pub fn row_status(what: &str, row: usize) -> String {
     format!("{what} moved to row {} \u{2014} its kept scenes came along", row + 1)
 }
 
+// --- S1: the strip's own geometry (what the draw callback paints) ---------------------------------------
+
+/// F2.8 S1: what the strip says when the cut has nothing in it. A blank rectangle reads as a broken
+/// widget; these words say the truth in plain words, and they are a constant so a test can pin them.
+pub const STRIP_EMPTY_HINT: &str = "nothing cut yet — the kept stretches show up here";
+
+/// F2.8 S1: how tall the strip's rows are, in px. The ruler takes the top band and the kept bar the rest,
+/// so the painter and the size request agree on one number instead of two that can drift apart.
+pub const RULER_H: f64 = 16.0;
+pub const BAR_H: f64 = 32.0;
+
+/// F2.8 S1: where each clip border is drawn, in px from the strip's origin.
+///
+/// Kept out of the painter because the press side has to ask for exactly the same numbers: a border the
+/// hand grabs and a border the eye sees must be the same pixel, or a trim lands somewhere the pointer was
+/// never pointing at. An insert contributes no borders at all (`spec/05-cut.md` rule 8).
+pub fn border_positions(boxes: &[Box_]) -> Vec<(f64, usize, Border)> {
+    boxes
+        .iter()
+        .filter(|b| !b.insert)
+        .flat_map(|b| [(b.x, b.index, Border::Start), (b.x + b.w, b.index, Border::End)])
+        .collect()
+}
+
+/// F2.8 S1: which border of which box a press x takes, over the whole drawn layout.
+///
+/// This is [`grab_border`] applied to every box at once, nearest wins, inserts skipped — the multi-clip
+/// version of the single-box rule, so `ui` can seed a drag from one call and hold no arithmetic itself.
+pub fn border_at(boxes: &[Box_], px: f64) -> Option<(usize, Border)> {
+    let mut best: Option<(f64, usize, Border)> = None;
+    for (edge, index, border) in border_positions(boxes) {
+        let d = (px - edge).abs();
+        if d <= EDGE_GRAB_PX && best.map_or(true, |(bd, _, _)| d < bd) {
+            best = Some((d, index, border));
+        }
+    }
+    best.map(|(_, index, border)| (index, border))
+}
+
+
+/// F2.8: one box on the placeholder strip — where a drawn thing sits and how wide it is, in pixels.
+///
+/// Kept as a struct rather than a tuple because the two flags are what the painter needs to know about a
+/// segment and a `(f64, f64)` cannot carry them: an insert must not be painted as a trimmable clip
+/// (`spec/05-cut.md` rule 8: inserts are files, never trimmed), and `index` is what the press hands back
+/// to [`press_trim_border`]-style seams so a click on box N trims segment N and not its neighbour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Box_ {
+    /// Left edge, px from the strip's origin.
+    pub x: f64,
+    /// Width, px. Never negative: a zero-length segment draws as nothing rather than as a box that
+    /// runs backwards into the one before it.
+    pub w: f64,
+    /// The index into the `segs` slice this box came from.
+    pub index: usize,
+    /// True for an insert (`Seg::is_insert`) — violet in the spec's colour list, and outside every trim
+    /// reach for as long as rule 8 holds.
+    pub insert: bool,
+}
+
+/// F2.8 S1: the boxes the kept-bar band draws, one per segment, at `pps` pixels per second.
+///
+/// This is the whole mapping from seconds to pixels that the strip is made of, held here instead of inside
+/// the draw callback so a test can assert the numbers and so the press side can ask the same question in
+/// reverse (which box is under this x). Insert segments come back flagged, not skipped: the band still has
+/// to show that something is there, it just must not offer their borders to a trim.
+pub fn clip_boxes(segs: &[Seg], pps: f64) -> Vec<Box_> {
+    segs.iter()
+        .enumerate()
+        .map(|(index, seg)| Box_ {
+            x: seg.s.max(0.0) * pps,
+            w: ((seg.e - seg.s).max(0.0)) * pps,
+            index,
+            insert: seg.is_insert(),
+        })
+        .collect()
+}
+
+/// F2.8 S1: which box a press falls on, and which of its borders the pointer took.
+///
+/// A press within [`EDGE_GRAB_PX`] of a box's border reports that box with that border — nearest border
+/// wins, so a clip narrower than two reaches still hands over the one the pointer is closer to, exactly as
+/// [`grab_border`] does for one box (`// layout.edgeGrabPx`). A press inside a box but away from both
+/// borders reports the box with `None`, which is what makes "on the green bar" and "on a border" two
+/// different answers to the same lookup. Inserts answer `None` at every position: rule 8 keeps their
+/// borders out of every trim reach.
+pub fn box_at(boxes: &[Box_], px: f64) -> Option<(usize, Option<Border>)> {
+    let mut best: Option<(f64, usize, Border)> = None;
+    let mut trimmable = boxes.iter().filter(|b| !b.insert);
+
+    for b in trimmable.clone() {
+        for (edge, border) in [(b.x, Border::Start), (b.x + b.w, Border::End)] {
+            let d = (px - edge).abs();
+            if d <= EDGE_GRAB_PX && best.map_or(true, |(bd, _, _)| d < bd) {
+                best = Some((d, b.index, border));
+            }
+        }
+    }
+    if let Some((_, index, border)) = best {
+        return Some((index, Some(border)));
+    }
+
+    trimmable
+        .find(|b| px >= b.x && px <= b.x + b.w)
+        .map(|b| (b.index, None))
+}
+
+/// F2.8 S1: a spliced insert's box on the strip. Its `s == e` gives it no width of its own, so the card
+/// is drawn standing at `at` (the second it plays from) for as long as its `dur` — otherwise every card
+/// would be a hairline nobody can see or click. Flagged `insert`, so neither its edges nor its body ever
+/// answer a press (`spec/05-cut.md` rule 8).
+pub fn insert_box(seg: &Seg, at: f64, pps: f64) -> Box_ {
+    Box_ {
+        x: at.max(0.0) * pps,
+        w: seg.dur.max(0.0) * pps,
+        index: 0,
+        insert: true,
+    }
+}
+
+/// F2.8 S1: the ruler row above the band — a tick every `every_seconds` up to `rec_end`, each with its
+/// clock label, spelled the way `spec/img/05-trim.png` prints them (`0:00`, `0:30`, `1:00`).
+///
+/// The label drops the tenth that [`preview::clock`] carries: a ruler marks whole seconds, and a tenth on
+/// every tick would read like a measurement of something moving. A non-positive span, zoom or spacing
+/// answers with no ticks at all rather than an infinite loop or a single stray mark.
+pub fn ruler_ticks(rec_end: f64, pps: f64, every_seconds: f64) -> Vec<(f64, String)> {
+    if rec_end <= 0.0 || pps <= 0.0 || every_seconds <= 0.0 {
+        return Vec::new();
+    }
+    let mut ticks = Vec::new();
+    let mut t = 0.0;
+    while t <= rec_end + f64::EPSILON {
+        // `tools::mm_ss` and not `preview::clock`: the ruler marks whole seconds, and the tenth the
+        // playhead clock carries would turn every label into `00:300`.
+        ticks.push((t * pps, tools::mm_ss(t)));
+        t += every_seconds;
+    }
+    ticks
+}
+
 // --- S3: what the right button never does ----------------------------------------------------------------
 
 /// F2.8 S3: a right click never moves the red line. Where the left button puts it is F2.4's

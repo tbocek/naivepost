@@ -72,6 +72,7 @@ pub use window::selection_readout;
 // F2.8: the strip's recording bound, so a test compares against the same wall the seam used.
 pub use window::TRACK_REC_END;
 pub use window::TRACK_STRIP_PPS;
+pub use window::review_cut_segs;
 pub use window::review_cut_segs_count;
 // F2.7: the three verb buttons, the ⌦ key and the two "what is in hand" seams.
 pub use window::delete_key_controller;
