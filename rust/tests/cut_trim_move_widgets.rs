@@ -19,6 +19,10 @@ static RAN_MOVE: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_TRIM: AtomicBool = AtomicBool::new(false);
 static RAN_REAL_TRIM: AtomicBool = AtomicBool::new(false);
+static RAN_WAVE: AtomicBool = AtomicBool::new(false);
+static RAN_SEL_SLIDE: AtomicBool = AtomicBool::new(false);
+static RAN_RIGHT_TRIM: AtomicBool = AtomicBool::new(false);
+static RAN_UNMOVED: AtomicBool = AtomicBool::new(false);
 
 fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
@@ -100,7 +104,13 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
     let line_before = ui::line_position(&window);
     println!("LINE BEFORE {line_before:?}");
 
-    // Fire the gesture the way GTK does: begin, update to 40 px along, end.
+    // Fire the gesture the way GTK does: begin, update 40 px along, end. The gesture reports its OWN
+    // offset from the press (that is what `press_move` has always received), so the press x lives in the
+    // seam below and these stay offsets. The press is placed mid-scene 1 — 90 px at this zoom, away from
+    // every border's EDGE_GRAB_PX reach — so the right button slides; a press ON a border is S1's
+    // question and `f2_8_s1_the_right_button_on_a_border_trims_it` drives that.
+    const PRESS_X: f64 = 90.0;
+    ui::set_press_x(PRESS_X);
     mover.emit_by_name::<()>("drag-begin", &[&0.0f64, &0.0f64]);
     mover.emit_by_name::<()>("drag-update", &[&40.0f64, &0.0f64]);
     settle();
@@ -339,6 +349,14 @@ fn window_round() {
             RAN_MOVE.store(true, Ordering::SeqCst);
             check_an_unmoved_press_is_a_click(app);
             RAN_CLICK.store(true, Ordering::SeqCst);
+            check_a_right_drag_on_a_wave_strip_slides_that_recording(app);
+            RAN_WAVE.store(true, Ordering::SeqCst);
+            check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app);
+            RAN_SEL_SLIDE.store(true, Ordering::SeqCst);
+            check_the_right_button_on_a_border_trims_it(app);
+            RAN_RIGHT_TRIM.store(true, Ordering::SeqCst);
+            check_an_unmoved_right_press_changes_nothing_through_the_widget(app);
+            RAN_UNMOVED.store(true, Ordering::SeqCst);
             check_a_border_drag_lands_where_the_rule_says(app);
             RAN_TRIM.store(true, Ordering::SeqCst);
             check_a_border_drag_on_the_real_strip_trims_the_clip(app);
@@ -368,4 +386,236 @@ fn f2_8_s2_a_right_drag_on_the_track_strip_moves_and_never_touches_the_line() {
         RAN_REAL_TRIM.load(Ordering::SeqCst),
         "the real-strip border-drag check never ran"
     );
+    assert!(
+        RAN_WAVE.load(Ordering::SeqCst),
+        "the wave-strip slide check never ran"
+    );
+    assert!(
+        RAN_SEL_SLIDE.load(Ordering::SeqCst),
+        "the selection-slide check never ran"
+    );
+    assert!(
+        RAN_RIGHT_TRIM.load(Ordering::SeqCst),
+        "the right-button border-trim check never ran"
+    );
+    assert!(
+        RAN_UNMOVED.load(Ordering::SeqCst),
+        "the unmoved-press-changes-nothing check never ran"
+    );
+}
+
+// --- F2.8 S1/S2/S3: each flowchart branch reached through the REAL button-3 gesture -------------------
+// The rule is proved in tests/cut_trim_move.rs; these prove a press on `track-strip` arrives at the right
+// branch. Nothing here calls `press_move` directly to produce its answer: the answer comes from the state
+// the gesture's own path wrote (the window's cut, its shift map and the status line), plus
+// `ui::right_press_took`, which is the same door the drag callback uses.
+
+/// The recording name a band hit resolves to. `set_press_band` supplies only the NAME; which band was hit
+/// comes from the press y, so priming the name is not priming the branch.
+const WAVE_REC: &str = "cam7";
+
+/// A window with a three-scene cut seeded and NO scene seam primed, so nothing can outrank the bands.
+fn bare_cut_window(app: &adw::Application) -> adw::ApplicationWindow {
+    let window = cut_window(app);
+    ui::set_press_scene(None);
+    ui::set_press_x(0.0);
+    window
+}
+
+/// F2.8 S2: a right-drag beginning at a y inside the WAVE band slides that one recording, with no scene
+/// seam primed -- flowchart M2 reached through the widget, not through a seam.
+fn check_a_right_drag_on_a_wave_strip_slides_that_recording(app: &adw::Application) {
+    let window = bare_cut_window(app);
+    ui::set_press_band(Some(WAVE_REC.to_string()));
+    let bands = trim::PLACEHOLDER_STRIP_BANDS;
+    // A y inside the wave band, and an x mid-scene 1 (40..120 px at this zoom) so no border steals it.
+    let wave_y = bands.wave.0 + (bands.wave.1 - bands.wave.0) / 2.0;
+    let press_x = 90.0;
+    assert_eq!(
+        trim::band_at(wave_y, &bands),
+        trim::Band::Wave,
+        "the y used below really is inside the wave band"
+    );
+    // The same door the drag callback reads, BEFORE any emission: band ground, not the recorders' band.
+    let (recorders, wave, on_border) = ui::right_press_took(press_x, wave_y);
+    assert_eq!(wave.as_deref(), Some(WAVE_REC), "the wave strip took that recording");
+    assert_eq!(recorders, None, "and it did NOT come back as the recorders' band");
+    assert!(!on_border, "mid-scene x is not a border");
+
+    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    ui::set_press_x(press_x);
+    mover.emit_by_name::<()>("drag-begin", &[&0.0f64, &wave_y]);
+    // >3 px of travel, or the gesture never opens (S3's slop).
+    mover.emit_by_name::<()>("drag-update", &[&24.0f64, &wave_y]);
+    settle();
+
+    let printed = status_text(&window);
+    println!("WAVE SLIDE PRINTED {printed}");
+    assert!(
+        printed.contains("the recording moved +"),
+        "a wave-strip drag says THE RECORDING moved, not the scene or the row: {printed}"
+    );
+    assert!(
+        !printed.contains("the scene moved"),
+        "it must not read as a scene slide: {printed}"
+    );
+    assert!(
+        !printed.contains("camera row"),
+        "nor as a whole-row shift: {printed}"
+    );
+    // And the shift landed on the named recording only -- real cut state, written by apply_gesture.
+    let shifted = ui::review_cut_shift(&window);
+    assert!(
+        shifted.contains_key(WAVE_REC),
+        "the shift map holds the recording the wave strip named: {shifted:?}"
+    );
+    assert!(
+        shifted[WAVE_REC].abs() > f64::EPSILON,
+        "and it actually moved: {:?}",
+        shifted[WAVE_REC]
+    );
+    window.close();
+}
+
+/// F2.8 S2: a right-drag that STARTS inside a footage selection, away from any border, slides the
+/// SELECTED scenes -- flowchart M3, ahead of the scene-under-the-pointer branch.
+fn check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app: &adw::Application) {
+    use naivepost::cut_select::Surface;
+    let window = bare_cut_window(app);
+    ui::set_press_band(None);
+    // A real band over scenes 1 and 2 (10..30 s and 40..70 s are inside it).
+    let band = ui::draw_selection(&window, Surface::PictureRow(0), None, 5.0, 75.0)
+        .expect("a band draws");
+    assert!(band.length() > 1.0, "the band is long enough to be a selection");
+
+    // Press at x=90 px (mid-scene 1) and at a NON-band y (the ruler), so the selection is what answers.
+    let press_x = 90.0;
+    let ruler_y = 4.0;
+    let (_, _, on_border) = ui::right_press_took(press_x, ruler_y);
+    assert!(!on_border, "away from a border, so S2 may slide the selection");
+
+    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    ui::set_press_x(press_x);
+    mover.emit_by_name::<()>("drag-begin", &[&0.0f64, &ruler_y]);
+    mover.emit_by_name::<()>("drag-update", &[&20.0f64, &ruler_y]);
+    settle();
+
+    let printed = status_text(&window);
+    println!("SELECTION SLIDE PRINTED {printed}");
+    assert!(
+        printed.contains("the selected scenes moved"),
+        "a press inside a footage selection slides the SELECTED SCENES: {printed}"
+    );
+    // The band itself is untouched by the press -- selecting is not clearing.
+    assert!(ui::selection(&window).is_some(), "the selection survived the press");
+    window.close();
+}
+
+/// F2.8 S1: the RIGHT button, pressed within EDGE_GRAB_PX of a drawn clip border, TRIMS that border.
+/// Asserted on the SEG moving (real cut state), not on a slide sentence.
+fn check_the_right_button_on_a_border_trims_it(app: &adw::Application) {
+    let window = bare_cut_window(app);
+    ui::set_press_band(None);
+    let segs_before = ui::review_cut_segs(&window);
+    assert_eq!(segs_before.len(), 3, "three seeded scenes");
+    // Scene 2 runs 40.0 .. 70.0 s => its start edge sits at 40 * TRACK_STRIP_PPS px. Grabbing THAT one
+    // rather than scene 1's keeps this check unambiguous: scene 1's start (40 px) and scene 2's start
+    // (160 px) are far apart, and nothing else in the fixture has an edge near 160 px.
+    let start_edge_px = 40.0 * ui::TRACK_STRIP_PPS;
+    let grab_x = start_edge_px + 3.0; // well inside the 6 px reach
+    let bands = trim::PLACEHOLDER_STRIP_BANDS;
+    let bar_y = bands.bar.0 + 1.0;
+
+    // The wire's own first question, answered the way the callback answers it.
+    let (_, _, on_border) = ui::right_press_took(grab_x, bar_y);
+    assert!(on_border, "x={grab_x} is within EDGE_GRAB_PX of scene 2's start border");
+
+    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    ui::set_press_x(grab_x);
+    mover.emit_by_name::<()>("drag-begin", &[&0.0f64, &bar_y]);
+    // The update carries an OFFSET from the press, so the pointer sits at grab_x + offset. Dragging 12 s
+    // along puts it at (grab_x + 48 px)/PPS = 56.0 s; scene 2 ends at 70 s and the recording at
+    // TRACK_REC_END, so nothing clamps it and the grabbed border lands exactly where the pointer is.
+    let target_s = (grab_x + 48.0) / ui::TRACK_STRIP_PPS;
+    mover.emit_by_name::<()>("drag-update", &[&48.0f64, &bar_y]);
+    settle();
+
+    let segs_after = ui::review_cut_segs(&window);
+    println!(
+        "BORDER TRIM scene2 before {:?}..{:?} after {:?}..{:?}",
+        segs_before[2].s, segs_before[2].e, segs_after[2].s, segs_after[2].e
+    );
+    assert!(
+        (segs_after[2].s - target_s).abs() < 0.001,
+        "scene 2's START moved to where the right-button drag put it: {} vs {target_s}",
+        segs_after[2].s
+    );
+    assert_eq!(
+        segs_after[2].e, segs_before[2].e,
+        "only the grabbed border moved -- its end is untouched"
+    );
+    assert_eq!(
+        (segs_after[1].s, segs_after[1].e),
+        (segs_before[1].s, segs_before[1].e),
+        "and no OTHER scene moved -- this was a border trim, not a slide"
+    );
+    assert_eq!(
+        segs_after.len(),
+        segs_before.len(),
+        "a trim does not add or remove scenes"
+    );
+    let printed = status_text(&window);
+    assert!(
+        !printed.contains("moved +"),
+        "this was a TRIM, not a slide -- no 'moved +' sentence: {printed}"
+    );
+    window.close();
+}
+
+/// F2.8 S3: a right press that never travels is a click. `drag-begin` alone leaves the cut, the
+/// selection and the red line exactly as they were.
+fn check_an_unmoved_right_press_changes_nothing_through_the_widget(app: &adw::Application) {
+    let window = bare_cut_window(app);
+    ui::set_press_band(Some(WAVE_REC.to_string()));
+    let segs_before = ui::review_cut_segs(&window);
+    let shift_before = ui::review_cut_shift(&window);
+    let line_before = ui::line_position(&window);
+    let status_before = status_text(&window);
+
+    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let bands = trim::PLACEHOLDER_STRIP_BANDS;
+    let wave_y = bands.wave.0 + 1.0;
+    ui::set_press_x(90.0);
+    // BEGIN ONLY -- no update, no end. No travel means no gesture.
+    mover.emit_by_name::<()>("drag-begin", &[&0.0f64, &wave_y]);
+    settle();
+
+    assert_eq!(
+        ui::review_cut_segs(&window).len(),
+        segs_before.len(),
+        "an unmoved press added or removed no scene"
+    );
+    for (i, (before, after)) in segs_before.iter().zip(ui::review_cut_segs(&window).iter()).enumerate() {
+        assert_eq!(
+            (before.s, before.e),
+            (after.s, after.e),
+            "scene {i} unchanged by an unmoved press"
+        );
+    }
+    assert_eq!(
+        ui::review_cut_shift(&window),
+        shift_before,
+        "no shift was pushed for a press that never moved"
+    );
+    assert_eq!(
+        ui::line_position(&window).t,
+        line_before.t,
+        "\"a right click never moves the line\""
+    );
+    assert_eq!(
+        status_text(&window),
+        status_before,
+        "and it prints nothing new"
+    );
+    window.close();
 }

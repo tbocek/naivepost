@@ -237,6 +237,99 @@ pub fn joined_status(start: f64, end: f64) -> String {
     )
 }
 
+/// F2.8 S2: which horizontal band of the strip a press fell on, read from the press's y. The flowchart asks
+/// these questions top to bottom — the recorders' band, then a wave strip, then the pictures/green bar — so
+/// the answer comes from geometry rather than from a seam the page primes; that is what makes the wave-strip
+/// branch reachable at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Band {
+    /// The graduated ruler across the top.
+    Ruler,
+    /// The recorders' band: pressing here slides that one recording (flowchart M1).
+    Recorders,
+    /// The kept bar / green bar / clip row. Not band ground: the press falls through to scene or row.
+    Bar,
+    /// The wave strip under the pointer: that one recording slides (flowchart M2).
+    Wave,
+}
+
+/// F2.8 S2: the vertical bands of the strip. Kept as three explicit spans instead of one height each so a
+/// painter and a press can disagree about nothing: both read the same numbers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StripBands {
+    /// The recorders' band, px from the strip's origin.
+    pub recorders: (f64, f64),
+    /// The kept/green bar row.
+    pub bar: (f64, f64),
+    /// The wave strip under it.
+    pub wave: (f64, f64),
+}
+
+/// F2.8 S2: the placeholder band layout, derived from the two heights the painter already uses — no new
+/// numbers. [`RULER_H`] (16 px) occupies the top; below it [`BAR_H`] (32 px) is split evenly between the
+/// green bar and its wave strip because the placeholder draws ONE camera row and needs both halves reachable
+/// by y on a strip this short. F2.10/F2.11 pass their real bands in through the same seam
+/// ([`StripBands`]/[`band_at`]) once actual picture rows exist; until then this is what `track-strip` answers,
+/// exactly the role `cut_select::PLACEHOLDER_BANDS` plays for the selection surface.
+pub const PLACEHOLDER_STRIP_BANDS: StripBands = StripBands {
+    recorders: (RULER_H, RULER_H + BAR_H / 2.0),
+    // The bar's own span is stated as the FULL row under the ruler; `band_at` tests the wave band first, so
+    // the wave strip takes the lower half of that row and the bar keeps the top half. Stated this way rather
+    // than as two disjoint spans because the painter draws one row of height `BAR_H` — the split below is
+    // where a press resolves to wave vs bar, not two separate painted heights.
+    bar: (RULER_H + BAR_H / 2.0, RULER_H + BAR_H),
+    // No room left under the bar on the placeholder, so the wave band sits over the bar's lower half: the
+    // press still resolves it, and the painter moves when the real rows arrive.
+    wave: (RULER_H + BAR_H / 2.0, RULER_H + BAR_H),
+};
+
+/// F2.8 S2: the band a press's y falls in. An unknown y answers [`Band::Bar`] rather than panicking — the
+/// bar is the ground that falls through to the scene/row branch, which is the flowchart's own last resort,
+/// so a stray y still produces a move instead of a crash.
+///
+/// NOTE the order: the WAVE band is tested before the bar. On the placeholder the two share their span
+/// ([`PLACEHOLDER_STRIP_BANDS`]'s lower half), because there is no vertical room for a third row today;
+/// testing the wave first is what makes the wave-strip branch reachable at all. When F2.10/F2.11 hand in
+/// real, disjoint bands the order stops mattering.
+pub fn band_at(y: f64, bands: &StripBands) -> Band {
+    if y < RULER_H {
+        return Band::Ruler;
+    }
+    if y >= bands.recorders.0 && y < bands.recorders.1 {
+        return Band::Recorders;
+    }
+    if y >= bands.wave.0 && y < bands.wave.1 {
+        return Band::Wave;
+    }
+    if y >= bands.bar.0 && y < bands.bar.1 {
+        return Band::Bar;
+    }
+    Band::Bar
+}
+
+/// F2.8 S2: the single door from a press position to the three flowchart inputs the move needs —
+/// `recorders_band`, `wave_strip` and `on_border`. The UI calls this instead of passing literals, so the
+/// branch order lives in tested code rather than inside a gesture callback.
+///
+/// `on_border` is answered from the boxes actually drawn (`border_at`), not from a flag: a border only
+/// exists where something was painted, and S2 refuses to slide "unless on a border" while S1 lets EITHER
+/// button drag it, so the two sentences meet here.
+pub fn press_targets(
+    y: f64,
+    x: f64,
+    boxes: &[Box_],
+    pps: f64,
+    band_name: Option<&str>,
+) -> (Option<String>, Option<String>, bool) {
+    let _ = pps;
+    let on_border = border_at(boxes, x).is_some();
+    match band_at(y, &PLACEHOLDER_STRIP_BANDS) {
+        Band::Recorders => (band_name.map(str::to_string), None, on_border),
+        Band::Wave => (None, band_name.map(str::to_string), on_border),
+        Band::Ruler | Band::Bar => (None, None, on_border),
+    }
+}
+
 // --- S2: what the right button takes ---------------------------------------------------------------------
 
 /// F2.8 S2: what a right-press picked up, in the order the flowchart asks.

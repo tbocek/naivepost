@@ -3783,6 +3783,16 @@ pub fn review_cut_segs_count(window: &adw::ApplicationWindow) -> usize {
     newest_review_cut().segs.len()
 }
 
+/// This window's shift correction (F2.8 S2), read straight off the cut the gesture wrote. A slide of a
+/// recording or a row lands here, so a test can assert WHICH sources moved and by how much instead of
+/// trusting the status sentence alone.
+pub fn review_cut_shift(
+    window: &adw::ApplicationWindow,
+) -> std::collections::BTreeMap<String, f64> {
+    let _ = window;
+    newest_review_cut().shift.clone()
+}
+
 /// This window's lanes (F2.9 S3), by their stable read: ⇲ Lane adds one and cuts nothing, so a test
 /// asserts the lane arrived while `review_cut_segs_count` stayed put.
 pub fn review_lanes(window: &adw::ApplicationWindow) -> Vec<cut::Lane> {
@@ -4234,6 +4244,11 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     static MOVE_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
         const { std::cell::RefCell::new(None) };
+    /// F2.8 S2: where the move drag was PRESSED, (x, y) in strip px, newest window first. The scope has to
+    /// be fixed at the press — `wave_strip` and `on_border` are read from this, not re-derived on each
+    /// update, so a pointer wandering off the band mid-drag cannot change what was picked up.
+    static MOVE_PRESSED: std::cell::RefCell<Vec<Rc<std::cell::RefCell<(f64, f64)>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
     /// The folds opened for the drag in flight, newest window first. Refolded when the gesture ends;
     /// until the fold surface exists this only records what the rule asked to open.
     static OPEN_FOLDS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Vec<usize>>>>> =
@@ -4329,15 +4344,150 @@ pub const TRACK_REC_END: f64 = 3600.0;
 /// is `false`, and there is deliberately no `set_playhead` / `move_line_and_save` call anywhere in this
 /// function or in the button-3 gesture that reaches it, so the page cannot drift into moving the line
 /// while the right hand is doing arithmetic on the clock.
+/// F2.8 S2: the boxes `track-strip` paints for this window's cut, in the same px space a press arrives in.
+/// Read from the newest review cut so a press and a paint never disagree about where a clip is.
+fn trim_boxes_for_strip() -> Vec<cut_trim::Box_> {
+    let cut_ = newest_review_cut();
+    cut_trim::clip_boxes(&cut_.segs, TRACK_STRIP_PPS)
+}
+
+/// F2.8 S1/S2: what a right-press at `press_x` takes. A border grabbed within [`cut_trim::EDGE_GRAB_PX`]
+/// of a DRAWN box belongs to S1 ("either button drags that border") and must be trimmed, not slid — but
+/// only once the hand has actually travelled: an unmoved press stays a click (S3), which trims nothing.
+/// Anything else falls through to the move rule.
+fn right_press_takes_border(press_x: f64, travel_px: f64) -> Option<(usize, cut_trim::Border)> {
+    if travel_px.abs() < cut_select::DRAG_SLOP_PX {
+        return None;
+    }
+    cut_trim::border_at(&trim_boxes_for_strip(), press_x)
+}
+
+/// F2.8 S2: where this window's move press landed in x, in strip px. The widget path stores it at
+/// `drag-begin`; until F2.10/F2.11 own the real rows a caller may also prime it directly (the same kind of
+/// seam `set_press_scene` is), which is how a test places a press mid-scene rather than on a border.
+pub fn set_press_x(x: f64) {
+    // Read the old pair first and drop that borrow before writing: holding it across the second
+    // `borrow_mut` on the same RefCell panics with "RefCell already borrowed".
+    let old = MOVE_PRESSED.with(|cell| cell.borrow().last().map(|s| *s.borrow()));
+    if let Some((_, y)) = old {
+        MOVE_PRESSED.with(|cell| {
+            if let Some(slot) = cell.borrow().last() {
+                *slot.borrow_mut() = (x, y);
+            }
+        });
+    }
+}
+
+/// Read side of [`set_press_x`] — the stored press position for the newest window.
+pub fn press_position() -> (f64, f64) {
+    MOVE_PRESSED.with(|cell| cell.borrow().last().map(|s| *s.borrow()).unwrap_or((0.0, 0.0)))
+}
+
+/// F2.8 S2/S3: the older door, seam-only. Kept for callers (and tests) that supply no press position: it
+/// answers with whatever `set_press_band` primed and nothing else — no band, no border — so a call here can
+/// still never move the line without travel. The widget path goes through [`press_move_at`] instead.
 pub fn press_move(
     window: &adw::ApplicationWindow,
     travel_px: f64,
     row_change: bool,
     d_seconds: f64,
 ) -> cut_trim::Gesture {
+    press_move_with_override(
+        window,
+        press_band(),
+        None,
+        false,
+        travel_px,
+        row_change,
+        d_seconds,
+    )
+}
+
+/// F2.8 S2: what a right-press at (`press_x`, `press_y`) took, exactly as the widget computes it — the
+/// same door, with the answer returned instead of applied. Kept separate from [`press_move_at`] so a test
+/// can assert WHICH branch the wire chose without trusting the status sentence alone.
+///
+/// The recording NAME comes from `set_press_band` (until F2.10/F2.11 own the lane names); WHICH band was
+/// hit comes from the press y through `cut_trim::press_targets` over `cut_trim::PLACEHOLDER_STRIP_BANDS`.
+/// That is what makes the flowchart's wave-strip branch reachable from a real right-press with nothing
+/// primed but the name.
+pub fn right_press_took(
+    press_x: f64,
+    press_y: f64,
+) -> (Option<String>, Option<String>, bool) {
+    let boxes = trim_boxes_for_strip();
+    cut_trim::press_targets(press_y, press_x, &boxes, TRACK_STRIP_PPS, press_band().as_deref())
+}
+
+/// F2.8 S2: the move door that knows WHERE the press landed. Same rule as [`press_move`], but its
+/// `recorders_band` / `wave_strip` / `on_border` come from the press position through
+/// [`right_press_took`], not from literals. `press_scene`/`press_row` remain overrides for the scene/row
+/// questions; those seams are all that is left standing in, because the page has no real rows to read them
+/// off yet.
+pub fn press_move_at(
+    window: &adw::ApplicationWindow,
+    press_x: f64,
+    press_y: f64,
+    travel_px: f64,
+    d_seconds: f64,
+) -> cut_trim::Gesture {
+    let (recorders_band, wave_strip, on_border) = right_press_took(press_x, press_y);
+    press_move_with_override(window, recorders_band, wave_strip, on_border, travel_px, false, d_seconds)
+}
+
+/// F2.8 S2/S3: the whole move rule with its three inputs supplied. Both doors land here: the widget's
+/// position-driven [`press_move_at`] and the older seam-only [`press_move`], which passes whatever seams
+/// were primed. A press that never travelled stays a click and never moves the line
+/// ([`cut_trim::right_press_moves_line`]).
+fn press_move_with_override(
+    window: &adw::ApplicationWindow,
+    recorders_band: Option<String>,
+    wave_strip: Option<String>,
+    on_border: bool,
+    travel_px: f64,
+    row_change: bool,
+    d_seconds: f64,
+) -> cut_trim::Gesture {
+    // The scene seam only answers when this press took neither a band nor a selection away from a border:
+    // the flowchart asks those questions BEFORE it asks about a scene.
+    let scene = if recorders_band.is_some() || wave_strip.is_some() || on_border {
+        None
+    } else {
+        let inside_selection = selection(window)
+            .map(|b| b.length() >= crate::cut_select::MIN_SECONDS)
+            .unwrap_or(false);
+        if inside_selection {
+            None
+        } else {
+            press_scene()
+        }
+    };
+    press_move_core(
+        window,
+        recorders_band,
+        wave_strip,
+        on_border,
+        scene,
+        travel_px,
+        row_change,
+        d_seconds,
+    )
+}
+
+/// F2.8 S2: the move rule with every input supplied, including which scene (if any) the press fell on.
+fn press_move_core(
+    window: &adw::ApplicationWindow,
+    recorders_band: Option<String>,
+    wave_strip: Option<String>,
+    on_border: bool,
+    scene: Option<usize>,
+    travel_px: f64,
+    row_change: bool,
+    d_seconds: f64,
+) -> cut_trim::Gesture {
     let cut_ = newest_review_cut();
     let band = selection(window);
-    let band_name = press_band();
+    let band_name = recorders_band.clone();
     let selected: Vec<usize> = match (&band, &cut_) {
         (Some(band), cut_) => cut_
             .segs
@@ -4357,16 +4507,16 @@ pub fn press_move(
         .into_iter()
         .collect();
     let press = cut_trim::Press {
-        recorders_band: band_name.as_deref(),
-        wave_strip: None,
+        recorders_band: recorders_band.as_deref(),
+        wave_strip: wave_strip.as_deref(),
         selection: band.as_ref().map(|b| (b.start, b.end)),
         selected,
         inside_selection: band
             .as_ref()
             .map(|b| crate::cut_select::MIN_SECONDS <= b.length())
             .unwrap_or(false),
-        on_border: false,
-        scene: press_scene(),
+        on_border,
+        scene,
         row: press_row(window),
     };
     let gesture = cut_trim::right_gesture(
@@ -4766,11 +4916,43 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
     // Button 3 is GTK's secondary button — the right hand, whose drags move and never trim.
     let mover = gtk::GestureDrag::new();
     mover.set_button(3);
+    // F2.8 S2: the press fixes what the drag takes, so its x AND y are remembered here — `wave_strip` and
+    // `on_border` have to come from where the pointer actually landed, not from a seam primed beforehand.
+    // Newest-slot rule like `SELECT_SURFACES`, so one window's press cannot answer another's drag.
+    let pressed_begin = Rc::new(std::cell::RefCell::new((0.0f64, 0.0f64)));
+    MOVE_PRESSED.with(|cell| cell.borrow_mut().push(pressed_begin.clone()));
+    let pressed_upd = pressed_begin.clone();
+    // A `drag-begin` carries the ABSOLUTE press position; a `drag-update`/`drag-end` carry the OFFSET from
+    // it. So the begin stores the absolute pair, and an update's own numbers are added to it to get where
+    // the pointer is now. A caller that primed the x seam directly (`set_press_x`) already supplied the
+    // absolute press, so its stored 0.0 begin adds nothing and the seam answer stands.
+    mover.connect_drag_begin(move |_g, x, y| {
+        // A `drag-begin` carries the ABSOLUTE press position; updates carry offsets from it. Each axis is
+        // taken from the begin UNLESS a caller primed it directly (`set_press_x`, F2.10/F2.11's seam), in
+        // which case the primed value stands -- hence the per-axis 0.0 "not primed" test rather than a
+        // whole-pair one: a test can prime x and still let the real y through.
+        let (px, py) = *pressed_begin.borrow();
+        *pressed_begin.borrow_mut() = (if px == 0.0 { x } else { px }, if py == 0.0 { y } else { py });
+    });
     let win = window.clone();
     mover.connect_drag_update(move |_g, x, _y| {
-        // Seconds travelled since the press, at the strip's zoom. The gesture reports its own offset, so
-        // the page forwards it rather than re-deriving anything.
-        press_move(&win, x, false, x / TRACK_STRIP_PPS);
+        // The press position was stored at the begin above; the update carries only the offset.
+        // The stored pair is the press itself when a caller primed it; add nothing to it. Reading it here
+        // rather than recomputing keeps the scope fixed at the press even if the pointer wanders.
+        let (press_x, press_y) = *pressed_upd.borrow();
+        // S1's "either button drags that border": if the press landed within EDGE_GRAB_PX of a drawn
+        // clip border, the RIGHT button trims it rather than starting a slide. That is why S2 reads
+        // "...the scene slides ... unless on a border" — the border question is answered first, by the
+        // same `border_at` the left button uses, so the two sentences cannot contradict each other.
+        if let Some((index, border)) = right_press_takes_border(press_x, x) {
+            press_trim_border(&win, index, border, (press_x + x) / TRACK_STRIP_PPS);
+            if let Some(strip) = track_strip(&win) {
+                strip.queue_draw();
+            }
+            return;
+        }
+        // Otherwise the right hand moves: seconds travelled since the press, at the strip's zoom.
+        press_move_at(&win, press_x, press_y, x, x / TRACK_STRIP_PPS);
     });
     strip.add_controller(mover.clone());
     MOVE_GESTURES.with(|cell| *cell.borrow_mut() = Some(mover));
