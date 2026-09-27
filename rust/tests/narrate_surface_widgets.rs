@@ -34,6 +34,7 @@ static RAN_VOICE_PICKER: AtomicBool = AtomicBool::new(false);
 static RAN_BACK_CLAMP: AtomicBool = AtomicBool::new(false);
 static RAN_LAST_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_PITCH_DEBOUNCE: AtomicBool = AtomicBool::new(false);
+static RAN_FIT_ROW: AtomicBool = AtomicBool::new(false);
 
 fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
@@ -627,6 +628,164 @@ fn narrate_round(app: &adw::Application) {
     RAN_READOUTS.store(true, Ordering::SeqCst);
     window.close();
     settle();
+
+    // --- (10) F4.3: the row's warning read off the WIDGET, not off the fit logic -----------------
+    // Four entries on three 10 s clips, chosen so each rung of the render's ladder shows up in a different
+    // row. Speech length here is §F4.3's page rule (chars / SPEECH_CHARS_PER_SECOND), so the character
+    // counts below ARE the seconds: 38 chars ~ 2.53 s, 240 chars = 16.0 s.
+    //   index 0 -> clip 1 (0..10): placed at 1.0, 2.0 s of speech  -> Fits, no warning, unclassed
+    //   index 1 -> clip 2 (10..20): placed at 14.0, 2.53 s         -> past room + extend, slid only
+    //   index 2 -> clip 3 (20..30): placed at 0.3, 16.0 s          -> past what a slide fixes, sped up
+    //   index 3 -> clip 1 again: a CAPTION (pos set)               -> never warns, spoken or not
+    let mut fit_state = base_state();
+    fit_state.entries = vec![
+        Entry {
+            s: 0.0,
+            e: 10.0,
+            at: 1.0,
+            text: "a short line that fits".into(), // 20 chars ~ 1.33 s
+            emotion: "calm".into(),
+            pos: String::new(),
+            roll: 0,
+        },
+        Entry {
+            s: 10.0,
+            e: 20.0,
+            at: 14.0,
+            text: "x".repeat(38), // ~2.53 s, placed late on a 10 s clip
+            emotion: "calm".into(),
+            pos: String::new(),
+            roll: 0,
+        },
+        Entry {
+            s: 20.0,
+            e: 30.0,
+            at: 0.3,
+            text: "y".repeat(240), // 16.0 s on a 10 s clip: even MAX_TEMPO cannot carry it
+            emotion: "calm".into(),
+            pos: String::new(),
+            roll: 0,
+        },
+        Entry {
+            s: 0.0,
+            e: 10.0,
+            at: 5.0,
+            text: "z".repeat(240), // long as the tempo case, but the viewer reads it: never spoken
+            emotion: String::new(),
+            pos: "lower third".into(),
+            roll: 0,
+        },
+    ];
+    let window = narrate_page(app, fit_state.clone());
+
+    // The rows are drawn in the page's own order (sorted by start, then `at`), which is NOT the order above,
+    // so each row is found by matching its own text box. That match must be EXACT: every field on this page
+    // carries a name, and an index whose field is missing would otherwise read as "no match" rather than as a
+    // row that failed to draw.
+    let row_of = |needle: &Entry| -> usize {
+        let matches: Vec<usize> = (0..fit_state.entries.len())
+            .filter(|index| {
+                widget_in(&window, &format!("line-text-{index}"))
+                    .and_then(|w| w.downcast::<gtk::Entry>().ok())
+                    // The field holds what `write_box` writes (`[tag] text`), not the raw entry text.
+                    .map(|field| field.text() == narrate_screen::write_box(needle))
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(
+            matches.len(),
+            1,
+            "exactly one row should carry {needle:?}, got {matches:?} — the fixture needs distinct texts"
+        );
+        matches[0]
+    };
+    let rows: Vec<usize> = (0..fit_state.entries.len())
+        .map(|n| row_of(&fit_state.entries[n]))
+        .collect();
+    // Each of the four entries landed on its own row, and no two of them share one.
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows.iter().collect::<std::collections::HashSet<_>>().len(), 4, "{rows:?}");
+    let (short, slid, sped, caption) = (rows[0], rows[1], rows[2], rows[3]);
+
+    // (c) a short line: empty label, no error class.
+    let quiet = label_text(&window, &format!("line-warning-{short}"));
+    assert_eq!(quiet, "", "a line that fits wears no warning (row {short})");
+    let quiet_widget = widget_in(&window, &format!("line-warning-{short}")).expect("warning label exists");
+    assert!(!quiet_widget.has_css_class("error"), "a fitting row is not marked red");
+
+    // (a) the slide rung: 'moved earlier' and NOT 'sped up', and red because row_is_red drove it. The
+    // expected sentence is rebuilt from this clip's OWN set of lines through the same page rule the wire
+    // uses, so the widget and the logic are pinned to one sentence rather than to two estimates.
+    let speech_of = |entry: &Entry| -> f64 {
+        if entry.text.is_empty() || !entry.pos.is_empty() {
+            0.0
+        } else {
+            narrate_screen::page_speech_seconds(
+                entry.text.chars().count(),
+                narrate_screen::SPEECH_CHARS_PER_SECOND,
+            )
+        }
+    };
+    let slid_lines: Vec<(usize, f64, f64)> = fit_state
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.s == 10.0 && e.e == 20.0)
+        .map(|(index, e)| (index, e.at, speech_of(e)))
+        .collect();
+    let slid_warning = label_text(&window, &format!("line-warning-{slid}"));
+    let slid_expected =
+        narrate_screen::fit_warning(narrate_screen::mirror_fit(10.0, &slid_lines))
+            .expect("a run past room + extend warns");
+    assert_eq!(
+        slid_warning, slid_expected,
+        "the widget shows the module's own sentence, byte for byte"
+    );
+    assert!(slid_warning.contains("moved earlier"), "{slid_warning}");
+    assert!(
+        !slid_warning.contains("sped up"),
+        "a slide-only fix must not claim tempo: {slid_warning}"
+    );
+    assert!(
+        widget_in(&window, &format!("line-warning-{slid}"))
+            .expect("warning label exists")
+            .has_css_class("error"),
+        "row_is_red drives the error class on a slid row"
+    );
+
+    // (b) the tempo rung: the branch the old per-line estimate could never produce.
+    let sped_warning = label_text(&window, &format!("line-warning-{sped}"));
+    let sped_speech = narrate_screen::page_speech_seconds(240, narrate_screen::SPEECH_CHARS_PER_SECOND);
+    let sped_expected = narrate_screen::fit_warning(narrate_screen::mirror_fit(
+        10.0,
+        &[(sped, 0.3, sped_speech)],
+    ))
+    .expect("a run past what a slide fixes warns");
+    assert_eq!(sped_warning, sped_expected, "same sentence from widget and logic");
+    assert!(
+        sped_warning.contains("sped up"),
+        "the tempo remedy must reach the row: {sped_warning}"
+    );
+    assert!(sped_warning.contains("moved earlier and sped up"), "{sped_warning}");
+    assert!(
+        widget_in(&window, &format!("line-warning-{sped}"))
+            .expect("warning label exists")
+            .has_css_class("error"),
+        "a sped-up row is marked red too"
+    );
+
+    // (d) a caption never wears a fit warning, however long it is: the viewer reads it, it is not spoken.
+    let caption_warning = label_text(&window, &format!("line-warning-{caption}"));
+    assert_eq!(caption_warning, "", "a caption wears no fit warning (row {caption})");
+    assert!(
+        !widget_in(&window, &format!("line-warning-{caption}"))
+            .expect("warning label exists")
+            .has_css_class("error"),
+        "a caption row is never marked red by the fit rule"
+    );
+    RAN_FIT_ROW.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
 }
 
 #[test]
@@ -676,4 +835,5 @@ fn sec_07_narrate_1_surface_the_narrate_page_reaches_its_rules() {
         RAN_PITCH_DEBOUNCE.load(Ordering::SeqCst),
         "the pitch slider's debounce path never ran"
     );
+    assert!(RAN_FIT_ROW.load(Ordering::SeqCst), "the F4.3 fit-row block never ran");
 }

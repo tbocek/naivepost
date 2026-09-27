@@ -515,6 +515,102 @@ pub fn row_is_red(fit: Fit) -> bool {
     fit_warning(fit).is_some()
 }
 
+// --- F4.3: the row's warning mirrors the render's own ladder -------------------------------------
+
+/// §F4.3 (`characters / the narration's own measured rate (default 15 chars/s, clamped 8..28)`): the band a
+/// speech estimate may be taken at. The *measured* rate — what this narration's wavs actually ran at — is not
+/// implemented yet, so every caller passes an estimate; this is the bound any caller that later has a
+/// measurement must push it through, so a wild measurement cannot make a line look free or endless.
+/// [`SPEECH_CHARS_PER_SECOND`] sits inside the band as the default.
+pub const CHAR_RATE_MIN: f64 = 8.0;
+pub const CHAR_RATE_MAX: f64 = 28.0;
+
+/// A chars-per-second rate clamped into [`CHAR_RATE_MIN`]..=[`CHAR_RATE_MAX`]. Non-positive and non-finite rates
+/// fall back to the default rather than dividing by zero or yielding `NaN` seconds.
+pub fn char_rate_clamped(rate: f64) -> f64 {
+    if !rate.is_finite() || rate <= 0.0 {
+        return SPEECH_CHARS_PER_SECOND;
+    }
+    rate.clamp(CHAR_RATE_MIN, CHAR_RATE_MAX)
+}
+
+/// §F4.3's page-only half of "speech length": **on the Narrate page** a line whose take does not exist yet is
+/// estimated as its characters over the rate, because the row has to warn before there is anything to measure.
+/// In the RENDER the same line has length 0.0 and takes no room at all — its cue is held to the next line or
+/// the clip's end — and that rule lives with the render's caller ([`crate::produce_render::fit`]'s input),
+/// which this function deliberately does not touch.
+pub fn page_speech_seconds(chars: usize, rate: f64) -> f64 {
+    chars as f64 / char_rate_clamped(rate)
+}
+
+/// F4.3 S1–S4 for the ROW: decide the warning by running the SAME ladder the render runs
+/// ([`crate::produce_render::fit`]) rather than by estimating on the page, so a row can never promise a
+/// remedy the render would not apply — which is exactly what the old per-line estimate did wrong: it looked at
+/// one line against one clip and could only ever say "moved earlier", never "and sped up".
+///
+/// `clip_len` is the clip's on-screen length (the render's `room`); `lines` are that ONE clip's lines in
+/// placement order as `(entry index, clip-relative at, speech seconds)`, speech from
+/// [`page_speech_seconds`] until a take exists to measure.
+///
+/// Which rung fired is read out of the ladder's own log strings — matched against [`crate::produce_render::
+/// moved_log`] / [`sped_up_log`]-shaped text rather than by re-reading its internals — because those two
+/// sentences ARE the record of the step, and matching them keeps this mirror honest if the ladder changes:
+/// - no log at all and the run's tail lands with slack → [`Fit::Fits`];
+/// - no log at all but the run needs the whole tail to land (it fits only because the breath after the last
+///   word is squeezed) → [`Fit::Tight`], the row says how close it is without blaming the render;
+/// - the slide rung logged (with or without growth) → [`Fit::Overruns`] with `sped_up: false`: the render's
+///   answer is "moved earlier";
+/// - the tempo rung logged → [`Fit::Overruns`] with `sped_up: true`: "moved earlier and sped up".
+///
+/// `past` is what the ladder could NOT remove at the clip's own end — where the run finishes plus the tail,
+/// less the clip's length — floored at 0.0, since the spec's last rung says what still overruns is simply cut
+/// there, and a negative overrun would read as spare time that does not exist.
+pub fn mirror_fit(clip_len: f64, lines: &[(usize, f64, f64)]) -> Fit {
+    if lines.is_empty() {
+        return Fit::Fits;
+    }
+    let (placed, logs) = crate::produce_render::fit(lines, clip_len);
+    // The tempo rung also logs the slide, so check it first: its presence means the run went past sliding.
+    let sped_up = logs.iter().any(|line| line.contains("sped up"));
+    let slid = logs.iter().any(|line| line.contains("moved") && line.contains("earlier"));
+    if sped_up || slid {
+        return Fit::Overruns {
+            // The shortfall is read off the very placements `fit` settled on, below.
+            past: overrun_after(placed.iter(), clip_len).max(0.0),
+            sped_up,
+        };
+    }
+    drop(placed);
+    // Nothing was logged: either it fits with room to breathe, or it fits only by spending the tail.
+    let speech: f64 = lines.iter().map(|(_, _, speak)| speak).sum();
+    let end = lines
+        .iter()
+        .map(|(_, at, speak)| *at + speak)
+        .fold(0.0_f64, f64::max);
+    let slack = clip_len - (end + SPEECH_TAIL_SECONDS);
+    if slack < 0.0 {
+        return Fit::Tight {
+            speech,
+            before: clip_len - end,
+            next_line: false,
+        };
+    }
+    Fit::Fits
+}
+
+/// What is left over the clip's end once the ladder has done everything it may. The render's own last rung
+/// decides this: it speeds to [`crate::produce_render::MAX_TEMPO`] (P.eng.narrationMaxTempo) and slides back
+/// to the lead, so what remains over the clip's length is exactly the shortfall that rung could not remove —
+/// the spec's "what still overruns is cut by the clip's end". Re-derived from `fit`'s returned placements
+/// rather than from a fresh model of the ladder, so it cannot drift from what the render actually did.
+fn overrun_after<'a>(placed: impl Iterator<Item = &'a crate::produce_render::Placed>, clip_len: f64) -> f64 {
+    placed
+        .map(|line| line.at + line.speech / line.tempo.max(1.0))
+        .fold(0.0_f64, f64::max)
+        + SPEECH_TAIL_SECONDS
+        - clip_len
+}
+
 // --- The row's ▶ (§1's number 16, inventory C.4) -------------------------------------------------------------
 
 /// What a press of the row's ▶ means. Six answers because the same button is asked to do six different things

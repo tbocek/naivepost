@@ -422,7 +422,7 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
                     .unwrap_or(std::cmp::Ordering::Equal),
             )
     });
-    for (index, entry) in ordered {
+    for (index, entry) in ordered.clone() {
         let row = gtk::ListBoxRow::new();
         row.set_widget_name(&format!("narrate-line-{index}"));
         let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -436,10 +436,10 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
         status.set_widget_name(&format!("line-status-{index}"));
         box_.append(&status);
         let warning = gtk::Label::new(Some(
-            &narrate_screen::fit_warning(fit_for(entry)).unwrap_or_default(),
+            &narrate_screen::fit_warning(fit_for(entry, &ordered)).unwrap_or_default(),
         ));
         warning.set_widget_name(&format!("line-warning-{index}"));
-        if narrate_screen::row_is_red(fit_for(entry)) {
+        if narrate_screen::row_is_red(fit_for(entry, &ordered)) {
             warning.add_css_class("error");
         }
         box_.append(&warning);
@@ -468,27 +468,37 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
     }
 }
 
-/// The row's fit, asked of the only estimate available before a take exists: §C.2's chars-per-second.
-fn fit_for(entry: &Entry) -> Fit {
-    let room = (entry.e - (entry.s + entry.at)).max(0.0);
-    let speech = entry.text.chars().count() as f64 / narrate_screen::SPEECH_CHARS_PER_SECOND;
+/// The row's fit, asked of the render's own ladder (F4.3) rather than of a per-line estimate: every line of
+/// THIS clip goes through `narrate_screen::mirror_fit` together, so what the row warns about is what the render
+/// will do — including speeding the narration up, which a single line measured against its clip can never show.
+///
+/// Speech length comes from §F4.3's page-only rule: characters over [`narrate_screen::SPEECH_CHARS_PER_SECOND`]
+/// (the page holds no measurement to clamp yet; when a take exists its wav length replaces this).
+///
+/// Two kinds of row never wear a fit warning because neither is spoken: an empty line and a caption (`pos` set —
+/// "the viewer reads it; never spoken"). Those answer `Fit::Fits` here rather than being filtered inside the
+/// mirror, since the skip is about what the row means, not about the ladder.
+fn fit_for(entry: &Entry, all: &[(usize, &Entry)]) -> Fit {
     if entry.text.is_empty() || !entry.pos.is_empty() {
         return Fit::Fits;
     }
-    if speech > room {
-        Fit::Overruns {
-            past: speech - room,
-            sped_up: false,
-        }
-    } else if speech + narrate_screen::SPEECH_TAIL_SECONDS > room {
-        Fit::Tight {
-            speech,
-            before: room,
-            next_line: false,
-        }
-    } else {
-        Fit::Fits
-    }
+    // Every line standing on this clip's bounds, in play order, as the ladder wants it: (index, at, speech).
+    let lines: Vec<(usize, f64, f64)> = all
+        .iter()
+        .filter(|(_, other)| other.s == entry.s && other.e == entry.e)
+        .map(|(index, other)| {
+            let spoken = if other.text.is_empty() || !other.pos.is_empty() {
+                0.0
+            } else {
+                narrate_screen::page_speech_seconds(
+                    other.text.chars().count(),
+                    narrate_screen::SPEECH_CHARS_PER_SECOND,
+                )
+            };
+            (*index, other.at, spoken)
+        })
+        .collect();
+    narrate_screen::mirror_fit((entry.e - entry.s).max(0.0), &lines)
 }
 
 /// §1 `Off greys lines, preview and voice picker`: exactly the three names the rules module lists.
