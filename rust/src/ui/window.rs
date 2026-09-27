@@ -170,6 +170,12 @@ fn page_box(
     context.add_css_class("body");
     box_.append(&context);
 
+    // §07-narrate#1-screen: the Narrate page is one surface built by its own module, appended where
+    // every other page puts its content. Its handlers go on in `build_window`, after `set_content`.
+    if page == Page::Narrate.label() {
+        box_.append(&crate::ui::narrate_page::build());
+    }
+
 
     // F2.1: the Cut page's own transport, first under the title rather than last in the box. The
     // page's content box is top-packed and does not stretch its children, so anything appended after
@@ -5097,6 +5103,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // no click.
     wire_fold_all(&window);
     refresh_fold_badges(&window);
+    // §07-narrate#1-screen: the Narrate page's controls, wired after `set_content` like every other
+    // control in this window, so the widgets being wired are inside the realized tree.
+    crate::ui::narrate_page::wire(&window);
     window
 }
 

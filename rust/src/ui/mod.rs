@@ -1,9 +1,19 @@
 pub mod settings;
+/// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
+pub mod narrate_page;
 /// F0.7 S5 — the policy form: every field with its value, source and reason.
 pub mod policy_form;
 pub mod window;
 
 pub use settings::badge;
+// §07-narrate#1-screen — the page's seams: the state it renders, the refresh that paints it, and one
+// function per press so a widget test can compare what the click printed with what the rule answered.
+pub use narrate_page::{
+    press_back, press_forward, press_line_add_below, press_line_remove, press_line_reroll,
+    press_line_speak, press_narrate_add_line, press_narrate_play, press_pitch, press_sample_play, press_sample_reroll,
+    press_sample_stop, press_take_add, press_take_remove, read_state, refresh,
+    set_narration_off, set_state, NarrateState,
+};
 pub use settings::dialog_log;
 pub use settings::dialog_log_open;
 pub use settings::dialog_open;

@@ -18,6 +18,11 @@ use crate::project::Project;
 /// Inventory A.2: the check button's label, quoted so a test can pin it against the inventory.
 pub const TICK_LABEL: &str = "Narration";
 
+/// §1's rewrite wording for the tick's tooltip. The shipped tooltip also promises that the subtitle
+/// choices go with the narration; §1 calls that stale (captions come from the transcript, not the voice),
+/// so this const stops at the slider.
+pub const TICK_TIP: &str = "Whether this video has a narration. Unticked, \u{25b6} writes none, the lines already written are left alone, and Produce drops the game-volume slider.";
+
 /// Inventory A.2: the tick is "initially on unless the project says no narration" — the flag
 /// inverted, since the project stores the negation (§01 line 75).
 pub fn tick_checked(no_narration: bool) -> bool {
