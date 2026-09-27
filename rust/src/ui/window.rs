@@ -18,6 +18,7 @@ use crate::fx_record;
 use crate::cut_cards;
 use crate::cut_cam;
 use crate::cut_hear;
+use crate::fx_lane;
 use crate::cut_insert;
 use crate::cut_play;
 use crate::cut_review;
@@ -372,6 +373,62 @@ fn page_box(
         // NOT filled here: `window` is still under construction and not in the widget tree yet, so a
         // search for `camera-rows` from it finds nothing. The rows are drawn by `refresh_camera_rows`,
         // which `build_window` calls after `set_content` alongside the other Cut-page wiring.
+
+        // §06-effects#2-the-lane-and-the-preview — the effects lane, its own strip under the camera
+        // rows (where `spec/img/06-lane.png` puts it), and the preview panel beside it. THE CUT PAGE
+        // ONLY, for the same reason `fold-badges` is: `page_box` runs once per tab, and a second box
+        // sharing the name makes every lookup ambiguous. Built EMPTY here and filled by
+        // `refresh_effects_lane` after `set_content`, exactly like `camera-rows`.
+        let lane_box = gtk::Box::new(gtk::Orientation::Vertical, 1);
+        lane_box.set_widget_name("effects-lane");
+        lane_box.set_tooltip_text(Some(
+            "one row per overlapping group \u{00b7} each kind its own colour",
+        ));
+        box_.insert_child_after(&lane_box, Some(&previous));
+        previous = lane_box.upcast();
+
+        // The preview as one frame: the dim outside the camera rect, the rect itself, the overlays at
+        // their real alpha, and the plate a delayed sound earns. No drawing happens here; the numbers all
+        // come from `fx_lane`'s view-model and are pushed in by `refresh_effects_lane`.
+        //
+        // The panel's height is pinned (`135` = 240 x 9/16, the picture's own shape) rather than left to
+        // the children's vexpand: with only expanding children inside a vertical page column, GTK gave the
+        // box its 240 px width but let the three parts share it as ~78 px each, so nothing read as a
+        // picture. A fixed height makes the frame what it claims to be.
+        let preview = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        preview.set_widget_name("preview-panel");
+        preview.set_size_request(240, 135);
+        preview.set_halign(gtk::Align::Start);
+        preview.set_tooltip_text(Some(
+            "paused: everything outside the camera rect dimmed \u{00b7} playing: only the mask and the titles",
+        ));
+
+        let dim = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        dim.set_widget_name("preview-dim");
+        dim.set_vexpand(true);
+        dim.set_hexpand(true);
+        preview.append(&dim);
+
+        let rect = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        rect.set_widget_name("preview-camera-rect");
+        rect.set_vexpand(true);
+        rect.set_hexpand(true);
+        preview.append(&rect);
+
+        // The overlay stack holds one child per effect that draws while paused, named by its index in the
+        // cut's `fx` list so a test reads the same index the logic test asserts on.
+        let overlays = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        overlays.set_widget_name("preview-overlays");
+        overlays.set_vexpand(true);
+        overlays.set_hexpand(true);
+        preview.append(&overlays);
+
+        let plate = gtk::Label::new(None);
+        plate.set_widget_name("preview-plate");
+        plate.set_visible(false);
+        preview.append(&plate);
+
+        box_.append(&preview);
     }
 
     // F2.11 S1 — the fold badges' own row, directly under the camera rows. THE CUT PAGE ONLY:
@@ -480,7 +537,311 @@ pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind)
     fx_record::record_into(&mut cut_, kind, at, fx_record::NEW_EFFECT_SECONDS);
     save_insert_cut(&cut_);
     record_edit(window, &cut_);
+    // Draw the new bar in the same turn, so the lane never lags the thing that was just added.
+    refresh_effects_lane(window);
     fx_record::recorded_status(kind)
+}
+
+// --- §06-effects#2-the-lane-and-the-preview: drawing the two surfaces -------------------------------------
+//
+// Every number on these surfaces comes from `fx_lane`'s view-model (`lane_layout`, `paused_scene`,
+// `playing_scene`, `plate_for`); nothing here composes a colour, an alpha, a row or a threshold, so the
+// rules cannot drift from the tests that pin them. The UI only pushes state into named widgets.
+
+thread_local! {
+    /// Set while [`refresh_effects_lane`] is pushing state into the widgets, so a property write made by
+    // the refresh cannot be mistaken for a user action and re-enter itself — the same guard shape as
+    // `CAMERA_REFRESH` (F2.10).
+    static LANE_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
+    /// Whether the lane's CSS classes have been loaded once. The crate installs no display-wide provider
+    /// except the scoped ones each surface needs; the lane's six kind colours are one of them, loaded a
+    /// single time because loading per refresh would stack providers.
+    static LANE_CSS_LOADED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The lane's CSS, built from `fx_lane::bar_colour` rather than hand-written hex, so the palette in the
+/// file and the palette on screen cannot disagree. One class per kind plus the staying zoom's own, and the
+/// two outline classes the held overlay and a box under the hand wear.
+fn install_lane_css_once() {
+    if LANE_CSS_LOADED.with(|cell| cell.get()) {
+        return;
+    }
+    let mut css = String::new();
+    for (class, kind, staying) in [
+        ("fx-kind-zoom", cut::EffectKind::Zoom, false),
+        ("fx-kind-zoom-staying", cut::EffectKind::Zoom, true),
+        ("fx-kind-speed", cut::EffectKind::Speed, false),
+        ("fx-kind-text", cut::EffectKind::Text, false),
+        ("fx-kind-svg", cut::EffectKind::Svg, false),
+        ("fx-kind-volume", cut::EffectKind::Volume, false),
+        ("fx-kind-label", cut::EffectKind::Label, false),
+    ] {
+        let (r, g, b) = fx_lane::bar_colour(kind, staying);
+        css.push_str(&format!(
+            ".{class} {{ background-color: rgba({}, {}, {}, 0.85); }}\n",
+            (r * 255.0).round() as i32,
+            (g * 255.0).round() as i32,
+            (b * 255.0).round() as i32
+        ));
+    }
+    let violet = fx_lane::HELD_OUTLINE;
+    css.push_str(&format!(
+        ".held-effect {{ border: 2px dashed rgba({}, {}, {}, 1.0); }}\n",
+        (violet[0] * 255.0).round() as i32,
+        (violet[1] * 255.0).round() as i32,
+        (violet[2] * 255.0).round() as i32
+    ));
+    css.push_str(".drawing-box { border: 1px dashed #ffffff; }\n");
+    css.push_str(".preview-dimmed { background-color: rgba(0, 0, 0, 0.45); }\n");
+
+    let provider = gtk::CssProvider::new();
+    let _ = provider.load_from_data(&css);
+    gtk::StyleContext::add_provider_for_display(
+        &gtk::gdk::Display::default().expect("a display to style"),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+    LANE_CSS_LOADED.with(|cell| cell.set(true));
+}
+
+/// This window's effects-lane holder, resolved through its own content so a closed window's surviving
+/// tree cannot answer for a live one — the same scoping `camera_rows_box` and `fold_badges_box` use: GTK
+/// does not destroy a window on `close()`, so searching from the window object can walk into that other
+/// tree and append into it (the `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`
+/// this guards against).
+pub fn effects_lane_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
+    let content = window.content()?;
+    find_widget_by_name(&content, "effects-lane")?
+        .downcast()
+        .ok()
+}
+
+/// One of this window's preview widgets, scoped to its own content for the reason stated on
+/// [`effects_lane_box`]. Every preview lookup goes through here rather than the window object.
+fn preview_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
+    let content = window.content()?;
+    find_widget_by_name(&content, name)
+}
+
+/// Redraw the effects lane and the preview panel from this window's cut, its held effect and the red line.
+///
+/// Build-once-then-update-properties (F2.10's rule): children are appended only when the count they stand
+/// for changed, and always removed FROM THEIR HOLDER rather than by a tree-wide name search. Invisible
+/// overlays stay in the tree and are hidden by opacity — adding and removing widgets mid-refresh is what
+/// trips `gtk_box_append`'s parent assertion.
+pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
+    if LANE_REFRESH.with(|cell| cell.get()) {
+        return;
+    }
+    LANE_REFRESH.with(|cell| cell.set(true));
+    install_lane_css_once();
+
+    let cut_ = review_cut_of(window);
+    let bars = fx_lane::lane_layout(&cut_.fx);
+    let rows = fx_lane::row_count(&cut_.fx);
+    let t = paste_line(window);
+    // The held effect is identified by its index in the cut's list, so the view can name the widget after
+    // the record it stands for. A held effect not on this cut holds no overlay.
+    let held_index = held_effect().and_then(|held| {
+        cut_.fx
+            .iter()
+            .position(|effect| effect.kind == held.kind && effect.t == held.t)
+    });
+    let mut scene = fx_lane::paused_scene(&cut_.fx, t, held_index, false);
+    // `paused_scene` deliberately leaves the record in hand OUT of `overlays` (it is being judged, not
+    // watched), so the view adds it back here as the full-alpha outlined one. Its index comes from
+    // `held_index`, which was resolved against this cut's own list above — a held effect that is not on
+    // this cut draws no overlay either way.
+    if let Some(index) = held_index {
+        if let Some(effect) = cut_.fx.get(index) {
+            if effect.effect_kind().is_some_and(fx_lane::drawn_paused) {
+                scene.overlays.push((index, effect.effect_kind().expect("filtered above"), 1.0));
+            }
+        }
+    }
+
+    if let Some(lane) = effects_lane_box(window) {
+        sync_lane_rows(&lane, rows.max(1));
+        for bar in &bars {
+            let Some(row_box) = lane_row_box(&lane, bar.row) else { continue };
+            let bar_widget = ensure_named_child(&row_box, &format!("fx-bar-{}", bar.index), |slot| {
+                let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                box_.set_size_request(48, slot);
+                box_
+            });
+            set_class(&bar_widget, "fx-kind-zoom-staying", bar.staying);
+            if !bar.staying {
+                set_class(&bar_widget, &format!("fx-kind-{}", spell_kind(bar.kind)), true);
+            }
+        }
+        // A record that went away (an undo) takes its bar with it: drop any bar whose index is no longer
+        // in this cut's list, from the row that holds it.
+        let live: Vec<String> = bars
+            .iter()
+            .map(|bar| format!("fx-bar-{}", bar.index))
+            .collect();
+        for row in 0..rows.max(1) {
+            if let Some(row_box) = lane_row_box(&lane, row) {
+                let mut node = row_box.first_child();
+                while let Some(child) = node {
+                    let next = child.next_sibling();
+                    if !live.contains(&child.widget_name().to_string()) {
+                        row_box.remove(&child);
+                    }
+                    node = next;
+                }
+            }
+        }
+    }
+
+    if let Some(dim) = preview_widget(window, "preview-dim") {
+        dim.set_opacity(scene.dim_alpha);
+        set_class(&dim, "preview-dimmed", scene.dim_alpha > 0.0);
+    }
+    if let Some(rect) = preview_widget(window, "preview-camera-rect") {
+        rect.set_opacity(if scene.rect_stroke_px > 0.0 { 1.0 } else { 0.0 });
+    }
+    if let Some(stack) = preview_widget(window, "preview-overlays")
+        .and_then(|w| w.downcast::<gtk::Box>().ok())
+    {
+        sync_overlay_stack(&stack, &scene, held_index);
+    }
+    if let Some(panel) = preview_widget(window, "preview-panel") {
+        // The room is the panel's own width once laid out. Before layout GTK reports 0 for it, which is
+        // "not measured yet" rather than "no room", so the natural size it asks its parent for stands in:
+        // reading an unrealized 0 as no room would hide the plate from every headless check while a real
+        // window shows it (`fx_lane::room_px`).
+        let (minimum, natural) = panel.preferred_size();
+        let asked = natural.width().max(minimum.width());
+        let room = fx_lane::room_px(panel.width() as f64, asked.max(0) as f64);
+        // What the plate says is the debt of the record under the red line, not a placeholder.
+        let said = fx_lane::plate_for(fx_lane::plate_debt_at(&cut_.fx, t), room);
+        if let Some(plate) = preview_widget(window, "preview-plate")
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+        {
+            match said {
+                Some(text) => {
+                    plate.set_text(&text);
+                    plate.set_visible(true);
+                }
+                None => plate.set_visible(false),
+            }
+        }
+    }
+
+    LANE_REFRESH.with(|cell| cell.set(false));
+}
+
+/// `EffectKind` back to its lower-case spelling for the CSS class name.
+fn spell_kind(kind: cut::EffectKind) -> &'static str {
+    match kind {
+        cut::EffectKind::Zoom => "zoom",
+        cut::EffectKind::Speed => "speed",
+        cut::EffectKind::Text => "text",
+        cut::EffectKind::Svg => "svg",
+        cut::EffectKind::Volume => "volume",
+        cut::EffectKind::Label => "label",
+    }
+}
+
+/// Get the named child of `holder`, creating it with `make` when it is not there yet.
+fn ensure_named_child<F: FnOnce(i32) -> gtk::Box>(holder: &gtk::Box, name: &str, make: F) -> gtk::Box {
+    if let Some(found) = find_in_holder(holder.as_ref(), name) {
+        return found;
+    }
+    let made = make(holder.height().max(1));
+    made.set_widget_name(name);
+    holder.append(&made);
+    made
+}
+
+/// Add or remove a CSS class by state — added AND removed, so an outlined widget is always today's answer.
+fn set_class<W: AsRef<gtk::Widget>>(widget: &W, class: &str, on: bool) {
+    let widget = widget.as_ref();
+    if on {
+        widget.add_css_class(class);
+    } else {
+        widget.remove_css_class(class);
+    }
+}
+
+fn lane_row_box(lane: &gtk::Box, row: usize) -> Option<gtk::Box> {
+    find_in_holder(lane.as_ref(), &format!("fx-lane-row-{row}"))
+}
+
+/// Find a direct child of `holder` by name. Direct only: a tree-wide search from a holder can land on a
+/// different window's copy, since a closed GTK window is not destroyed.
+fn find_in_holder(holder: &gtk::Widget, name: &str) -> Option<gtk::Box> {
+    let mut child = holder.first_child();
+    while let Some(node) = child {
+        if node.widget_name() == name {
+            return node.downcast::<gtk::Box>().ok();
+        }
+        child = node.next_sibling();
+    }
+    None
+}
+
+/// Make the lane hold exactly `rows` row boxes, adding the missing ones and dropping the extra FROM THE
+/// HOLDER. Height is `layout.effectRowPx` per row, so an empty lane is still one row deep.
+fn sync_lane_rows(lane: &gtk::Box, rows: usize) {
+    let height = fx_lane::lane_height_px(rows) / rows.max(1) as f64;
+    let existing = lane.observe_children().n_items() as usize;
+    for index in existing..rows {
+        let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+        row_box.set_widget_name(&format!("fx-lane-row-{index}"));
+        row_box.set_size_request(-1, height.ceil() as i32);
+        lane.append(&row_box);
+    }
+    for _ in rows..existing {
+        if let Some(last) = lane.last_child() {
+            lane.remove(&last);
+        }
+    }
+    // Re-set the height every pass: the row count can change without any row being added or removed.
+    let mut child = lane.first_child();
+    while let Some(node) = child {
+        node.set_size_request(-1, height.ceil() as i32);
+        child = node.next_sibling();
+    }
+}
+
+/// Bring the overlay stack to exactly the overlays this frame lists, then push their alphas and classes.
+fn sync_overlay_stack(stack: &gtk::Box, scene: &fx_lane::PausedScene, held_index: Option<usize>) {
+    let wanted: Vec<String> = scene
+        .overlays
+        .iter()
+        .map(|(index, _, _)| format!("preview-overlay-{index}"))
+        .collect();
+    // Remove children whose name is no longer wanted, from the holder.
+    let mut node = stack.first_child();
+    while let Some(child) = node {
+        let next = child.next_sibling();
+        if !wanted.contains(&child.widget_name().to_string()) {
+            stack.remove(&child);
+        }
+        node = next;
+    }
+    for (index, _kind, alpha) in &scene.overlays {
+        let name = format!("preview-overlay-{index}");
+        let overlay = ensure_named_child(stack, &name, |_| {
+            let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            box_.set_vexpand(true);
+            box_
+        });
+        // The one in hand draws full (§2: "the held one full"); every other keeps the real alpha its glides
+        // give it. `held_full` answers which, so nothing here re-derives who is held.
+        let shown = if Some(*index) == held_index && scene.held_full {
+            1.0
+        } else {
+            *alpha
+        };
+        overlay.set_opacity(shown);
+        // The dashed violet outline is ADDED and REMOVED by state: an outline left on after the effect was
+        // put down would claim something is still in hand.
+        set_class(&overlay, "held-effect", Some(*index) == held_index && scene.held_outline_dashed);
+    }
 }
 
 /// The form column as the page sits idle (§1's "Form column", §A's "Idle rows"). A Grid named
@@ -1666,6 +2027,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // F2.10: fill `camera-rows` now that the page is inside the tree, so the search for it succeeds
     // and the plates, badges and switches a test fires by name are actually there.
     refresh_camera_rows(&window);
+    // §06-effects#2: the lane's one row and the preview's frame are filled here for the same reason —
+    // `page_box` builds both holders empty because the window is not in the tree yet at that point.
+    refresh_effects_lane(&window);
     // F2.11: the gutter's fold-all badge, then the per-gap − / + badges and each row's ✕. Drawn here,
     // after `set_content`, because a button outside the realized tree is found by no name and fired by
     // no click.
@@ -3485,8 +3849,10 @@ fn refresh_selection_readout(window: &adw::ApplicationWindow) {
     // F2.10: and the camera rows, whose badges, plates and gutter switches read the same live cut on
     // every draw, nudge and clear — a badge showing a state the next press contradicts is a lie.
     refresh_camera_rows(window);
+    // §06-effects#2-the-lane-and-the-preview: the lane and the preview read the same live cut on every
+    // draw, nudge and clear, so a bar or an overlay never lags the record it stands for.
+    refresh_effects_lane(window);
 }
-
 
 /// The playhead the snap marks are built around (F2.6 S2 lists the line among the snap targets).
 fn preview_playhead(window: &adw::ApplicationWindow) -> f64 {
@@ -3532,6 +3898,9 @@ pub fn press_fx_lane(window: &adw::ApplicationWindow) -> cut_select::FxLanePress
         cut_select::FxLanePress::PutsHeldEffectDown => {
             set_held_effect(None);
             log_line("effect put down on the effects lane");
+            // The preview's held overlay goes with it: a dashed outline around nothing would claim an
+            // effect is still in hand.
+            refresh_effects_lane(window);
         }
         cut_select::FxLanePress::Nothing => {}
     }
@@ -7126,6 +7495,9 @@ pub fn press_undo(window: &adw::ApplicationWindow) -> String {
             let mut cut_ = newest_review_cut();
             snapshot.restore(&mut cut_);
             publish_cut(&cut_);
+            // The lane and the preview refresh with it: a bar left on screen for an effect Undo took away
+            // is a lie about what this cut holds.
+            refresh_effects_lane(window);
             // S1: the sentence is `cut::undone`'s, not composed here.
             let said = cut::undone(cut_.segs.len());
             log_line(&said);
@@ -7148,6 +7520,7 @@ pub fn press_redo(window: &adw::ApplicationWindow) -> String {
             let mut cut_ = newest_review_cut();
             snapshot.restore(&mut cut_);
             publish_cut(&cut_);
+            refresh_effects_lane(window);
             // S1: one walk sentence for both directions (spec F2.13 gives the pair a single line).
             let said = cut::undone(cut_.segs.len());
             log_line(&said);
@@ -7177,6 +7550,7 @@ pub fn press_revert(window: &adw::ApplicationWindow) -> String {
     let mut cut_ = had.clone();
     snapshot.restore(&mut cut_);
     publish_cut(&cut_);
+    refresh_effects_lane(window);
     let said = cut::reverted(snapshot.segs.len(), had.segs.len());
     log_line(&said);
     said
@@ -7196,6 +7570,7 @@ pub fn press_clear_cut(window: &adw::ApplicationWindow) -> String {
     let history = cut_history(window);
     history.borrow_mut().push(&cleared);
     publish_cut(&cleared);
+    refresh_effects_lane(window);
     let said = cut::cleared_message(had.segs.len(), had.fx.len());
     log_line(&said);
     said

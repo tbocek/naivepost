@@ -326,3 +326,68 @@ fn sec_06_effects_2_the_lane_and_the_preview_s10_earliest_answer_wins() {
     assert_eq!(lane::rejoin_dip(), 0.15);
     assert_eq!(lane::SOUND_DIP_SECONDS, lane::rejoin_dip());
 }
+
+/// §06-effects#2-the-lane-and-the-preview — the debt the plate speaks of is measured AT THE RED LINE: the
+/// covering record's length less the seconds it has run by then, and the same earliest-answer winner s10 pins.
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s11_plate_debt_at_the_line() {
+    let held = Fx {
+        snd: "scene".into(),
+        ..fx(EffectKind::Speed, 10.0, 5.0)
+    };
+
+    // Three of its five seconds gone by the line at 13 → two seconds of sound still behind.
+    assert_eq!(lane::plate_debt_at(&[held.clone()], 13.0), 2.0);
+    assert_eq!(lane::plate_text(lane::plate_debt_at(&[held.clone()], 13.0)), "sound 2.0 s behind");
+
+    // Before the record starts there is nothing to be late for, so no plate.
+    assert_eq!(lane::plate_debt_at(&[held.clone()], 9.0), 0.0);
+    assert!(lane::plate_for(lane::plate_debt_at(&[held.clone()], 9.0), 100.0).is_none());
+
+    // Past its end nothing covers the line, so no record owes anything. The last covered second is where the
+    // debt tops out — at 14.9 s of a 5.0 s bar only 0.1 s is still owed, which is what `plate_text` reads as
+    // "sound 0.1 s behind", never an inflated figure. Compared with a tolerance: the seconds are floats and the
+    // subtraction carries their representation error, which is not what this rule is about.
+    let near_end = lane::plate_debt_at(&[held.clone()], 14.9);
+    assert!((near_end - 0.1).abs() < 1e-6, "0.1 s still owed at 14.9 of a 5.0 s bar, got {near_end}");
+    assert_eq!(lane::plate_debt_at(&[held.clone()], 15.0), 0.0, "the bar ended; nothing under the line");
+    assert_eq!(lane::plate_debt_at(&[held.clone()], 20.0), 0.0);
+    assert_eq!(lane::plate_debt_at(&[held.clone()], 10.0), 5.0, "at its start, all of it is owed");
+
+    // The EARLIER covering record answers, matching s10's ordering rule — not whichever has the bigger debt.
+    let later = Fx {
+        snd: "pitch".into(),
+        ..fx(EffectKind::Speed, 12.0, 9.0)
+    };
+    assert_eq!(lane::plate_debt_at(&[later.clone(), held.clone()], 13.0), 2.0);
+
+    // A kind with no `snd` in §06#1's table says nothing about sound even with the field filled in.
+    let caption = Fx {
+        snd: "mute".into(),
+        ..fx(EffectKind::Text, 12.0, 4.0)
+    };
+    assert_eq!(lane::plate_debt_at(&[caption], 13.0), 0.0);
+
+    // No records at all.
+    assert_eq!(lane::plate_debt_at(&[], 13.0), 0.0);
+}
+
+/// §06-effects#2-the-lane-and-the-preview — an unrealized panel reports width 0, which is "not measured yet",
+/// not "no room"; the width it asked for stands in until the layout says otherwise.
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s12_room_px_before_allocation() {
+    // Not laid out yet: the request is the room.
+    assert_eq!(lane::room_px(0.0, 240.0), 240.0);
+    // Laid out wider than requested: the allocation wins.
+    assert_eq!(lane::room_px(900.0, 240.0), 900.0);
+    // And a real allocation smaller than a big request never grows past what was actually got... it takes the
+    // larger of the two numbers it is handed, nothing more.
+    assert_eq!(lane::room_px(70.0, 60.0), 70.0);
+
+    // Fed through `plate_shown`, the unrealized 240 px panel has room while a 40 px one does not — which is
+    // what makes the plate provable headless instead of only on a real window.
+    assert!(lane::plate_shown(lane::room_px(0.0, 240.0)));
+    assert!(!lane::plate_shown(lane::room_px(0.0, 40.0)));
+    assert!(lane::plate_for(2.0, lane::room_px(0.0, 240.0)).is_some());
+    assert!(lane::plate_for(2.0, lane::room_px(0.0, 40.0)).is_none());
+}

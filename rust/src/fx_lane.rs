@@ -270,6 +270,123 @@ pub fn draws_debt_tail(snd: &str, debt: f64, scene_runs_on: bool) -> bool {
     snd == "scene" && debt.abs() >= DEBT_TAIL_MIN_SECONDS && scene_runs_on
 }
 
+// --- the two surfaces as values ------------------------------------------------------------------------------
+//
+// The lane and the preview each need several of the rules above at once. Composing them here keeps the view down
+// to one call per surface, so no colour, alpha, row or threshold can be re-derived inside a draw callback --
+// which is where a rule goes wrong unnoticed, because nothing outside the callback can see it.
+
+/// One bar in the lane: which effect it is, which row it got, and the colour it is drawn.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bar {
+    /// Index into the effect list, so the view can name the widget `fx-bar-<index>` and read the record back.
+    pub index: usize,
+    pub row: usize,
+    pub kind: EffectKind,
+    /// A staying zoom is a different bar (§2 gives it its own colour).
+    pub staying: bool,
+    pub colour: Rgb,
+    /// Whether this bar claims its row for its seconds. Under the floor a bar is still drawn and reserves
+    /// nothing, which is what keeps a scatter of tiny labels from growing the lane. `effects.packMinSeconds 0.4`
+    pub reserves_a_row: bool,
+}
+
+/// §06-effects#2-the-lane-and-the-preview: the lane as one value.
+///
+/// Empty input answers an empty list of bars — and the lane is still one row deep, because [`row_count`]
+/// answers 1 for no effects at all (§2: "lane one row deep even when empty"). The view sizes itself from
+/// `row_count`, never from this list's length.
+pub fn lane_layout(fx: &[Fx]) -> Vec<Bar> {
+    let rows = rows_for_effects(fx);
+    fx.iter()
+        .zip(rows)
+        .enumerate()
+        .filter_map(|(index, (effect, row))| {
+            let kind = effect.effect_kind()?;
+            // Staying is a zoom's question: §06#1's table gives no other kind a `stay` field, so a stray
+            // `stay: true` on a caption cannot make it the orange bar.
+            let staying = fx_record::uses(kind, fx_record::Field::Stay) && effect.stay;
+            Some(Bar {
+                index,
+                row,
+                kind,
+                staying,
+                colour: bar_colour(kind, staying),
+                reserves_a_row: effect.dur >= PACK_MIN_SECONDS,
+            })
+        })
+        .collect()
+}
+
+/// What the paused preview shows for one frame: the dim outside the camera rect, the rect's stroke, and every
+/// overlay with the alpha its fades give it right now.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PausedScene {
+    pub dim_alpha: f64,
+    pub rect_stroke_px: f64,
+    /// `(index, kind, alpha)` for each overlay the paused frame draws. An invisible one (alpha 0) is STILL
+    /// listed, so the view hides it by opacity rather than by removing a widget: adding and removing children
+    /// mid-drag is what trips `gtk_box_append`'s parent assertion in a refresh path.
+    pub overlays: Vec<(usize, EffectKind, f64)>,
+    pub held_full: bool,
+    pub held_outline_dashed: bool,
+    pub box_dashed: bool,
+}
+
+/// §06-effects#2-the-lane-and-the-preview: the paused frame. Outside the camera rect is dimmed black at
+/// [`DIM_ALPHA`], the rect is stroked, and visible overlays sit at their real alpha — except the one in the
+/// hand, which is drawn full with the dashed violet outline and therefore left out of `overlays`.
+pub fn paused_scene(fx: &[Fx], t: f64, held_index: Option<usize>, drawing_box: bool) -> PausedScene {
+    let overlays = fx
+        .iter()
+        .enumerate()
+        .filter(|(index, effect)| {
+            Some(*index) != held_index && effect.effect_kind().is_some_and(drawn_paused)
+        })
+        .map(|(index, effect)| (index, effect.effect_kind().expect("filtered above"), visibility_at(effect, t)))
+        .collect();
+    PausedScene {
+        dim_alpha: DIM_ALPHA,
+        rect_stroke_px: RECT_STROKE_PX,
+        overlays,
+        held_full: held_drawn_full(held_index.is_some()),
+        held_outline_dashed: held_outline_dashed(held_index.is_some()),
+        box_dashed: box_being_drawn_dashed(drawing_box),
+    }
+}
+
+/// §06-effects#2-the-lane-and-the-preview: the playing frame — titles only, at their real alpha.
+///
+/// The camera layer is deliberately NOT part of this answer: while playing the page paints only the black mask
+/// over what the finished frame hides ([`mask_only_while_playing`]), and the camera rides the smoothed live
+/// clock ([`camera_clock_is_smoothed`]) rather than anything computed per frame here.
+pub fn playing_scene(fx: &[Fx], t: f64) -> Vec<(usize, EffectKind, f64)> {
+    fx.iter()
+        .enumerate()
+        .filter(|(_, effect)| effect.effect_kind().is_some_and(drawn_while_playing))
+        .map(|(index, effect)| (index, effect.effect_kind().expect("filtered above"), visibility_at(effect, t)))
+        .collect()
+}
+
+/// Does this bar earn the dashed debt tail? One question about one bar: the record's own sound answer, the
+/// debt against its on-screen seconds, and whether the scene runs on past it.
+pub fn debt_tail_for(fx: &[Fx], index: usize, on_screen: f64, scene_runs_on: bool) -> bool {
+    let Some(effect) = fx.get(index) else {
+        return false;
+    };
+    draws_debt_tail(&effect.snd, debt(effect.dur, on_screen), scene_runs_on)
+}
+
+/// The plate's words, if there is room for the plate. No debt means no plate, and a narrow bar cannot hold
+/// one either — `effects.plateMinPx 60`, read as "wider than".
+pub fn plate_for(debt: f64, width_px: f64) -> Option<String> {
+    if !plate_shown(width_px) {
+        return None;
+    }
+    let text = plate_text(debt);
+    (!text.is_empty()).then_some(text)
+}
+
 /// §06-effects#2-the-lane-and-the-preview (`"sound X s behind|ahead"`): the plate's words. One tenth of a second
 /// is the finest thing worth telling someone to wait for; an exact zero has nothing to say, and a plate reading
 /// "sound 0.0 s" would be a bug dressed as information.
@@ -301,6 +418,39 @@ pub fn sound_answer_at(fx: &[Fx], t: f64) -> Option<String> {
         })
         .min_by(|a, b| a.t.total_cmp(&b.t))
         .map(|effect| effect.snd.clone())
+}
+
+/// §06-effects#2-the-lane-and-the-preview (`"sound X s behind|ahead" plate once wider than 60 px`): the room
+/// the plate has to speak in. A panel that has been laid out answers with its allocated width; one that has not
+/// answers `0`, which is NOT "no room" — it is "not measured yet", and reporting that as no room would hide the
+/// plate from every headless check while a real window shows it. So before allocation the width the widget asked
+/// for stands in, and afterwards the larger of the two wins: a panel never shrinks below what it requested here.
+pub fn room_px(allocated: f64, requested: f64) -> f64 {
+    allocated.max(requested)
+}
+
+/// §06-effects#2-the-lane-and-the-preview (the debt tail and its plate): how far the sound under the red line
+/// is from where the picture is. The winner is the same record [`sound_answer_at`] picks — the earliest one that
+/// both covers `t` and names a sound answer, since §2 gives only a speed a `snd` (§06#1's table) — and the debt
+/// is its total length less the seconds it has run by then. That clamp is the app's own arithmetic between two
+/// numbers it already holds (the record's start and the line), never a model's estimate; clamping keeps the
+/// answer inside the bar even when the line sits past its end, so a stale line cannot print a debt bigger than
+/// the effect. Past the last covered second there is no covering record and the answer is `0.0`, which
+/// `plate_text` calls no plate.
+pub fn plate_debt_at(fx: &[Fx], t: f64) -> f64 {
+    let Some(winner) = fx
+        .iter()
+        .filter(|effect| effect.effect_kind().is_some_and(|kind| fx_record::uses(kind, fx_record::Field::Snd)))
+        .filter(|effect| !effect.snd.is_empty())
+        .filter(|effect| {
+            let (from, to) = effect.spans();
+            t >= from && t < to
+        })
+        .min_by(|a, b| a.t.total_cmp(&b.t))
+    else {
+        return 0.0;
+    };
+    debt(winner.dur, (t - winner.t).clamp(0.0, winner.dur))
 }
 
 /// §06-effects#2-the-lane-and-the-preview (`sndDip 0.15 s fades at the rejoin`, inventory/effects.md §A.3): the
