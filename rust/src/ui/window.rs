@@ -24,6 +24,7 @@ use crate::fx_volume;
 use crate::fx_label;
 use crate::fx_text;
 use crate::fx_aspect;
+use crate::fx_band;
 use crate::fx_lane;
 use crate::fx_zoom;
 use crate::cut_insert;
@@ -1012,6 +1013,7 @@ pub fn press_speed_apply(window: &adw::ApplicationWindow) -> String {
     cut_.fx.push(effect.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    live_form_answer_is_undo(window);
     record_edit(window, &cut_);
     refresh_effects_lane(window);
     close_speed_form(window);
@@ -1078,6 +1080,44 @@ fn wire_speed_esc(window: &adw::ApplicationWindow) {
         }
     });
     window.add_controller(controller);
+}
+
+/// F3.8 S3 (`Esc drops the hold and disarms`): the band's own Esc controller. Shaped exactly like
+/// `wire_speed_esc`: it claims Escape and nothing else, prints what [`press_band_esc`] answered, and lets the
+/// key travel on when this window holds no effect — so a page with an open form or an arm is still handled by
+/// that kind's own controller, which is wired before this one.
+fn wire_band_esc(window: &adw::ApplicationWindow) {
+    let controller = gtk::EventControllerKey::new();
+    let win = window.clone();
+    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
+        if key != gtk::gdk::Key::Escape {
+            return glib::Propagation::Proceed;
+        }
+        match press_band_esc(&win) {
+            Some(said) => {
+                if let Some(status_line) = find_status(win.upcast_ref()) {
+                    status_line.set_text(&said);
+                }
+                glib::Propagation::Stop
+            }
+            None => glib::Propagation::Proceed,
+        }
+    });
+    window.add_controller(controller.clone());
+    BAND_ESC_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
+}
+
+thread_local! {
+    /// The band's Esc controller, kept so a test can fire a real Escape through it the way
+    /// `delete_key_controller` exposes the ⌦ one.
+    static BAND_ESC_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// This window's band-Esc controller, so a test can see it is attached. `None` on a page that drew none.
+pub fn band_esc_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
+    let _ = window;
+    BAND_ESC_KEYS.with(|cell| cell.borrow().clone())
 }
 
 // --- F3.6 Volume by hand: the press, the form, the Apply -------------------------------------------------
@@ -1359,8 +1399,8 @@ pub fn press_volume_apply(window: &adw::ApplicationWindow) -> String {
         Ok(effect) => effect,
         Err(reason) => {
             // The reason prints verbatim and the form STAYS OPEN: a refusal that closed the form would throw
-            // away the numbers someone is still typing, and the floor it names is the thing to fix next.
             log_line(&reason);
+            live_form_refused();
             return reason;
         }
     };
@@ -1368,6 +1408,7 @@ pub fn press_volume_apply(window: &adw::ApplicationWindow) -> String {
     cut_.fx.push(effect.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    live_form_answer_is_undo(window);
     record_edit(window, &cut_);
     refresh_effects_lane(window);
     close_volume_form(window);
@@ -1667,9 +1708,8 @@ pub fn press_label_apply(window: &adw::ApplicationWindow) -> String {
         Ok(effect) => effect,
         Err(reason) => {
             // The reason prints verbatim and the form STAYS OPEN: an empty-name refusal that closed the form
-            // would throw away the moment someone is still naming, and the whole point of the sentence is that
-            // the mark arrives as soon as they type.
             log_line(&reason);
+            live_form_refused();
             return reason;
         }
     };
@@ -1677,6 +1717,7 @@ pub fn press_label_apply(window: &adw::ApplicationWindow) -> String {
     cut_.fx.push(effect.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    live_form_answer_is_undo(window);
     record_edit(window, &cut_);
     refresh_effects_lane(window);
     close_label_form(window);
@@ -2029,6 +2070,7 @@ pub fn press_text_apply(window: &adw::ApplicationWindow) -> String {
         Err(reason) => {
             // Verbatim, form still open. No record, no history write: nothing happened yet.
             log_line(&reason);
+            live_form_refused();
             return reason;
         }
     };
@@ -2036,6 +2078,7 @@ pub fn press_text_apply(window: &adw::ApplicationWindow) -> String {
     cut_.fx.push(fx.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    live_form_answer_is_undo(window);
     record_edit(window, &cut_);
     refresh_effects_lane(window);
     close_text_form(window);
@@ -2715,6 +2758,7 @@ pub fn press_svg_apply(window: &adw::ApplicationWindow) -> String {
         Err(reason) => {
             // Verbatim, form still open. No record, no history write: nothing happened yet.
             log_line(&reason);
+            live_form_refused();
             return reason;
         }
     };
@@ -2722,6 +2766,7 @@ pub fn press_svg_apply(window: &adw::ApplicationWindow) -> String {
     cut_.fx.push(fx.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    live_form_answer_is_undo(window);
     record_edit(window, &cut_);
     refresh_effects_lane(window);
     close_svg_form(window);
@@ -3471,12 +3516,24 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     let t = paste_line(window);
     // The held effect is identified by its index in the cut's list, so the view can name the widget after
     // the record it stands for. A held effect not on this cut holds no overlay.
-    let held_index = held_effect().and_then(|held| {
+    let mut held_index = held_effect().and_then(|held| {
         cut_.fx
             .iter()
             .position(|effect| effect.kind == held.kind && effect.t == held.t)
     });
     let mut scene = fx_lane::paused_scene(&cut_.fx, t, held_index, false);
+    // F3.8 S2 (`Hold drops when the line walks > 1/24 s off the band`): the refresh path is where the page
+    // learns the line has moved, so it is also where a hold that has walked away is given up. 1/24 s is one
+    // frame at 24 fps, and the slack exists because the clock keeps running while something is in hand: a
+    // band whose edge crosses the line by a single frame must not vanish from under the pointer mid-drag.
+    if let Some(index) = held_index {
+        if let Some(effect) = cut_.fx.get(index) {
+            if fx_band::hold_drops(effect.t, effect.dur, t) {
+                set_held_effect(None);
+                held_index = None;
+            }
+        }
+    }
     // `paused_scene` deliberately leaves the record in hand OUT of `overlays` (it is being judged, not
     // watched), so the view adds it back here as the full-alpha outlined one. Its index comes from
     // `held_index`, which was resolved against this cut's own list above — a held effect that is not on
@@ -3498,9 +3555,59 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                 box_.set_size_request(48, slot);
                 box_
             });
+            // F3.8 S1/S3: the bar's DRAWN width comes from the record's own length, with 48 px only as a
+            // FLOOR. The grip threshold (`fx_band::GRIP_MIN_PX` 30) and the ✕ threshold
+            // (`fx_band::KILL_MIN_PX` 32) are stated against the width of the bar on screen, so a fixed width
+            // makes the affordances the user sees disagree with the rule the press applies: a long record would
+            // look grabbable in its middle while `grab_at` called it an edge, and a short one could show a ✕
+            // the rules forbid. Re-set on EVERY refresh because `ensure_named_child` reuses the widget and a
+            // nudge or a resize changes `dur` under it; `slot` stays the height (never read back — it is 0
+            // before allocation). 48 px remains the floor so a record under 12 s is still big enough to click.
+            let width = cut_bar_width_px(cut_.fx[bar.index].dur);
+            let drawn = width.max(48.0).round();
+            bar_widget.set_size_request(drawn as i32, bar_widget.height().max(1));
             set_class(&bar_widget, "fx-kind-zoom-staying", bar.staying);
             if !bar.staying {
                 set_class(&bar_widget, &format!("fx-kind-{}", spell_kind(bar.kind)), true);
+            }
+            // F3.8 S3: the ✕ lives INSIDE the bar it kills, named after the record rather than the row, so a
+            // test can find "the kill button of effect #i" and click it. It exists only while the bar is wide
+            // enough to carry one clear target away from its own grips (§A.9: `≥ 32 px`), and being added AND
+            // removed off that width keeps a narrow bar from ever offering a ✕ that overlaps an edge grip.
+            // The button is created ONCE per record index and its handler travels with it: `ensure_named_button`
+            // returns the same widget on every refresh, so the click below is connected exactly once and cannot
+            // stack a second removal on one press.
+            // `width` is the SAME number the bar was just sized with above, so the drawn ✕ and the press rule
+            // can never disagree about whether this bar has room for one.
+            let kill_name = format!("fx-remove-{}", bar.index);
+            if fx_band::kill_open(width) {
+                let kill = ensure_named_button(&bar_widget, &kill_name, |slot| {
+                    let mark = gtk::Button::with_label("\u{2715}");
+                    mark.set_size_request(slot.min(20), slot);
+                    mark
+                });
+                kill.set_tooltip_text(Some(
+                    "remove this effect \u{2014} \u{21b6} Undo takes it back",
+                ));
+                let win_kill = window.clone();
+                let index = bar.index;
+                kill.connect_clicked(move |_| {
+                    let said = remove_effect_at(&win_kill, index);
+                    if let Some(status_line) = find_status(win_kill.upcast_ref()) {
+                        status_line.set_text(&said);
+                    }
+                });
+            } else if let Some(existing) = bar_widget
+                .first_child()
+                .and_then(|node| walk_named(node, &kill_name))
+            {
+                // Drop the ✕ from its holder (never a tree-wide search) when the bar has shrunk under the
+                // threshold; a stale ✕ would be a kill button nobody asked for.
+                if let Some(parent) = existing.parent() {
+                    if let Ok(parent_box) = parent.downcast::<gtk::Box>() {
+                        parent_box.remove(&existing);
+                    }
+                }
             }
         }
         // A record that went away (an undo) takes its bar with it: drop any bar whose index is no longer
@@ -3587,6 +3694,15 @@ fn spell_kind(kind: cut::EffectKind) -> &'static str {
     }
 }
 
+/// F3.8 S1/S2 (`ends are grips when the band is ≥ 30 px` / `an end, band ≥ 30 px`): how wide a bar on this
+/// page's lane is, in pixels, for one record of `dur` seconds. The lane is drawn at the same zoom as the
+/// tracks above it, so a bar's width is its length times the page's pixels-per-second — and every threshold
+/// that decides what a press on it means ([`fx_band::grab_at`], [`fx_band::kill_open`]) is in pixels for the
+/// same reason §A.9 gives: a grip is a reach for the hand, not a length of film.
+pub fn cut_bar_width_px(dur: f64) -> f64 {
+    dur * SELECT_SURFACE_PPS
+}
+
 /// Get the named child of `holder`, creating it with `make` when it is not there yet.
 fn ensure_named_child<F: FnOnce(i32) -> gtk::Box>(holder: &gtk::Box, name: &str, make: F) -> gtk::Box {
     if let Some(found) = find_in_holder(holder.as_ref(), name) {
@@ -3596,6 +3712,38 @@ fn ensure_named_child<F: FnOnce(i32) -> gtk::Box>(holder: &gtk::Box, name: &str,
     made.set_widget_name(name);
     holder.append(&made);
     made
+}
+
+/// F3.8 S3: the same build-once rule as [`ensure_named_child`], for a widget that is not a box — the ✕ in a
+/// bar is a Button, and the two cannot share one helper without an upcast at every call site.
+fn ensure_named_button<F: FnOnce(i32) -> gtk::Button>(holder: &gtk::Box, name: &str, make: F) -> gtk::Button {
+    if let Some(found) = holder
+        .first_child()
+        .and_then(|node| walk_named(node, name))
+        .and_then(|w| w.downcast::<gtk::Button>().ok())
+    {
+        return found;
+    }
+    let made = make(holder.height().max(1));
+    made.set_widget_name(name);
+    holder.append(&made);
+    made
+}
+
+/// Find `name` anywhere under `node` (the ✕ sits inside the bar, so the flat sibling scan of
+/// [`find_in_holder`] cannot reach it).
+fn walk_named(node: gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    if node.widget_name() == name {
+        return Some(node);
+    }
+    let mut child = node.first_child();
+    while let Some(inner) = child {
+        if let Some(found) = walk_named(inner.clone(), name) {
+            return Some(found);
+        }
+        child = inner.next_sibling();
+    }
+    None
 }
 
 /// Add or remove a CSS class by state — added AND removed, so an outlined widget is always today's answer.
@@ -4883,6 +5031,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // F3.5: Esc releases the drawing arm / drops an open drawing form. Wired here (after `set_content`) like
     // every other control on this page.
     wire_svg_esc(&window);
+    // F3.8 S3: Esc drops a HELD EFFECT. Wired last among the Esc controllers so the six per-kind form/arm
+    // controllers keep their precedence and this one only claims what they left — a hold with no form open.
+    wire_band_esc(&window);
     // F3.2: the Aspect ratio dropdown, wired by name after `set_content` for the same reason — the widget
     // the lookup finds must be the one in the realized tree.
     wire_aspect_choice(&window);
@@ -6758,6 +6909,328 @@ fn set_pressed_surface(surface: cut_select::Surface) {
     });
 }
 
+/// F3.8 S5 (`Forms are live`): close whichever per-kind form this page has open, so ✎ Edit from a band cannot
+/// leave two forms showing at once. Each kind's own Cancel keeps its own wording; this only hides the panel.
+fn close_any_effect_form(window: &adw::ApplicationWindow) {
+    if zoom_form_open().is_some() {
+        set_zoom_form(None);
+        if let Some(holder) = zoom_form_box(window) {
+            holder.set_visible(false);
+        }
+    }
+    if speed_form_open().is_some() {
+        close_speed_form(window);
+    }
+    if text_form_open().is_some() {
+        close_text_form(window);
+    }
+    if svg_form_open().is_some() {
+        close_svg_form(window);
+    }
+    if volume_form_open().is_some() {
+        close_volume_form(window);
+    }
+    if label_form_open().is_some() {
+        close_label_form(window);
+    }
+}
+
+/// F3.8 S1 (`a click: the form opens`): the ONE door from a band to the form of its kind. Every kind in §06
+/// that has a form routes here — Zoom, Speed, Text, SVG, Volume and Label each got one in their own round; a
+/// kind with no form returns `None` so the caller prints nothing rather than inventing a panel. Kept as a
+/// dispatch rather than five calls at the press site so "click a band → its form" cannot half-work: adding a
+/// seventh kind without a form shows up here as a missing arm.
+pub fn open_effect_form(window: &adw::ApplicationWindow, fx: &cut::Fx) -> Option<&'static str> {
+    let kind = fx.effect_kind()?;
+    match kind {
+        cut::EffectKind::Zoom => {
+            // The zoom form takes a `fx_zoom::Form`, not the stored record: rebuild the six fields from it so
+            // the door works for a band clicked rather than a box just dragged.
+            let form = fx_zoom::Form {
+                at: fx.t,
+                dur: fx.dur,
+                stay: fx.stay,
+                trans: fx.trans,
+                tout: fx.tout,
+                curve: fx.ease.clone(),
+                // The zoom form holds its box as plain fractions; a record with no box shows the centre, the
+                // same stand-in `zoom_drag_ended` leaves when the hand never sized one.
+                cx: fx.cx.unwrap_or(0.5),
+                cy: fx.cy.unwrap_or(0.5),
+                hf: fx.hf.unwrap_or(0.5),
+                // The camera row is the page's own answer, not a field of the record: `press_row` is what
+                // every other zoom opener uses.
+                row: press_row(window),
+            };
+            show_zoom_form(window, &form);
+            Some("zoom")
+        }
+        cut::EffectKind::Speed => {
+            show_speed_form(window, fx);
+            Some("speed")
+        }
+        cut::EffectKind::Text => {
+            show_text_form(window, fx);
+            Some("text")
+        }
+        cut::EffectKind::Svg => {
+            show_svg_form(window, fx);
+            Some("svg")
+        }
+        cut::EffectKind::Volume => {
+            show_volume_form(window, fx);
+            Some("volume")
+        }
+        cut::EffectKind::Label => {
+            show_label_form(window, fx);
+            Some("label")
+        }
+    }
+}
+
+/// F3.8 S1/S2/S3: a press on one bar of the effects lane, answered by the rules in [`fx_band`] and nothing
+/// else. The seam a real widget (and a test firing by name) goes through: `index` is the record's place in the
+/// cut's `fx` list, which is what the widget is named after (`fx-bar-<index>`), `x_px` where in the bar the
+/// press landed, `width_px` the bar's drawn width, `travel_px` how far the pointer went, and `over_kill`
+/// whether it was on the ✕.
+///
+/// Named `press_effect_bar`, NOT `press_band`: this file already owns `press_band` / `set_press_band`, which
+/// pick which RECORDING a press refers to (§05). The two are unrelated and must not be conflated.
+pub fn press_effect_bar(
+    window: &adw::ApplicationWindow,
+    index: usize,
+    x_px: f64,
+    width_px: f64,
+    travel_px: f64,
+    over_kill: bool,
+) -> fx_band::Press {
+    let mut cut_ = review_cut_of(window);
+    let Some(fx) = cut_.fx.get(index).cloned() else {
+        return fx_band::Press::Dropped;
+    };
+    // Where the hand grabbed decides whether a drag slides or resizes; `fx_band` answers it from the same
+    // pixel reach the lane draws with.
+    let grab = fx_band::grab_at(x_px, width_px);
+    let answer = fx_band::press_band(fx.t, width_px, travel_px, over_kill, true, grab);
+    match answer {
+        fx_band::Press::ClickForm => {
+            open_effect_form(window, &fx);
+        }
+        fx_band::Press::Hold { t, from_end: _ } => {
+            set_held_effect(Some(fx.clone()));
+            // S1: `picked up` puts the line on the band's start. `set_line_position` also marks that a line
+            // exists, which is what makes the placement known to every other flow.
+            set_line_position(window, cut_line::LinePos { t });
+            refresh_insert_button(window);
+            refresh_effects_lane(window);
+            let said = fx_band::picked_up(fx_record::label_of(fx.effect_kind().unwrap_or(cut::EffectKind::Zoom)));
+            if let Some(status_line) = find_status(window.upcast_ref()) {
+                status_line.set_text(&said);
+            }
+            log_line(&said);
+        }
+        fx_band::Press::Kill => {
+            let said = remove_effect_at(window, index);
+            if let Some(status_line) = find_status(window.upcast_ref()) {
+                status_line.set_text(&said);
+            }
+            log_line(&said);
+        }
+        fx_band::Press::Dropped => {
+            set_held_effect(None);
+            refresh_effects_lane(window);
+        }
+    }
+    answer
+}
+
+/// F3.8 S3: take ONE record out of the cut by its index. Goes through `record_edit`, NEVER `seed_review_cut`:
+/// the removal must sit on the history so F2.13's ↶ puts the effect back.
+pub fn remove_effect_at(window: &adw::ApplicationWindow, index: usize) -> String {
+    let mut cut_ = review_cut_of(window);
+    if index >= cut_.fx.len() {
+        return fx_band::GONE.to_string();
+    }
+    let taken = cut_.fx.remove(index);
+    save_insert_cut(&cut_);
+    record_edit(window, &cut_);
+    // The thing in hand was this record: holding a removed effect would leave the lane asking for an overlay of
+    // nothing.
+    if held_effect().is_some_and(|held| held.kind == taken.kind && held.t == taken.t) {
+        set_held_effect(None);
+    }
+    refresh_effects_lane(window);
+    refresh_insert_button(window);
+    let label = fx_record::label_of(taken.effect_kind().unwrap_or(cut::EffectKind::Zoom));
+    let said = fx_band::removed(label);
+    log_line(&said);
+    said
+}
+
+/// F3.8 S3 (`⌦ with an effect held removes it`): the keyboard's kill. The held record is found in the LIVE
+/// cut the same way the lane finds it (kind + start), never by remembering an index across edits.
+pub fn remove_held_effect(window: &adw::ApplicationWindow) -> String {
+    let Some(held) = held_effect() else {
+        return fx_band::GONE.to_string();
+    };
+    let cut_ = review_cut_of(window);
+    let Some(index) = fx_band::refind(&cut_.fx, &held.kind, held.t) else {
+        return fx_band::GONE.to_string();
+    };
+    remove_effect_at(window, index)
+}
+
+/// F3.8 S2 (`Frame steps and ←/→ nudge a held effect unsnapped`): the keyboard's move of the record in
+/// hand. `fx_band::nudged` IS `effect_rules::nudge`, so there is no snap in this path by construction — the
+/// keyboard moves a band, it does not stretch one, and a nudge walked past a segment end stays exactly that
+/// many seconds off it.
+pub fn nudge_held_effect(window: &adw::ApplicationWindow, delta: f64) -> String {
+    let Some(held) = held_effect() else {
+        return fx_band::GONE.to_string();
+    };
+    let mut cut_ = review_cut_of(window);
+    let Some(index) = fx_band::refind(&cut_.fx, &held.kind, held.t) else {
+        return fx_band::GONE.to_string();
+    };
+    let (t, dur) = fx_band::nudged(&held, delta);
+    cut_.fx[index].t = t;
+    cut_.fx[index].dur = dur;
+    save_insert_cut(&cut_);
+    record_edit(window, &cut_);
+    set_held_effect(Some(cut_.fx[index].clone()));
+    // Same rule as `drag_held_band`: the line rides with the band it is sitting on, so a nudge never leaves
+    // the held record "behind the viewer" for the refresh to give up.
+    set_line_position(window, cut_line::LinePos { t });
+    refresh_effects_lane(window);
+    let said = fx_band::moved(fx_record::label_of(held.effect_kind().unwrap_or(cut::EffectKind::Zoom)));
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    log_line(&said);
+    said
+}
+
+/// F3.8 S2: a drag of the record in hand, on the lane. `from_end == None` slides the WHOLE band, snapped
+/// against `marks`; `Some(end)` moves that end only. `marks` MUST arrive with the moved effect's own two ends
+/// filtered out (§A.9: "the held effect's own ends excluded") — a band that snaps to itself cannot be dragged
+/// once it lines up with its own start. The page builds those marks; this seam takes them as given so the rule
+/// stays testable without a rendered timeline.
+pub fn drag_held_band(
+    window: &adw::ApplicationWindow,
+    to: f64,
+    marks: &[f64],
+    pps: f64,
+    session_end: f64,
+    from_end: Option<bool>,
+) -> String {
+    let Some(held) = held_effect() else {
+        return fx_band::GONE.to_string();
+    };
+    let mut cut_ = review_cut_of(window);
+    let Some(index) = fx_band::refind(&cut_.fx, &held.kind, held.t) else {
+        return fx_band::GONE.to_string();
+    };
+    let (t, dur) = match from_end {
+        None => fx_band::move_whole(&held, to, marks, pps, session_end),
+        Some(end) => fx_band::resize_end(&held, end, to),
+    };
+    cut_.fx[index].t = t;
+    cut_.fx[index].dur = dur;
+    save_insert_cut(&cut_);
+    record_edit(window, &cut_);
+    set_held_effect(Some(cut_.fx[index].clone()));
+    // S1 put the line on the band's start when the band was picked up; a drag that moves the band carries the
+    // line along with it, or the refresh below would read the OLD line against the NEW position and drop the
+    // hold as "walked off the band".
+    set_line_position(window, cut_line::LinePos { t });
+    refresh_effects_lane(window);
+    let label = fx_record::label_of(held.effect_kind().unwrap_or(cut::EffectKind::Zoom));
+    let said = match from_end {
+        None => fx_band::moved(label),
+        Some(_) => fx_band::resized(label),
+    };
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    log_line(&said);
+    said
+}
+
+/// F3.8 S4 (`✎ Edit: found by kind and start · the box from the live effect`): reopen the form of the record
+/// in hand. A miss says so and changes NOTHING — the sentence's own promise. On a hit the form is opened from
+/// the LIVE record, and the four box fractions go through [`fx_band::live_box`] with whatever the form or the
+/// hold carried as a snapshot: the argument exists to make the live read visible at the call site, because a
+/// form that redrew from its own earlier copy would overwrite a box someone moved since it opened.
+pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
+    let Some(held) = held_effect() else {
+        return fx_band::GONE.to_string();
+    };
+    let cut_ = review_cut_of(window);
+    let Some(index) = fx_band::refind(&cut_.fx, &held.kind, held.t) else {
+        log_line(fx_band::GONE);
+        return fx_band::GONE.to_string();
+    };
+    let live = &cut_.fx[index];
+    // What the form last showed, as the stale side of the comparison. `held` is the copy that went into the
+    // hand, so its fractions ARE the snapshot: they may be older than `live`'s.
+    let stale = (
+        held.cx.unwrap_or(0.0),
+        held.cy.unwrap_or(0.0),
+        held.wf.unwrap_or(0.0),
+        held.hf.unwrap_or(0.0),
+    );
+    let (cx, cy, wf, hf) = fx_band::live_box(live, Some(stale));
+    let mut shown = live.clone();
+    shown.cx = cx;
+    shown.cy = cy;
+    shown.wf = wf;
+    shown.hf = hf;
+    set_held_effect(Some(shown.clone()));
+    // One form on the page at a time: opening this record's form over another would leave both visible.
+    close_any_effect_form(window);
+    open_effect_form(window, &shown);
+    let said = format!("editing {} \u{2014} {}", fx_record::label_of(shown.effect_kind().unwrap_or(cut::EffectKind::Zoom)), fx_band::KEPT_AS_YOU_TYPE);
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    log_line(&said);
+    said
+}
+
+/// F3.8 S3 (`Esc drops the hold and disarms ("cancelled" for a bare disarm)`): Escape when an effect is in
+/// hand. Returns `None` when this window holds nothing, so the key travels on to whichever form or arm does
+/// own it — the per-kind Esc controllers keep their precedence and this one only claims the leftover.
+pub fn press_band_esc(window: &adw::ApplicationWindow) -> Option<String> {
+    if held_effect().is_none() {
+        return None;
+    }
+    let _ = window;
+    set_held_effect(None);
+    refresh_effects_lane(window);
+    refresh_insert_button(window);
+    Some(fx_band::CANCELLED.to_string())
+}
+
+/// F3.8 S5 (`Forms are live: first answer pushes Undo ... refusals reset that`): the visit-level bookkeeping
+/// every live form shares. One entry per visit, held here rather than in each field, because "↶ takes the whole
+/// edit back" means the visit, not the keystroke.
+thread_local! {
+    static LIVE_FORM: std::cell::RefCell<fx_band::LiveForm> =
+        std::cell::RefCell::new(fx_band::LiveForm::default());
+}
+
+/// F3.8 S5: does THIS accepted answer take the visit's single Undo entry? True the first time, false for
+/// every change after it. Called by the Apply seams right before they write.
+pub fn live_form_answer_is_undo(_window: &adw::ApplicationWindow) -> bool {
+    LIVE_FORM.with(|cell| cell.borrow_mut().first_answer())
+}
+
+/// F3.8 S5: a refused answer wrote nothing, so it gives the Undo entry back and the next accepted answer is
+/// again the first. Called on every Apply refusal path.
+pub fn live_form_refused() {
+    LIVE_FORM.with(|cell| cell.borrow_mut().refusal_resets());
+}
+
 /// F2.6 S1: a press on the effects lane -- the only ground that refuses a selection. With an effect in
 /// hand the press PUTS IT DOWN (that is what the lane is for); with nothing held it does nothing. Either
 /// way NO band is drawn, so the existing selection stays exactly as it was. Callable without a widget so
@@ -7131,6 +7604,17 @@ fn wire_line_keys(window: &adw::ApplicationWindow) {
         // S2/S3: the hold comes from the window's own held state, not a constant. With `None` hardcoded
         // here a real key press could never take S2's nudge branch, however much was in hand.
         let held = held_now();
+        // F3.8 S2 (`Frame steps and ←/→ nudge a held effect unsnapped`): with an EFFECT in hand the arrows
+        // move that record, not the line. The step is `cut_line::step_frames(shift)` frames converted to
+        // seconds at the page's fps, and it lands exactly there: `nudge_held_effect` goes through
+        // `effect_rules::nudge`, which never consults snap marks, so a nudged band stays precisely one frame
+        // off the segment end it was beside. A clip or edge in hand keeps its existing path untouched.
+        if held_effect().is_some() && matches!(key, gtk::gdk::Key::Left | gtk::gdk::Key::Right) {
+            let frames = cut_line::step_frames(shift) as f64 / DEFAULT_FPS;
+            let delta = if key == gtk::gdk::Key::Left { -frames } else { frames };
+            let _ = nudge_held_effect(&win, delta);
+            return glib::Propagation::Stop;
+        }
         let response = match key {
             gtk::gdk::Key::Left => arrow_steps(&win, shift, held, DEFAULT_FPS, now_ms()),
             gtk::gdk::Key::Right => arrow_steps(&win, shift, held, DEFAULT_FPS, now_ms()),
@@ -9316,7 +9800,11 @@ pub fn refresh_insert_button(window: &adw::ApplicationWindow) {
             None => has_target,
         };
         button.set_sensitive(live);
-        button.set_label(cut_insert::edit_verb(cut_insert::hold(held_clip().as_ref())));
+        // F3.8 S1: `Insert becomes ✎ Edit` when an EFFECT is held too, not only a card. §A.9 says it in the
+        // same breath as "band → hold", so the held-effect case joins the held-card one here rather than being
+        // a second rule somewhere else. The word still comes from `cut_insert::edit_verb`, never retyped.
+        let editing = cut_insert::hold(held_clip().as_ref()) || held_effect().is_some();
+        button.set_label(cut_insert::edit_verb(editing));
     }
 }
 
@@ -9600,7 +10088,18 @@ fn wire_delete_keys(window: &adw::ApplicationWindow) {
     let win = window.clone();
     controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
         if matches!(key, gtk::gdk::Key::Delete | gtk::gdk::Key::BackSpace) {
-            press_delete_key(&win);
+            // F3.8 S3: `⌦ with an effect held removes it`. The EFFECT comes first because the hand last
+            // touched it — the same priority `cut_verbs::delete_verb` already gives a held effect over a
+            // selection. With nothing in hand the key keeps its old job and still deletes the selection.
+            if held_effect().is_some() {
+                let said = remove_held_effect(&win);
+                if let Some(status_line) = find_status(win.upcast_ref()) {
+                    status_line.set_text(&said);
+                }
+                log_line(&said);
+            } else {
+                press_delete_key(&win);
+            }
             glib::Propagation::Stop
         } else {
             glib::Propagation::Proceed
@@ -10761,7 +11260,11 @@ pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
     let effect = match fx_zoom::apply(&form) {
         Ok(effect) => effect,
         // S4's floor: refuse with the module's own sentence and leave the form open to be corrected.
-        Err(reason) => return reason,
+        Err(reason) => {
+            // F3.8 S5: a refusal wrote nothing, so it gives the visit's Undo entry back rather than spending it.
+            live_form_refused();
+            return reason;
+        }
     };
     let mut cut_ = newest_review_cut();
     // A zoom placed by a drag is new: one push of the applied record. `fx_record::record_into` is not the
@@ -10769,6 +11272,7 @@ pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
     cut_.fx.push(effect.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    live_form_answer_is_undo(window);
     record_edit(window, &cut_);
     refresh_effects_lane(window);
     set_zoom_form(None);

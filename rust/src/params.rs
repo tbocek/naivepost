@@ -21,6 +21,7 @@ use crate::degraded;
 use crate::edges;
 use crate::frames;
 use crate::fx_aspect;
+use crate::fx_band;
 use crate::fx_svg;
 use crate::fx_lane;
 use crate::fx_text;
@@ -880,6 +881,35 @@ pub fn effects() -> Vec<Param> {
         // Not a form floor but the one §6 names outright ("the 0.2 s floor under which a band is not a marked
         // stretch"): below it a drag is a slipped click, and ⏩ Speed falls through to the line.
         param("effects.markedBandMinSeconds", num(cut_speed::MIN_MARKED_SECONDS), "cut_speed::MIN_MARKED_SECONDS"),
+        // --- F3.8: the lane's own thresholds (§A.9) -----------------------------------------------
+        // §10 gives these no `P.` rows, so each takes the bare prefix of the rule that reads it
+        // (`fx_band`), exactly as `effects.labelMinSeconds` does for F3.7. The numbers live in `fx_band`;
+        // these rows only catalogue them.
+        param(
+            "effects.gripMinPx",
+            num(fx_band::GRIP_MIN_PX),
+            "fx_band::GRIP_MIN_PX",
+        ),
+        param(
+            "effects.killMinPx",
+            num(fx_band::KILL_MIN_PX),
+            "fx_band::KILL_MIN_PX",
+        ),
+        param(
+            "effects.undoPushPx",
+            num(fx_band::UNDO_PUSH_PX),
+            "fx_band::UNDO_PUSH_PX",
+        ),
+        param(
+            "effects.formDebounceMs",
+            num(fx_band::DEBOUNCE_MS),
+            "fx_band::DEBOUNCE_MS",
+        ),
+        param(
+            "machine.holdReleaseSeconds",
+            num(fx_band::HOLD_RELEASE_SECONDS),
+            "fx_band::HOLD_RELEASE_SECONDS",
+        ),
         // §10's own row for that same 0.2 s, spelled with its `P.` id: "timeline needed under the band before ⏩
         // Speed treats it as a chosen stretch". One constant answers both ids — `cut_speed::press` reads
         // MIN_MARKED_SECONDS once — so the two spellings cannot be tuned apart, which is why this row points at

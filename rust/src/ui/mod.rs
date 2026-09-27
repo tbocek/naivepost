@@ -260,3 +260,17 @@ pub use window::tab_dimmed;
 pub use window::tab_tooltip;
 pub use window::window_logs;
 pub use window::APP_ID;
+// F3.8 Hold, move, resize, edit, remove: the lane's seams, so a test can fire a band press by name and read
+// the effect back through the same state the logic tests check.
+pub use window::cut_bar_width_px;
+pub use window::drag_held_band;
+pub use window::live_form_answer_is_undo;
+pub use window::live_form_refused;
+pub use window::nudge_held_effect;
+pub use window::open_effect_form;
+pub use window::press_band_esc;
+pub use window::press_effect_bar;
+pub use window::press_edit_effect;
+pub use window::remove_effect_at;
+pub use window::remove_held_effect;
+pub use window::band_esc_controller;

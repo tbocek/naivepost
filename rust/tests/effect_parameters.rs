@@ -13,7 +13,7 @@ use naivepost::params;
 use naivepost::tools::clips;
 use naivepost::tools::cutpass;
 use naivepost::{cut_cards, cut_clamp, cut_effects_pass};
-use naivepost::{fx_svg, fx_text, fx_volume, fx_zoom};
+use naivepost::{fx_band, fx_svg, fx_text, fx_volume, fx_zoom};
 
 /// §06 §6's rows, in §6's order.
 fn effect_rows() -> Vec<params::Param> {
@@ -217,7 +217,11 @@ fn sec_06_effects_6_parameters_used_s5_the_drawing_numbers_are_here_and_the_unow
     );
     // §I's killMin 32, fxMinBand 30 and fxGrab 9: no constant here holds them. Matched case-sensitively on whole
     // names — `layout.edgeGrabPx` already contains "grab", and the 10 px hit radius is §10's list's business.
-    for absent in ["kill", "bandMin", "grabReach"] {
+    // F3.8's kill width WAS in this list as a number nothing read -- §A.9 states it, no module used it. That is
+    // no longer true: `fx_band::KILL_MIN_PX` is the rule that decides whether a bar carries a ✕, so the row is
+    // catalogued and asserted against the constant instead of asserted absent.
+    assert_eq!(number_anywhere("effects.killMinPx"), fx_band::KILL_MIN_PX);
+    for absent in ["bandMin", "grabReach"] {
         assert!(
             !listed.iter().any(|id| id.contains(absent)),
             "{absent} has no constant reading it and so must not be catalogued"

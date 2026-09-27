@@ -35,6 +35,7 @@ pub mod cut_rules;
 pub mod effect_details;
 pub mod effect_overlap;
 pub mod effect_rules;
+pub mod fx_band;
 pub mod narrate_pass;
 pub mod narrate_preview;
 pub mod narrate_screen;

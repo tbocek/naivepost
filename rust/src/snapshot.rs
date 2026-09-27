@@ -198,6 +198,48 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // would write, and that one ↶ takes back, is proven by `tests/label_form_widgets.rs`.
             let _ = said;
         }
+        // F3.8's screen is the LANE being worked on (`spec/img/06-lane.png`), which the fixture cannot show:
+        // its `cut/cut.json` carries `fx: []`, so every shot of the Cut page draws an empty lane. Seeded here
+        // the way `05-fold` seeds its hole -- the shared fixture file untouched -- and driven through the same
+        // doors the widgets fire (`tests/band_hold_widgets.rs` presses exactly these) rather than by poking
+        // state: a lane painted from a shortcut would not be the lane the app draws.
+        if screen == "06-lane" {
+            let mut lane = cut::Cut::default();
+            lane.segs = vec![
+                cut::Seg { s: 0.0, e: 30.0, cam: 0, ..Default::default() },
+                cut::Seg { s: 30.0, e: 60.0, cam: 0, ..Default::default() },
+            ];
+            // Wide bars, at the same 4 px/s the spec's own lane is drawn with: 50 s is 200 px, far past both
+            // `fx_band::GRIP_MIN_PX` (30) and `KILL_MIN_PX` (32), so the grips and the middle ✕ are drawn at a
+            // size the shot can actually be read at (a 10 s / 40 px bar renders, but as a 2 glyph sliver).
+            lane.fx.push(cut::Fx {
+                kind: "zoom".to_string(),
+                t: 5.0,
+                dur: 50.0,
+                ..Default::default()
+            });
+            lane.fx.push(cut::Fx {
+                kind: "speed".to_string(),
+                t: 70.0,
+                dur: 60.0,
+                rate: 0.5,
+                ..Default::default()
+            });
+            // A narrow one for contrast: 6 s is 24 px, under both thresholds, so it offers no grips and no ✕.
+            lane.fx.push(cut::Fx {
+                kind: "label".to_string(),
+                t: 140.0,
+                dur: 6.0,
+                text: "intro".to_string(),
+                ..Default::default()
+            });
+            ui::seed_review_cut(&window, &lane);
+            ui::set_line_position(&window, cut_line::LinePos { t: 140.0 });
+            // Pick the first band UP through the press seam (a middle grab, 20 px of travel), so the shot shows
+            // the held state: the white outline, the line walked to the band's start, and the
+            // "Zoom picked up" sentence the lane prints.
+            ui::press_effect_bar(&window, 0, 100.0, 200.0, 20.0, false);
+        }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.
