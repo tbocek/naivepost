@@ -21,6 +21,7 @@ static RAN_TAKEN: AtomicBool = AtomicBool::new(false);
 static RAN_PASTED: AtomicBool = AtomicBool::new(false);
 static RAN_LANE: AtomicBool = AtomicBool::new(false);
 static RAN_ESC: AtomicBool = AtomicBool::new(false);
+static RAN_PASTE_LENGTHENS: AtomicBool = AtomicBool::new(false);
 
 fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
@@ -361,6 +362,8 @@ fn window_round() {
             RAN_LANE.store(true, Ordering::SeqCst);
             check_esc_drops_the_copy(app);
             RAN_ESC.store(true, Ordering::SeqCst);
+            check_copy_then_paste_lengthens_through_the_real_buttons(app);
+            RAN_PASTE_LENGTHENS.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -375,4 +378,71 @@ fn f2_9_s1_s2_s3_copy_paste_and_lane_reach_the_window_through_real_widgets() {
     assert!(RAN_PASTED.load(Ordering::SeqCst), "the footage-paste check never ran");
     assert!(RAN_LANE.load(Ordering::SeqCst), "the lane check never ran");
     assert!(RAN_ESC.load(Ordering::SeqCst), "the Esc-drops-the-copy check never ran");
+    assert!(
+        RAN_PASTE_LENGTHENS.load(Ordering::SeqCst),
+        "the copy-then-paste-lengthens check never ran"
+    );
+}
+
+/// F2.9 S1+S2 through the REAL buttons: `copy-button` then `paste-button` on a footage band of >= 1 s
+/// splices a `copy:<seconds>` card at the red line, the cut gets longer, the copy is consumed, and the
+/// buttons' sensitivity follows `refresh_copy_buttons`' rule -- Copy live only with a band at least
+/// `cut_select::MIN_SCENE_SECONDS` long (// P.policy.minSceneSeconds), Paste/Lane only while a hand is held.
+fn check_copy_then_paste_lengthens_through_the_real_buttons(app: &adw::Application) {
+    let window = cut_window(app);
+    drop_copy();
+    // A 6 s footage band: comfortably over the 1 s floor (// P.policy.minSceneSeconds = 1.0).
+    seed_band(&window, 20.0, 26.0);
+    settle();
+
+    let copy_ = ui::line_step_button(&window, "copy-button").expect("copy-button exists");
+    let paste_ = ui::line_step_button(&window, "paste-button").expect("paste-button exists");
+    assert!(copy_.is_sensitive(), "a 6 s band makes \u{29c9} Copy live");
+    assert!(
+        !paste_.is_sensitive(),
+        "with nothing in hand \u{29c9} Paste is greyed -- that is `refresh_copy_buttons`' rule"
+    );
+
+    copy_.emit_clicked();
+    settle();
+    let hand = ui::copy_hand().expect("the click put the seconds in hand");
+    assert_eq!((hand.from, hand.length), (20.0, 6.0), "the hand holds the whole band");
+    assert!(paste_.is_sensitive(), "holding a copy makes \u{29c9} Paste live");
+    assert!(
+        ui::selection(&window).is_some(),
+        "S1: taking a copy leaves the selection on the band"
+    );
+
+    // Aim it at the red line and press the real Paste button.
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 40.0 });
+    let before_len = naivepost::cut_screen::cut_seconds(&cut_of(&window));
+    let before_segs = ui::review_cut_segs_count(&window);
+    paste_.emit_clicked();
+    settle();
+
+    let after_segs = ui::review_cut_segs_count(&window);
+    assert_eq!(after_segs, before_segs + 1, "the spliced insert joined the cut");
+    let card = ui::review_cut_segs(&window)
+        .into_iter()
+        .find(|seg| seg.ins.contains("copy:"))
+        .expect("the pasted segment is a `copy:<seconds>` insert");
+    assert_eq!(card.s, 40.0, "it opens the cut at the line");
+    assert_eq!(card.dur, 6.0, "and runs for the copied length");
+    assert!(
+        naivepost::cut_screen::cut_seconds(&cut_of(&window)) > before_len,
+        "the video got longer: {before_len} -> {}",
+        naivepost::cut_screen::cut_seconds(&cut_of(&window))
+    );
+    // S2: pasting CONSUMES the copy -- and the buttons go grey again on their own.
+    assert!(ui::copy_hand().is_none(), "a successful paste consumed the copy");
+    assert!(
+        !paste_.is_sensitive(),
+        "Paste greyed again once nothing is in hand"
+    );
+    let printed = status_text(&window);
+    assert!(
+        printed.contains("pasted"),
+        "the status line carries the paste sentence: {printed}"
+    );
+    window.close();
 }
