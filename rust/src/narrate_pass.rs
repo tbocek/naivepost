@@ -380,6 +380,148 @@ pub fn leave_silent(clip: u32) -> String {
     crate::tools::ok(&serde_json::json!({ "clip": clip, "silent": true }))
 }
 
+/// §3.8's `get_lines(from, to)`: how many rows one read may hand back. The spec gives no number; an
+/// unbounded read is refused for the same reason `tools::WEB_READ_MAX_BYTES` bounds a page — one result
+/// that grows with the session eventually outgrows the conversation it arrives in, and past that the model
+/// stops reading its own brief. 40 rows is several minutes of speech either side of a clip, well over what
+/// a narration question needs.
+pub const GET_LINES_MAX_ROWS: usize = 40;
+
+/// `get_lines(from, to)` — §3.8: "the transcript around a clip, beyond the brief's
+/// ±P.machine.narrationContextSeconds". The brief already carries everything inside
+/// [`CONTEXT_SECONDS`]; this is the tool for what lies outside it, so the writer can ask rather than guess
+/// what was said before the cut. Rows come back in the SAME shape the brief prints them (`[+Ns] LABEL:
+/// text`, seconds relative to `anchor`), because two spellings for one thing is the mistake class §12 #27
+/// calls out. Past [`GET_LINES_MAX_ROWS`] the tail is dropped and the answer says so, rather than silently
+/// answering less than it was asked.
+pub fn get_lines(rows: &[SessionLine], anchor: f64, from: f64, to: f64, narrator: &str) -> String {
+    let mut hits: Vec<&SessionLine> = rows
+        .iter()
+        .filter(|row| row.start < to && row.end > from)
+        .collect();
+    hits.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let truncated = hits.len() > GET_LINES_MAX_ROWS;
+    hits.truncate(GET_LINES_MAX_ROWS);
+    if hits.is_empty() {
+        // Said out loud, because an empty string cannot tell "your window was too small" from "nobody
+        // spoke here" — the exact complaint §12 #9 makes about the prototype.
+        return crate::tools::ok(&serde_json::json!({
+            "from": from,
+            "to": to,
+            "lines": [],
+            "note": format!(
+                "nothing said between {:+.0}s and {:+.0}s of this clip",
+                from - anchor,
+                to - anchor
+            ),
+        }));
+    }
+    let lines: Vec<String> = hits
+        .iter()
+        .map(|row| {
+            format!(
+                "[{:+.0}s] {}: {}",
+                row.start - anchor,
+                fix_transcripts::label(asset_name(&row.source), &row.who, narrator),
+                row.text
+            )
+        })
+        .collect();
+    crate::tools::ok(&serde_json::json!({
+        "from": from,
+        "to": to,
+        "lines": lines,
+        "truncated": truncated,
+    }))
+}
+
+/// `describe_insert(clip)` — §3.8: "what is actually on an inserted card: its text, parameters, length.
+/// The prototype passes only the **file name**, so `tier.svg?S=Dust II` is all the writer knows about a
+/// full-screen graphic". The app rendered the card and split its path already ([`crate::cut_cards`]), so
+/// the parameters are known by name and value (unescaped) and go in the answer as named pairs instead of as
+/// a suffix the writer has to decode. What is NOT claimed here is the card's drawn text: that lives in the
+/// SVG file on disk, which this call does not open — reading a file the writer cannot see would be a second
+/// source of truth, and headless there is no card to render. The spec asks for "its text"; answered as the
+/// card's own name plus the parameters the picture is made of.
+pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
+    let Some(index) = (clip as usize).checked_sub(1) else {
+        return crate::tools::error(&format!(
+            "clip {clip} is not one of the {} clips in this edit",
+            clips.len()
+        ));
+    };
+    let Some(seg) = clips.get(index) else {
+        return crate::tools::error(&format!(
+            "clip {clip} is not one of the {} clips in this edit",
+            clips.len()
+        ));
+    };
+    if seg.ins.is_empty() {
+        return crate::tools::error(&format!(
+            "clip {clip} is footage, not an insert -- describe_insert answers about a card; \
+             this clip's own transcript is in the brief"
+        ));
+    }
+    let path = crate::cut_cards::split_path(&seg.ins);
+    let params: Vec<String> = path
+        .args
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    crate::tools::ok(&serde_json::json!({
+        "clip": clip,
+        "insert": path.file,
+        "params": params,
+        "seconds_on_screen": on_screen(seg),
+    }))
+}
+
+/// `finish` — §3.8: "names the clips with no answer and those whose lines will not fit, so they can be
+/// rewritten shorter instead of squeezed by the render". Both lists count the SAME set of clips — every
+/// clip the writer was asked about — and are measured elsewhere and handed in: `answered` holds a number for
+/// each clip it placed a line on or explicitly left silent, `unfitted` comes from the packing check
+/// ([`crate::produce_render::fit`], whose `MAX_TEMPO` 1.25 is the squeeze limit). F4.3 owns that
+/// arithmetic; this reports it. ok ONLY when both lists cover every clip 1..=N — a finish that waves
+/// through a clip nobody answered is how the prototype shipped silence.
+///
+/// Clip order is never a complaint here (§12 #27: the prototype rejected out-of-order entries while
+/// re-sorting them anyway). The numbers are sorted for the message alone so the sentence reads in clip
+/// order whatever order the answers arrived in.
+pub fn finish(answered: &[u32], unfitted: &[u32]) -> String {
+    let total = answered.iter().chain(unfitted.iter()).max().copied().unwrap_or(0);
+    let mut missing: Vec<u32> = (1..=total).filter(|n| !answered.contains(n)).collect();
+    let mut bad: Vec<u32> = unfitted.to_vec();
+    bad.sort_unstable();
+    bad.dedup();
+    // A clip that got no answer at all is already named under that heading; don't also call it unfitted.
+    missing.sort_unstable();
+    bad.retain(|n| !missing.contains(n));
+    if missing.is_empty() && bad.is_empty() {
+        return crate::tools::ok(&serde_json::json!({ "done": true }));
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if !missing.is_empty() {
+        parts.push(format!(
+            "no line and no silence for clip(s) {}",
+            missing
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !bad.is_empty() {
+        parts.push(format!(
+            "line(s) that will not fit, rewrite shorter rather than let the render squeeze them: clip(s) {}",
+            bad.iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    crate::tools::error(&parts.join("; "))
+}
+
 // --- The call's own flow (F4.2's last paragraph) ------------------------------------------------------------
 
 /// How many times the one call is made before the run gives up with nothing written.

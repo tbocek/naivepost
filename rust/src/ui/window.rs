@@ -10852,6 +10852,13 @@ pub fn narrate_script_loaded() -> bool {
     !NARRATE_SCRIPT.with(|cell| cell.borrow().is_empty())
 }
 
+/// Where a narrate run reads its prompt wording (§03 §7). The same folders `bench_paths` answers with,
+/// falling back to [`NO_SETTINGS`] — no folder at all, so every read finds nothing and the empty shipped
+/// text shows through rather than the run failing for want of a config home.
+fn settings_for_narrate() -> crate::settings::Paths {
+    crate::settings::from_environment().unwrap_or(NO_SETTINGS)
+}
+
 /// F4.1's body for THIS window and the live session's project. Both doors — the seam above and the
 /// shell's ▶ — come through here, so the two cannot drift apart.
 fn run_narrate_on<FReply>(window: &adw::ApplicationWindow, reply: FReply) -> String
@@ -10993,6 +11000,20 @@ where
         .collect();
     clips.sort_by(|a, b| a.0.total_cmp(&b.0));
     let plan = narrate_run::plan_run(rewrite, &clips, &existing, &voice);
+
+    // F4.2 S1/S2: the two messages this run would send, built here — after every refusal in
+    // `run_narrate_on` has returned, so a press that is turned away builds nothing. This build ships no
+    // baked prompt wording (`bench::SHIPPED_FOR_TESTS` is empty), so both wordings come from
+    // `settings::prompt_text` with an empty fallback, which is what the settings box shows when this
+    // machine holds no edit. Assembled and held: headless there is no endpoint to carry it, and the
+    // reply still arrives through the injected closure below.
+    let paths = settings_for_narrate();
+    let narrate_rules = crate::settings::prompt_text(&paths, "narrate", "")
+        .unwrap_or_default();
+    let system_rules = crate::settings::prompt_text(&paths, "system", "")
+        .unwrap_or_default();
+    let _request =
+        crate::narrate_call::request_from_tree(&tree, project, &voice, &narrate_rules, &system_rules);
 
     // S2: pull half-typed rows into the record, then keep the previous generation before anything
     // overwrites it. Both happen before the save so the file on disk matches what the run believes.

@@ -42,6 +42,7 @@ pub mod narrate_screen;
 pub mod narrate_data;
 pub mod narrate_details;
 pub mod narrate_off;
+pub mod narrate_call;
 pub mod narrate_reply;
 pub mod narrate_rewrite;
 pub mod narrate_run;

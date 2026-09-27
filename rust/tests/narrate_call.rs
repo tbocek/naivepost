@@ -374,3 +374,121 @@ fn f4_2_s12_the_call_runs_three_times_with_thinking_that_stops_and_a_bar_that_on
     assert_eq!(silent["clip"], 4);
     assert_eq!(silent.get("error"), None, "{}", silent);
 }
+
+/// §3.8's `get_lines(from, to)` — "the transcript around a clip, beyond the brief's
+/// ±P.machine.narrationContextSeconds". The brief already carries what lies inside 4 s (F4.2 S3), so this
+/// tool's whole job is what lies OUTSIDE them, in the same `[+Ns] LABEL: text` shape.
+#[test]
+fn f4_2_s13_get_lines_reaches_past_the_brief_s_window() {
+    // P.machine.narrationContextSeconds: the brief reaches 4 s each way of a clip at 100..120, i.e.
+    // 96..124. A row at 80 is outside that and appears ONLY through this tool.
+    let rows = [
+        row(80.0, 84.0, "game.wav", "", "said long before the cut"),
+        row(110.0, 112.0, "game.wav", "", "inside the brief, not this read"),
+        row(130.0, 133.0, "game.wav", "", "said after the clip ends"),
+    ];
+    // Asked for the window 75..140 anchored at the clip's own start: every row that overlaps it comes
+    // back, with offsets relative to the anchor. This read is the writer's only way to see past the brief.
+    let answer: serde_json::Value =
+        serde_json::from_str(&pass::get_lines(&rows, 100.0, 75.0, 140.0, MIC)).unwrap();
+    let lines = answer["lines"].as_array().expect("a list of lines");
+    assert_eq!(lines.len(), 3, "{answer}");
+    assert_eq!(lines[0], "[-20s] SPEAKER: said long before the cut", "{answer}");
+    assert_eq!(lines[1], "[+10s] SPEAKER: inside the brief, not this read", "{answer}");
+    assert_eq!(lines[2], "[+30s] SPEAKER: said after the clip ends", "{answer}");
+    assert_eq!(answer["truncated"], false, "{answer}");
+
+    // An empty window says so out loud rather than returning nothing: §12 #9's complaint is exactly
+    // that a model cannot tell "your window was too small" from "nobody spoke".
+    let empty: serde_json::Value =
+        serde_json::from_str(&pass::get_lines(&rows, 100.0, 90.0, 95.0, MIC)).unwrap();
+    assert_eq!(empty["lines"].as_array().unwrap().len(), 0, "{empty}");
+    assert_eq!(
+        empty["note"].as_str().unwrap(),
+        "nothing said between -10s and -5s of this clip",
+        "{empty}"
+    );
+
+    // The cap: one read never hands back more than GET_LINES_MAX_ROWS, and says when it dropped the tail,
+    // so an over-wide request is visible instead of quietly answering less than it asked.
+    let many: Vec<SessionLine> = (0..(pass::GET_LINES_MAX_ROWS as u32 + 7))
+        .map(|i| row(200.0 + f64::from(i), 201.0 + f64::from(i), "game.wav", "", "row"))
+        .collect();
+    let capped: serde_json::Value =
+        serde_json::from_str(&pass::get_lines(&many, 200.0, 199.0, 300.0, MIC)).unwrap();
+    assert_eq!(
+        capped["lines"].as_array().unwrap().len(),
+        pass::GET_LINES_MAX_ROWS,
+        "one read is bounded"
+    );
+    assert_eq!(capped["truncated"], true, "and says so");
+}
+
+/// §3.8's `describe_insert(clip)`: the card's parameters by name and its length, not the bare file name
+/// the prototype passed (`tier.svg?S=Dust II` being all the writer knew about a full-screen graphic).
+#[test]
+fn f4_2_s14_describe_insert_answers_with_the_card_s_parameters_and_length() {
+    let card = Seg {
+        s: 40.0,
+        e: 40.0,
+        dur: 6.0,
+        ins: "project:cards/tier.svg?S=Dust%20II&K=gold".into(),
+        ..Default::default()
+    };
+    let answer: serde_json::Value =
+        serde_json::from_str(&pass::describe_insert(&[card], 1)).unwrap();
+    assert_eq!(answer["insert"], "project:cards/tier.svg", "{answer}");
+    let params = answer["params"].as_array().expect("named pairs");
+    assert_eq!(params.len(), 2, "{answer}");
+    // Unescaped on the way out: the writer reads "Dust II", not the URL form the path carries.
+    assert_eq!(params[0], "S=Dust II", "{answer}");
+    assert_eq!(params[1], "K=gold", "{answer}");
+    assert_eq!(answer["seconds_on_screen"], 6.0, "{answer}");
+    assert_eq!(answer.get("error"), None, "{}", answer);
+
+    // Not an insert: the error says which clip and what it actually is, because the writer needs to know
+    // it asked about footage rather than a card.
+    let footage = [seg(0.0, 10.0)];
+    let wrong: serde_json::Value =
+        serde_json::from_str(&pass::describe_insert(&footage, 1)).unwrap();
+    let err = wrong["error"].as_str().expect("an error for a non-insert");
+    assert!(err.contains("clip 1") && err.contains("footage"), "{err}");
+
+    // A clip number outside the edit says how many there are.
+    let none: serde_json::Value =
+        serde_json::from_str(&pass::describe_insert(&footage, 9)).unwrap();
+    assert!(none["error"].as_str().unwrap().contains("1 clips"), "{none}");
+}
+
+/// §3.8's `finish`: names the clips with no answer and those whose lines will not fit, and takes entries
+/// in any order (§12 #27 — one policy, no order complaint).
+#[test]
+fn f4_2_s15_finish_names_the_unanswered_and_the_unfitted_and_takes_any_order() {
+    // Everything answered, nothing unfitted: done.
+    let done: serde_json::Value = serde_json::from_str(&pass::finish(&[1, 2, 3], &[])).unwrap();
+    assert_eq!(done["done"], true, "{done}");
+    assert_eq!(done.get("error"), None, "{}", done);
+
+    // A clip that got an answer but will not fit is named once, under the fitting heading; a clip nobody
+    // answered is named under its own. Here 1..=4 were asked about: 4 has no line and no silence.
+    let missed: serde_json::Value = serde_json::from_str(&pass::finish(&[1, 2, 3], &[4])).unwrap();
+    let err = missed["error"].as_str().expect("a finish that waves nothing through");
+    assert!(err.contains("no line and no silence") && err.contains("4"), "{err}");
+
+    // Unfitted only: every clip got an answer, clip 2's is too long for its clip.
+    let blank: serde_json::Value =
+        serde_json::from_str(&pass::finish(&[1, 2, 3, 4], &[2])).unwrap();
+    let err = blank["error"].as_str().unwrap();
+    assert!(err.contains("will not fit") && err.contains("clip(s) 2"), "{err}");
+    assert!(!err.contains("no line and no silence"), "{err}");
+
+    // Any order in, no order complaint out: the lists are sorted for the message alone.
+    let shuffled: serde_json::Value =
+        serde_json::from_str(&pass::finish(&[3, 1, 5, 2], &[5, 4])).unwrap();
+    let err = shuffled["error"].as_str().unwrap();
+    assert!(!err.to_lowercase().contains("order"), "§12 #27: one policy, no order rejection: {err}");
+    // And the two unfitted clips read in ascending order whatever came in.
+    let four = err.find("4").expect("clip 4 named");
+    let five = err.rfind('5').expect("clip 5 named");
+    assert!(four < five, "ascending in the sentence: {err}");
+}
