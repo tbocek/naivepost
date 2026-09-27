@@ -44,6 +44,7 @@ pub mod narrate_details;
 pub mod narrate_off;
 pub mod narrate_reply;
 pub mod narrate_rewrite;
+pub mod narrate_run;
 pub mod narrate_rules;
 pub mod narrate_tts;
 pub mod cut_suggest;

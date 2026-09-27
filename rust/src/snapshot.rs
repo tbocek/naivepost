@@ -316,6 +316,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             state.cut_at = 33.0;
             ui::set_state(state);
             ui::refresh(&window);
+            // F4.1's bar face is part of this screen now: the run has written its clips, so the progress
+            // bar reads `writing N/M clips` rather than sitting idle. Driven through the same seam the
+            // run paints from (not a poke), with the reply empty because headless there is no model --
+            // only the stage text and fraction are wanted here, and the door's own status line is not.
+            ui::show_narrate_stage(&window, 2, 4);
         }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
