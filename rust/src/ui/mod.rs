@@ -163,6 +163,13 @@ pub use window::press_speed_cancel;
 pub use window::press_speed_esc;
 pub use window::press_speed_item;
 pub use window::speed_form_open;
+/// F3.6 Volume by hand — the form's doors, so a test can press them the way the dropdown row does.
+pub use window::paused_preview_gain;
+pub use window::press_volume_apply;
+pub use window::press_volume_cancel;
+pub use window::press_volume_esc;
+pub use window::press_volume_item;
+pub use window::volume_form_open;
 pub use window::speed_custom_rate_visible;
 pub use window::drag_text_edge;
 pub use window::nudge_text_box;

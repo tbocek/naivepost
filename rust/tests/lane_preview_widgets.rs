@@ -158,9 +158,20 @@ fn lane_preview_round(app: &adw::Application) {
     settle();
 
     // --- (b) a real click puts a named bar in that row -------------------------------------------
+    // §F3.6 supersedes the press: 🔊 Volume now opens its form and records nothing until Apply, so the
+    // bar arrives at the form's own Apply button rather than out of the dropdown. A placed line gives the
+    // press seconds to work on; without one §F3.6 refuses and no bar would ever appear.
     let window = cut_page(app, &tape(), &Cut::default());
+    ui::note_place(true);
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 12.0 });
     click(&window, "effect-item-volume");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "one click, one record");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        0,
+        "the press alone adds no record -- the loudness is still an unanswered question"
+    );
+    click(&window, "volume-apply-button");
+    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "Apply put one record on the cut");
     let row = widget_in(&window, "fx-lane-row-0").expect("row 0 exists after the click");
     assert!(
         holds(&row, "fx-bar-0"),

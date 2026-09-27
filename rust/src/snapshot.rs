@@ -172,6 +172,18 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // No Apply here: Apply closes the form, and the screen F3.5 names IS the form. The record it would
             // write is proven by `tests/svg_drawing_widgets.rs`; the shot shows what the user is being asked.
         }
+        // F3.6's screen is the volume form OPEN (`spec/img/06-volume.png`), so the shot drives the same door
+        // the dropdown row fires (`tests/volume_form_widgets.rs` presses exactly this) rather than poking state.
+        if screen == "06-volume" {
+            // A placed line 81 s in, so the heading reads the band the press opens with -- spelled by
+            // `fx_volume::form_title`, never hardcoded here. Two seconds from the line is `LINE_SECONDS`.
+            ui::note_place(true);
+            ui::set_line_position(&window, cut_line::LinePos { t: 81.0 });
+            let said = ui::press_volume_item(&window);
+            // No Apply here either: Apply closes the form, and the screen §F3.6 names IS the form. The record
+            // it would write, and that one ↶ takes back, is proven by `tests/volume_form_widgets.rs`.
+            let _ = said;
+        }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.

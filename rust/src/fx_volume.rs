@@ -5,8 +5,13 @@
 //! (a marked band, else two seconds off the red line), how the percent field and the stored linear gain are the same
 //! number read two ways, and what the page says afterwards. Everything arithmetic about loudness is already
 //! [`crate::cut_hear`]'s: overlapping gains multiply, playbin's ceiling caps the result, and a zero gain is silence.
-//! `rust/src/ui/window.rs` renders only Prepare today, so nothing here draws — and §A.6 says a volume has no visual
-//! to draw anyway.
+//! `rust/src/ui/window.rs` renders it for real: 🔊 Volume in the ✚ Effect dropdown calls
+//! `ui::press_volume_item`, `show_volume_form` draws the five fields, and `press_volume_apply` puts the record
+//! on the cut through `record_edit`. What this module owns is where the seconds come from (a marked band, else two
+//! seconds off the red line), how the percent field and the stored linear gain are the same number read two ways,
+//! and what the page says afterwards. Everything arithmetic about loudness is already [`crate::cut_hear`]'s:
+//! overlapping gains multiply, playbin's ceiling caps the result, and a zero gain is silence. §A.6's "No box, no
+//! drag" holds in code: there is no geometry here for a drag to write.
 
 use crate::cut::{EffectKind, Fx};
 use crate::cut_hear;

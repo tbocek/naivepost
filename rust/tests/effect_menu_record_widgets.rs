@@ -16,6 +16,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{Cut, EffectKind};
 use naivepost::fx_record as rec;
+use naivepost::fx_volume as vol;
 use naivepost::fx_zoom as zoom;
 use naivepost::shell::Page;
 use naivepost::timeline::Recording;
@@ -142,18 +143,35 @@ fn fx_menu_round(app: &adw::Application) {
         );
     }
 
-    // --- S1: the volume row records a volume -----------------------------------------------
+    // --- S1: the volume row OPENS THE FORM; it records nothing until Apply ---------------------
+    // §F3.6 supersedes what this block used to assert (a record appearing straight out of the dropdown,
+    // `NEW_EFFECT_SECONDS` wide, printed with `rec::recorded_status`). A volume is placed over seconds and
+    // its loudness is an answer someone has to give, so the press only opens "Volume a – b": the record
+    // arrives at Apply, which is what the S3 undo below then takes back. The form's own fields, defaults
+    // and refusals are proven in tests/volume_form_widgets.rs.
+    //
+    // A placed line first: with none ever placed and no band marked there is nothing for a volume to work
+    // on, and §F3.6's refusal ("volume needs seconds to work on") is the right answer -- that branch is
+    // checked in tests/volume_form_widgets.rs, not here.
+    ui::note_place(true);
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 81.0 });
     click(&window, "effect-item-volume");
-    let cut_ = ui::review_cut_of(&window);
-    assert_eq!(cut_.fx.len(), 1, "one click, one record");
-    assert_eq!(cut_.fx[0].kind, "volume");
-    assert_eq!(cut_.fx[0].dur, rec::NEW_EFFECT_SECONDS, "it starts two seconds wide");
-    // Empty lane = the whole bed (§1's `lane (new)`), straight out of the dropdown.
-    assert!(rec::rides_whole_bed(&cut_.fx[0]), "a new volume rides the whole bed");
     assert_eq!(
-        status_text(&window),
-        rec::recorded_status(EffectKind::Volume),
-        "the status line prints the module's own sentence"
+        ui::review_cut_of(&window).fx.len(),
+        0,
+        "the press adds no record: until the percent is given there is no loudness to place"
+    );
+    let opened = ui::volume_form_open().expect("the volume row opened the form");
+    assert_eq!(opened.dur, vol::LINE_SECONDS, "it starts two seconds wide, off the line");
+    assert_eq!(
+        opened.percent,
+        vol::DEFAULT_GAIN * 100.0,
+        "pre-filled at the default gain, in the field's own unit"
+    );
+    assert!(
+        status_text(&window).starts_with(&vol::form_title(opened.t, opened.dur)),
+        "and the status names the seconds the form is about, got {}",
+        status_text(&window)
     );
     RAN_VOLUME_ROW.store(true, Ordering::SeqCst);
 
@@ -163,12 +181,18 @@ fn fx_menu_round(app: &adw::Application) {
     // arming forbids; the placement itself is proven in tests/zoom_drag_widgets.rs.
     //
     // A line has to be placed first: with none ever placed, S1's own refusal is the right answer and that
-    // branch is checked in tests/zoom_drag_widgets.rs.
+    // branch is checked in tests/zoom_drag_widgets.rs. (S1 already placed one at 81 s; set again so this
+    // block does not depend on what came before it.)
     ui::note_place(true);
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 81.0 });
     click(&window, "effect-item-zoom");
     let cut_ = ui::review_cut_of(&window);
-    assert_eq!(cut_.fx.len(), 1, "arming added no record -- only the volume is on the cut");
+    assert_eq!(
+        cut_.fx.len(),
+        0,
+        "arming added no record -- the zoom's box has not been drawn yet, and §F3.6 moved the volume to \
+         Apply as well, so nothing is on the cut here"
+    );
     assert!(ui::zoom_armed(), "the zoom entry left the page waiting for a box");
     let said = status_text(&window);
     assert!(
@@ -183,7 +207,18 @@ fn fx_menu_round(app: &adw::Application) {
     assert!(zoom::whole_source_shown(true), "while armed the framing is out of the way");
     RAN_ZOOM_ROW.store(true, Ordering::SeqCst);
 
-    // --- S3: the one hand-added record came in as an edit, so ↶ takes it back -----------------
+    // --- S3: the hand-added record came in as an edit, so ↶ takes it back ----------------------
+    // The cut reaches this point empty -- neither the volume press nor the zoom arm puts anything on it --
+    // so the record that gets undone is put there deliberately, by pressing the form's own Apply rather
+    // than by poking state. That is the record `record_edit` pushed, which is exactly what F2.13's ↶ covers.
+    // The line from S1 is still placed, so the press finds seconds to work on again.
+    click(&window, "effect-item-volume");
+    click(&window, "volume-apply-button");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        1,
+        "Apply, not the press, is what put one volume on the cut"
+    );
     click(&window, "undo-button");
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
