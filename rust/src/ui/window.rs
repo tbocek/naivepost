@@ -13,8 +13,10 @@ use gtk4 as gtk;
 use crate::add_sources;
 use crate::bench;
 use crate::cut::{self, Cut};
+use crate::cut_cards;
 use crate::cut_cam;
 use crate::cut_hear;
+use crate::cut_insert;
 use crate::cut_play;
 use crate::cut_review;
 use crate::cut_select;
@@ -276,10 +278,10 @@ fn page_box(
         // greyed button is always today's answer and never a leftover. | Split is the exception at rest:
         // with no band it splits at the red line, so it stays live — see `verb_buttons_state`.
         // Verbs start greyed: with no band there is nothing to add, remove, copy or paste, and the refresh
-        // path lights them from the live selection. `insert-button` rests greyed with its siblings on
-        // purpose — with no line placed and no seconds chosen there is nothing to insert over, and
-        // F2.12 lights it when a target exists; leaving it live because no test covers it would put a
-        // working-looking control in a row of greyed ones.
+        // path lights them from the live selection. `insert-button` starts greyed with its siblings for the
+        // same reason — a fresh window has no line and no seconds — but it is NOT left that way:
+        // `refresh_insert_button`, on the same refresh path, lights it as soon as a line or a selection
+        // exists and puts the word "Edit" on it while a card is held (F2.12 S1/S6).
         let verbs = cut_tool_group("verbs", &cut_screen::VERB_BUTTONS, true);
         toolbar.append(&verbs);
 
@@ -314,6 +316,16 @@ fn page_box(
         let form = cut_form_column();
         box_.insert_child_after(&form, Some(&previous));
         previous = form.upcast();
+
+        // F2.12 Insert — the insert form's own holder, right under the readout column. DECISION: it is a
+        // separate box rather than rows bolted into `cut-form`, because §A puts an open form INSTEAD of
+        // the idle readings and the eight rows are read by their own names; hiding one box and showing the
+        // other cannot disturb them. Built empty here and filled by `show_insert_form` from a
+        // `cut_insert::FormPlan`, so nothing about a card's fields is invented in the widget layer.
+        let insert_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        insert_form.set_widget_name("insert-form");
+        insert_form.set_visible(false);
+        box_.insert_child_after(&insert_form, Some(&previous));
 
 
 
@@ -1574,6 +1586,18 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         }
     }
     wire_delete_keys(&window);
+    // F2.12: ⧉ Insert, wired the same way — after `set_content`, so the button being wired is the one
+    // inside the realized tree. The button forwards and prints; every rule is in `cut_insert`.
+    if let Some(button) = line_step_button(&window, "insert-button") {
+        let win = window.clone();
+        button.connect_clicked(move |_| {
+            let status = press_insert_from_button(&win);
+            if let Some(status_line) = find_status(win.upcast_ref()) {
+                status_line.set_text(&status);
+            }
+            refresh_insert_button(&win);
+        });
+    }
     // F2.9: ⧉ Copy / ⧉ Paste / ⇲ Lane, wired the same way — after `set_content`, so the buttons being
     // wired are the ones inside the realized tree.
     for (name, seam) in [
@@ -3410,6 +3434,9 @@ fn refresh_selection_readout(window: &adw::ApplicationWindow) {
         }
     }
     refresh_verb_buttons(window);
+    // F2.12: Insert rides the same refresh path — greyed with nowhere to go, and wearing "Edit" while a card
+    // is held. A greyed or mislabelled Insert is always today's answer, never a leftover from an earlier band.
+    refresh_insert_button(window);
     // F2.9: the copy buttons ride the same refresh path, so a band drawn, nudged or cleared updates them
     // without a second place to remember.
     refresh_copy_buttons(window);
@@ -3623,6 +3650,8 @@ pub fn line_position(window: &adw::ApplicationWindow) -> cut_line::LinePos {
 /// would make the next real move silently unwritable for a second.
 pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos) {
     let _ = window;
+    // F2.12 S1: a placed line IS a target for Insert, and this is where the page learns one exists.
+    note_place(true);
     LINE_STATES.with(|slots| {
         if let Some(slot) = slots.borrow().last() {
             slot.borrow_mut().0 = pos;
@@ -5007,6 +5036,10 @@ pub fn press_lane_cross(window: &adw::ApplicationWindow, name: &str) -> String {
 }
 
 thread_local! {
+    /// F2.12 S1: whether this session has been told where its red line stands. `None` means no line was
+    /// ever placed, which is the state that makes "click the timeline where the insert goes first" true.
+    static INSERT_PLACE_KNOWN: std::cell::RefCell<Option<bool>> =
+        const { std::cell::RefCell::new(None) };
     static HELD_EFFECT: std::cell::RefCell<Option<cut::Fx>> =
         const { std::cell::RefCell::new(None) };
     static HELD_CLIP: std::cell::RefCell<Option<cut::Seg>> =
@@ -5535,8 +5568,494 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// S2: Esc drops the copy. Claims ONLY Escape — every other key returns `Proceed`, so typing in an entry
-/// field is untouched, exactly as the ⌦ controller does for its two keys.
+// --- F2.12: insert a card, still, video or sound ---------------------------------------------------------
+
+/// The insert form's holder, wherever this window put it. `None` on a page that drew none (Prepare, Narrate,
+/// Produce) — every insert control lives inside this box, so one lookup finds the whole form and nothing
+/// outside it.
+fn insert_form_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
+    find_widget_by_name(window.upcast_ref(), "insert-form")?
+        .downcast::<gtk::Box>()
+        .ok()
+}
+
+/// What the open form stands for, so Apply can place the file the chooser returned at the second the page
+/// read when Insert was pressed. Held per window because two windows may each have an insert half-finished;
+/// the newest one is the one whose buttons were just clicked.
+#[derive(Debug, Clone)]
+struct InsertOpen {
+    path: String,
+    at: f64,
+    seconds: f64,
+}
+
+thread_local! {
+    static INSERT_OPEN: std::cell::RefCell<Option<InsertOpen>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The form the page is showing, if any — what a widget test reads to assert the same state the logic test
+/// checked ([`cut_insert::FormPlan`] plus where the insert will land).
+pub fn insert_open(window: &adw::ApplicationWindow) -> Option<(String, f64, f64)> {
+    let _ = window;
+    INSERT_OPEN.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .map(|open| (open.path.clone(), open.at, open.seconds))
+    })
+}
+
+/// F2.12 S4: draw the form from a [`cut_insert::FormPlan`]. Every label, every conditional control and the
+/// opening length come out of the plan; this only turns them into widgets with stable names.
+///
+/// The three radios are a group by construction: GTK lets one of several `RadioButton`s share a group, and
+/// the LANE radio is only ever created when the plan says video, so a non-video file cannot be put on a lane
+/// even by a stray click. The sound tick is drawn only when the plan says there is a sound to answer for, and
+/// greyed while LANE is chosen — a lane cuts nothing, so there is no sound underneath to keep or drop yet.
+fn show_insert_form(
+    window: &adw::ApplicationWindow,
+    plan: &cut_insert::FormPlan,
+    path: &str,
+    at: f64,
+    fields: Vec<cut_insert::Field>,
+) {
+    let Some(holder) = insert_form_box(window) else {
+        return;
+    };
+    // Clear the previous form out of THE HOLDER, never by a tree-wide name search (see the fold badges for
+    // why: a closed window's widgets stay parented somewhere).
+    let stale: Vec<gtk::Widget> = holder
+        .observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .collect();
+    for old in stale {
+        holder.remove(&old);
+    }
+
+    let heading = gtk::Label::new(Some(&format!(
+        "{} \u{2014} {}",
+        cut_insert::edit_verb(cut_insert::hold(held_clip().as_ref())),
+        cut_insert::base_name(path)
+    )));
+    heading.set_widget_name("insert-heading");
+    heading.set_xalign(0.0);
+    holder.append(&heading);
+
+    // One entry per declared card field, in the order the card asked (S4). A logo field gets its Logo\u{2026}
+    // picker beside the entry rather than instead of it: the typed value survives a re-open either way.
+    for field in &fields {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        let key = gtk::Label::new(Some(&field.label));
+        key.set_widget_name(&format!("insert-label-{}", field.key));
+        key.set_xalign(0.0);
+        row.append(&key);
+        let entry = gtk::Entry::new();
+        entry.set_widget_name(&format!("insert-field-{}", field.key));
+        entry.set_text(&field.value);
+        entry.set_hexpand(true);
+        if !field.hint.is_empty() {
+            entry.set_tooltip_text(Some(&field.hint));
+        }
+        row.append(&entry);
+        if field.logo {
+            let picker = gtk::Button::with_label("Logo\u{2026}");
+            picker.set_widget_name(&format!("insert-logo-{}", field.key));
+            picker.set_tooltip_text(Some("pick a mark to sit beside the title"));
+            row.append(&picker);
+        }
+        holder.append(&row);
+    }
+
+    // The three modes (§G's labels verbatim), BETWEEN first as the default for no selection. GTK 4 has no
+    // `RadioButton` type: a toggle in a group is a `CheckButton` drawn as a radio and grouped by
+    // `set_group`, which is what makes "exactly one mode" true rather than a convention.
+    let between = gtk::CheckButton::with_label(cut_insert::BETWEEN_LABEL);
+    between.set_widget_name("insert-mode-between");
+    let over = gtk::CheckButton::with_label(cut_insert::OVER_LABEL);
+    over.set_widget_name("insert-mode-over");
+    over.set_group(Some(&between));
+    holder.append(&between);
+    holder.append(&over);
+    // The LANE radio is drawn for video only; `lane_offered` answers that, so a still or a sound cannot be
+    // put on a row of its own even by a stray click.
+    if plan.lane_shown {
+        let lane = gtk::CheckButton::with_label(cut_insert::LANE_LABEL);
+        lane.set_widget_name("insert-mode-lane");
+        lane.set_group(Some(&between));
+        holder.append(&lane);
+    }
+    match plan.mode {
+        cut_insert::Mode::Between => between.set_active(true),
+        cut_insert::Mode::Over => over.set_active(true),
+        cut_insert::Mode::Lane => {
+            if let Some(lane) = find_widget_by_name(window.upcast_ref(), "insert-mode-lane")
+                .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+            {
+                lane.set_active(true);
+            } else {
+                between.set_active(true);
+            }
+        }
+    }
+
+    // The sound tick: shown only when there is a sound to answer for, greyed while LANE is chosen.
+    if plan.sound_shown {
+        let tick = gtk::CheckButton::with_label(plan.sound_label);
+        tick.set_widget_name("insert-sound-tick");
+        tick.set_sensitive(!matches!(plan.mode, cut_insert::Mode::Lane));
+        holder.append(&tick);
+    }
+
+    // Seconds, opening at the plan's length (S3).
+    let sec_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let sec_key = gtk::Label::new(Some("Seconds"));
+    sec_key.set_xalign(0.0);
+    sec_row.append(&sec_key);
+    let seconds = gtk::Entry::new();
+    seconds.set_widget_name("insert-seconds");
+    seconds.set_width_chars(6);
+    seconds.set_text(&format!("{:.1}", plan.seconds));
+    seconds.set_tooltip_text(Some(&format!(
+        "at least {:.1} s \u{2014} shorter keeps the length it opened with",
+        cut_select::MIN_SCENE_SECONDS
+    )));
+    sec_row.append(&seconds);
+    holder.append(&sec_row);
+
+    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let apply = gtk::Button::with_label(if cut_insert::hold(held_clip().as_ref()) {
+        "Apply"
+    } else {
+        "Insert it"
+    });
+    apply.set_widget_name("insert-apply-button");
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.set_widget_name("insert-cancel-button");
+    buttons.append(&apply);
+    buttons.append(&cancel);
+    holder.append(&buttons);
+
+    INSERT_OPEN.with(|cell| {
+        *cell.borrow_mut() = Some(InsertOpen {
+            path: path.to_string(),
+            at,
+            seconds: plan.seconds,
+        })
+    });
+    holder.set_visible(true);
+
+    let win = window.clone();
+    apply.connect_clicked(move |_| {
+        let status = press_insert_apply(&win);
+        if let Some(status_line) = find_status(win.upcast_ref()) {
+            status_line.set_text(&status);
+        }
+        refresh_copy_buttons(&win);
+    });
+    let win = window.clone();
+    cancel.connect_clicked(move |_| {
+        let status = close_insert_form(&win);
+        if let Some(status_line) = find_status(win.upcast_ref()) {
+            status_line.set_text(&status);
+        }
+    });
+    // Switching the mode re-draws the tick's sentence, which is the only thing the change touches on the
+    // form itself (what it does to the footage is decided at Apply, by `cut_insert::place`).
+    for radio in [&between, &over] {
+        let win = window.clone();
+        radio.connect_toggled(move |button| {
+            if button.is_active() {
+                refresh_insert_tick(&win);
+            }
+        });
+    }
+    if let Some(lane) = find_widget_by_name(window.upcast_ref(), "insert-mode-lane")
+        .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+    {
+        let win = window.clone();
+        lane.connect_toggled(move |button| {
+            if button.is_active() {
+                refresh_insert_tick(&win);
+            }
+        });
+    }
+}
+
+/// Read the mode the radios hold right now. No lane widget means no lane was offered, so the answer is never
+/// `Lane` for a still, a card or a sound.
+fn insert_mode_now(window: &adw::ApplicationWindow) -> cut_insert::Mode {
+    let radio = |name: &str| {
+        find_widget_by_name(window.upcast_ref(), name)
+            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+    };
+    if radio("insert-mode-lane").is_some_and(|b| b.is_active()) {
+        cut_insert::Mode::Lane
+    } else if radio("insert-mode-over").is_some_and(|b| b.is_active()) {
+        cut_insert::Mode::Over
+    } else {
+        cut_insert::Mode::Between
+    }
+}
+
+/// Re-label and re-enable the sound tick after a mode change: the sentence comes from
+/// [`cut_insert::tick_label`], the greying from the fact that a LANE has nothing under it.
+fn refresh_insert_tick(window: &adw::ApplicationWindow) {
+    let Some(tick) = find_widget_by_name(window.upcast_ref(), "insert-sound-tick")
+        .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+    else {
+        return;
+    };
+    let mode = insert_mode_now(window);
+    tick.set_label(Some(cut_insert::tick_label(mode == cut_insert::Mode::Between)));
+    tick.set_sensitive(!matches!(mode, cut_insert::Mode::Lane));
+}
+
+/// Hide the form and forget what it stood for. Returns the line the page prints.
+pub fn close_insert_form(window: &adw::ApplicationWindow) -> String {
+    INSERT_OPEN.with(|cell| *cell.borrow_mut() = None);
+    if let Some(holder) = insert_form_box(window) {
+        holder.set_visible(false);
+    }
+    "the insert was cancelled".to_string()
+}
+
+/// F2.12 S5: Apply / Insert it. Reads the form's own widgets, hands the answers to
+/// [`cut_insert::FormAnswer::from_form`] and [`cut_insert::place`], saves the cut through the same door the
+/// folds use, and returns [`cut_insert::Placed::status`] (or the refusal). No rule lives here.
+pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
+    let Some(open) = INSERT_OPEN.with(|cell| cell.borrow().clone()) else {
+        return cut_insert::NO_LINE_YET.to_string();
+    };
+    let fallback = open.seconds;
+    let text = find_widget_by_name(window.upcast_ref(), "insert-seconds")
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        .map(|entry| entry.text().to_string())
+        .unwrap_or_default();
+    let silent = find_widget_by_name(window.upcast_ref(), "insert-sound-tick")
+        .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+        .is_some_and(|tick| tick.is_active());
+    let answer = cut_insert::FormAnswer::from_form(insert_mode_now(window), &text, fallback, silent);
+    let mut cut_ = newest_review_cut();
+    match cut_insert::place(&mut cut_, &open.path, open.at, answer.mode, answer.seconds, answer.silent) {
+        Ok(placed) => {
+            seed_review_cut(window, &cut_);
+            save_insert_cut(&cut_);
+            INSERT_OPEN.with(|cell| *cell.borrow_mut() = None);
+            if let Some(holder) = insert_form_box(window) {
+                holder.set_visible(false);
+            }
+            placed.status
+        }
+        Err(refusal) => refusal,
+    }
+}
+
+/// Write the mutated cut where it was read from. Same path as `save_folds`: `cut::save` writes the whole cut,
+/// and the segments an insert added are fields of it. A project with no tree keeps the insert in memory only.
+fn save_insert_cut(cut_: &Cut) {
+    let root = std::env::current_dir().unwrap_or_default();
+    let dir = startup::session_dir(&root);
+    if let Ok(tree) = layout::Tree::new(&dir) {
+        let _ = cut::save(cut_, &tree);
+    }
+}
+
+/// F2.12 S1 + S2: ⧉ Insert. The placement question is answered FIRST, before any dialog opens, because a
+/// chooser the user cancels should not have cost them a refusal they did not ask for — and because the file
+/// that comes back has to land where the timeline read at the press.
+///
+/// With a line or a selection this seeds `assets/` with the built-in cards (so the folder never opens empty),
+/// then opens the file chooser titled for the scope of the seconds. Headless there is nobody to answer the
+/// chooser, so nothing more happens here; the seam a widget test drives past the chooser is
+/// [`insert_chosen`], which is what the chooser's callback calls.
+pub fn press_insert(window: &adw::ApplicationWindow) -> String {
+    // S6 first: a held card is edited, not replaced. A card that went away while its dialog was open says so
+    // rather than opening a form for something that is no longer there.
+    if let Some(held) = held_clip() {
+        let cut_ = newest_review_cut();
+        if held.is_insert() && cut_insert::find_card(&cut_, &held.ins, held.s).is_none() {
+            return cut_insert::GONE.to_string();
+        }
+    }
+    // S1: the placement question is answered BEFORE any chooser opens — a cancelled dialog should not have
+    // cost the user a refusal they did not ask for, and the file that comes back has to land where the
+    // timeline read at the press.
+    let band = selection(window);
+    let placed = place_known().then(|| line_position(window).t);
+    let at = match cut_insert::needs_place(placed, band.as_ref()) {
+        Ok(at) => at,
+        Err(refusal) => return refusal.to_string(),
+    };
+    let root = std::env::current_dir().unwrap_or_default();
+    let dir = startup::session_dir(&root);
+    let assets = cut_insert::chooser_dir(&dir);
+    cut_insert::seed_cards(&assets, &cut_cards::seeds());
+    let title = cut_insert::chooser_title(band.as_ref());
+    let sound_only = matches!(
+        band.as_ref().map(|b| &b.scope),
+        Some(cut_select::Scope::Sound { .. })
+    );
+    open_insert_chooser(window, title, &assets, sound_only, at);
+    format!("{} \u{2014} choose the file", title)
+}
+
+/// Open the native file chooser over `dir`. Kept apart from [`press_insert`] so the decision (where, which
+/// title, which filter) is testable without a display: a headless run simply never answers the dialog.
+fn open_insert_chooser(
+    window: &adw::ApplicationWindow,
+    title: &str,
+    dir: &std::path::Path,
+    sound_only: bool,
+    at: f64,
+) {
+    let chooser = gtk::FileChooserNative::builder()
+        .title(title)
+        .modal(true)
+        .action(gtk::FileChooserAction::Open)
+        .build();
+    let _ = chooser.set_current_folder(Some(&gio::File::for_path(dir)));
+    let filter = gtk::FileFilter::new();
+    if sound_only {
+        filter.set_name(Some("sounds"));
+        for ext in ["mp3", "wav", "ogg", "oga", "flac", "m4a", "aac", "opus"] {
+            filter.add_pattern(&format!("*.{}", ext));
+        }
+    } else {
+        filter.set_name(Some("clips, images, animations and sounds"));
+        for ext in [
+            "mp4", "mkv", "mov", "webm", "avi", "svg", "svgz", "png", "jpg", "jpeg", "mp3", "wav",
+            "ogg", "flac", "m4a",
+        ] {
+            filter.add_pattern(&format!("*.{}", ext));
+        }
+    }
+    chooser.add_filter(&filter);
+    let win = window.clone();
+    chooser.connect_response(move |chooser, response| {
+        if response != gtk::ResponseType::Accept {
+            return;
+        }
+        let Some(file) = chooser.file().and_then(|f| f.path()) else {
+            return;
+        };
+        // The same body a widget test drives, so the chooser and the seam cannot drift apart.
+        insert_chosen(&win, &file, at);
+    });
+    chooser.show();
+}
+
+/// F2.12 S3 + S4: the file came back from the chooser — build the plan and draw the form.
+///
+/// `file_seconds` is NOT probed here: reading a video's duration means an ffprobe call, and the container
+/// this runs in has neither ffmpeg nor a reason to spawn one per click. The plan therefore falls back to
+/// [`cut_insert::DEFAULT_SECONDS`] (P.policy.insertDefaultSeconds = 4) unless the caller passes a length it
+/// already knows, which is exactly what a still and an un-probed file get anyway.
+pub fn insert_chosen(window: &adw::ApplicationWindow, file: &std::path::Path, at: f64) -> String {
+    insert_chosen_with_length(window, file, at, None)
+}
+
+/// [`insert_chosen`] with the length the caller already has (a probe, or a card's own animation). Split out
+/// so a test can hand in a length and see S3's precedence — selection seconds beat the file's, and both beat
+/// the default — without a media probe.
+pub fn insert_chosen_with_length(
+    window: &adw::ApplicationWindow,
+    file: &std::path::Path,
+    at: f64,
+    file_seconds: Option<f64>,
+) -> String {
+    let raw = file.to_string_lossy().to_string();
+    let band = selection(window);
+    let animated = svg_is_animated(file);
+    let mut plan = cut_insert::form_plan(&raw, band.as_ref(), file_seconds, animated, false, false, false);
+    // The card's holes are read off the document; a non-SVG gets no fields and the door ignores the argument.
+    let mut fields: Vec<cut_insert::Field> = Vec::new();
+    if plan.kind == cut_insert::Kind::Svg {
+        if let Ok(doc) = std::fs::read_to_string(file) {
+            fields = cut_insert::card_fields(doc.as_bytes());
+            for field in fields.iter_mut() {
+                if let Some(value) = plan.values.iter().find_map(|(key, value)| {
+                    key.eq_ignore_ascii_case(&field.key)
+                        .then_some(value.clone())
+                }) {
+                    field.value = value;
+                }
+            }
+        }
+    }
+    show_insert_form(window, &plan, &raw, at, fields);
+    format!(
+        "{} \u{2014} {:.1} s, {} \u{2014} the form is open",
+        cut_insert::base_name(&raw),
+        plan.seconds,
+        mode_word(plan.mode)
+    )
+}
+
+/// Whether an SVG animates, read off the document: a `@keyframes` block or an `<animate>` tag. An SVG with
+/// neither is drawn as a still, so it has no length of its own (see [`cut_insert::default_length`]).
+fn svg_is_animated(file: &std::path::Path) -> bool {
+    std::fs::read_to_string(file)
+        .map(|doc| doc.contains("@keyframes") || doc.contains("<animate"))
+        .unwrap_or(false)
+}
+
+/// The mode said back as one word, for the status line.
+fn mode_word(mode: cut_insert::Mode) -> &'static str {
+    match mode {
+        cut_insert::Mode::Between => "spliced between the footage",
+        cut_insert::Mode::Over => "over the footage",
+        cut_insert::Mode::Lane => "on a lane of its own",
+    }
+}
+
+/// F2.12 S6: set Insert's sensitivity and its word. Runs from the same refresh path as the verb and copy
+/// buttons, so a greyed Insert is always today's answer: with no line and no selection there is nowhere for
+/// an insert to go, and while a card is held the button edits that card rather than choosing a new file.
+pub fn refresh_insert_button(window: &adw::ApplicationWindow) {
+    if let Some(button) = line_step_button(window, "insert-button") {
+        // A target means a SECOND someone chose: a placed red line, or a band whose length clears the floor
+        // every other verb holds a scene to. `line_position` answers 0.0 both for "the line is on frame
+        // zero" and for "no line was ever placed", so the page keeps its own answer beside it rather than
+        // reading a false yes out of the default.
+        let has_target = place_known() || selection(window).is_some();
+        let live = match selection(window) {
+            Some(band) => band.length() >= cut_select::MIN_SCENE_SECONDS,
+            None => has_target,
+        };
+        button.set_sensitive(live);
+        button.set_label(cut_insert::edit_verb(cut_insert::hold(held_clip().as_ref())));
+    }
+}
+
+/// Whether this session has been told where its red line stands. Read back by
+/// [`refresh_insert_button`] and by [`press_insert`]: `false` is a page that has never had a line placed,
+/// which is what makes S1's refusal reachable.
+fn place_known() -> bool {
+    INSERT_PLACE_KNOWN.with(|cell| cell.borrow().unwrap_or(false))
+}
+
+/// Record whether a second has been placed. `false` means "no target": it clears the flag AND drops the
+/// line to zero, because a page that says it has no target while still showing one would contradict itself.
+/// `true` only claims the target — where it points is whatever `set_line_position` last stored.
+pub fn note_place(placed: bool) {
+    INSERT_PLACE_KNOWN.with(|cell| *cell.borrow_mut() = Some(placed));
+    if !placed {
+        LINE_STATES.with(|slots| {
+            if let Some(slot) = slots.borrow().last() {
+                slot.borrow_mut().0 = cut_line::LinePos { t: 0.0 };
+            }
+        });
+    }
+}
+
+/// S1: ⧉ Insert's wire. The button forwards here and prints what comes back, so no rule sits in the callback.
+fn press_insert_from_button(window: &adw::ApplicationWindow) -> String {
+    press_insert(window)
+}
+
+/// S2: Esc drops the copy. Claims ONLY Escape — every other key returns `Proceed`, so typing in an entry/// field is untouched, exactly as the ⌦ controller does for its two keys.
 fn wire_copy_esc(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();

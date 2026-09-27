@@ -146,6 +146,15 @@ pub use window::review_fold_rows;
 pub use window::toggle_button;
 pub use window::line_click_gesture;
 pub use window::held_effect;
+// F2.12: the insert button's wire, the form's seams and its read-back for tests.
+pub use window::close_insert_form;
+pub use window::insert_chosen;
+pub use window::insert_chosen_with_length;
+pub use window::insert_open;
+pub use window::press_insert;
+pub use window::press_insert_apply;
+pub use window::note_place;
+pub use window::refresh_insert_button;
 pub use window::press_add;
 pub use window::press_delete_key;
 pub use window::press_remove;

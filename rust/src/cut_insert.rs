@@ -681,6 +681,120 @@ pub fn held_status(card: &str) -> String {
     format!("{} \u{2014} the footage is held while it plays", base_name(card))
 }
 
+// --- the form's opening plan -------------------------------------------------------------------------------
+
+/// What the insert form shows when a file comes back from the chooser (or when a held card is re-opened):
+/// the length the `Seconds` entry starts with, which radio is lit, and which of the two conditional controls
+/// are drawn at all.
+///
+/// This is the whole S3+S4 decision for one file, kept out of the widget layer so the page only draws what it
+/// reads. The spec is silent on how the mode is picked when a *held* card is edited rather than a new file
+/// chosen; the answer taken here is that the card's own shape says — `s == e` means it was spliced, a span
+/// means it was laid over, a lane card is not a segment at all and never reaches this door.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormPlan {
+    /// What the file IS, off its extension ([`kind`]).
+    pub kind: Kind,
+    /// The length the `Seconds` entry opens with: the selection's own seconds, else the file's, else
+    /// [`DEFAULT_SECONDS`] (S3).
+    pub seconds: f64,
+    /// Which radio is lit (S3: a selection asks for OVER, nothing asked for BETWEEN).
+    pub mode: Mode,
+    /// Whether the LANE radio is drawn at all — video only (S4, [`lane_offered`]).
+    pub lane_shown: bool,
+    /// Whether the sound tick is drawn (S4, [`sound_open`]). A still with no sound over silent footage asks
+    /// nothing, which is what keeps the form short.
+    pub sound_shown: bool,
+    /// The tick's sentence for the lit mode ([`tick_label`]).
+    pub sound_label: &'static str,
+    /// The card's declared fields, in the order it declares them (S4). Empty for anything that is not an SVG.
+    pub fields: Vec<Field>,
+    /// The values written on the file's own path (`card.svg?title=Best maps`), so a re-opened form shows what
+    /// is there and [`with_card_fields`] can drop each one into its field.
+    pub values: Vec<(String, String)>,
+}
+
+/// F2.12 S3 + S4: the plan the form is built from. `file_seconds` is what a probe found for a video or audio
+/// file, or what the card's own animation runs for; `None` (a still, a probe-less headless run) falls back to
+/// [`default_length`]'s [`DEFAULT_SECONDS`]. `silent` is what the tick is set to, which decides the sentence
+/// along with the mode.
+pub fn form_plan(
+    path: &str,
+    selection: Option<&Selection>,
+    file_seconds: Option<f64>,
+    animated_svg: bool,
+    silent: bool,
+    file_has_sound: bool,
+    footage_under_has_sound: bool,
+) -> FormPlan {
+    let file_kind = kind(path);
+    let (splice, selected) = default_modes(selection);
+    let mode = if splice { Mode::Between } else { Mode::Over };
+    let seconds = selected.unwrap_or_else(|| default_length(file_seconds, animated_svg));
+    FormPlan {
+        kind: file_kind,
+        seconds,
+        mode,
+        lane_shown: lane_offered(file_kind),
+        sound_shown: sound_open(
+            file_kind,
+            mode,
+            file_has_sound,
+            footage_under_has_sound,
+        ),
+        sound_label: tick_label(mode == Mode::Between),
+        fields: Vec::new(),
+        values: crate::cut_cards::split_path(path).args,
+    }
+}
+
+/// F2.12 S4: fill in the fields a card declares, read off the document the chooser just returned. Kept apart
+/// from [`form_plan`] because the document has to be read from disk and only an SVG has holes to ask about;
+/// every other kind gets the plan unchanged. Values already written on the path (`card.svg?title=Best maps`)
+/// come back into each field, so an edit re-opens with what is there — which is why the path is passed in
+/// beside the plan rather than being guessed at from it.
+pub fn with_card_fields(mut plan: FormPlan, doc: &str) -> FormPlan {
+    if plan.kind != Kind::Svg {
+        return plan;
+    }
+    let mut fields = card_fields(doc.as_bytes());
+    for field in fields.iter_mut() {
+        if let Some(value) = plan.values.iter().find_map(|(key, value)| {
+            key.eq_ignore_ascii_case(&field.key)
+                .then_some(value.clone())
+        }) {
+            field.value = value;
+        }
+    }
+    plan.fields = fields;
+    plan
+}
+
+// --- the answer the form gives back ------------------------------------------------------------------------
+
+/// What was typed into the open form, ready to hand to [`place`]. One struct so the widget layer collects
+/// answers instead of deciding anything: the mode comes off the radios, the seconds through
+/// [`seconds_or_default`] (an unparsable or too-short entry keeps the length the plan opened with rather than
+/// refusing the press), and `silent` off the sound tick.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormAnswer {
+    pub mode: Mode,
+    pub seconds: f64,
+    pub silent: bool,
+}
+
+impl FormAnswer {
+    /// Read the answer against the plan the form was built from: `text` is what the `Seconds` entry holds now,
+    /// `fallback` the length it opened with ([`FormPlan::seconds`]).
+    pub fn from_form(mode: Mode, text: &str, fallback: f64, silent: bool) -> Self {
+        FormAnswer {
+            mode,
+            seconds: seconds_or_default(text, fallback),
+            silent,
+        }
+    }
+}
+
 /// F2.12 S7: whether the playhead has moved. Held by a spliced card, the footage does not advance however much
 /// time passes; released, seconds are seconds. `rate` is the player's own rate (F2.1), so a card played at half
 /// speed still holds the footage for twice as long on the wall clock.
