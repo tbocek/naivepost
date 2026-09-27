@@ -38,12 +38,16 @@ prototype `spec/` was written from: read it for observed behaviour, put new work
 
     just build                 # cargo build --release -> rust/target/release/naivepost
                                # (GTK 4 app: runs on a host with a display, not in this container)
-    just test                  # xvfb-run, GSK_RENDERER=cairo; several tests build real widgets
+    just test                  # xvfb-run, GSK_RENDERER=cairo; several tests build real widgets;
                                # ~4 min: run it once into a file, then grep/tail the file
-    just snapshot 03-window    # -> rust/shots/03-window.png (03-sources, 04-prepare, 05-cut, …)
-                               # every page draws its spec screen; compare each with spec/img.
-                               # Every interactive widget has a name (set_widget_name, from the
-                               # spec's label) and a test that fires it and checks the effect.
+    just snapshot 05-cut       # -> rust/shots/05-cut.png; one name per spec screen (03-window,
+                               # 04-prepare, 05-cut, ...); compare each with spec/img/<same name>
+
+- Every page draws its spec screen. Every interactive widget has a name
+  (`set_widget_name`, from the spec's label) and a test that fires it and checks
+  the effect. Widget names, tooltips and sizes live in the code and its tests, not here.
+- `src/ui/window.rs` is the shell and the pages; read a function in it with
+  `read_file symbol=<name>` rather than by line ranges.
 
 ## Rules the code holds to
 

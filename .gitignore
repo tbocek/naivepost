@@ -36,4 +36,8 @@
 # the rewrite's build output
 /rust/target/
 /rust/shots/
+
+# a session folder the app writes when it is launched from `rust/` itself; anchored so it cannot
+# match a real project folder or anything under rust/src
+/rust/session.naivepost/
 .codehalter/

@@ -39,6 +39,18 @@ recorder's words, waveform and sound where they belong against the footage. The
 footage is the master: a recording is heard for exactly the part of it that was
 running while the footage was.
 
+Pressing ▶ answers before it runs. A session with no sources says
+`add at least one source` in the status line and nothing starts; two inputs whose
+file names would land in the same `inputs/<name>` folder refuse with
+`A and B have the same name — rename one`, because the second would overwrite the
+first's whole record. Both refusals happen before the run is opened, so ⏸ never
+appears for work that never began.
+
+A previous run that died inside Describe is cleaned up first: its `events.tsv` and
+`state.txt` are removed and the log says so, while the scaled frames are kept —
+they are correct no matter where the description stopped, and re-extracting them
+costs a minute per video for nothing.
+
 Pressing ▶ then does, in order:
 
 1. **Optional voice separation** — a source flagged for it (✂) is decoded to 44.1 kHz
@@ -74,7 +86,16 @@ Pressing ▶ then does, in order:
 6. **Describe** — the frames go to a vision model in small batches, each batch
    carrying the words heard in those seconds and a rolling summary of what has
    happened so far, so the answer is *what is happening* rather than *what is in
-   this picture*. Output is one EVENT line per frame, stamped on that frame's
+   this picture*. What the model actually sees is not every picture on disk: each
+   scene's first frame, then one every Freq seconds until the next change, so a new
+   slide's opening picture is always in the batch even when it falls between two of
+   them. Those copies are scaled to 896 px wide for sending while the frames the
+   project keeps stay at the video's own size. A run that stopped mid-Describe
+   resumes at the first unanswered chunk rather than re-describing what is already
+   logged, and the pass ends with `event log complete (N chunks)`, naming how many
+   of them came from the cache. A folder extracted frame-by-frame is refused rather
+   than described — without a fixed interval there is nothing to stamp or resume on.
+   Output is one EVENT line per frame, stamped on that frame's
    second; a frame in which nothing changed says only `same` and is folded
    into the line before it when the log is read, so a change is dated to the
    second it happened and a brief still reads one line per thing that happened.
@@ -83,7 +104,30 @@ Pressing ▶ then does, in order:
    and speaker labels pass through byte-identical, enforced.
 8. **Merge** — everything above becomes one session timeline: every spoken line
    and every EVENT line on one clock.
-9. **Mark what was said twice** — see *Video style* below.
+9. **One word list for the session** — before anything is marked, the aligned (or,
+   where there was no aligner, the recogniser's) word timings are glued into words on
+   the session clock and saved once. A word put on almost no sound *and* landing well
+   after the word before it — under a tenth of its recording's median loudness, more
+   than a second late — is taken as placed on the wrong breath and timed at that
+   previous word's end, so a clip ending there does not carry the silence with it;
+   each one is named in the log. The list then carries the raw transcript's case and
+   punctuation and the fix pass's spelling over the recogniser's bare words. Times
+   stop changing here: from this point only how a word is written changes, never when
+   it is, which is what lets the marks, the joins, `final.txt` and the captions all
+   read the same words.
+10. **Mark what was said twice** — the app asks whether any part of the talk is
+   a retake of something said earlier, and marks those stretches abandoned
+   rather than deleting them. Fewer than four spoken lines and there is nothing
+   to compare, so nothing is marked — but the empty marks file is still written,
+   because its presence is what tells the cut stage this question was asked. The
+   brief the model is given numbers every line and flags each pause of 1.5 s or
+   more, which is where a retake usually starts. The same question is put three
+   times and the answers pooled and deduped, since one pass hears some repeats
+   and misses others. A mark shorter than 0.3 s is treated as a breath and
+   dropped, and a mark is trimmed back to the words the later take actually
+   repeats rather than swallowing the sentence before it. If more than 40 % of
+   the speech would be called abandoned, the whole thing is refused — that is a
+   misreading, not an edit — and the refusal is the only line in the log.
 
 Every stage is skipped if its output is already on disk, so a re-run resumes
 rather than starting over. ⏸ parks the run between requests; ⏹ ends it.
@@ -93,7 +137,14 @@ time. The first row is not a prompt: it is what you want the editor to know
 about this session — who is in it, how names are spelled, what has to end up in
 the video, how long it should be — and every request this project makes carries
 it. Behind it, in pipeline order, are all twelve system prompts. A ✎ beside a
-name means yours differs from the shipped one; Reset restores it.
+name means yours differs from the shipped one; Reset restores it. Nothing is
+saved by a button: every keystroke goes to disk as you type it.
+
+Along the bottom of the window, `Inputs:` counts what Prepare has read — frames
+to the describe model and transcript lines to the fixer — with the same
+arithmetic broken down per file on hover; `Outputs: Prepare:` counts what the
+page has written, its folder button naming the three subfolders the count
+covers. Both refresh when you switch tabs.
 
 ### Video style
 
@@ -117,6 +168,14 @@ the audio envelope picks the quietest moment to splice at. What survives is
 written to `prepare/transcript/final.txt`, punctuated and readable — delete a
 word there by hand, press Cut, and it is out of the video, with no model asked.
 
+A join's answer is checked before anything is removed. It must leave out one
+stretch, next to the join: an answer that cuts two separate stretches, or more
+than forty words, or more than sixty percent of what it was shown, is refused
+and the stumble stays in, with the reason on the log. A refused join is asked
+once more; if that fails too, nothing is removed there. And when a join takes
+out every word of a recording, that recording is not silently dropped — it is
+flagged yellow on the Cut page as gone whole, worth a look.
+
 **Gaming** — a session where the interesting moments have to be *chosen*. The
 cut model reads the whole session timeline and answers with the segments worth
 keeping, to a target length if the context names one.
@@ -130,11 +189,155 @@ The session on a timeline: thumbnails per camera row, a waveform lane per sound
 below, everything the cut keeps tinted green. Time nobody filmed takes no width
 at all, so two recordings meet with a striped amber border each.
 
+One toolbar runs across the page in six groups, left to right: transport (▶ the
+recording, ▶✂ the cut, ▶✂✂ every cut, and the frame steps), the preview volume,
+the verbs (＋ Add, | Split, － Remove, ⧉ Copy, ⧉ Paste, Insert, ⇲ Lane), the
+**✚ Effect** dropdown, history (↶ Undo `Ctrl+Z`, ↷ Redo `Ctrl+Shift+Z` or
+`Ctrl+Y`, Revert, ✗ Clear) and zoom (**− +**). Each press scales by a quarter-step
+and stops at both ends — in at 240 px a second, out where the whole session
+fits, so you can never scroll past the end of your own recording. The **Thumbnails**
+row in the form column carries its own 🖼− / 🖼+ ladder between 40 and 160 px, and
+the page opens at 64 px.
+
+Picking an entry under **✚ Effect** adds that kind of effect at the red line with its kind's own
+default: a bare caption lands in the lower third, a drawing in the middle, a volume on the whole bed
+until you point it at one lane. It starts two seconds wide — drag it to the length you want — and
+**↶ Undo** takes it back.
+
+**⊕ Zoom** is the one entry that does not add anything when you pick it — it waits for you to draw
+the box. The picture's camera layer steps aside so you can see the whole source, and you drag a
+rectangle wherever the close-up should be; let go and the form opens, titled with the second it
+belongs to, where you say how long the move lasts and how it ends: **Pull back** for a passing
+close-up that opens out again on its own, or **Stay on it** for a reframing that keeps that region
+from there on (that is how a vertical short is cut out of widescreen footage). A camera that stays has
+no way back, so its fade-out is greyed out rather than left for you to get wrong. Press Esc before
+drawing anything and nothing happens at all. Every other effect still lands straight away.
+
+**Aspect ratio** in the form column is the shape of the finished video: the footage's own, or 9:16,
+1:1, 4:5 and 16:9. Picking a shape nobody has framed yet does two things at once — it stores that
+shape and puts a whole-frame zoom at the very start, so the video has a framing from its first frame
+instead of opening on bars. If the lane already holds a zoom that stays inside the new shape, your
+zooms are left alone and keep deciding what shows; the shape still changes. One **↶ Undo** takes the
+shape and the starting zoom back together. The outline drawn on the preview is what the finished video
+shows, not a guide line.
+
+**⏩ Speed** works on whatever you marked, as long as the mark is at least a fifth of a second — then the
+effect's seconds are your seconds and it opens at half speed. With no mark but the red line down, it
+becomes a two-second stop right there. The form asks six things: the rate, what the sound does, how
+long, the fade in, the fade out, and the curve. **×0 means a hold**, not a very slow clip: the picture
+stands still while the clock runs, and the footage underneath keeps running normally. If you marked a
+stretch too short for a rate to fit without going under what the render can cut, the **rate gives way
+instead of your mark moving** — your seconds stay where you put them. Under the sound choice a note tells
+you what that answer costs: how many seconds the sound ends up behind the picture, and that going back in
+sync skips those seconds. Esc or Cancel leaves everything alone. One **↶ Undo** takes the whole effect
+back. Where a fast stretch and a slow one overlap, they don't fight — the two rates average across each
+span, so overlapping effects blend rather than one winning outright.
+
+Below the camera rows, the **effects lane** shows one row per group of effects that overlap in time,
+each kind in its own colour so a zoom never looks like a caption, and a staying zoom is coloured apart
+from a passing one. The lane keeps its height even when nothing is on it: an empty lane is the ordinary
+state, not a collapsed one. In the paused preview everything outside the camera rect is dimmed, the
+overlays draw at the see-through-ness their fades give them, and the one you are holding draws full with
+a dashed violet outline so you can tell it apart from what is already placed. While a delayed sound
+answer is still running behind the picture, a plate reads `sound 2.0 s behind` (or `ahead`) on the bar —
+but only where the bar is wide enough to hold the words; a narrow bar says nothing rather than truncating.
+
+History answers for what you changed on the page. **↶ Undo** walks back one step and
+says how many kept stretches are left; **↷ Redo** walks forward again, and `Ctrl+Z`,
+`Ctrl+Shift+Z` and `Ctrl+Y` all reach the same walk as the buttons do. **Revert** goes
+back to the last suggestion — or, if nothing has been suggested this session, to what the
+page opened with — and your own edits come back with Undo afterwards. When there is
+nothing to go back to, both of them say so plainly instead of pretending to move: "nothing
+to undo", "nothing to revert". **✗ Clear** takes every kept stretch and every effect off
+in one step, and leaves your recordings, rows, shifts and lanes exactly where you put
+them; it refuses when there is nothing on the page to clear. The walk holds its last 50
+states, so a long session loses its earliest steps first, never the whole history.
+
 The page opens as soon as there is footage — you can lay the session out, see
 where takes fall against each other, shift a recording by hand and listen,
 before anything has been transcribed.
 
-▶ asks the model for a cut. The toolbar has three ▶s of its own: plain ▶ plays
+▶ asks the model for a cut — or, when your policy says **cut by the words**, builds it from your marks
+with no model at all. It refuses before asking anything when it cannot do the job: while another run is
+going, while you have hand edits ("press Revert first for a fresh suggestion"), or before Describe has
+produced a session timeline. With a target length it aims the cut at that window; with none it keeps what
+is worth keeping, and it only asks for the captions, speed and decoration passes your policy switched on.
+Whatever comes back lands as one Undo, keeps the inserts you placed by hand, and replaces the effects with
+the ones that still sit on footage the cut actually keeps.
+
+The page also carries its own **▶ Play the recording** control: it plays from the red line and lets
+every second through, cuts and all. Pressing it again pauses; ⏹ ends what it started. Reopening the project
+brings the red line back to where you left it, read from `cut/line.json` beside the cut — unless the
+footage no longer covers that second, in which case the page simply starts at the beginning. And
+closing the window always saves the line, even a moment after the last automatic save,
+so the position you closed on is the position you open on. Beside it sits **▶✂ Play the cut**, which
+plays the finished video instead: removed stretches are skipped, the line jumps to
+the next clip's first playable second and stops past the last one, speed effects
+hold their flat rate, a stop shows its still and volume applies — and the clock
+reads the cut's own time, not the session's. Pressing it while the preview is the
+recording switches over and snaps the line onto kept material ("preview is the cut —
+the clock reads the finished video"); pressing it during a review ends the review
+and carries on as the plain cut. With no clips there is nothing to skip to, so the
+button is greyed and every other way in (Space, a click on the picture, the run
+bar) answers "the cut is empty — add a clip to play it, or press ▶ to play the
+recording instead". And **▶✂✂ Review every cut** hears every splice in one sitting without watching the
+minutes between them: ten seconds of the finished video before each join and ten after it, one join
+after the other, pausing with "reviewed all N cuts" once the last has been heard. It starts wherever
+the red line stands — inside a join's window it plays on, between windows it seeks to the next run-up,
+past the last join it wraps to the first — and it ends if you move the line by hand ("the line was
+moved — the cut review is over; ▶✂✂ starts it again"). With fewer than two clips there is no join to
+hear, so it says "nothing to review — a cut needs two clips to have a join between them". Each of the
+three buttons wears ⏸ only while its own thing runs; pressing another switches the preview without
+stopping it, and exactly one is lit at a time.
+
+Under them sits the **preview volume** slider, labelled and 0–100. It is one setting for the whole app: every place
+it is shown mirrors the same number, and it changes nothing that gets rendered — the render mixes what
+each scene hears at recorded levels, so how loud your preview was is never in the file. What you hear
+per second follows the scene under the red line: every overlapping sound (a camera's own, a separate
+recording, an extra track) plays unless that scene silences it, a silenced lane is never started rather
+than played quietly, and a muted picture goes quiet by mute, not by stopping anything. Volume effects
+and speed over the line raise the gain and set the rate as you play over them.
+
+Below that is where you **select**: a left-drag draws a band scoped to whatever ground it was drawn on —
+that row's footage, or one recording's sound — and the `Selection:` readout under it follows the band live.
+Where the drag STARTS is what decides what you get: pressing on a picture row selects that camera's footage,
+pressing on the ruler selects the whole timeline's footage, and pressing on the effects lane takes no
+selection at all — it puts down the effect you were holding. Once started, a drag keeps that ground even if
+the pointer wanders across another band, so the readout never changes its mind about what you drew. The band's
+ends resize, its middle moves, and **✕ Clear selection** takes the selection away and nothing else; the cut
+keeps every clip. Ends snap to clip borders, recording ends, effect ends and the red line when released
+near one. selection of *sound* rather than pictures greys ＋ Add, | Split and － Remove and points ⧉ Copy
+at the sound instead, which comes back as a laid-over lane rather than a cut. Until the tracks themselves
+are drawn this drag runs on a placeholder
+strip above where they will sit, so it selects across the whole session rather than one row.
+
+Under the readout sit those three verbs. **＋ Add** keeps the selected stretch as scenes — one per filmed
+run, both ends snapped to a word edge, a silence or a visual cut within five seconds — and takes that span
+off every other camera; the status line says whether anything was taken from another camera, and
+↶ Undo (Ctrl+Z) gives it back. **| Split** puts a border at each end of the band and removes nothing:
+the band stays up so you can see what you asked for, and the right half is marked so no automatic pass
+joins it back. With nothing selected, | Split cuts once at the red line and hands you the second half.
+**— Remove** drops exactly the selection; remainders of at least a frame survive either side. Every one of
+them answers in words when it cannot act — a band under one second is too short to add, a sound selection
+cannot be added to, split or removed, and a stretch the cut already keeps none of has nothing to drop.
+
+**⌦ / Delete / BackSpace** works on whatever is in hand, in this order: a held effect, then a held clip
+(the only way to remove a spliced card), then the selection, then the scene under the red line — and if
+none of those is there it says so rather than guessing.
+
+**⧉ Copy** takes the selected stretch into hand, where it stays until you use it or let go of it. A band
+under a second is refused — there is nothing worth copying that short — and taking a copy leaves the band on
+screen, because copying is reading, not editing. **⧉ Paste** puts what is in hand at the red line. Copied
+*footage* comes in as a spliced `copy:<seconds>` card and the video gets longer, with the status line
+naming both totals: what the cut is now and what it was. Copied *sound* is laid over the kept footage as
+one piece per kept stretch, and refused outright when the cut keeps no picture under it rather than being
+hung in silence. Either way the paste consumes the copy, so the same seconds cannot be pasted twice.
+**⇲ Lane** gives the copy a row of its own — `Copied`, then `Copied-2`, `Copied-3` past every name already
+taken — starting at the red line with nothing cut to it; ＋ Add is what lays scenes on that row later. It
+refuses a line no recording is still rolling at. **Esc** drops whatever is in hand, and only that key, so
+typing anywhere else is untouched.
+
+The toolbar has three ▶s of its own: plain ▶ plays
 the recording, every second of it; ▶✂ plays the cut, removed stretches skipped,
 with the clock on the finished video's time; ▶✂✂ reviews the cuts — ten seconds
 of the finished video before each join and ten after it, one join after the
@@ -144,16 +347,73 @@ without watching the minutes between them.
 From then on the cut is yours: drag to select, ＋ Add,
 ✕ to drop, ⌦ for whatever is in hand, Revert to go back to the suggestion.
 **Trim a clip edge by dragging it** — with either button, on the pictures or on
-the green bar above them — or ‹f and f› a frame at a time once it is in hand.
-Wherever the pointer turns into a resize arrow, a drag there resizes: that is the
-whole rule. The right button is for *moving* things instead, a scene along its
+the green bar above them — or ‹f and f› a frame at a time once it is a clip in hand.
+The strip you drag on shows the session's ruler along the top, marked every whole
+second with its time, and under it the kept stretches of the cut as one green bar
+with a visible border where each clip starts and ends. A press takes a border when
+it lands within 6 px of it; that is how near you have to aim.
+The right button is for *moving* things instead, a scene along its
 recording or a recording along the clock. Everything snaps to word edges,
 silences and visual cuts, with the pointer showing what a press would grab.
+
+Trimming stops where the cut would break: an end won't go below a second of scene, past the next clip, or
+past the recording's end, and a start won't go above a second short or before the previous clip. Drop a
+border flush against a neighbour (within about a frame) and the two join back into one scene — same camera
+only, never a card — with **↶ Undo** putting the border back; otherwise the clip simply lands on the edge
+you left it at, and the status line reads "clip N: 00:40 – 01:24 (43.5 s)".
+
+What the right button takes depends on where you press, in this order: a recording on the recorders' band,
+then the wave strip under the pointer, then the marked scenes if you pressed inside a footage selection
+(unless you hit a border, which trims), then one scene sliding along its own recording with its length kept
+and clear of its neighbours, and failing all of that the whole camera row along the clock — which is how a
+shift correction between two devices gets applied. A row change says "<what> moved to row 3 — its kept
+scenes came along"; anything else says "<what> moved +1.23 s", or "<what> is back where it started" if you
+ended where you began. Folds in the way of the drag open while it runs and refold after. One undo covers the
+whole gesture, however many times the mouse moved, and a right click never moves the red line.
+
+What a right-press grabs depends on where it lands: on the recorders' band or on a wave strip it takes that
+one recording, inside a footage selection it slides the scenes you selected, and on the green bar or a clip
+it slides that scene along its own recording with its length kept, snapping flush against a neighbour it came
+within 8 px of. Press on a border instead and either mouse button trims it — the border wins over the slide,
+which is why a slide only happens away from one.
 
 You can also splice in cards, stills and sounds, switch which camera a scene is
 shown from, silence a lane for one scene, and add effects — zoom, hold, speed,
 volume, captions, drawings — each proposed by its own model pass after the cut
 and each editable by hand.
+
+Each camera of the session gets its own coloured row, and two recordings that overlap in time never share
+one: dragging an overlapping recording's pin gives it a row of its own, and every other clip on it moves
+with it. Clicking a row makes the preview watch that camera — the picture comes from there until you press
+▶, which hands playback back to the cut itself. The row's name plate carries the shift correction between
+its clock and the cut's (so `cam1 -19.00 s` reads as "camera 2 sits 19 seconds earlier"), and while a
+row is watched the status line says so once when the red line reaches a scene kept from another camera.
+On each row, the 🔍 badge picks which camera shows the scene under the red line; the 🔈 badge silences
+that microphone for this scene only, and the gutter switch beside it silences the same lane for the whole
+cut. Silencing a lane takes it out of what you hear but never out of the cut.
+
+Time the cut throws away can be folded out of the way too. Press **−** over a stretch the cut drops — a hole
+between two kept clips, or the head or tail of what was filmed — and it collapses to a seam, the clips either
+side meeting where the gap used to be. Press **+** on that seam and it opens again. The gutter badge does every
+gap at once: one press folds them all, the next unfolds them all. A gap too narrow to fit the badge gets none,
+so you are never offered a control wider than the thing it folds. Folding changes nothing about the cut — it is
+a view, not an edit, so undo leaves it alone and nothing measured with it moves — but the page remembers it:
+reopen the project and the same stretches are still folded. An emptied bottom row stays on screen until you press
+its ✕, and a cut lane's ✕ takes the lane, its pin, its shift, its pictures and its sound with it.
+
+**Insert** puts something the session never recorded into the cut — a sting, a still, a tier board, a song.
+Click where it goes (a red line or a marked band answers "where"; with neither, Insert says so rather than
+guessing) and the chooser opens in `assets/`, where the built-in cards are written the first time you ask.
+Three ways to place it: **BETWEEN** the footage cuts the clip open for the card, so the video grows by the
+card's own seconds while costing no session time; **OVER** takes exactly the seconds it runs, the same as
+－ Remove, and only the picture changes if you leave the sound running under it; **LANE** is for video only
+and cuts nothing — it adds a row you can later cut to. A sound has no third way: it is laid over the kept
+footage, one piece per stretch, each resuming where that piece stands, and it refuses where there is no
+picture under it. A card's own holes come out of the file, so the form asks for each declared field by name
+(with a Logo… picker where the card wants a mark), and what you type rides on the end of the path, which
+makes one file a different card every time. Hold a card on the track — right-click or double click — and
+Insert becomes **Edit**, re-opening that card's form; if it left the cut while the dialog was open, it says
+so plainly instead of editing a ghost.
 
 ### Narrate
 
@@ -273,7 +533,14 @@ is the project's file layout and the `cut/cut.json`, `narrate/narration.json`
 and `produce/publish/publish.json`, the machine files of §7, the session clock
 of §8, the text formats of §6 — the transcripts, `session.tsv`, `events.tsv`,
 `retakes.tsv`, `final.txt`, the ASR sidecars, `.frames` and `scenes.tsv`, the
-`AWV4` waveform cache and `requests.tsv` — and the four servers of
+`AWV4` waveform cache and `requests.tsv` — the Settings dialog of
+[03-shell.md §5](spec/03-shell.md), opened from the header bar's gear: rows for
+the LLM server, key and model with its vision check and Fetch models, ffmpeg and
+firefox, the audio.cpp endpoint with its four model rows and the forced aligner,
+and the sd.cpp server. Each Test button reads what its box holds at that moment,
+marks ✓ or ✗ with the verdict as its tooltip, and mirrors its line into the main
+log as `settings: …`; "Test All" runs all six kinds and reports each one without
+stopping at a failure — and the four servers of
 [02-services.md §1](spec/02-services.md): their loopback defaults, what each
 settings box falls back to, which path and timeout every kind of call has, and
 which aligner a server's own model list offers — and the model roles of
@@ -376,14 +643,33 @@ click reaches it and bounces off with the reason on the status line — "Add
 footage on the Prepare step first" — while a page whose prerequisites vanish
 while open goes back to Prepare in silence; arriving flushes the narration's
 400 ms autosave, then refits its lines to the cut, rebuilds the cut if Prepare's
-output moved, or refreshes Produce's readouts and publish panel. And what one
+output moved, or refreshes Produce's readouts and publish panel. Those two rows —
+the page's `Inputs:` count and its `Outputs:` count with the folder button beside
+it — sit under the bottom bar on every tab, not only on Prepare, and they are
+redrawn each time you switch. The ⓘ that opens the editing-policy form is now one
+button in the title bar, to the left of ⚙ ⟳, and its tooltip names the tab you are
+looking at. And what one
 means ([F0.2](spec/03-shell.md)): a run under way first, so the same button shows
 ⏸ and says "pausing after the current stage…" rather than starting anything; then
 the page's own preview, but only once it has been started — Prepare and Produce
 have none, so their ▶ runs the step while something plays; otherwise the sources
 are snapshotted as they stand and that one step runs, with no "all done" line for
-a single step. The window draws that ▶ at the left of its bottom row; ⏹ and the
-"I'm feeling lucky" gears come with their own items. And which project a launch
+a single step. The window draws that ▶ at the left of its bottom row, with ⏹
+beside it: one press stops the page's preview and the run together, ending on
+"stopping…", and a subprocess killed by that stop is reported as stopped rather
+than as a failure. Right of ⏹ sits **I'm feeling lucky** ([F0.4](spec/03-shell.md)):
+one press runs every step in page order — Prepare → Cut → Narrate → Produce — each
+switching to its own page and logging `>>> run: ‹Name›`. Narrate skips itself when the
+video has no narration, and Cut skips itself when the cut has hand edits, which are
+kept; the press refuses if a run is already going. It closes with what it cost —
+`all done in 2m 15s`, or `stopped after …` with how many steps were left undone.
+Every run, whichever button started it, keeps its own bookkeeping
+([F0.5](spec/03-shell.md)): the bar fills while it works and reads
+`‹job› ‹phase›: ‹task› n/m`, the status line carries the same words, the log
+opens by itself when the run starts and stays open after it ends so the last line
+is still there to read, and the audio models are unloaded quietly at the end of
+every run — even one that used no audio.
+And which project a launch
 opens ([F0.6](spec/03-shell.md)): the file the desktop handed over — the first
 only, and even when it cannot be read, since a double-click asks for *that*
 project; else what `llm.conf` remembers for this folder while it is still on
@@ -407,7 +693,9 @@ looks like a finished file, and skipping one that is already there at the same s
 referencing it where it lies. A video arrives as footage, the first untagged recording
 becomes the narrator only if nobody holds that slot, and the status counts what went in:
 "added 2 source(s)", "added 1 of 3 — the rest were already in", "already in the session —
-nothing added". And ⟳ Rescan, at the right end of the header bar
+nothing added". The copy counts on the run bar as it goes — the bar means how much of the import is
+on disk, so it moves with the bytes rather than with the rows — and each accepted file appears in the
+sources list straight away, beside the rows that were already there. And ⟳ Rescan, at the right end of the header bar
 ([F0.11](spec/03-shell.md)): every source whose
 file has gone is dropped from the session and named in the log by the path the row
 shows; narrator slot 1 goes to the first surviving recording, footage only if none
@@ -428,6 +716,21 @@ into a contradiction — two rows in one slot, or footage promised out of an aud
 cleaned as it loads, one log line per change. Language and the frame cadence (Freq) sit
 under the list and write straight through to the session; Style is not in this rewrite —
 the policy sets it from the User Context — and frames are kept at the video's own size.
+
+**The editing policy** ([F0.7](spec/03-shell.md)) is what replaces that missing Style
+dropdown, and you see it by pressing ⚙ on the bottom bar or ⓘ in the title bar.
+The form lists all five fields, each with its value, who set it, and why.
+Who set it is one of three words: `default`, `model`, or `user`.
+With no User Context written, every field sits at its default — retakes marking, a model-chosen cut, and captions, speeds and decorations all on.
+Write some context and the app asks the model (thinking off) to set only the fields your words actually speak to, storing each with the reason it gave, which is the sentence printed under that row.
+A field you set yourself is never overwritten by a later derivation: it keeps your value and reads `set by you`, whatever the model proposes next.
+An empty context stops the derivation entirely rather than inventing a style out of nothing.
+These five switches decide which flows run at all: the marking pass picks retakes, join repair or no marking in Prepare; the cut mode picks the words-derived cut or the model-chosen one; and the three pass switches turn captions, speeds and decorations off so those jobs are never asked.
+Change the marking pass and the marks already made go stale — `retakes.tsv` and `final.txt` hold what the previous pass decided — so Prepare runs the new pass instead of trusting them.
+Re-opening the form re-reads the live policy, so what you see is what the project holds now, not when you last looked.
+The reason sits in its own fourth column beside the value and the source, under a note that the page is the whole §2 catalogue.
+Three buttons sit at the bottom: **Re-derive** asks the model again right now, **Reset to defaults** puts every field back at the shipped default — still open to a later derivation, not frozen as yours — and **Close** dismisses the form.
+A new context is derived from on its own: about half a second after you stop typing in the User Context, before ▶ reads the policy, or whenever you press Re-derive; if the model is unreachable nothing changes and the status line says which one was missing.
 
 ✂ on a row is a wish, spent by ▶. The recording is decoded to 44.1 kHz stereo and sent to
 the separation model in pieces of at most 300 s, each cut moved to a silence rather than
@@ -485,13 +788,23 @@ times the words fence the edge and the sound picks the quietest moment inside th
 that stays followed up to 0.25 s past its own end for a trailing consonant, then the quietest point
 within 0.4 s; without them the envelope alone places it, reaching back up to 0.8 s and leaving 0.05 s at
 the cut, and a stamp with more than half a second of quiet before it stands where it is rather than
-jumping forward onto the next sound.
+jumping forward onto the next sound. The envelopes are read from `cache/waves/<take>.wave`, checked
+against that recording's own size and modification time: a cache made before the file was replaced is
+thrown away rather than trusted, and a take with no cache at all falls back to the word times, so a
+missing envelope never fails the run.
 
 The text itself is open to you: `prepare/transcript/final.txt` is edited in any text editor — there is no
 editor in the app — and the next Cut ▶ notices it is newer than the marks and remakes them from what you
 left in it, asking no model. A word you typed that nobody spoke is left out with a warning, since there is
-no sound for it, and an edit that removes more than 40 % of the words is refused as not an edit, leaving
-nothing marked.
+no sound for it, and an edit that removes more than 40 % of the words is refused as not an edit: nothing
+is marked, the marks that were there stay, and the refusal is what the status line says after the press.
+Either way the remake happens once — the remade `retakes.tsv` is newer than the text from then on, so a
+later ▶ finds no edit to make. The word times this works from are read per source out of
+`prepare/inputs/<base>/words.json`, keyed on the recording's base name without its extension. Join
+marks you leave in the file (`|cut 3|`, `|cut|`) are read as marks, never as words, so leaving them in
+or deleting them gives the same cut; a word nobody spoke counts on top of what you deleted rather than
+standing in for one, so it is dropped with a warning and does not by itself tip the edit past the 40 %
+refusal.
 
 What Prepare leaves behind is the whole record of one read: `prepare/inputs/meta.env` first, whose presence
 is what says the sources were read at all — `INTERVAL` (Freq) and `SCALE`, always `native` so frames keep
@@ -554,6 +867,14 @@ produced. It can be moved, copied or zipped whole.
     inputs/<source>/              voice16k.wav, transcript.{txt,tsv,srt},
                                   words.json, asrchunks.json,
                                   words.aligned.json, turns.json
+    word_list.json                  the session's one word list: every word glued onto
+                                  the session clock, with a word put on almost no
+                                  sound moved to the end of the word before it and
+                                  the fix pass's spelling printed over the recogniser's.
+                                  Times never change after this — only how a word is
+                                  written — so retakes, joins, `final.txt` and the
+                                  captions all read the same words. Written once; a
+                                  re-run keeps it rather than rebuilding.
     inputs/frames/<source>/       one JPEG per interval, named for its second
     describe/<source>/events.tsv  what was on screen, per few seconds
     transcript/
@@ -658,7 +979,10 @@ cd rust && just test    # xvfb-run, GSK_RENDERER=cairo
 same way, where `<screen>` is named after a spec image (`03-window`, `03-sources`,
 `04-prepare`, `05-cut`, ...) and the window is built from the fixture project at
 `rust/fixtures/demo.naivepost`. There is no host display in this container, so
-both recipes are how the app is seen here.
+both recipes are how the app is seen here. A screen that is really a dialog —
+`03-new-confirm`, `03-policy-form`, `03-settings` — paints the dialog itself
+rather than the window behind it, matching its spec image; the settings dialog
+shows blank badge cells there because nothing has been probed in a snapshot run.
 
 `just build` (or `cargo build --release`) produces the standalone binary at
 `rust/target/release/naivepost`, and prints the triple it is building for first.
