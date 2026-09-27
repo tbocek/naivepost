@@ -2,7 +2,10 @@
 //!
 //! ⏩ Speed turns a marked stretch into a clock and a bare red line into a stop; the form settles the rate, what
 //! its sound does, and the two ramps. Every one of those answers is arithmetic or a quoted sentence, so all of it
-//! lives here and the widget layer will only forward presses (`rust/src/ui/window.rs` renders only Prepare today).
+//! lives here. The widget layer forwards and holds no rule: `rust/src/ui/window.rs` routes the dropdown's ⏩ Speed
+//! row through `press_speed_item` (→ [`press`] / [`initial`], which opens the form but records nothing), draws the
+//! "Speed a – b" fields from this module's own lists, and applies them in `press_speed_apply` (→ [`apply`] +
+//! `record_edit`, so one ↶ takes the speed back).
 //!
 //! Two readings of a speed exist on purpose and this module holds the render's: overlapping rates AVERAGE per span
 //! and ramps become stairs. The preview keeps its own flat, first-covering-effect reading in
