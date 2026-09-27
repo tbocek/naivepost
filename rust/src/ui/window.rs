@@ -4696,6 +4696,20 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     policy_button.set_tooltip_text(Some(policy_form::OPEN_TIP));
     run_row.append(&policy_button);
     wire_policy(&policy_button, &window);
+    // F3.9's ✐ Captions lives on THIS bar, not on the Cut toolbar: §05 #1-screen pins that toolbar to six
+    // declared groups (`cut_screen::TOOLBAR_GROUPS`), and F3.9 names no §1 item, so its control cannot join
+    // that order without inventing a seventh group the inventory does not list. A caption pass is a JOB run
+    // after the cut, which is what this row is for -- beside ▶ / ⏹ / 🎲 / ⚙, the other things you start.
+    // Created once per window here (before any lookup) so re-entering the tab cannot stack a second button;
+    // the widget NAME is unchanged from the toolbar attempt, so tests and snapshots find it where they always did.
+    let captions = gtk::Button::with_label(CAPTIONS_PASS_LABEL);
+    captions.set_widget_name("captions-pass-button");
+    captions.set_tooltip_text(Some(
+        "ask the model for captions over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
+    ));
+    run_row.append(&captions);
+    refresh_captions_gate(&window);
+    wire_captions_pass(&captions, &window);
     run_row.append(&progress);
 
     wire_play(
@@ -4929,22 +4943,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     if let Some(review_) = review_cuts_button(&window) {
         wire_review_cuts(&review_, &window);
     }
-    // F3.9: the captions pass sits beside ▶✂✂ because both act on the cut that has just been made. Built
-    // lazily by name so the toolbar keeps its declared order and this control needs no edit to `cut_screen`'s
-    // frozen button tables (§1 lists the transport group; F3.9 adds no §1 item).
-    if let Some(captions) = captions_pass_button(&window) {
-        wire_captions_pass(&captions, &window);
-    } else if let Some(toolbar) = find_widget_by_name(window.upcast_ref(), "cut-toolbar")
-        .and_then(|node| node.downcast::<gtk::Box>().ok())
-    {
-        let made = gtk::Button::with_label(CAPTIONS_PASS_LABEL);
-        made.set_widget_name("captions-pass-button");
-        made.set_tooltip_text(Some(
-            "ask the model for captions over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
-        ));
-        toolbar.append(&made);
-        wire_captions_pass(&made, &window);
-    }
+    // F3.9's ✐ Captions is wired where it is BUILT -- in the run-bar row above, next to the other jobs -- and
+    // deliberately NOT appended into `cut-toolbar`: §05 #1-screen asserts that bar holds exactly the six
+    // groups `cut_screen::TOOLBAR_GROUPS` declares, in that order, and F3.9 adds no §1 item to any of them.
+    // Only the gate is refreshed here, because the policy may have moved since the page was built.
+    refresh_captions_gate(&window);
     // F2.4 S4: this window's line slot, registered with the others so the newest window is the live
     // one. The project root DOES reach the page — `session_root` above is what the cut was loaded from —
     // so the saved position is restored here rather than starting at zero: `cut_line::restore` keeps it
