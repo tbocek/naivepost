@@ -13,6 +13,8 @@ use gtk4 as gtk;
 use crate::add_sources;
 use crate::bench;
 use crate::cut::{self, Cut};
+use crate::cut_effect_decisions;
+use crate::fx_record;
 use crate::cut_cards;
 use crate::cut_cam;
 use crate::cut_hear;
@@ -292,7 +294,7 @@ fn page_box(
         effect_button.set_widget_name("effect-button");
         effect_button.set_label("\u{271a} Effect");
         effect_button.set_tooltip_text(Some(cut_screen::EFFECT_MENU_TIP));
-        let effect_menu = cut_effect_menu();
+        let effect_menu = cut_effect_menu(&main_window());
         effect_button.set_popover(Some(&effect_menu));
         let effects = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         effects.set_widget_name("group-effects");
@@ -433,7 +435,7 @@ fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insensitive: boo
 /// so a test finds `effect-item-zoom` whether or not the popover was ever popped. Built as a Box of
 /// buttons rather than a `PopoverMenu` because a menu model cannot be inspected by name under
 /// `GSK_RENDERER=cairo` — the flat rows keep the same names and the same order.
-fn cut_effect_menu() -> gtk::Popover {
+fn cut_effect_menu(window: &adw::ApplicationWindow) -> gtk::Popover {
     let popover = gtk::Popover::new();
     let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
     list.set_widget_name("effect-menu");
@@ -443,10 +445,42 @@ fn cut_effect_menu() -> gtk::Popover {
         let row = gtk::Button::with_label(item.label);
         row.set_widget_name(item.name);
         row.set_tooltip_text(Some(&format!("add a {} effect", item.tip)));
+        // The rule lives in `press_effect_item`; this closure parses the row's own kind id, calls that
+        // one function and prints the sentence it returns. Nothing else.
+        let owner = window.clone();
+        let kind_id = item.tip.to_string();
+        row.connect_clicked(move |_| {
+            let Some(kind) = cut::Fx::parse_kind(&kind_id) else {
+                return;
+            };
+            let say = press_effect_item(&owner, kind);
+            if let Some(status) = find_widget_by_name(owner.upcast_ref(), "status-line")
+                .and_then(|w| w.downcast::<gtk::Label>().ok())
+            {
+                status.set_text(&say);
+            }
+        });
         list.append(&row);
     }
     popover.set_child(Some(&list));
     popover
+}
+
+/// §06-effects#1-record: record one effect of this kind on this window's cut.
+///
+/// One call to `fx_record::record_into` (which lays down a record carrying exactly the columns §1 gives
+/// the kind), then the same save path `save_insert_cut` uses, then `record_edit` so F2.13's Undo covers
+/// the addition — never `seed_review_cut`, which would publish without recording and leave the new bar
+/// un-undoable. Returns the sentence the status line shows.
+pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind) -> String {
+    let mut cut_ = review_cut_of(window);
+    // The red line, read the way Paste reads it: the live preview's playhead if one is going, else the
+    // saved line position. No new position store — the line already has one owner.
+    let at = paste_line(window);
+    fx_record::record_into(&mut cut_, kind, at, fx_record::NEW_EFFECT_SECONDS);
+    save_insert_cut(&cut_);
+    record_edit(window, &cut_);
+    fx_record::recorded_status(kind)
 }
 
 /// The form column as the page sits idle (§1's "Form column", §A's "Idle rows"). A Grid named

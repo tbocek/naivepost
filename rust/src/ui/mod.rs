@@ -155,6 +155,7 @@ pub use window::press_insert;
 pub use window::press_insert_apply;
 pub use window::note_place;
 pub use window::refresh_insert_button;
+pub use window::press_effect_item;
 pub use window::press_add;
 pub use window::press_delete_key;
 pub use window::press_remove;

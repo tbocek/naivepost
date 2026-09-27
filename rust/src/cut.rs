@@ -345,6 +345,12 @@ impl Fx {
         EffectKind::parse(&self.kind)
     }
 
+    /// The kind behind a stored kind id — the public door onto the private `parse`, for callers that hold
+    /// the id rather than an `Fx` (the effects dropdown's rows carry it as their `tip`).
+    pub fn parse_kind(id: &str) -> Option<EffectKind> {
+        EffectKind::parse(id)
+    }
+
     /// The window it covers on the timeline: `dur` already includes the fades, so the
     /// bar runs exactly this wide (06-effects.md §1).
     pub fn spans(&self) -> (f64, f64) {

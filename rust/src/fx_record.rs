@@ -191,3 +191,134 @@ pub fn words(fx: &Fx) -> &str {
 pub fn drawing(fx: &Fx) -> &str {
     &fx.src
 }
+
+// --- creating a record: the mirror of `uses` -------------------------------------------------------------------
+
+/// The length a hand-added effect starts with, so its bar is visible before F3.8 resizes it.
+/// `record.newEffectSeconds` — §10 gives this no `P.` id, so it carries a bare prefix like
+/// `machine.jpegQuality`.
+///
+/// DECISION (§1 records no starting length of its own, only "total length incl. fades"): the by-hand
+/// flows F3.1–F3.7 each set a length as part of laying the effect down, but the ✚ Effect dropdown has to
+/// land something the person can see and grab, so the default lives here with the record rather than in
+/// each flow's callback.
+pub const NEW_EFFECT_SECONDS: f64 = 2.0;
+
+/// The kind spelled the way `cut.json` writes it — [`crate::cut::EffectKind::parse`]'s table read
+/// backwards. `"speed"`, never `"stop"`: §1 says a stop is a rate of nought, and `parse` folds both
+/// spellings into Speed, so writing `"stop"` would put a second name on one kind.
+fn spell(kind: EffectKind) -> &'static str {
+    match kind {
+        EffectKind::Zoom => "zoom",
+        EffectKind::Speed => "speed",
+        EffectKind::Text => "text",
+        EffectKind::Svg => "svg",
+        EffectKind::Volume => "volume",
+        EffectKind::Label => "label",
+    }
+}
+
+/// The word a person reads for this kind — the same words the `EFFECT_ITEMS` labels carry
+/// (`src/cut_screen.rs`), so the status line and the dropdown cannot disagree about what was added.
+pub fn label_of(kind: EffectKind) -> &'static str {
+    match kind {
+        EffectKind::Zoom => "Zoom",
+        EffectKind::Speed => "Speed",
+        EffectKind::Text => "Text",
+        EffectKind::Svg => "SVG",
+        EffectKind::Volume => "Volume",
+        EffectKind::Label => "Label",
+    }
+}
+
+/// The JSON key a [`Field`] is written under. Kept beside `json_key`'s caller rather than derived from
+/// the enum's name so a renamed field cannot silently change the file format.
+fn json_key(field: Field) -> &'static str {
+    match field {
+        Field::Dur => "dur",
+        Field::Trans => "trans",
+        Field::Tout => "tout",
+        Field::Ease => "ease",
+        Field::Cx => "cx",
+        Field::Cy => "cy",
+        Field::Hf => "hf",
+        Field::Wf => "wf",
+        Field::Stay => "stay",
+        Field::Rate => "rate",
+        Field::Snd => "snd",
+        Field::Gain => "gain",
+        Field::Words => "text",
+        Field::Source => "src",
+        Field::Cam => "cam",
+        Field::Lane => "lane",
+    }
+}
+
+/// §06-effects#1-record: creating a record — the mirror of [`uses`].
+///
+/// A brand-new effect carries ONLY what §1's table gives its kind: `t`, `dur`, the kind, and nothing
+/// else. Every other field stays at the value its `skip_serializing_if` skips, which is why a fresh
+/// record costs its kind's keys and no others — and why a caption with no box still reads as the lower
+/// third through [`Fx::centre`] instead of being stored there.
+pub fn blank(kind: EffectKind, at: f64, dur: f64) -> Fx {
+    Fx { kind: spell(kind).to_string(), t: at, dur, ..Default::default() }
+}
+
+/// §1's column rule stated as a check: for a freshly recorded effect of this kind, a field the table marks
+/// `–` costs no key in the serialised record.
+///
+/// Only the DENIAL half is checked, and that is deliberate: the storage skips a field at its neutral value,
+/// so a field the table *grants* also costs nothing until the hand sets it — a zoom with no fades writes no
+/// `trans`, and a volume on the whole bed writes no `lane`. What must never happen is a `–` row arriving in
+/// the file, because reading such a key back would give a kind an answer §1 denies it. The granted columns are
+/// proven by [`uses`] and by the defaults they read to (see `Fx::centre` for a boxless caption).
+///
+/// This is why `blank` adds nothing beyond time, length and kind rather than filling each column by hand: a
+/// new column in §1's table cannot land in the file for a kind that has no right to it.
+pub fn recorded_keys_are_the_kinds_own(kind: EffectKind, dur: f64) -> bool {
+    let value = match serde_json::to_value(blank(kind, 0.0, dur)) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let Some(map) = value.as_object() else { return false };
+    // `kind` and `t` are always written: an effect that is no kind or happens at no second is not a record.
+    if map.get("kind").and_then(|v| v.as_str()) != Some(spell(kind)) || !map.contains_key("t") {
+        return false;
+    }
+    [
+        Field::Dur,
+        Field::Trans,
+        Field::Tout,
+        Field::Ease,
+        Field::Cx,
+        Field::Cy,
+        Field::Hf,
+        Field::Wf,
+        Field::Stay,
+        Field::Rate,
+        Field::Snd,
+        Field::Gain,
+        Field::Words,
+        Field::Source,
+        Field::Cam,
+        Field::Lane,
+    ]
+    .into_iter()
+    // A field the table grants may be present or absent depending on its value (the storage skips neutral
+    // values), so only the denial is checkable here: a `–` row must never reach the file.
+    .all(|field| uses(kind, field) || !map.contains_key(json_key(field)))
+}
+
+/// Add one record of this kind to the cut and hand it back, so the caller can place or report it
+/// without reaching into `cut.fx`.
+pub fn record_into(cut: &mut crate::cut::Cut, kind: EffectKind, at: f64, dur: f64) -> Fx {
+    let made = blank(kind, at, dur);
+    cut.fx.push(made.clone());
+    made
+}
+
+/// What the page says after recording one. The undo clause is not decoration: recording goes through
+/// `ui::record_edit`, so ↶ does take it back (F2.13).
+pub fn recorded_status(kind: EffectKind) -> String {
+    format!("{} recorded \u{2014} \u{21b6} Undo takes it back", label_of(kind))
+}
