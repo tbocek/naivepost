@@ -5,8 +5,13 @@
 //! that only has one shape, the same `clampFades` when two overrunning fades have to share a band. What differs is
 //! the order of the questions — ▨ SVG asks for the file *first*, before it arms, because arming someone to place a
 //! drawing they have not chosen yet puts the box down for nothing — and where an untouched drawing lands: the middle
-//! rather than the lower third, since a drawing is as often the subject as a decoration and the middle is the one
-//! place that is not a guess about which. `rust/src/ui/window.rs` renders only Prepare today, so nothing here draws.
+//! rather than the middle, since a drawing is as often the subject as a decoration and the middle is the one
+//! place that is not a guess about which. The widget layer holds no rule: `rust/src/ui/window.rs` routes the
+//! dropdown's ▨ SVG row through `press_svg_item` (→ [`press`], which opens the chooser or refuses and records
+//! nothing), answers the dialog in `svg_chosen` (→ [`chose`], which arms and never toggles off), dispatches the
+//! preview's single left-button drag by which entry is armed (→ [`place`], via `svg_drag_ended_with_source`),
+//! draws the "SVG at m:ss" fields from this module's own lists (`show_svg_form`), and applies them in
+//! `press_svg_apply` (→ [`apply`] + `record_edit`, so one ↶ takes the drawing back).
 
 use std::collections::HashMap;
 use std::path::Path;
