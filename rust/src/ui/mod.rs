@@ -128,6 +128,21 @@ pub use window::press_watch_row;
 pub use window::refresh_camera_rows;
 // F2.10: the named row box and its per-row controls, so a widget test can find them by name.
 pub use window::camera_rows_box;
+// F2.11: the fold badges and the two ✕, drawn as named widgets and forwarded by these seams.
+pub use window::fold_badges_box;
+pub use window::fold_gaps;
+pub use window::folded_gap_at;
+pub use window::press_fold_all;
+pub use window::press_fold_gap;
+pub use window::press_lane_cross;
+pub use window::press_row_cross;
+pub use window::refresh_fold_badges;
+// F2.11: what the session filmed, which is NOT the kept segments — a dropped stretch only exists inside
+// a run longer than the clips kept in it, so the fold half reads this list (see `page_recordings`).
+pub use window::page_recordings;
+pub use window::set_session_recordings;
+// F2.11: the whole cut (folds included) as the page holds it, for a test that fired a real widget.
+pub use window::review_fold_rows;
 pub use window::toggle_button;
 pub use window::line_click_gesture;
 pub use window::held_effect;

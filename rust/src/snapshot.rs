@@ -128,6 +128,34 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             ui::press_watch_row(&window, 1);
             ui::refresh_camera_rows(&window);
         }
+        // F2.11's own picture (`spec/img/05-fold.png`) is a WIDE dropped stretch folded to a seam. The
+        // demo fixture cannot show one: its `cut/cut.json` keeps 0-9.5, 10-30 and 40-70 out of a tape
+        // whose only filmed gap is 0.5 s = 2 px at the snapshot zoom, under `cut_fold::FOLD_MIN_PX`, so
+        // no badge would be drawn at all. Laid out here instead -- the shared fixture file untouched:
+        // the session filmed 0-120 as one take (that is what gives head/hole/tail anywhere to exist, see
+        // `ui::page_recordings`), two clips are kept, the 30-40 hole is FOLDED so the bars meet at a
+        // seam with a `+` on it, and the 60-120 tail is left open wearing a `-`.
+        if screen == "05-cut" || screen == "05-fold" {
+            let mut folded = cut::Cut::default();
+            folded.segs = vec![
+                cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
+                cut::Seg { s: 40.0, e: 60.0, cam: 0, ..Default::default() },
+            ];
+            ui::set_session_recordings(&[crate::timeline::Recording {
+                base: "session-tape".to_string(),
+                start: 0.0,
+                end: 120.0,
+            }]);
+            ui::seed_review_cut(&window, &folded);
+            // The badge table only exists once the badges have been DRAWN (`refresh_fold_badges` is what
+            // records which gap each numbered button stands for), so a fold requested before that first
+            // draw has no index to fold — press the fold BEFORE refreshing, then refresh once.
+            ui::refresh_fold_badges(&window);
+            // One fold already applied, so the shot shows BOTH states at once: `+` waiting on the seam
+            // where 0:30-0:40 was folded away, `-` over the still-open tail.
+            ui::press_fold_gap(&window, 1);
+            ui::refresh_camera_rows(&window);
+        }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.

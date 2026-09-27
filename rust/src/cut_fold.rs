@@ -13,9 +13,10 @@
 //! fold as a distance. Being a view does not mean being unsaved: `folds` goes into `cut.json` on every toggle
 //! and comes back on open, because where someone was working is worth more than a clean file.
 //!
-//! No UI lives here and none is wired: `rust/src/ui/window.rs` renders only the Prepare page, so there are no −
-//! and + badges, no gutter badge and no row ✕ to attach yet (as with F2.1–F2.10), and nothing of this flow to
-//! compare against `spec/img/05-fold.png`. The widget layer will forward the presses and print what these return.
+//! No rule lives in the widget layer: `rust/src/ui/window.rs` draws the − / + badges, the gutter's fold-all
+//! badge and the two ✕ as NAMED widgets (`fold-button-<i>`, `fold-all-button`, `row-cross-<n>`,
+//! `lane-cross-<name>`), each forwarding to a function here and printing the sentence that comes back. See
+//! `ui::refresh_fold_badges` for the drawing half.
 
 use crate::cut::{Cut, Seg};
 use crate::cut_hear;
