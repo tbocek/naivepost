@@ -4,7 +4,11 @@
 //! the form is where the words are typed, and typing them is what places the caption. Everything below is
 //! arithmetic or a quoted sentence — including the layout (§S4), which is deliberately an estimate over an average
 //! character width rather than a font measurement so that the preview and the render come to the same size to the
-//! last decimal. `rust/src/ui/window.rs` renders only Prepare today, so nothing here draws anything.
+//! last decimal. The widget layer holds no rule: `rust/src/ui/window.rs` routes the dropdown's ❝ Text row through
+//! `press_text_item` (→ [`arm`], which arms the gesture and records nothing), dispatches the preview's single
+//! left-button drag by which entry is armed (→ [`place`], via `text_drag_ended_with_source`), draws the
+//! "Text at m:ss" fields from this module's own lists (`show_text_form`), and applies them in `press_text_apply`
+//! (→ [`apply`] + `record_edit`, so one ↶ takes the caption back).
 
 use crate::cut::Fx;
 use crate::cut_speed;
@@ -100,7 +104,10 @@ pub fn arm_words(marked: Option<(f64, f64)>) -> String {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Press {
     Armed,
-    #[allow(dead_code)] // nothing draws yet (headless): the thin UI will clear the arm with this
+    // Consumed by the wire: `press_text_item`'s Disarmed branch clears `TEXT_ARMED` and hides the form when the
+    // same entry is pressed a second time. The allowance stays only because this variant carries no data for the
+    // module's own tests to assert on beyond equality -- the behaviour it drives is proven widget-side.
+    #[allow(dead_code)]
     Disarmed,
 }
 
