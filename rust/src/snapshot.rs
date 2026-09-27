@@ -240,6 +240,83 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // "Zoom picked up" sentence the lane prints.
             ui::press_effect_bar(&window, 0, 100.0, 200.0, 20.0, false);
         }
+        // §07-narrate's own picture (`spec/img/07-narrate.png`) is FOUR written lines with the app's own
+        // times, estimates and one red fit warning. The fixture cannot show them: `fixtures/demo.naivepost`
+        // carries no `narrate/narration.json`, so a bare shot of the page draws an empty lines column.
+        // Seeded here the way `06-lane` seeds its bars -- the shared fixture file untouched -- through the
+        // page's own publish door (`set_state` + `refresh`), which is what every flow calls after it edits
+        // the narration; the rows are then drawn by `draw_rows` from these entries, not painted here.
+        if screen == "07-narrate" {
+            let mut state = ui::NarrateState::default();
+            // Four clips, one line each, laid out on the spec image's seconds. `s`/`e` are the clip bounds
+            // copied from the cut (§4), `at` the placement inside the clip, so the row's time reads
+            // `s + at` as `time_field` spells it: 3.5, 43.6, 102.2 and 439.1.
+            state.entries = vec![
+                crate::narration::Entry {
+                    s: 3.0,
+                    e: 28.0,                    at: 0.5,
+                    text: "Welcome back: lecture two of the blockchain series is all about Ethereum."
+                        .into(),
+                    emotion: "calm".into(),
+                    // `pos` stays empty on purpose: a non-empty one makes `status` answer `Caption`, which
+                    // prints the caption sentence and hides the estimated end time §1's rows show.
+                    ..Default::default()
+                },
+                crate::narration::Entry {
+                    s: 30.0,
+                    e: 70.0,
+                    at: 13.6,
+                    text: "First a quick look back at Bitcoin, and at what a 51 percent attack really costs.".into(),
+                    emotion: "happy=0.6, calm=0.4".into(),
+                    ..Default::default()
+                },
+                crate::narration::Entry {
+                    s: 90.0,
+                    e: 140.0,
+                    at: 12.2,
+                    text: "Then the Ethereum basics: gas, smart contracts, accounts and the architecture behind them.".into(),
+                    emotion: "curious".into(),
+                    ..Default::default()
+                },
+                // Long enough at `SPEECH_CHARS_PER_SECOND` to run past its clip, so the last row wears the
+                // red mark and prints `fit_warning`'s overrun sentence -- the thing §1's item 21 shows.
+                crate::narration::Entry {
+                    s: 435.0,
+                    e: 445.0,
+                    at: 4.1,
+                    text: "And right at the end of this clip, a long line that will not fit: the page warns that it runs past the clip before anything is spoken, so it can be rewritten shorter.".into(),
+                    emotion: "excited".into(),
+                    ..Default::default()
+                },
+            ];
+            // The clips these lines hang on, copied from the entries' own bounds: `shell::refit`, which
+            // runs when the page is entered, orphans a line whose clip no longer exists (and an orphaned
+            // line reads as one the cut threw away). A snapshot that wants four rows therefore has to show
+            // four kept clips, which is what §1's image shows too.
+            state.segs = state
+                .entries
+                .iter()
+                .map(|entry| cut::Seg {
+                    s: entry.s,
+                    e: entry.e,
+                    cam: 0,
+                    ..Default::default()
+                })
+                .collect();
+            state.voice = "narrator1".into();
+            state.takes = vec![(1.0, 6.0)];
+            state.pitch = 0.0;
+            state.clips = 4;
+            state.length = 480.0;
+            state.has_cut = true;
+            state.has_timeline = true;
+            state.narrators = 1;
+            // The clock reads where the shot's line sits, so the two faces agree with the rows below them.
+            state.session = 40.0;
+            state.cut_at = 33.0;
+            ui::set_state(state);
+            ui::refresh(&window);
+        }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.
@@ -289,8 +366,10 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // unreadable narrow column when nothing asks for width. `05-cut` reaches a wide layout today only
             // because its fold/camera-row refreshes happen to widen it; the `06-*` screens never do. A
             // default size before `present()` is enough to inspect the page -- no shell relayout.
-            if screen_page(&screen) == Some("Cut") {
-                window.set_default_size(1240, 900);
+            if screen_page(&screen) == Some("Cut") || screen_page(&screen) == Some("Narrate") {
+                // 1280x800 rather than the Cut page's 1240x900: at 900 the Narrate shot renders ~3000 px
+                // tall and every control reads as a hairline. This is closer to §1's own screenshot ratio.
+                window.set_default_size(1280, 800);
             }
             window.present();
         }

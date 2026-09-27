@@ -558,3 +558,26 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
         "{foreign:?}"
     );
 }
+
+// --- S15: the lines column's empty state (§1's number 20, `no narration lines yet`) -------------------
+
+/// §07-narrate#1-screen — with nothing written the column still says so. An empty list box reads as a panel
+/// that failed to fill; the note is what makes it read as "nothing yet", and it names the ＋ that changes it.
+#[test]
+fn sec_07_narrate_1_screen_s15_the_empty_lines_column_says_so_and_names_the_button_that_fills_it() {
+    let note = page::no_lines_note();
+    assert!(
+        note.starts_with("no narration lines yet"),
+        "the empty state must open by saying there are no lines, got {note:?}"
+    );
+    // The full-width plus is the same glyph the page draws its add-line buttons with, so the note points at
+    // the control the reader can actually press rather than at an icon they have to recognise.
+    assert!(
+        note.contains('\u{ff0b}'),
+        "the note must name the \u{ff0b} that puts a line at the playhead, got {note:?}"
+    );
+    assert!(
+        note.contains("playhead"),
+        "the note must say where the new line lands, got {note:?}"
+    );
+}

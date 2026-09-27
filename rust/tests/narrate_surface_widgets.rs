@@ -30,6 +30,10 @@ static RAN_TAKE_BAND: AtomicBool = AtomicBool::new(false);
 static RAN_SAMPLE: AtomicBool = AtomicBool::new(false);
 static RAN_PITCH: AtomicBool = AtomicBool::new(false);
 static RAN_READOUTS: AtomicBool = AtomicBool::new(false);
+static RAN_VOICE_PICKER: AtomicBool = AtomicBool::new(false);
+static RAN_BACK_CLAMP: AtomicBool = AtomicBool::new(false);
+static RAN_LAST_ROW: AtomicBool = AtomicBool::new(false);
+static RAN_PITCH_DEBOUNCE: AtomicBool = AtomicBool::new(false);
 
 fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
@@ -496,6 +500,107 @@ fn narrate_round(app: &adw::Application) {
     window.close();
     settle();
 
+    // --- (10) the voice picker shows the published voice's row, not row 0 ----------------------
+    // The dropdown is unlabelled and carries the chosen voice as its own face, so "which row is showing"
+    // IS the answer to who speaks. `base_state` has no voice set; publishing `narrator1` and refreshing
+    // must move the shown row to that option's index rather than leaving it on `captions`.
+    let mut voiced = base_state();
+    voiced.voice = "narrator1".into();
+    let window = narrate_page(app, voiced.clone());
+    ui::refresh(&window);
+    settle();
+    let picker = widget_in(&window, "voice-picker")
+        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        .expect("the Narrate page carries the voice picker");
+    let files: Vec<&str> = voiced.voice_files.iter().map(String::as_str).collect();
+    let wanted = narrate_screen::voice_options(voiced.narrators, &files)
+        .iter()
+        .position(|option| option.id == "narrator1")
+        .expect("narrator1 is one of the picker's rows");
+    assert_eq!(
+        picker.selected() as usize,
+        wanted,
+        "the row shown is the seeded voice's index ({wanted}), not row 0"
+    );
+    assert_ne!(
+        picker.selected(),
+        0,
+        "row 0 is `captions`; a published narrator left on row 0 means the picker never followed the state"
+    );
+    RAN_VOICE_PICKER.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
+
+    // --- (11) back three seconds clamps at zero and forward walks back off it -------------------
+    let mut near_start = base_state();
+    near_start.session = 1.0;
+    near_start.cut_at = 1.0;
+    let window = narrate_page(app, near_start);
+    button(&window, "narrate-back-3s").emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(
+        ui::read_state().session,
+        0.0,
+        "back past the head stops at 0 rather than going negative"
+    );
+    button(&window, "narrate-forward-3s").emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert!(
+        (ui::read_state().session - narrate_screen::BACK_SECONDS).abs() < 1e-9,
+        "forward from the clamp moves by exactly BACK_SECONDS"
+    );
+    RAN_BACK_CLAMP.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
+
+    // --- (12) the LAST seeded row's ▶ and 🗑 fire by name -------------------------------------
+    // Rows are rebuilt whole and sorted, so the highest index is the last entry's buttons; firing them
+    // proves the wiring tracks the rebuilt list rather than the first build's indices.
+    let window = narrate_page(app, base_state());
+    button(&window, "line-speak-2").emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(
+        status_text(&window),
+        ui::press_line_speak(&window, 2),
+        "the row's ▶ printed what the seam answers for that index"
+    );
+    let before = ui::read_state().entries.len();
+    button(&window, "line-remove-2").emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(
+        ui::read_state().entries.len(),
+        before - 1,
+        "🗑 on the last row took it out of the list"
+    );
+    RAN_LAST_ROW.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
+
+    // --- (13) the pitch slider's debounce writes the clamped value through the widget ---------
+    // Block (8) drives `press_pitch` directly; this one moves the real `Scale`, which is the path a drag
+    // takes, and waits out PITCH_APPLY_MS so the deferred write is the thing being checked.
+    let mut voiced = base_state();
+    voiced.voice = "narrator1".into();
+    let window = narrate_page(app, voiced);
+    let scale = widget_in(&window, "pitch-slider")
+        .and_then(|w| w.downcast::<gtk::Scale>().ok())
+        .expect("the Narrate page carries the pitch slider");
+    scale.set_value(narrate_screen::PITCH_MAX_SEMITONES + 4.0);
+    let context = glib::MainContext::default();
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(narrate_screen::PITCH_APPLY_MS + 400);
+    while ui::read_state().pitch.abs() < 1e-9 && std::time::Instant::now() < deadline {
+        context.iteration(true);
+    }
+    assert!(
+        (ui::read_state().pitch - narrate_screen::PITCH_MAX_SEMITONES).abs() < 1e-9,
+        "a value past the top lands clamped at +6.0 after the {} ms debounce",
+        narrate_screen::PITCH_APPLY_MS
+    );
+    RAN_PITCH_DEBOUNCE.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
+
     // --- (9) the two readouts -------------------------------------------------------------------
     let window = narrate_page(app, base_state());
     assert_eq!(
@@ -555,4 +660,20 @@ fn sec_07_narrate_1_surface_the_narrate_page_reaches_its_rules() {
     assert!(RAN_SAMPLE.load(Ordering::SeqCst), "the sample ladder never ran");
     assert!(RAN_PITCH.load(Ordering::SeqCst), "the pitch clamp never ran");
     assert!(RAN_READOUTS.load(Ordering::SeqCst), "the readouts never ran");
+    assert!(
+        RAN_VOICE_PICKER.load(Ordering::SeqCst),
+        "the voice picker block never ran"
+    );
+    assert!(
+        RAN_BACK_CLAMP.load(Ordering::SeqCst),
+        "the back-clamp block never ran"
+    );
+    assert!(
+        RAN_LAST_ROW.load(Ordering::SeqCst),
+        "the last row's speak/remove block never ran"
+    );
+    assert!(
+        RAN_PITCH_DEBOUNCE.load(Ordering::SeqCst),
+        "the pitch slider's debounce path never ran"
+    );
 }

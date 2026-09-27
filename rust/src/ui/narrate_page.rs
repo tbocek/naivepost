@@ -92,15 +92,42 @@ fn mutate<T>(f: impl FnOnce(&mut NarrateState) -> T) -> T {
 
 // --- the surface -------------------------------------------------------------------------------------
 
+thread_local! {
+    static PAGE_CSS_LOADED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The page's own ground colour, installed once per process the way `window.rs::install_lane_css_once`
+/// installs the lane's palette. Both the preview frame and the take band are `DrawingArea`s whose paint
+/// belongs to a draw handler this build does not have yet, so without a background they render as the
+/// window's own grey and read as empty space rather than as a picture and a waveform lane.
+fn install_page_css_once() {
+    if PAGE_CSS_LOADED.with(|cell| cell.get()) {
+        return;
+    }
+    let css = ".narrate-plate { background-color: #1c1c1d; border: 1px solid #000000; }\n";
+    let provider = gtk::CssProvider::new();
+    let _ = provider.load_from_data(css);
+    gtk::StyleContext::add_provider_for_display(
+        &gtk::gdk::Display::default().expect("a display to style"),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+    PAGE_CSS_LOADED.with(|cell| cell.set(true));
+}
+
 /// Build the whole page. Called from `page_box` once per window for the Narrate tab.
 pub fn build() -> gtk::Widget {
+    install_page_css_once();
     let split = gtk::Paned::new(gtk::Orientation::Horizontal);
     // §A.1: 560 px to the left pair, the window's extra width going to the lines.
     split.set_position(560);
     split.set_wide_handle(true);
 
     let left = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    left.set_hexpand(false);
+    // Fills the paned's 560 px rather than hugging its children: with `false` here nothing in the column
+    // asked for width, so GTK gave the column its natural (~140 px) size and every control below was cut
+    // off at the fold.
+    left.set_hexpand(true);
 
     // **1** the Narration tick.
     let tick = gtk::CheckButton::with_label(narrate_off::TICK_LABEL);
@@ -113,11 +140,24 @@ pub fn build() -> gtk::Widget {
     let preview = gtk::Box::new(gtk::Orientation::Vertical, 0);
     preview.set_widget_name("narrate-preview");
     preview.set_size_request(240, 135);
-    preview.set_halign(gtk::Align::Start);
+    // NOT `Start`: the frame is a fixed-size box inside a column that is itself only as wide as its widest
+    // child, so `Start` left it at its minimum width and the whole left column collapsed to ~140 px while
+    // the picture became an invisible sliver. `Fill` makes the column take the paned's 560 px and the
+    // frame fill them at its own 16:9 shape.
+    preview.set_halign(gtk::Align::Fill);
     preview.set_tooltip_text(Some("The finished frame with the narration mixed over the cut's sound"));
     let picture = gtk::DrawingArea::new();
     picture.set_widget_name("narrate-picture");
-    picture.set_vexpand(true);
+    // NOT `vexpand`, and it needs a size of its own as well: the box's 135 px is a MINIMUM, not a cap, so
+    // an expanding child soaked up the paned's whole height and the "16:9 frame" rendered ~1170 px tall.
+    // Dropping the expansion alone was not enough either — with no natural height and no request, GTK gave
+    // the area 2 px inside the 135 px box. The explicit request makes the plate the frame it claims to be.
+    picture.set_vexpand(false);
+    picture.set_size_request(240, 135);
+    // The plate the frame is cut out of: a bare `DrawingArea` paints nothing until a
+    // `connect_draw` handler exists (there is none anywhere in `src/`), so headless and live alike the
+    // frame was invisible. CSS gives it the dark 16:9 field with a stroke, which is what §2's image shows.
+    picture.add_css_class("narrate-plate");
     preview.append(&picture);
     left.append(&preview);
 
@@ -177,6 +217,15 @@ pub fn build() -> gtk::Widget {
     ]);
     picker.set_widget_name("voice-picker");
     picker.set_tooltip_text(Some(&narrate_screen::sample_tip()));
+    // The row shown is the chosen voice's, spelled by `voice_options` rather than hardcoded: the spec's
+    // shot has the picker carrying `Narrator 1 — 2026-09-16 18-43-01.mkv` as its own face. A number
+    // outside the list leaves the dropdown on its first row, so this cannot crash on an empty state.
+    if let Some(row) = narrate_screen::voice_options(1, &[])
+        .iter()
+        .position(|option| option.id == read_state().voice)
+    {
+        picker.set_selected(row as u32);
+    }
     left.append(&picker);
 
     // **8** the take band's ＋ − ▶ and **9** Add file….
@@ -206,6 +255,9 @@ pub fn build() -> gtk::Widget {
     band.set_widget_name("take-band");
     band.set_size_request(240, narrate_screen::BAND_LANE_PX as i32);
     band.set_tooltip_text(Some(narrate_screen::band_status(&[])));
+    // Same reason as the preview's plate above: no draw handler, so the lane needs its own painted ground
+    // or the take marks have nothing to be drawn over.
+    band.add_css_class("narrate-plate");
     left.append(&band);
 
     // **11** the sample sentence, **12** its ▶ ⏹ ⟳, **13** the pitch slider.
@@ -243,8 +295,25 @@ pub fn build() -> gtk::Widget {
 
     // **14–21** the lines column: one row per entry, sorted by clip then offset.
     let scroller = gtk::ScrolledWindow::new();
-    scroller.set_policy(gtk::PolicyType::External, gtk::PolicyType::Automatic);
+    // BOTH axes `Automatic`, not `External`: `External` tells GTK that some other code owns the vertical
+    // adjustment and feeds the scrolled window through it. Nothing here does — no scrollbar widget, no
+    // `vadjustment` wiring — so the list was never laid out as a scrollable area and only its first row
+    // appeared however many entries were published. `Automatic` lets the window build and manage its own.
+    scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     scroller.set_hexpand(true);
+    scroller.set_vexpand(true);
+    // Bounded content height: an unbounded ScrolledWindow reports its child's FULL natural height as its
+    // own minimum, so four rows made the page demand ~2682 px and GTK sized the window to that (a 1280x800
+    // request rendered 2669x3025). These three calls are the GTK4 way of saying "this area scrolls; it does
+    // not report its content height upward".
+    scroller.set_min_content_height(240);
+    scroller.set_max_content_height(560);
+    scroller.set_propagate_natural_height(false);
+    // A cap on the CONTENT height is not a cap on the widget: with `vexpand` inside a column whose own
+    // minimum is already huge, GTK gave this window its content's full natural height anyway (measured:
+    // rows 38 px x4 yet the list allocated 2682 px). The explicit request pins it; the content bounds
+    // above then decide when the scrollbar appears.
+    scroller.set_size_request(-1, 560);
     let lines = gtk::ListBox::new();
     lines.set_widget_name("narrate-lines");
     scroller.set_child(Some(&lines));
@@ -277,6 +346,7 @@ fn upcast_widget(w: gtk::Paned) -> gtk::Widget {
 
 /// Repaint the labels, the picker's rows and the line rows from the published state.
 pub fn refresh(window: &adw::ApplicationWindow) {
+    install_page_css_once();
     let s = read_state();
     if let Some(clock) = label(window, "narrate-clock") {
         clock.set_text(&narrate_screen::clock_line(s.session, s.cut_at, s.length));
@@ -297,6 +367,20 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     if let Some(band) = widget_in(window, "take-band") {
         band.set_tooltip_text(Some(narrate_screen::band_status(&s.takes)));
     }
+    // The picker follows the published voice for the same reason the clock follows the published second:
+    // a flow that changes the voice without this leaves the dropdown showing row 0 while the state says
+    // otherwise, and the two disagree on screen.
+    if let Some(picker) = widget_in(window, "voice-picker")
+        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+    {
+        let files: Vec<&str> = s.voice_files.iter().map(String::as_str).collect();
+        if let Some(row) = narrate_screen::voice_options(s.narrators, &files)
+            .iter()
+            .position(|option| option.id == s.voice)
+        {
+            picker.set_selected(row as u32);
+        }
+    }
     let before = read_state().entries.len();
     draw_rows(window, &s);
     // Always re-wired: the rows are rebuilt whole on every refresh, so their handlers go with the old
@@ -315,6 +399,19 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
     // index each button carries disagree with the entry it stands for.
     while let Some(row) = list.row_at_index(0) {
         list.remove(&row);
+    }
+    if s.entries.is_empty() {
+        // The empty page still has to say something where its rows go; an empty list box reads as a broken
+        // panel rather than as "nothing written yet". No buttons are wired into this row -- there is no
+        // entry for them to point at -- so `wire_row_buttons`' count loop never reaches it.
+        let placeholder = gtk::ListBoxRow::new();
+        placeholder.set_widget_name("narrate-lines-empty");
+        let note = gtk::Label::new(Some(narrate_screen::no_lines_note()));
+        note.set_xalign(0.0);
+        note.add_css_class("dim-label");
+        placeholder.set_child(Some(&note));
+        list.append(&placeholder);
+        return;
     }
     let mut ordered: Vec<(usize, &Entry)> = s.entries.iter().enumerate().collect();
     ordered.sort_by(|(_, a), (_, b)| {

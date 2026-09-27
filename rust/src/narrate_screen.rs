@@ -261,6 +261,12 @@ pub fn sample_tip() -> String {
         .to_string()
 }
 
+/// The lines column's own empty state: what the page says where its rows go before anyone has written a
+/// line. A blank list box reads as a panel that failed to fill, which is not what it means.
+pub fn no_lines_note() -> &'static str {
+    "no narration lines yet \u{2014} \u{ff0b} puts one at the playhead"
+}
+
 /// §1 (`Shift the reference recording before it is cloned — a different speaker, not the same one transposed`).
 /// The distinction matters because the slider is next to a pitch control for the *video* on another page.
 pub fn pitch_tip() -> String {
