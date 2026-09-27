@@ -445,3 +445,65 @@ fn f3_1_s7_camera_path() {
     assert!(glide_out.hf <= zoom::HF_MAX && glide_out.hf >= zoom::SETTLED.hf, "{glide_out:?}");
     assert!(zoom::camera_at(&[tiny], 10.5).hf >= zoom::HF_MIN);
 }
+
+/// F3.1 S3 — the form a finished drag opens already carries the defaults: nothing in it is blank, and every number
+/// is one this file already owns (`place`, `stays_by_default`, `fades`, `to_fractions`/`clamp_rect`).
+#[test]
+fn f3_1_s3c_form_from_drag_carries_the_defaults() {
+    // A box on the source's own picture, armed at the line, with no marked stretch and no shape chosen.
+    let box_ = zoom::Rect { x: 480.0, y: 270.0, w: 960.0, h: 540.0 };
+    let none_marked = Cut::default();
+
+    let plain = zoom::form_from_drag(box_, SOURCE.0, SOURCE.1, 81.0, None, &none_marked.fx, false, 0);
+    // P.policy.effectDefaultSeconds (zoom/text/svg 3) — the length the arm words promised.
+    assert_eq!(plain.dur, zoom::DEFAULT_SECONDS);
+    assert_eq!(plain.dur, 3.0);
+    // P.policy.effectDefaultFades (zoom 1): a glide in and out.
+    assert_eq!((plain.trans, plain.tout), (1.0, 1.0));
+    assert!(!plain.stay, "no shape chosen means nothing to reframe into");
+    // The line it was armed at, not the box's position or midnight.
+    assert_eq!(plain.at, 81.0);
+    assert_eq!(plain.curve, zoom::CURVE_CHOICES[0]);
+    // Half the source in each direction: the centre lands mid-frame, hf half the height.
+    assert!((plain.cx - 0.5).abs() < 1e-9, "{}", plain.cx);
+    assert!((plain.cy - 0.5).abs() < 1e-9, "{}", plain.cy);
+    assert!((plain.hf - 0.5).abs() < 1e-9, "{}", plain.hf);
+    assert_eq!(plain.row, 0, "the row the box was drawn on (§06#1's `cam`)");
+
+    // The marked stretch outranks the default length — same rule `place` answers, seen through the form.
+    let marked = zoom::form_from_drag(box_, SOURCE.0, SOURCE.1, 81.0, Some((8.0, 18.0)), &none_marked.fx, false, 2);
+    assert_eq!(marked.dur, 10.0, "a 10 s marked stretch, not 3 s");
+    assert_eq!(marked.at, 81.0, "it still happens at the line the arm held");
+    assert_eq!(marked.row, 2);
+
+    // Aspect set and no staying zoom yet → stay, and a camera that stays has no glides.
+    let shaped = Cut { aspect: "9:16".to_string(), ..Default::default() };
+    let first_into_shape = zoom::form_from_drag(box_, SOURCE.0, SOURCE.1, 81.0, None, &shaped.fx, true, 0);
+    assert!(first_into_shape.stay, "the first zoom into a shaped video reframes it");
+    assert_eq!((first_into_shape.trans, first_into_shape.tout), (0.0, 0.0), "then no glides");
+
+    // A staying zoom already exists → the next one passes instead of stacking reframings.
+    let already_settled = vec![zoom_at(12.0, true)];
+    let later = zoom::form_from_drag(box_, SOURCE.0, SOURCE.1, 81.0, None, &already_settled, true, 0);
+    assert!(!later.stay, "one reframing is enough; this one is a passing close-up");
+    assert_eq!((later.trans, later.tout), (1.0, 1.0), "and it glides both ways again");
+
+    // A box dragged past the clamp still arrives inside it -- the form cannot open on an unrenderable rect.
+    let enormous = zoom::Rect { x: 0.0, y: 0.0, w: SOURCE.0 * 20.0, h: SOURCE.1 * 20.0 };
+    let clamped = zoom::form_from_drag(enormous, SOURCE.0, SOURCE.1, 81.0, None, &none_marked.fx, false, 0);
+    assert_eq!(clamped.hf, zoom::HF_MAX, "hf clamped to // effects.rectHfMax");
+    assert!(clamped.cx <= zoom::CENTRE_MAX && clamped.cy <= zoom::CENTRE_MAX);
+}
+
+/// F3.1 S4 (`Form "Zoom at m:ss"`): the heading names the second the zoom belongs to, so the form says which line
+/// it was opened for. Distinct from [`zoom::label`], which is lower-case because it is the subject of a status
+/// sentence rather than a window title.
+#[test]
+fn f3_1_s4b_the_form_title_names_the_second() {
+    assert_eq!(zoom::form_title(81.5), "Zoom at 01:21");
+    assert_eq!(zoom::form_title(0.0), "Zoom at 00:00");
+    assert_eq!(zoom::form_title(3599.0), "Zoom at 59:59");
+    // The two spellings differ on purpose: the title is a heading, the label is a sentence's subject.
+    assert_ne!(zoom::form_title(81.5), zoom::label(81.5));
+    assert_eq!(zoom::label(81.5), format!("zoom at {}", tools::mm_ss(81.5)));
+}

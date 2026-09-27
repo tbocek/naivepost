@@ -1,7 +1,10 @@
-// §06-effects#1-record — the wire: a click on the ✚ Effect dropdown records the effect through the real buttons.
+// §06-effects#1-record / F3.1 S1 — the wire: a click on the ✚ Effect dropdown reaches each kind's rule through
+// the real buttons.
 //
 // `naivepost::fx_record` holds the record's rules (proven by tests/effect_record_creation.rs); this file proves
-// the Cut page's six named dropdown rows reach them. Every check fires a widget the way GTK does
+// the Cut page's six named dropdown rows reach them. Five kinds record straight through the shared closure; ⊕ Zoom
+// does NOT -- §F3.1 S1 makes it ARM a drag instead, adding nothing to the cut until a box is drawn (see
+// tests/zoom_drag_widgets.rs for that placement). Every check fires a widget the way GTK does
 // (`emit_by_name("clicked")`) and asserts the SAME state the logic test asserts — the cut's `fx` list, the kind
 // recorded, the whole-bed reading, the exact status sentence — never a painted pixel.
 //
@@ -13,6 +16,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{Cut, EffectKind};
 use naivepost::fx_record as rec;
+use naivepost::fx_zoom as zoom;
 use naivepost::shell::Page;
 use naivepost::timeline::Recording;
 use naivepost::ui;
@@ -153,30 +157,38 @@ fn fx_menu_round(app: &adw::Application) {
     );
     RAN_VOLUME_ROW.store(true, Ordering::SeqCst);
 
-    // --- S2: a different row reaches a different kind through the same closure ---------------
+    // --- S2: ⊕ Zoom ARMS a drag, it does not record ------------------------------------------
+    // §F3.1 S1: the box someone draws is the effect, so this click must add NOTHING to the cut. The
+    // old version of this block asserted a second `zoom` record appeared here, which is exactly what
+    // arming forbids; the placement itself is proven in tests/zoom_drag_widgets.rs.
+    //
+    // A line has to be placed first: with none ever placed, S1's own refusal is the right answer and that
+    // branch is checked in tests/zoom_drag_widgets.rs.
+    ui::note_place(true);
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 81.0 });
     click(&window, "effect-item-zoom");
     let cut_ = ui::review_cut_of(&window);
-    assert_eq!(cut_.fx.len(), 2, "the second row added, it did not replace");
-    assert_eq!(cut_.fx[1].kind, "zoom");
-    // A zoom names the camera row it was framed on; nothing was framed yet, so row 0.
-    assert_eq!(rec::camera_row(&cut_.fx[1]), Some(0));
-    // ...and a volume has no such answer at all (§1's `cam` row is zoom-only).
-    assert_eq!(rec::camera_row(&cut_.fx[0]), None);
-    assert_eq!(status_text(&window), rec::recorded_status(EffectKind::Zoom));
+    assert_eq!(cut_.fx.len(), 1, "arming added no record -- only the volume is on the cut");
+    assert!(ui::zoom_armed(), "the zoom entry left the page waiting for a box");
+    let said = status_text(&window);
+    assert!(
+        said.starts_with(zoom::ARM_WORDS),
+        "the status line opens with the module's own arm words, got {said}"
+    );
+    assert!(
+        said.contains("It starts at the red line"),
+        "and its tail names where the zoom will go and for how long, got {said}"
+    );
+    // Camera layer goes down while armed: whole source visible (§F3.1 S1).
+    assert!(zoom::whole_source_shown(true), "while armed the framing is out of the way");
     RAN_ZOOM_ROW.store(true, Ordering::SeqCst);
 
-    // --- S3: the pair came in as edits, so ↶ takes them back one at a time ------------------
-    click(&window, "undo-button");
-    assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
-        1,
-        "one Undo removed the last record, not both"
-    );
+    // --- S3: the one hand-added record came in as an edit, so ↶ takes it back -----------------
     click(&window, "undo-button");
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
         0,
-        "and the second Undo left the page as it opened -- a hand-added effect is never an unwinding surprise"
+        "one Undo took the hand-added effect back -- a hand-added effect is never an unwinding surprise"
     );
     RAN_UNDO.store(true, Ordering::SeqCst);
 

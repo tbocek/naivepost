@@ -323,6 +323,47 @@ pub const CURVE_HELP: &str = "the shape both fades travel in. Straight is all th
 /// what the form does while it is open: every keystroke is kept, and one ↶ takes the whole edit back.
 pub const FORM_FOOTER: &str = "Kept as you type \u{2014} \u{21b6} Undo takes the whole edit back.";
 
+/// F3.1 S2 → S3: the form a finished drag opens, carrying every default §S3 gives rather than a blank sheet.
+///
+/// The box arrives in picture pixels and leaves as source fractions through [`to_fractions`], clamped by
+/// [`clamp_rect`] — no number is composed here. `at` is the line the arm was holding (S1 refuses without one), and
+/// the length comes from [`place`], so a marked stretch outranks both the line and [`DEFAULT_SECONDS`] exactly as
+/// §F3.1 S3 says. `stay` is [`stays_by_default`] read against this cut's own list, and the fades follow from
+/// [`fades`] — which answers nought for a staying camera, so the form's fade-out field greys itself rather than
+/// being told to.
+///
+/// `marked` is handed in because nothing in the window knows the marked stretch yet (no live marking seam exists in
+/// `src/ui/window.rs` today); the UI passes `None`, and the marked branch is proven logic-side only until F1.x's
+/// marking reaches the Cut page.
+pub fn form_from_drag(
+    box_: Rect,
+    source_w: f64,
+    source_h: f64,
+    at: f64,
+    marked: Option<(f64, f64)>,
+    fx: &[Fx],
+    aspect_set: bool,
+    row: usize,
+) -> Form {
+    let (_line, dur) = place(marked, at);
+    let stay = stays_by_default(aspect_set, a_staying_zoom_exists(fx));
+    let (trans, tout) = fades(stay);
+    let (cx, cy, hf) = to_fractions(box_, source_w, source_h);
+    let (hf, cx, cy) = clamp_rect(hf, cx, cy);
+    Form {
+        at,
+        dur,
+        stay,
+        trans,
+        tout,
+        curve: CURVE_CHOICES[0].to_string(),
+        cx,
+        cy,
+        hf,
+        row,
+    }
+}
+
 /// F3.1 S4 (`Apply: dur ≥ 0.4`): `// effects.zoomFloorSeconds` — §06's own §6 lists this as a form floor ("zoom
 /// 0.4") with no `P.` row in §10. [`crate::cut_insert::seconds_accepts`] is the sibling for an insert, at that
 /// flow's own second-long floor; the two floors differ because a camera move under 0.4 s is not a move.

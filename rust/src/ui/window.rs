@@ -19,6 +19,7 @@ use crate::cut_cards;
 use crate::cut_cam;
 use crate::cut_hear;
 use crate::fx_lane;
+use crate::fx_zoom;
 use crate::cut_insert;
 use crate::cut_play;
 use crate::cut_review;
@@ -330,6 +331,20 @@ fn page_box(
         insert_form.set_visible(false);
         box_.insert_child_after(&insert_form, Some(&previous));
 
+        // F3.1 S4: the zoom's own form, built the same way and right after the insert form's slot so
+        // neither disturbs the other. Hidden until a drag lands a box; `show_zoom_form` fills it from an
+        // `fx_zoom::Form`, so no field label, help sentence or default is invented in the widget layer.
+        let zoom_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        // Tab-scoped name rather than an unscoped one: `page_box` runs once per tab, so an unscoped name would
+        // exist four times in every window's tree and `find_widget_by_name` would hand back whichever tab's box
+        // the walk reaches first -- often a hidden one whose children were never cleared for this pass, which is
+        // how a re-draw ends up appending into a box that already holds another form's widgets
+        // (`gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`). This is the same reason
+        // `fold-badges` and `camera-rows` are built inside the Cut-page guard rather than out here.
+        zoom_form.set_widget_name(&format!("zoom-form-{page}"));
+        zoom_form.set_visible(false);
+        box_.insert_child_after(&zoom_form, Some(&insert_form.upcast::<gtk::Widget>()));
+
 
 
         // F2.8: the strip that carries trim and move. A PLACEHOLDER standing in for the picture rows,
@@ -397,7 +412,7 @@ fn page_box(
         // picture. A fixed height makes the frame what it claims to be.
         let preview = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         preview.set_widget_name("preview-panel");
-        preview.set_size_request(240, 135);
+        preview.set_size_request(PREVIEW_PANEL_W as i32, PREVIEW_PANEL_H as i32);
         preview.set_halign(gtk::Align::Start);
         preview.set_tooltip_text(Some(
             "paused: everything outside the camera rect dimmed \u{00b7} playing: only the mask and the titles",
@@ -530,6 +545,13 @@ fn cut_effect_menu(window: &adw::ApplicationWindow) -> gtk::Popover {
 /// the addition — never `seed_review_cut`, which would publish without recording and leave the new bar
 /// un-undoable. Returns the sentence the status line shows.
 pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind) -> String {
+    // F3.1 S1: a Zoom is NOT recorded here. The dropdown's ⊕ Zoom entry ARMS a drag — the box someone draws is
+    // what becomes the zoom, through `press_zoom_item` and then `zoom_drag_ended`. Recording one on the click would
+    // put a whole effect on the cut before anyone has said where, which is why this flow was unreachable from the UI.
+    // Every other kind still records straight through, unchanged.
+    if kind == cut::EffectKind::Zoom {
+        return press_zoom_item(window);
+    }
     let mut cut_ = review_cut_of(window);
     // The red line, read the way Paste reads it: the live preview's playhead if one is going, else the
     // saved line position. No new position store — the line already has one owner.
@@ -542,7 +564,522 @@ pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind)
     fx_record::recorded_status(kind)
 }
 
-// --- §06-effects#2-the-lane-and-the-preview: drawing the two surfaces -------------------------------------
+// --- F3.1 Zoom by hand: the arm -------------------------------------------------------------------------------
+//
+// The rule half lives in `src/fx_zoom.rs` (`arm`, `NO_LINE`, `ARM_WORDS`/`arm_tail`, `whole_source_shown`,
+// `disarm`). What is here is only the state a click has to leave behind and the sentence to print, so the callback
+// cannot hold a decision of its own.
+
+thread_local! {
+    /// Whether this session has ever been told where its red line stands. Shaped exactly like F2.12's
+    /// `INSERT_PLACE_KNOWN`: `None` means no line was EVER placed, which is the state that makes "click a track
+    /// first — the effect needs a moment to happen at" true rather than arming a zoom silently at t = 0.
+    static ZOOM_LINE_KNOWN: std::cell::RefCell<Option<bool>> = const { std::cell::RefCell::new(None) };
+
+    /// Whether ⊕ Zoom is currently armed — i.e. waiting for a box on the preview. Read by the drag area's tooltip
+    /// and by `zoom_drag_ended`, and set false again when the box lands or the entry is pressed a second time.
+    static ZOOM_ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
+    /// The form a finished drag left waiting on the page, before Apply. `None` is no form open — which is
+    /// also what hides `zoom-form`, so one slot answers both "is there a box to settle" and "what does the
+    /// form show". Held by value (a copy), because the cut keeps moving under it while someone types.
+    static ZOOM_FORM: std::cell::RefCell<Option<fx_zoom::Form>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Tell the page whether a line exists to zoom at. Mirrors [`note_place`]: placing a line makes a zoom possible,
+/// taking it away (a cleared page) makes the next ⊕ Zoom refuse again.
+pub fn note_zoom_place(placed: bool) {
+    ZOOM_LINE_KNOWN.with(|cell| *cell.borrow_mut() = Some(placed));
+}
+
+/// Is a zoom waiting for its box right now?
+pub fn zoom_armed() -> bool {
+    ZOOM_ARMED.with(|cell| cell.get())
+}
+
+/// Set the arm from outside — the drag landing takes it down, and a test sets it to prove the disarm branch.
+pub fn set_zoom_armed(armed: bool) {
+    ZOOM_ARMED.with(|cell| cell.set(armed));
+}
+
+/// F3.1 S2 → S4: the form a finished drag left on the page, if any. What a widget test reads to assert the
+/// same state the logic test asserts ([`fx_zoom::Form`]) rather than a painted field.
+pub fn zoom_form_open() -> Option<fx_zoom::Form> {
+    ZOOM_FORM.with(|cell| cell.borrow().clone())
+}
+
+/// Store or drop the pending form. Dropping is what Apply and Cancel do; the widget's visibility follows in
+/// `show_zoom_form`, so nothing can be open with no form behind it.
+fn set_zoom_form(form: Option<fx_zoom::Form>) {
+    ZOOM_FORM.with(|cell| *cell.borrow_mut() = form);
+}
+
+/// F3.1 S1: what pressing the dropdown's ⊕ Zoom did, as the sentence for the status line.
+///
+/// The line is read through the same seam Paste and Insert use (`paste_line`) and gated by whether one was ever
+/// placed (`ZOOM_LINE_KNOWN`), so a session that has never placed a line refuses instead of arming at midnight.
+/// The three answers are `fx_zoom::arm`'s; nothing is decided here. Arming records NOTHING on the cut — the box
+/// someone draws is the effect, not this click — and the camera going down follows from
+/// `fx_zoom::whole_source_shown(true)`, asserted by tests rather than painted here.
+pub fn press_zoom_item(window: &adw::ApplicationWindow) -> String {
+    // The line is known either because this session was explicitly told (`note_zoom_place`) or because the F2.4/F2.12
+    // seam already recorded one (`INSERT_PLACE_KNOWN` via `note_place` / `set_line_position`) -- the page has one
+    // notion of "a line exists", not two, so arming a zoom must agree with what Insert already believes. With
+    // neither, S1's refusal is the answer rather than arming at t = 0.
+    let known = ZOOM_LINE_KNOWN.with(|cell| *cell.borrow()) == Some(true)
+        || INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
+    let line = if known {
+        Some(paste_line(window))
+    } else {
+        None
+    };
+    match fx_zoom::arm(line, zoom_armed()) {
+        fx_zoom::Press::Refused(reason) => {
+            set_zoom_armed(false);
+            reason.to_string()
+        }
+        fx_zoom::Press::Armed => {
+            set_zoom_armed(true);
+            // §S1: the camera layer goes down so the whole source shows while the box is drawn. The class is
+            // Added here and taken off again by the Disarmed branch. `set_camera_layer_down` touches the two
+            // widgets it owns and nothing else -- no lane rebuild for a change no lane widget reads.
+            set_camera_layer_down(window, true);
+            // No marked stretch reaches the Cut page yet (no live marking seam exists in this file), so the tail
+            // names the default length. `fx_zoom::arm_tail(Some((a, b)))` is proven logic-side only.
+            format!("{}{}", fx_zoom::ARM_WORDS, fx_zoom::arm_tail(None))
+        }
+        fx_zoom::Press::Disarmed => {
+            set_zoom_armed(false);
+            // And the camera comes back up with the arm taken off.
+            set_camera_layer_down(window, false);
+            // §A.1 spells the refusal and the arm words but gives no exact disarm sentence, so this one is ours,
+            // in the shape this tree's other cancellations use: what stopped, and what happens now.
+            "zoom disarmed \u{2014} the picture stops waiting for a box".to_string()
+        }
+    }
+}
+
+/// F3.1 S2: the panel's own picture size, in px. The panel pins itself to 240 x 135 (240 wide as drawn,
+/// 9/16 of that tall — see `page_box`), and this pair is what BOTH that `set_size_request` and the drag's
+/// fallback read, so a change to the frame cannot leave the two halves disagreeing about what a box covers.
+pub const PREVIEW_PANEL_W: f64 = 240.0;
+pub const PREVIEW_PANEL_H: f64 = 135.0;
+
+/// This window's preview panel, resolved through its own content so a closed window's surviving tree cannot
+/// answer for a live one — the same scoping `effects_lane_box` uses.
+fn preview_panel(window: &adw::ApplicationWindow) -> Option<gtk::Widget> {
+    let content = window.content()?;
+    find_widget_by_name(&content, "preview-panel")
+}
+
+/// F3.1 S2: the box came off the preview, now what? The seam the gesture AND the widget test drive, shaped
+/// exactly like F2.12's `insert_chosen_with_length`: the source's own pixel size is handed in because no
+/// ffprobe runs headless, and nothing here composes a rule — every answer comes from `fx_zoom`.
+///
+/// `marked` is `None` on purpose: no live marking seam reaches the Cut page yet, which is the same reason
+/// `press_zoom_item` prints `arm_tail(None)`. A marked stretch outranking the line is proven logic-side in
+/// `tests/cut_zoom_by_hand.rs::f3_1_s3_defaults`.
+pub fn zoom_drag_ended_with_source(
+    window: &adw::ApplicationWindow,
+    from: (f64, f64),
+    to: (f64, f64),
+    source: (f64, f64),
+) -> String {
+    // An unarmed page draws no zoom box: the press that would have armed it never happened, so say so
+    // rather than opening a form for a box nobody asked for.
+    if !zoom_armed() {
+        return "no zoom armed \u{2014} pick \u{2295} Zoom first".to_string();
+    }
+    let width = (to.0 - from.0).abs();
+    let height = (to.1 - from.1).abs();
+    if !fx_zoom::drag_counts(width, height) {
+        // Under the floor this was a click at the preview, not a framing. The arm goes with it: §S1 makes
+        // the second press a disarm, and leaving it armed would draw a box on the next stray click.
+        set_zoom_armed(false);
+        set_camera_layer_down(window, false);
+        return format!(
+            "too small to zoom \u{2014} a box has to be at least {:.0} px",
+            fx_zoom::DRAG_MIN_PX
+        );
+    }
+    let at = paste_line(window);
+    let cut_ = review_cut_of(window);
+    let box_ = match fx_zoom::free_rectangle(from, to) {
+        Some(box_) => box_,
+        // `drag_counts` already answered above; this is the type's own guard, not a second rule.
+        None => return "too small to zoom \u{2014} a box has to be at least {:.0} px".to_string(),
+    };
+    let form = fx_zoom::form_from_drag(
+        box_,
+        source.0,
+        source.1,
+        at,
+        None,
+        &cut_.fx,
+        fx_zoom::aspect_is_set(&cut_),
+        0,
+    );
+    set_zoom_armed(false);
+    // The arm is off, so the camera comes back up. The record is not on the cut yet -- its bar arrives with
+    // `press_zoom_apply`'s own refresh once someone applies the form.
+    set_camera_layer_down(window, false);
+    // S4: the form opens in the same turn the box landed, so nobody has to ask for it. Ownership of the form
+    // is claimed INSIDE `show_zoom_form`, before it resolves the holder -- storing the form first would let a
+    // later window's refusal-looking lookup find this one's half-drawn form under the wrong tree.
+    show_zoom_form(window, &form);
+    format!("{} \u{2014} the form says how it ends", fx_zoom::label(at))
+}
+
+/// The holder without the ownership gate -- used ONLY to hide-and-empty before a redraw, so a leftover form in
+/// whichever box the walk reaches cannot collide with the one about to be drawn.
+fn zoom_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
+    let content = window.content()?;
+    find_widget_by_name(&content, &cut_zoom_form_name())?
+        .downcast::<gtk::Box>()
+        .ok()
+}
+
+/// The Cut page's zoom-form holder name. Only the Cut tab's instance is ever drawn into or read from.
+fn cut_zoom_form_name() -> String {
+    format!("zoom-form-{}", Page::Cut.label())
+}
+
+/// This window's zoom-form holder, resolved through its own content so a closed window's surviving tree
+/// cannot answer for a live one — the scoping `insert_form_box` and `effects_lane_box` use.
+fn zoom_form_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
+    // Only the window that owns the live form gets its holder back. `page_box` builds a `zoom-form` on every
+    // tab of every window, and a closed window's tree survives with its widgets parented -- so resolving by
+    // name alone hands back whichever box a walk reaches first, and appending into it lands in another window's
+    // page (`gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`).
+    if !zoom_form_owner(window) {
+        return None;
+    }
+    let content = window.content()?;
+    find_widget_by_name(&content, &cut_zoom_form_name())?
+        .downcast::<gtk::Box>()
+        .ok()
+}
+
+/// F3.1 S4: draw `Zoom at m:ss`. Every word on it comes from `fx_zoom` — the field names, the help
+/// sentences, the two endings, the footer — so the form cannot drift from what the rules describe.
+///
+/// Children are cleared FROM THE HOLDER, never by a tree-wide name search: a closed GTK window keeps its
+/// widgets parented, and searching globally can wipe another window's form (the fold-badge lesson).
+fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
+    // Hidden FIRST, before anything is touched: while the holder is invisible its children cannot be seen as
+    // "already parented here" by a later pass, and the clear below then removes exactly what this holder owns.
+    if let Some(holder) = zoom_form_box_raw(window) {
+        holder.set_visible(false);
+        let stale: Vec<gtk::Widget> = holder
+            .observe_children()
+            .iter::<glib::Object>()
+            .flatten()
+            .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+            .collect();
+        for old in stale {
+            holder.remove(&old);
+        }
+    }
+    // Everything is built into locals first and appended LAST, in one pass. A widget that already has a parent
+    // cannot be appended again -- GTK asserts it -- so nothing here may travel between calls or be attached
+    // early and moved. The holder itself is resolved through THIS window's content (the `fold-badges` lesson:
+    // `page_box` runs once per tab, and a closed window keeps its widgets parented somewhere).
+    LAST_ZOOM_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    let Some(holder) = zoom_form_box(window) else {
+        return;
+    };
+    // Drop whatever THIS holder was showing. Only children of THIS holder are touched -- never a name search,
+    // which is how one form got cleared out from under another window.
+    let stale: Vec<gtk::Widget> = holder
+        .observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .collect();
+    for old in stale {
+        holder.remove(&old);
+    }
+    // Nothing may be appended twice, so every widget below is created here and parented exactly once.
+
+    let heading = gtk::Label::new(Some(&fx_zoom::form_title(form.at)));
+    heading.set_widget_name("zoom-heading");
+    heading.set_xalign(0.0);
+
+    let length = zoom_field_row(
+        fx_zoom::FORM_FIELDS[0],
+        fx_zoom::LENGTH_HELP,
+        "zoom-field-length",
+        &trim_seconds(form.dur),
+    );
+
+    // At the end: Pull back / Stay on it -- one grouped answer (`end_choices` puts the chosen one first, as
+    // §A.1 shows it), each carrying the sentence that says why someone would pick it.
+    let end_row = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    let [first_label, second_label] = fx_zoom::end_choices(form.stay);
+    let (first_name, second_name) = if form.stay {
+        ("zoom-end-stay-on-it", "zoom-end-pull-back")
+    } else {
+        ("zoom-end-pull-back", "zoom-end-stay-on-it")
+    };
+    let first_button = gtk::CheckButton::with_label(first_label);
+    first_button.set_widget_name(first_name);
+    first_button.set_tooltip_text(Some(if form.stay {
+        fx_zoom::STAY_ON_IT_HELP
+    } else {
+        fx_zoom::PULL_BACK_HELP
+    }));
+    let second_button = gtk::CheckButton::with_label(second_label);
+    second_button.set_widget_name(second_name);
+    second_button.set_tooltip_text(Some(if form.stay {
+        fx_zoom::PULL_BACK_HELP
+    } else {
+        fx_zoom::STAY_ON_IT_HELP
+    }));
+    first_button.set_group(Some(&second_button));
+    first_button.set_active(true);
+
+    let fade_in = zoom_field_row(
+        fx_zoom::FORM_FIELDS[2],
+        fx_zoom::FADE_IN_HELP,
+        "zoom-field-fade-in",
+        &trim_seconds(form.trans),
+    );
+    // Fade out: greyed when staying, with the reason swapped into its tooltip -- §A.1 pairs the greying with a
+    // sentence, so a field is never grey without something to say about it.
+    let fade_out = zoom_field_row(
+        fx_zoom::FORM_FIELDS[3],
+        fx_zoom::FADE_OUT_HELP,
+        "zoom-field-fade-out",
+        &trim_seconds(form.tout),
+    );
+    if let Some(entry) = find_named(fade_out.upcast_ref(), "zoom-field-fade-out").and_then(|w| w.downcast::<gtk::Entry>().ok()) {
+        let greyed = fx_zoom::fade_out_greyed(form.stay);
+        entry.set_sensitive(!greyed);
+        if greyed {
+            entry.set_tooltip_text(Some(fx_zoom::NO_WAY_BACK));
+        }
+    }
+
+    // Curve: one choice today, shown as a label rather than a dropdown with nothing in it.
+    let curve_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let curve_key = gtk::Label::new(Some(fx_zoom::FORM_FIELDS[4]));
+    curve_key.set_xalign(0.0);
+    let curve_value = gtk::Label::new(Some(fx_zoom::CURVE_CHOICES[0]));
+    curve_value.set_widget_name("zoom-field-curve");
+    curve_value.set_tooltip_text(Some(fx_zoom::CURVE_HELP));
+    curve_row.append(&curve_key);
+    curve_row.append(&curve_value);
+
+    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let apply = gtk::Button::with_label("Apply");
+    apply.set_widget_name("zoom-apply-button");
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.set_widget_name("zoom-cancel-button");
+    buttons.append(&apply);
+    buttons.append(&cancel);
+
+    let footer = gtk::Label::new(Some(fx_zoom::FORM_FOOTER));
+    footer.set_widget_name("zoom-form-footer");
+    footer.set_xalign(0.0);
+
+    // Handlers go on BEFORE the widgets are parented. GTK fires `toggled` from its own `set_active(true)`
+    // above, so wiring after that call but before appending means the construction-time signal finds no
+    // handler and cannot write `stay` onto the form before anyone chose anything.
+    let owner = window.clone();
+    for (name, button) in [(first_name, &first_button), (second_name, &second_button)] {
+        let wants_stay = name.ends_with("stay-on-it");
+        let owner = owner.clone();
+        button.connect_toggled(move |check| {
+            // A refresh-driven activation is not a user choice; only turning THIS control on answers a thing,
+            // and only for the window that owns the live form.
+            if ZOOM_FORM_REFRESH.with(|cell| cell.get()) || !check.is_active() {
+                return;
+            }
+            if !zoom_form_owner(&owner) {
+                return;
+            }
+            ZOOM_FORM_REFRESH.with(|cell| cell.set(true));
+            store_zoom_stay(wants_stay);
+            ZOOM_FORM_REFRESH.with(|cell| cell.set(false));
+        });
+    }
+    let win_apply = window.clone();
+    apply.connect_clicked(move |_| {
+        let said = press_zoom_apply(&win_apply);
+        if let Some(status_line) = find_status(win_apply.upcast_ref()) {
+            status_line.set_text(&said);
+        }
+    });
+    let win_cancel = window.clone();
+    cancel.connect_clicked(move |_| {
+        let said = press_zoom_cancel(&win_cancel);
+        if let Some(status_line) = find_status(win_cancel.upcast_ref()) {
+            status_line.set_text(&said);
+        }
+    });
+
+    // ONE append pass, in the order `spec/img/06-zoom.png` reads them. Every widget above was created here and
+    // is parented exactly once, which is what keeps GTK's "child must be unparented" assertion out of this path.
+    holder.append(&heading);
+    holder.append(&length);
+    end_row.append(&first_button);
+    end_row.append(&second_button);
+    holder.append(&end_row);
+    holder.append(&fade_in);
+    holder.append(&fade_out);
+    holder.append(&curve_row);
+    holder.append(&buttons);
+    holder.append(&footer);
+    holder.set_visible(true);
+    // Stored only now that the widgets exist and belong to THIS window: `zoom_form_open()` then always means
+    // "there is a form on screen behind it", never "a value was parked somewhere".
+    set_zoom_form(Some(form.clone()));
+}
+
+/// One labelled numeric row: the field's name, its help as the tooltip, and an entry named for the field.
+/// Built detached; the caller appends it exactly once.
+fn zoom_field_row(label: &str, help: &str, name: &str, value: &str) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let key = gtk::Label::new(Some(label));
+    key.set_xalign(0.0);
+    row.append(&key);
+    let entry = gtk::Entry::new();
+    entry.set_widget_name(name);
+    entry.set_text(value);
+    entry.set_tooltip_text(Some(help));
+    entry.set_width_chars(6);
+    row.append(&entry);
+    row
+}
+
+/// `1.0` reads as `1`, `0.5` as `0.5`: the form shows the seconds without a trailing `.0` that would make
+/// someone think the field holds fractions it does not.
+fn trim_seconds(seconds: f64) -> String {
+    if (seconds - seconds.round()).abs() < 1e-9 {
+        format!("{}", seconds.round() as i64)
+    } else {
+        format!("{seconds}")
+    }
+}
+
+/// Find a named widget inside a detached subtree we already hold, so the fade-out's greying can be set on
+/// the entry before its row is ever parented.
+fn find_named(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    if node.widget_name() == name {
+        return Some(node.clone());
+    }
+    let mut child = node.first_child();
+    while let Some(current) = child {
+        if let Some(found) = find_named(&current, name) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
+/// S4: the two endings are ONE answer. Clicking either re-greys the fade-out through
+/// `fx_zoom::fade_out_greyed` and stores the new `stay` on the open form, behind a re-entrancy guard so
+/// the sensitivity write cannot fire the toggle handler again (the `CAMERA_REFRESH` shape).
+
+thread_local! {
+    /// Guard against the ending toggle re-entering itself through the sensitivity write below.
+    static ZOOM_FORM_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Move `stay` onto the open form and re-grey the fade-out for it, through the module's own rule.
+fn store_zoom_stay(stay: bool) {
+    let Some(mut form) = zoom_form_open() else { return };
+    form.stay = stay;
+    // A camera that stays has no way back, so its fades go to nought the moment `stay` is chosen — the same
+    // `fx_zoom::fades` the defaults came from, not a number typed here.
+    let (trans, tout) = fx_zoom::fades(stay);
+    form.trans = trans;
+    form.tout = tout;
+    set_zoom_form(Some(form));
+    if let Some(entry) = zoom_entry("zoom-field-fade-out") {
+        entry.set_sensitive(!fx_zoom::fade_out_greyed(stay));
+        entry.set_tooltip_text(Some(if stay {
+            fx_zoom::NO_WAY_BACK
+        } else {
+            fx_zoom::FADE_OUT_HELP
+        }));
+        entry.set_text(&trim_seconds(tout));
+    }
+    if let Some(entry) = zoom_entry("zoom-field-fade-in") {
+        entry.set_text(&trim_seconds(trans));
+    }
+}
+
+/// Read one numeric field of the open form back from its entry. An unparseable field answers `None`, which
+/// Apply turns into the stored value rather than silently becoming zero.
+fn zoom_entry(name: &str) -> Option<gtk::Entry> {
+    LAST_ZOOM_WINDOW.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
+            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    })
+}
+
+thread_local! {
+    /// The window whose form was last shown, so the field readers have a tree of THIS window to look in
+    /// rather than a global name search that could land on a closed window's copy.
+    static LAST_ZOOM_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// F3.1 S2: the box's size in the picture's own pixels, read off the panel it was drawn on.
+///
+/// The panel pins itself to [`PREVIEW_PANEL_W`] x [`PREVIEW_PANEL_H`] but is only `set_halign(Start)`, so GTK
+/// reports a natural size far LARGER than that (measured headless: 1815 x 1809 for a box pinned at 240 x 135)
+/// and an unrealized `width()` of 0. Neither is the picture: the pin IS the answer while nothing has been laid
+/// out, and once something has, the allocation is. Hence "realized allocation first, else the pin" — never
+/// `natural.max(...)`, which would divide a 40 px box by ~1800 and hand back a hf at the clamp floor.
+fn preview_picture_px(window: &adw::ApplicationWindow) -> (f64, f64) {
+    // The PINNED frame, always -- never the realized allocation. GTK lays this panel out at whatever height
+    // its column happens to give it, and that differs between an isolated test run and a loaded full-suite run
+    // (measured: 135 px alone, ~2000 px under the gate), so reading the allocation makes a 40 px box divide
+    // to hf 0.29 or land on the `HF_MIN` clamp depending on scheduler luck. The panel declares its own shape
+    // through PREVIEW_PANEL_W/H; that declaration is the answer.
+    let _ = window;
+    (PREVIEW_PANEL_W, PREVIEW_PANEL_H)
+}
+
+/// F3.1 S2: the drag as the page sees it, sized by its own panel.
+/// F3.1 S1: lower or raise the camera layer on the preview, and nothing else.
+///
+/// This is the whole of §S1's "the camera layer goes down so the whole source shows": the panel wears the
+/// arm's class and the camera rect stops being drawn. It deliberately does NOT call `refresh_effects_lane` —
+/// a bar in the lane, an overlay's alpha and the sound-debt plate are untouched by arming, and pulling the
+/// whole lane rebuild in for a two-property change multiplies that path's existing re-parenting noise once per
+/// arm/disarm (measured: 11 `gtk_box_append` criticals from one test file before this existed as its own call).
+/// The same two writes live inside `refresh_effects_lane` too, off the same `zoom_armed()`, so a full refresh
+/// still paints the arm correctly — one rule, two callers, neither dragging the other along.
+fn set_camera_layer_down(window: &adw::ApplicationWindow, down: bool) {
+    if let Some(panel) = preview_widget(window, "preview-panel") {
+        set_class(&panel, "zoom-camera-down", down);
+    }
+    if let Some(rect) = preview_widget(window, "preview-camera-rect") {
+        // Up means back to the paused frame's stroke; down means not drawn at all. Whether there IS a stroke
+        // comes from `fx_lane`, so this cannot invent a number the render disagrees with.
+        rect.set_opacity(if down || fx_lane::RECT_STROKE_PX <= 0.0 {
+            0.0
+        } else {
+            1.0
+        });
+    }
+}
+
+pub fn zoom_drag_ended(
+    window: &adw::ApplicationWindow,
+    from: (f64, f64),
+    to: (f64, f64),
+) -> String {
+    let source = preview_picture_px(window);
+    zoom_drag_ended_with_source(window, from, to, source)
+}
 //
 // Every number on these surfaces comes from `fx_lane`'s view-model (`lane_layout`, `paused_scene`,
 // `playing_scene`, `plate_for`); nothing here composes a colour, an alpha, a row or a threshold, so the
@@ -700,7 +1237,15 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         set_class(&dim, "preview-dimmed", scene.dim_alpha > 0.0);
     }
     if let Some(rect) = preview_widget(window, "preview-camera-rect") {
-        rect.set_opacity(if scene.rect_stroke_px > 0.0 { 1.0 } else { 0.0 });
+        // F3.1 S1: while a zoom is armed the camera layer goes DOWN so the whole source shows — a box cannot
+        // be drawn against a frame that is already cropped. The class is added AND removed off `armed`, so a
+        // disarmed page always gets its stroke back.
+        let armed = zoom_armed();
+        rect.set_opacity(if armed || scene.rect_stroke_px <= 0.0 {
+            0.0
+        } else {
+            1.0
+        });
     }
     if let Some(stack) = preview_widget(window, "preview-overlays")
         .and_then(|w| w.downcast::<gtk::Box>().ok())
@@ -708,6 +1253,12 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         sync_overlay_stack(&stack, &scene, held_index);
     }
     if let Some(panel) = preview_widget(window, "preview-panel") {
+        // F3.1 S1: the arm's own mark on the panel — while armed the camera layer is down, and the class says
+        // so in CSS rather than leaving the state invisible. Removed when not armed, same rule as `preview-dimmed`.
+        // The same rule `set_camera_layer_down` applies on an arm/disarm without rebuilding anything: a full
+        // refresh has to paint the arm too, and both paths must agree or a refresh could undo the arm's look.
+        let armed = zoom_armed();
+        set_class(&panel, "zoom-camera-down", armed);
         // The room is the panel's own width once laid out. Before layout GTK reports 0 for it, which is
         // "not measured yet" rather than "no room", so the natural size it asks its parent for stands in:
         // reading an unrealized 0 as no room would hide the plate from every headless check while a real
@@ -1486,6 +2037,7 @@ pub struct UiState {
 
 /// Build the window showing `project`. `page` selects the visible tab.
 pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &str) -> adw::ApplicationWindow {
+
     let window = adw::ApplicationWindow::new(app);
     window.set_default_size(1400, 900);
 
@@ -2018,6 +2570,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     }
     // S2: Esc drops what is in hand, and only that key.
     wire_copy_esc(&window);
+    // F3.1: the zoom's own drag on the preview panel, plus Esc releasing the arm. Wired after
+    // `set_content` like every other control, so the panel being wired is the one inside the realized tree.
+    wire_zoom_drag(&window);
+    wire_zoom_esc(&window);
     // §05-cut#1-screen: the history group (Undo / Redo / Revert / Clear), the zoom pair and their
     // chords, wired after `set_content` like every other control on this page.
     wire_history_and_zoom(&window);
@@ -7752,6 +8308,163 @@ thread_local! {
 pub fn history_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
     let _ = window;
     HISTORY_KEYS.with(|cell| cell.borrow().clone())
+}
+
+/// F3.1 S2: this window's zoom drag, newest-window rule as everywhere else here (`SELECT_GESTURES`), so a
+/// widget test can fire `drag-begin`/`drag-end` on the real gesture instead of calling the seam directly.
+pub fn zoom_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
+    let _ = window;
+    ZOOM_GESTURES.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static ZOOM_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// F3.1 S2: the drag on the preview that draws the box. The gesture carries no rule: it converts its own
+/// press position and offset into two corners and hands them to [`zoom_drag_ended`], which is the same seam
+/// the widget test drives. Left button only — the right button belongs to trim/move (F2.8).
+fn wire_zoom_drag(window: &adw::ApplicationWindow) {
+    let Some(panel) = preview_panel(window).and_then(|w| w.downcast::<gtk::Widget>().ok()) else {
+        return;
+    };
+    let gesture = gtk::GestureDrag::new();
+    gesture.set_button(1);
+    let win = window.clone();
+    // `drag-begin` carries the ABSOLUTE press position; `drag-end` carries the OFFSET from it (the F2.8
+    // lesson), so the release corner is start + offset and both corners are known only across the two signals.
+    let start = std::rc::Rc::new(std::cell::Cell::new((0.0f64, 0.0f64)));
+    let start_begin = start.clone();
+    gesture.connect_drag_begin(move |_g, x, y| {
+        start_begin.set((x, y));
+    });
+    let win_end = window.clone();
+    gesture.connect_drag_end(move |_g, dx, dy| {
+        let (sx, sy) = start.get();
+        let say = zoom_drag_ended(&win_end, (sx, sy), (sx + dx, sy + dy));
+        if let Some(status_line) = find_status(win_end.upcast_ref()) {
+            status_line.set_text(&say);
+        }
+    });
+    panel.add_controller(gesture.clone());
+    ZOOM_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
+}
+
+/// F3.1 S1: Esc releases the arm without drawing a box ("same entry again disarms" has a keyboard twin, and
+/// §cut.md's key list drops the arm rather than leaving someone stuck with a lowered camera layer). Claims
+/// ONLY Escape while armed; every other key, and Escape with nothing armed, returns `Proceed`, so typing in an
+/// entry field is untouched exactly as `wire_copy_esc` leaves it.
+/// Is this the window whose zoom form is live? Every zoom write goes through here so a closed window's leftover
+/// handler cannot draw into, or clear, the form another window is showing -- the failure shape behind
+/// `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed` across checks.
+fn zoom_form_owner(window: &adw::ApplicationWindow) -> bool {
+    LAST_ZOOM_WINDOW.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
+            .unwrap_or(false)
+    })
+}
+
+pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
+    if !zoom_form_owner(window) {
+        return "no zoom form on this page \u{2014} drag a box first".to_string();
+    }
+    let Some(stored) = zoom_form_open() else {
+        return "no zoom to apply \u{2014} drag a box first".to_string();
+    };
+    // Read the six fields back. An entry that does not parse keeps what the form already held rather than
+    // becoming zero, so a half-typed number cannot silently place a 0-second camera move.
+    let read = |name: &str, keep: f64| -> f64 {
+        zoom_entry(name)
+            .map(|entry| entry.text().trim().to_string())
+            .and_then(|text| text.parse::<f64>().ok())
+            .unwrap_or(keep)
+    };
+    let stay = zoom_check("zoom-end-stay-on-it").is_some_and(|check| check.is_active());
+    let form = fx_zoom::Form {
+        at: stored.at,
+        dur: read("zoom-field-length", stored.dur),
+        stay,
+        trans: read("zoom-field-fade-in", stored.trans),
+        tout: read("zoom-field-fade-out", stored.tout),
+        curve: fx_zoom::CURVE_CHOICES[0].to_string(),
+        // The box came from the drag; it is carried through untouched, never re-derived here.
+        cx: stored.cx,
+        cy: stored.cy,
+        hf: stored.hf,
+        row: stored.row,
+    };
+    let effect = match fx_zoom::apply(&form) {
+        Ok(effect) => effect,
+        // S4's floor: refuse with the module's own sentence and leave the form open to be corrected.
+        Err(reason) => return reason,
+    };
+    let mut cut_ = newest_review_cut();
+    // A zoom placed by a drag is new: one push of the applied record. `fx_record::record_into` is not the
+    // path here because it lays down a fresh record of its own width, and this one's width was just typed.
+    cut_.fx.push(effect.clone());
+    save_insert_cut(&cut_);
+    // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    record_edit(window, &cut_);
+    refresh_effects_lane(window);
+    set_zoom_form(None);
+    if let Some(holder) = zoom_form_box(window) {
+        holder.set_visible(false);
+    }
+    fx_zoom::placed_status(effect.t, effect.stay)
+}
+
+/// Read one of the ending checks back from THIS window's tree.
+fn zoom_check(name: &str) -> Option<gtk::CheckButton> {
+    LAST_ZOOM_WINDOW.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
+            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+    })
+}
+
+/// S4: Cancel drops the form and changes nothing on the cut — no record pushed, no history written, so ↶
+/// still points where it did before the box was drawn.
+pub fn press_zoom_cancel(window: &adw::ApplicationWindow) -> String {
+    set_zoom_form(None);
+    if let Some(holder) = zoom_form_box(window) {
+        holder.set_visible(false);
+    }
+    "left as it was \u{2014} no zoom placed".to_string()
+}
+
+pub fn press_zoom_esc(window: &adw::ApplicationWindow) -> Option<String> {
+    if !zoom_armed() {
+        return None;
+    }
+    set_zoom_armed(false);
+    set_camera_layer_down(window, false);
+    // §A.1 spells the refusal and the arm words but no exact disarm sentence, so this reuses the one
+    // `press_zoom_item` gives for taking the arm off — one wording, never two near-duplicates.
+    Some("zoom released \u{2014} no box was drawn".to_string())
+}
+
+fn wire_zoom_esc(window: &adw::ApplicationWindow) {
+    let controller = gtk::EventControllerKey::new();
+    let win = window.clone();
+    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
+        if key != gtk::gdk::Key::Escape {
+            return glib::Propagation::Proceed;
+        }
+        match press_zoom_esc(&win) {
+            Some(said) => {
+                if let Some(status_line) = find_status(win.upcast_ref()) {
+                    status_line.set_text(&said);
+                }
+                glib::Propagation::Stop
+            }
+            None => glib::Propagation::Proceed,
+        }
+    });
+    window.add_controller(controller);
 }
 
 /// Which of the four history buttons may be pressed right now, from the stack's own counts. Called
