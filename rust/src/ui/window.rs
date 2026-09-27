@@ -1524,6 +1524,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         .and_then(|tree| cut::load(tree).ok())
         .unwrap_or_default();
     REVIEW_CUTS.with(|slots| slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(opened_cut.clone()))));
+    // F2.13: this window's edit history, opened on the SAME cut that was just published, so the base
+    // Revert returns to is what this page opened with (§2) rather than whatever a previous window left
+    // behind. Done through `reopen_history_on` rather than a second push because the history may already
+    // have been touched (a refresh ran during the build) -- replacing beats stacking another baseline.
+    reopen_history_on(&window, &opened_cut);
     // F2.11: this window's SESSION recordings, pushed beside the cut. The fold half of the page reads
     // these rather than `kept_footage_recordings(&opened_cut)`: a dropped stretch only exists inside a
     // run that is LONGER than the union of the kept clips inside it, and runs built from the kept
@@ -3927,6 +3932,14 @@ pub fn review_lanes(window: &adw::ApplicationWindow) -> Vec<cut::Lane> {
     newest_review_cut().lanes
 }
 
+/// F2.13 S3: the whole cut this window holds, as a read seam. Clear takes the scenes and the effects off
+/// and keeps everything recording-side, so a check has to read `fx`, `rows` and `nrows` too — the three
+/// the narrower accessors above do not cover. Reading only: no rule lives here.
+pub fn review_cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
+    let _ = window;
+    newest_review_cut()
+}
+
 /// This window's preview as it currently stands — for a test that fired the real button and wants to
 /// check the same state the logic test checks rather than a painted pixel.
 pub fn preview_player(window: &adw::ApplicationWindow) -> Player {
@@ -4227,6 +4240,10 @@ fn report_verb(window: &adw::ApplicationWindow, outcome: &cut_verbs::Outcome) {
                         slot.borrow_mut().segs = segs.clone();
                     }
                 });
+                // F2.13: the verb's segments are an edit, so they go on the history here rather than
+                // waiting for a caller to remember. Read back out of the slot just written so the
+                // snapshot carries the whole cut (lanes, shifts, rows) and not only the new list.
+                record_edit(window, &newest_review_cut());
             }
             if !keeps_selection {
                 clear_selection(window);
@@ -4704,7 +4721,7 @@ pub fn press_lens_row(window: &adw::ApplicationWindow, row: i32) -> Option<Strin
     let recordings = crate::timeline::kept_footage_recordings(&cut_);
     let rows = crate::timeline::rows_for(&recordings, &cut_);
     let said = cut_cam::show_scene_from(&mut cut_, scene, row, &recordings, &rows)?;
-    seed_review_cut(window, &cut_);
+    record_edit(window, &cut_);
     if let Some(status) = find_status(window.upcast_ref()) {
         status.set_text(&said);
     }
@@ -4720,7 +4737,7 @@ pub fn press_speaker_badge(window: &adw::ApplicationWindow, lane: &str) -> Optio
     let scene = kept_scene_at_line(window)?;
     let mut cut_ = newest_review_cut();
     let said = cut_hear::toggle_heard(&mut cut_, scene, lane)?;
-    seed_review_cut(window, &cut_);
+    record_edit(window, &cut_);
     if let Some(status) = find_status(window.upcast_ref()) {
         status.set_text(&said);
     }
@@ -4736,7 +4753,7 @@ pub fn press_speaker_badge(window: &adw::ApplicationWindow, lane: &str) -> Optio
 pub fn press_gutter_switch(window: &adw::ApplicationWindow, lane: &str) -> String {
     let mut cut_ = newest_review_cut();
     let said = cut_hear::toggle_lane_all(&mut cut_, &[lane], lane);
-    seed_review_cut(window, &cut_);
+    record_edit(window, &cut_);
     if let Some(status) = find_status(window.upcast_ref()) {
         status.set_text(&said);
     }
@@ -5010,7 +5027,7 @@ pub fn press_row_cross(window: &adw::ApplicationWindow, row: usize) -> Option<St
     let placed = crate::timeline::rows_for(&recordings, &cut_);
     let mut cut_ = cut_;
     let said = cut_fold::kill_row(&mut cut_, row, &recordings, &placed)?;
-    seed_review_cut(window, &cut_);
+    record_edit(window, &cut_);
     save_folds(&cut_);
     refresh_camera_rows(window);
     refresh_fold_badges(window);
@@ -5025,7 +5042,7 @@ pub fn press_row_cross(window: &adw::ApplicationWindow, row: usize) -> Option<St
 pub fn press_lane_cross(window: &adw::ApplicationWindow, name: &str) -> String {
     let mut cut_ = newest_review_cut();
     let said = cut_fold::remove_lane(&mut cut_, name);
-    seed_review_cut(window, &cut_);
+    record_edit(window, &cut_);
     save_folds(&cut_);
     refresh_camera_rows(window);
     refresh_fold_badges(window);
@@ -5176,7 +5193,7 @@ pub fn press_trim_border(
             .map(|seg| cut_trim::trim_status(index + 1, seg.s, seg.e))
             .unwrap_or_default()
     };
-    seed_review_cut(window, &cut_);
+    record_edit(window, &cut_);
     if !status.is_empty() {
         if let Some(status_line) = find_status(window.upcast_ref()) {
             status_line.set_text(&status);
@@ -5410,7 +5427,7 @@ fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gesture) {
         // hand's target so the next draw reads it back.
         cut_.nrows = (*row as i32) + 1;
     }
-    seed_review_cut(window, &cut_);
+    record_edit(window, &cut_);
     OPEN_FOLDS.with(|slots| {
         // The slot is created on first use rather than at window build: nothing else on this page needs
         // it, and `seed_review_cut` shows a seam can write the newest slot without one. Pushed when
@@ -5517,7 +5534,7 @@ pub fn press_paste(window: &adw::ApplicationWindow) -> String {
     let file_seconds = hand.as_ref().map(|h| h.from.max(0.0)).unwrap_or(0.0);
     let mut cut_ = newest_review_cut();
     let outcome = cut_copy::paste(&mut cut_, &mut hand, Some(at), &path, file_seconds, &sources);
-    seed_review_cut(window, &cut_);
+    record_edit(window, &cut_);
     COPY_HAND.with(|cell| *cell.borrow_mut() = hand);
     match outcome {
         Ok(status) => status,
@@ -5562,7 +5579,7 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
                 return cut_copy::too_short().to_string();
             };
             cut_.lanes.push(lane);
-            seed_review_cut(window, &cut_);
+            record_edit(window, &cut_);
             cut_copy::lane_status(hand.length, hand.from, &name, at)
         }
     }
@@ -5840,7 +5857,7 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
     let mut cut_ = newest_review_cut();
     match cut_insert::place(&mut cut_, &open.path, open.at, answer.mode, answer.seconds, answer.silent) {
         Ok(placed) => {
-            seed_review_cut(window, &cut_);
+            record_edit(window, &cut_);
             save_insert_cut(&cut_);
             INSERT_OPEN.with(|cell| *cell.borrow_mut() = None);
             if let Some(holder) = insert_form_box(window) {
@@ -7018,9 +7035,15 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Record that the page has been edited, so Undo/Redo/Revert/Clear have something to answer about.
-/// The verb doors print and write segments but do not own the history (§2's snapshots are the edit
-/// record); this is the seam that pushes one, and the same one `note_edit` in the test stands for.
+/// The TEST-FACING door for "the page has been edited". Every mutating press in the app records through
+/// [`record_edit`], which publishes, records and refreshes in one step; this is the narrower seam a test
+/// uses when it wants to say "treat what is on screen as an edit" without going through a widget -- which
+/// is why `tests/cut_screen_toolbar_widgets.rs` calls it after a Split. It pushes unconditionally
+/// (`History::push`), where the app-side door asks first whether anything actually changed.
+///
+/// A real ＋ Add lights Undo WITHOUT any call to this function: `report_verb`'s Applied branch calls
+/// `record_edit`, so the button's state comes from the app's own recording rather than from a caller
+/// remembering to say so. Do not use this to make a button light in production code.
 pub fn note_edit(window: &adw::ApplicationWindow) {
     let history = cut_history(window);
     history.borrow_mut().push(&newest_review_cut());
@@ -7038,6 +7061,27 @@ fn cut_history(window: &adw::ApplicationWindow) -> Rc<std::cell::RefCell<cut::Hi
     fresh
 }
 
+/// F2.13: re-open this window's edit history on the cut a caller is about to show, so the base Revert
+/// returns to is that cut and not whatever was newest when the history happened to be touched first.
+/// Used by `build_window` at project open (against the cut read from `cut/cut.json`) and by tests that
+/// seed a cut into an already-built window — both are "this is what the page opens with".
+/// F2.13: re-open this window's edit history on the cut a caller is about to show, so the base Revert
+/// returns to is that cut and not whatever was newest when the history happened to be touched first.
+/// Used by `build_window` at project open (against the cut read from `cut/cut.json`) and by tests that
+/// seed a cut into an already-built window — both are "this is what the page opens with".
+pub fn reopen_history_on(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
+    let _ = window;
+    CUT_HISTORIES.with(|slot| {
+        let fresh = Rc::new(std::cell::RefCell::new(cut::History::open(cut_)));
+        let mut slot = slot.borrow_mut();
+        if let Some(latest) = slot.last_mut() {
+            *latest = fresh;
+        } else {
+            slot.push(fresh);
+        }
+    });
+}
+
 /// Undo (§1 item 18): take the page back one state. Returns the line for the status bar — either what
 /// the page went back to, or the fact that there was nothing behind it.
 pub fn press_undo(window: &adw::ApplicationWindow) -> String {
@@ -7048,11 +7092,8 @@ pub fn press_undo(window: &adw::ApplicationWindow) -> String {
             let mut cut_ = newest_review_cut();
             snapshot.restore(&mut cut_);
             publish_cut(&cut_);
-            let said = format!(
-                "\u{21b6} back to the previous state \u{2014} {} segment(s), {} \u{2014} Redo puts it forward again",
-                cut_.segs.len(),
-                crate::tools::mm_ss(cut_screen::cut_seconds(&cut_))
-            );
+            // S1: the sentence is `cut::undone`'s, not composed here.
+            let said = cut::undone(cut_.segs.len());
             log_line(&said);
             said
         }
@@ -7073,11 +7114,8 @@ pub fn press_redo(window: &adw::ApplicationWindow) -> String {
             let mut cut_ = newest_review_cut();
             snapshot.restore(&mut cut_);
             publish_cut(&cut_);
-            let said = format!(
-                "\u{21a7} forward again \u{2014} {} segment(s), {}",
-                cut_.segs.len(),
-                crate::tools::mm_ss(cut_screen::cut_seconds(&cut_))
-            );
+            // S1: one walk sentence for both directions (spec F2.13 gives the pair a single line).
+            let said = cut::undone(cut_.segs.len());
             log_line(&said);
             said
         }
@@ -7095,19 +7133,17 @@ pub fn press_revert(window: &adw::ApplicationWindow) -> String {
     let history = cut_history(window);
     let already_base = history.borrow().base_is_the_screen(&newest_review_cut());
     if already_base {
-        let said = "nothing to revert \u{2014} the cut is as it was".to_string();
+        let said = cut::NOTHING_TO_REVERT.to_string();
         log_line(&said);
         return said;
     }
+    // What was on screen BEFORE the restore, so the sentence can say how much hand-made work went away.
+    let had = newest_review_cut();
     let snapshot = history.borrow_mut().revert();
-    let mut cut_ = newest_review_cut();
+    let mut cut_ = had.clone();
     snapshot.restore(&mut cut_);
     publish_cut(&cut_);
-    let said = format!(
-        "back to where this page started \u{2014} {} segment(s). \u{21b6} Undo cannot reach the hand edits \
-         you just dropped: they are gone",
-        cut_.segs.len()
-    );
+    let said = cut::reverted(snapshot.segs.len(), had.segs.len());
     log_line(&said);
     said
 }
@@ -7118,7 +7154,7 @@ pub fn press_revert(window: &adw::ApplicationWindow) -> String {
 pub fn press_clear_cut(window: &adw::ApplicationWindow) -> String {
     let had = newest_review_cut();
     if had.segs.is_empty() && had.fx.is_empty() {
-        let said = "nothing to clear \u{2014} the timeline is already empty".to_string();
+        let said = cut::NOTHING_TO_CLEAR.to_string();
         log_line(&said);
         return said;
     }
@@ -7126,12 +7162,7 @@ pub fn press_clear_cut(window: &adw::ApplicationWindow) -> String {
     let history = cut_history(window);
     history.borrow_mut().push(&cleared);
     publish_cut(&cleared);
-    let said = format!(
-        "cleared {} segment(s) and {} effect(s) \u{2014} the recordings stay as they were loaded, and \
-         \u{21b6} Undo brings them back",
-        had.segs.len(),
-        had.fx.len()
-    );
+    let said = cut::cleared_message(had.segs.len(), had.fx.len());
     log_line(&said);
     said
 }
@@ -7143,6 +7174,24 @@ fn publish_cut(cut_: &cut::Cut) {
             *slot.borrow_mut() = cut_.clone();
         }
     });
+}
+
+/// F2.13 S4: the ONE door every mutating press writes through. It publishes the new cut, records it on
+/// the history, and refreshes the four history buttons from the stack — so a button lighting up always
+/// means a snapshot is behind it, never that some caller remembered to say so.
+///
+/// Recording goes through [`cut::History::note_change`] rather than `push`: several doors write things
+/// that are not edits along with the cut (a fold toggle persists `folds`, which `Snapshot` deliberately
+/// omits so Undo can never unfold the page under someone; the watched row is not a cut field at all),
+/// and comparing the snapshot against the state on screen is what keeps those off the stack. A door whose
+/// write changed none of the seven editable things therefore leaves Undo exactly as greyed as it was.
+///
+/// The history's OWN writes (`press_undo`, `press_redo`, `press_revert`) use plain [`publish_cut`]: they
+/// move the pointer or reset the base, and recording them would put the undo itself on the undo stack.
+fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
+    publish_cut(cut_);
+    cut_history(window).borrow_mut().note_change(cut_);
+    refresh_history_buttons(window);
 }
 
 /// − / + (§1 item 22): one step of the zoom ladder. The floor is where the whole session fits, so

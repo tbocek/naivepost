@@ -253,13 +253,21 @@ fn check_undo_redo_reach_the_history(app: &adw::Application) {
     button(&window, "undo-button").emit_by_name::<()>("clicked", &[]);
     settle();
     let said = status_text(&window);
-    assert!(said.contains("back to the previous state"), "the click printed the undo sentence: {said}");
-    assert!(ui::window_logs().iter().any(|l| l.contains("back to the previous state")));
+    // F2.13 S1: the walk sentence, spelled once in `cut::undone` and printed by the press.
+    assert!(
+        said.contains("undone \u{2014}") && said.ends_with("segment(s) left"),
+        "the click printed the undo sentence: {said}"
+    );
+    assert!(ui::window_logs().iter().any(|l| l.contains("undone \u{2014}")));
 
     button(&window, "redo-button").emit_by_name::<()>("clicked", &[]);
     settle();
     let said = status_text(&window);
-    assert!(said.contains("forward again"), "Redo printed its own sentence: {said}");
+    // F2.13 S1: Redo shares that one line -- what matters after either press is what the timeline holds.
+    assert!(
+        said.contains("undone \u{2014}") && said.ends_with("segment(s) left"),
+        "Redo printed the same walk sentence: {said}"
+    );
 }
 
 fn round() {

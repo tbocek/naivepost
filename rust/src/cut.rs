@@ -541,15 +541,41 @@ impl History {
         History { snapshots: vec![now.clone()], at: 0, base: now }
     }
 
-    /// Record an edit.
+    /// F2.13 S4 (`only a real change reaches the stack`): record the cut if it actually differs from the
+    /// state on screen, and say whether it did.
+    ///
+    /// Every mutating door funnels through here rather than calling [`History::push`] directly, because a
+    /// door that writes the page also writes things that are not edits: a fold toggle (F2.11 saves folds
+    /// but `Snapshot` deliberately omits them, so Undo must never unfold the page under someone) and the
+    /// watched row (not a cut field at all). Testing the difference on the snapshot itself — rather than
+    /// trusting the caller to know whether its write mattered — is what keeps those writes off the stack:
+    /// an identical snapshot means "nothing happened", so no step is recorded and the buttons stay honest.
+    /// Returns whether a snapshot was pushed, which is the same answer the greying needs.
+    pub fn note_change(&mut self, cut: &Cut) -> bool {
+        let now = Snapshot::of(cut);
+        if self.snapshots.get(self.at) == Some(&now) {
+            return false;
+        }
+        self.push_snapshot(now);
+        true
+    }
+
+    /// The body of [`History::push`], working from an already-taken snapshot so `note_change` can compare
+    /// the one copy it made instead of hashing the cut twice.
     ///
     /// Everything after `at` goes first: redoing into a branch the person has already left behind
     /// would silently re-apply something they undid, and §A's "pushUndo clears redo" is that sentence
     /// written as a rule. Then the oldest snapshot is dropped once the stack passes [`UNDO_DEPTH`], so
     /// the bound costs the earliest edits rather than the whole history's usefulness.
     pub fn push(&mut self, cut: &Cut) {
+        self.push_snapshot(Snapshot::of(cut));
+    }
+
+    /// [`History::push`]'s body on an already-taken snapshot, so `note_change` compares the one copy it
+    /// made instead of snapshotting the cut twice.
+    fn push_snapshot(&mut self, now: Snapshot) {
         self.snapshots.truncate(self.at + 1);
-        self.snapshots.push(Snapshot::of(cut));
+        self.snapshots.push(now);
         if self.snapshots.len() > UNDO_DEPTH + 1 {
             self.snapshots.remove(0);
         }
@@ -609,6 +635,68 @@ impl History {
     pub fn depth(&self) -> usize {
         self.snapshots.len()
     }
+
+    /// The state the pointer stands on — what the page is showing, as the stack sees it. `note_change`
+    /// compares against this, and a test reads it to check that an identical write left no step behind.
+    pub fn current(&self) -> Snapshot {
+        self.snapshots[self.at].clone()
+    }
+}
+
+// --- F2.13: the four sentences (spec/05-cut.md F2.13) -------------------------------------------------
+//
+// They live here, beside the rules they describe, so the widget layer prints what a rule returned instead
+// of composing a sentence of its own (spec/00-principles.md §5). Each one is the whole line the status bar
+// shows for that answer; nothing in `ui` adds to them.
+
+/// F2.13 S1 (`walk the snapshots, depth 50 · "undone — N segment(s) left"`): the line both ↶ Undo and
+/// ↷ Redo print when they moved. One sentence for both directions because the spec gives one: what a person
+/// needs to know after either press is how much of the cut is on screen now, not which way the pointer went.
+/// `left` is the segments of the state arrived at. // P.layout.undoDepth 50 is how far back either walk goes.
+pub fn undone(left: usize) -> String {
+    format!("undone \u{2014} {} segment(s) left", left)
+}
+
+/// F2.13 S1: the refusal at the bottom of the stack. The spec words the other three refusals and leaves
+/// this one to the flow's shape; the wording kept is the page's own, because "the state this page opened
+/// with" says where the floor is rather than only that there is one.
+pub const NOTHING_TO_UNDO: &str = "nothing to undo \u{2014} you are at the state this page opened with";
+
+/// F2.13 S2 (`greyed · "nothing to revert — the cut is as it was"`): Revert with nothing changed since
+/// the base. Same string greys the button and answers a press that got through anyway.
+pub const NOTHING_TO_REVERT: &str = "nothing to revert \u{2014} the cut is as it was";
+
+/// F2.13 S2: the two readings of a completed Revert, split on whether the base holds anything.
+///
+/// A base with segments in it came from a suggestion (§2: the base is "the last suggestion or what the
+/// page opened with"), so the sentence names whose seconds these are and promises the undo path back.
+/// An empty base means nothing was ever suggested and the page opened blank: everything that disappears
+/// was hand-made, and saying "the cut is empty" is more honest than quoting zero suggestions.
+pub fn reverted(base_segs: usize, hand_made: usize) -> String {
+    if base_segs == 0 {
+        format!(
+            "reverted \u{2014} {} hand-made segment(s) gone, the cut is empty",
+            hand_made
+        )
+    } else {
+        format!(
+            "reverted to the {} segment(s) of the last suggestion (\u{21b6} Undo brings your edits back)",
+            base_segs
+        )
+    }
+}
+
+/// F2.13 S3 (`"nothing to clear — the timeline holds no cut yet"`): Clear before any cut exists. The
+/// sentence names the timeline rather than the button's target, because at this point there is no target.
+pub const NOTHING_TO_CLEAR: &str = "nothing to clear \u{2014} the timeline holds no cut yet";
+
+/// F2.13 S3 (`"cleared N scene(s) and M effect(s)"`): what one Clear took off. Scenes and effects are
+/// counted apart because they are lost apart — a scene is a kept stretch of the recording, an effect is
+/// something laid over it — and the numbers are what tells someone whether ✗ Clear was the button they
+/// meant to press. Recordings, rows, shifts and lanes are NOT mentioned because they stay (see
+/// [`cleared`]).
+pub fn cleared_message(scenes: usize, effects: usize) -> String {
+    format!("cleared {} scene(s) and {} effect(s)", scenes, effects)
 }
 
 /// The cut with every kept stretch and every effect taken off it, leaving the recordings as they were

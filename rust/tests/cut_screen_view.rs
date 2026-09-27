@@ -459,7 +459,7 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
             );
             settle();
             let z = status_line(&window);
-            assert!(z.contains("back to the previous state"), "Ctrl+Z reached the history: {z}");
+            assert!(z.contains("undone \u{2014}") && z.ends_with("segment(s) left"), "F2.13 S1: Ctrl+Z reached the history: {z}");
 
             // Ctrl+Y redoes -- the second chord §1 spells.
             let _ = controller.emit_by_name::<bool>(
@@ -468,7 +468,7 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
             );
             settle();
             let y = status_line(&window);
-            assert!(y.contains("forward again"), "Ctrl+Y reached the same history: {y}");
+            assert!(y.contains("undone \u{2014}") && y.ends_with("segment(s) left"), "F2.13 S1: Ctrl+Y shares the one walk sentence: {y}");
 
             // Ctrl+Shift+Z redoes too, so either hand's habit works. Rewound first so it has a step
             // of its own to take, rather than riding the previous chord's leftover.
@@ -487,7 +487,7 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
             );
             settle();
             let zs = status_line(&window);
-            assert!(zs.contains("forward again"), "Ctrl+Shift+Z also redoes: {zs}");
+            assert!(zs.contains("undone \u{2014}") && zs.ends_with("segment(s) left"), "F2.13 S1: Ctrl+Shift+Z also redoes with the same line: {zs}");
 
             // An UNMODIFIED letter is not ours: plain `z` leaves the status line exactly where it was,
             // which is what lets a focused Entry keep its keystrokes.
