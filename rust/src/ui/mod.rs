@@ -190,6 +190,12 @@ pub use window::run_speeds_pass_with_reply;
 pub use window::speeds_pass_button;
 pub use window::refresh_speeds_gate;
 pub use window::set_speeds_pass;
+// F3.11 Decorations proposed by the model: the pass's seams, so a test can fire ✨ Decorations by name and read
+// the same cut state the logic test in `tests/cut_effects_proposed.rs` checks.
+pub use window::decorations_pass_button;
+pub use window::run_effects_pass;
+pub use window::run_effects_pass_with_reply;
+pub use window::set_decorations_pass;
 pub use window::CaptionBatch;
 pub use window::speed_custom_rate_visible;
 pub use window::drag_text_edge;

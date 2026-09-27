@@ -4721,6 +4721,18 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     run_row.append(&speeds);
     refresh_speeds_gate(&window);
     wire_speeds_pass(&speeds, &window);
+    // F3.11's ✨ Decorations beside those two, for the same reason: one call after the cut asking for zooms,
+    // a stop and some volume is a job, not one of §1's toolbar items, so it sits with the other jobs and NOT
+    // in `cut-toolbar` (whose six groups §05 #1-screen pins via `cut_screen::TOOLBAR_GROUPS`). Created once
+    // per window here, before any lookup, so re-entering the tab cannot stack a second button.
+    let decorations = gtk::Button::with_label(DECORATIONS_PASS_LABEL);
+    decorations.set_widget_name("decorations-pass-button");
+    decorations.set_tooltip_text(Some(
+        "ask the model for zooms, a stop and some volume over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
+    ));
+    run_row.append(&decorations);
+    refresh_decorations_gate(&window);
+    wire_decorations_pass(&decorations, &window);
     run_row.append(&progress);
 
     wire_play(
@@ -10631,6 +10643,202 @@ fn wire_speeds_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
     button.connect_clicked(move |_| {
         let _ = run_speeds_pass(&window);
+    });
+}
+
+/// F3.11's label. As with ✐ Captions and ⏩ Speeds, the spec's flowchart starts at a model call and names no
+/// control: a named button is the decision taken in its spirit, so the pass can be started and its gate seen.
+pub const DECORATIONS_PASS_LABEL: &str = "\u{2728} Decorations";
+
+/// F3.11 S1–S5: run the decorations pass over this window's newest cut and say what happened.
+///
+/// Rule-free like [`run_captions_pass`] and [`run_speeds_pass`]: every decision lives in
+/// [`crate::cut_effects_pass`]. This seam reads the page, hands the rules their inputs (the kept clips AND the
+/// captions and rates already on them, because S1's brief names both), and writes back what they answer.
+pub fn run_effects_pass(window: &adw::ApplicationWindow) -> String {
+    // One attempt from the page. Headless there is no endpoint wired for this pass, so nothing is proposed and
+    // the rule's own "no usable answer" line is what remains -- never invented decorations standing in for a
+    // proposal the model did not make.
+    place_effects_reply(window, &[])
+}
+
+/// F3.11 S2/S3/S5 with a scripted reply: the same route the pass takes, minus the telephone. A test feeds the
+/// `add_effect` calls here and asserts placement against real page state, exactly as
+/// `run_speeds_pass_with_reply` does.
+pub fn run_effects_pass_with_reply(
+    window: &adw::ApplicationWindow,
+    calls: &[crate::cut_effects_pass::Call],
+) -> String {
+    place_effects_reply(window, calls)
+}
+
+/// The shared body of the two decorations seams. Kept private so they cannot drift apart.
+fn place_effects_reply(
+    window: &adw::ApplicationWindow,
+    calls: &[crate::cut_effects_pass::Call],
+) -> String {
+    if !policy::pass_runs(&session_policy(window), policy::Pass::Decorations) {
+        let said = "decorations are off \u{2014} the context ruled them out".to_string();
+        if let Some(status_line) = find_status(window.upcast_ref()) {
+            status_line.set_text(&said);
+        }
+        return said;
+    }
+    let mut cut_ = newest_review_cut();
+    // S1's batch: the visible segments, numbered from 1, with the captions already on the cut clamped onto
+    // them (see [`decoration_batch`]). The rates come from the same batch, so the brief and the refusal rules
+    // read one picture of the cut rather than two that can disagree.
+    let batch = decoration_batch(&cut_);
+    let rates = clip_rates(&batch);
+    // S1's brief is built here so a test can pin that the captions and the speeds really were named to the
+    // model before any decoration was asked for; the request text itself belongs to the endpoint, not the page.
+    let _ = crate::cut_effects_pass::brief(&batch, &rates);
+
+    // Two rounds at most, decided by the same rule F3.9 uses: one rejection owes one retry, a third ask never
+    // happens. A fault is an UNUSABLE reply (a clip number never given); a per-call skip (an unknown kind, an
+    // empty span) is unwelcome, not unusable, and costs no round.
+    let mut placed: Option<Vec<crate::cut::Fx>> = None;
+    let mut skipped: Vec<String> = Vec::new();
+    for attempt in 1..=2u32 {
+        let reply = crate::cut_effects_pass::place(&batch, calls);
+        for answer in &reply.answers {
+            if let crate::cut_effects_pass::Answer::Refused(reason) = answer {
+                // S3: a skipped line is SAID. Dropping it silently would leave the user counting bars on the
+                // lane and finding fewer than the reply proposed, with no reason printed anywhere.
+                skipped.push(reason.clone());
+            }
+        }
+        if reply.usable() {
+            placed = Some(reply.effects.clone());
+            break;
+        }
+        if let Some(problem) = &reply.fault {
+            log_line(&crate::cut_effects_pass::rejected(problem));
+        }
+        if !crate::cut_captions::retries(attempt) {
+            break;
+        }
+    }
+    let mut said = match placed {
+        Some(effects) => {
+            if effects.is_empty() {
+                // Nothing landed, which is a right answer to a cut that wants no decoration (every gain was 1,
+                // every span empty) rather than a failed run -- so it is not [`cut_effects_pass::no_answer`]'s
+                // sentence, which promises the model was asked and gave nothing usable.
+                "nothing proposed \u{2014} the cut stands as it is".to_string()
+            } else {
+                cut_.fx.extend(effects.iter().cloned());
+                save_insert_cut(&cut_);
+                record_edit(window, &cut_);
+                refresh_effects_lane(window);
+                crate::cut_effects_pass::placed(effects.len())
+            }
+        }
+        None => crate::cut_effects_pass::no_answer(),
+    };
+    for reason in skipped {
+        said.push_str(" \u{2014} ");
+        said.push_str(&reason);
+        log_line(&reason);
+    }
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    log_line(&said);
+    said
+}
+
+/// F3.11 S1: the clips the decorations pass asks about — the VISIBLE SEGMENTS of the cut, numbered from 1 in
+/// play order, each carrying its own session start, with the captions already on the cut clamped onto them.
+/// Same reasoning as in `place_speeds_reply`, restated because a reader of this pass should not have to open
+/// the other one to know why: NOT `cut_play::kept_runs`, which MERGES touching segments for preloading, so a
+/// cut of three adjoining segments would be one clip to the model and every clip number above 1 the model
+/// named would fall outside the batch.
+fn decoration_batch(cut_: &crate::cut::Cut) -> crate::tools::clips::Clips {
+    let mut segs: Vec<(f64, f64)> = cut_
+        .segs
+        .iter()
+        .filter(|seg| seg.e > seg.s)
+        .map(|seg| (seg.s, seg.e))
+        .collect();
+    segs.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let triples: Vec<(u32, f64, f64)> = segs
+        .iter()
+        .enumerate()
+        .map(|(i, (start, end))| (i as u32 + 1, *start, end - start))
+        .collect();
+    let mut batch = crate::tools::clips::Clips::new(&triples);
+    // S1's brief names the captions per clip ("never zoom past captions"), so a caption hanging across a clip
+    // boundary is CLAMPED to the overlap rather than skipped: dropping it would hide a caption the viewer
+    // sees from the rule that reads it.
+    for fx in cut_.fx.iter().filter(|fx| fx.kind == "text") {
+        let clips_now: Vec<(u32, f64, f64)> = batch
+            .clips()
+            .iter()
+            .map(|clip| (clip.n, clip.start, clip.length))
+            .collect();
+        for (n, start, length) in clips_now {
+            let from = fx.t.max(start);
+            let to = (fx.t + fx.dur).min(start + length);
+            if to - from > 0.0 {
+                // Whether a caption fits is not this pass's question, so the tool's answer is not acted on.
+                let _ = batch.add_caption(n, from - start, to - start, &fx.text);
+            }
+        }
+    }
+    batch
+}
+
+/// F3.11 S1 (`told the captions and speeds`): the rate each clip already plays at, read off the speed effects
+/// the F3.10 pass (or a hand-placed ⏩) put on the cut. A clip with no speed effect is absent rather than
+/// listed at 1: [`crate::cut_effects_pass::brief`] says nothing about a picture that is not moving, and a
+/// stop (rate 0) IS worth saying, so only "no effect" and "rate 1" are left out.
+fn clip_rates(batch: &crate::tools::clips::Clips) -> Vec<(u32, f64)> {
+    let mut rates: Vec<(u32, f64)> = Vec::new();
+    for clip in batch.clips() {
+        // The clip's own rate field, set by `set_clip_speed` or by a speed effect whose span covers it. A stop
+        // reports 0 and a fast clip its rate; anything else stays unlisted.
+        if clip.rate != 1.0 {
+            rates.push((clip.n, clip.rate));
+        }
+    }
+    rates
+}
+
+/// F3.11: move this session's decorations gate directly, the way `set_captions_pass` moves its own.
+pub fn set_decorations_pass(window: &adw::ApplicationWindow, on: bool) {
+    let _ = window;
+    if let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) {
+        session.borrow_mut().policy.decorations_pass.value = on;
+    }
+}
+
+/// F3.11: the ✨ Decorations button, found by name so a test can fire the real click.
+pub fn decorations_pass_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "decorations-pass-button")?
+        .downcast()
+        .ok()
+}
+
+/// F3.11: re-read the gate onto the button. Same predicate the pass checks, both ways, so a greyed control
+/// always means "the pass would refuse" and the grey is never sticky.
+pub fn refresh_decorations_gate(window: &adw::ApplicationWindow) {
+    if let Some(button) = decorations_pass_button(window) {
+        let gated = !policy::pass_runs(&session_policy(window), policy::Pass::Decorations);
+        button.set_sensitive(!gated);
+        button.set_tooltip_text(Some(if gated {
+            "off \u{2014} the context ruled decorations out (P.policy.decorationsPass)"
+        } else {
+            "ask the model for zooms, a stop and some volume over the kept clips \u{2014} \u{21b6} Undo takes the pass back"
+        }));
+    }
+}
+
+/// F3.11: the ✨ Decorations button forwards to [`run_effects_pass`], reading the cut this window holds.
+fn wire_decorations_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        let _ = run_effects_pass(&window);
     });
 }
 
