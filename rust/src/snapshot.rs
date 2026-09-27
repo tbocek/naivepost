@@ -17,6 +17,7 @@ use crate::cut_line;
 use crate::layout;
 use crate::new_project;
 use crate::project;
+use crate::shell::Page;
 use crate::ui;
 
 /// Screen names the window can render: the spec's images, mapped onto a page.
@@ -29,7 +30,7 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         "05-cut" | "05-add" | "05-fold" | "05-rows" | "05-split" | "05-trim" | "05-remove"
         | "05-lanes" => Some("Cut"),
         "06-preview" | "06-zoom" | "06-speed" | "06-text" | "06-volume" | "06-label"
-        | "06-lane" | "06-effect-menu" => Some("Cut"),
+        | "06-lane" | "06-svg" | "06-effect-menu" => Some("Cut"),
         "07-narrate" | "07-take" => Some("Narrate"),
         "08-produce" | "08-words" => Some("Produce"),
         _ => None,
@@ -156,6 +157,21 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             ui::press_fold_gap(&window, 1);
             ui::refresh_camera_rows(&window);
         }
+        // F3.5's screen is the drawing form OPEN, so the shot must drive the same doors the widgets use
+        // (`tests/svg_drawing_widgets.rs` fires exactly these) rather than poke state: a picture painted
+        // from a shortcut would not be the picture the app draws.
+        if screen == "06-svg" {
+            // A line exists and points at 81 s, so the heading reads `SVG at 1:21` -- spelled by
+            // `fx_svg::form_title`, never hardcoded here.
+            ui::note_place(true);
+            ui::set_line_position(&window, cut_line::LinePos { t: 81.0 });
+            // File first, as S1/S2 order it; then a DRAWN box (not the click default) lands and opens the
+            // form, which is the state the spec's FORM node describes.
+            ui::svg_chosen(&window, Some("assets/logo.svg"));
+            ui::svg_drag_ended(&window, (24.0, 24.0), (150.0, 96.0));
+            // No Apply here: Apply closes the form, and the screen F3.5 names IS the form. The record it would
+            // write is proven by `tests/svg_drawing_widgets.rs`; the shot shows what the user is being asked.
+        }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.
@@ -191,9 +207,23 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // beside the title and Reset it drives — and the row itself was requested above, before
             // `build_window`. Row 2 = "Describe", per `bench::ROWS`.
             "04-prompt-picker" => None,
+            // F3.5's screen is the form itself, not the page behind it -- same reason `03-policy-form`
+            // paints its dialog: the Cut page's own column collapses to a sliver headless (see the note on
+            // the default size above), so painting the whole window would show empty grey instead of the
+            // fields. The holder is resolved THROUGH the window that owns the live form.
+            // Painted as the whole window: the form is part of the Cut page and cannot be reparented out of
+            // it (GTK refuses a child that already has a parent), so the page itself must reach a readable
+            // width -- done above, before `present()`, with a default size plus the pinned preview panel.
             _ => None,
         };
         if subject.is_none() {
+            // Render-only: a snapshot window is never resized by a user, and the Cut page collapses into one
+            // unreadable narrow column when nothing asks for width. `05-cut` reaches a wide layout today only
+            // because its fold/camera-row refreshes happen to widen it; the `06-*` screens never do. A
+            // default size before `present()` is enough to inspect the page -- no shell relayout.
+            if screen_page(&screen) == Some("Cut") {
+                window.set_default_size(1240, 900);
+            }
             window.present();
         }
         let painted = subject.clone().unwrap_or_else(|| window.clone().upcast());
