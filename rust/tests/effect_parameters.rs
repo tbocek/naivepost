@@ -200,11 +200,13 @@ fn sec_06_effects_6_parameters_used_s5_the_drawing_numbers_are_here_and_the_unow
         .map(|param| param.id.to_string())
         .collect();
 
-    // F3.7's label form floor (0.4): the form has no constant in this tree, so there is nothing to catalogue.
+    // F3.7's label form floor (0.4) DOES have a constant now -- `fx_label::MIN_SECONDS` -- and stays out of §6's
+    // catalogue because §10 gives it no `P.` row on purpose (see the note above `params::effects`): nothing tunes
+    // it, the form only refuses under it.
     for absent in ["labelMin", "labelFloor"] {
         assert!(
             !listed.iter().any(|id| id.contains(absent)),
-            "{absent} would catalogue a floor no rule reads yet"
+            "{absent} would catalogue a floor §10 deliberately leaves uncatalogued"
         );
     }
     // The decorations density is §F3.11's prompt wording ("few and deliberate: three or four across five minutes"),

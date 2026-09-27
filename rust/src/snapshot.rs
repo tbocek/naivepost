@@ -184,6 +184,20 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // it would write, and that one ↶ takes back, is proven by `tests/volume_form_widgets.rs`.
             let _ = said;
         }
+        // F3.7's screen is the label form OPEN (`spec/img/06-label.png`), so the shot drives the same door the
+        // dropdown row fires (`tests/label_form_widgets.rs` presses exactly this) rather than poking state.
+        if screen == "06-label" {
+            // A placed line 81 s in, so the heading names that moment -- spelled by `fx_label::form_title`,
+            // never hardcoded here. The Name field shows empty because the name is the question the form asks:
+            // an unnamed mark is refused at Apply ("nothing is placed until then"), so prefilling one would put
+            // a word on the lane nobody typed.
+            ui::note_place(true);
+            ui::set_line_position(&window, cut_line::LinePos { t: 81.0 });
+            let said = ui::press_label_item(&window);
+            // No Apply here either: Apply closes the form, and the screen §F3.7 names IS the form. The mark it
+            // would write, and that one ↶ takes back, is proven by `tests/label_form_widgets.rs`.
+            let _ = said;
+        }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.

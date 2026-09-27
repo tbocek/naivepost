@@ -170,6 +170,12 @@ pub use window::press_volume_cancel;
 pub use window::press_volume_esc;
 pub use window::press_volume_item;
 pub use window::volume_form_open;
+/// F3.7 Label by hand — the form's doors, so a test can press them the way the dropdown row does.
+pub use window::label_form_open;
+pub use window::press_label_apply;
+pub use window::press_label_cancel;
+pub use window::press_label_esc;
+pub use window::press_label_item;
 pub use window::speed_custom_rate_visible;
 pub use window::drag_text_edge;
 pub use window::nudge_text_box;
