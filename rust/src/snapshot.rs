@@ -13,6 +13,7 @@ use glib::translate::ToGlibPtr;
 use gtk4 as gtk;
 
 use crate::cut;
+use crate::cut_line;
 use crate::layout;
 use crate::new_project;
 use crate::project;
@@ -98,6 +99,34 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // today (`cut::load` answers that with `Cut::default()`), which draws the empty hint.
         if let Some(loaded) = layout::Tree::new(&dir).ok().and_then(|tree| cut::load(&tree).ok()) {
             ui::seed_review_cut(&window, &loaded);
+            // The camera rows are built from the cut too, and `build_window` drew them before this seed
+            // landed -- so a snapshot of any Cut-page screen has to refresh them or they show the empty
+            // pre-seed list. (F2.10: `camera-rows`, its name plates, lens badge and per-lane badges.)
+            ui::refresh_camera_rows(&window);
+        }
+        // F2.10's own picture is TWO cameras at once (`spec/img/05-rows.png`), which no fixture on disk
+        // carries -- the demo project's `cut/cut.json` is one camera in three clips. A snapshot asked for
+        // by that image's name therefore lays the figure out here: camera 1 for 0-37, camera 2 overlapping
+        // from 20 with the shift correction its name plate shows, one lane so there is a speaker badge and
+        // a gutter switch, the line inside the overlap, and row 2 watched so the dashed outline is in shot.
+        if screen == "05-rows" {
+            let mut two_cameras = cut::Cut::default();
+            two_cameras.segs = vec![
+                cut::Seg { s: 0.0, e: 37.0, cam: 0, ..Default::default() },
+                cut::Seg { s: 20.0, e: 37.0, cam: 1, ..Default::default() },
+            ];
+            two_cameras.lanes = vec![cut::Lane {
+                name: "cam1".into(),
+                src: "cam1".into(),
+                at: 20.0,
+                off: 0.0,
+                dur: 17.0,
+            }];
+            two_cameras.shift.insert("cam1".to_string(), -19.0);
+            ui::seed_review_cut(&window, &two_cameras);
+            ui::set_line_position(&window, cut_line::LinePos { t: 25.0 });
+            ui::press_watch_row(&window, 1);
+            ui::refresh_camera_rows(&window);
         }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is

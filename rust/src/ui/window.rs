@@ -13,6 +13,7 @@ use gtk4 as gtk;
 use crate::add_sources;
 use crate::bench;
 use crate::cut::{self, Cut};
+use crate::cut_cam;
 use crate::cut_hear;
 use crate::cut_play;
 use crate::cut_review;
@@ -336,7 +337,26 @@ fn page_box(
         box_.insert_child_after(&surface_group, Some(&previous));
         previous = surface_group.upcast();
         box_.insert_child_after(&strip, Some(&previous));
-        let _ = previous;
+
+        // F2.10 Cameras and hearing — the named row list, right under the strip's ruler, where
+        // `spec/img/05-rows.png` puts the camera rows. DECISION: F2.11 owns the real picture rows,
+        // thumbnails and wave strips, and F2.8's placeholder geometry on `track-strip` is left EXACTLY
+        // as that item drew it (STRIP_WIDTH / STRIP_HEIGHT over `cut_trim::PLACEHOLDER_STRIP_BANDS`) —
+        // reflowing the strip would move every press band F2.8's widget test fires into. So the things
+        // this item actually names — the name plate you click to watch a row, the 🔍 lens badge, the 🔈
+        // speaker badges and the gutter switches — are drawn as their own stacked list in a box named
+        // `camera-rows`, one row per coloured row from `timeline::row_count`, so the whole flow is
+        // reachable by a click and testable today. The contents are rebuilt by
+        // `refresh_camera_rows` from this window's cut; nothing here holds a second copy of a rule.
+        let cam_rows = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        cam_rows.set_widget_name("camera-rows");
+        cam_rows.set_tooltip_text(Some(
+            "one row per camera \u{2014} click its name plate to watch that row in the preview",
+        ));
+        box_.insert_child_after(&cam_rows, Some(&previous));
+        // NOT filled here: `window` is still under construction and not in the widget tree yet, so a
+        // search for `camera-rows` from it finds nothing. The rows are drawn by `refresh_camera_rows`,
+        // which `build_window` calls after `set_content` alongside the other Cut-page wiring.
     }
 
     view.set_content(Some(&box_));
@@ -1549,6 +1569,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     wire_history_keys(&window);
     // F2.8: the trim and move gestures on `track-strip`, wired after `set_content` for the same reason.
     wire_track_strip(&window);
+    // F2.10: fill `camera-rows` now that the page is inside the tree, so the search for it succeeds
+    // and the plates, badges and switches a test fires by name are actually there.
+    refresh_camera_rows(&window);
     window
 }
 
@@ -3321,6 +3344,9 @@ fn refresh_selection_readout(window: &adw::ApplicationWindow) {
     // §05-cut#1-screen: and so do the four history buttons — one refresh path sets every greyed
     // control on the page, from the rule that owns each of them.
     refresh_history_buttons(window);
+    // F2.10: and the camera rows, whose badges, plates and gutter switches read the same live cut on
+    // every draw, nudge and clear — a badge showing a state the next press contradicts is a lie.
+    refresh_camera_rows(window);
 }
 
 
@@ -4186,6 +4212,403 @@ pub fn set_watched_row(row: Option<usize>) {
     WATCHED_ROW.with(|cell| *cell.borrow_mut() = row);
 }
 
+// --- F2.10: cameras and hearing, the seams the badges and rows call ------------------------------------
+
+/// F2.10 S3: this window's watch, newest slot last like [`REVIEW_CUTS`] so one window's click cannot
+/// answer another's ▶. The rule itself is [`cut_cam::Watch`]; this only remembers which one is live.
+thread_local! {
+    static CAM_WATCHES: std::cell::RefCell<Vec<Rc<RefCell<cut_cam::Watch>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// F2.10: a named `gtk::ToggleButton` in this window — the lens badge, a speaker badge or a gutter
+/// switch. `line_step_button` only downcasts to a plain Button, so the toggle half needs its own finder;
+/// it is the same walk, and the same stable names the page drew.
+pub fn toggle_button(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::ToggleButton> {
+    find_widget_by_name(window.upcast_ref(), name)?.downcast().ok()
+}
+
+/// F2.10 S3: this window's [`cut_cam::Watch`], created on first ask so a page that was never clicked
+/// still has an empty one to hand to ▶.
+pub fn camera_watch(window: &adw::ApplicationWindow) -> Rc<RefCell<cut_cam::Watch>> {
+    let _ = window;
+    CAM_WATCHES.with(|slots| {
+        let mut slots = slots.borrow_mut();
+        if let Some(latest) = slots.last() {
+            return latest.clone();
+        }
+        let fresh = Rc::new(RefCell::new(cut_cam::Watch::default()));
+        slots.push(fresh.clone());
+        fresh
+    })
+}
+
+/// The session second the red line stands on — the `t` every F2.10 sentence is about.
+///
+/// This is [`line_position`]'s number and nothing else: the line's own state, restored from
+/// `cut/line.json` at open and moved by F2.4's steps. No second line position is invented here, so the
+/// status says the same moment the ruler draws.
+fn line_second(window: &adw::ApplicationWindow) -> f64 {
+    line_position(window).t
+}
+
+/// The scene index the line stands in, as F2.10 reads it: a KEPT scene (footage, not an insert), since
+/// both the lens badge and the speaker badge are asked about footage. `None` when the line sits over a
+/// card or over nothing.
+fn kept_scene_at_line(window: &adw::ApplicationWindow) -> Option<usize> {
+    let cut_ = newest_review_cut();
+    let at = line_second(window);
+    cut_
+        .segs
+        .iter()
+        .position(|seg| seg.ins.is_empty() && seg.s <= at && at < seg.e)
+}
+
+/// F2.10 S3 (`if the line is in a kept scene shown from another row, status says ONCE …`): the seam a
+/// row's name plate forwards to. [`cut_cam::click_row`] owns the whole decision, including
+/// whether the "the cut shows camera M here" sentence is owed; this prints what comes back.
+pub fn press_watch_row(window: &adw::ApplicationWindow, row: i32) -> Option<String> {
+    let cut_ = newest_review_cut();
+    let at = line_second(window);
+    let said = {
+        let watch = camera_watch(window);
+        let mut watch = watch.borrow_mut();
+        cut_cam::click_row(&mut watch, row, &cut_.segs, Some(at))
+    };
+    // Keep F2.4's slot in step: whatever the picture band click sets, a row click means the same thing
+    // about which row this window is looking at.
+    set_watched_row(Some(row.max(0) as usize));
+    if let Some(line) = &said {
+        if let Some(status) = find_status(window.upcast_ref()) {
+            status.set_text(line);
+        }
+    }
+    // The dashed outline moves with the watch, so the rows are rebuilt rather than merely queued.
+    refresh_camera_rows(window);
+    said
+}
+
+// --- F2.10: drawing the rows --------------------------------------------------------------------------
+
+/// The 🔍 glyph, spelled once so the badge and its tooltip cannot drift apart. (The headless container
+/// has no icon theme, so — as with F2.5's "preview volume" word for a speaker icon — the glyph is drawn
+/// as text rather than looked up.)
+pub const LENS_GLYPH: &str = "\u{1f50d}";
+/// The 🔈 glyph for a lane's speaker badge, spelled once for the same reason.
+pub const SPEAKER_GLYPH: &str = "\u{1f508}";
+
+/// Is a lane heard in the scene under the line? An unlisted lane is heard (`spec/inventory/cut.md` §A
+/// rule 10: `quiet` lists the silent ones), and with no kept scene under the line there is nothing to
+/// be silent in, so the badge reads heard and greyed rather than lying about a scene that isn't there.
+fn lane_heard_in_line_scene(cut_: &Cut, lane: &str, scene: Option<usize>) -> bool {
+    match scene {
+        Some(index) => cut_
+            .segs
+            .get(index)
+            .map(|seg| seg.hears(lane))
+            .unwrap_or(true),
+        None => true,
+    }
+}
+
+/// Rebuild `camera-rows` from this window's own cut. One row per coloured row of the timeline
+/// (`timeline::row_count`, which is the greedy colouring's answer plus `Cut::nrows`' floor — no second
+/// colouring here), each holding, in this order: the clickable name plate (F2.10 S3), the lens badge
+/// (S1), one speaker badge per lane (S2) and that lane's gutter switch (S2). Every widget takes its
+/// state from the same functions the logic tests call, and every press goes through the same
+/// `press_*` seam a test fires, so the drawing cannot disagree with the rule.
+///
+/// Called from `refresh_selection_readout` (which every draw, nudge and clear already calls) and after
+/// each of this item's presses. Rebuilding rather than patching keeps the watched row's dashed outline
+/// STATE: it is added when the watch says so, never painted on luck.
+pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
+    let Some(rows_box) = camera_rows_box(window) else {
+        return;
+    };
+    let cut_ = newest_review_cut();
+    let recordings = crate::timeline::kept_footage_recordings(&cut_);
+    let placed = crate::timeline::rows_for(&recordings, &cut_);
+    let total = crate::timeline::row_count(&recordings, &cut_);
+    // The rows this window has already drawn, keyed by their widget name. A row is built ONCE and then
+    // only re-styled: `find_widget_by_name` matches on GTK's *widget name*, which every control here
+    // carries (`set_widget_name`), so a rebuild that appended a second `watch-row-1` would leave the
+    // first one — the widget a test actually finds — frozen at its old label. Growing the list to the
+    // row count and never shrinking it also keeps §B's emptied bottom row on screen until its ✕ lands
+    // with F2.11, rather than dropping a row the user can still click.
+    let lanes: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
+    let scene = kept_scene_at_line(window);
+    let at = line_second(window);
+    let watched = watched_row();
+
+    let drawn = rows_box.observe_children().n_items() as usize;
+    // The guard is set for the whole pass below: every `set_active` in it is a STATE PUSH, not a press.
+    CAMERA_REFRESH.with(|cell| cell.set(true));
+    // The dashed outline the spec's **4** asks for has to be painted, not merely named: GTK draws no
+    // class of its own, so a `watched-row` class with no CSS behind it is invisible. A frame around the
+    // row box is what reads as "this row is the one the preview shows", and it is drawn here rather
+    // than in a stylesheet because the crate installs no CSS provider at all (nothing else in `src/`
+    // calls `CssProvider`), and adding a display-wide provider would restyle every other page.
+    let watched_box = gtk::CssProvider::new();
+    let _ = watched_box.load_from_data(".watched-row { border: 2px dashed #3a63c8; }");
+    gtk::StyleContext::add_provider_for_display(
+        &gtk::gdk::Display::default().expect("a display to style"),
+        &watched_box,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+    for index in 0..total.max(drawn) {
+        let row = index as i32;
+        // Reuse the row this window already drew rather than appending a second copy: `find_widget_by_name`
+        // matches GTK's widget name, so a duplicate `camera-row-1` would leave the FIRST one — the
+        // widget a test finds by that name — frozen at its old label while a hidden twin carried the
+        // new state. Building once and re-styling is what keeps the on-screen plate and the rule the
+        // same object.
+        let holder = match find_widget_by_name(rows_box.upcast_ref(), &format!("camera-row-{}", index + 1))
+            .and_then(|found| found.downcast::<gtk::Box>().ok())
+        {
+            Some(existing) => existing,
+            None => {
+                let fresh = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                fresh.set_widget_name(&format!("camera-row-{}", index + 1));
+                rows_box.append(&fresh);
+                fresh
+            }
+        };
+        if watched == Some(index) {
+            // **4** in `spec/img/05-rows.png`: the watched row is outlined, not filled. BOTH branches
+            // run on every pass, so the outline can move OFF a row as well as onto one.
+            holder.add_css_class("watched-row");
+        } else {
+            holder.remove_css_class("watched-row");
+        }
+        // The holder is reused so one row answers to one name; its CONTROLS, however, have to be made
+        // fresh each pass (`gtk::Box::append` refuses a child that already has a parent, and the
+        // labels, glyphs and toggle faces all carry this pass's state). Drain the old set first, then
+        // build — which is why the block below appends without checking.
+        while let Some(old) = holder.first_child() {
+            holder.remove(&old);
+        }
+
+        // The name plate: what lies on this row, which part of that file it shows, and the shift
+        // correction the page was opened with (**2**'s "−19.00 s"). A row with nothing on it still
+        // gets its plate, named by `cut_cam::row_name`'s fallback, because an empty bottom row is a
+        // real row until its ✕ (§B) and an unnamed row cannot be watched back.
+        let occupant = recordings
+            .iter()
+            .zip(&placed)
+            .find(|(_, placed_row)| **placed_row as i32 == row);
+        let (plate, base) = match occupant {
+            Some((rec, _)) => {
+                let shift = cut_.shift.get(&rec.base).copied().unwrap_or(0.0);
+                (cut_cam::name_plate(&rec.base, shift, 0.0), rec.base.clone())
+            }
+            None => (cut_cam::row_name(row, &[], &[]), String::new()),
+        };
+        let plate_button = gtk::Button::with_label(&plate);
+        plate_button.set_widget_name(&format!("watch-row-{}", index + 1));
+        plate_button.set_tooltip_text(Some(&format!(
+            "watch {} in the preview \u{2014} \u{25b6} hands the preview back to the cut",
+            if base.is_empty() {
+                plate.as_str()
+            } else {
+                base.as_str()
+            }
+        )));
+        let win = window.clone();
+        plate_button.connect_clicked(move |_| {
+            press_watch_row(&win, row);
+        });
+        holder.append(&plate_button);
+
+        // S1's lens badge: lit when the scene under the line is shown FROM this row. Sensitive only
+        // where the question has an answer — a card at the line owns no camera, so asking it which
+        // lens it uses would write a number nothing reads.
+        let lens = gtk::ToggleButton::new();
+        lens.set_widget_name(&format!("lens-badge-{}", index + 1));
+        lens.set_label(LENS_GLYPH);
+        lens.set_sensitive(scene.is_some());
+        lens.set_active(scene.map(|i| cut_.segs[i].cam).unwrap_or(-1) == row);
+        lens.set_tooltip_text(Some(&format!(
+            "{LENS_GLYPH} {}",
+            match scene {
+                Some(i) => format!(
+                    "the scene at {} is shown from {} now",
+                    cut_hear::scene_clock(cut_.segs[i].s),
+                    if base.is_empty() {
+                        plate.as_str()
+                    } else {
+                        base.as_str()
+                    }
+                ),
+                None => "no footage scene at the line \u{2014} nothing to show from a row".to_string(),
+            }
+        )));
+        let win = window.clone();
+        lens.connect_toggled(move |badge| {
+            // A `set_active` from the refresh is not a press: without this guard the refresh would
+            // re-enter the very press that asked for it and never settle.
+            if refreshing() {
+                return;
+            }
+            // The button's own face is set here; the RULE runs in `press_lens_row`. A press that the
+            // rule refuses (an insert reached despite the greying) puts the face back rather than
+            // leaving a lit badge over an unchanged cut.
+            if press_lens_row(&win, row).is_none() {
+                badge.set_active(false);
+            }
+        });
+        holder.append(&lens);
+
+        // S2: one speaker badge per lane, plus that lane's gutter switch beside it.
+        for lane in lanes.iter().cloned() {
+            let heard = lane_heard_in_line_scene(&cut_, &lane, scene);
+            // The lane name each closure below owns its own copy of, so no closure borrows a loop
+            // variable that dies at the next row.
+            let badge = gtk::ToggleButton::new();
+            badge.set_widget_name(&format!("speaker-badge-{lane}"));
+            badge.set_label(SPEAKER_GLYPH);
+            // Pressed = silent, so the badge reads as struck-through sound when the scene does not hear.
+            badge.set_active(!heard);
+            badge.set_sensitive(scene.is_some());
+            badge.set_tooltip_text(Some(&cut_hear::hush_status(
+                lane.as_str(),
+                heard,
+                scene.map(|i| cut_.segs[i].s).unwrap_or(at),
+            )));
+            let win = window.clone();
+            let badge_lane = lane.clone();
+            badge.connect_toggled(move |toggled| {
+                if refreshing() {
+                    return;
+                }
+                if press_speaker_badge(&win, &badge_lane).is_none() {
+                    toggled.set_active(false);
+                }
+            });
+            holder.append(&badge);
+
+            let gutter = gtk::ToggleButton::new();
+            gutter.set_widget_name(&format!("gutter-switch-{lane}"));
+            gutter.set_label("\u{25ac}");
+            // OFF (not pressed) when the lane is silent EVERYWHERE, on while any scene still hears it —
+            // the same reading `cut_hear::toggle_lane_all` acts on, so the switch never claims a state
+            // the next press contradicts.
+            gutter.set_active(cut_hear::lane_is_heard_anywhere(&cut_, &[lane.as_str()]));
+            gutter.set_tooltip_text(Some(&format!("{lane} for the whole cut")));
+            let win = window.clone();
+            gutter.connect_toggled(move |switch| {
+                if refreshing() {
+                    return;
+                }
+                press_gutter_switch(&win, lane.as_str());
+                // The switch's own face is the whole-cut answer, which `toggle_lane_all` just wrote;
+                // re-read it so a half-silenced row that went fully silent shows exactly that.
+                let fresh = newest_review_cut();
+                switch.set_active(cut_hear::lane_is_heard_anywhere(&fresh, &[lane.as_str()]));
+            });
+            holder.append(&gutter);
+        }
+        // NOT re-appended: `holder` is already inside `rows_box` — it was put there when first built.
+        // Appending it again is the `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL'
+        // failed` that shows up on every refresh after the first.
+    }
+    CAMERA_REFRESH.with(|cell| cell.set(false));
+}
+
+thread_local! {
+    /// F2.10: set while [`refresh_camera_rows`] is pushing state INTO the widgets, so a `set_active`
+    /// made by the refresh cannot be mistaken for a user press and re-enter the press that asked for the
+    /// refresh. Without this the chain `press_* -> refresh -> set_active -> connect_toggled -> press_*`
+    /// never ends.
+    static CAMERA_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Is a camera-row refresh in progress right now? Every toggle handler starts with this and returns if set.
+fn refreshing() -> bool {
+    CAMERA_REFRESH.with(|cell| cell.get())
+}
+
+/// F2.10 S1 (`🔍 lens badge: which row its picture comes from`): the seam the badge forwards to. The
+/// scene keeps its own seconds and only changes which row its picture is read off, so the edit is the
+/// `cam` field and nothing else — [`cut_cam::show_scene_from`] refuses an insert for exactly that
+/// reason, and a refusal leaves this window's cut untouched rather than half-applied.
+pub fn press_lens_row(window: &adw::ApplicationWindow, row: i32) -> Option<String> {
+    let scene = kept_scene_at_line(window)?;
+    let mut cut_ = newest_review_cut();
+    let recordings = crate::timeline::kept_footage_recordings(&cut_);
+    let rows = crate::timeline::rows_for(&recordings, &cut_);
+    let said = cut_cam::show_scene_from(&mut cut_, scene, row, &recordings, &rows)?;
+    seed_review_cut(window, &cut_);
+    if let Some(status) = find_status(window.upcast_ref()) {
+        status.set_text(&said);
+    }
+    // The lit badge follows the cut, so the rows are rebuilt from the new state rather than queued.
+    refresh_camera_rows(window);
+    Some(said)
+}
+
+/// F2.10 S2 (`🔈 speaker badge per lane: does this scene hear that lane`): the seam a badge forwards
+/// to. With no kept scene under the line there is no scene to be silent in, so nothing is printed and
+/// nothing changes.
+pub fn press_speaker_badge(window: &adw::ApplicationWindow, lane: &str) -> Option<String> {
+    let scene = kept_scene_at_line(window)?;
+    let mut cut_ = newest_review_cut();
+    let said = cut_hear::toggle_heard(&mut cut_, scene, lane)?;
+    seed_review_cut(window, &cut_);
+    if let Some(status) = find_status(window.upcast_ref()) {
+        status.set_text(&said);
+    }
+    refresh_camera_rows(window);
+    Some(said)
+}
+
+/// F2.10 S2 (`the gutter switch toggles a lane for the whole cut`): the seam the gutter forwards to.
+/// The switch stands for every recording sharing that lane's name, so `lanes` is that name once and
+/// `name` is what the status calls it — the same string, because today one switch speaks for one
+/// recording. [`cut_hear::toggle_lane_all`] answers even when there is nothing to change ("… is in no
+/// scene yet"), so this always has a sentence to print.
+pub fn press_gutter_switch(window: &adw::ApplicationWindow, lane: &str) -> String {
+    let mut cut_ = newest_review_cut();
+    let said = cut_hear::toggle_lane_all(&mut cut_, &[lane], lane);
+    seed_review_cut(window, &cut_);
+    if let Some(status) = find_status(window.upcast_ref()) {
+        status.set_text(&said);
+    }
+    refresh_camera_rows(window);
+    said
+}
+
+/// F2.10 S3: ▶ hands the preview back — the seam [`hand_preview_back`] is reached through, kept separate
+/// so a test can count how many times the watch was released without a real ▶.
+pub fn hand_preview_back(window: &adw::ApplicationWindow) -> Option<String> {
+    let was = {
+        let watch = camera_watch(window);
+        let mut watch = watch.borrow_mut();
+        watch.play_hands_back()
+    };
+    if !was {
+        return None;
+    }
+    // The row's own name comes from this window's recordings, so the sentence names a camera rather
+    // than a number; `row_name` falls back to "row N" when nothing is laid out yet.
+    let cut_ = newest_review_cut();
+    let recordings = crate::timeline::kept_footage_recordings(&cut_);
+    let rows = crate::timeline::rows_for(&recordings, &cut_);
+    let named = watched_row()
+        .map(|row| cut_cam::row_name(row as i32, &recordings, &rows))
+        .unwrap_or_else(|| "the watched row".to_string());
+    set_watched_row(None);
+    refresh_camera_rows(window);
+    Some(format!("\u{25b6} plays the cut \u{2014} {named} no longer watched"))
+}
+
+/// F2.10: the box holding this window's camera rows, by its stable name — `None` on a page that drew
+/// none. Every F2.10 press repaints through it, and Task 2 of this item builds its contents here.
+pub fn camera_rows_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
+    find_widget_by_name(window.upcast_ref(), "camera-rows")?
+        .downcast()
+        .ok()
+}
+
 thread_local! {
     static HELD_EFFECT: std::cell::RefCell<Option<cut::Fx>> =
         const { std::cell::RefCell::new(None) };
@@ -5002,11 +5425,28 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
         panic!("the window has no preview player");
     };
     let pressed = cut_play::pressed(&mut player.borrow_mut(), cut);
-    // The outer `status` is the status Label, so each arm binds its own name and paints from it.
+    // F2.10 S3: ▶ is what takes the preview back from a watched row. The release runs FIRST and its
+    // sentence wins over `cut_play`'s own, because "▶ plays the cut — <row> no longer watched" answers
+    // the click the user just made; a press that released nothing leaves the status as `cut_play`
+    // answered it. (It used to run before the match below and be overwritten by it.)
+    let released = hand_preview_back(window);
+    if let Some(back) = &released {
+        status.set_text(back);
+    }
+    // The outer `status` is the status Label, so each arm binds its own name and paints from it. A row
+    // release already printed above keeps the line; otherwise this press's own sentence goes there.
     match &pressed {
         // S2/S3: both change what the clock means or what is playing, so both get their sentence.
-        cut_play::Pressed::SwitchedToCut { status: line, .. } => status.set_text(line),
-        cut_play::Pressed::ReviewEnded { status: ended } => status.set_text(*ended),
+        cut_play::Pressed::SwitchedToCut { status: line, .. } => {
+            if released.is_none() {
+                status.set_text(line)
+            }
+        }
+        cut_play::Pressed::ReviewEnded { status: ended } => {
+            if released.is_none() {
+                status.set_text(*ended)
+            }
+        }
         cut_play::Pressed::Refused(line) => status.set_text(line),
         // S4: the toggle needs no sentence — the button's own face carries it.
         cut_play::Pressed::Toggled(_) => {}
@@ -5019,9 +5459,11 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
 fn wire_play_cut(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
     button.connect_clicked(move |_| {
-        // No live cut model reaches the page yet (the Cut page's own round owns it), so the empty cut
-        // is the honest input and S1's refusal is what a press answers with today.
-        let _ = press_play_cut(&window, &cut::Cut::default());
+        // The cut this press plays is the one this window holds — `seed_review_cut`'s slot, read back
+        // through `newest_review_cut`. F2.10 S3 hangs on that: ▶ must release a watched row from the
+        // same cut the page drew, so pressing with an empty stand-in would refuse instead of handing
+        // the preview back.
+        let _ = press_play_cut(&window, &newest_review_cut());
     });
 }
 

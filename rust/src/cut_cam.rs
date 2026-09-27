@@ -11,10 +11,17 @@
 //! ([`pin_for_drag`]), so an overlap made by hand gets a row of its own instead of being drawn under its
 //! neighbour and becoming impossible to see or pick.
 //!
-//! No UI lives here and none is wired: `rust/src/ui/window.rs` renders only the Prepare page, so there are no
-//! lens badges, speaker badges, gutter switches or clickable rows to attach yet (as with F2.1–F2.9) and nothing
-//! of this flow to compare against `spec/img/05-rows.png`. The widget layer will forward the presses and print
-//! what these return.
+//! No UI lives here — no widget is built or held by this module — but every rule in it IS wired, and the
+//! Cut page's row list is the only thing between a click and these functions:
+//! `watch-row-<n>` → `ui::press_watch_row` → [`click_row`],
+//! `lens-badge-<n>` → `ui::press_lens_row` → [`show_scene_from`],
+//! `speaker-badge-<lane>` → `ui::press_speaker_badge` → [`crate::cut_hear::toggle_heard`],
+//! `gutter-switch-<lane>` → `ui::press_gutter_switch` → [`crate::cut_hear::toggle_lane_all`].
+//! The rows themselves are drawn into the box named `camera-rows` by `ui::refresh_camera_rows`, which
+//! reads this module's answers rather than deciding anything of its own, and ▶ releases the preview from
+//! a watched row through `press_play_cut` → `ui::hand_preview_back` → [`Watch::play_hands_back`]. So
+//! the flow is reachable from the page and comparable against `spec/img/05-rows.png`; what stays here
+//! is the decision, so a test can check it without a display.
 
 use std::collections::BTreeMap;
 

@@ -408,3 +408,91 @@ fn f2_10_s3_a_card_at_the_line_never_says_the_cut_shows_another_camera() {
     let mut watch = cam::Watch::default();
     assert_eq!(cam::click_row(&mut watch, 1, &both, Some(40.0)), None);
 }
+
+// --- the seams: what `ui::press_*` computes before it touches a widget -----------------------------------
+//
+// The three tests below pin the INPUTS the F2.10 seams build, so that drawing → seam → rule can be traced
+// without a display. They call the same functions `rust/src/ui/window.rs` calls, in the same order, on the
+// same fixture as the rule tests above: if the seam and the test ever disagree about which scene or which
+// recording list is handed over, one of them fails here rather than silently drawing the wrong badge.
+
+/// F2.10 (Cameras and hearing) S1 — `"the scene at m:ss is shown from <cam> now"`, through the seam.
+/// `ui::press_lens_row` reads its recordings with `timeline::kept_footage_recordings` and its rows with
+/// `timeline::rows_for` (NOT the hand-written `pair()` the rule tests use), because the page knows only
+/// the cut. This pins that those two lists produce the same sentence and move ONLY the row: the scene's
+/// own seconds are untouched, since picking a lens changes where the picture comes from, never when.
+#[test]
+fn f2_10_s1_the_seam_changes_only_the_row_a_picture_is_read_off() {
+    let mut cut = Cut {
+        segs: vec![film(0.0, 37.0, 0), film(20.0, 37.0, 1)],
+        ..Default::default()
+    };
+    // Exactly what `press_lens_row` builds before calling the rule.
+    let recordings = naivepost::timeline::kept_footage_recordings(&cut);
+    let rows = rows_for(&recordings, &cut);
+    assert_eq!(recordings.len(), 2, "two kept footage segments are two recordings");
+    assert_eq!(rows, vec![0, 1], "the overlap from 20 is what puts the second camera on its own row");
+
+    // The scene under the line is index 0 (0 <= 25 < 37), the same pick `kept_scene_at_line` makes.
+    let said = cam::show_scene_from(&mut cut, 0, 1, &recordings, &rows)
+        .expect("a kept scene has a picture to be shown from a row");
+    // The sentence names the row by what lies ON it (`row_name`'s answer over THIS list), and its clock
+    // is the scene's own start — not the overlap's second. Both come from the lists above, so this pins
+    // which recording the seam hands over, not just that a string came back.
+    let named = cam::row_name(1, &recordings, &rows);
+    assert_eq!(said, format!("the scene at 0:00 is shown from {named} now"));
+    assert_eq!(named, "cam1", "row 1 of this cut carries the second camera's footage");
+    assert_eq!(cut.segs[0].cam, 1, "the scene is shown from row 1 now");
+    assert_eq!((cut.segs[0].s, cut.segs[0].e), (0.0, 37.0), "only the row moved; the scene keeps its seconds");
+}
+
+/// F2.10 (Cameras and hearing) S2 — `the gutter switch toggles a lane for the whole cut`, read back the
+/// way the page draws the switch's face. `refresh_camera_rows` shows a switch ON while
+/// `cut_hear::lane_is_heard_anywhere` holds and OFF once `all_silent` holds; this pins that pair after
+/// each press of `ui::press_gutter_switch`, so the face and the rule cannot drift apart.
+#[test]
+fn f2_10_s2_the_gutter_switch_is_read_from_what_the_page_shows() {
+    let lane = "cam0";
+    let mut cut = Cut { segs: vec![film(0.0, 10.0, 0), film(12.0, 20.0, 0)], ..Default::default() };
+    assert!(hear::lane_is_heard_anywhere(&cut, &[lane]), "nothing listed yet, so every scene hears it");
+    assert!(!hear::all_silent(&cut, &[lane]), "and silence is not the state before the first press");
+
+    let off = hear::toggle_lane_all(&mut cut, &[lane], lane);
+    assert_eq!(off, format!("{lane} off for the whole cut \u{2014} 2 scene(s) changed"));
+    assert!(hear::all_silent(&cut, &[lane]), "every kept scene now lists the lane");
+    assert!(!hear::lane_is_heard_anywhere(&cut, &[lane]), "so the switch's face goes OFF");
+
+    let on = hear::toggle_lane_all(&mut cut, &[lane], lane);
+    assert_eq!(on, format!("{lane} is on for the whole cut \u{2014} every scene hears it (2 changed)"));
+    assert!(hear::lane_is_heard_anywhere(&cut, &[lane]), "back ON, which is what the page must show");
+    assert!(!hear::all_silent(&cut, &[lane]), "and no scene still lists it");
+}
+
+/// F2.10 (Cameras and hearing) S3 — the refusal `ui::press_lens_row` propagates when the line lies on a
+/// card: `show_scene_from` answers `None` and leaves the cut byte-identical, so a press over an insert
+/// writes no camera onto a thing that owns none. Paired with the fresh-watch case behind
+/// `ui::hand_preview_back`: with nothing watched, ▶ has nothing to hand back and says so by returning
+/// false rather than claiming the preview was taken off a row.
+#[test]
+fn f2_10_s3_a_card_at_the_line_leaves_the_lens_refused() {
+    let mut cut = Cut { segs: vec![film(0.0, 10.0, 0), card(12.0)], ..Default::default() };
+    let before = serde_json::to_string(&cut).expect("the fixture serialises");
+    let recordings = naivepost::timeline::kept_footage_recordings(&cut);
+    let rows = rows_for(&recordings, &cut);
+
+    // Index 1 is the card: `ins` non-empty, so `kept_scene_at_line` would never name it and the rule
+    // refuses outright if asked.
+    assert_eq!(
+        cam::show_scene_from(&mut cut, 1, 1, &recordings, &rows),
+        None,
+        "a card owns no picture to be shown from a row, so the seam gets None and prints nothing"
+    );
+    assert_eq!(
+        serde_json::to_string(&cut).expect("the cut still serialises"),
+        before,
+        "a refused lens press changes no byte of the cut"
+    );
+
+    let mut watch = cam::Watch::default();
+    assert!(!watch.play_hands_back(), "with nothing watched there is nothing to hand back");
+}

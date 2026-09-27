@@ -116,6 +116,19 @@ pub use window::set_held_edge;
 pub use window::apply_pick;
 pub use window::watched_row;
 pub use window::set_watched_row;
+// F2.10: the camera/hearing seams — the row click, the lens badge, the speaker badge, the gutter switch,
+// and ▶'s hand-back of the preview.
+pub use window::camera_watch;
+pub use window::hand_preview_back;
+pub use window::press_gutter_switch;
+pub use window::press_lens_row;
+pub use window::press_speaker_badge;
+pub use window::press_watch_row;
+// F2.10: the row list itself, rebuilt from the live cut by every refresh above.
+pub use window::refresh_camera_rows;
+// F2.10: the named row box and its per-row controls, so a widget test can find them by name.
+pub use window::camera_rows_box;
+pub use window::toggle_button;
 pub use window::line_click_gesture;
 pub use window::held_effect;
 pub use window::press_add;
