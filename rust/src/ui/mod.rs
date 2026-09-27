@@ -75,6 +75,9 @@ pub use window::state;
 pub use window::stop_button;
 pub use window::press_play_cut;
 pub use window::press_review_cuts;
+// F3.12: the clamp seam, so a test can run "effects held to the cut as applied" by name and read the same
+// cut state `tests/cut_clamped_to_cut.rs` checks.
+pub use window::clamp_effects_to_cut;
 pub use window::press_play_recording;
 pub use window::play_cut_button;
 pub use window::review_cuts_button;

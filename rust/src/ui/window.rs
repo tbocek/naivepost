@@ -8020,6 +8020,49 @@ pub fn press_remove(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
     outcome
 }
 
+/// F3.12 S1–S5: hold this window's effects to the cut as it will actually play, and say what went.
+///
+/// The rule lives in [`crate::cut_clamp`]; this seam only reads the page, runs the pass over the newest
+/// review cut (the scenes AFTER snapping, dead-air removal, mark removal and coalescing — which is the whole
+/// reason the pass exists), and writes back what survives. It is reached from the Cut page through
+/// [`report_verb`], so every verb that rewrites the segment list clamps the effect list against it in the
+/// same step; `suggest::apply` runs the same function on the model's own answer.
+///
+/// A no-op writes NOTHING at all — not even a status-free history entry: `record_edit` feeds
+/// `History::note_change`, but a clamp that changed nothing must not consume an Undo step or repaint the lane.
+pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
+    let before = newest_review_cut();
+    let clamped = crate::cut_clamp::clamp_to_cut(&before);
+    // Nothing dropped and nothing trimmed: the effects already sit inside the footage the cut keeps.
+    if clamped.dropped == 0 && clamped.kept == before.fx {
+        return "nothing to clamp \u{2014} every effect sits inside the footage the cut keeps".to_string();
+    }
+    let mut cut_ = before.clone();
+    cut_.fx = clamped.kept.clone();
+    // Through `record_edit`, NEVER `publish_cut` alone: one ↶ takes the clamp back exactly as it takes any
+    // other edit back (§F3.12's "same Undo step as the segments").
+    record_edit(window, &cut_);
+    refresh_effects_lane(window);
+    let said = if clamped.dropped > 0 {
+        // S5's line goes to the log, where the count is read with the rest of the run; the status line says
+        // the same thing shorter. Which effect went is NOT said (§12 decision 19).
+        log_line(&crate::cut_clamp::log_line(clamped.dropped));
+        format!(
+            "effects clamped to the cut \u{2014} {} dropped",
+            clamped.dropped
+        )
+    } else {
+        format!(
+            "effects trimmed to the cut \u{2014} {} kept",
+            cut_.fx.len()
+        )
+    };
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    said
+}
+
 /// Print the verb's sentence and honour what the answer says about the band. A refusal changes nothing at
 /// all — no status-free silence, and no edit either, which is the point of refusing.
 fn report_verb(window: &adw::ApplicationWindow, outcome: &cut_verbs::Outcome) {
@@ -8045,6 +8088,12 @@ fn report_verb(window: &adw::ApplicationWindow, outcome: &cut_verbs::Outcome) {
                 // waiting for a caller to remember. Read back out of the slot just written so the
                 // snapshot carries the whole cut (lanes, shifts, rows) and not only the new list.
                 record_edit(window, &newest_review_cut());
+                // F3.12: the segments moved, so every effect chosen against the old seconds is now
+                // pointed at whatever those seconds became. Clamp them to the cut as applied right here,
+                // after the verb wrote its segments and its own status line — the clamp's line follows
+                // rather than replaces it, because the user needs to know both what the verb did and what
+                // the cut then refused to keep.
+                clamp_effects_to_cut(window);
             }
             if !keeps_selection {
                 clear_selection(window);
