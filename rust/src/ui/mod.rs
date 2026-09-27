@@ -176,6 +176,14 @@ pub use window::press_label_apply;
 pub use window::press_label_cancel;
 pub use window::press_label_esc;
 pub use window::press_label_item;
+// F3.9 Captions proposed by the model: the pass's seams, so a test can fire ✐ Captions by name and read the
+// placed captions through the same cut state the logic tests check.
+pub use window::run_captions_pass;
+pub use window::run_captions_pass_with_reply;
+pub use window::captions_pass_button;
+pub use window::refresh_captions_gate;
+pub use window::set_captions_pass;
+pub use window::CaptionBatch;
 pub use window::speed_custom_rate_visible;
 pub use window::drag_text_edge;
 pub use window::nudge_text_box;

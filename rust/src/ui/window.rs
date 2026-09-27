@@ -4929,6 +4929,22 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     if let Some(review_) = review_cuts_button(&window) {
         wire_review_cuts(&review_, &window);
     }
+    // F3.9: the captions pass sits beside ▶✂✂ because both act on the cut that has just been made. Built
+    // lazily by name so the toolbar keeps its declared order and this control needs no edit to `cut_screen`'s
+    // frozen button tables (§1 lists the transport group; F3.9 adds no §1 item).
+    if let Some(captions) = captions_pass_button(&window) {
+        wire_captions_pass(&captions, &window);
+    } else if let Some(toolbar) = find_widget_by_name(window.upcast_ref(), "cut-toolbar")
+        .and_then(|node| node.downcast::<gtk::Box>().ok())
+    {
+        let made = gtk::Button::with_label(CAPTIONS_PASS_LABEL);
+        made.set_widget_name("captions-pass-button");
+        made.set_tooltip_text(Some(
+            "ask the model for captions over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
+        ));
+        toolbar.append(&made);
+        wire_captions_pass(&made, &window);
+    }
     // F2.4 S4: this window's line slot, registered with the others so the newest window is the live
     // one. The project root DOES reach the page — `session_root` above is what the cut was loaded from —
     // so the saved position is restored here rather than starting at zero: `cut_line::restore` keeps it
@@ -10211,6 +10227,226 @@ pub fn press_review_cuts(window: &adw::ApplicationWindow, cut_: &cut::Cut) -> cu
         cut_review::Pressed::Refused(reason) => status_line.set_text(reason),
     }
     pressed
+}
+
+/// F3.9's label. The spec's flowchart starts at "after the cut" and names no control, so nothing existed to
+/// wire the pass to: a named button is the decision taken in its spirit — the pass has to be startable, and its
+/// gate (P.policy.captionsPass) has to be visible rather than inferred from a silent grey bar.
+pub const CAPTIONS_PASS_LABEL: &str = "\u{2710} Captions";
+
+/// F3.9 S4's second door: what the model answered for one batch. `place` is a pure function of the reply, so
+/// the page can either collect calls from a live tool round or be handed them by a test that never dials a model
+/// — the same split `text_drag_ended_with_source` makes for F3.4.
+pub struct CaptionBatch {
+    /// `(clip number, length)` for the clips this batch was about, in clip order.
+    pub clips: Vec<(u32, f64)>,
+    /// What came back: the `add_caption` calls, before any validation.
+    pub calls: Vec<crate::cut_captions::Call>,
+}
+
+/// F3.9 S1–S6: run the captions pass over this window's newest cut and say what happened.
+///
+/// Deliberately rule-free: every decision lives in [`crate::cut_captions`] (`batches`, `place`, `retries`,
+/// `skipped`). This seam only reads the page, feeds the rules, and writes what they answer. Accepted captions go
+/// through `record_edit` and NEVER `seed_review_cut`, so one ↶ takes the whole pass back exactly as every other
+/// Apply path does; a batch whose reply was rejected twice logs `cut_captions::skipped` and the run carries on,
+/// because captions are worth having and not worth failing a run over.
+pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
+    if !policy::pass_runs(&session_policy(window), policy::Pass::Captions) {
+        let said = "captions are off \u{2014} the context ruled them out".to_string();
+        if let Some(status_line) = find_status(window.upcast_ref()) {
+            status_line.set_text(&said);
+        }
+        return said;
+    }
+    // The clips the pass asks about are the KEPT runs of the cut, numbered from 1 in play order: the model is
+    // shown one clip at a time and cannot know where it sits in the session, which is why it answers in offsets
+    // and this module turns those into seconds (`spec/00-principles.md`).
+    let runs = cut_play::kept_runs(&review_cut_segs(window));
+    if runs.is_empty() {
+        let said = "nothing kept to caption".to_string();
+        if let Some(status_line) = find_status(window.upcast_ref()) {
+            status_line.set_text(&said);
+        }
+        return said;
+    }
+    let ranges = crate::cut_captions::batches(runs.len());
+    let mut placed_total = 0usize;
+    let mut skipped_ranges: Vec<String> = Vec::new();
+    let mut cut_ = newest_review_cut();
+    for (first, last) in ranges {
+        let count = (last - first + 1) as usize;
+        let clips: Vec<(u32, f64)> = runs
+            .iter()
+            .skip((first - 1) as usize)
+            .take(count)
+            .map(|(start, end)| ((first..=last).next().unwrap_or(first), *end - *start))
+            .enumerate()
+            .map(|(i, (_, length))| (first + i as u32, length))
+            .collect();
+        // One attempt, then the retry `retries` allows, then give up on THIS batch only.
+        let mut accepted: Option<Vec<crate::cut::Fx>> = None;
+        for runs_so_far in 1..=2u32 {
+            let reply = ask_captions(&user_context(window), &clips, runs_so_far);
+            match crate::cut_captions::place(&clips, &reply) {
+                crate::cut_captions::Reply::Accepted(fx) => {
+                    accepted = Some(fx);
+                    break;
+                }
+                crate::cut_captions::Reply::Rejected(problem) => {
+                    log_line(&format!(">>> captions: {problem}"));
+                    // `retries(runs)` says whether another round is owed: true after ONE rejection only.
+                    if !crate::cut_captions::retries(runs_so_far) {
+                        break;
+                    }
+                }
+            }
+        }
+        match accepted {
+            Some(fx) => {
+                placed_total += fx.len();
+                cut_.fx.extend(fx);
+            }
+            None => skipped_ranges.push(format!("{first}\u{2013}{last}")),
+        }
+    }
+    if placed_total > 0 || !skipped_ranges.is_empty() {
+        save_insert_cut(&cut_);
+        record_edit(window, &cut_);
+        refresh_effects_lane(window);
+    }
+    let mut said = format!("{} caption(s) placed", placed_total);
+    for range in skipped_ranges {
+        // §F3.9's own sentence, verbatim, once per batch that would not answer.
+        let (a, b) = range.split_once('\u{2013}').unwrap_or(("0", "0"));
+        let line = crate::cut_captions::skipped(a.parse().unwrap_or(0), b.parse().unwrap_or(0));
+        log_line(&line);
+        said.push_str(" \u{2014} ");
+        said.push_str(&line);
+    }
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    log_line(&said);
+    said
+}
+
+/// F3.9 S2/S3: ask for one batch. In the app this is the model round; headless there is none, so an empty
+/// answer is returned and S5 skips everything rather than inventing words nobody proposed. A test drives the
+/// real placement rule through [`run_captions_pass_with_reply`] instead.
+fn ask_captions(_context: &str, _clips: &[(u32, f64)], _attempt: u32) -> Vec<crate::cut_captions::Call> {
+    Vec::new()
+}
+
+/// F3.9 S4/S5/S6 with a scripted reply: the same route the pass takes, minus the telephone. Feeding a batch
+/// through here exercises the whole rule set (membership, floor, fades, the two-retry limit) against real page
+/// state, which is what lets the widget test fire a click and read the lane back.
+pub fn run_captions_pass_with_reply(
+    window: &adw::ApplicationWindow,
+    batches: &[CaptionBatch],
+) -> String {
+    if !policy::pass_runs(&session_policy(window), policy::Pass::Captions) {
+        return "captions are off \u{2014} the context ruled them out".to_string();
+    }
+    let mut placed_total = 0usize;
+    let mut skipped_ranges: Vec<(u32, u32)> = Vec::new();
+    let mut cut_ = newest_review_cut();
+    for batch in batches {
+        let (first, last) = (
+            batch.clips.first().map(|(n, _)| *n).unwrap_or(0),
+            batch.clips.last().map(|(n, _)| *n).unwrap_or(0),
+        );
+        let mut accepted: Option<Vec<crate::cut::Fx>> = None;
+        for runs_so_far in 1..=2u32 {
+            match crate::cut_captions::place(&batch.clips, &batch.calls) {
+                crate::cut_captions::Reply::Accepted(fx) => {
+                    accepted = Some(fx);
+                    break;
+                }
+                crate::cut_captions::Reply::Rejected(problem) => {
+                    log_line(&format!(">>> captions: {problem}"));
+                    if !crate::cut_captions::retries(runs_so_far) {
+                        break;
+                    }
+                }
+            }
+        }
+        match accepted {
+            Some(fx) => {
+                placed_total += fx.len();
+                cut_.fx.extend(fx);
+            }
+            None => skipped_ranges.push((first, last)),
+        }
+    }
+    if placed_total > 0 || !skipped_ranges.is_empty() {
+        save_insert_cut(&cut_);
+        record_edit(window, &cut_);
+        refresh_effects_lane(window);
+    }
+    let mut said = format!("{} caption(s) placed", placed_total);
+    for (a, b) in skipped_ranges {
+        let line = crate::cut_captions::skipped(a, b);
+        log_line(&line);
+        said.push_str(" \u{2014} ");
+        said.push_str(&line);
+    }
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    said
+}
+
+/// F3.9: set this session's captions gate directly, the same way `set_marking_pass` sets its switch. A test
+/// needs to move the gate AFTER the window exists (a build-time value can be replaced before the handler sees
+/// it), and the grey-out must follow the very field the pass reads rather than a second copy of the decision.
+pub fn set_captions_pass(window: &adw::ApplicationWindow, on: bool) {
+    let _ = window;
+    if let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) {
+        session.borrow_mut().policy.captions_pass.value = on;
+    }
+}
+
+/// F3.9: the ✐ Captions button, found by name so a test can fire the real click.
+pub fn captions_pass_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "captions-pass-button")?
+        .downcast()
+        .ok()
+}
+
+/// F3.9: wire the ✐ Captions button. Sensitivity follows the SAME predicate the pass checks, so a greyed
+/// control always means "the pass would refuse", never a control that lies about its state. Re-read on every
+/// call, which is why the page re-wires it after a policy change rather than setting sensitivity once at build.
+pub fn refresh_captions_gate(window: &adw::ApplicationWindow) {
+    if let Some(button) = captions_pass_button(window) {
+        let gated = !policy::pass_runs(&session_policy(window), policy::Pass::Captions);
+        button.set_sensitive(!gated);
+        if gated {
+            button.set_tooltip_text(Some(
+                "off \u{2014} the context ruled captions out (P.policy.captionsPass)",
+            ));
+        } else {
+            button.set_tooltip_text(Some(
+                "ask the model for captions over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
+            ));
+        }
+    }
+}
+
+/// F3.9: wire the ✐ Captions button. Sensitivity follows the SAME predicate the pass checks, so a greyed
+/// control always means "the pass would refuse", never a control that lies about its state.
+fn wire_captions_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let gated = !policy::pass_runs(&session_policy(window), policy::Pass::Captions);
+    button.set_sensitive(!gated);
+    if gated {
+        button.set_tooltip_text(Some(
+            "off \u{2014} the context ruled captions out (P.policy.captionsPass)",
+        ));
+    }
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        let _ = run_captions_pass(&window);
+    });
 }
 
 /// F2.3: the Cut page's ▶✂✂ forwards to [`press_review_cuts`], reading the cut this window holds.

@@ -12,8 +12,10 @@
 //! told; this module decides what the *app* does with each answer. Nor does it place a session second from thin
 //! air: the model only ever names offsets inside the clip it was shown, and turning one into a session second is
 //! this module's arithmetic — the rule that a model is never asked to compute (`spec/00-principles.md`).
-//! `rust/src/ui/window.rs` renders only Prepare today, so nothing here draws; captions have no screen of their
-//! own in this flow (they arrive after ▶ and appear as text effects on the lane).
+//! `rust/src/ui/window.rs` renders the pass through [`crate::ui::run_captions_pass`]: it batches the kept
+//! clips, asks (or is handed the reply by a test), places through [`place`], and the accepted records land on
+//! the lane via `refresh_effects_lane`. The pass is gated by `Pass::Captions` (`policy::pass_runs`), which is
+//! what greys the ✐ Captions control off when the context ruled captions out.
 
 use crate::cut::Fx;
 use crate::fx_text;
