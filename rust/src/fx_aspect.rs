@@ -3,8 +3,9 @@
 //! The dropdown in the form column gives the finished video its shape. Two of its five choices only report; one
 //! of them also places a zoom, and that is the whole flow: pick 9:16 on footage nobody has framed yet and the
 //! video would come out with bars, so the same press puts a staying zoom at 0:00 holding the whole frame. All of
-//! it is arithmetic and three sentences, so it lives here; `rust/src/ui/window.rs` renders only Prepare today and
-//! will do nothing but forward the pick when the Cut page's widgets arrive.
+//! it is arithmetic and three sentences, so it lives here. The Cut page's dropdown (`aspect-choice` in
+//! `rust/src/ui/window.rs`) holds no rule of its own: it lists [`ASPECTS`], tooltips [`DROPDOWN_HELP`], and forwards
+//! the pick through `ui::press_aspect`, which calls [`apply`] and records the result as one Undo step.
 
 use crate::cut::{Cut, Fx};
 use crate::fx_zoom;

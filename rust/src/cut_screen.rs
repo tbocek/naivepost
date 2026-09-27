@@ -477,6 +477,17 @@ pub fn segment_count(cut: &Cut) -> usize {
     cut.segs.len()
 }
 
+/// How a stored aspect reads on the page: an unset shape shows the default, a chosen one shows itself.
+/// The ONE spelling of that rule — `idle_readouts` and the F3.2 refresh both call this, so the Aspect ratio
+/// row and the `aspect-choice` dropdown beside it can never be painted with two different answers.
+pub fn aspect_shown(aspect: &str) -> String {
+    if aspect.is_empty() {
+        ASPECT_DEFAULT.to_string()
+    } else {
+        aspect.to_string()
+    }
+}
+
 /// The eight rows of the idle form, in §A's order and with its spellings. The clocks go through
 /// [`crate::tools::mm_ss`], so a page and a log line never disagree about what 4271 seconds is.
 pub fn idle_readouts(
@@ -487,7 +498,7 @@ pub fn idle_readouts(
     cut: &Cut,
     source_seconds: f64,
 ) -> Vec<Readout> {
-    let aspect = if aspect.is_empty() { ASPECT_DEFAULT } else { aspect };
+    let aspect = aspect_shown(aspect);
     // A row that reads "nothing selected" would be a prompt, and this is a reading: the silence is
     // the answer, and §A gives it no wording of its own.
     let selection = match selection {

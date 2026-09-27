@@ -18,6 +18,7 @@ use crate::fx_record;
 use crate::cut_cards;
 use crate::cut_cam;
 use crate::cut_hear;
+use crate::fx_aspect;
 use crate::fx_lane;
 use crate::fx_zoom;
 use crate::cut_insert;
@@ -562,6 +563,51 @@ pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind)
     // Draw the new bar in the same turn, so the lane never lags the thing that was just added.
     refresh_effects_lane(window);
     fx_record::recorded_status(kind)
+}
+
+// --- F3.2 Aspect ratio: the dropdown ------------------------------------------------------------------------
+//
+// The rule half lives in `src/fx_aspect.rs` (`ASPECTS`, `stored`, `choose`, `apply` and the three status
+// sentences). What is here is only the door the dropdown calls and the row it repaints, so the callback
+// cannot hold a decision of its own.
+
+/// F3.2: pick one of the five shapes and this answers the whole press — store the shape, add the staying zoom
+/// when the flowchart says to, say what happened. Every string comes from [`fx_aspect::apply`]; nothing is
+/// composed here.
+///
+/// It writes through [`record_edit`] and never `seed_review_cut`: the aspect AND the ⊕ zoom it brings are ONE
+/// Undo step (§F3.2's "same Undo step"), which is exactly why they go through one call rather than two
+/// publishes. A refused or reported pick (source, or a lane that already decides) still goes through the same
+/// door — `fx_aspect::apply` adds no zoom there, so the history sees the aspect change alone and ↶ takes just
+/// that back.
+pub fn press_aspect(window: &adw::ApplicationWindow, choice: &str) -> String {
+    let mut cut_ = review_cut_of(window);
+    let status = fx_aspect::apply(&mut cut_, choice);
+    record_edit(window, &cut_);
+    // The shape changes what the preview frames, so the lane and the preview redraw in the same turn as the
+    // zoom that may have just arrived — a bar left off screen for a zoom that exists is a lie about the cut.
+    refresh_effects_lane(window);
+    // And every readout rides the shared refresh path (the one F2.6/F2.9/F2.13 already use), with the aspect
+    // row repainted inside it from the LIVE cut. A row still showing 16:9 after ↶ took a stored 9:16 away
+    // would be a stale look rather than today's answer, which is the rule this page holds to.
+    refresh_selection_readout(window);
+    log_line(&status);
+    status
+}
+
+/// Repaint the idle form's Aspect ratio row from the cut this window holds NOW. `cut_screen::aspect_shown`
+/// holds the one spelling of 'empty means the default', shared with `idle_readouts`, so the row and the
+/// dropdown beside it cannot drift to two different answers. Called from [`refresh_selection_readout`] —
+/// the same path that keeps every other control honest — so Undo, Revert and Clear move this row too instead
+/// of leaving the last picked shape on screen.
+fn refresh_aspect_readout(window: &adw::ApplicationWindow) {
+    let cut_ = review_cut_of(window);
+    let name = cut_screen::readout_widget("Aspect ratio");
+    if let Some(label) = find_widget_by_name(window.upcast_ref(), &name) {
+        if let Ok(label) = label.downcast::<gtk::Label>() {
+            label.set_text(&cut_screen::aspect_shown(&cut_.aspect));
+        }
+    }
 }
 
 // --- F3.1 Zoom by hand: the arm -------------------------------------------------------------------------------
@@ -1401,9 +1447,9 @@ fn sync_overlay_stack(stack: &gtk::Box, scene: &fx_lane::PausedScene, held_index
 ///
 /// Two of the rows carry controls rather than a plain value: Thumbnails has the 🖼− / 🖼+ ladder
 /// (40..160 px, one third at a step — `cut_screen::thumb_down`/`thumb_up`) and Aspect ratio has the
-/// dropdown seeded with `ASPECT_DEFAULT` first. Both write through the seams below (`set_thumb_px`,
-/// `set_aspect`) which repaint the row from the number they changed, so the readout is never a copy
-/// that drifted from the control.
+/// F3.2 dropdown (`aspect-choice`, listed from `fx_aspect::ASPECTS`). The thumbnail buttons write
+/// through `set_thumb_px`; the dropdown writes through `press_aspect` below, and both repaint the row
+/// they changed, so the readout is never a copy that drifted from the control.
 fn cut_form_column() -> gtk::Grid {
     let form = gtk::Grid::new();
     form.set_widget_name("cut-form");
@@ -1452,21 +1498,24 @@ fn cut_form_column() -> gtk::Grid {
         form.attach(&key, 0, index as i32, 1, 1);
         form.attach(&value, 1, index as i32, 1, 1);
     }
-    // The aspect row gets its dropdown next to the shape it reads. §A spells the row as a dropdown
-    // rather than a number, so the default is listed first and stays what an unset project shows.
+    // F3.2: the Aspect ratio row's dropdown, listing `fx_aspect::ASPECTS` — the five shapes §B gives, in
+    // its order (source first, then tallest to widest). Not a local list: the spec's set is spelled once in
+    // that module, and this control has no business inventing 4:3 or 21:9. Its tooltip is §B's whole
+    // sentence (`DROPDOWN_HELP`), which is where "9:16 is a vertical short" and what the preview outline
+    // means both get said. The starting selection reads the LIVE cut rather than always index 0, so the
+    // control never shows a shape the cut does not have; an unset aspect is source, which is index 0.
     if let Some(aspect_row) = cut_screen::IDLE_FORM_ROWS
         .iter()
         .position(|l| *l == "Aspect ratio")
     {
-        let choice = gtk::DropDown::from_strings(&[
-            cut_screen::ASPECT_DEFAULT,
-            "4:3",
-            "9:16",
-            "1:1",
-            "21:9",
-        ]);
+        let choice = gtk::DropDown::from_strings(&fx_aspect::ASPECTS);
         choice.set_widget_name("aspect-choice");
-        choice.set_tooltip_text(Some("the shape the finished video is cut to"));
+        choice.set_tooltip_text(Some(fx_aspect::DROPDOWN_HELP));
+        let start = fx_aspect::ASPECTS
+            .iter()
+            .position(|s| *s == cut_.aspect)
+            .unwrap_or(0);
+        choice.set_selected(start as u32);
         form.attach(&choice, 2, aspect_row as i32, 1, 1);
     }
     form
@@ -2574,6 +2623,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // `set_content` like every other control, so the panel being wired is the one inside the realized tree.
     wire_zoom_drag(&window);
     wire_zoom_esc(&window);
+    // F3.2: the Aspect ratio dropdown, wired by name after `set_content` for the same reason — the widget
+    // the lookup finds must be the one in the realized tree.
+    wire_aspect_choice(&window);
     // §05-cut#1-screen: the history group (Undo / Redo / Revert / Clear), the zoom pair and their
     // chords, wired after `set_content` like every other control on this page.
     wire_history_and_zoom(&window);
@@ -4392,6 +4444,9 @@ fn refresh_selection_readout(window: &adw::ApplicationWindow) {
             button.set_sensitive(band.is_some());
         }
     }
+    // F3.2: the Aspect ratio row rides this same path, so a pick, an Undo or a Clear all move it with the
+    // cut rather than leaving whatever shape was last painted.
+    refresh_aspect_readout(window);
     refresh_verb_buttons(window);
     // F2.12: Insert rides the same refresh path — greyed with nowhere to go, and wearing "Edit" while a card
     // is held. A greyed or mislabelled Insert is always today's answer, never a leftover from an earlier band.
@@ -8349,6 +8404,35 @@ fn wire_zoom_drag(window: &adw::ApplicationWindow) {
     });
     panel.add_controller(gesture.clone());
     ZOOM_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
+}
+
+/// F3.2: the Aspect ratio dropdown's wire. `connect_selected_notify` is the `notify::selected` handler GTK
+/// raises when the popover's own choice lands (and the one a test raises with `set_selected`), so this fires
+/// on the user's pick and on nothing else. The callback converts the index to the string it stands for and
+/// prints what [`press_aspect`] returns — no rule, no sentence of its own.
+fn wire_aspect_choice(window: &adw::ApplicationWindow) {
+    let Some(widget) = find_widget_by_name(window.upcast_ref(), "aspect-choice") else {
+        return;
+    };
+    let Ok(choice) = widget.downcast::<gtk::DropDown>() else {
+        return;
+    };
+    let win = window.clone();
+    choice.connect_selected_notify(move |picker| {
+        // The index is the only thing the signal carries; the string it stands for comes from the same
+        // `ASPECTS` list the dropdown was built from, so the two cannot disagree about what index 2 means.
+        if picker.selected() == gtk::INVALID_LIST_POSITION {
+            return;
+        }
+        let picked = fx_aspect::ASPECTS
+            .get(picker.selected() as usize)
+            .copied()
+            .unwrap_or(fx_aspect::SOURCE);
+        let say = press_aspect(&win, picked);
+        if let Some(status_line) = find_status(win.upcast_ref()) {
+            status_line.set_text(&say);
+        }
+    });
 }
 
 /// F3.1 S1: Esc releases the arm without drawing a box ("same entry again disarms" has a keyboard twin, and
