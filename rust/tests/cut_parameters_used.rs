@@ -93,6 +93,11 @@ fn sec_05_cut_6_parameters_used_s2_the_target_arithmetic_rows_spell_the_formulas
     // P.policy.targetLengthSeconds = 0 (none): no target collapses the window rather than aiming at nothing.
     assert_eq!(cutpass::footage_window(0.0), (0.0, 0.0));
 
+    // The dead-air pair and the seam bound, read by suggest's S2a/S3 walk-back from src/suggest.rs.
+    assert_eq!(number("P.policy.deadAirMaxSeconds"), 8.0);
+    assert_eq!(number("P.policy.deadAirKeepSeconds"), 0.5);
+    assert_eq!(number("P.eng.seamMaxSeconds"), 1.5);
+
     // P.policy.insertDefaultSeconds = 4: a card with no length of its own.
     assert_eq!(naivepost::cut_insert::DEFAULT_SECONDS, 4.0);
     assert_eq!(number("P.policy.insertDefaultSeconds"), naivepost::cut_insert::DEFAULT_SECONDS);
@@ -155,18 +160,18 @@ fn sec_05_cut_6_parameters_used_s4_the_engineering_group_is_the_constants_the_pa
 // --- S5: what is deferred ------------------------------------------------------------------------------------
 
 /// §05-cut#6-parameters-used — the ids §6 names that have no row here, and why: `talkPadSeconds (0.2)`,
-/// `deadAirMaxSeconds (8)`, `deadAirKeepSeconds (0.5)`, `seamMaxSeconds (1.5)`, §6's preview
-/// `preloadLead 3 s` / `rateSeekGap 250 ms` / `thumb batch 6`, plus the two items with no constant at all (§I's
+/// §6's preview `rateSeekGap 250 ms` / `thumb batch 6`, plus the two items with no constant at all (§I's
 /// 10 px hit reach and §10's colour list). A number nothing reads has no module to live in, which is the rule
 /// this catalogue exists to keep — so each appears the round its rule is written, and asserting their absence is
-/// what stops one arriving as a decoration.
+/// what stops one arriving as a decoration. (`deadAirMaxSeconds`, `deadAirKeepSeconds` and
+/// `seamMaxSeconds` left this list when F2.14 wrote the walk-back that reads them.)
 #[test]
 fn sec_05_cut_6_parameters_used_s5_what_is_deferred_is_absent_and_said_so() {
     let listed = ids();
     for deferred in [
         "talkPad",      // P.eng.talkPadSeconds 0.2 — no word-edge rule reads a pad yet
-        "deadAir",      // P.policy.deadAirMax/KeepSeconds — the speed pass carries seconds, not bounds
-        "seamMax",      // P.eng.seamMaxSeconds (the words family has its own rows in §4)
+        // `deadAir` and `seamMax` left this list: F2.14 S2a's dead-air removal and S3's hole closing
+        // read all three from src/suggest.rs, so each id now has a row built from its own constant.
         // `preload` left this list: preview::PRELOAD_LEAD_SECONDS now reads P.eng.preloadLeadSeconds,
         // so the id has a rule behind it and is catalogued in cut()'s preview group.
         "seekGap",      // preview: rateSeekGap 250 ms

@@ -142,12 +142,11 @@ pub fn choose_edge(
 /// Whether a silence inside a kept clip is long enough to be cut out.
 ///
 /// §12 row 13 calls the bound a policy number rather than a silent rule: `P.policy.deadAirMaxSeconds`
-/// (8.0), paired with `P.policy.deadAirKeepSeconds` (0.5) for how much of the beat survives. Neither
-/// constant exists in this tree yet — `params::cut()` deliberately omits both rows because "no rule in
-/// this tree reads them yet" (`params.rs`, the paragraph above `cut()`), and `params::silence()`
-/// answers a different pair (`degraded::SILENCE_THRESHOLD_DB` / `SILENCE_MIN_SECONDS`, the
-/// detection floor, not the length bound). So `max` arrives from the caller and this helper only holds
-/// the comparison; the round that writes the removal pass adds the constants and this signature stands.
+/// (8.0), paired with `P.policy.deadAirKeepSeconds` (0.5) for how much of the beat survives. Both
+/// constants now live in [`crate::suggest`] (F2.14 S2a's walk-back reads them) and are catalogued in
+/// `params::cut()`; `params::silence()` answers a different pair
+/// (`degraded::SILENCE_THRESHOLD_DB` / `SILENCE_MIN_SECONDS`, the detection floor, not the length
+/// bound), which is why `max` still arrives from the caller and this helper holds only the comparison.
 ///
 /// Strictly greater: a silence of exactly the maximum is a deliberate beat, and the brief tells the
 /// model the number so it can keep one by asking.

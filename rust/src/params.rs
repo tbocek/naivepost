@@ -14,6 +14,7 @@ use crate::cut_hear;
 use crate::cut_clamp;
 use crate::cut_insert;
 use crate::cut_select;
+use crate::suggest;
 use crate::cut_copy;
 use crate::cut_captions;
 use crate::degraded;
@@ -564,9 +565,10 @@ fn engineering() -> Vec<Param> {
 /// moves with it. The rows split as §6 splits them — what bounds an edit, what the suggest pass and the target
 /// arithmetic compute on, what the preview does, then the engineering choices around pixels and formats.
 ///
-/// Deliberately absent, because no rule in this tree reads them yet: `P.eng.talkPadSeconds`,
-/// `P.policy.deadAirMaxSeconds`, `P.policy.deadAirKeepSeconds`, `P.eng.seamMaxSeconds`, and §D's
-/// `rateSeekGap` 250 ms and thumbnail batch 6. (`P.eng.preloadLeadSeconds` is no longer one of them:
+/// Deliberately absent, because no rule in this tree reads them yet: `P.eng.talkPadSeconds`, and §D's
+/// `rateSeekGap` 250 ms and thumbnail batch 6. The dead-air pair (`deadAirMaxSeconds`,
+/// `deadAirKeepSeconds`) and `P.eng.seamMaxSeconds` are no longer among them: F2.14 S2a and S3 read all
+/// three from `src/suggest.rs`, so each has a row below. (`P.eng.preloadLeadSeconds` is no longer one of them:
 /// `preview::PRELOAD_LEAD_SECONDS` reads it, so its row is in `cut()`.)
 /// A number nothing reads has no module to live in, which is the rule this catalogue exists to keep — each of
 /// those appears here the round its rule is written. The Cut tints (§10's colour list) are absent for the same
@@ -600,6 +602,23 @@ pub fn cut() -> Vec<Param> {
             "P.policy.targetLengthSeconds",
             format!("{} (none)", num(cutpass::NO_TARGET)),
             "cutpass::NO_TARGET",
+        ),
+        // F2.14 S2a: the dead-air pair, both read by the words path's walk-back in `src/suggest.rs`.
+        param(
+            "P.policy.deadAirMaxSeconds",
+            num(suggest::DEAD_AIR_MAX_SECONDS),
+            "suggest::DEAD_AIR_MAX_SECONDS",
+        ),
+        param(
+            "P.policy.deadAirKeepSeconds",
+            num(suggest::DEAD_AIR_KEEP_SECONDS),
+            "suggest::DEAD_AIR_KEEP_SECONDS",
+        ),
+        // F2.14 S3: how wide a hole the walk-back may close where somebody talked.
+        param(
+            "P.eng.seamMaxSeconds",
+            num(suggest::SEAM_MAX_SECONDS),
+            "suggest::SEAM_MAX_SECONDS",
         ),
         param(
             "P.policy.shortTargetSeconds",
