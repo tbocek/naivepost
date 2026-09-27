@@ -4710,6 +4710,17 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     run_row.append(&captions);
     refresh_captions_gate(&window);
     wire_captions_pass(&captions, &window);
+    // F3.10's ⏩ Speeds beside it, for the same reason: one call after the cut asking which stretches run
+    // dull is a job, not one of §1's toolbar items, so it sits with the other jobs and NOT in `cut-toolbar`
+    // (whose six groups §05 #1-screen pins).
+    let speeds = gtk::Button::with_label(SPEEDS_PASS_LABEL);
+    speeds.set_widget_name("speeds-pass-button");
+    speeds.set_tooltip_text(Some(
+        "ask the model which clips run fast \u{2014} \u{21b6} Undo takes the pass back",
+    ));
+    run_row.append(&speeds);
+    refresh_speeds_gate(&window);
+    wire_speeds_pass(&speeds, &window);
     run_row.append(&progress);
 
     wire_play(
@@ -4948,6 +4959,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // groups `cut_screen::TOOLBAR_GROUPS` declares, in that order, and F3.9 adds no §1 item to any of them.
     // Only the gate is refreshed here, because the policy may have moved since the page was built.
     refresh_captions_gate(&window);
+    refresh_speeds_gate(&window);
     // F2.4 S4: this window's line slot, registered with the others so the newest window is the live
     // one. The project root DOES reach the page — `session_root` above is what the cut was loaded from —
     // so the saved position is restored here rather than starting at zero: `cut_line::restore` keeps it
@@ -10449,6 +10461,176 @@ fn wire_captions_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
     button.connect_clicked(move |_| {
         let _ = run_captions_pass(&window);
+    });
+}
+
+/// F3.10's label. As with ✐ Captions, the spec's flowchart starts at a model call and names no control: a named
+/// button is the decision taken in its spirit, so the pass can be started and its gate seen.
+pub const SPEEDS_PASS_LABEL: &str = "\u{23e9} Speeds";
+
+/// F3.10 S1–S5: run the speeds pass over this window's newest cut and say what happened.
+///
+/// Rule-free like [`run_captions_pass`]: every decision lives in [`crate::cut_speed_pass`]. This seam reads the
+/// page, hands the rules their inputs (the kept clips AND the captions already on them, because S1's brief notes
+/// them and S2 refuses a fast rate over one), and writes back what they answer. Placed speeds go through
+/// `record_edit` and NEVER `seed_review_cut`, so one ↶ takes the whole pass back.
+pub fn run_speeds_pass(window: &adw::ApplicationWindow) -> String {
+    // One attempt from the page. Headless there is no endpoint wired for this pass, so nothing is proposed and
+    // the rule's own "no usable answer" line is what remains -- never invented rates standing in for a proposal.
+    place_speeds_reply(window, &[])
+}
+
+/// F3.10 S2/S4/S5 with a scripted reply: the same route the pass takes, minus the telephone. A test feeds the
+/// calls here and asserts placement against real page state, exactly as `run_captions_pass_with_reply` does.
+pub fn run_speeds_pass_with_reply(
+    window: &adw::ApplicationWindow,
+    calls: &[crate::cut_speed_pass::Call],
+) -> String {
+    place_speeds_reply(window, calls)
+}
+
+/// The shared body of both seams. Kept private so the two public doors cannot drift apart.
+fn place_speeds_reply(
+    window: &adw::ApplicationWindow,
+    calls: &[crate::cut_speed_pass::Call],
+) -> String {
+    if !policy::pass_runs(&session_policy(window), policy::Pass::Speeds) {
+        let said = "speeds are off \u{2014} the context ruled them out".to_string();
+        if let Some(status_line) = find_status(window.upcast_ref()) {
+            status_line.set_text(&said);
+        }
+        return said;
+    }
+    let mut cut_ = newest_review_cut();
+    // The clips the pass asks about are the VISIBLE SEGMENTS of the cut, numbered from 1 in play order, each
+    // carrying its own session start -- which is why this uses `Clips` triples rather than F3.9's
+    // `(number, length)` sum. NOT `cut_play::kept_runs`: that helper MERGES touching segments into runs for
+    // preloading ("no gap means no jump to preload for"), and one merged run would be one clip to the model,
+    // so a cut of three adjoining segments would answer to a single 30 s clip and every rate the model named
+    // for clip 2 or 3 would fall outside the batch.
+    let mut segs: Vec<(f64, f64)> = cut_
+        .segs
+        .iter()
+        .filter(|seg| seg.e > seg.s)
+        .map(|seg| (seg.s, seg.e))
+        .collect();
+    segs.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let triples: Vec<(u32, f64, f64)> = segs
+        .iter()
+        .enumerate()
+        .map(|(i, (start, end))| (i as u32 + 1, *start, end - start))
+        .collect();
+    let mut batch = crate::tools::clips::Clips::new(&triples);
+    // S1's brief and S2's refusal read the captions that are ALREADY on the cut, so they must be in the batch.
+    // A text effect hanging across a clip boundary is CLAMPED to the overlap rather than skipped: dropping it
+    // would hide a caption from the refusal rule and let a clip the viewer sees as captioned be sped up.
+    for fx in cut_.fx.iter().filter(|fx| fx.kind == "text") {
+        let clips_now: Vec<(u32, f64, f64)> = batch
+            .clips()
+            .iter()
+            .map(|clip| (clip.n, clip.start, clip.length))
+            .collect();
+        for (n, start, length) in clips_now {
+            let from = fx.t.max(start);
+            let to = (fx.t + fx.dur).min(start + length);
+            if to - from > 0.0 {
+                // Whether a caption fits is not this pass's question, so the tool's answer is not acted on.
+                let _ = batch.add_caption(n, from - start, to - start, &fx.text);
+            }
+        }
+    }
+    let footage = crate::cut_speed_pass::footage_total(&batch);
+
+    // Two rounds at most, decided by the same rule F3.9 uses: one rejection owes one retry, a third ask never
+    // happens. A fault is an UNUSABLE reply (a clip number never given); a per-call refusal is unwelcome, not
+    // unusable, and does not cost the round.
+    let mut placed: Option<Vec<crate::cut::Fx>> = None;
+    let mut refusals: Vec<String> = Vec::new();
+    for attempt in 1..=2u32 {
+        let reply = crate::cut_speed_pass::place(&batch, calls);
+        for answer in &reply.answers {
+            if let crate::cut_speed_pass::Answer::Refused(reason) = answer {
+                // S2: the refusal MUST be said. Silently dropping a rate would leave the model believing its
+                // speed is in the cut.
+                refusals.push(reason.clone());
+            }
+        }
+        if reply.usable() {
+            placed = Some(reply.effects.clone());
+            break;
+        }
+        if let Some(problem) = &reply.fault {
+            log_line(&crate::cut_speed_pass::rejected(problem));
+        }
+        if !crate::cut_captions::retries(attempt) {
+            break;
+        }
+    }
+    let mut said = match placed {
+        Some(effects) => {
+            if effects.is_empty() {
+                // Nothing fast was proposed, which is a right answer, not a failure.
+                "nothing runs fast \u{2014} every clip plays at 1".to_string()
+            } else {
+                cut_.fx.extend(effects.iter().cloned());
+                save_insert_cut(&cut_);
+                record_edit(window, &cut_);
+                refresh_effects_lane(window);
+                crate::cut_speed_pass::runs_fast(&batch, &effects, footage)
+            }
+        }
+        None => {
+            // §F3.10's own line, spelled by the module; a cut with every clip at 1 is a cut, not a failed run.
+            crate::cut_speed_pass::no_answer()
+        }
+    };
+    for reason in refusals {
+        // Each refused rate is surfaced so the user sees WHICH clip the model wanted to hurry and why not.
+        said.push_str(" \u{2014} ");
+        said.push_str(&reason);
+        log_line(&reason);
+    }
+    if let Some(status_line) = find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    log_line(&said);
+    said
+}
+
+/// F3.10: move this session's speeds gate directly, the way `set_captions_pass` moves its own.
+pub fn set_speeds_pass(window: &adw::ApplicationWindow, on: bool) {
+    let _ = window;
+    if let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) {
+        session.borrow_mut().policy.speed_pass.value = on;
+    }
+}
+
+/// F3.10: the ⏩ Speeds button, found by name so a test can fire the real click.
+pub fn speeds_pass_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
+    find_widget_by_name(window.upcast_ref(), "speeds-pass-button")?
+        .downcast()
+        .ok()
+}
+
+/// F3.10: re-read the gate onto the button. Same predicate the pass checks, both ways, so a greyed control
+/// always means "the pass would refuse" and the grey is never sticky.
+pub fn refresh_speeds_gate(window: &adw::ApplicationWindow) {
+    if let Some(button) = speeds_pass_button(window) {
+        let gated = !policy::pass_runs(&session_policy(window), policy::Pass::Speeds);
+        button.set_sensitive(!gated);
+        button.set_tooltip_text(Some(if gated {
+            "off \u{2014} the context ruled speed changes out (P.policy.speedPass)"
+        } else {
+            "ask the model which clips run fast \u{2014} \u{21b6} Undo takes the pass back"
+        }));
+    }
+}
+
+/// F3.10: wire the ⏩ Speeds button.
+fn wire_speeds_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
+    let window = window.clone();
+    button.connect_clicked(move |_| {
+        let _ = run_speeds_pass(&window);
     });
 }
 

@@ -183,6 +183,13 @@ pub use window::run_captions_pass_with_reply;
 pub use window::captions_pass_button;
 pub use window::refresh_captions_gate;
 pub use window::set_captions_pass;
+// F3.10 Speeds proposed by the model: the pass's seams, so a test can fire ⏩ Speeds by name and read the
+// placed rates through the same cut state the logic tests check.
+pub use window::run_speeds_pass;
+pub use window::run_speeds_pass_with_reply;
+pub use window::speeds_pass_button;
+pub use window::refresh_speeds_gate;
+pub use window::set_speeds_pass;
 pub use window::CaptionBatch;
 pub use window::speed_custom_rate_visible;
 pub use window::drag_text_edge;

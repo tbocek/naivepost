@@ -12,8 +12,11 @@
 //! effect whether a person placed it with ⏩ or a model proposed it. Nor does it re-implement §3.7's tool:
 //! [`Clips::set_clip_speed`] already refuses to hurry a captioned clip and already clamps the rate, so this pass asks
 //! that question of the tool and reports what the tool answered.
-//! `rust/src/ui/window.rs` renders only Prepare today, so nothing here draws; a proposed speed appears on the lane as
-//! an ordinary speed effect, which has its own screen (§F3.3), not one of its own.
+//! `rust/src/ui/window.rs` runs the pass through [`crate::ui::run_speeds_pass`]: it reads the kept clips and the
+//! captions already on them, hands them to [`place`], and the accepted speed effects land on the lane via
+//! `refresh_effects_lane`. The pass is gated by `Pass::Speeds` (`policy::pass_runs`), which is what greys the
+//! ⏩ Speeds control off when the context ruled speed changes out. A proposed speed has no screen of its own —
+//! it appears as an ordinary speed effect, whose screen is §F3.3's.
 
 use crate::cut::Fx;
 use crate::cut_captions;
