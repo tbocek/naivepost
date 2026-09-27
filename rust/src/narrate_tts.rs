@@ -344,3 +344,110 @@ pub fn request(
 ) -> Value {
     crate::bodies::speech_request(model, text, voice_ref, language, options(emotion, seed))
 }
+
+/// Where a speak ended. `Refused` carries the sentence the step answered with — the diagnosis is the step's
+/// own words, never a generic one, per spec/00-principles.md ("name the model and the reason where it
+/// failed"). `Take` is the file that was written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    Refused(String),
+    Take(PathBuf),
+}
+
+impl Outcome {
+    /// The refusal's sentence, or `None` when the line was spoken.
+    pub fn refused(&self) -> Option<&str> {
+        match self {
+            Self::Refused(why) => Some(why),
+            Self::Take(_) => None,
+        }
+    }
+
+    /// The take's path, or `None` when nothing was written.
+    pub fn wav(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::Refused(_) => None,
+            Self::Take(file) => Some(file),
+        }
+    }
+}
+
+/// S1→S5 in the flowchart's order, for one line. Every network step arrives as a closure the caller owns:
+/// this function opens no socket, draws no widget and starts no thread (the module header's rule), so the
+/// whole sequence — including which step refused and which steps therefore never ran — is testable without
+/// a server, and the page can drive it with a real one.
+///
+/// * `upload_reference` — S3, `POST /v1/ui/upload`, answering the server path this line will name. It is
+///   called on **every** speak and its answer is never remembered across calls:
+///   [`crate::bodies::VOICE_REF_REUPLOADED_EVERY_LINE`] — a path the server forgot at a restart names
+///   nothing, and a cached one would fail every later line while looking like a working setup.
+/// * `post_speech` — S4/S5, `POST /v1/audio/speech`, answering `(status, body)`.
+/// * `healthy` / `models` — S2's answers, which the caller already holds from `/health` and `/v1/models`;
+///   re-asking here would put a second probe of the same server inside one line.
+/// * `model` — the TTS id to ask for ([`crate::services::tts_model`], default [`crate::services::TTS_MODEL`]).
+/// * `key` — the take's cache key ([`crate::narration::tts_key`]); the filename comes from
+///   [`crate::narration::tts_file`] through [`take_path`].
+/// A refusal returns immediately and touches nothing later: no upload after a missing reference, no speech
+/// call after a refused upload, no file after a bad reply. That ordering is what makes "the server was never
+/// asked" a checkable fact rather than a hope.
+pub fn speak_line<FUpload, FPost>(
+    tree: &Tree,
+    text: &str,
+    emotion: &str,
+    seed: u32,
+    key: &str,
+    project_language: &str,
+    healthy: bool,
+    models: &[AudioModel],
+    model: &str,
+    upload_reference: FUpload,
+    post_speech: FPost,
+) -> Outcome
+where
+    FUpload: FnOnce(&Tree) -> Result<ServerPath, String>,
+    FPost: FnOnce(&Value) -> Result<(u16, Vec<u8>), String>,
+{
+    // S1 · the reference on disk (F4.6 built it; without it there is nothing to clone).
+    if let Some(problem) = reference_problem(tree) {
+        return Outcome::Refused(problem);
+    }
+    // S2 · audio.cpp healthy, serving a model able to clone.
+    if let Some(problem) = server_problem(healthy, models) {
+        return Outcome::Refused(problem);
+    }
+    // S3 · up it goes again, for this line.
+    let voice_ref = match upload_reference(tree) {
+        Ok(path) => path,
+        Err(problem) => return Outcome::Refused(problem),
+    };
+    // S4 · one POST, the emotion riding inside `options`.
+    let body = request(
+        model,
+        text,
+        &voice_ref,
+        &language(project_language),
+        emotion,
+        seed,
+    );
+    let (status, bytes) = match post_speech(&body) {
+        Ok(reply) => reply,
+        Err(problem) => return Outcome::Refused(problem),
+    };
+    // S5 · 200 and at least MIN_WAV_BYTES, or it is not a take.
+    if let Some(problem) = reply_problem(status, &bytes) {
+        return Outcome::Refused(problem);
+    }
+    match write_take(tree, key, &bytes) {
+        Ok(file) => Outcome::Take(file),
+        Err(problem) => Outcome::Refused(problem),
+    }
+}
+
+/// What the row says about an outcome: the refusal verbatim (it already names the step and the reason), or
+/// the spoken take named by the file it landed in, so the user can see the line was really written and where.
+pub fn outcome_said(outcome: &Outcome) -> String {
+    match outcome {
+        Outcome::Refused(why) => why.clone(),
+        Outcome::Take(file) => format!("spoken \u{2014} {}", file.display()),
+    }
+}

@@ -13,6 +13,8 @@ pub use narrate_page::{
     press_line_speak, press_narrate_add_line, press_narrate_play, press_pitch, press_sample_play, press_sample_reroll,
     press_sample_stop, press_take_add, press_take_remove, read_state, refresh,
     set_narration_off, set_state, NarrateState,
+    // F4.4's scripted speech legs: a test scripts the reply, then reads how often the reference went up.
+    clear_speech_script, set_speech_script, speech_script_loaded, upload_count,
 };
 pub use settings::dialog_log;
 pub use settings::dialog_log_open;

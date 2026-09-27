@@ -179,6 +179,11 @@ fn narrate_window(
         playing: false,
         busy: false,
         narration_off: project.no_narration,
+        // F4.4's inputs, left at "nothing checked": this file drives the F4.1 run, not the speak flow.
+        language: String::new(),
+        audio_healthy: false,
+        audio_models: Vec::new(),
+        tts_model: String::new(),
     });
     ui::refresh(&window);
     settle();

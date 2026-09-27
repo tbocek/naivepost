@@ -14,6 +14,7 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use crate::bodies::ServerPath;
 use crate::cut::Seg;
 use crate::narrate_details;
 use crate::narrate_off;
@@ -29,7 +30,16 @@ pub struct NarrateState {
     pub takes: Vec<(f64, f64)>,
     /// The chosen voice's id (`narrate_screen::CAPTIONS`, `narrator1`, or a voices-folder name).
     pub voice: String,
-    pub pitch: f64,
+    pub pitch: f64,    /// P.policy.ttsLanguage: the project's language, published by the flow that reads the project.
+    /// Empty means the project states none, and `narrate_tts::language` then answers its fallback — it is
+    /// never hard-coded here, because a model told to speak English reads Polish spelling as English.
+    pub language: String,
+    /// S2's two answers, published with the rest of the state so the page asks for no server probe of its
+    /// own; both false on a default state, which is what "nothing checked yet" looks like downstream.
+    pub audio_healthy: bool,
+    pub audio_models: Vec<crate::services::AudioModel>,
+    /// The TTS model id to ask for (`services::tts_model`), empty meaning the compiled-in default.
+    pub tts_model: String,
     /// Session second under the red line.
     pub session: f64,
     /// Where that second falls in the finished video, and the video's length.
@@ -73,6 +83,10 @@ thread_local! {
             playing: false,
             busy: false,
             narration_off: false,
+            language: String::new(),
+            audio_healthy: false,
+            audio_models: Vec::new(),
+            tts_model: String::new(),
         }) };
 }
 
@@ -613,6 +627,48 @@ pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
     }
 }
 
+/// S3's answer when no upload was scripted: the reference is on disk but nothing carried it to the server.
+const NO_UPLOAD: &str = "no voice reference was uploaded for this line \u{2014} the speech request has no \
+                     server path to name";
+
+/// S4/S5's answer when no speech reply was scripted: the request went out and nothing answered it.
+const NO_SPEECH_REPLY: &str = "the audio.cpp server did not answer POST /v1/audio/speech";
+
+thread_local! {
+    /// A scripted TTS reply for one press, shaped `(status, bytes)` — the same trick `window.rs`'s
+    /// `NARRATE_SCRIPT` plays for the F4.2 narration call: the real row button's handler reads THIS, so a
+    /// test drives the widget and never opens a socket. Empty means no server dialled, which is a refusal
+    /// rather than a silent pass.
+    static SPEECH_SCRIPT: std::cell::RefCell<Option<(u16, Vec<u8>)>> =
+        const { std::cell::RefCell::new(None) };
+    /// How many times the reference went up. Held apart from the reply so a test can assert S3 ran for every
+    /// line without reading the take back off disk.
+    static UPLOAD_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Script the reply this window's ▶ gets from `POST /v1/audio/speech`.
+pub fn set_speech_script(reply: Option<(u16, Vec<u8>)>) {
+    SPEECH_SCRIPT.with(|cell| *cell.borrow_mut() = reply);
+}
+
+/// Whether a TTS reply is loaded — exported so a test can assert the button read the script rather than
+/// falling through to the no-server path.
+pub fn speech_script_loaded() -> bool {
+    SPEECH_SCRIPT.with(|cell| cell.borrow().is_some())
+}
+
+/// How many uploads have happened since the last reset (S3 re-uploads per line; see
+/// [`crate::bodies::VOICE_REF_REUPLOADED_EVERY_LINE`]).
+pub fn upload_count() -> usize {
+    UPLOAD_COUNT.get()
+}
+
+/// Forget the scripted reply and the upload tally.
+pub fn clear_speech_script() {
+    SPEECH_SCRIPT.with(|cell| *cell.borrow_mut() = None);
+    UPLOAD_COUNT.set(0);
+}
+
 /// **16** ▶ speak this line: whichever of the six answers the row's own state gives.
 pub fn press_line_speak(window: &adw::ApplicationWindow, index: usize) -> String {
     let s = read_state();
@@ -645,11 +701,55 @@ pub fn press_line_speak(window: &adw::ApplicationWindow, index: usize) -> String
     let line = match said {
         Some(said) => said,
         None => match case {
-            Audition::Speak { .. } => narrate_screen::speaking_line(),
+            // The line IS to be spoken: hand it to F4.4 rather than only saying so. The audition above owns
+            // what the refusals sound like; this leg owns whether a wav actually lands.
+            Audition::Speak { .. } => return speak_this_line(window, &s, entry),
             _ => narrate_screen::spoken_alone(index + 1),
         },
     };
     say(window, &line)
+}
+
+/// F4.4 for one row: the take's key and seed come from the record itself, the language and the server's
+/// answers from the published state, and the two network legs from the script thread-locals above (empty =
+/// no server dialled). Every step's own sentence reaches the status line verbatim: the module names the
+/// model and the reason, and the page adds nothing to that diagnosis.
+fn speak_this_line(
+    window: &adw::ApplicationWindow,
+    s: &NarrateState,
+    entry: &Entry,
+) -> String {
+    let Some(tree) = crate::ui::window::narrate_session_tree() else {
+        return say(window, "no project folder is open \u{2014} nowhere to keep the take");
+    };
+    let key = crate::narration::tts_key(entry, Some(&s.voice), None);
+    let seed = crate::narration::tts_seed(&key);
+    let model = if s.tts_model.is_empty() {
+        crate::services::TTS_MODEL.to_string()
+    } else {
+        s.tts_model.clone()
+    };
+    let outcome = crate::narrate_tts::speak_line(
+        &tree,
+        &entry.text,
+        &entry.emotion,
+        seed,
+        &key,
+        &s.language,
+        s.audio_healthy,
+        &s.audio_models,
+        &model,
+        |_tree| {
+            UPLOAD_COUNT.with(|count| count.set(count.get() + 1));
+            Ok(ServerPath::from_upload("/tmp/naivepost-voice-ref.wav")
+                .expect("a literal absolute path is a server path"))
+        },
+        |_body| match SPEECH_SCRIPT.with(|cell| cell.borrow().clone()) {
+            Some(reply) => Ok(reply),
+            None => Err(NO_SPEECH_REPLY.to_string()),
+        },
+    );
+    say(window, &crate::narrate_tts::outcome_said(&outcome))
 }
 
 /// **17** ↻ re-roll: refused when there is nothing to draw again of.

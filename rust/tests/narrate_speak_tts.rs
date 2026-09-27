@@ -242,3 +242,325 @@ fn f4_4_s6_the_vocabulary_is_eight_bases_their_kin_and_21_blends_and_nothing_is_
     assert_eq!(tts::emotion_text("wistful=1, smug=0.3"), "wistful, smug");
     assert_eq!(tts::emotion_text("deadpan"), "deadpan");
 }
+
+// --- the flow itself: `speak_line` runs S1-S5 in order and stops at the first refusal ---------------
+
+/// A reference on disk, so S1 passes and the later steps are the ones being tested.
+fn with_reference(tree: &Tree) {
+    std::fs::create_dir_all(tree.voice_ref_wav().parent().expect("narrate/ has a parent")).unwrap();
+    std::fs::write(tree.voice_ref_wav(), b"RIFF fake reference").unwrap();
+}
+
+/// A server that is up and serving something able to clone, so S2 passes.
+fn good_models() -> Vec<AudioModel> {
+    vec![model("index-tts2", "index_tts2", "clon")]
+}
+
+/// The counters each closure bumps, so "never reached" is an asserted fact rather than a hope.
+#[derive(Default)]
+struct Calls {
+    uploads: std::cell::Cell<u32>,
+    posts: std::cell::Cell<u32>,
+}
+
+/// Run one line through the flow with counting closures and a scripted reply.
+fn run(
+    tree: &Tree,
+    emotion: &str,
+    language: &str,
+    healthy: bool,
+    models: &[AudioModel],
+    upload_ok: bool,
+    reply: Result<(u16, Vec<u8>), String>,
+) -> (tts::Outcome, Calls, serde_json::Value) {
+    let calls = Calls::default();
+    let mut captured = serde_json::Value::Null;
+    let key = format!("key|{emotion}|{}", language);
+    let seed = narration::tts_seed(&key);
+    let outcome = tts::speak_line(
+        tree,
+        "one sentence to speak",
+        emotion,
+        seed,
+        &key,
+        language,
+        healthy,
+        models,
+        "index-tts2",
+        |_tree| {
+            calls.uploads.set(calls.uploads.get() + 1);
+            if upload_ok {
+                Ok(uploaded())
+            } else {
+                Err("the upload was refused by the server".to_string())
+            }
+        },
+        |body| {
+            calls.posts.set(calls.posts.get() + 1);
+            captured = body.clone();
+            reply
+        },
+    );
+    (outcome, calls, captured)
+}
+
+/// S7: the refusal ORDER. A missing reference stops before the server is touched at all; an unhealthy
+/// server stops before the request goes out. Each step's own sentence is what comes back.
+#[test]
+fn f4_4_s7_the_steps_run_in_order_and_a_refusal_touches_nothing_after_it() {
+    // No reference on disk: not even the upload runs, though the server would have said yes.
+    let (_root, tree) = temp_tree("s7-no-ref");
+    let (outcome, calls, body) = run(
+        &tree,
+        "calm",
+        "pl",
+        true,
+        &good_models(),
+        true,
+        Ok((200, vec![9_u8; 4000])),
+    );
+    assert_eq!(calls.uploads.get(), 0, "S1 refused before any upload");
+    assert_eq!(calls.posts.get(), 0, "S1 refused before any speech call");
+    assert!(body.is_null(), "nothing was ever built to send");
+    let why = outcome.refused().expect("a missing reference is a refusal").to_string();
+    assert!(why.contains("voice_ref.wav"), "{why} must name what is missing");
+    assert_eq!(outcome.wav(), None, "no take from a refusal");
+
+    // Reference present but the server is down: still no upload, no request.
+    with_reference(&tree);
+    let (outcome, calls, _body) = run(
+        &tree,
+        "calm",
+        "pl",
+        false,
+        &[],
+        true,
+        Ok((200, vec![9_u8; 4000])),
+    );
+    assert_eq!(calls.uploads.get(), 0, "S2 refused before uploading the reference");
+    assert_eq!(calls.posts.get(), 0, "S2 refused before the speech call");
+    let why = outcome.refused().expect("an unhealthy server is a refusal").to_string();
+    assert!(why.contains("/health"), "{why} must name the probe that failed");
+
+    // Healthy but serving nothing that can clone: same short-circuit, different sentence.
+    let (outcome, calls, _body) = run(
+        &tree,
+        "calm",
+        "pl",
+        true,
+        &[model("whisper", "whisper", "asr")],
+        true,
+        Ok((200, vec![9_u8; 4000])),
+    );
+    assert_eq!(calls.uploads.get(), 0, "a model that cannot clone stops before the upload");
+    let why = outcome.refused().expect("no cloner is a refusal").to_string();
+    assert!(why.contains("clone"), "{why}: {why}");
+
+    let _ = std::fs::remove_dir_all(_root);
+}
+
+/// S3: the reference goes up again for EVERY line. Nothing caches a server path across calls, because a
+/// restart forgets it and a remembered path names nothing — `bodies::VOICE_REF_REUPLOADED_EVERY_LINE`.
+#[test]
+fn f4_4_s8_the_reference_is_uploaded_for_every_single_line() {
+    assert!(
+        bodies::VOICE_REF_REUPLOADED_EVERY_LINE,
+        "the rule this test pins is the constant stating it"
+    );
+    let (root, tree) = temp_tree("s8-reupload");
+    with_reference(&tree);
+
+    for line in 1..=3 {
+        let (outcome, calls, _body) = run(
+            &tree,
+            "calm",
+            "en",
+            true,
+            &good_models(),
+            true,
+            Ok((200, vec![9_u8; 2000])),
+        );
+        assert_eq!(
+            calls.uploads.get(),
+            1,
+            "line {line}: exactly one upload per speak, never zero and never reused"
+        );
+        assert_eq!(calls.posts.get(), 1, "line {line}: one speech call after the upload");
+        assert!(outcome.wav().is_some(), "line {line} should have produced a take");
+    }
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// S4: the body that reaches the wire is `request`'s shape, the emotion rides inside `options`, and the
+/// language is the project's own.
+#[test]
+fn f4_4_s9_the_body_that_reaches_the_wire_is_the_request_shape() {
+    // P.policy.ttsLanguage
+    let (root, tree) = temp_tree("s9-body");
+    with_reference(&tree);
+
+    // A known weighted tag: eight floats, alpha 1 (alpha is a multiplier over the weights, so a vector
+    // arriving at 0.85 would not be the weight that was written).
+    let (_o, _c, body) = run(
+        &tree,
+        "angry=1, happy=0.4",
+        "pl",
+        true,
+        &good_models(),
+        true,
+        Ok((200, vec![9_u8; 2000])),
+    );
+    assert_eq!(keys(&body), ["input", "language", "model", "options", "voice_ref"]);
+    assert_eq!(body["language"], "pl", "the project's language, not a hard-coded \"en\"");
+    assert_eq!(body["model"], "index-tts2");
+    assert_eq!(body["input"], "one sentence to speak");
+    assert_eq!(body["voice_ref"], "/srv/uploads/voice_ref.wav", "the path THIS line uploaded");
+    let options = body["options"].as_object().expect("options is an object");
+    assert_eq!(options["emotion_alpha"], "1", "a vector is spoken at alpha 1");
+    assert!(
+        options.contains_key("emotion_vector"),
+        "a known weighted tag becomes eight floats: {options:?}"
+    );
+    let floats: Vec<&str> = options["emotion_vector"]
+        .as_str()
+        .expect("the vector is a comma string")
+        .split(',')
+        .collect();
+    assert_eq!(floats.len(), 8, "eight axes: {:?}", options["emotion_vector"]);
+    assert!(
+        !options.contains_key("use_emotion_text"),
+        "the two branches are never both sent: {options:?}"
+    );
+
+    // An unknown word: the judge gets it as words, at EMOTION_ALPHA.
+    let (_o, _c, body) = run(
+        &tree,
+        "deadpan",
+        "pl",
+        true,
+        &good_models(),
+        true,
+        Ok((200, vec![9_u8; 2000])),
+    );
+    let options = body["options"].as_object().expect("options is an object");
+    assert_eq!(options["use_emotion_text"], "true");
+    assert_eq!(options["emotion_text"], "deadpan");
+    assert_eq!(options["emotion_alpha"], "0.85");
+    assert!(
+        !options.contains_key("emotion_vector"),
+        "an unknown name is never guessed into a vector: {options:?}"
+    );
+
+    // An empty project language falls back to LANGUAGE_FALLBACK rather than sending "".
+    let (_o, _c, body) = run(
+        &tree,
+        "calm",
+        "",
+        true,
+        &good_models(),
+        true,
+        Ok((200, vec![9_u8; 2000])),
+    );
+    assert_eq!(body["language"], tts::LANGUAGE_FALLBACK, "an unset project language falls back");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// S5: only a 200 of at least MIN_WAV_BYTES is a take, and the file lands where `take_path` says.
+#[test]
+fn f4_4_s10_only_a_real_reply_becomes_a_file_and_it_lands_where_take_path_says() {
+    let (root, tree) = temp_tree("s10-reply");
+    with_reference(&tree);
+
+    // A 200 one byte short of the floor: refused, and nothing written.
+    let (outcome, _calls, _b) = run(
+        &tree,
+        "calm",
+        "en",
+        true,
+        &good_models(),
+        true,
+        Ok((200, vec![9_u8; tts::MIN_WAV_BYTES - 1])),
+    );
+    assert!(outcome.wav().is_none(), "999 bytes is not a wav");
+    let why = outcome.refused().expect("short reply refused").to_string();
+    assert!(why.contains("999"), "{why} should quote the size it got");
+    assert_eq!(count_takes(&tree), 0, "a refused reply leaves no file behind");
+
+    // A 500 with plenty of bytes: still refused, still nothing written.
+    let (outcome, _calls, _b) = run(
+        &tree,
+        "calm",
+        "en",
+        true,
+        &good_models(),
+        true,
+        Ok((500, vec![9_u8; 5000])),
+    );
+    assert!(outcome.wav().is_none(), "a 500 is never a take");
+    let why = outcome.refused().expect("a 500 is a refusal").to_string();
+    assert!(why.contains("500"), "{why} should quote the status");
+    assert_eq!(count_takes(&tree), 0, "the error page was not filed as audio");
+
+    // A real reply: the take exists at exactly the path `take_path` names, with the bytes it carried.
+    let bytes = vec![9_u8; tts::MIN_WAV_BYTES + 500];
+    let key = "key|calm|en".to_string();
+    let seed = narration::tts_seed(&key);
+    let outcome = tts::speak_line(
+        &tree,
+        "one sentence to speak",
+        "calm",
+        seed,
+        &key,
+        "en",
+        true,
+        &good_models(),
+        "index-tts2",
+        |_| Ok(uploaded()),
+        |_| Ok((200, bytes.clone())),
+    );
+    let file = outcome.wav().expect("a good reply is a take").to_path_buf();
+    assert_eq!(file, tts::take_path(&tree, &key), "written where take_path points");
+    assert_eq!(file.parent().unwrap(), tts::take_path(&tree, "x").parent().unwrap(), "under narrate/tts/");
+    assert_eq!(std::fs::read(&file).expect("the take is readable"), bytes);
+    assert_eq!(count_takes(&tree), 1);
+    assert_eq!(outcome.refused(), None);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// How many wavs sit in the take folder. Its path is derived from a real take rather than by rebuilding
+/// `narrate/tts/` here, because `Tree::narrate_dir` is private and this test should not need it.
+fn count_takes(tree: &Tree) -> usize {
+    let sample = tts::take_path(tree, "count-probe");
+    let folder = sample.parent().expect("a take path has a folder");
+    std::fs::read_dir(folder)
+        .map(|entries| entries.count())
+        .unwrap_or(0)
+}
+
+/// S3's failure leg: an upload that does not answer is the end of the line — no speech call, no file.
+#[test]
+fn f4_4_s11_a_refused_upload_never_reaches_the_speech_call() {
+    let (root, tree) = temp_tree("s11-upload-fail");
+    with_reference(&tree);
+
+    let (outcome, calls, body) = run(
+        &tree,
+        "excited",
+        "en",
+        true,
+        &good_models(),
+        false,
+        Ok((200, vec![9_u8; 4000])),
+    );
+    assert_eq!(calls.uploads.get(), 1, "the upload was attempted");
+    assert_eq!(calls.posts.get(), 0, "and its failure stopped the flow there");
+    assert!(body.is_null(), "no request body was ever built");
+    let why = outcome.refused().expect("a refused upload is a refusal").to_string();
+    assert!(why.contains("upload"), "{why} must name the step that failed");
+    assert_eq!(count_takes(&tree), 0, "nothing was written for a line that never went out");
+
+    let _ = std::fs::remove_dir_all(root);
+}

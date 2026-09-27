@@ -35,6 +35,7 @@ static RAN_BACK_CLAMP: AtomicBool = AtomicBool::new(false);
 static RAN_LAST_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_PITCH_DEBOUNCE: AtomicBool = AtomicBool::new(false);
 static RAN_FIT_ROW: AtomicBool = AtomicBool::new(false);
+static RAN_TTS_WIRE: AtomicBool = AtomicBool::new(false);
 
 fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
@@ -169,6 +170,12 @@ fn base_state() -> ui::NarrateState {
         playing: false,
         busy: false,
         narration_off: false,
+        // F4.4's three inputs, published by the flow that reads the project. Left at "nothing checked":
+        // block (4) drives the refusals, and block (11) sets these where it wants a server that answers.
+        language: String::new(),
+        audio_healthy: false,
+        audio_models: Vec::new(),
+        tts_model: String::new(),
     }
 }
 
@@ -352,10 +359,12 @@ fn narrate_round(app: &adw::Application) {
     button(&window, "line-speak-0").emit_by_name::<()>("clicked", &[]);
     settle();
     let spoken_said = status_text(&window);
-    assert_eq!(
-        spoken_said,
-        narrate_screen::speaking_line(),
-        "a writable line reports that it is being synthesized"
+    // F4.4 reached through the row's ▶: this state has neither a reference on disk nor a checked server, so
+    // the flow refuses at S1 and says so on the status line — where the old bare "synthesizing…" used to
+    // promise work it never did.
+    assert!(
+        spoken_said.contains("voice_ref.wav") || spoken_said.contains("/health"),
+        "a speak with nothing in place names what is missing, not a promise: {spoken_said}"
     );
     assert_ne!(blank_said, caption_said, "each answer is its own words");
     assert_ne!(caption_said, spoken_said, "each answer is its own words");
@@ -786,6 +795,74 @@ fn narrate_round(app: &adw::Application) {
     RAN_FIT_ROW.store(true, Ordering::SeqCst);
     window.close();
     settle();
+
+    // --- (11) F4.4 through the row's ▶: a scripted speech reply puts a wav on disk --------------
+    // The click is real (`line-speak-0`, the name the page wires); only the two network legs are scripted,
+    // the same way the F4.1 test primes `set_narrate_script` in place of the model.
+    let session_root = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
+    let _ = std::fs::remove_dir_all(session_root.join("narrate"));
+
+    // A state whose server answers and can clone, so S1/S2 pass and the take leg is what runs.
+    let mut speak_state = base_state();
+    speak_state.audio_healthy = true;
+    speak_state.audio_models = vec![naivepost::services::AudioModel {
+        id: "index-tts2".into(),
+        family: "index_tts2".into(),
+        task: "clon".into(),
+    }];
+    speak_state.language = "pl".into();
+    let window = narrate_page(app, speak_state.clone());
+
+    // S1 first: with no reference on disk the refusal must name the REFERENCE, not the server. That is the
+    // order check through the widget -- the flow cannot ask a healthy box to clone a voice that isn't there.
+    ui::clear_speech_script();
+    button(&window, "line-speak-0").emit_by_name::<()>("clicked", &[]);
+    settle();
+    let no_ref = status_text(&window);
+    assert!(no_ref.contains("voice_ref.wav"), "{no_ref} must name the missing reference");
+    assert!(!no_ref.contains("/health"), "{no_ref}: S1 refused before the server was asked");
+    assert_eq!(ui::upload_count(), 0, "nothing uploaded when there was nothing to upload");
+    assert!(!take_folder_has_files(&session_root), "a refusal at S1 leaves no take behind");
+
+    // Now put the reference where F4.6 would have built it, and script a real reply.
+    std::fs::create_dir_all(session_root.join("narrate")).expect("narrate/ created");
+    std::fs::write(session_root.join("narrate").join("voice_ref.wav"), b"RIFF fake reference")
+        .expect("reference written");
+    let bytes = vec![7_u8; naivepost::narrate_tts::MIN_WAV_BYTES + 900];
+    ui::set_speech_script(Some((200, bytes.clone())));
+    assert!(ui::speech_script_loaded(), "the reply is primed before the click");
+
+    button(&window, "line-speak-0").emit_by_name::<()>("clicked", &[]);
+    settle();
+    let spoken = status_text(&window);
+    assert!(spoken.starts_with("spoken"), "{spoken} should report the take");
+    assert_eq!(ui::upload_count(), 1, "S3 uploaded the reference once for this line");
+    // The file landed where the key says it belongs, holding the bytes the reply carried.
+    let tree = naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
+    let key = naivepost::narration::tts_key(&speak_state.entries[0], Some(&speak_state.voice), None);
+    let expected = naivepost::narrate_tts::take_path(&tree, &key);
+    assert!(expected.is_file(), "the take exists at {}", expected.display());
+    assert_eq!(std::fs::read(&expected).expect("readable"), bytes, "and holds what was sent");
+    let named = expected.file_name().unwrap().to_string_lossy().to_string();
+    assert!(spoken.contains(&named), "the status names the file it wrote: {spoken}");
+
+    // No scripted reply: the same click now refuses at S4/S5 and writes nothing further.
+    let before = take_folder_count(&session_root);
+    ui::clear_speech_script();
+    assert!(!ui::speech_script_loaded(), "the script is cleared");
+    button(&window, "line-speak-0").emit_by_name::<()>("clicked", &[]);
+    settle();
+    let refused = status_text(&window);
+    assert!(
+        refused.contains("POST /v1/audio/speech"),
+        "{refused} must name the endpoint that did not answer"
+    );
+    assert_ne!(refused, spoken, "a refusal is not the success sentence");
+    assert_eq!(take_folder_count(&session_root), before, "an unanswered request wrote no file");
+
+    RAN_TTS_WIRE.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
 }
 
 #[test]
@@ -836,4 +913,16 @@ fn sec_07_narrate_1_surface_the_narrate_page_reaches_its_rules() {
         "the pitch slider's debounce path never ran"
     );
     assert!(RAN_FIT_ROW.load(Ordering::SeqCst), "the F4.3 fit-row block never ran");
+    assert!(RAN_TTS_WIRE.load(Ordering::SeqCst), "the F4.4 speak-wire block never ran");
+}
+
+/// How many files sit in the session project's take folder (0 when it does not exist yet).
+fn take_folder_count(root: &std::path::Path) -> usize {
+    std::fs::read_dir(root.join("narrate").join("tts"))
+        .map(|entries| entries.count())
+        .unwrap_or(0)
+}
+
+fn take_folder_has_files(root: &std::path::Path) -> bool {
+    take_folder_count(root) > 0
 }

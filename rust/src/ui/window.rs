@@ -10797,7 +10797,7 @@ fn narrate_bar_busy() -> bool {
 
 /// This session's project folder, resolved the way every other flow resolves it, so "this project" means
 /// one thing app-wide. `None` when no project is open.
-fn narrate_session_tree() -> Option<layout::Tree> {
+pub fn narrate_session_tree() -> Option<layout::Tree> {
     let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
     layout::Tree::new(&dir).ok()
 }
