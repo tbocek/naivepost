@@ -14,7 +14,6 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::produce_runs as runs;
 use crate::produce_screen as screen;
 use crate::project::{Codec, Container, Subtitles};
 
@@ -473,7 +472,7 @@ thread_local! {
 }
 
 /// The window this page lives in, once `wire` has run. Slot buttons are attached through it.
-fn held_window() -> Option<adw::ApplicationWindow> {
+pub fn held_window() -> Option<adw::ApplicationWindow> {
     ROOT.with(|held| held.borrow().clone()).and_then(|w| w.downcast::<adw::ApplicationWindow>().ok())
 }
 
@@ -648,72 +647,42 @@ pub fn press_remove_image(window: &adw::ApplicationWindow, index: usize) -> Stri
 }
 
 /// **3** Set Thumbnail: put this picture on the thumbnail as it is — a copy, cropped to the video's
-/// shape, with no model call and no GPU (§A). `own` is what keeps a later ↻ from redrawing over it.
+/// shape, with no model call and no GPU (§A). Forwarder: the record-and-print lives in `produce_press_wiring`.
 pub fn press_set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
-    let s = read_state();
-    let Some(path) = s.frames.get(index) else {
-        return say(window, "there is no such slot to set from");
-    };
-    let chosen = runs::take_from_image(path, 1920, 1080, 0.0);
-    mutate(|st| {
-        st.own = true;
-        st.thumb_title = st.title.clone();
-    });
-    refresh(window);
-    say(window, &chosen.log)
+    crate::ui::produce_press_wiring::set_thumbnail(window, index)
 }
 
 /// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit.
 pub fn press_export_thumbnail(window: &adw::ApplicationWindow, bytes: u64) -> String {
-    if let Err(reason) = runs::jpeg_target(bytes) {
-        return say(window, &reason);
-    }
-    say(window, &format!("thumbnail exported as {}", runs::export_name("final")))
+    crate::ui::produce_press_wiring::export_thumbnail(window, bytes)
 }
 
 /// **6** ↻ redraw: one sd.cpp call, nothing rewritten when the words are left alone.
 pub fn press_redraw_thumbnail(window: &adw::ApplicationWindow, only_thumbnail: bool) -> String {
-    let plan = runs::redraw(only_thumbnail);
-    say(
-        window,
-        &format!(
-            "thumbnail redraw \u{2014} {} sd.cpp call, {} text rewrites",
-            plan.sd_calls, plan.rewrites
-        ),
-    )
+    crate::ui::produce_press_wiring::redraw_thumbnail(window, only_thumbnail)
 }
 
 /// **8** ↻ suggest: the only thing on this page that asks a model to rewrite text, and it rewrites all
-/// three written things at once so they cannot disagree about what the video is.
+/// three written things at once so they cannot disagree about what the video is. No draw: the picture stays.
 pub fn press_suggest(window: &adw::ApplicationWindow) -> String {
-    let plan = runs::reword();
-    say(
-        window,
-        &format!(
-            "{} \u{2014} {} LLM call answering {}",
-            runs::REWORD_LOG,
-            plan.llm_calls,
-            plan.answers.join(", ")
-        ),
-    )
+    crate::ui::produce_press_wiring::reword(window)
 }
 
 /// **10** ↻ Transcode: an encode with no model call. Refused while a render runs.
 pub fn press_transcode_again(window: &adw::ApplicationWindow) -> String {
-    let s = read_state();
-    let args = vec!["ffmpeg".to_string()];
-    if let Err(reason) = runs::transcode_plan("final.mp4", &args, s.rendering) {
-        return say(window, &reason);
-    }
-    say(window, &runs::transcode_started("final.mp4", &produce_settings(&s)))
+    crate::ui::produce_press_wiring::transcode_again(window)
 }
 
-/// **10** ⤓ Save video: a copy out, so `produce/final` keeps its place as the stamped output.
+/// **10** ⤓ Save video: a copy out, so `produce/final` keeps its place as the stamped output. The path is
+/// what the shell's save dialog answered; headless there is no chooser, so the seam takes it as an argument.
 pub fn press_save_video(window: &adw::ApplicationWindow, to: &str, bytes: u64) -> String {
-    match runs::copy_plan("final.mp4", to, read_state().rendering, bytes) {
-        Ok(plan) => say(window, &plan.log),
-        Err(reason) => say(window, &reason),
-    }
+    crate::ui::produce_press_wiring::save_video(window, to, bytes)
+}
+
+/// **10** ⤓ Save video as the widget fires it — the project-named default for the destination, read by
+/// `produce_press_wiring::save_video_from_button`.
+pub fn press_save_video_from_button(window: &adw::ApplicationWindow) -> String {
+    crate::ui::produce_press_wiring::save_video_from_button(window)
 }
 
 /// Store one row's value and answer with the sentence this press produced.
@@ -878,7 +847,7 @@ fn parse_subtitles(value: &str) -> Subtitles {
     }
 }
 
-fn container_name(c: Container) -> &'static str {
+pub(crate) fn container_name(c: Container) -> &'static str {
     match c {
         Container::Mp4 => "mp4",
         Container::Mkv => "mkv",
@@ -904,6 +873,44 @@ fn subtitles_name(s: Subtitles) -> &'static str {
 
 /// The page's row as the settings struct the transcode log reads. Built here rather than read off the
 /// project because the page holds the row's truth until a run saves it.
+/// Mark the thumbnail as the user's own picture, with the current title as its printed line. The state half
+/// of `produce_press_wiring::set_thumbnail`, kept here because the fields are this page's.
+pub fn set_own_thumbnail() {
+    mutate(|st| {
+        st.own = true;
+        st.thumb_title = st.title.clone();
+    });
+}
+
+/// The row's container word (`"mp4"`/`"mkv"`/`"webm"`), for a press that names the file it copies.
+pub fn container_word() -> String {
+    container_name(parse_container(&read_state().container)).to_string()
+}
+
+/// The row's container as the enum `save_default` takes.
+pub fn container_of_row() -> Container {
+    parse_container(&read_state().container)
+}
+
+/// The render's own output file, which is what a copy reads and weighs. Named here so the wiring module
+/// asks the page rather than guessing the container spelling twice.
+pub fn rendered_video() -> std::path::PathBuf {
+    let tree = crate::layout::Tree::new(&crate::startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ))
+    .ok();
+    match tree {
+        Some(tree) => tree.final_video(container_word().as_str()),
+        None => std::path::PathBuf::from("produce/final.mp4"),
+    }
+}
+
+/// The page's row as the settings struct the transcode log reads. Public for `produce_press_wiring`;
+/// built here rather than read off the project because the page holds the row's truth until a run saves it.
+pub fn row_settings() -> crate::project::Produce {
+    produce_settings(&read_state())
+}
+
 fn produce_settings(s: &ProduceState) -> crate::project::Produce {
     crate::project::Produce {
         container: parse_container(&s.container),
@@ -1022,7 +1029,7 @@ pub fn wire(window: &adw::ApplicationWindow) {
                     press_redraw_thumbnail(&w, true);
                 }
                 "transcode-save" => {
-                    press_save_video(&w, "/tmp/copy.mp4", 2 * 1024 * 1024);
+                    press_save_video_from_button(&w);
                 }
                 _ => {
                     press_transcode_again(&w);

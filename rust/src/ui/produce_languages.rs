@@ -1,6 +1,12 @@
 //! F5.4 §S3/§S7/§S9 — the Produce page's Translate row: its ticks, what a tick does to the state,
 //! and the render's spawner seam. Split out of `produce_page` because that file is at its size budget;
 //! `wire_settings` calls [`wire_ticks`] and `finish_produce` passes [`spawn`] to the render.
+//!
+//! F5.7 lives here too: [`legs`] builds the six presses' injected legs from the page's held state and the
+//! scripted seams this module already owns, so a redraw and the run's own words half draw with the SAME legs
+//! and cannot disagree about what was sent.
+//! and the render's spawner seam. Split out of `produce_page` because that file is at its size budget;
+//! `wire_settings` calls [`wire_ticks`] and `finish_produce` passes [`spawn`] to the render.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -384,6 +390,142 @@ fn session_tree() -> crate::layout::Tree {
         &std::env::current_dir().unwrap_or_default(),
     ))
     .unwrap_or_else(|_| crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap())
+}
+
+/// F5.7: the six page presses, driven through [`crate::produce_presses`]. Built here rather than in
+/// `produce_page` because that file is at its size budget, and because three of the legs are already this
+/// module's private seams for the words half — reading them from one place keeps a redraw and the run's own
+/// words half drawing with the SAME legs, so the two can never disagree about what was sent.
+///
+/// The page passes its own readers in as arguments rather than this module reaching back into it, so the
+/// dependency runs one way: `produce_page` → `produce_presses`, with this module supplying the legs.
+pub fn legs(
+    has_cut: impl Fn() -> bool + 'static,
+    rendering: impl Fn() -> bool + 'static,
+    container: impl Fn() -> String + 'static,
+    spans: impl Fn() -> Vec<(f64, f64)> + 'static,
+) -> crate::produce_presses::Legs {
+    use crate::produce_presses::Legs;
+    // Each reader is shared through an `Rc` before it is captured: an `impl Fn` argument moves into the first
+    // closure that takes it, and two of these legs read the same container (the video's name, above all).
+    let video_container = std::rc::Rc::new(container);
+    let for_video = Rc::clone(&video_container);
+    let for_copy = video_container;
+    let clip_spans = std::rc::Rc::new(spans);
+    // The page's held state is read through `read_state` directly rather than passed in: it is a thread-local
+    // clone, so every closure below can take its own copy of the reader without one move fighting another.
+    Legs {
+        // A cut exists when the Cut page's live segments do — read live, not off the Inputs row's count, so
+        // a tweak that was never saved still counts as a cut (§F5.1 S3's same rule).
+        has_cut: Box::new(has_cut),
+        has_video: Box::new(move || session_tree().final_video(&for_video()).is_file()),
+        has_picture: Box::new(|| session_tree().thumbnail_png().is_file()),
+        rendering: Box::new(rendering),
+        // The marked texts, or the title line, depending on which pass `print_order` is on. Whitespace-only
+        // entries drop out so an empty box cannot claim a print pass it never had.
+        words_of: Box::new(move |kind: &str| match kind {
+            "texts" => crate::ui::produce_page::read_state()
+                .texts
+                .iter()
+                .map(|mark| mark.text.clone())
+                .filter(|text| !text.trim().is_empty())
+                .collect(),
+            _ => vec![crate::ui::produce_page::read_state().thumb_title]
+                .into_iter()
+                .filter(|text| !text.trim().is_empty())
+                .collect(),
+        }),
+        instruction: Box::new(move || crate::ui::produce_page::read_state().instruction),
+        // Everything after the base, in order — the same split `publish::references` makes.
+        references: Box::new(move || crate::ui::produce_page::read_state().frames.iter().skip(1).cloned().collect()),
+        // The band the title prints across comes from the record's own box when it has one; 0.25 (the upper
+        // third) is the app's default, matching `details::thumbnail_box_without_aspect`.
+        title_band: Box::new(|| {
+            crate::publish::load(&session_tree())
+                .ok()
+                .and_then(|record| record.title_box)
+                .map_or(0.25, |band| band.cy)
+        }),
+        brief: Box::new(move || upload_brief((*clip_spans)())),
+        ask_draw: draw_leg(),
+        poll: poll_leg(),
+        print: print_leg(),
+        ask_model: crate::produce_upload::scripted_ask(),
+        encode: Box::new(spawn_argv),
+        copy: Box::new(move |file: &str| copy_video_out(file, &for_copy())),
+        jpeg_sizes: Box::new(jpeg_ladder_sizes),
+        // Each press runs inside one click and this page owns no cancel flag of its own, so nothing reports
+        // a stop; wiring the shell's flag replaces this closure and nothing else.
+        was_stopped: Box::new(|| false),
+        // The F5.6 words half does not count reprint passes here; it reports its own order elsewhere. The
+        // page's presses turn this on in `produce_page::press_legs`.
+        count_prints: false,
+    }
+}
+
+/// The re-word's brief: the same [`crate::produce_upload::brief`] the run's words half sends, over the
+/// spans the page holds. `at_output` accumulates in the order given, because the produced clock is the only
+/// clock the brief speaks. The events and transcript are left out: only the title, instruction and
+/// description come back from this call — the full brief belongs to ▶, not to ↻ beside Title.
+fn upload_brief(spans: Vec<(f64, f64)>) -> String {
+    let clips: Vec<crate::produce_upload::BriefClip> = spans
+        .into_iter()
+        .enumerate()
+        .map(|(index, (start, end))| crate::produce_upload::BriefClip {
+            number: index + 1,
+            at_output: start,
+            seconds: (end - start).max(0.0),
+            session: format!(
+                "{}\u{2013}{}",
+                crate::tools::mm_ss(start),
+                crate::tools::mm_ss(end)
+            ),
+            seen: vec![],
+            said: vec![],
+        })
+        .collect();
+    crate::produce_upload::brief(&clips, &[], crate::produce_upload::BRIEF_MAX_CHARS)
+}
+
+/// Spawn an argv-shaped command through the page's spawner, so a transcode goes through the same door the
+/// encodes do — scripted in a test, real otherwise.
+fn spawn_argv(argv: &[String]) -> Result<(), String> {
+    let command = crate::produce_exec::Command {
+        step: "transcode",
+        log: format!("transcode: {}", argv.join(" ")),
+        argv: argv.to_vec(),
+    };
+    spawn(&command)
+}
+
+/// The export ladder's weight at each rung of [`crate::produce_runs::JPEG_QUALITIES`]. No encoder runs in
+/// this container, so every rung is measured as the picture that exists: the first fitting rung is then the
+/// current file whenever it fits, and the LAST rung otherwise — §F5.7's "last attempt written even if it
+/// still doesn't", reached without an encoder. A real ladder fills these with one measurement per rung.
+fn jpeg_ladder_sizes() -> Vec<u64> {
+    let bytes = session_tree()
+        .thumbnail_png()
+        .metadata()
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    crate::produce_runs::JPEG_QUALITIES.iter().map(|_| bytes).collect()
+}
+
+/// ⤓ Save video's copy: the render's own output out to the chosen path. The stamp stays where ▶ wrote it,
+/// so a copy elsewhere leaves the video up to date (§F5.7 S7).
+fn copy_video_out(file: &str, container: &str) -> Result<(), String> {
+    let from = session_tree().final_video(container);
+    std::fs::copy(&from, file)
+        .map(|_| ())
+        .map_err(|why| format!("{file}: {why}"))
+}
+
+/// Put a press's failure where it can be read. The status line already carries `runs::ending`'s "see log",
+/// so this writes the reason the log is worth opening for; a refusal brought no error and adds nothing.
+pub fn report(out: &crate::produce_presses::Outcome) {
+    if let Some(why) = &out.error {
+        crate::ui::window::log_line(&format!("!!! {why}"));
+    }
 }
 
 /// F5.5 S5: write the `<video>` tag page beside the video. Called from both doors of the run — after both

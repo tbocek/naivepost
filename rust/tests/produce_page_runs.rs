@@ -56,6 +56,156 @@ fn settings() -> Produce {
     Produce { subtitles: Subtitles::TrackInFile, ..Produce::default() }
 }
 
+// ---- S1/S2 endings, and the two refusal sentences §F5.7 spells out ---------------------
+
+#[test]
+fn f5_7_s1_the_redraw_refusal_names_where_its_frames_come_from() {
+    assert_eq!(ITEM, "F5.7");
+    // Quoted from spec/08-produce.md §F5.7 line 184: "No cut → \u{201c}no cut yet \u{2014} the thumbnail is
+    // drawn from the cut's own frames\u{201d}". It is NOT `cut::NO_CUT_YET`: the picture has a second way to
+    // exist, so this sentence says which of the two the reader is waiting for.
+    assert_eq!(
+        runs::REDRAW_NO_CUT,
+        "no cut yet \u{2014} the thumbnail is drawn from the cut's own frames"
+    );
+    assert_ne!(runs::REDRAW_NO_CUT, naivepost::cut::NO_CUT_YET);
+}
+
+#[test]
+fn f5_7_s1_the_redraw_ends_naming_the_button_that_renders() {
+    assert_eq!(ITEM, "F5.7");
+    // The same line 184, its last clause: ends "thumbnail drawn \u{2014} \u{25b6} renders the video".
+    assert_eq!(runs::REDRAW_DONE, "thumbnail drawn \u{2014} \u{25b6} renders the video");
+    // The ▶ is in there on purpose: after a picture there is still a video owed, and the status line is
+    // where a person looks to be told what comes next.
+    assert!(runs::REDRAW_DONE.contains('\u{25b6}'));
+}
+
+#[test]
+fn f5_7_s2_the_reword_refusal_is_the_cut_steps_own_sentence() {
+    assert_eq!(ITEM, "F5.7");
+    // Line 185: "No cut → \u{201c}no cut yet \u{2014} build one on the Cut step first\u{201d}" — the very
+    // string `crate::cut` owns, named here too so neither press can drift from the other.
+    assert_eq!(
+        runs::REWORD_NO_CUT,
+        "no cut yet \u{2014} build one on the Cut step first"
+    );
+    assert_eq!(runs::REWORD_NO_CUT, naivepost::cut::NO_CUT_YET);
+}
+
+#[test]
+fn f5_7_s2_the_reword_end_names_all_three_answers() {
+    assert_eq!(ITEM, "F5.7");
+    // Line 185's ending, quoted whole. Three answers named, so the line answers "did the description change
+    // too?" without a second press.
+    assert_eq!(
+        runs::REWORD_DONE,
+        "title, instruction and description rewritten \u{2014} \u{25b6} renders the video"
+    );
+    for key in ["title", "instruction", "description"] {
+        assert!(runs::REWORD_DONE.contains(key), "{key} missing from {}", runs::REWORD_DONE);
+    }
+    // The three are the same three `reword()` counts as its answers: the sentence and the cost agree.
+    assert_eq!(runs::reword().answers.len(), 3);
+}
+
+#[test]
+fn f5_7_both_runs_end_through_one_path() {
+    assert_eq!(ITEM, "F5.7");
+    // Line 186: "Both end through one path: success re-prints the words onto the thumbnail; else
+    // \u{2018}<what> failed \u{2014} see log\u{2019} or \u{2018}<what> stopped\u{2019}." One function, so the
+    // two buttons cannot report the same trouble in two different voices.
+    assert_eq!(runs::ending("the thumbnail", runs::REDRAW_DONE, true, false), runs::REDRAW_DONE);
+    assert_eq!(
+        runs::ending("the thumbnail", runs::REDRAW_DONE, false, false),
+        "the thumbnail failed \u{2014} see log"
+    );
+    assert_eq!(runs::ending("the thumbnail", runs::REDRAW_DONE, false, true), "the thumbnail stopped");
+
+    // Same three shapes for the other run, with its own `what` and its own done line.
+    assert_eq!(runs::ending("the text", runs::REWORD_DONE, true, false), runs::REWORD_DONE);
+    assert_eq!(runs::ending("the text", runs::REWORD_DONE, false, false), "the text failed \u{2014} see log");
+    assert_eq!(runs::ending("the text", runs::REWORD_DONE, false, true), "the text stopped");
+
+    // A stop is reported apart from a failure: a stopped run left work unfinished, a failed one hit an
+    // error, and the log behind "see log" differs. So the two must not collapse into one sentence.
+    assert_ne!(
+        runs::ending("x", "done", false, true),
+        runs::ending("x", "done", false, false)
+    );
+}
+
+// ---- S3: the Set-Thumbnail sentence -------------------------------------------------
+
+#[test]
+fn f5_7_s3_taken_as_is_promises_the_words_and_the_redraw() {
+    assert_eq!(ITEM, "F5.7");
+    // Line 187: "Set Thumbnail on an image: use as is, cropped; \u{2018}thumbnail taken from <file> \u{2014}
+    // the words are printed on it; \u{21bb} draws over it\u{2019}."
+    assert_eq!(
+        runs::taken_log("/home/dev/Pictures/slide.png"),
+        "thumbnail taken from slide.png \u{2014} the words are printed on it; \u{21bb} draws over it"
+    );
+    // Base name only: the user's folder is nobody's business once the copy exists (same rule as S3's log).
+    assert!(!runs::taken_log("/home/dev/Pictures/slide.png").contains("/Pictures/"));
+    // And a bare name passes through untouched.
+    assert!(runs::taken_log("slide.png").starts_with("thumbnail taken from slide.png \u{2014}"));
+}
+
+// ---- S6/S7: the export and save lines ----------------------------------------------
+
+#[test]
+fn f5_7_s6_the_export_line_gives_the_path_and_the_weight() {
+    assert_eq!(ITEM, "F5.7");
+    // Line 189: "\u{2018}>>> exported <path> (<size>)\u{2019}".
+    assert_eq!(
+        runs::exported_log("/tmp/demo-thumbnail.jpg", 3 * 1024 * 1024),
+        ">>> exported /tmp/demo-thumbnail.jpg (3 MiB)"
+    );
+    // Under a whole MiB the weight keeps a decimal: "0 MiB" would make a picture that landed look like one
+    // that produced nothing.
+    assert_eq!(
+        runs::exported_log("/p/final.jpg", 1_468_006),
+        ">>> exported /p/final.jpg (1.4 MiB)"
+    );
+    assert!(runs::exported_log("/p/final.jpg", 0).ends_with("(0 MiB)"));
+}
+
+#[test]
+fn f5_7_s7_save_announces_then_reports_the_size() {
+    assert_eq!(ITEM, "F5.7");
+    // Line 189: "\u{2018}saving <file>\u{2026}\u{2019} then \u{2018}saved <file> \u{2014} <size>\u{2019}" — two
+    // lines, in that order, because a whole-video copy takes long enough that silence reads as a hung button.
+    assert_eq!(runs::saving_log("final.mp4"), "saving final.mp4\u{2026}");
+    assert_eq!(runs::saved_log("final.mp4", 700 * 1024 * 1024), "saved final.mp4 \u{2014} 700 MiB");
+    assert!(runs::saving_log("a.webm").ends_with('\u{2026}'));
+    // The no-video refusal names ▶: the button that fixes this sits on the same page.
+    assert_eq!(
+        runs::SAVE_NO_VIDEO,
+        "nothing to save yet \u{2014} \u{25b6} renders the video first"
+    );
+}
+
+#[test]
+fn f5_7_s6_the_rung_picker_takes_the_first_that_fits_and_otherwise_the_last() {
+    assert_eq!(ITEM, "F5.7");
+    let cap = runs::JPEG_MAX_BYTES;
+    // First rung fits: rung 0 (quality 92) is the answer, and nothing past it is tried.
+    assert_eq!(runs::jpeg_rung(&[cap - 1, cap + 1]), Some(0));
+    // A heavy top of the ladder: skip to the first that fits rather than the smallest file.
+    assert_eq!(runs::jpeg_rung(&[cap + 500, cap + 20, cap, 10]), Some(2));
+    // The cap itself counts as fitting.
+    assert_eq!(runs::jpeg_rung(&[cap]), Some(0));
+    // Nothing fits: the LAST attempt is written even though it is still over (§F5.7 line 189). Refusing
+    // would discard a thumbnail that is merely heavy after every quality rung was already spent.
+    assert_eq!(runs::jpeg_rung(&[cap + 9, cap + 8, cap + 7]), Some(2));
+    assert_eq!(runs::jpeg_rung(&[cap + 1]), Some(0), "one attempt, and it is the last one too");
+    // No attempts at all is the only empty answer.
+    assert_eq!(runs::jpeg_rung(&[]), None);
+    // The ladder it picks within is the spec's own five rungs, best first.
+    assert_eq!(runs::JPEG_QUALITIES.len(), 5);
+}
+
 // ---- S1: ⊙ Thumbnail only ---------------------------------------------------------
 
 #[test]

@@ -36,6 +36,98 @@ pub const DRAW_AGAIN_LOG: &str = "publish: drawing the thumbnail again — one s
 /// empty field, because the usual reason for a second run is that the picture was wrong, not the words.
 pub const WORDS_ASK_AGAIN: &str = "Words: <previous text>";
 
+/// The redraw's own no-cut answer. It differs from [`crate::cut::NO_CUT_YET`] because the thumbnail has a
+/// second way to exist — the cut's own frames — so this sentence tells the reader which of the two they are
+/// waiting for rather than only that nothing is cut yet.
+pub const REDRAW_NO_CUT: &str =
+    "no cut yet \u{2014} the thumbnail is drawn from the cut's own frames";
+
+/// The redraw's ending, and the reason `\u{25b6}` is spelled into it: after a picture there is still a video
+/// to render, and the status line is where a person looks to be told what comes next.
+pub const REDRAW_DONE: &str = "thumbnail drawn \u{2014} \u{25b6} renders the video";
+
+/// ↻ beside Title's no-cut answer — the Cut step's own sentence, named here as well so both presses read
+/// their refusal from this module rather than one reaching into `cut` for a string and the other not.
+pub const REWORD_NO_CUT: &str = crate::cut::NO_CUT_YET;
+
+/// …and its ending, naming all three things it rewrote so the line answers "did the description change too?"
+/// without a second press.
+pub const REWORD_DONE: &str =
+    "title, instruction and description rewritten \u{2014} \u{25b6} renders the video";
+
+/// S3's own sentence: the chosen picture arrives with the words printed on it, and ↻ is what takes them off
+/// again. Kept separate from [`take_from_image`]'s log because that one records the *copy* (size, source
+/// second) while this one is what the user is told about the result.
+pub fn taken_log(file: &str) -> String {
+    let base = file.rsplit('/').next().unwrap_or(file);
+    format!(
+        "thumbnail taken from {base} \u{2014} the words are printed on it; \u{21bb} draws over it"
+    )
+}
+
+/// §F5.7: both runs end through ONE path, so a failure reads the same whichever button caused it. Success
+/// hands back the caller's own done line; a stop is reported apart from a failure because a stopped run left
+/// work unfinished while a failed one hit an error, and the log behind "see log" differs accordingly.
+pub fn ending(what: &str, done: &str, ok: bool, stopped: bool) -> String {
+    if ok {
+        return done.to_string();
+    }
+    if stopped {
+        return format!("{what} stopped");
+    }
+    format!("{what} failed \u{2014} see log")
+}
+
+/// What ⤓ prints once the JPEG is written: the path the uploader will go looking for, and the weight that
+/// decided which rung of [`JPEG_QUALITIES`] it came out at.
+pub fn exported_log(path: &str, bytes: u64) -> String {
+    format!(">>> exported {path} ({})", human_size(bytes))
+}
+
+/// What ⤓ Save video says when there is no video to save. Naming ▶ rather than "render something first" is
+/// the point: the button that fixes this is on the same page.
+pub const SAVE_NO_VIDEO: &str = "nothing to save yet \u{2014} \u{25b6} renders the video first";
+
+/// The copy's opening line: a whole-video copy takes long enough that silence reads as a hung button.
+pub fn saving_log(file: &str) -> String {
+    format!("saving {file}\u{2026}")
+}
+
+/// …and its close, with the size so a person can tell a full copy from a short one without opening the file.
+pub fn saved_log(file: &str, bytes: u64) -> String {
+    format!("saved {file} \u{2014} {}", human_size(bytes))
+}
+
+/// The weight of a file as the logs print it: whole MiB where there are whole MiB, and one decimal below
+/// that so a 1.4 MiB thumbnail never reports as "0 MiB". Rounding down to zero would make an export that
+/// landed look like an export that produced nothing.
+fn human_size(bytes: u64) -> String {
+    const MIB: f64 = 1024.0 * 1024.0;
+    let mib = bytes as f64 / MIB;
+    if mib >= 10.0 || bytes.is_multiple_of(1024 * 1024) {
+        format!("{} MiB", mib as u64)
+    } else {
+        format!("{mib:.1} MiB")
+    }
+}
+
+/// S6: which rung of [`JPEG_QUALITIES`] the export lands on, given the encoded size of each attempt in the
+/// ladder's own order. The FIRST fitting rung wins, because quality drops before anything else does.
+///
+/// When nothing fits, the LAST attempt is returned rather than an error: §F5.7 writes it even though it is
+/// over the cap. Refusing here would throw away a thumbnail that is merely heavy, after the ladder had
+/// already spent every rung of the lever it owns — and "never rescaled" means there is no smaller picture
+/// left to offer. The caller reports the overshoot; it does not discard the picture.
+pub fn jpeg_rung(sizes: &[u64]) -> Option<usize> {
+    if sizes.is_empty() {
+        return None;
+    }
+    match sizes.iter().position(|bytes| *bytes <= JPEG_MAX_BYTES) {
+        Some(rung) => Some(rung),
+        None => Some(sizes.len() - 1),
+    }
+}
+
 /// What one redraw press does. `keeps` is the list a test pins: everything the run must leave untouched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Redraw {
@@ -326,7 +418,7 @@ pub fn copy_plan(video: &str, _to: &str, running: bool, bytes: u64) -> Result<Co
     })
 }
 
-/// Bytes as the whole MiB the log prints. Rounding up would promise a file bigger than what was copied.
+/// Bytes as the whole MiB the copy log prints. Rounding up would promise a file bigger than what was copied.
 fn mib(bytes: u64) -> u64 {
     bytes / (1024 * 1024)
 }

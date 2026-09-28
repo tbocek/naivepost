@@ -4,6 +4,9 @@ pub mod produce_page;
 /// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
 /// render's spawner seam. Split out of `produce_page`, which is at its size budget.
 pub mod produce_languages;
+/// F5.7 — the wiring that turns a Produce-page click into a `produce_presses` walk: the legs it reads the
+/// page for, and the save path the widget's own default supplies. Also split out of `produce_page`.
+pub mod produce_press_wiring;
 /// §08-produce#1-screen item **7** — the ✎ dialog of the thumbnail's text-overlay editor.
 pub mod produce_words;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
