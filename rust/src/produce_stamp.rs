@@ -3,9 +3,9 @@
 //! encode is skipped and the file is left exactly as it was.
 //!
 //! The seven groups the flowchart lists are hashed **separately** ([`parts`]) before they are hashed
-//! together ([`stamp`]), because "not up to date" is worth more than a bare yes/no: [`changed_parts`] can
-//! say whether it was the encoder settings or one narration wav that moved. That costs nothing and stops
-//! the stamp being one opaque blob nobody can argue with.
+//! together ([`stamp`]), because "it changed" is worth more than one opaque blob nobody can argue with:
+//! [`changed_parts`] names which group moved — the encoder settings or one narration wav — from the two
+//! part lists alone, with no store behind them.
 //!
 //! What is deliberately **not** in it:
 //! - the output path — §A fixes the file as `produce/final.<container>` ([`crate::layout::Tree::final_video`]), so
@@ -278,6 +278,35 @@ pub fn stamp_path(tree: &Tree) -> PathBuf {
     tree.final_stamp()
 }
 
+/// The stamp the ▶ gate compares against: the same seven groups [`Input`] hashes, with the two things a
+/// take depends on read from the project rather than passed in. The lines come from `narrate/narration.json`
+/// and each line's own `roll` salts its wav lookup, so an edited line, a re-rolled take or a redrawn wav
+/// all move this hash — which is what §F5.3 requires of the comparison a press makes. A caller that already
+/// holds the lines (the render half) builds an [`Input`] itself; this is the door that only has the tree.
+pub fn gate_stamp(
+    tree: &Tree,
+    settings: &Produce,
+    segs: &[Seg],
+    sources: &[project::Source],
+    aspect: &str,
+    voice: Option<&str>,
+    no_narration: bool,
+) -> String {
+    let entries = crate::narration::load(tree).unwrap_or_default().entries;
+    let input = Input {
+        settings,
+        segs,
+        lines: &entries,
+        sources,
+        aspect,
+        voice: voice.unwrap_or(""),
+        no_narration,
+    };
+    // Each line's take salt is its own `Entry.roll`: one rule for both halves of the render, so the stamp
+    // the gate asks about and the stamp the run writes are built the same way over the same lines.
+    input.stamp_of(|line| wav_of(tree, line, voice, line.roll), disk_facts)
+}
+
 /// The stored hash. Anything unreadable — no file, a hand-deleted one, a half-written line from a crash —
 /// reads as `None`, and `None` means encode: the stamp may only ever let a run skip work it can prove was
 /// done, never hide that it cannot tell.
@@ -316,14 +345,6 @@ pub fn changed_parts<'a>(stored: &[(&'a str, String)], current: &[(&'a str, Stri
 }
 
 // ---- what the log says -----------------------------------------------------------
-
-/// §F5.3 (`yes → the encode is skipped`): the run says so instead of finishing in a third of a second and
-/// leaving the person wondering whether anything happened. Naming the file keeps it parallel with F5.2's
-/// `>>> <file>` lines.
-pub const UP_TO_DATE_LOG: &str = ">>> produce/final.mp4 is up to date \u{2014} nothing to encode";
-
-/// The other branch, said before the work starts so a long run has an explanation on its first line.
-pub const NOT_UP_TO_DATE_LOG: &str = ">>> not up to date \u{2014} encoding";
 
 /// F5.2 S10's last word: the stamp written after a render that returned without error, with the hash that
 /// will make the next ▶ cheap. The hash goes in because these lines are compared between runs, and a stale

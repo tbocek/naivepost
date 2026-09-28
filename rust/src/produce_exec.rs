@@ -699,7 +699,7 @@ fn write_sidecar(sidecar: &Sidecar) -> Result<(), String> {
 
 /// S10: the stamp, written only by the run that made the file. `stamp_written` is the rule (an encode
 /// that did not happen, or a run that failed, writes none); this only asks it and does the writing.
-pub fn write_stamp(plan: &Plan, tree: &Tree, ran: &Ran) -> bool {
+pub fn write_stamp(plan: &Plan, tree: &Tree, ran: &Ran, mut log: impl FnMut(&str)) -> bool {
     // S10: the stamp is the promise that this file matches these settings, so only the run that finished
     // writing it may make that promise. A stopped run has a joined file and no deliverables beside it, so
     // `clean()` (which requires the mux) outranks `stamp_written` here: without it, an encode that got
@@ -707,7 +707,13 @@ pub fn write_stamp(plan: &Plan, tree: &Tree, ran: &Ran) -> bool {
     if !ran.clean() || !render::stamp_written(!ran.encoded.is_empty(), ran.failed.is_some()) {
         return false;
     }
-    produce_stamp::write_stamp(tree, &plan.stamp).is_ok()
+    let ok = produce_stamp::write_stamp(tree, &plan.stamp).is_ok();
+    // Said once per clean render: the hash goes in because these lines are compared between runs, and a
+    // stale stamp somebody wants to delete has to be findable by eye.
+    if ok {
+        log(&produce_stamp::wrote_stamp_log(&plan.stamp));
+    }
+    ok
 }
 
 /// The produced file's size, or 0 when it is not there yet.
@@ -767,7 +773,7 @@ where
     let started = std::time::Instant::now();
     let plan = plan(run, tree, mats);
     let ran = walk(&plan, &mut log, speak, ask, spawn);
-    let stamp_ok = write_stamp(&plan, tree, &ran);
+    let stamp_ok = write_stamp(&plan, tree, &ran, &mut log);
     if let Some(why) = &ran.failed {
         log(&format!("produce FAILED: {why}"));
     }

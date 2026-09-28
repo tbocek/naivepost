@@ -169,7 +169,7 @@ pub fn resolve(tree: &Tree, rel: &str) -> Option<PathBuf> {
     match rel {
         "clips/final.srt" => Some(scratch_srt(tree)),
         "clips/concat.txt" => Some(concat_path(tree)),
-        "final.stamp" => Some(produce_stamp::stamp_path(tree)),
+        produce_stamp::STAMP_FILE => Some(produce_stamp::stamp_path(tree)),
         "final.jpg" => Some(tree.final_jpg()),
         "final.html" => Some(tree.final_html()),
         // The record is read through Tree because that is where the legacy spelling of the folder is

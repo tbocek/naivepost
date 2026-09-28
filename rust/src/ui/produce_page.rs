@@ -1255,17 +1255,19 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
         // No project folder means no stamp and no video to ask about: encode.
         return finish_produce(window, &s, &project, cut, settings, crate::produce_flow::Gate::Encode);
     };
-    // S2: up to date is the stamp's question, asked with the two hashes this page can build.
-    let input = crate::produce_stamp::Input {
-        settings: &settings,
-        segs: &cut.segs,
-        lines: &[],
-        sources: &project.sources,
-        aspect: &cut.aspect,
-        voice: &s.voice,
-        no_narration: project.no_narration,
-    };
-    let current = input.stamp_with(tree, None, 0);
+    // S2: up to date is the stamp's question, and it is asked over the narration too — §F5.3 lists the
+    // lines (bounds, text, wav size and mtime) among what the hash covers, so `gate_stamp` reads
+    // `narrate/narration.json` itself rather than hashing an empty list and calling that cheap.
+    let voice = if s.voice.is_empty() { None } else { Some(s.voice.as_str()) };
+    let current = crate::produce_stamp::gate_stamp(
+        tree,
+        &settings,
+        &cut.segs,
+        &project.sources,
+        &cut.aspect,
+        voice,
+        project.no_narration,
+    );
     let gate = crate::produce_flow::gate(
         crate::produce_stamp::skip_encode(
             crate::produce_stamp::read_stamp(tree).as_deref(),

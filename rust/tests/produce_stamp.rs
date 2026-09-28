@@ -408,10 +408,14 @@ fn f5_3_s8_the_same_hash_skips_the_encode() {
     let base = Case::new();
     let current = base.stamp();
 
-    // The flowchart's yes branch.
+    // The flowchart's yes branch, and the sentence that skip is told in: `produce_flow::SKIP_LOG` is the
+    // one skip line the page says (§F5.1 S2 spells it), so this pins *that* string, not a second variant.
     assert!(stamp::skip_encode(Some(&current), &current));
-    assert!(stamp::UP_TO_DATE_LOG.contains("up to date"), "{}", stamp::UP_TO_DATE_LOG);
-    assert!(stamp::UP_TO_DATE_LOG.contains("produce/final.mp4"), "{}", stamp::UP_TO_DATE_LOG);
+    assert!(
+        naivepost::produce_flow::SKIP_LOG.contains("already what this page describes"),
+        "{}",
+        naivepost::produce_flow::SKIP_LOG
+    );
 
     // Each no branch means encode.
     let other = base.clone().with_facts(FIRST_WAV, 41_000, 1_700_000_000);
@@ -429,8 +433,9 @@ fn f5_3_s8_the_same_hash_skips_the_encode() {
     std::fs::remove_file(stamp::stamp_path(&tree)).unwrap();
     assert!(!stamp::skip_encode(stamp::read_stamp(&tree).as_deref(), &current));
 
-    // The other branch has its own line, said before the work starts.
-    assert!(stamp::NOT_UP_TO_DATE_LOG.contains("not up to date"), "{}", stamp::NOT_UP_TO_DATE_LOG);
+    // The other branch has no line of its own: §F5.3 gives the skip a sentence and leaves the encode to
+    // F5.1's opening line, so what is asserted here is only that the answer was "encode" — which the two
+    // `!skip_encode` checks above already settled.
     std::fs::remove_dir_all(&root).ok();
 }
 
