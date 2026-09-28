@@ -103,6 +103,7 @@ pub mod produce_runs;
 pub mod produce_screen;
 pub mod produce_clip_cues;
 pub mod produce_subtitles;
+pub mod produce_tag_page;
 pub mod produce_translate;
 pub mod produce_stamp;
 pub mod publish;

@@ -9,7 +9,7 @@ RUN apk update && apk add --no-cache \
 # rust/GTK rewrite toolchain (rust/), plus virtual display, fonts and icons so
 # GUI tests run and screenshots render text and icons inside this container.
 RUN apk add --no-cache \
-        rust cargo gcc musl-dev \
+        rust cargo rust-clippy gcc musl-dev \
         gtk4.0-dev libadwaita-dev \
         just \
         xvfb xvfb-run \

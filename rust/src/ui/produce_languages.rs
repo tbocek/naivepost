@@ -9,14 +9,18 @@ use std::rc::Rc;
 use crate::produce_screen as screen;
 use crate::ui::produce_page::ProduceState;
 
+/// What a tick hands back to the page: `guarded` reads the repaint guard, `changed` records the tick.
+type Guard = Rc<dyn Fn() -> bool>;
+type Changed = Rc<dyn Fn(&str, bool)>;
+
 /// Tick every `translate-tick-<language>` the page drew. `guarded` answers the page's repaint guard (a
 /// rebuild must not read as an edit) and `changed` records the tick — both stay the page's own, so this
 /// module touches none of its thread-locals. A tick has no value string and the row holds several
 /// languages at once, which is why the toggle's own state is the answer and `set_setting` is not used.
 pub fn wire_ticks(
     window: &adw::ApplicationWindow,
-    guarded: Rc<dyn Fn() -> bool>,
-    changed: Rc<dyn Fn(&str, bool)>,
+    guarded: Guard,
+    changed: Changed,
 ) {
     for language in screen::TRANSLATE_LANGUAGES {
         let name = format!("translate-tick-{language}");
@@ -61,4 +65,33 @@ pub fn spawn(command: &crate::produce_exec::Command) -> Result<(), String> {
         Some(sink) => sink(command),
         None => crate::produce_exec::spawn_tool(command),
     }
+}
+
+/// F5.5 S5: write the `<video>` tag page beside the video. Called from both doors of the run — after both
+/// halves, and on the up-to-date skip too, because §F5.5 rewrites the page either way (its tracks are read
+/// off disk, not out of the render). The known-language list comes from the settings file's
+/// `subtitle_languages` (`code:tag:name`, 03-shell §6) so a track is offered under its proper name; with
+/// no settings file there is no list and `embed::tracks` names each track by its code instead.
+pub fn tag_page(settings: &crate::project::Produce) {
+    let tree = crate::layout::Tree::new(crate::startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ))
+    .unwrap_or_else(|_| {
+        crate::layout::Tree::new(std::path::Path::new("session.naivepost")).expect("a session folder")
+    });
+    let known = crate::roles::subtitle_languages(
+        &crate::settings::from_environment()
+            .and_then(|paths| crate::settings::read(&paths).ok())
+            .map(|conf| conf.subtitle_languages)
+            .unwrap_or_default(),
+    );
+    crate::produce_tag_page::build_and_write(
+        &tree,
+        settings.container,
+        settings.codec,
+        &crate::ui::window::live_project().language,
+        &known,
+        &*crate::produce_tag_page::poster_through(spawn),
+        crate::ui::window::log_line,
+    );
 }

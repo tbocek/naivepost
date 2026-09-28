@@ -1329,12 +1329,16 @@ fn finish_produce(
         return say(window, &asked);
     }
     if gate == crate::produce_flow::Gate::Skip {
+        // F5.5 S5 runs on the skip path too: the page is rewritten even when the encode was skipped.
+        crate::ui::produce_languages::tag_page(&settings);
         return say(window, crate::produce_flow::SKIP_LOG);
     }
     let run = crate::produce_flow::Run {
         cut,
         lines: vec![],
-        settings,
+        // Cloned rather than moved: F5.5 S5 runs after the render and needs the container and codec to
+        // ask whether the result is something a browser plays.
+        settings: settings.clone(),
         sources: crate::run::snapshot_sources(project),
         publish: project.publish.clone(),
         aspect: String::new(),
@@ -1437,6 +1441,9 @@ fn finish_produce(
             render
         },
     );
+    // F5.5 S5: after both halves; the page's own outcome is an input to nothing (S6 keeps the render's
+    // error as the run's verdict).
+    crate::ui::produce_languages::tag_page(&settings);
     crate::ui::window::log_line(&ending.log);
     if !ending.progress.is_empty() {
         crate::ui::window::log_line(&ending.progress);
