@@ -27,6 +27,9 @@ static RAN_PLATE: AtomicBool = AtomicBool::new(false);
 static RAN_SETTINGS: AtomicBool = AtomicBool::new(false);
 static RAN_FORCED: AtomicBool = AtomicBool::new(false);
 static RAN_IMAGES: AtomicBool = AtomicBool::new(false);
+static RAN_CHANGE: AtomicBool = AtomicBool::new(false);
+static RAN_SETTINGS_WIRE: AtomicBool = AtomicBool::new(false);
+static RAN_WORDS: AtomicBool = AtomicBool::new(false);
 
 /// §A's fifteen, by the name a test finds each one by. The item id is spelled in every entry's comment
 /// so the gate log shows which of the fifteen each check was about.
@@ -272,6 +275,151 @@ fn produce_round(_app: &adw::Application) {
     RAN_IMAGES.store(true, Ordering::SeqCst);
     window.close();
     settle();
+
+    // --- (e) the Change… door: the slot keeps its place, only its picture moves -------------------
+    // sec_08_produce_1_screen S1 — §1 item 2's Change… door on a live button.
+    let window = produce_page(_app);
+    let mut one = published();
+    one.frames = vec!["project:produce/publish/keep-me.jpg".to_string()];
+    ui::produce_page::set_state(one);
+    ui::produce_page::refresh(&window);
+    click(&window, "image-change-0");
+    let after_change = ui::produce_page::read_state();
+    assert_eq!(
+        after_change.frames.len(),
+        1,
+        "Change… never adds or drops a slot -- it replaces one in place"
+    );
+    assert_ne!(
+        after_change.frames[0], "project:produce/publish/keep-me.jpg",
+        "and the picture in that slot is no longer the one that was there"
+    );
+    assert!(
+        common::status_text(&window).contains("image changed"),
+        "the page says which thing happened: {}",
+        common::status_text(&window)
+    );
+    RAN_CHANGE.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
+
+    // --- (f) the settings wire: the rule answers the WIDGET, not a call from this test -----------
+    // sec_08_produce_1_screen S2 — §1 items 11–14 reached through notify::selected / toggled.
+    let window = produce_page(_app);
+    ui::produce_page::set_state(published());
+    ui::produce_page::refresh(&window);
+    let container_picker = widget_in(&window, "setting-container")
+        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        .expect("the Container row is a dropdown");
+    // webm, chosen the way a person chooses it: by moving the picker, not by calling `set_setting`.
+    container_picker.set_selected(2);
+    settle();
+    let forced = ui::produce_page::read_state();
+    assert_eq!(
+        forced.codec, "vp9",
+        "webm's forcing arrived through notify::selected, with no set_setting call in this test"
+    );
+    assert_eq!(
+        forced.subtitles, ps::SUBTITLE_CHOICES[2],
+        "and the subtitle track went with it"
+    );
+    // A tick goes through `set_toggle` the same way.
+    let blurred = widget_in(&window, "tick-blurred")
+        .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+        .expect("the Frame edges tick exists");
+    blurred.set_active(false);
+    settle();
+    assert!(
+        !ui::produce_page::read_state().blurred_edges,
+        "unticking Frame edges reaches the state through the toggle signal"
+    );
+    // And the guard: put the value back IN THE STATE and refresh. The programmatic `set_active(true)`
+    // emits its own toggled signal; had that reached `set_toggle` it would have written the value the
+    // repaint just set, which is harmless here but proves nothing -- what matters is that the handler
+    // does NOT answer the repaint as an edit at all. Read both sides after the refresh.
+    let mut back = ui::produce_page::read_state();
+    back.blurred_edges = true;
+    ui::produce_page::set_state(back);
+    ui::produce_page::refresh(&window);
+    settle();
+    assert!(
+        ui::produce_page::read_state().blurred_edges,
+        "the held value survives its own repaint"
+    );
+    assert!(
+        widget_in(&window, "tick-blurred")
+            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+            .map(|t| t.is_active())
+            .unwrap_or(false),
+        "and the widget shows it"
+    );
+    RAN_SETTINGS_WIRE.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
+
+    // --- (g) the ✎ chip and its dialog ---------------------------------------------------------
+    // sec_08_produce_1_screen S1 item 7 — the thumbnail text-overlay editor's chip and dialog.
+    let window = produce_page(_app);
+    let mut marked = published();
+    marked.texts = vec![naivepost::project::TextMark {
+        cx: 0.5,
+        cy: 0.25,
+        wf: 1.0,
+        hf: 0.4,
+        text: "a title band".to_string(),
+    }];
+    ui::produce_page::set_state(marked);
+    ui::produce_page::refresh(&window);
+    assert!(
+        widget_in(&window, "words-chip-0").is_some(),
+        "§1 item 7: every word box on the picture gets its ✎ chip"
+    );
+    click(&window, "words-chip-0");
+    // The dialog is its own top-level window rather than a child of the page, so it is found through the
+    // module that opened it instead of by walking this window's content tree.
+    let dialog = naivepost::ui::produce_words::open_dialog().expect("the chip opens the reword dialog");
+    assert!(dialog.widget_name() == "words-dialog", "and it is the named dialog");
+    let entry = dialog
+        .extra_child()
+        .and_then(|c| c.downcast::<gtk::Entry>().ok())
+        .expect("the dialog has its entry");
+    assert_eq!(
+        entry.text().as_str(),
+        "a title band",
+        "opened PRE-FILLED: a reword dialog that starts blank loses the words it was opened to change"
+    );
+    entry.set_text("rewritten band");
+    dialog.response("save");
+    settle();
+    assert_eq!(
+        ui::produce_page::read_state().texts[0].text, "rewritten band",
+        "Save went through press_words_reword"
+    );
+    // Re-open and remove. The dialog must come up filled with the NEW words, not the ones first seeded.
+    click(&window, "words-chip-0");
+    let again = naivepost::ui::produce_words::open_dialog().expect("the chip opens the dialog again");
+    assert_eq!(
+        again
+            .extra_child()
+            .and_then(|c| c.downcast::<gtk::Entry>().ok())
+            .map(|e| e.text().to_string())
+            .unwrap_or_default(),
+        "rewritten band",
+        "the second opening reads the live mark"
+    );
+    again.response("remove");
+    settle();
+    assert!(
+        ui::produce_page::read_state().texts.is_empty(),
+        "Remove went through press_words_remove"
+    );
+    assert!(
+        widget_in(&window, "words-chip-0").is_none(),
+        "and the chip is gone with it -- a leftover chip would claim a box that no longer exists"
+    );
+    RAN_WORDS.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
 }
 
 /// The setting rows the page actually drew, by their widget names.
@@ -318,4 +466,10 @@ fn sec_08_produce_1_screen_s1_s4_plate_rows_forcing_and_images_wire_the_named_wi
     assert!(RAN_SETTINGS.load(Ordering::SeqCst), "the rows check never ran");
     assert!(RAN_FORCED.load(Ordering::SeqCst), "the forcing check never ran");
     assert!(RAN_IMAGES.load(Ordering::SeqCst), "the images-row check never ran");
+    assert!(RAN_CHANGE.load(Ordering::SeqCst), "the Change… door check never ran");
+    assert!(
+        RAN_SETTINGS_WIRE.load(Ordering::SeqCst),
+        "the settings-signal check never ran"
+    );
+    assert!(RAN_WORDS.load(Ordering::SeqCst), "the word-chip / dialog check never ran");
 }

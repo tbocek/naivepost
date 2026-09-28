@@ -90,6 +90,14 @@ thread_local! {
     }) };
 }
 
+thread_local! {
+    /// `refresh` writes widget values programmatically, and `set_selected` / `set_value` /
+    /// `set_active` each EMIT their own change signal. Without this guard the page would answer its own
+    /// repaint as if it were a user edit — the same trap `window.rs` threads `guard` through for the
+    /// tab switch. Handlers check it first; `refresh` holds it across every programmatic write.
+    static SETTINGS_GUARD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Publish what the page should show.
 pub fn set_state(next: ProduceState) {
     PRODUCE_STATE.with(|held| *held.borrow_mut() = next);
@@ -228,6 +236,9 @@ to resize, the middle to move, and press its \u{270e} to reword or remove it.",
 
 /// The settings grid: one labelled control per row, drawn from `settings_rows_shown` so the
 /// Game-audio row is ABSENT when narration is off (§F4.8), each widget named by `row_widget`.
+/// Build the settings rows with the values the page currently holds already IN them. Doing it here, at
+/// creation, is what lets `refresh` rebuild the grid whole without a repaint ever landing on a control
+/// that shows a default instead of the state — and it needs no guard, because nothing is wired yet.
 fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
     let s = read_state();
     for name in screen::settings_rows_shown(s.narration_off) {
@@ -241,6 +252,7 @@ fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
                 scale.set_widget_name(&row_widget("Game audio"));
                 scale.set_draw_value(false);
                 scale.set_hexpand(true);
+                scale.set_value(s.game_volume);
                 scale.set_tooltip_text(Some(screen::tooltip("Game audio")));
                 grid.attach(&scale, 1, row, 2, 1);
             }
@@ -254,6 +266,7 @@ fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
                 );
                 scale.set_widget_name(&row_widget("Quality (CRF)"));
                 scale.set_hexpand(true);
+                scale.set_value(s.crf as f64);
                 scale.set_tooltip_text(Some(screen::tooltip("Quality (CRF)")));
                 grid.attach(&scale, 1, row, 2, 1);
             }
@@ -266,6 +279,11 @@ fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
                 };
                 let tick = gtk::CheckButton::with_label(tick_label);
                 tick.set_widget_name(widget);
+                tick.set_active(match name {
+                    "Frame timing" => s.vfr,
+                    "Channels" => s.mono,
+                    _ => s.blurred_edges,
+                });
                 tick.set_tooltip_text(Some(screen::tooltip(name)));
                 grid.attach(&tick, 1, row, 2, 1);
             }
@@ -280,6 +298,7 @@ fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
                 for language in screen::translate_options(&s.session_language) {
                     let tick = gtk::CheckButton::with_label(language);
                     tick.set_widget_name(&format!("translate-tick-{language}"));
+                    tick.set_active(s.translate.iter().any(|t| t == language));
                     tick.set_tooltip_text(Some(screen::tooltip("Translate")));
                     ticks.append(&tick);
                 }
@@ -290,6 +309,11 @@ fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
                 let choices = screen::options(name).unwrap_or(&[]);
                 let picker = gtk::DropDown::from_strings(choices);
                 picker.set_widget_name(&row_widget(name));
+                if let Some(at) = screen::options(name)
+                    .and_then(|list| list.iter().position(|v| *v == held_choice(&s, name)))
+                {
+                    picker.set_selected(at as u32);
+                }
                 picker.set_tooltip_text(Some(screen::tooltip(name)));
                 grid.attach(&picker, 1, row, 2, 1);
             }
@@ -297,6 +321,20 @@ fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
         row += 1;
     }
     row
+}
+
+/// The value the page holds for one dropdown row, so `build_settings` can seed the picker.
+fn held_choice<'a>(s: &'a ProduceState, row: &str) -> &'a str {
+    match row {
+        "Container" => s.container.as_str(),
+        "Codec" => s.codec.as_str(),
+        "Preset" => s.preset.as_str(),
+        "Resolution" => s.resolution.as_str(),
+        "Frame rate" => s.frame_rate.as_str(),
+        "Audio" => s.audio.as_str(),
+        "Subtitles" => s.subtitles.as_str(),
+        _ => "",
+    }
 }
 
 fn setting_label(text: &str) -> gtk::Label {
@@ -364,6 +402,9 @@ fn build_right_column() -> gtk::Box {
     grid.set_widget_name("encoder-settings");
     grid.set_row_spacing(6);
     grid.set_column_spacing(8);
+    // Built un-wired here: `wire` attaches every control after `set_content`, because a handler put on
+    // a widget that is not yet in the realized tree never fires (the same reason the Cut page attaches its
+    // gestures after `set_content`).
     build_settings(&grid, 0);
     scroller.set_child(Some(&grid));
     right.append(&scroller);
@@ -431,6 +472,11 @@ thread_local! {
     static ROOT: std::cell::RefCell<Option<gtk::Widget>> = const { std::cell::RefCell::new(None) };
 }
 
+/// The window this page lives in, once `wire` has run. Slot buttons are attached through it.
+fn held_window() -> Option<adw::ApplicationWindow> {
+    ROOT.with(|held| held.borrow().clone()).and_then(|w| w.downcast::<adw::ApplicationWindow>().ok())
+}
+
 /// Find one widget by name from the window this page sits in.
 pub fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     let content = window.content()?;
@@ -461,7 +507,7 @@ fn label(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Label> {
 /// `build()` happened to draw first: the grid is emptied and refilled from `settings_rows_shown`, which
 /// is the same door `build_settings` walks. Rebuilding also re-attaches nothing twice, because every
 /// child is removed from the grid before any is added.
-fn rebuild_settings(window: &adw::ApplicationWindow, s: &ProduceState) {
+fn rebuild_settings(window: &adw::ApplicationWindow, _s: &ProduceState) {
     let Some(grid) = widget_in(window, "encoder-settings")
         .and_then(|w| w.downcast::<gtk::Grid>().ok())
     else {
@@ -471,6 +517,9 @@ fn rebuild_settings(window: &adw::ApplicationWindow, s: &ProduceState) {
         grid.remove(&child);
     }
     build_settings(&grid, 0);
+    // The fresh controls carry no handlers until this runs: rebuilding the grid would otherwise leave
+    // every row decorative.
+    wire_settings(window);
 }
 
 /// Say it on the status line and in the log, the page's two output channels.
@@ -486,6 +535,12 @@ fn say(window: &adw::ApplicationWindow, said: &str) -> String {
 pub fn refresh(window: &adw::ApplicationWindow) {
     let s = read_state();
     draw_slots(&s);
+    // The ✎ chips belong to the marks, so they are redrawn by the same door that redraws the slots.
+    draw_word_chips(window, &s);
+    // §A: a row's presence is itself drawn, so the grid is rebuilt whole rather than updated in place.
+    // The new controls are seeded from the held state as they are created (`build_settings`), which is
+    // why no guarded set-value pass is needed here: nothing emits a change signal during construction,
+    // so a repaint cannot be mistaken for an edit.
     rebuild_settings(window, &s);
     if let Some(entry) = widget_in(window, "title-entry")
         .and_then(|w| w.downcast::<gtk::Entry>().ok())
@@ -501,57 +556,6 @@ pub fn refresh(window: &adw::ApplicationWindow) {
             .and_then(|w| w.downcast::<gtk::TextView>().ok())
         {
             view.buffer().set_text(text);
-        }
-    }
-    // The dropdowns follow the held state so a flow that changed a setting cannot leave the widget
-    // showing something the state does not say.
-    for row in screen::settings_rows_shown(s.narration_off) {
-        let value = match row.as_ref() {
-            "Container" => s.container.clone(),
-            "Codec" => s.codec.clone(),
-            "Preset" => s.preset.clone(),
-            "Resolution" => s.resolution.clone(),
-            "Frame rate" => s.frame_rate.clone(),
-            "Audio" => s.audio.clone(),
-            "Subtitles" => s.subtitles.clone(),
-            _ => continue,
-        };
-        if let Some(picker) = widget_in(window, &row_widget(row))
-            .and_then(|w| w.downcast::<gtk::DropDown>().ok())
-        {
-            if let Some(at) = screen::options(row)
-                .and_then(|list| list.iter().position(|v| *v == value))
-            {
-                picker.set_selected(at as u32);
-            }
-        }
-    }
-    if let Some(scale) = widget_in(window, &row_widget("Game audio"))
-        .and_then(|w| w.downcast::<gtk::Scale>().ok())
-    {
-        scale.set_value(s.game_volume);
-    }
-    if let Some(scale) = widget_in(window, &row_widget("Quality (CRF)"))
-        .and_then(|w| w.downcast::<gtk::Scale>().ok())
-    {
-        scale.set_value(s.crf);
-    }
-    for (name, on) in [
-        ("tick-peak-rate-vfr", s.vfr),
-        ("tick-mono", s.mono),
-        ("tick-blurred", s.blurred_edges),
-    ] {
-        if let Some(tick) = widget_in(window, name)
-            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
-        {
-            tick.set_active(on);
-        }
-    }
-    for language in screen::translate_options(&s.session_language) {
-        if let Some(tick) = widget_in(window, &format!("translate-tick-{language}"))
-            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
-        {
-            tick.set_active(s.translate.iter().any(|t| t == language));
         }
     }
     if let Some(inputs) = label(window, "produce-inputs") {
@@ -765,6 +769,20 @@ pub fn set_setting(window: &adw::ApplicationWindow, row: &str, value: &str) -> S
     say(window, &said)
 }
 
+/// One of the three TICK rows changed (§A: Frame timing, Channels, Frame edges). A separate seam rather
+/// than another arm of `set_setting`: a tick has no value string, and teaching `set_setting` to parse
+/// "on"/"off" would give one function two kinds of input.
+pub fn set_toggle(window: &adw::ApplicationWindow, row: &str, on: bool) -> String {
+    mutate(|s| match row {
+        "Frame timing" => s.vfr = on,
+        "Channels" => s.mono = on,
+        "Frame edges" => s.blurred_edges = on,
+        _ => (),
+    });
+    refresh(window);
+    say(window, &format!("{row} {}", if on { "on" } else { "off" }))
+}
+
 fn set_plain_row(s: &mut ProduceState, row: &str, value: &str) {
     match row {
         "Preset" => s.preset = value.to_string(),
@@ -884,15 +902,6 @@ fn subtitles_name(s: Subtitles) -> &'static str {
     }
 }
 
-/// A container stands in for itself when the codec is asked of it (see `container_of_codec`).
-#[allow(dead_code)]
-fn codec_container(codec: Codec) -> Container {
-    match codec {
-        Codec::Vp9 => Container::Webm,
-        _ => Container::Mp4,
-    }
-}
-
 /// The page's row as the settings struct the transcode log reads. Built here rather than read off the
 /// project because the page holds the row's truth until a run saves it.
 fn produce_settings(s: &ProduceState) -> crate::project::Produce {
@@ -913,12 +922,76 @@ fn produce_settings(s: &ProduceState) -> crate::project::Produce {
     }
 }
 
+/// One ✎ chip per word box on the picture (§1 item 7: "✎ to reword"). Rebuilt whole, because a removed
+/// mark must not leave its chip behind claiming a box that no longer exists.
+fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
+    let Some(holder) = widget_in_root("thumbnail-word-chips") else {
+        return;
+    };
+    while let Some(child) = holder.first_child() {
+        holder.remove(&child);
+    }
+    for (index, mark) in s.texts.iter().enumerate() {
+        let chip = gtk::Button::with_label(&format!("\u{270e} {}", mark.text));
+        chip.set_widget_name(&format!("words-chip-{index}"));
+        chip.set_tooltip_text(Some("reword or remove this box"));
+        chip.set_halign(gtk::Align::Start);
+        let w = window.clone();
+        let text = mark.text.clone();
+        chip.connect_clicked(move |_| crate::ui::produce_words::open_reword(&w, index, &text));
+        holder.append(&chip);
+    }
+}
+
+/// The drag-a-box gesture over the picture. The box is kept as FRACTIONS of the plate, not pixels:
+/// `screen::place_words` is resolution-independent, so a saved mark survives being shown at another
+/// size. A press with almost no travel is a look, not a box — §A floors a box at 28 px and the plate
+/// is ~320 px wide, so 0.02 is that same floor expressed as a fraction.
+fn install_words_gesture(window: &adw::ApplicationWindow) {
+    let Some(picture) = widget_in(window, "thumbnail-picture") else {
+        return;
+    };
+    let gesture = gtk::GestureDrag::new();
+    gesture.set_button(1);
+    // Grabbed before the closure below takes what it needs: `add_controller` consumes nothing but the
+    // handler must own its own copies of `picture` and `window`.
+    let plate = picture.clone();
+    let w = window.clone();
+    // `drag-begin` carries the ABSOLUTE press position and `drag-end` only the OFFSET from it (the F2.8
+    // lesson), so both corners are known only across the two signals.
+    let start = std::rc::Rc::new(std::cell::Cell::new((0.0f64, 0.0f64)));
+    let start_begin = start.clone();
+    gesture.connect_drag_begin(move |_g, x, y| {
+        start_begin.set((x, y));
+    });
+    gesture.connect_drag_end(move |_g, offset_x, offset_y| {
+        let (start_x, start_y) = start.get();
+        let wide = f64::from(plate.width()).max(1.0);
+        let high = f64::from(plate.height()).max(1.0);
+        let x0 = start_x.min(start_x + offset_x).max(0.0) / wide;
+        let y0 = start_y.min(start_y + offset_y).max(0.0) / high;
+        let wf = offset_x.abs() / wide;
+        let hf = offset_y.abs() / high;
+        if wf < 0.02 || hf < 0.02 {
+            return;
+        }
+        crate::ui::produce_words::open_place(
+            &w,
+            x0 + wf / 2.0,
+            y0 + hf / 2.0,
+            wf.min(1.0),
+            hf.min(1.0),
+        );
+    });
+    picture.add_controller(gesture);
+}
+
 /// Attach every handler. Called from `build_window` after `set_content`, like every other control on
 /// every page: a handler attached before the widget is inside the realized tree never fires.
 pub fn wire(window: &adw::ApplicationWindow) {
-    if let Some(root) = window.content() {
-        ROOT.with(|held| *held.borrow_mut() = Some(root));
-    }
+    // Hold the WINDOW, not just the content root: `draw_slots` needs it to attach its per-slot buttons,
+    // which are looked up by name from the window root.
+    ROOT.with(|held| *held.borrow_mut() = Some(window.clone().upcast()));
     let win = window.clone();
     for name in [
         "add-image-button",
@@ -954,18 +1027,98 @@ pub fn wire(window: &adw::ApplicationWindow) {
             });
         }
     }
-    // The per-slot buttons, rewired whenever the row is rebuilt whole.
-    wire_slot_buttons(&win);
+    // The thirteen settings rows, wired before the slot buttons because `refresh` below rebuilds the
+    // grid whole and the wires must exist by the time a person touches a control.
+    wire_settings(&win);
+    // The overlay editor's drag lives on the picture itself; the ✎ chips arrive with each refresh.
+    install_words_gesture(&win);
     refresh(&win);
-    wire_slot_buttons(&win);
 }
 
-/// The slot buttons for however many slots the page currently holds.
+/// Attach every settings control to `set_setting` / `set_toggle`, so §1's items 11–14 reach the rules
+/// from the widgets and not only from a test. Each handler is the same three steps: bail when the guard
+/// says this emission is our own repaint, read what the widget now holds, hand it to the seam that owns
+/// the rule (including webm's forcing).
+fn wire_settings(window: &adw::ApplicationWindow) {
+    for row in [
+        "Container",
+        "Codec",
+        "Preset",
+        "Resolution",
+        "Frame rate",
+        "Audio",
+        "Subtitles",
+    ] {
+        let Some(picker) = widget_in(window, &row_widget(row))
+            .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        else {
+            continue;
+        };
+        let w = window.clone();
+        let row = row.to_string();
+        picker.connect_selected_notify(move |picker| {
+            if SETTINGS_GUARD.with(|guard| guard.get()) {
+                return;
+            }
+            let at = picker.selected() as usize;
+            let Some(value) = screen::options(&row).and_then(|list| list.get(at)).copied() else {
+                return;
+            };
+            set_setting(&w, &row, value);
+        });
+    }
+    for row in ["Game audio", "Quality (CRF)"] {
+        let Some(scale) = widget_in(window, &row_widget(row))
+            .and_then(|w| w.downcast::<gtk::Scale>().ok())
+        else {
+            continue;
+        };
+        let w = window.clone();
+        let row = row.to_string();
+        scale.connect_value_changed(move |scale| {
+            if SETTINGS_GUARD.with(|guard| guard.get()) {
+                return;
+            }
+            set_setting(&w, &row, &scale.value().to_string());
+        });
+    }
+    for (row, name) in [
+        ("Frame timing", "tick-peak-rate-vfr"),
+        ("Channels", "tick-mono"),
+        ("Frame edges", "tick-blurred"),
+    ] {
+        let Some(tick) = widget_in(window, name)
+            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+        else {
+            continue;
+        };
+        let w = window.clone();
+        let row = row.to_string();
+        tick.connect_toggled(move |tick| {
+            if SETTINGS_GUARD.with(|guard| guard.get()) {
+                return;
+            }
+            set_toggle(&w, &row, tick.is_active());
+        });
+    }
+}
+
+/// Stand in for the file chooser Change… opens. A headless run has no chooser, so the picture name is
+/// synthesised here, exactly as ＋ Add image synthesises `frame-{n}.jpg`. It counts presses rather than
+/// reading the row, because the whole point of the door is that the slot's picture MOVES; deriving the
+/// name from the current state would hand back what a previous press already put there.
+static CHANGE_STAND_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The per-slot buttons for however many slots the page holds.
 fn wire_slot_buttons(window: &adw::ApplicationWindow) {
-    for index in 0..read_state().frames.len() {
+    let count = read_state().frames.len();
+    for index in 0..count {
+        // The file chooser belongs to the host desktop and there is none headless, so Change… stands in
+        // with a name synthesised at press time by `CHANGE_STAND_IN`, just as ＋ Add image does.
         for (prefix, door) in [
             ("image-make-base", Door::MakeBase),
             ("image-set-thumbnail", Door::SetThumbnail),
+            ("image-change", Door::Change),
             ("image-remove", Door::Remove),
         ] {
             let name = format!("{prefix}-{index}");
@@ -975,6 +1128,13 @@ fn wire_slot_buttons(window: &adw::ApplicationWindow) {
                     match door {
                         Door::MakeBase => press_make_base(&w, index),
                         Door::SetThumbnail => press_set_thumbnail(&w, index),
+                        // What this door proves is that the slot KEEPS ITS PLACE and only its picture
+                        // changes (`screen::change_image`), not which filename arrived.
+                        Door::Change => {
+                            let pick = CHANGE_STAND_IN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            let stood_in_for = format!("project:produce/publish/chosen-{pick}.jpg");
+                            press_change_image(&w, index, &stood_in_for)
+                        }
                         Door::Remove => press_remove_image(&w, index),
                     };
                 });
@@ -987,6 +1147,7 @@ fn wire_slot_buttons(window: &adw::ApplicationWindow) {
 enum Door {
     MakeBase,
     SetThumbnail,
+    Change,
     Remove,
 }
 
@@ -1053,4 +1214,12 @@ fn draw_slots(s: &ProduceState) {
         }
         list.append(&row);
     }
+    // The buttons are found by name from the window root, so they can be wired the moment they exist:
+    // `wire` runs before the first `refresh`, when there are no slots yet and nothing to attach to.
+    if let Some(window) = held_window() {
+        wire_slot_buttons(&window);
+    }
 }
+
+// (the file ends above: the guarded set-value pass that used to sit here was removed — `build_settings`
+// seeds every control from the held state as it creates it, so no repaint can show a default.)
