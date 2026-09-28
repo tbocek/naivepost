@@ -9,10 +9,13 @@ use naivepost::narrate_off::{
     game_volume_shown, greyed, lines_to_speak, page_returns, refuse_run, set_off, skips,
     tick_checked, touches_the_record, TICK_LABEL,
 };
+use naivepost::narrate_run;
+use naivepost::narrate_screen;
 use naivepost::narration::{self, Entry, Narration};
+use naivepost::produce_screen;
 use naivepost::project::Project;
+use naivepost::project_settings;
 use naivepost::run::Step;
-
 fn temp_root(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("naivepost-narroff-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -95,6 +98,28 @@ fn f4_8_s1_the_tick_greys_the_page_and_never_greys_itself() {
     assert_eq!(TICK_LABEL, "Narration");
     assert!(tick_checked(narrated().no_narration));
     assert!(!tick_checked(silent().no_narration));
+
+    // The page's `apply_greys` reads THIS struct rather than a hard-coded list, so the names
+    // `off_greys()` prints and the fields that come true must be the same three things — one per name,
+    // in the same order, with nothing extra set.
+    let names = narrate_screen::off_greys();
+    let flags = [off.lines, off.preview, off.voice];
+    assert_eq!(names.len(), flags.len(), "three names, three fields");
+    assert!(
+        flags.iter().all(|greyed| *greyed),
+        "every field the three names stand for is set"
+    );
+    assert_eq!(
+        names.iter().filter(|name| !name.is_empty()).count(),
+        3,
+        "each name stands for exactly one greyed surface"
+    );
+    // ...and none of them is set when the narration is on, which is what makes the page light up again.
+    assert_eq!(
+        [on.lines, on.preview, on.voice],
+        [false, false, false],
+        "a narrated project leaves all three fields of greyed() false"
+    );
 }
 
 #[test]
@@ -121,6 +146,26 @@ fn f4_8_s2_the_tick_writes_the_flag_and_leaves_the_record_alone() {
     set_off(&mut project, &tree, false).unwrap();
     assert!(!saved_project(&tree).contains("\"no_narration\": true"));
     assert_eq!(read_record_bytes(&tree), before);
+
+    // The flag round-trips through a FRESH read, which is the property the page's own
+    // `session_no_narration()` reader depends on: a reload opens with the tick unchecked (or checked),
+    // never with whatever the widget last drew.
+    set_off(&mut project, &tree, true).unwrap();
+    let reloaded = naivepost::project::load(tree.dir()).expect("the project reloads after the tick");
+    assert!(
+        reloaded.no_narration,
+        "a fresh read sees the flag the tick wrote"
+    );
+    assert!(
+        !tick_checked(reloaded.no_narration),
+        "so the tick would open UNCHECKED for this project"
+    );
+    set_off(&mut project, &tree, false).unwrap();
+    let reloaded = naivepost::project::load(tree.dir()).expect("the project reloads again");
+    assert!(
+        tick_checked(reloaded.no_narration),
+        "and CHECKED once the narration is back on"
+    );
 
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -151,6 +196,45 @@ fn f4_8_s3_produce_hides_the_slider_and_renders_without_lines() {
     assert!(game_volume_shown(project.no_narration));
     assert_eq!(project.produce.game_volume, kept);
 
+    // The row list the settings tab draws is built through `settings_rows_shown`, so the slider's
+    // ABSENCE is a property of the list, not of a widget that forgot to draw: off drops exactly
+    // "Game audio", on keeps all thirteen.
+    let off_rows = produce_screen::settings_rows_shown(true);
+    assert!(
+        !off_rows.contains(&"Game audio"),
+        "with narration off the game-volume row is not offered: {off_rows:?}"
+    );
+    assert_eq!(off_rows.len(), 12, "one row of the thirteen goes away");
+    let on_rows = produce_screen::settings_rows_shown(false);
+    assert!(on_rows.contains(&"Game audio"), "a narrated project gets the slider back");
+    assert_eq!(
+        on_rows.len(),
+        produce_screen::SETTINGS_ROWS.len(),
+        "and nothing else is dropped"
+    );
+    // Same rule one level up, in the whole tab list.
+    assert_eq!(
+        project_settings::rows_for(true).len(),
+        project_settings::rows_for(false).len() - 1,
+        "the tab loses exactly the game-volume control with narration off"
+    );
+    assert!(project_settings::rows_for(true)
+        .iter()
+        .all(|row| *row != "Game audio"));
+
+    // And the render speaks nothing: the entries it is handed come through `lines_to_speak`, so with
+    // the tick off there is no line left for the pass to synthesize.
+    let silent_pass = narrate_run::speak_pass("own", &lines_to_speak(true, &entries()), |_| false);
+    assert!(
+        !silent_pass.contains(&narrate_run::Speak::Synthesize),
+        "nothing is synthesized when narration is off: {silent_pass:?}"
+    );
+    let narrated_pass = narrate_run::speak_pass("own", &lines_to_speak(false, &entries()), |_| false);
+    assert!(
+        narrated_pass.contains(&narrate_run::Speak::Synthesize),
+        "the same call with narration on does have work to do: {narrated_pass:?}"
+    );
+
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -167,6 +251,38 @@ fn f4_8_s4_a_lucky_run_skips_narrate() {
     assert_eq!(skips(Step::Prepare, true), None);
     assert_eq!(skips(Step::Suggest, true), None);
     assert_eq!(skips(Step::Produce, true), None);
+
+    // The chain's own const and this module's sentence are ONE string — `lucky::Chain::next` now takes
+    // its skip line from here at runtime, so a drift would be caught by that assert as well as this.
+    assert_eq!(
+        skips(Step::Narrate, true),
+        Some(naivepost::lucky::NARRATE_SKIPPED.to_string())
+    );
+
+    // A real chain carrying the flag walks past Narrate rather than handing it over, and lands on Produce.
+    let (mut chain, _opening) = naivepost::lucky::Chain::start(false).expect("not busy");
+    chain.set_narration_off(true);
+    // Prepare, then Cut, then the walk reaches Narrate and must skip it.
+    let mut saw_skip = None;
+    for outcome in [
+        naivepost::lucky::StepOutcome::Ran { seconds: 1 },
+        naivepost::lucky::StepOutcome::Ran { seconds: 1 },
+        naivepost::lucky::StepOutcome::Declined,
+    ] {
+        if let naivepost::lucky::Advance::Skipped { line } = chain.next(outcome) {
+            saw_skip = Some(line);
+        }
+    }
+    assert_eq!(
+        saw_skip,
+        skips(Step::Narrate, true),
+        "the line the chain logs is this module's, byte for byte"
+    );
+    assert_eq!(
+        chain.left(),
+        1,
+        "only Produce is still ahead once Narrate was carried past"
+    );
 }
 
 #[test]
