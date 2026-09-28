@@ -895,13 +895,10 @@ pub fn container_of_row() -> Container {
 /// The render's own output file, which is what a copy reads and weighs. Named here so the wiring module
 /// asks the page rather than guessing the container spelling twice.
 pub fn rendered_video() -> std::path::PathBuf {
-    let tree = crate::layout::Tree::new(&crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .ok();
-    match tree {
-        Some(tree) => tree.final_video(container_word().as_str()),
-        None => std::path::PathBuf::from("produce/final.mp4"),
+    let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    match crate::layout::Tree::new(dir) {
+        Ok(tree) => tree.final_video(container_word().as_str()),
+        Err(_) => std::path::PathBuf::from("produce/final.mp4"),
     }
 }
 

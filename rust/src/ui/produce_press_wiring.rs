@@ -102,15 +102,12 @@ pub fn save_video_from_button(window: &adw::ApplicationWindow) -> String {
 }
 
 /// The project's own name for the save default: the session folder's, falling back to the app's name when
-/// the folder is not a project tree at all. `Tree::name` borrows the tree, so the copy happens inside.
+/// the folder is not a project tree at all.
 fn project_name() -> String {
-    let tree = crate::layout::Tree::new(&crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .ok();
-    match tree {
-        Some(tree) => tree.name().unwrap_or("naivepost").to_string(),
-        None => "naivepost".to_string(),
+    let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    match crate::layout::Tree::new(dir) {
+        Ok(tree) => tree.name().unwrap_or("naivepost").to_string(),
+        Err(_) => "naivepost".to_string(),
     }
 }
 
@@ -123,7 +120,7 @@ fn legs() -> crate::produce_presses::Legs {
                 .unwrap_or(false)
         },
         || produce_page::read_state().rendering,
-        || produce_page::container_word(),
+        produce_page::container_word,
         produced_spans,
     );
     // This page reports its own reprint passes; the F5.6 words half counts its own elsewhere.
