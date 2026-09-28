@@ -286,7 +286,13 @@ fn f5_1_s4_words_failure_is_logged_and_the_render_carries_on() {
         },
         |_| {
             log.borrow_mut().push("render");
-            (true, true, 0.0, "0 B".to_string())
+            flow::Rendered {
+                ok: true,
+                tag_ok: true,
+                stopped: false,
+                seconds: 0.0,
+                size: "0 B".to_string(),
+            }
         },
     );
     assert_eq!(ending.status, render::STAGE_DONE, "the render's verdict stands despite the words failure");
@@ -311,7 +317,13 @@ fn f5_1_s5_the_tag_page_writes_after_both_halves() {
         |_| {
             seen.borrow_mut().push("render-start");
             seen.borrow_mut().push("render-done");
-            (true, true, 0.0, "0 B".to_string())
+            flow::Rendered {
+                ok: true,
+                tag_ok: true,
+                stopped: false,
+                seconds: 0.0,
+                size: "0 B".to_string(),
+            }
         },
     );
     let done = order.borrow();

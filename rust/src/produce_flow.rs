@@ -219,6 +219,42 @@ pub fn words_failed(reason: &str) -> String {
     format!("!!! the upload text and thumbnail failed: {reason} {WORDS_FAILED_TAIL}")
 }
 
+/// §B's render-failure line, `produce FAILED: …`. It keeps the prototype's capitals because it is the one
+/// line that says the *render* died rather than one half of it: "!!!" marks every logged failure, and
+/// this is the one that means there is no video.
+pub fn failed_log(reason: &str) -> String {
+    format!("produce FAILED: {reason}")
+}
+
+/// S5/S6: what the render half reports back — the one struct the ending is read from, so a run's numbers
+/// are assembled once and cannot disagree with themselves.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rendered {
+    /// The render returned without error. This, not the tag page's outcome, is the run's verdict (S6).
+    pub ok: bool,
+    /// S5's tag page: written or not. An input to the ending, never the verdict.
+    pub tag_ok: bool,
+    /// S10: a checkpoint answered "stopped". A stop outranks a failure: nothing was left half-written.
+    pub stopped: bool,
+    /// Wall-clock seconds the render took, and the produced file's size, for the closing lines.
+    pub seconds: f64,
+    pub size: String,
+}
+
+impl Default for Rendered {
+    fn default() -> Self {
+        Rendered {
+            ok: false,
+            tag_ok: false,
+            stopped: false,
+            seconds: 0.0,
+            size: "0 B".to_string(),
+        }
+    }
+}
+
+
+
 // --- S5/S6: how the run ends -------------------------------------------------------------------
 
 /// How the two halves came back, as [`run_with`] collected them.
@@ -318,21 +354,21 @@ pub fn stamp_written(encoded: bool, failed: bool) -> bool {
 pub fn run_with<FWords, FRender>(run: &Run, mut words: FWords, mut render_half: FRender) -> Ending
 where
     FWords: FnMut(&Run) -> (bool, Option<String>),
-    FRender: FnMut(&Run) -> (bool, bool, f64, String),
+    FRender: FnMut(&Run) -> Rendered,
 {
     let (words_ok, words_reason) = words(run);
     // The render starts regardless of what the words half did. Its own error is the verdict (S6); the
     // words' error is a logged line on its own progress.
-    let (render_ok, tag_ok, seconds, size) = render_half(run);
+    let made = render_half(run);
     // One `Halves`, so the done log line and the bar's progress text are read off the same numbers.
     let halves = Halves {
         words_ok,
         words_reason,
-        render_ok,
-        tag_ok,
-        stopped: false,
-        seconds,
-        size,
+        render_ok: made.ok,
+        tag_ok: made.tag_ok,
+        stopped: made.stopped,
+        seconds: made.seconds,
+        size: made.size,
     };
     ending_for(&run.video_file(), &halves)
 }

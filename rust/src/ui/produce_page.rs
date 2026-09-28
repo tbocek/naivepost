@@ -1329,7 +1329,8 @@ fn finish_produce(
     crate::ui::window::log_line(&crate::produce_flow::opening_line(&run, false));
     // S5/S6: both halves through `run_with`, so the closing line and the bar's progress text come from
     // one place. The words half is F5.6's; its failure is logged with the spec's own tail and never stops
-    // the render. The render half reports 0 s / "0 B" until F5.2's encoder supplies real numbers.
+    // the render. The render half is F5.2's, run here by `produce_exec`: it plans the whole run, walks
+    // the subprocesses and reports back what it made.
     let ending = crate::produce_flow::run_with(
         &run,
         |_| match words_half() {
@@ -1339,13 +1340,102 @@ fn finish_produce(
                 (false, Some(why))
             }
         },
-        |_| (true, true, 0.0, "0 B".to_string()),
+        |run| {
+            let tree = session_tree();
+            // Cloned twice: the two closures that need the source list each own a copy, because a `move`
+            // closure takes what it captures and both of these run inside one call.
+            let sources_for_stamp = project.sources.clone();
+            let sources_for_clips = project.clone();
+            let render = crate::produce_exec::run_render(
+                run,
+                &tree,
+                &crate::produce_exec::Materials {
+                    exists: &|file| std::path::Path::new(file).exists(),
+                    fx_for: &|_| Vec::new(),
+                    lanes: &run.cut.lanes,
+                    src_shape: (1920, 1080),
+                    wav_of: &|entry| crate::produce_stamp::wav_of(&tree, entry, Some(&run.voice), 0),
+                    cues: crate::produce_exec::Cues {
+                        all: Vec::new(),
+                        languages: run.settings.translate.clone(),
+                    },
+                    sources: &move || sources_for_stamp.clone(),
+                    // S5's picture input: an insert reads its own asset, footage and a `copy:` stretch read
+                    // the first footage recording. Resolved here, where the project is held, by the same
+                    // rule `Seg::insert_asset` uses.
+                    source_file: &move |clip| {
+                        if clip.source.is_empty() || clip.source.starts_with("copy:") {
+                            return sources_for_clips
+                                .sources
+                                .iter()
+                                .find(|src| src.footage)
+                                .map(|src| src.path.clone());
+                        }
+                        let root = std::env::current_dir().unwrap_or_default();
+                        // `Seg::insert_asset` is the one path rule of §1; the clip carries the same spelling.
+                        let mut probe = crate::cut::Seg::default();
+                        probe.ins = clip.source.clone();
+                        Some(
+                            probe
+                                .insert_asset(&root, &root)
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_else(|| clip.source.clone()),
+                        )
+                    },
+                },
+                |line| crate::ui::window::log_line(line),
+                speak_a_line,
+                |at, which| render_asked(at, which),
+                crate::produce_exec::spawn_tool,
+            );
+            // A render that stopped or failed says so in the log with the spec's own line, on top of the
+            // ending's word on the status line: `run_with` turns the report into "production stopped" or
+            // "production failed — see log", and the reason belongs where a person can read it.
+            if let Some(why) = render_failure_note(&render) {
+                crate::ui::window::log_line(&crate::produce_flow::failed_log(&why));
+            }
+            render
+        },
     );
     crate::ui::window::log_line(&ending.log);
     if !ending.progress.is_empty() {
         crate::ui::window::log_line(&ending.progress);
     }
     say(window, ending.status)
+}
+
+/// The session's folder, resolved the way the page resolves everything else on this path.
+fn session_tree() -> crate::layout::Tree {
+    crate::layout::Tree::new(&crate::startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ))
+    .unwrap_or_else(|_| crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap())
+}
+
+/// S2's speak: no audio.cpp here, so every line reports why. A synthesis that fails is logged by the
+/// render's own rule (`synthesis_failure_log`) and the encoder carries on — the same shape as the words
+/// half's failure above, and for the same reason: one silent sentence is not a reason to lose a video.
+fn speak_a_line(line: &crate::produce_exec::ToSpeak) -> Result<(), String> {
+    Err(format!(
+        "no speech server here: {} was not synthesized",
+        line.text.chars().take(24).collect::<String>()
+    ))
+}
+
+/// S10's checkpoint question. This page runs the whole render inside one press and the shell's cancel
+/// flag is F0.x's, so the answer is always "go on": the seam is here because `produce_exec` is where a
+/// stop is *placed* between the subprocesses, and wiring the real flag replaces one closure, not the walk.
+fn render_asked(_at: crate::produce_exec::At, _which: &str) -> bool {
+    true
+}
+
+/// The render's own failure, if it had one, for §B's `produce FAILED: …` line. A stop is not a failure
+/// and gets no such line, which is why the report's `stopped` outranks `ok` here.
+fn render_failure_note(render: &crate::produce_flow::Rendered) -> Option<String> {
+    if render.ok || render.stopped {
+        return None;
+    }
+    Some(render.size.clone())
 }
 
 /// F5.6's half of the run, as seen from here: no image server in this container, so it reports why.
