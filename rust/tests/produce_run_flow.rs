@@ -286,7 +286,7 @@ fn f5_1_s4_words_failure_is_logged_and_the_render_carries_on() {
         },
         |_| {
             log.borrow_mut().push("render");
-            (true, true)
+            (true, true, 0.0, "0 B".to_string())
         },
     );
     assert_eq!(ending.status, render::STAGE_DONE, "the render's verdict stands despite the words failure");
@@ -311,7 +311,7 @@ fn f5_1_s5_the_tag_page_writes_after_both_halves() {
         |_| {
             seen.borrow_mut().push("render-start");
             seen.borrow_mut().push("render-done");
-            (true, true)
+            (true, true, 0.0, "0 B".to_string())
         },
     );
     let done = order.borrow();
@@ -399,6 +399,7 @@ fn f5_1_s6_done_logs_the_finished_line() {
         flow::progress_text("produce/final.mp4", 187.5, "41 MB"),
         "produced produce/final.mp4 \u{2014} 187.5 s, 41 MB"
     );
+    assert_eq!(ending.progress, flow::progress_text("produce/final.mp4", 187.5, "41 MB"));
 }
 
 #[test]

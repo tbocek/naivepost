@@ -244,6 +244,9 @@ pub struct Halves {
 pub struct Ending {
     pub status: &'static str,
     pub log: String,
+    /// The run bar's progress text ([`progress_text`]). Empty for a stopped or failed ending: only a run
+    /// that finished has something to show there.
+    pub progress: String,
 }
 
 /// S6: **the render's error is the run's verdict**, and the tag page's is not — a helper page that could
@@ -260,6 +263,7 @@ pub fn finish(halves: &Halves) -> Ending {
         return Ending {
             status: render::stopped_log(),
             log: render::stopped_log().to_string(),
+            progress: String::new(),
         };
     }
     // The tag's failure changes nothing: render_verdict takes it and ignores it, which is the rule.
@@ -268,12 +272,14 @@ pub fn finish(halves: &Halves) -> Ending {
         return Ending {
             status: render::failure_log(),
             log: render::failure_log().to_string(),
+            progress: String::new(),
         };
     }
     Ending {
         status: render::STAGE_DONE,
         // The file name comes from `ending_for`, which knows it; `finish` alone reports the word only.
         log: render::STAGE_DONE.to_string(),
+        progress: String::new(),
     }
 }
 
@@ -290,6 +296,7 @@ pub fn ending_for(file: &str, halves: &Halves) -> Ending {
     let mut ending = finish(halves);
     if ending.status == render::STAGE_DONE {
         ending.log = render::finished_log(file, halves.seconds, &halves.size);
+        ending.progress = progress_text(file, halves.seconds, &halves.size);
     }
     ending
 }
@@ -303,28 +310,31 @@ pub fn stamp_written(encoded: bool, failed: bool) -> bool {
 /// S4/S5: run both halves and join them.
 ///
 /// `words` performs F5.6 and reports `(ok, reason)`; `render_half` performs F5.2 and reports
-/// `(ok, tag_ok)`. Both are closures so a headless test injects stubs and asserts the ORDER: the opening
-/// line first, the two halves each once, the tag page only after both, and the closing sentence last. A
-/// failing words half never stops the render — that is the whole reason the two are separate calls rather
-/// than one function that could bail.
+/// `(ok, tag_ok, seconds, size)` — the render tells us its own elapsed time and file size because only
+/// F5.2's encoder knows them. Both are closures so a headless test injects stubs and asserts the ORDER:
+/// the opening line first, the two halves each once, the tag page only after both, and the closing
+/// sentence last. A failing words half never stops the render — that is the whole reason the two are
+/// separate calls rather than one function that could bail.
 pub fn run_with<FWords, FRender>(run: &Run, mut words: FWords, mut render_half: FRender) -> Ending
 where
     FWords: FnMut(&Run) -> (bool, Option<String>),
-    FRender: FnMut(&Run) -> (bool, bool),
+    FRender: FnMut(&Run) -> (bool, bool, f64, String),
 {
     let (words_ok, words_reason) = words(run);
     // The render starts regardless of what the words half did. Its own error is the verdict (S6); the
     // words' error is a logged line on its own progress.
-    let (render_ok, tag_ok) = render_half(run);
-    finish(&Halves {
+    let (render_ok, tag_ok, seconds, size) = render_half(run);
+    // One `Halves`, so the done log line and the bar's progress text are read off the same numbers.
+    let halves = Halves {
         words_ok,
         words_reason,
         render_ok,
         tag_ok,
         stopped: false,
-        seconds: 0.0,
-        size: String::new(),
-    })
+        seconds,
+        size,
+    };
+    ending_for(&run.video_file(), &halves)
 }
 
 // --- names ------------------------------------------------------------------------------------

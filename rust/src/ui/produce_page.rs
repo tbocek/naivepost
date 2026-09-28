@@ -1327,19 +1327,29 @@ fn finish_produce(
     let run = crate::produce_flow::Run { aspect: run.cut.aspect.clone(), ..run };
     // S4: the one opening line, logged before either half starts.
     crate::ui::window::log_line(&crate::produce_flow::opening_line(&run, false));
-    // S5/S6: both halves as closures; the real F5.6 words and F5.2 render replace them in their rounds.
-    let ending = crate::produce_flow::ending_for(
-        &run.video_file(),
-        &crate::produce_flow::Halves {
-            words_ok: false,
-            words_reason: Some("no image server here".to_string()),
-            render_ok: true,
-            tag_ok: true,
-            stopped: false,
-            seconds: 0.0,
-            size: "0 B".to_string(),
+    // S5/S6: both halves through `run_with`, so the closing line and the bar's progress text come from
+    // one place. The words half is F5.6's; its failure is logged with the spec's own tail and never stops
+    // the render. The render half reports 0 s / "0 B" until F5.2's encoder supplies real numbers.
+    let ending = crate::produce_flow::run_with(
+        &run,
+        |_| match words_half() {
+            Ok(()) => (true, None),
+            Err(why) => {
+                crate::ui::window::log_line(&crate::produce_flow::words_failed(&why));
+                (false, Some(why))
+            }
         },
+        |_| (true, true, 0.0, "0 B".to_string()),
     );
     crate::ui::window::log_line(&ending.log);
+    if !ending.progress.is_empty() {
+        crate::ui::window::log_line(&ending.progress);
+    }
     say(window, ending.status)
+}
+
+/// F5.6's half of the run, as seen from here: no image server in this container, so it reports why.
+/// F5.6 replaces this one function with the sd.cpp call; nothing else about the run changes.
+fn words_half() -> Result<(), String> {
+    Err("no image server here".to_string())
 }
