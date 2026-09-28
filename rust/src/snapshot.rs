@@ -63,6 +63,21 @@ fn write_png(widget: &gtk::Widget, out: &Path) -> Result<(), String> {
     surface.write_to_png(&mut file).map_err(|err| err.to_string())
 }
 
+/// Write one encoder row's default into the page's state, by the row name §A gives it. The page keeps
+/// its settings as spelled strings, so this is the one place that maps a §A row to its field.
+fn set_setting_row(state: &mut ui::produce_page::ProduceState, row: &str, value: &str) {
+    match row {
+        "Container" => state.container = value.to_string(),
+        "Codec" => state.codec = value.to_string(),
+        "Preset" => state.preset = value.to_string(),
+        "Resolution" => state.resolution = value.to_string(),
+        "Frame rate" => state.frame_rate = value.to_string(),
+        "Audio" => state.audio = value.to_string(),
+        "Subtitles" => state.subtitles = value.to_string(),
+        _ => (),
+    }
+}
+
 pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
     let page = screen_page(screen).ok_or_else(|| format!("unknown screen {screen}"))?;
     if !dir.join(project::PROJECT_FILE).is_file() {
@@ -321,6 +336,46 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // run paints from (not a poke), with the reply empty because headless there is no model --
             // only the stage text and fraction are wanted here, and the door's own status line is not.
             ui::show_narrate_stage(&window, 2, 4);
+        }
+        // §08-produce#1-screen's own picture (`spec/img/08-produce.png`) is a page with work on it:
+        // images in the row, an instruction written, settings chosen and both readouts filled. The
+        // fixture cannot show that -- `fixtures/demo.naivepost` carries no `publish.json`, so a bare
+        // shot draws the empty-images note and two blank readouts. Seeded here the way `07-narrate`
+        // seeds its lines: through the page's own publish door (`set_state` + `refresh`), which is what
+        // every flow calls after it edits the publish state, so the slots, the rows and the readouts
+        // are drawn by the page from this state rather than painted here.
+        if screen == "08-produce" {
+            let mut state = ui::produce_page::read_state();
+            state.frames = (1..=3)
+                .map(|n| format!("project:produce/publish/frame-{n}.jpg"))
+                .collect();
+            state.instruction = "Make the speaker mid-gesture at the whiteboard, keep the room dark \u{2014} \
+no words, no logos.".into();
+            state.negative = "watermarks, lettering, extra limbs".into();
+            state.title = "Ethereum, one lecture at a time".into();
+            state.thumb_title = state.title.clone();
+            state.description = "Lecture two of the series: gas, smart contracts and accounts, with the \
+architecture behind them.
+".into();
+            // §A's Default column, spelled from the rules module so the shot agrees with the tests.
+            for (row, value) in crate::produce_screen::defaults() {
+                match row {
+                    "Container" | "Codec" | "Preset" | "Resolution" | "Frame rate" | "Audio"
+                    | "Subtitles" => set_setting_row(&mut state, row, value),
+                    _ => (),
+                }
+            }
+            state.game_volume = 0.22;
+            state.crf = 24.0;
+            state.blurred_edges = true;
+            state.clips = 7;
+            state.seconds = 254.0;
+            state.to_speak = 5;
+            state.publish_written = true;
+            state.out_files = 9;
+            state.out_bytes = 41 * 1024 * 1024;
+            ui::produce_page::set_state(state);
+            ui::produce_page::refresh(&window);
         }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is

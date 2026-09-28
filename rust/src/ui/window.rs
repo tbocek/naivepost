@@ -181,6 +181,12 @@ fn page_box(
         box_.append(&crate::ui::narrate_page::build());
     }
 
+    // §08-produce#1-screen: like Narrate, the Produce page is one surface from its own module, so the
+    // tab holds §A's fifteen widgets rather than a stub.
+    if page == Page::Produce.label() {
+        box_.append(&crate::ui::produce_page::build());
+    }
+
 
     // F2.1: the Cut page's own transport, first under the title rather than last in the box. The
     // page's content box is top-packed and does not stretch its children, so anything appended after
@@ -5111,6 +5117,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // §07-narrate#1-screen: the Narrate page's controls, wired after `set_content` like every other
     // control in this window, so the widgets being wired are inside the realized tree.
     crate::ui::narrate_page::wire(&window);
+    crate::ui::produce_page::wire(&window);
     window
 }
 

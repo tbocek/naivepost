@@ -1,4 +1,6 @@
 pub mod settings;
+/// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
+pub mod produce_page;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
 /// F0.7 S5 — the policy form: every field with its value, source and reason.
