@@ -5,18 +5,30 @@
 //! the narration read from `narrate/narration.json` rather than an empty list, and that the answer
 //! lands on the status line as `produce_flow::SKIP_LOG` when the stored stamp matches.
 //!
-//! Same shape as `tests/produce_screen_widgets.rs`: one application, one `connect_activate`, exactly
-//! one `Application::run` (`g_application_run` refuses a second claimant of the default main context),
-//! cwd pinned to this test's own temp root BEFORE the run because the page resolves the session through
-//! `startup::session_dir(current_dir())`, and no sleeps — `settle()` pumps the glib context.
+//! One application, one `connect_activate`, one `run_with_args` for the whole binary: three
+//! `Application::run` calls from three test threads is what produced `Default main context is already
+//! acquired by another thread!`. The three checks therefore run IN SEQUENCE inside the activate
+//! callback, each wrapped in `catch_unwind`: an assertion that fires directly inside that closure
+//! unwinds into GTK's `extern "C"` trampoline (`panic_cannot_unwind`) and aborts the whole test
+//! process, which reads as a crash rather than a failed check. Each block records its own failure
+//! message instead, and the `#[test]` below asserts the recorded messages are all empty once the run
+//! has returned. cwd is pinned to this test's own temp root BEFORE the run because the page resolves
+//! the session through `startup::session_dir(current_dir())`, and no sleeps — `settle()` pumps the
+//! glib context.
 //!
 //! The temp root holds a session folder laid out as §1 lays a project out: `cut/cut.json` for the cut,
 //! `produce/final.mp4` as the video that stands there, `produce/final.stamp` as what it is up to date
 //! with, and `narrate/narration.json` + the take wavs for the lines. `produce_stamp::gate_stamp` is
 //! what the page calls, so the stamp written into the file is produced through the same door — a test
 //! that hand-wrote a hash the page could not have computed would prove nothing about the wire.
+//!
+//! Naming note: §F5.3 has no S-numbered steps (it is a flowchart plus one paragraph), so the `s8` /
+//! `s10` in these names are the hash-group breakdown already used by `tests/produce_stamp.rs`
+//! (`f5_3_s1`…`f5_3_s11`). The `S8` at `spec/08-produce.md:74` belongs to F5.2's loudnorm+mux and is
+//! a different flow; these names are not aligned to it.
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -31,11 +43,48 @@ use naivepost::ui;
 mod common;
 use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
-/// Each check sets its own flag; the `#[test]` at the bottom asserts the flag, so a check that never
-/// ran fails the test instead of passing silently (a panic inside `activate` is swallowed by GTK).
-static RAN_SKIP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static RAN_STALE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static RAN_UPLOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// One slot per check, holding that block's failure text if it failed. Written from inside the activate
+/// callback and read after `run_with_args` returns, so a failing assert never unwinds into GTK.
+static SKIP_FAIL: Mutex<Option<String>> = Mutex::new(None);
+static STALE_FAIL: Mutex<Option<String>> = Mutex::new(None);
+static UPLOAD_FAIL: Mutex<Option<String>> = Mutex::new(None);
+
+/// Run one check so a panic becomes a recorded message rather than an abort through the C trampoline.
+fn record(
+    slot: &Mutex<Option<String>>,
+    label: &str,
+    body: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe,
+) {
+    let outcome = std::panic::catch_unwind(body);
+    let failure = match outcome {
+        Ok(Ok(())) => None,
+        Ok(Err(why)) => Some(why),
+        Err(payload) => Some(
+            payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "<non-string panic>".to_string()),
+        ),
+    };
+    if let Some(why) = failure {
+        *slot.lock().unwrap() = Some(format!("{label}: {why}"));
+    }
+}
+
+/// Move into a fresh subfolder of this test's root and run one check there, so each check owns its own
+/// session folder while cwd is what the page reads. Returns the check's own failure text, if any, so
+/// `record` can take ownership of it instead of borrowing a local that dies at the end of the block.
+fn in_root(name: String, check: fn(&Path)) -> impl FnOnce() -> Result<(), String> {
+  move || {
+        let base = std::env::current_dir().expect("cwd pinned before the run");
+        let root = base.join(&name);
+        std::fs::create_dir_all(&root).map_err(|why| format!("{name} root: {why}"))?;
+        std::env::set_current_dir(&root).map_err(|why| format!("cwd to {name}: {why}"))?;
+        check(&root);
+        Ok(())
+    }
+}
 
 /// This test's own session folder: `<root>/session.naivepost`, the name `startup::SESSION_NAME` gives
 /// the working copy beside a root, which is what the page resolves from cwd.
@@ -57,7 +106,7 @@ fn two_segs() -> Vec<Seg> {
 }
 
 /// Write `cut/cut.json` with two segments and the aspect the run will hash, so `what_is_the_cut` finds
-/// a cut on disk (no review cut is seeded in these checks, so the file is the answer).
+/// a cut on disk too (the seeded review cut is the page's first answer; the file is its second).
 fn write_cut(tree: &Tree) {
     let cut = naivepost::cut::Cut {
         segs: two_segs(),
@@ -73,9 +122,10 @@ fn write_cut(tree: &Tree) {
     .unwrap();
 }
 
-/// The settings the page will build from a default `ProduceState`: `produce_settings` reads
-/// container/codec/resolution/game_volume/crf/vfr/mono/blurred_edges off the state and defaults the
-/// rest, so a default state hashes as `Produce::default()` under the same names.
+/// The settings the test hashes. `page_settings` pairs with the page seeded through `seed_page`: the
+/// page rebuilds its hashed struct from `produce_screen::defaults()`, which reparses to exactly
+/// `Produce::default()` (mp4/h264/slow/1080p/30/128k/none, game 0.22, crf 24, vfr off, mono off,
+/// blurred edges on).
 fn page_settings() -> Produce {
     Produce::default()
 }
@@ -141,103 +191,15 @@ fn press_play(window: &adw::ApplicationWindow) -> String {
         .to_string()
 }
 
-/// One application per check, exactly one `Application::run` each: the three checks run in three
-/// processes because cargo gives each test its own thread and `g_application_run` refuses to be
-/// re-entered on a thread that already ran one. `app` is handed back so the caller can keep it alive
-/// until after `run` returns rather than moving it into the closure.
-fn build_app() -> adw::Application {
-    adw::Application::builder()
-        .application_id(ui::APP_ID)
-        .flags(gio::ApplicationFlags::NON_UNIQUE)
-        .build()
-}
-
-/// (a) Up to date: the stamp on disk is the current hash, the video stands there, so the press answers
-/// §F5.1 S2's skip sentence byte for byte and writes no new stamp.
-///
-/// The whole check runs INSIDE the activate closure, files and all: `seed_review_cut` writes to a
-/// thread-local slot that only exists on the thread the window was built on, so the cut has to be seeded
-/// there rather than from the test thread before the app starts.
-fn check_up_to_date(root: &Path) {
-    let tree = session(root);
-    let settings = page_settings();
-    let app = build_app();
-    let check = move |window: &adw::ApplicationWindow| {
-        write_cut(&tree);
-        // The live cut the page reads through `review_cut_of`: seeded from the same two segments the
-        // stamp was built over, so the page's cut and this test's cut are one answer.
-        let cut = naivepost::cut::Cut {
-            segs: two_segs(),
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        };
-        ui::seed_review_cut(window, &cut);
-        // No narration at all: the simplest up-to-date state, two segments, nothing spoken.
-        write_narration(&tree, &[]);
-        // The page hashes the LIVE project (`window::live_project()` -> `PLAY_SESSION`'s newest slot),
-        // which `build_window` fills from the model it was handed — the same fixture this file builds its
-        // stamp over, so the two sources lists are already one answer and need no seeding. What DOES need
-        // seeding is the page's own row, read through `produce_settings(&read_state())`: a bare default
-        // state carries EMPTY strings and booleans, which do not reparse to `Produce::default()`, and its
-        // empty `voice` hashes as `None` while `current_stamp` hashes `Some("1")` (the voice
-        // `write_line` builds each take's wav path with). Seeding the state with
-        // `produce_screen::defaults()` — the list the page's `build_settings` seeds its controls from —
-        // plus the voice makes the page and this helper hash the same seven groups.
-        let row = naivepost::produce_screen::defaults();
-        let mut page = ui::produce_page::read_state();
-        page.container = row[0].1.to_string();
-        page.codec = row[1].1.to_string();
-        page.preset = row[2].1.to_string();
-        page.resolution = row[3].1.to_string();
-        page.frame_rate = row[4].1.to_string();
-        page.audio = row[5].1.to_string();
-        page.subtitles = row[6].1.to_string();
-        page.game_volume = row[8].1.parse().expect("game audio parses");
-        page.crf = row[9].1.parse().expect("crf parses");
-        page.vfr = row[10].1 == "on";
-        page.mono = row[11].1 == "on";
-        page.blurred_edges = row[12].1 == "on";
-        page.voice = "1".to_string();
-        ui::produce_page::set_state(page);
-        let current = current_stamp(&tree, &settings, &two_segs());
-        let video = tree.final_video("mp4");
-        std::fs::create_dir_all(video.parent().unwrap()).unwrap();
-        std::fs::write(&video, b"a finished video of some length").unwrap();
-        std::fs::write(stamp::stamp_path(&tree), format!("{current}\n")).unwrap();
-
-                let said = press_play(window);
-                assert_eq!(
-                    said,
-                    naivepost::produce_flow::SKIP_LOG,
-            "the press did not answer with the skip sentence"
-        );
-        // A skip writes nothing: what stands in the file is still the hash that made it a skip.
-        assert_eq!(
-            stamp::read_stamp(&tree).as_deref(),
-            Some(current.as_str()),
-            "a skipped encode must not rewrite the stamp"
-        );
-        assert!(
-            video.is_file(),
-            "and the video it stands beside is left exactly as it was"
-        );
-    };
-    app.connect_activate(move |app| {
-        let window = produce_window(app);
-        check(&window);
-        RAN_SKIP.store(true, std::sync::atomic::Ordering::SeqCst);
-        window.close();
-        settle();
-    });
-    app.run();
-}
-
 /// Seed the page's own row so a press hashes the same settings the test hashed. The page rebuilds the
-/// hashed struct through `produce_settings(&read_state())` from the state's STRINGS and booleans, and a
-/// bare default state's empty strings do not reparse to `Produce::default()`; its empty `voice` also
-/// hashes as `None` where `current_stamp` hashes `Some("1")` (the voice `write_line` builds the take
-/// path with). Seeding `produce_screen::defaults()` — the list the page's `build_settings` seeds its
-/// controls from — plus the voice makes both sides hash the same seven groups.
+/// hashed struct through `produce_settings(&read_state())` (`src/ui/produce_page.rs:907`, called at
+/// `:1252`) from the state's STRINGS and booleans, and a bare default state's empty strings do not
+/// reparse to `Produce::default()`; its empty `voice` also hashes as `None` where `current_stamp`
+/// hashes `Some("1")` (the voice `write_line` builds the take path with, and the same value
+/// `gate_stamp` salts each take with). Seeding `produce_screen::defaults()` — the list the page's
+/// `build_settings` seeds its controls from — plus the voice makes both sides hash the same seven
+/// groups. The sources need no seeding: the page reads them through `window::live_project()`, whose
+/// newest `PLAY_SESSION` slot `build_window` fills from the fixture model this helper hashes over.
 fn seed_page(_window: &adw::ApplicationWindow) {
     let row = naivepost::produce_screen::defaults();
     let mut page = ui::produce_page::read_state();
@@ -257,6 +219,77 @@ fn seed_page(_window: &adw::ApplicationWindow) {
     ui::produce_page::set_state(page);
 }
 
+/// Lay the page's side of the wire down: the live cut the page reads through `review_cut_of`, seeded
+/// from the same two segments the stamp was built over, so the page's cut and this test's cut are one
+/// answer. Must run on the window's own thread — `seed_review_cut` writes a thread-local slot.
+fn seed_live_cut(window: &adw::ApplicationWindow) {
+    ui::seed_review_cut(
+        window,
+        &naivepost::cut::Cut {
+            segs: two_segs(),
+            aspect: "16:9".to_string(),
+            ..Default::default()
+        },
+    );
+    seed_page(window);
+}
+
+/// (a) Up to date: the stamp on disk is the current hash, the video stands there, so the press answers
+/// §F5.1 S2's skip sentence byte for byte and writes no new stamp.
+fn check_up_to_date(root: &Path) {
+    let tree = session(root);
+    let settings = page_settings();
+    write_cut(&tree);
+    // No narration at all: the simplest up-to-date state, two segments, nothing spoken.
+    write_narration(&tree, &[]);
+    let current = current_stamp(&tree, &settings, &two_segs());
+    let video = tree.final_video("mp4");
+    std::fs::create_dir_all(video.parent().unwrap()).unwrap();
+    std::fs::write(&video, b"a finished video of some length").unwrap();
+    stamp::write_stamp(&tree, &current).expect("the stamp is written beside the video");
+    // Both halves of the gate before the press touches either: the same hash, and a file behind it.
+    assert!(stamp::skip_encode(Some(&current), &current), "S8: the same hash");
+    assert_eq!(
+        stamp::read_stamp(&tree).as_deref(),
+        Some(current.as_str()),
+        "and the stamp on disk reads back what was written"
+    );
+
+    let window = produce_window(&app_in_round());
+    seed_live_cut(&window);
+    let said = press_play(&window);
+    assert_eq!(
+        said,
+        naivepost::produce_flow::SKIP_LOG,
+        "the press did not answer with the skip sentence"
+    );
+    // A skip writes nothing: what stands in the file is still the hash that made it a skip.
+    assert_eq!(
+        stamp::read_stamp(&tree).as_deref(),
+        Some(current.as_str()),
+        "a skipped encode must not rewrite the stamp"
+    );
+    assert!(
+        video.is_file(),
+        "and the video it stands beside is left exactly as it was"
+    );
+    window.close();
+    settle();
+}
+
+/// The app handle the checks build their windows under, published by `run_round` so each check can use
+/// it without taking an argument through the `catch_unwind` boundary.
+thread_local! {
+    static CURRENT_APP: std::cell::RefCell<Option<adw::Application>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn app_in_round() -> adw::Application {
+    CURRENT_APP
+        .with(|held| held.borrow().clone())
+        .expect("run_round published the application")
+}
+
 /// (b) The narration is in the comparison: a line written after the stamp was made makes the video
 /// stale, so the press does NOT answer with the skip sentence. Before this round's fix the gate hashed
 /// an empty line list and this press skipped, which is the bug the spec's flowchart forbids.
@@ -270,7 +303,7 @@ fn check_narration_makes_it_stale(root: &Path) {
     let video = tree.final_video("mp4");
     std::fs::create_dir_all(video.parent().unwrap()).unwrap();
     std::fs::write(&video, b"a finished video of some length").unwrap();
-    std::fs::write(stamp::stamp_path(&tree), format!("{stale}\n")).unwrap();
+    stamp::write_stamp(&tree, &stale).expect("the stale stamp is written");
 
     // ...and then a line with a real take appears. Same settings, same cut, same aspect.
     let line = write_line(&tree, "a line spoken after the stamp", 8_000);
@@ -281,30 +314,16 @@ fn check_narration_makes_it_stale(root: &Path) {
         "the stamp must move when a line is added — that is the rule the gate reads"
     );
 
-    let app = build_app();
-    app.connect_activate(move |app| {
-        let window = produce_window(app);
-        seed_page(&window);
-        // The live cut, seeded on the window's own thread, matching the stamp's segments.
-        ui::seed_review_cut(
-            &window,
-            &naivepost::cut::Cut {
-                segs: two_segs(),
-                aspect: "16:9".to_string(),
-                ..Default::default()
-            },
-        );
-        let said = press_play(&window);
-        assert_ne!(
-            said,
-            naivepost::produce_flow::SKIP_LOG,
-            "the press skipped over a changed narration: status was {said:?}"
-        );
-        RAN_STALE.store(true, std::sync::atomic::Ordering::SeqCst);
-        window.close();
-        settle();
-    });
-    app.run();
+    let window = produce_window(&app_in_round());
+    seed_live_cut(&window);
+    let said = press_play(&window);
+    assert_ne!(
+        said,
+        naivepost::produce_flow::SKIP_LOG,
+        "the press skipped over a changed narration: status was {said:?}"
+    );
+    window.close();
+    settle();
 }
 
 /// (c) The upload record is not in the hash: with the video up to date, writing and then deleting
@@ -319,7 +338,7 @@ fn check_upload_text_is_outside_the_hash(root: &Path) {
     let video = tree.final_video("mp4");
     std::fs::create_dir_all(video.parent().unwrap()).unwrap();
     std::fs::write(&video, b"a finished video of some length").unwrap();
-    std::fs::write(stamp::stamp_path(&tree), format!("{current}\n")).unwrap();
+    stamp::write_stamp(&tree, &current).expect("the stamp is written");
 
     // Text written, then text deleted: the video's up-to-dateness answers the same both times, because
     // the upload record is not in the hash and deleting `publish/` restarts the text alone.
@@ -336,71 +355,83 @@ fn check_upload_text_is_outside_the_hash(root: &Path) {
         "publish.json must not move the render's stamp"
     );
 
-    let app = build_app();
-    app.connect_activate(move |app| {
-        let window = produce_window(app);
-        seed_page(&window);
-        ui::seed_review_cut(
-            &window,
-            &naivepost::cut::Cut {
-                segs: two_segs(),
-                aspect: "16:9".to_string(),
-                ..Default::default()
-            },
-        );
-        let said = press_play(&window);
-        assert_eq!(
-            said,
-            naivepost::produce_flow::SKIP_LOG,
-            "with the upload text deleted the video is still up to date: status was {said:?}"
-        );
-        RAN_UPLOAD.store(true, std::sync::atomic::Ordering::SeqCst);
-        window.close();
-        settle();
+    let window = produce_window(&app_in_round());
+    seed_live_cut(&window);
+    let said = press_play(&window);
+    assert_eq!(
+        said,
+        naivepost::produce_flow::SKIP_LOG,
+        "with the upload text deleted the video is still up to date: status was {said:?}"
+    );
+    window.close();
+    settle();
+}
+
+/// The three checks, in sequence, on the one thread the application runs on. Each is wrapped so a
+/// failure is recorded rather than aborted through GTK's C trampoline.
+fn run_round(app: &adw::Application) {
+    CURRENT_APP.with(|held| *held.borrow_mut() = Some(app.clone()));
+
+    record(
+        &SKIP_FAIL,
+        "up-to-date press",
+        std::panic::AssertUnwindSafe(in_root("skip".to_string(), check_up_to_date)),
+    );
+    record(
+        &STALE_FAIL,
+        "changed-narration press",
+        std::panic::AssertUnwindSafe(in_root("stale".to_string(), check_narration_makes_it_stale)),
+    );
+    record(
+        &UPLOAD_FAIL,
+        "upload-text press",
+        std::panic::AssertUnwindSafe(in_root(
+            "upload".to_string(),
+            check_upload_text_is_outside_the_hash,
+        )),
+    );
+
+    // Hand the main loop back so `run_with_args` returns; without this the activate handler never
+    // finishes and the harness waits forever on a loop with no work in it.
+    let app = app.clone();
+    glib::idle_add_local(move || {
+        app.quit();
+        glib::ControlFlow::Break
     });
-    app.run();
 }
 
 #[test]
-fn f5_3_s8_a_press_on_an_up_to_date_project_skips_the_encode() {
-    let root = std::env::temp_dir().join(format!("np-f53-wire-skip-{}", std::process::id()));
+fn f5_3_s8_a_press_on_the_produce_page_asks_the_stamp_question() {
+    // Pin cwd BEFORE anything builds: the press resolves the project through
+    // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray
+    // `rust/session.naivepost/` into the repo.
+    let root = std::env::temp_dir().join(format!("np-f53-wire-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("temp root created");
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
-    check_up_to_date(&root);
-    std::fs::remove_dir_all(&root).ok();
-    assert!(
-        RAN_SKIP.load(std::sync::atomic::Ordering::SeqCst),
-        "the up-to-date press check never ran inside the app"
-    );
-}
 
-#[test]
-fn f5_3_s8_a_changed_narration_line_is_not_up_to_date() {
-    let root = std::env::temp_dir().join(format!("np-f53-wire-stale-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("temp root created");
-    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
-    check_narration_makes_it_stale(&root);
-    std::fs::remove_dir_all(&root).ok();
-    assert!(
-        RAN_STALE.load(std::sync::atomic::Ordering::SeqCst),
-        "the stale-narration press check never ran inside the app"
-    );
-}
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let app = adw::Application::builder()
+            .application_id(ui::APP_ID)
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.connect_activate(run_round);
+        // An explicit argv: `run()` would hand the harness's own flags (`--exact`, `--nocapture`) to
+        // libgio, which treats an option it does not know as fatal and aborts before the activate
+        // callback runs — which reads as "the block never ran". Our own one-argument list keeps the
+        // two argument lists apart for good.
+        app.run_with_args(&["naivepost"]);
+    });
 
-#[test]
-fn f5_3_s10_deleting_the_upload_text_does_not_stale_the_video() {
-    let root = std::env::temp_dir().join(format!("np-f53-wire-upload-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("temp root created");
-    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
-    check_upload_text_is_outside_the_hash(&root);
+    let skip = SKIP_FAIL.lock().unwrap().take();
+    let stale = STALE_FAIL.lock().unwrap().take();
+    let upload = UPLOAD_FAIL.lock().unwrap().take();
     std::fs::remove_dir_all(&root).ok();
-    assert!(
-        RAN_UPLOAD.load(std::sync::atomic::Ordering::SeqCst),
-        "the upload-text check never ran inside the app"
-    );
+
+    assert!(skip.is_none(), "{}", skip.unwrap_or_default());
+    assert!(stale.is_none(), "{}", stale.unwrap_or_default());
+    assert!(upload.is_none(), "{}", upload.unwrap_or_default());
 }
 
 /// Where the stamp file goes: beside the video, named for its stem. Kept here as one more thing the wire
