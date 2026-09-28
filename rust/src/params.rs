@@ -1078,11 +1078,11 @@ pub fn produce() -> Vec<Param> {
         param("P.policy.gameVolume", num(project::Produce::default().game_volume), "project::Produce::default — game_volume"),
         param("P.eng.loudness", loudnorm_spelled(produce_render::LOUDNORM), "produce_render::LOUDNORM"),
         param("P.eng.clipLimiter", limiter_spelled(), "produce_render::LIMITER"),
-        // §10's row for the frame-edge blur: spelled out of the two constants `blur_sigma` reads, so a
-        // change to either shows up in the catalogue without a hand edit.
+        // §10 spells this row as a whole rule, `0.02·height, min 4`, so both constants `blur_sigma`
+        // reads go into the spelling; a change to either shows up in the catalogue without a hand edit.
         param(
             "P.eng.blurSigma",
-            num(produce_render::BLUR_SIGMA_FRACTION),
+            blur_sigma_spelled(),
             "produce_render::blur_sigma",
         ),
         // --- §08 §4's fitting bound, read where the render applies it (the rest of F4.3 lives in §7) -------
@@ -1137,6 +1137,18 @@ fn title_band_spelled() -> String {
         num(band.cy),
         num(band.wf),
         num(band.hf)
+    )
+}
+
+/// §10 spells `P.eng.blurSigma` as `0.02·height, min 4`: a rule with two halves, so both constants
+/// [`produce_render::blur_sigma`] reads land in the spelling rather than only the fraction. The floor is
+/// what keeps a small frame blurred at all, and a row that hid it would show a number the render does not
+/// obey. `·` is U+00B7, the character §10 writes.
+fn blur_sigma_spelled() -> String {
+    format!(
+        "{}\u{b7}height, min {}",
+        num(produce_render::BLUR_SIGMA_FRACTION),
+        num(produce_render::BLUR_SIGMA_MIN)
     )
 }
 

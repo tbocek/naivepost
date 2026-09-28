@@ -67,11 +67,10 @@ fn p_eng_blursigma_s1_the_value_and_its_single_home() {
         "produce_render::blur_sigma",
         "a row must name the function that owns the rule, not one of the two numbers alone"
     );
-    // Hard-coded from spec/10-parameters.md line 209. The row itself is built from the constants
-    // (`num(BLUR_SIGMA_FRACTION)`), so this assertion pins that the derived spelling still matches the
-    // spec's characters rather than proving nothing: change either constant and this fails.
-    assert_eq!(row.spelled, "0.02");
-    assert_eq!(row.spelled.parse::<f64>().unwrap(), render::BLUR_SIGMA_FRACTION);
+    // Hard-coded from spec/10-parameters.md line 209, `0.02·height, min 4` (· is U+00B7). The row is
+    // built from BOTH constants, so this pins that the derived spelling still matches the spec's
+    // characters rather than proving nothing: change either constant and this fails.
+    assert_eq!(row.spelled, "0.02\u{b7}height, min 4");
 
     // §10 files it among the engineering constants, so the prefix answers to Eng.
     assert_eq!(
@@ -254,4 +253,26 @@ fn p_eng_blursigma_s5_a_proportion_of_height_not_another_kinds_002() {
     assert_eq!(naivepost::render_fx::ZOOM_GRID_FPS, 30.0);
     assert_eq!(naivepost::render_fx::ZOOM_DEPTH_CAP, 10.0);
     assert_ne!(naivepost::render_fx::ZOOM_GRID_FPS, render::BLUR_SIGMA_FRACTION);
+}
+
+/// S6: the row spells BOTH halves of the rule, each taken from the constant that owns it, so the floor is
+/// visible in the catalogue and not only in the code that obeys it.
+#[test]
+fn p_eng_blursigma_s6_the_row_spells_the_fraction_and_the_floor_together() {
+    let row = row_for("P.eng.blurSigma");
+    // Derived here from the constants themselves rather than copied, so a drift between the two sides of
+    // the same rule (the fraction and the floor) shows up as a mismatch.
+    let derived = format!(
+        "{}\u{b7}height, min {}",
+        render::BLUR_SIGMA_FRACTION,
+        render::BLUR_SIGMA_MIN as i64
+    );
+    assert_eq!(row.spelled, derived, "both constants land in the row's spelling");
+    assert!(row.spelled.contains("0.02"), "{}", row.spelled);
+    assert!(row.spelled.contains("min 4"), "{}", row.spelled);
+    // The spelled `min 4` is the same fact the render obeys at a small frame: 0.02*10 = 0.2 would be no
+    // blur at all, and the floor lifts it to 4.
+    assert_eq!(render::blur_sigma(10), render::BLUR_SIGMA_MIN as i32);
+    // And one home for the whole rule, still.
+    assert_eq!(row.from, "produce_render::blur_sigma");
 }
