@@ -5414,6 +5414,8 @@ fn wire_play(
         // F4.1's ▶ is the same button on the Narrate page: the refusal is asked BEFORE the bar opens,
         // exactly as Prepare does above, so a refused run never shows ⏸ for work that never began.
         let narrate_asked = run::step(shell.borrow().page) == run::Step::Narrate;
+        // F5.1's ▶ on the Produce page, refused the same way before the bar opens (§F5.1 S1).
+        let produce_asked = run::step(shell.borrow().page) == run::Step::Produce;
         let live = PLAY_SESSION.with(|slots| {
             slots
                 .borrow()
@@ -5433,6 +5435,16 @@ fn wire_play(
             if let Some(reason) = refuse_narrate_run(&live) {
                 // S1 only: nothing was pulled, nothing was saved, no file was written or copied.
                 status.set_text(&reason);
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, run::Transport::default());
+                return;
+            }
+        }
+
+        if produce_asked {
+            let has_cut = !review_cut_of(&main_window()).segs.is_empty();
+            if let Some(reason) = crate::produce_flow::refuse(bar.borrow().running.is_some(), has_cut) {
+                // §F5.1 S1: refused before the bar opened — no ⏸ shows for a run that never began.
+                status.set_text(reason);
                 paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, run::Transport::default());
                 return;
             }
@@ -5639,6 +5651,12 @@ fn wire_play(
             && run::step(shell.borrow().page) == run::Step::Narrate
         {
             let _ = press_narrate_run(&main_window());
+        }
+        // F5.1: the Produce step's own ▶, forwarded the same way; rules and strings live in `produce_flow`.
+        if matches!(pressed, run::Pressed::Started { .. })
+            && run::step(shell.borrow().page) == run::Step::Produce
+        {
+            let _ = crate::ui::produce_page::press_produce_run(&main_window());
         }
     });
 }
@@ -10988,7 +11006,8 @@ pub fn press_narrate_run_with_reply(
 }
 
 /// The live project this window runs under — the newest slot, the same rule `session_policy` reads.
-fn live_project() -> Project {
+/// Public to the crate so the Produce page's F5.1 seam reads the session rather than a widget copy of it.
+pub(crate) fn live_project() -> Project {
     PLAY_SESSION
         .with(|slots| slots.borrow().last().cloned())
         .map(|held| held.borrow().clone())

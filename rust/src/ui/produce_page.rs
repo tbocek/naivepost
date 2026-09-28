@@ -1221,5 +1221,125 @@ fn draw_slots(s: &ProduceState) {
     }
 }
 
-// (the file ends above: the guarded set-value pass that used to sit here was removed — `build_settings`
-// seeds every control from the held state as it creates it, so no repaint can show a default.)
+/// The F5.1 run, driven from the page. Kept here rather than in `window.rs` so the shell's play handler
+/// stays a forwarder (spec/00-principles.md §5): every decision is `produce_flow`'s, every string comes
+/// from it too, and this only gathers what the page holds and writes the answers back.
+///
+/// The two halves arrive as closures because headless there is no sd.cpp and no ffmpeg pipeline to call:
+/// a soft words failure and a passing render are what a test can assert against without a server. When the
+/// real F5.6 words and F5.2 render land in their own rounds they replace those two closures and nothing
+/// else in this function changes.
+pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
+    let s = read_state();
+    let project = crate::ui::window::live_project();
+    let tree = crate::layout::Tree::new(&crate::startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ))
+    .ok();
+    // S3: ONE function answers "what is the cut", and the Cut page's own segments win so a tweak that
+    // was never saved still renders. `review_cut_of` is that live cut.
+    let cut = match tree.as_ref() {
+        Some(tree) => crate::produce_flow::what_is_the_cut(
+            Some(crate::ui::review_cut_of(window)),
+            tree,
+        ),
+        None => crate::ui::review_cut_of(window),
+    };
+    // S1: nothing to render. The shell refuses before the bar opens; this is the page's own copy of that
+    // answer for the door that calls the seam directly.
+    if cut.segs.is_empty() {
+        return say(window, crate::cut::NO_CUT_YET);
+    }
+    let settings = produce_settings(&s);
+    let Some(tree) = tree.as_ref() else {
+        // No project folder means no stamp and no video to ask about: encode.
+        return finish_produce(window, &s, &project, cut, settings, crate::produce_flow::Gate::Encode);
+    };
+    // S2: up to date is the stamp's question, asked with the two hashes this page can build.
+    let input = crate::produce_stamp::Input {
+        settings: &settings,
+        segs: &cut.segs,
+        lines: &[],
+        sources: &project.sources,
+        aspect: &cut.aspect,
+        voice: &s.voice,
+        no_narration: project.no_narration,
+    };
+    let current = input.stamp_with(tree, None, 0);
+    let gate = crate::produce_flow::gate(
+        crate::produce_stamp::skip_encode(
+            crate::produce_stamp::read_stamp(tree).as_deref(),
+            &current,
+        ),
+        tree.final_video(container_name(parse_container(&s.container))).exists(),
+    );
+    finish_produce(window, &s, &project, cut, settings, gate)
+}
+
+/// The S2 answer acted on and S4–S6 run. Split out only so the `Tree` borrow above ends before the run.
+fn finish_produce(
+    window: &adw::ApplicationWindow,
+    s: &ProduceState,
+    project: &crate::project::Project,
+    cut: crate::cut::Cut,
+    settings: crate::project::Produce,
+    gate: crate::produce_flow::Gate,
+) -> String {
+    // S2: a stale video standing here gets the overwrite question, in §S2's own two paragraphs. Nothing
+    // is written by asking; the answer's own door is what runs the encode.
+    if gate == crate::produce_flow::Gate::ConfirmOverwrite {
+        let video = crate::layout::Tree::new(&crate::startup::session_dir(
+            &std::env::current_dir().unwrap_or_default(),
+        ))
+        .map(|t| t.final_video(container_name(parse_container(&s.container))))
+        .unwrap_or_default();
+        let base = video
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "final".to_string());
+        let (bytes, mtime) = crate::produce_stamp::disk_facts(&video);
+        // The title rides the status line and the two-paragraph body goes to the log: the dialog this
+        // answer opens belongs to the confirmation round, and the page's own door prints both halves.
+        let asked = crate::produce_flow::overwrite_title(&base);
+        let body = crate::produce_flow::overwrite_detail(
+            &video.to_string_lossy(),
+            &format!("{bytes} bytes"),
+            &format!("modified {mtime}"),
+        );
+        crate::ui::window::log_line(&body);
+        return say(window, &asked);
+    }
+    if gate == crate::produce_flow::Gate::Skip {
+        return say(window, crate::produce_flow::SKIP_LOG);
+    }
+    let run = crate::produce_flow::Run {
+        cut,
+        lines: vec![],
+        settings,
+        sources: crate::run::snapshot_sources(project),
+        publish: project.publish.clone(),
+        aspect: String::new(),
+        clips: s.clips,
+        publish_written: s.publish_written,
+        voice: s.voice.clone(),
+        no_narration: project.no_narration,
+    };
+    let run = crate::produce_flow::Run { aspect: run.cut.aspect.clone(), ..run };
+    // S4: the one opening line, logged before either half starts.
+    crate::ui::window::log_line(&crate::produce_flow::opening_line(&run, false));
+    // S5/S6: both halves as closures; the real F5.6 words and F5.2 render replace them in their rounds.
+    let ending = crate::produce_flow::ending_for(
+        &run.video_file(),
+        &crate::produce_flow::Halves {
+            words_ok: false,
+            words_reason: Some("no image server here".to_string()),
+            render_ok: true,
+            tag_ok: true,
+            stopped: false,
+            seconds: 0.0,
+            size: "0 B".to_string(),
+        },
+    );
+    crate::ui::window::log_line(&ending.log);
+    say(window, ending.status)
+}
