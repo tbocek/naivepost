@@ -16,6 +16,10 @@ use naivepost::params;
 use naivepost::produce_render;
 use naivepost::transcribe;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{all_rows};
+
 /// A row by id from anywhere in the catalogue. `params::find` only searches `prepare()`, and this item
 /// lives on the Narrate page, so the lookup has to span all five lists.
 fn row_for(id: &str) -> params::Param {
@@ -23,18 +27,6 @@ fn row_for(id: &str) -> params::Param {
         .into_iter()
         .find(|param| param.id == id)
         .unwrap_or_else(|| panic!("{id} is not catalogued"))
-}
-
-/// Every list that carries rows, chained across all five pages so uniqueness is checked against the
-/// whole catalogue rather than one page (`tests/hands_off.rs`'s `row()` makes the same choice).
-fn all_rows() -> Vec<params::Param> {
-    params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .chain(params::effects())
-        .chain(params::narrate())
-        .chain(params::produce())
-        .collect()
 }
 
 /// The three numbers a `loudnorm` filter sets, keyed by the name ffmpeg uses.

@@ -2,16 +2,14 @@
 //! [`naivepost::rescan`] and draws the answer, so what this check asserts is that a click named the
 //! row it dropped and said "rescanned", never that anything was re-rendered (spec/00-principles.md §5).
 
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use naivepost::rescan;
 use naivepost::ui;
-
-fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir};
 
 /// One running GTK application for this test binary — the same single-main-loop arrangement
 /// `tests/save_as_widgets.rs` needs for the same reason. The check records that it ran, so one that

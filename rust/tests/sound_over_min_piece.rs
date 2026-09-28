@@ -12,22 +12,14 @@ use naivepost::cut_copy as cp;
 use naivepost::cut_select::Scope;
 use naivepost::{cut_select, fx_lane, fx_volume, params};
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{all_rows};
+
 /// The recording a lane names — same fixture name `tests/cut_copy_paste_lane.rs` uses.
 const REC: &str = "2026-09-16 17-26-20";
 /// The sound file each laid piece names as its asset.
 const FILE: &str = "assets/audio.wav";
-
-/// Every list that carries rows. All five are chained because the new row lives in `cut()` while uniqueness has
-/// to hold across the whole catalogue, not merely per page (`tests/hands_off.rs`'s `row()` does the same).
-fn all_rows() -> Vec<params::Param> {
-    params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .chain(params::effects())
-        .chain(params::narrate())
-        .chain(params::produce())
-        .collect()
-}
 
 fn anywhere(id: &str) -> params::Param {
     let mut found = all_rows().into_iter().filter(|row| row.id == id).collect::<Vec<_>>();

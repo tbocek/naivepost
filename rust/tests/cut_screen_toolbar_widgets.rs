@@ -16,12 +16,12 @@ use naivepost::cut_screen::{self, HISTORY_BUTTONS, TRANSPORT_BUTTONS, VERB_BUTTO
 use naivepost::shell::Page;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle, status_text};
+
 static RAN_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_UNDO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A window sitting on the Cut page with a three-scene cut seeded, cwd pinned to its own temp root so
 /// nothing resolves the project through `rust/` and writes a stray `rust/session.naivepost/` into the
@@ -56,24 +56,9 @@ fn seg(s: f64, e: f64) -> Seg {
 }
 
 /// Let the main context run what the widget emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
     ui::line_step_button(window, name).unwrap_or_else(|| panic!("the Cut page carries {name}"))
-}
-
-fn status_text(window: &adw::ApplicationWindow) -> String {
-    ui::find_status(window.upcast_ref())
-        .expect("the shell has a status line")
-        .text()
-        .to_string()
 }
 
 /// Every widget name under `root`, depth-first, skipping unnamed ones. `observe_children` gives the

@@ -578,12 +578,6 @@ fn legacy_key(key: &str) -> bool {
     IGNORED_KEYS.contains(&key) || key.starts_with("PROMPT_")
 }
 
-/// Whether this key belongs to an older build, so its value can be dropped (§8).
-pub fn is_legacy_key(key: &str) -> bool {
-    legacy_key(key)
-}
-
-
 /// root, is not a project at all — the prototype keeps only the pairs where both are set.
 pub fn remembered(projects: &BTreeMap<String, String>) -> Vec<ProjectRef> {
     // Sorted by folder, which is what makes an unchanged save byte-identical and the
@@ -655,17 +649,6 @@ pub fn voices_folder(conf_value: &str, models_dir: &str, flatpak: bool, data_dir
         return data_dir.join("voices");
     }
     PathBuf::from(DEFAULT_VOICES)
-}
-
-/// The legacy `AUDIOCPP_MODELS` spelling of the voices folder: its `voices/`
-/// subfolder, which is what the prototype implied (§8). Only an absolute root
-/// counts, for the same reason an override does — a relative one moves with the
-/// process. Anything else answers empty, meaning "no legacy folder".
-pub fn voices_under_models(models_dir: &str) -> String {
-    if models_dir.is_empty() || !Path::new(models_dir).is_absolute() {
-        return String::new();
-    }
-    format!("{}/voices", models_dir.trim_end_matches('/'))
 }
 
 /// Create the voices folder at 0700 and leave an existing one alone. Nothing reads it

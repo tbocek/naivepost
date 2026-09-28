@@ -16,16 +16,16 @@ use naivepost::cut_select::{Surface, MIN_SCENE_SECONDS};
 use naivepost::shell::Page;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle, status_text};
+
 static RAN_SHORT: AtomicBool = AtomicBool::new(false);
 static RAN_TAKEN: AtomicBool = AtomicBool::new(false);
 static RAN_PASTED: AtomicBool = AtomicBool::new(false);
 static RAN_LANE: AtomicBool = AtomicBool::new(false);
 static RAN_ESC: AtomicBool = AtomicBool::new(false);
 static RAN_PASTE_LENGTHENS: AtomicBool = AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A footage scene on camera 0.
 fn clip(s: f64, e: f64) -> Seg {
@@ -57,21 +57,6 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 }
 
 /// Let the main context run what the widget emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
-
-fn status_text(window: &adw::ApplicationWindow) -> String {
-    ui::find_status(window.upcast_ref())
-        .expect("the shell has a status line")
-        .text()
-        .to_string()
-}
 
 /// This window's cut as a whole, so the length can be measured the same way the page measures it.
 fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {

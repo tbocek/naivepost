@@ -20,41 +20,16 @@ use naivepost::cut::{Cut, EffectKind, Fx};
 use naivepost::shell::Page;
 use naivepost::timeline::Recording;
 use naivepost::ui;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 static RAN_EMPTY_LANE: AtomicBool = AtomicBool::new(false);
 static RAN_BAR_IN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_HELD_OVERLAY: AtomicBool = AtomicBool::new(false);
 static RAN_UNDO_TAKES_BAR: AtomicBool = AtomicBool::new(false);
 
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
-
-thread_local! {
-    /// The only strong handle on the window last built, so the next check can drop it first: a closed GTK
-    /// window is not destroyed and its names stay parented, which would send a lookup to the wrong tree.
-    static LAST_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-fn release_last_window() {
-    LAST_WINDOW.with(|cell| {
-        if let Some(old) = cell.borrow_mut().take() {
-            old.close();
-        }
-    });
-    settle();
-}
-
 /// Let the main context run what the widget emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 fn click(window: &adw::ApplicationWindow, name: &str) {
     ui::line_step_button(window, name)
@@ -106,7 +81,7 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &Cut) -> adw::Ap
         "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
     );
     let window = ui::build_window(app, &model, "Prepare");
-    LAST_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    hold_last_window(window.clone());
     window.present();
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")

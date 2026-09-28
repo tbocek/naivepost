@@ -14,6 +14,10 @@ use naivepost::params;
 use naivepost::textfmt::Retake;
 use naivepost::wave::Wave;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{all_rows};
+
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
 const WORD: u8 = 120;
@@ -45,18 +49,6 @@ fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {
 /// No envelope anywhere, and nothing else spoken.
 fn none(_: f64) -> Option<&'static Edges> {
     None
-}
-
-/// Every list that carries rows, chained across all five pages so uniqueness is checked against the whole
-/// catalogue rather than one page (`tests/hands_off.rs`'s `row()` makes the same choice).
-fn all_rows() -> Vec<params::Param> {
-    params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .chain(params::effects())
-        .chain(params::narrate())
-        .chain(params::produce())
-        .collect()
 }
 
 /// A row found anywhere in the catalogue. Asserted NON-EMPTY rather than exactly-one: some ids are

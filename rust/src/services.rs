@@ -489,8 +489,3 @@ pub fn slots_for(conf: &Conf, wanted: AudioTask) -> u32 {
 pub fn llm_slots(conf: &Conf) -> u32 {
     conf.slots.llm
 }
-
-/// The same for sd.cpp (`SD_SLOTS`), which is what a batch of thumbnails is limited by.
-pub fn image_slots(conf: &Conf) -> u32 {
-    conf.slots.sd
-}

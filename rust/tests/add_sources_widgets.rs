@@ -3,16 +3,14 @@
 //! these checks assert is that a click either opened the chooser or was refused, never that anything
 //! was copied (spec/00-principles.md §5).
 
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use naivepost::add_sources;
 use naivepost::ui;
-
-fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir};
 
 /// One running GTK application for this test binary — the same single-main-loop arrangement
 /// `tests/rescan_widgets.rs` needs for the same reason: both checks run in one `connect_activate`,

@@ -710,7 +710,7 @@ pub struct FormPlan {
     /// The card's declared fields, in the order it declares them (S4). Empty for anything that is not an SVG.
     pub fields: Vec<Field>,
     /// The values written on the file's own path (`card.svg?title=Best maps`), so a re-opened form shows what
-    /// is there and [`with_card_fields`] can drop each one into its field.
+    /// is there in each field.
     pub values: Vec<(String, String)>,
 }
 
@@ -746,28 +746,6 @@ pub fn form_plan(
         fields: Vec::new(),
         values: crate::cut_cards::split_path(path).args,
     }
-}
-
-/// F2.12 S4: fill in the fields a card declares, read off the document the chooser just returned. Kept apart
-/// from [`form_plan`] because the document has to be read from disk and only an SVG has holes to ask about;
-/// every other kind gets the plan unchanged. Values already written on the path (`card.svg?title=Best maps`)
-/// come back into each field, so an edit re-opens with what is there — which is why the path is passed in
-/// beside the plan rather than being guessed at from it.
-pub fn with_card_fields(mut plan: FormPlan, doc: &str) -> FormPlan {
-    if plan.kind != Kind::Svg {
-        return plan;
-    }
-    let mut fields = card_fields(doc.as_bytes());
-    for field in fields.iter_mut() {
-        if let Some(value) = plan.values.iter().find_map(|(key, value)| {
-            key.eq_ignore_ascii_case(&field.key)
-                .then_some(value.clone())
-        }) {
-            field.value = value;
-        }
-    }
-    plan.fields = fields;
-    plan
 }
 
 // --- the answer the form gives back ------------------------------------------------------------------------

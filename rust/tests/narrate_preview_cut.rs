@@ -241,7 +241,10 @@ fn f4_5_s8_the_composed_press_answers_pause_refusal_or_a_start_second() {
 
     // No clips at all: the whole answer is the sentence, verbatim.
     let empty = view::press_picture(false, &[], None, &covered());
-    assert_eq!(empty, view::Refused(view::NOTHING_TO_PREVIEW.to_string()));
+    assert_eq!(
+        empty,
+        view::Pressed::Refused(view::NOTHING_TO_PREVIEW.to_string())
+    );
     assert_eq!(
         empty.refused(),
         Some("nothing to preview yet \u{2014} cut some clips first"),
@@ -251,18 +254,21 @@ fn f4_5_s8_the_composed_press_answers_pause_refusal_or_a_start_second() {
 
     // A line under the playhead wins: start from ITS second, not from the top of the cut.
     let from_line = view::press_picture(false, &clips, Some(35.0), &covered());
-    assert_eq!(from_line, view::Playing { from: 35.0 });
+    assert_eq!(from_line, view::Pressed::Playing { from: 35.0 });
     assert!(from_line.playing(), "this press leaves the preview running");
     assert_eq!(from_line.refused(), None);
 
     // No line chosen: the cut's own start, which is the first kept clip's `s`.
     let from_top = view::press_picture(false, &clips, None, &covered());
-    assert_eq!(from_top, view::Playing { from: 10.0 });
+    assert_eq!(from_top, view::Pressed::Playing { from: 10.0 });
 
     // The cue lands off every covered span: refused, and with the recording sentence rather than the
     // empty-cut one -- the clips exist, it is the footage that does not reach there.
     let off_recording = view::press_picture(false, &clips, Some(35.0), &[(0.0, 12.0)]);
-    assert_eq!(off_recording, view::Refused(view::NO_RECORDING_AT_START.to_string()));
+    assert_eq!(
+        off_recording,
+        view::Pressed::Refused(view::NO_RECORDING_AT_START.to_string())
+    );
     assert_ne!(
         off_recording.refused(),
         Some(view::NOTHING_TO_PREVIEW),

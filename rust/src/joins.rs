@@ -296,32 +296,6 @@ pub fn parse_joined(reply: &str) -> Option<String> {
     value.get("joined")?.as_str().map(|text| text.trim().to_string())
 }
 
-/// The longest prefix of `answer` that runs off the FRONT of `shown`: answer[0] equals shown's first
-/// word, answer[1] its second, and so on. Zero when they do not start alike.
-#[allow(dead_code)]
-fn longest_prefix_off(answer: &[String], shown: &[String]) -> usize {
-    let mut n = 0;
-    while n < answer.len() && n < shown.len() && same_spelling(&answer[n], &shown[n]) {
-        n += 1;
-    }
-    n
-}
-
-/// The longest suffix of `answer` that runs off the END of `shown`.
-#[allow(dead_code)]
-fn longest_suffix_off(answer: &[String], shown: &[String]) -> usize {
-    let mut n = 0;
-    while n < answer.len() && n < shown.len()
-        && same_spelling(
-            &answer[answer.len() - 1 - n],
-            &shown[shown.len() - 1 - n],
-        )
-    {
-        n += 1;
-    }
-    n
-}
-
 /// Split an answer into the two parts it says were kept — the end of BEFORE and the start of AFTER —
 /// rather than assuming it keeps each side as a whole block.
 ///
@@ -420,13 +394,6 @@ fn unmatched_span(kept: &[String], shown: &[String]) -> (usize, usize) {
 /// added. Compared bare, the same way every other pass in the session compares words.
 fn same_spelling(a: &str, b: &str) -> bool {
     word_list::bare(a) == word_list::bare(b)
-}
-
-/// How many shown words sit between a stretch taken off the NEAR end and the join. Zero when the
-/// stretch touches the seam, which is the ordinary case; anything else means the answer left a word
-/// of the attempt standing, and `seam_snap` decides whether that snaps or refuses.
-fn gap_from_join(shown: &[String], taken: usize) -> usize {
-    shown.len().saturating_sub(taken)
 }
 
 /// The refusal sentence inside a tool reply, if the reply is one.

@@ -18,6 +18,10 @@ use naivepost::cut_speed_pass::{self, Call};
 use naivepost::shell::Page;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_PLACED_REFUSED_IGNORED: AtomicBool = AtomicBool::new(false);
 static RAN_MERGED: AtomicBool = AtomicBool::new(false);
@@ -25,35 +29,7 @@ static RAN_GATE: AtomicBool = AtomicBool::new(false);
 static RAN_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_NO_ANSWER: AtomicBool = AtomicBool::new(false);
 
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
-
-thread_local! {
-    /// Strong handle on the window last built, so the next check drops it first: a closed GTK window is not
-    /// destroyed and its names stay parented, which would send a lookup to the wrong tree.
-    static LAST_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-fn release_last_window() {
-    LAST_WINDOW.with(|cell| {
-        if let Some(old) = cell.borrow_mut().take() {
-            old.close();
-        }
-    });
-    settle();
-}
-
 /// Let the main context run what the widget emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
@@ -74,13 +50,6 @@ fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget>
     walk(window.upcast_ref(), name)
 }
 
-fn status_text(window: &adw::ApplicationWindow) -> String {
-    ui::find_status(window.upcast_ref())
-        .expect("the shell has a status line")
-        .text()
-        .to_string()
-}
-
 /// Build a window sitting on the Cut tab with the given cut seeded, dropping the previous check's window first.
 fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
     release_last_window();
@@ -90,7 +59,7 @@ fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
         "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
     );
     let window = ui::build_window(app, &model, "Prepare");
-    LAST_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    hold_last_window(window.clone());
     window.present();
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")

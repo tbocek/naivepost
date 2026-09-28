@@ -18,6 +18,9 @@ use naivepost::policy;
 use naivepost::project::Origin;
 use naivepost::shell::Page;
 use naivepost::ui;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle};
 
 static RAN_GEAR: AtomicBool = AtomicBool::new(false);
 static RAN_ROWS: AtomicBool = AtomicBool::new(false);
@@ -26,19 +29,7 @@ static RAN_INFO: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMNS: AtomicBool = AtomicBool::new(false);
 static RAN_DERIVE: AtomicBool = AtomicBool::new(false);
 
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
-
 /// Let the main context run whatever the emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 /// A window with the fixture loaded, on Prepare. Every check starts from no open form: the thread-local
 /// outlives a window, so a leftover would make the next press raise instead of build.

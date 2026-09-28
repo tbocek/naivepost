@@ -4,14 +4,12 @@
 //! checks assert is that a press reaches them and that the two widgets F0.5 owns draw the state, not
 //! that a press means something (spec/00-principles.md §5).
 
-use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
 use naivepost::ui;
-
-fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir};
 
 /// One running GTK application for this test binary, taken in turn by the checks below.
 fn window_round() {

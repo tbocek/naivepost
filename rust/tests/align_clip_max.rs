@@ -19,17 +19,9 @@ use naivepost::params;
 use naivepost::transcribe::{self, SAMPLE_RATE};
 use serde_json::json;
 
-/// Every list that carries rows, chained across all five pages so uniqueness is checked against the
-/// whole catalogue rather than one page (`tests/hands_off.rs`'s `row()` makes the same choice).
-fn all_rows() -> Vec<params::Param> {
-    params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .chain(params::effects())
-        .chain(params::narrate())
-        .chain(params::produce())
-        .collect()
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{all_rows};
 
 /// A complete entry whose `start` is set to `value`; `end` is pinned at 1.0 s so the entry parses and
 /// only the start's reading is under test. `parse_words` skips an entry that lacks EITHER time, so a

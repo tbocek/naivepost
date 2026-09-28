@@ -11531,11 +11531,6 @@ thread_local! {
         const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
-/// What this launch recorded as opened, keyed by root.
-pub fn remembered_projects() -> std::collections::BTreeMap<String, String> {
-    REMEMBERED.with(|list| list.borrow().clone())
-}
-
 /// Where a press of Save goes: [`save_as::press`] decides whether it may happen at all, and the
 /// chooser only names the project. Every sentence the user reads comes from [`save_as`].
 ///

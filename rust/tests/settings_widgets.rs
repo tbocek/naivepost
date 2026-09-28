@@ -8,7 +8,6 @@
 //! press tested the *typed* value rather than the file behind it, which lags by
 //! [`naivepost::checks::CONF_SAVE_WAIT`].
 
-use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,20 +17,11 @@ use naivepost::checks;
 use naivepost::ui::settings;
 use naivepost::ui;
 use naivepost::ui::settings::Provider;
-
-fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle};
 
 /// Let the main context run whatever the emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 /// One running GTK application for this test binary — the same single-main-loop arrangement
 /// `tests/add_sources_widgets.rs` needs for the same reason: all three checks run in one
@@ -92,7 +82,6 @@ fn open_canned(window: &adw::ApplicationWindow, provider: Provider) {
     ui::open_settings(window, provider);
     assert!(ui::dialog_open(window), "the settings dialog is open");
 }
-
 
 /// A named widget inside the open dialog (Fetch / Use are not per-row Test buttons, so they carry no
 /// `test-<key>-button` name and come from the dialog's own tree).

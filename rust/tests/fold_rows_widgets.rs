@@ -20,6 +20,10 @@ use naivepost::timeline::{self, Recording, Span};
 use naivepost::ui;
 use naivepost::cut_fold;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+
 static RAN_FOLD: AtomicBool = AtomicBool::new(false);
 static RAN_UNFOLD: AtomicBool = AtomicBool::new(false);
 static RAN_ALL: AtomicBool = AtomicBool::new(false);
@@ -30,10 +34,6 @@ static RAN_LANE_CROSS: AtomicBool = AtomicBool::new(false);
 
 /// Pixels-per-second the placeholder strip (and therefore the badges) is drawn at.
 const PPS: f64 = ui::TRACK_STRIP_PPS;
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// Kept footage on camera 0.
 fn clip(s: f64, e: f64) -> Seg {
@@ -65,7 +65,7 @@ fn cut_page_taped(
         "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
     );
     let window = ui::build_window(app, &model, "Prepare");
-    LAST_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    hold_last_window(window.clone());
     window.present();
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
@@ -82,32 +82,12 @@ fn cut_page_taped(
     window
 }
 
-thread_local! {
-    /// The only strong handle this test holds on the window it last built. Kept in a slot so the NEXT
-    /// check can drop it before building its own — see [`cut_page_taped`].
-    static LAST_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-fn release_last_window() {
-    LAST_WINDOW.with(|cell| *cell.borrow_mut() = None);
-    settle();
-}
-
 /// The common case: the session filmed 0–120 as one take.
 fn cut_page(app: &adw::Application, seeded: &cut::Cut) -> adw::ApplicationWindow {
     cut_page_taped(app, &tape_for(seeded), seeded)
 }
 
 /// Let the main context run what the widget emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
     // Found inside the holder this item draws into, via the same accessor the page uses, so the widget a
@@ -141,13 +121,6 @@ fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
     }
     walk(holder.upcast_ref(), name)
         .unwrap_or_else(|| panic!("no widget named `{name}` in this window's holder"))
-}
-
-fn status_text(window: &adw::ApplicationWindow) -> String {
-    ui::find_status(window.upcast_ref())
-        .expect("the shell has a status line")
-        .text()
-        .to_string()
 }
 
 /// Two kept clips out of a 0–120 recording: drops a head (0–10), a hole (30–40) and a tail (60–120),

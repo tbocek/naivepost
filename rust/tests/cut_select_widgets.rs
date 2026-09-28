@@ -13,15 +13,14 @@ use naivepost::cut_hear;
 use naivepost::cut_select::{self, Scope, Surface};
 use naivepost::shell::Page;
 use naivepost::ui;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle};
 
 static RAN_DRAG: AtomicBool = AtomicBool::new(false);
 static RAN_SOUND: AtomicBool = AtomicBool::new(false);
 static RAN_BANDS: AtomicBool = AtomicBool::new(false);
 static RAN_FX_LANE: AtomicBool = AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A window sitting on the Cut page, built fresh per check so one check's band cannot leak into
 /// another's assertions; the newest window is the one every accessor reads.
@@ -44,14 +43,6 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
 /// Let GTK finish laying out and mapping what was just shown. gtk4-rs 0.11 exposes no free
 /// `events_pending`, so pump the GLib main context directly.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 /// The page's pixels-per-second for the placeholder surface — read from the wiring's own constant, so
 /// the seconds asserted here are the seconds the handler computed, not ones back-solved by hand.

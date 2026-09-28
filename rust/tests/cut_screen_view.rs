@@ -7,6 +7,9 @@
 
 use naivepost::cut::{Cut, Seg};
 use naivepost::cut_screen::{self as cut_screen, Preview, Wheel, WheelOver};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{settle};
 
 /// A kept stretch of footage — what §A counts as a clip.
 fn footage(start: f64, end: f64) -> Seg {
@@ -509,14 +512,6 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
 }
 
 /// Let GTK finish mapping and dispatching what was just shown or emitted.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 /// The page's status line -- what the user reads after a press or a chord.
 fn status_line(window: &adw::ApplicationWindow) -> String {

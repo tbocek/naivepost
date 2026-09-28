@@ -14,13 +14,12 @@ use naivepost::cut::{Cut, Fx, Lane, Seg};
 use naivepost::cut_hear::{self, LaneStart};
 use naivepost::shell::Page;
 use naivepost::ui;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle};
 
 static RAN_VOLUME: AtomicBool = AtomicBool::new(false);
 static RAN_MIX: AtomicBool = AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A window sitting on the Cut page, built fresh per check so one check's volume cannot leak into
 /// another's assertions; the newest window is the one every accessor reads.
@@ -43,14 +42,6 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
 /// Let GTK finish laying out and mapping what was just shown. gtk4-rs 0.11 exposes no free
 /// `events_pending`, so pump the GLib main context directly until the widgets are mapped.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 /// F2.5 S6: the slider is drawn, and dragging it hands ONE number to every preview.
 fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Application) {

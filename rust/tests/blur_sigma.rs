@@ -18,17 +18,9 @@ use naivepost::params;
 use naivepost::produce_render as render;
 use naivepost::project::Produce;
 
-/// Every list that carries rows, chained across all five pages so uniqueness is checked against the
-/// whole catalogue rather than one page (`tests/hands_off.rs`'s `row()` makes the same choice).
-fn all_rows() -> Vec<params::Param> {
-    params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .chain(params::effects())
-        .chain(params::narrate())
-        .chain(params::produce())
-        .collect()
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{all_rows};
 
 /// A row by id across all five lists. `params::find` searches only `prepare()`, which cannot see a
 /// §08 row, so the lookup goes through the chained lists instead.

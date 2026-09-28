@@ -11,6 +11,9 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::shell::Page;
 use naivepost::{cut_line, ui};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir};
 
 static RAN_STEPS: AtomicBool = AtomicBool::new(false);
 static RAN_KEYS: AtomicBool = AtomicBool::new(false);
@@ -20,10 +23,6 @@ static RAN_RESTORE: AtomicBool = AtomicBool::new(false);
 static RAN_FLUSH: AtomicBool = AtomicBool::new(false);
 
 const FPS: f64 = 25.0;
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A window sitting on the Cut page, built fresh per check so one check's line state cannot leak into
 /// another's assertions; the newest window is the one every accessor reads.

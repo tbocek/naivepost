@@ -15,6 +15,10 @@ use naivepost::cut_trim as trim;
 use naivepost::shell::Page;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle, status_text};
+
 static RAN_MOVE: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_TRIM: AtomicBool = AtomicBool::new(false);
@@ -23,10 +27,6 @@ static RAN_WAVE: AtomicBool = AtomicBool::new(false);
 static RAN_SEL_SLIDE: AtomicBool = AtomicBool::new(false);
 static RAN_RIGHT_TRIM: AtomicBool = AtomicBool::new(false);
 static RAN_UNMOVED: AtomicBool = AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A footage scene on camera 0.
 fn clip(s: f64, e: f64) -> Seg {
@@ -63,21 +63,6 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 }
 
 /// Let the main context run what the widget emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
-
-fn status_text(window: &adw::ApplicationWindow) -> String {
-    ui::find_status(window.upcast_ref())
-        .expect("the shell has a status line")
-        .text()
-        .to_string()
-}
 
 /// S2 + S3: the real button-3 gesture moves the scene, prints exactly the rule's sentence, and leaves
 /// the playhead alone.

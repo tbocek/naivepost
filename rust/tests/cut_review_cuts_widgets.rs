@@ -12,14 +12,13 @@ use naivepost::cut::{Cut, Seg};
 use naivepost::run::Transport;
 use naivepost::shell::Page;
 use naivepost::{cut_review, ui};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir};
 
 static RAN_START: AtomicBool = AtomicBool::new(false);
 static RAN_END: AtomicBool = AtomicBool::new(false);
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A window sitting on the Cut page, built fresh per check so one check's player state cannot leak
 /// into another's assertions; the newest window is the one every accessor reads.

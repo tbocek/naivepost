@@ -215,45 +215,6 @@ pub fn write_marks(tree: &Tree, marks: &[Retake]) -> Result<(), String> {
     textfmt::write_retakes(marks, &tree.retakes_tsv())
 }
 
-/// S2 through the widgets and through the disk at once: ask the same question the Cut ▶ asks, but hand
-/// it the words directly instead of reading them back from each source's `words.json`. The widget test
-/// needs this because the folder it builds has no Prepare output to read — only what it seeded itself.
-///
-/// `sources` is the session's stored source paths, in the order they were added — the same list
-/// [`before_cut`] takes — so the lanes are laid out on the same clock and keyed the same way here as
-/// there. Pass `&[]` when nothing is known about the session: no lane loads and the edges land on the
-/// word times, which is F1.11's envelope-less case rather than a failure.
-pub fn before_cut_with_times(
-    tree: &Tree,
-    text: &str,
-    words: &[String],
-    times: &[(f64, f64)],
-    sources: &[String],
-) -> Option<Outcome> {
-    let final_mtime = mtime(&tree.final_txt());
-    let marks_mtime = mtime(&tree.retakes_tsv());
-    if !edited(final_mtime, marks_mtime) {
-        return None;
-    }
-    if times.is_empty() {
-        return Some(Outcome {
-            logs: vec![EDITED_NOTE.to_string()],
-            ..Default::default()
-        });
-    }
-    let held = edges::load(tree, &session_lanes(tree, sources));
-    let outcome = remake(text, words, times, edges::finder(&held));
-    if !outcome.refused {
-        if let Err(reason) = write_marks(tree, &outcome.marks) {
-            let mut outcome = outcome;
-            outcome.logs.push(format!("!!! text edit: {reason}"));
-            outcome.refused = true;
-            return Some(outcome);
-        }
-    }
-    Some(outcome)
-}
-
 /// The per-source folder key: the base name without its extension, off whatever form the project stored
 /// (`project:sources/lecture.mkv`, `sources/lecture.mkv` or a bare `lecture.mkv`). Same rule as
 /// [`crate::prepare_data`]'s row name — the two have to agree or this reads a file Prepare never wrote.

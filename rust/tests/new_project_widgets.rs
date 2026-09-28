@@ -7,10 +7,9 @@ use std::path::{Path, PathBuf};
 use adw::prelude::*;
 use naivepost::new_project;
 use naivepost::ui;
-
-fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir};
 
 /// One running GTK application for this test binary, taken in turn by the checks below — the same
 /// single-main-loop arrangement tests/smoke.rs needs for the same reason.

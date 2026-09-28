@@ -22,6 +22,10 @@ use naivepost::shell::Page;
 use naivepost::timeline::Recording;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+
 static RAN_REFUSE: AtomicBool = AtomicBool::new(false);
 static RAN_LIVE: AtomicBool = AtomicBool::new(false);
 static RAN_FORM: AtomicBool = AtomicBool::new(false);
@@ -29,10 +33,6 @@ static RAN_SPLICE: AtomicBool = AtomicBool::new(false);
 static RAN_OVER: AtomicBool = AtomicBool::new(false);
 static RAN_EDIT: AtomicBool = AtomicBool::new(false);
 static RAN_LANE_ONLY: AtomicBool = AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A footage scene on camera 0.
 fn clip(s: f64, e: f64) -> Seg {
@@ -42,20 +42,6 @@ fn clip(s: f64, e: f64) -> Seg {
 /// A spliced card: `s == e` with a `dur`, which is what makes it an insert (`Seg::is_insert`).
 fn card(at: f64, dur: f64, path: &str) -> Seg {
     Seg { s: at, e: at, dur, ins: path.to_string(), ..Default::default() }
-}
-
-thread_local! {
-    /// The only strong handle this test holds on the window it last built. Kept in a slot so the NEXT check
-    /// can drop it before building its own: a closed GTK window is not destroyed, its widget tree survives
-    /// with every `insert-form` still parented to it, and a name lookup from a new window can reach those
-    /// leftovers (`gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`).
-    static LAST_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-fn release_last_window() {
-    LAST_WINDOW.with(|cell| *cell.borrow_mut() = None);
-    settle();
 }
 
 /// Build a window already sitting on the Cut tab with the given tape and cut, the way the fold wire does.
@@ -71,7 +57,7 @@ fn cut_page(
         "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
     );
     let window = ui::build_window(app, &model, "Prepare");
-    LAST_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    hold_last_window(window.clone());
     window.present();
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
@@ -97,21 +83,6 @@ fn tape() -> Vec<Recording> {
 }
 
 /// Let the main context run what the widget emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
-
-fn status_text(window: &adw::ApplicationWindow) -> String {
-    ui::find_status(window.upcast_ref())
-        .expect("the shell has a status line")
-        .text()
-        .to_string()
-}
 
 /// This window's cut as a whole, so its length is measured the same way the page measures it.
 fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {

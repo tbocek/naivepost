@@ -16,13 +16,13 @@ use naivepost::cut_verbs::{self, Outcome};
 use naivepost::shell::Page;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle, status_text};
+
 static RAN_BUTTONS: AtomicBool = AtomicBool::new(false);
 static RAN_SOUND_GREY: AtomicBool = AtomicBool::new(false);
 static RAN_DELETE_ORDER: AtomicBool = AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// A window sitting on the Cut page with a footage cut seeded, so every verb has ground to act on.
 fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
@@ -57,24 +57,9 @@ fn seg(s: f64, e: f64, cam: i32) -> Seg {
 }
 
 /// Let the main context run what the widget emissions queued, the way the other widget tests do.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
     ui::line_step_button(window, name).unwrap_or_else(|| panic!("the Cut page carries {name}"))
-}
-
-fn status_text(window: &adw::ApplicationWindow) -> String {
-    ui::find_status(window.upcast_ref())
-        .expect("the shell has a status line")
-        .text()
-        .to_string()
 }
 
 /// The three buttons exist, a real click on ＋ Add prints exactly what the rule returns, and ✕ still

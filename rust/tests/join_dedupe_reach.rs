@@ -16,6 +16,10 @@ use naivepost::hand_edit;
 use naivepost::params;
 use naivepost::tools::textedit;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{all_rows};
+
 /// Words with one second each, so word `i` starts at second `i`.
 fn fixture(words: &[&str]) -> (Vec<String>, Vec<(f64, f64)>) {
     let w: Vec<String> = words.iter().map(|s| s.to_string()).collect();
@@ -27,18 +31,6 @@ fn fixture(words: &[&str]) -> (Vec<String>, Vec<(f64, f64)>) {
 
 fn kept(v: &[bool]) -> Vec<bool> {
     v.to_vec()
-}
-
-/// Every list that carries rows, chained across all five pages so uniqueness is checked against the
-/// whole catalogue rather than one page (`tests/hands_off.rs`'s `row()` makes the same choice).
-fn all_rows() -> Vec<params::Param> {
-    params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .chain(params::effects())
-        .chain(params::narrate())
-        .chain(params::produce())
-        .collect()
 }
 
 /// S1: `P.eng.joinReachWords` = 3, held by `textedit::JOIN_REACH_WORDS`, catalogued once under the

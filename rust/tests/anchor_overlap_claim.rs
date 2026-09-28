@@ -17,6 +17,10 @@
 use naivepost::diarize::{self, Anchor, Slot};
 use naivepost::params;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{all_rows};
+
 /// Two voices, twelve seconds of each, concatenated in the anchor file: block 0 = [0,12), block 1 =
 /// [12,24).
 fn anchor() -> Anchor {
@@ -47,18 +51,6 @@ fn anchor() -> Anchor {
 /// The owner `match_slots` hands back for one lone claim against the two-block anchor.
 fn owner_of(claim: (u32, f64, f64)) -> Option<usize> {
     diarize::match_slots(&[claim], &anchor())[0].1
-}
-
-/// Every list that carries rows, chained across all five pages so uniqueness is checked against the
-/// whole catalogue rather than one page (`tests/hands_off.rs`'s `row()` makes the same choice).
-fn all_rows() -> Vec<params::Param> {
-    params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .chain(params::effects())
-        .chain(params::narrate())
-        .chain(params::produce())
-        .collect()
 }
 
 /// S1: `P.eng.minAnchorOverlap` = 0.5, held by `diarize::MIN_ANCHOR_OVERLAP`, catalogued once under

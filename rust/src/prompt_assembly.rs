@@ -280,41 +280,8 @@ pub fn cut_system(system: &str, key: &str) -> String {
     out.join("\n\n")
 }
 
-/// The jobs-list block with every other job's line taken out.
-///
-/// The heading is one line of the block and the job lines follow it, so this walks the lines: the
-/// heading stays, this job's line stays, the rest go. A blank line inside the list belongs to the
-/// job above it — kept or dropped along with that job — because a prompt may write each job as its
-/// own paragraph.
-fn own_job_line(block: &str, key: &str) -> String {
-    let label: &str = match job_label(key) {
-        Some(label) => label,
-        // Nothing of ours to keep: the block contributes nothing.
-        None => "",
-    };
-    let mut out: Vec<String> = Vec::new();
-    let mut mine = false;
-    for line in block.lines() {
-        if is_heading(line) {
-            out.push(line.to_string());
-            mine = false;
-            continue;
-        }
-        if line.trim().is_empty() {
-            if mine {
-                out.push(String::new());
-            }
-            continue;
-        }
-        if mine {
-            out.push(line.to_string());
-        }
-    }
-    out.join("\n")
-}
-
 /// This job's own lines within the jobs list: its line plus every example indented under it, and
-/// nothing of anyone else's. Kept separate from [`own_job_line`]'s walk so a caller (and a test)
+/// nothing of anyone else's. Kept as its own walk so a caller (and a test)
 /// can ask for just this job's part of the shipped list.
 pub fn own_lines_in_jobs_block(block: &str, key: &str) -> Vec<String> {
     let label: &str = match job_label(key) {

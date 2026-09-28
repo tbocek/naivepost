@@ -7,7 +7,7 @@
 //! once per thread, so one application drives every check here and none of them can share a session
 //! folder with the F0.2 round's fixture.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;

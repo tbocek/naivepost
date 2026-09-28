@@ -21,16 +21,16 @@ use naivepost::cut_line::LinePos;
 use naivepost::shell::Page;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle, status_text};
+
 static RAN_ROWS: AtomicBool = AtomicBool::new(false);
 static RAN_WATCH: AtomicBool = AtomicBool::new(false);
 static RAN_LENS: AtomicBool = AtomicBool::new(false);
 static RAN_SPEAKER: AtomicBool = AtomicBool::new(false);
 static RAN_GUTTER: AtomicBool = AtomicBool::new(false);
 static RAN_HANDED_BACK: AtomicBool = AtomicBool::new(false);
-
-fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
-}
 
 /// Kept footage on camera `row`.
 fn film(s: f64, e: f64, row: i32) -> Seg {
@@ -55,13 +55,6 @@ fn seeded_cut() -> cut::Cut {
     fresh
 }
 
-fn status_text(window: &adw::ApplicationWindow) -> String {
-    ui::find_status(window.upcast_ref())
-        .expect("the shell has a status line")
-        .text()
-        .to_string()
-}
-
 /// This window's cut as a whole, read back through the same accessors the page draws from.
 fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
     let mut fresh = cut::Cut::default();
@@ -71,14 +64,6 @@ fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
 }
 
 /// Let the main context run what the widget emissions queued.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 /// A widget by its stable name, whatever its type -- used where the accessor's downcast is too narrow (the
 /// row boxes are `gtk::Box`, not buttons). Same walk the page's own finders use.

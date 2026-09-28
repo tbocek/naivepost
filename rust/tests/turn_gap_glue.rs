@@ -13,6 +13,10 @@ use naivepost::params;
 use naivepost::requests::Turn;
 use naivepost::transcribe;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{all_rows};
+
 /// A diarizer turn built from seconds, counted in samples at the one rate every sidecar uses.
 fn turn(start: f64, end: f64, speaker: u32) -> Turn {
     Turn {
@@ -30,18 +34,6 @@ fn turns(spans: &[(f64, f64, u32)]) -> Vec<Turn> {
 /// is samples.
 fn spoken(spans: &[(f64, f64, u32)]) -> Vec<(f64, f64, String)> {
     transcribe::glue_turns(&turns(spans))
-}
-
-/// Every list that carries rows, chained across all five pages so uniqueness is checked against the
-/// whole catalogue rather than one page (`tests/hands_off.rs`'s `row()` makes the same choice).
-fn all_rows() -> Vec<params::Param> {
-    params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .chain(params::effects())
-        .chain(params::narrate())
-        .chain(params::produce())
-        .collect()
 }
 
 /// S1: `P.eng.turnGapSeconds` = 0.5, held by `transcribe::TURN_GLUE`, catalogued once under the

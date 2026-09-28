@@ -6,7 +6,7 @@
 //! lives in `naivepost::tools::retakes` and is exercised here through the flow that calls it.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use naivepost::retakes;
 use naivepost::layout::Tree;

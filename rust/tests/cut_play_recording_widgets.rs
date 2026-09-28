@@ -9,7 +9,6 @@
 //! thread-locals (the preview player and the window log), so they must not run beside anything else in
 //! this binary. Same arrangement as `tests/add_sources_widgets.rs`.
 
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
@@ -18,6 +17,9 @@ use naivepost::preview::{self, Press};
 use naivepost::run::Transport;
 use naivepost::shell::Page;
 use naivepost::ui;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir};
 
 static RAN_WIDGET: AtomicBool = AtomicBool::new(false);
 static RAN_LAYOUT: AtomicBool = AtomicBool::new(false);
@@ -47,10 +49,6 @@ fn window_round() {
         });
         app.run_with_args::<String>(&[]);
     });
-}
-
-fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
 }
 
 /// A window sitting on the Cut page. Built fresh per check so one check's player state cannot leak

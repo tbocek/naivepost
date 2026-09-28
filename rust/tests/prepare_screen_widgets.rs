@@ -5,12 +5,15 @@
 //! keystroke reached the plain module and that the heading says what §1 says it says — never that a
 //! model was called or a file described (spec/00-principles.md §5).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::ui;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{fixture_dir, settle};
 
 /// The bench writes through the settings folder, so this binary points the app at its own: the same
 /// `XDG_CONFIG_HOME` every settings test uses, set before GTK starts and never read from `$HOME`.
@@ -18,10 +21,6 @@ fn config_home() -> PathBuf {
     let dir = std::env::temp_dir().join("np-prepare-screen-widgets");
     std::fs::create_dir_all(&dir).expect("a settings folder for the bench to write into");
     dir
-}
-
-fn fixture_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
 }
 
 /// One running GTK application for this binary, its environment already pointing at a private
@@ -98,14 +97,6 @@ fn seed_session_files() {
 
 /// Let the emissions a `set_selected` / `emit_clicked` queued actually run, so the handler's
 /// repaint has happened by the time the assertions read the widgets.
-fn settle() {
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        if !context.iteration(false) {
-            break;
-        }
-    }
-}
 
 /// §1 badges **4**, **6** and **7** through the widgets: Reset pressed on a stored edit, and the
 /// two bottom-bar readouts showing the same strings the plain modules compute.
