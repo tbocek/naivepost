@@ -5848,7 +5848,10 @@ fn wire_lucky(
         // The chain is over either way: give the button back. F0.5 S4 closes its bookkeeping too —
         // running off, so nothing downstream thinks a run still stands; the log's own state is kept
         // as it was painted (open), because that is where the end line and any refusal were read.
-        runqueue::end_run(&mut bar.borrow_mut(), None);
+        let ended = runqueue::end_run(&mut bar.borrow_mut(), None);
+        // §1: every run ends with `unload_all_models`, even one that used no audio, quietly and
+        // off-thread, so the window answers now instead of waiting on a server.
+        crate::settings_probe::fire_unload(ended.audio_unload);
         queue.borrow_mut().reset();
         button.set_sensitive(true);
         button.remove_css_class("lucky-running");
@@ -5979,7 +5982,7 @@ const SETTINGS_TIP: &str = "Settings \u{2014} the LLM and audio.cpp endpoints";
 fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
     button.connect_clicked(move |_| {
-        settings::open_with(&window, settings::no_probe());
+        settings::open_with(&window, crate::settings_probe::live_provider());
     });
 }
 
@@ -11626,6 +11629,13 @@ thread_local! {
 
 pub(crate) fn log_line(line: &str) {
     LOGS.with(|logs| logs.borrow_mut().push(line.to_string()));
+}
+
+/// The one line a finished run leaves about its audio housekeeping. Called from the unload thread,
+/// so it goes through the same log sink as everything else; `log_line` itself stays `pub(crate)`
+/// because only this crate's own flows are allowed to write to the user's log.
+pub fn note_unload(said: &str) {
+    log_line(&format!(">>> audio housekeeping: {said}"));
 }
 
 /// Every line the window has logged this session, oldest first.

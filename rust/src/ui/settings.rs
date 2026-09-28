@@ -177,6 +177,11 @@ impl Dialog {
     }
 
     /// Ask the provider for one row and report what it said.
+    ///
+    /// The provider alone answers, whatever the row: a test's canned provider must get its own rows
+    /// back unchanged. The live HTTP routing lives in [`crate::settings_probe::live_provider`],
+    /// which the window installs — hard-coding it here would send a test's LLM row to port 8731 and
+    /// replace its verdict with a connection error.
     fn ask(&self, key: &str) {
         let typed = self.typed(key);
         let answer = (self.provider)(key, &typed);

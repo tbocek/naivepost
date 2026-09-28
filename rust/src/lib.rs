@@ -113,6 +113,8 @@ pub mod probes;
 pub mod rescan;
 pub mod requests;
 pub mod request_timing;
+pub mod server_leg;
+pub mod settings_probe;
 pub mod roles;
 pub mod lucky;
 pub mod run;
