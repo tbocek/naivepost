@@ -24,7 +24,10 @@ use crate::{fx_aspect, prepare, produce_screen, project::Project};
 /// The tab controls in §3's own order: the five project controls, then the thirteen
 /// encoder rows (§A's list, taken whole from [`produce_screen::SETTINGS_ROWS`] rather
 /// than retyped here), then the publish state, then the aspect.
-pub fn rows() -> Vec<&'static str> {
+///
+/// `no_narration` is the project's flag: with narration off the game-volume row is not offered at all
+/// (F4.8 — "Produce: no game-volume slider"), which [`produce_screen::settings_rows_shown`] decides.
+pub fn rows_for(no_narration: bool) -> Vec<&'static str> {
     let mut rows = vec![
         "Freq",
         "Language",
@@ -32,10 +35,16 @@ pub fn rows() -> Vec<&'static str> {
         "Copy into project",
         "User Context",
     ];
-    rows.extend(produce_screen::SETTINGS_ROWS.iter().copied());
+    rows.extend(produce_screen::settings_rows_shown(no_narration));
     rows.push("Publish");
     rows.push("Aspect");
     rows
+}
+
+/// Every row the tab can hold, for a narrated project — the full list, before F4.8 takes the
+/// game-volume row away from one that has no narration.
+pub fn rows() -> Vec<&'static str> {
+    rows_for(false)
 }
 
 /// What the control shows before this project has an opinion. Read from the stored

@@ -31,6 +31,18 @@ pub const SETTINGS_ROWS: [&str; 13] = [
     "Frame edges",
 ];
 
+/// F4.8: the encoder rows the page draws for one project. With narration off, `Game audio` is not one
+/// of them — there is no voice for the original to sit under, so its slider goes ([`crate::narrate_off`]
+/// owns that rule; this only applies it to the row list rather than restating why). The stored value is
+/// untouched, so ticking Narration back on brings the slider back where the person left it.
+pub fn settings_rows_shown(no_narration: bool) -> Vec<&'static str> {
+    SETTINGS_ROWS
+        .iter()
+        .copied()
+        .filter(|row| *row != "Game audio" || crate::narrate_off::game_volume_shown(no_narration))
+        .collect()
+}
+
 /// §A's Container row: mp4, mkv, webm.
 pub const CONTAINERS: [&str; 3] = ["mp4", "mkv", "webm"];
 /// §A's Codec row: h264, h265, vp9.

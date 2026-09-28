@@ -154,6 +154,10 @@ pub fn build() -> gtk::Widget {
     let tick = gtk::CheckButton::with_label(narrate_off::TICK_LABEL);
     tick.set_widget_name("narration-tick");
     tick.set_tooltip_text(Some(narrate_off::TICK_TIP));
+    // The widget's resting state comes from the project's flag, not from a literal: an older project
+    // saved with narration off opens UNTICKED (and greys on the first refresh) instead of drawing a
+    // checked box over a page whose state says `narration_off`.
+    tick.set_active(narrate_off::tick_checked(session_no_narration()));
     left.append(&tick);
 
     // **2** the preview: one fixed 16:9 frame, the same pinned-height trick the Cut page's
@@ -531,20 +535,32 @@ fn fit_for(entry: &Entry, all: &[(usize, &Entry)]) -> Fit {
     narrate_screen::mirror_fit((entry.e - entry.s).max(0.0), &lines)
 }
 
-/// §1 `Off greys lines, preview and voice picker`: exactly the three names the rules module lists.
+/// This project's `no_narration` flag as the page reads it at build time. No project folder, or an
+/// unreadable one, reads as narrated: the same default [`crate::project::load`] gives a missing file.
+fn session_no_narration() -> bool {
+    crate::ui::window::narrate_session_tree()
+        .and_then(|tree| crate::project::load(tree.dir()).ok())
+        .map(|project| project.no_narration)
+        .unwrap_or(false)
+}
+
+/// §1 `Off greys lines, preview and voice picker`: exactly the three names the rules module lists,
+/// greyed by the fields of [`narrate_off::Greyed`] rather than by a local bool, so the page cannot
+/// grey something the rule did not name or miss one it did.
 fn apply_greys(window: &adw::ApplicationWindow, off: bool) {
+    let greyed = narrate_off::greyed(off);
     let targets = [
-        ("lines", "narrate-lines"),
-        ("preview", "narrate-preview"),
-        ("voice", "voice-picker"),
+        ("lines", greyed.lines, "narrate-lines"),
+        ("preview", greyed.preview, "narrate-preview"),
+        ("voice", greyed.voice, "voice-picker"),
     ];
-    for (which, name) in targets {
+    for (which, is_greyed, name) in targets {
         assert!(
             narrate_screen::off_greys().contains(&which),
             "{which} greying off is not one of off_greys()'s three"
         );
         if let Some(widget) = widget_in(window, name) {
-            widget.set_sensitive(!off);
+            widget.set_sensitive(!is_greyed);
         }
     }
     // The controls that only exist to serve a narration go with them.
@@ -983,7 +999,20 @@ pub fn press_pitch(window: &adw::ApplicationWindow, delta: f64) -> String {
 }
 
 /// **1** the Narration tick. Off greys the three things `off_greys()` names and says which they were.
+///
+/// The write goes through [`narrate_off::set_off`], the module that owns the flag, so the tick lands
+/// in `naivepost.json` and survives a reload; F4.8's second node is that it never touches
+/// `narrate/narration.json`, which holds true because `set_off` writes the project file alone. With
+/// no project folder open there is nothing to persist to, so the page keeps its own copy and skips the
+/// write rather than inventing a path.
 pub fn set_narration_off(window: &adw::ApplicationWindow, off: bool) -> String {
+    if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        if let Ok(mut project) = crate::project::load(tree.dir()) {
+            if let Err(why) = narrate_off::set_off(&mut project, &tree, off) {
+                return format!("could not save the narration setting \u{2014} {why}");
+            }
+        }
+    }
     mutate(|s| s.narration_off = off);
     apply_greys(window, off);
     let said = if off {

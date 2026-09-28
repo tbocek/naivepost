@@ -65,6 +65,7 @@ use crate::startup;
 use crate::narration::{self, Narration};
 use crate::narrate_data;
 use crate::narrate_preview;
+use crate::narrate_off::{self};
 use crate::narrate_run::{self, JOBS, JOB_NARRATION, JOB_SPEAKING, SPEAKING_STATUS, STAGE_THINKING, Speak};
 use crate::narrate_screen;
 use crate::shell::{self, Move, Outcome, Page, Shell};
@@ -5760,6 +5761,9 @@ fn wire_lucky(
             }
         };
         log_line(&opening);
+        // F4.8: this project's Narration tick is the chain's skip condition, so a video with no
+        // narration walks past Narrate instead of running it (the sentence comes from `narrate_off`).
+        chain.set_narration_off(project.no_narration);
 
         // F0.5 S1: the chain is a run like any other, so it opens the bookkeeping the same way —
         // fresh cancel context, empty queue, model log closed, log expanded.
@@ -11105,8 +11109,13 @@ where
     // synthesized and counts the cache honestly -- the cached half is a real file check, so a warm
     // project really does report zero work.
     say_on_status(window, SPEAKING_STATUS);
-    NARRATE_QUEUE.with(|queue| queue.borrow_mut().push(1, record.entries.len().max(1), "line"));
-    let speaks = narrate_run::speak_pass(&voice, &record, |entry| {
+    // F4.8: the lines this pass may speak come through `narrate_off::lines_to_speak`, the one seam the
+    // tick owns — with narration off it answers empty, so nothing is synthesized behind the tick's back,
+    // and a blank line stays a deliberate silence that is never spoken.
+    let to_speak = narrate_off::lines_to_speak(live_project().no_narration, &record.entries);
+    NARRATE_QUEUE
+        .with(|queue| queue.borrow_mut().push(1, to_speak.len().max(1), "line"));
+    let speaks = narrate_run::speak_pass(&voice, to_speak.as_slice(), |entry| {
         let key = narration::tts_key(entry, Some(&voice), None);
         tree.tts_wav(&narration::tts_file(&key)).is_file()
     });

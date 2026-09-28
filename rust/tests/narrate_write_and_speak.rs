@@ -464,8 +464,9 @@ fn f4_1_s6_speak_pass_counts() {
         ],
         silent: Vec::new(),
     };
-    // Only the middle clip's wav exists in the cache.
-    let speaks = speak_pass("own", &record, |entry| entry.s == 10.0);
+    // Only the middle clip's wav exists in the cache. `speak_pass` takes the lines the tick allows to
+    // speak (F4.8: `narrate_off::lines_to_speak`), so it is handed the record's entries.
+    let speaks = speak_pass("own", &record.entries, |entry| entry.s == 10.0);
     assert_eq!(
         speaks,
         vec![Speak::SkippedBlank, Speak::SkippedCached, Speak::Synthesize],

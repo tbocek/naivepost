@@ -226,9 +226,12 @@ impl Chain {
             };
             if page == Page::Narrate && self.narration_off {
                 self.pending.remove(0);
-                return Advance::Skipped {
-                    line: NARRATE_SKIPPED.to_string(),
-                };
+                // The sentence comes from F4.8's owner, not from this module's const: one rule, one
+                // wording. `NARRATE_SKIPPED` is kept as the drift check the branch itself asserts.
+                let owned = crate::narrate_off::skips(run::Step::Narrate, true)
+                    .unwrap_or_else(|| NARRATE_SKIPPED.to_string());
+                assert_eq!(owned, NARRATE_SKIPPED, "the skip line and narrate_off's must be one string");
+                return Advance::Skipped { line: owned };
             }
             if page == Page::Cut && self.hand_edits {
                 self.pending.remove(0);

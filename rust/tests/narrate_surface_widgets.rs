@@ -16,6 +16,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::Seg;
 use naivepost::narrate_details;
+use naivepost::narrate_off;
 use naivepost::narrate_screen::{self, CAPTIONS};
 use naivepost::narration::Entry;
 use naivepost::shell::Page;
@@ -40,6 +41,7 @@ static RAN_LAST_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_PITCH_DEBOUNCE: AtomicBool = AtomicBool::new(false);
 static RAN_FIT_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_TTS_WIRE: AtomicBool = AtomicBool::new(false);
+static RAN_OFF_WIRE: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
@@ -834,6 +836,128 @@ fn narrate_round(app: &adw::Application) {
     RAN_TTS_WIRE.store(true, Ordering::SeqCst);
     window.close();
     settle();
+
+    // --- (12) F4.8 through the REAL tick widget: the toggle greys, persists, and leaves the record --
+    // Everything above block (1) drove `ui::set_narration_off` directly. This one drives the widget:
+    // a `toggled` emission on `narration-tick`, which is the signal `wire()` listens for, so the wire
+    // itself is what is under test here rather than the seam behind it.
+    let session_root = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
+    let tree = naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
+    let mut off_state = base_state();
+    off_state.entries = vec![naivepost::narration::Entry {
+        s: 0.0,
+        e: 10.0,
+        at: 2.0,
+        text: "a line written before the tick went off".into(),
+        ..Default::default()
+    }];
+    let window = narrate_page(app, off_state.clone());
+
+    // Put a record where the page's project has one, so "left exactly as it is" is a byte comparison
+    // against something that exists rather than against an absent file.
+    std::fs::create_dir_all(tree.narration_json().parent().unwrap()).expect("narrate/ made");
+    naivepost::narration::save(
+        &naivepost::narration::Narration {
+            entries: off_state.entries.clone(),
+            silent: Vec::new(),
+        },
+        &tree,
+    )
+    .expect("record written");
+    let record_before = std::fs::read(tree.narration_json()).expect("record readable");
+
+    let tick = widget_in(&window, "narration-tick")
+        .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+        .expect("the Narration tick is a check button");
+    // (a) resting state comes from the project's flag, not from a literal: the fixture is narrated.
+    assert_eq!(
+        tick.is_active(),
+        narrate_off::tick_checked(false),
+        "a narrated project opens with the tick CHECKED"
+    );
+
+    // (b) fire the real signal. `emit_by_name("toggled")` runs the handler without moving the box, so
+    // the widget would end up disagreeing with the state; `set_active` moves the box AND emits the same
+    // signal gtk's own click emits, which is why this is the emission a user press is equivalent to.
+    tick.set_active(false);
+    settle();
+    assert!(!tick.is_active(), "the box moved off");
+    assert!(
+        ui::read_state().narration_off,
+        "the handler carried the box's state into the page"
+    );
+
+    // (c) the greys match `narrate_off::greyed(true)` field by field, and the tick stayed pressable.
+    let greyed = narrate_off::greyed(true);
+    assert!(greyed.lines && greyed.preview && greyed.voice, "all three go grey");
+    assert!(!greyed.tick, "the tick never greys -- it is the way back");
+    for name in ["narrate-lines", "narrate-preview", "voice-picker"] {
+        assert!(
+            !widget_in(&window, name).unwrap().is_sensitive(),
+            "{name} is insensitive with narration off, as greyed says"
+        );
+    }
+    assert!(tick.is_sensitive(), "the tick stays live while everything else greys");
+
+    // (d) the status line the wire printed is the seam's own sentence, unchanged by going through GTK.
+    assert_eq!(
+        status_text(&window),
+        format!(
+            "narration off \u{2014} {} greyed",
+            narrate_screen::off_greys().join(", ")
+        ),
+        "the widget's status equals the seam's wording"
+    );
+
+    // (e) F4.8 node 2: the record was not opened. Bytes identical, and the module says so too.
+    assert!(!narrate_off::touches_the_record(), "the tick must never open the record");
+    assert_eq!(
+        std::fs::read(tree.narration_json()).expect("still readable"),
+        record_before,
+        "narration.json left exactly as it was by the toggle"
+    );
+    // ...while the flag itself DID land in the project file, which is what makes the tick survive.
+    let saved = std::fs::read_to_string(session_root.join("naivepost.json"))
+        .or_else(|_| std::fs::read_to_string(tree.dir().join("naivepost.json")))
+        .expect("the project file is readable");
+    assert!(
+        saved.contains("\"no_narration\": true"),
+        "the tick wrote its flag: {saved}"
+    );
+
+    // (f) the chain's skip sentence is the owning module's, pinned against lucky's const.
+    assert_eq!(
+        narrate_off::skips(naivepost::run::Step::Narrate, true),
+        Some(naivepost::lucky::NARRATE_SKIPPED.to_string()),
+        "the skip line the lucky run logs is narrate_off's, not a copy"
+    );
+
+    // (g) S5: back on through the same widget, the surfaces return and the record still matches.
+    tick.set_active(true);
+    settle();
+    assert!(tick.is_active(), "the box came back on");
+    assert!(!ui::read_state().narration_off, "and the page came with it");
+    for name in ["narrate-lines", "narrate-preview", "voice-picker"] {
+        assert!(
+            widget_in(&window, name).unwrap().is_sensitive(),
+            "{name} is live again with the narration"
+        );
+    }
+    assert_eq!(status_text(&window), "narration on", "and says so plainly");
+    assert_eq!(
+        std::fs::read(tree.narration_json()).expect("still readable"),
+        record_before,
+        "everything written is still there after the round trip"
+    );
+    assert_eq!(
+        naivepost::narration::load(&tree).unwrap().entries,
+        off_state.entries,
+        "the lines the tick passed over are the lines that were there"
+    );
+
+    RAN_OFF_WIRE.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
 }
 
 #[test]
@@ -885,6 +1009,10 @@ fn sec_07_narrate_1_surface_the_narrate_page_reaches_its_rules() {
     );
     assert!(RAN_FIT_ROW.load(Ordering::SeqCst), "the F4.3 fit-row block never ran");
     assert!(RAN_TTS_WIRE.load(Ordering::SeqCst), "the F4.4 speak-wire block never ran");
+    assert!(
+        RAN_OFF_WIRE.load(Ordering::SeqCst),
+        "the F4.8 real-tick block never ran"
+    );
 }
 
 /// How many files sit in the session project's take folder (0 when it does not exist yet).

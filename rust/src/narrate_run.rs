@@ -281,11 +281,10 @@ pub fn fold_written(record: &Narration, written: &[Written]) -> Narration {
 /// [`tally`] and [`spoken_log`] turn the result into the run's four-space summary.
 pub fn speak_pass(
     voice: &str,
-    record: &Narration,
+    record: &[Entry],
     cached: impl Fn(&Entry) -> bool,
 ) -> Vec<Speak> {
     record
-        .entries
         .iter()
         .map(|entry| speak_line(&entry.text, voice, cached(entry)))
         .collect()
@@ -365,7 +364,7 @@ mod smoke {
         let w = super::Written { start: 0.0, end: 1.0, at: 0.5, text: "x".into(), emotion: String::new() };
         let folded = super::fold_written(&Narration::default(), &[w]);
         assert_eq!(folded.entries.len(), 1);
-        assert_eq!(super::tally(&super::speak_pass("own", &folded, |_| false)), (1, 0));
-        assert_eq!(super::tally(&super::speak_pass("own", &folded, |_| true)), (0, 1));
+        assert_eq!(super::tally(&super::speak_pass("own", &folded.entries, |_| false)), (1, 0));
+        assert_eq!(super::tally(&super::speak_pass("own", &folded.entries, |_| true)), (0, 1));
     }
 }
