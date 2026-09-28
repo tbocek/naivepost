@@ -21,6 +21,7 @@ use naivepost::produce_exec as exec;
 use naivepost::produce_flow as flow;
 use naivepost::produce_render as render;
 use naivepost::produce_screen as screen;
+use naivepost::produce_subtitles as subs;
 use naivepost::project::{Container, Produce, Publish, Source, Subtitles};
 
 const ITEM: &str = "f5_2";
@@ -98,6 +99,21 @@ fn any_source(_: &render::Clip) -> Option<String> {
     Some("/media/take.mp4".to_string())
 }
 
+/// No aligned words: these tests are about files, rates and lines. The F5.4 word path is exercised in
+/// `tests/produce_subtitles_flow.rs`, which supplies its own list.
+fn no_words(_: &render::Clip) -> Vec<subs::Word> {
+    Vec::new()
+}
+
+/// A model that answers every number it is given, in a language of its own. The S3 walk is driven for
+/// real here; `tests/produce_translate_flow.rs` covers the refusals.
+fn answer_every_number(
+    _message: &str,
+    numbers: &[usize],
+) -> Result<std::collections::BTreeMap<usize, String>, String> {
+    Ok(numbers.iter().map(|n| (*n, format!("uebersetzt {n}"))).collect::<std::collections::BTreeMap<usize, String>>())
+}
+
 /// THE Materials constructor. Never build one inline in a test: one door, nothing to mangle.
 fn mats<'a>(
     lanes: &'a [Lane],
@@ -112,6 +128,8 @@ fn mats<'a>(
         wav_of,
         source_file: &any_source,
         cues,
+        words: &no_words,
+        translate: &answer_every_number,
         sources: &project_sources,
     }
 }

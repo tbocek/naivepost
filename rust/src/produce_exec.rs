@@ -20,6 +20,7 @@
 //! Nothing here decides a rule. Every string, every argv and every path comes from `produce_render`,
 //! `produce_subtitles` or [`Tree`]; the split is the point.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::cut::{Fx, Lane, Seg};
@@ -120,6 +121,16 @@ pub struct Materials<'a> {
     /// the stamp wants `project::Source`s, so the caller who owns the project hands them over here rather
     /// than this module guessing at a conversion.
     pub sources: &'a dyn Fn() -> Vec<crate::project::Source>,
+    /// S1 (§F5.4): the clip's OWN aligned words, on the clip's own recording clock — the narrator mic
+    /// already excluded and the spellings already taken from the fixed transcript (`word_list`). Asked only
+    /// where the clip has no narration line of its own and is footage; [`crate::produce_clip_cues`] asks
+    /// that question, this answers where the words come from. An empty list means "this session has no
+    /// aligned words for this clip", which yields no cues rather than a guess.
+    pub words: &'a dyn Fn(&render::Clip) -> Vec<subs::Word>,
+    /// S3 (§F5.4): the model leg for a translated track. Caller-supplied, as `narrate_tts::speak_line`
+    /// supplies both of its network legs, so no test dials a socket. Its answers are what each `.code`
+    /// sidecar carries; a refusal ships the original text with the merge's warning.
+    pub translate: &'a crate::produce_translate::Ask,
 }
 
 /// One clip's encode: its stem, the file it writes, the command that writes it.
@@ -217,37 +228,19 @@ fn stem_at(index: usize, stamp: &str) -> String {
     render::clip_stem(index, stamp)
 }
 
-/// S4's cue for one narration line: the seconds it is up, and what is said on it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ClipCue {
-    pub s: f64,
-    pub e: f64,
-    pub text: String,
-}
+/// The clip's cue list now comes from [`crate::produce_clip_cues::build`], which reads the placed lines
+/// and the clip's own words and asks §F5.4's first diamond in one place.
 
-/// The clip's cue list: the narration lines the plan placed on it, turned into cues on the clip's own
-/// clock. A line with no take gets the half-second floor, because S4's `tidy` folds a zero-length cue
-/// into the next one and a silent line should not vanish from the sheet.
-fn clip_cues(clip: &render::Clip) -> Vec<ClipCue> {
-    clip.lines
-        .iter()
-        .map(|line| ClipCue {
-            s: line.at,
-            e: line.at + line.speech.max(0.5),
-            text: line.text.clone(),
-        })
-        .collect()
-}
-
-/// Move a [`ClipCue`] onto the video's timeline the way `produce_subtitles::on_clock` moves a cue: the
-/// clip's start plus each second shrunk by the clip's rate. Kept here rather than in `subs` because the
-/// render's own cue carries the narration's text, which `subs::Cue` has no reason to know about.
-fn cue_on_clock(cue: &ClipCue, produced_start: f64, rate: f64) -> subs::Cue {
+/// Move one of the sheet's cues onto the video's timeline the way [`subs::on_clock`] moves a cue: the
+/// clip's start plus each second shrunk by the clip's rate. Used instead of `subs::on_clock` because
+/// the sheet's cues arrive with their seconds still relative to the clip and this walk already holds the
+/// offset `produced_clocks` answered.
+fn cue_on_clock(cue: &subs::Cue, produced_start: f64, rate: f64) -> subs::Cue {
     subs::Cue {
         s: crate::narration::output_seconds(cue.s, rate) + produced_start,
         e: crate::narration::output_seconds(cue.e, rate) + produced_start,
         text: cue.text.clone(),
-        pos: String::new(),
+        pos: cue.pos.clone(),
     }
 }
 
@@ -355,7 +348,10 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         languages: mats.cues.languages.clone(),
     };
     for (clip, (start, _len)) in clips.iter().zip(render::produced_clocks(&clips).iter()) {
-        let mine = clip_cues(clip);
+        // S1 (§F5.4): the clip's lines if it has any, else its own speech where it is footage. The kind
+        // of clip and the branch order are `produce_clip_cues`' answer, read off the fields the render
+        // itself filled, and the cue rule is `produce_subtitles::cues`'.
+        let mine = crate::produce_clip_cues::build(clip, &clip.lines, &run.lines, &(mats.words)(clip));
         if !mine.is_empty() {
             cues.all.extend(mine.iter().map(|c| cue_on_clock(c, *start, clip.rate)));
         }
@@ -449,7 +445,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                 language: Some(code.clone()),
                 srt: tree.final_srt(Some(code)),
                 vtt: tree.final_vtt(Some(code)),
-                cues: cues.all.clone(),
+                cues: Vec::new(),
                 log: render::sidecar_log(video_stem(), Some(code)),
             });
         }
@@ -523,6 +519,7 @@ impl Ran {
 /// listener one silent sentence, which is a good deal less than a failed render costs them.
 pub fn walk<FLog, FSpeak, FAsk, FSpawn>(
     plan: &Plan,
+    mats: &Materials,
     mut log: FLog,
     mut speak: FSpeak,
     mut ask: FAsk,
@@ -660,8 +657,16 @@ where
         ran.stopped_at = Some("before translate and mux");
         return ran;
     }
+    // S7 — the walk asks each ticked language once per batch. `plan.translated` came from
+    // `Cues::languages`, which is already the ticked list minus the session's own (`track_languages`
+    // drops it), so nothing here is translated into itself and the bare-stem track stays the original.
+    let tracked = crate::produce_translate::track(&plan.cues.all, "", &plan.translated, mats.translate);
     for code in &plan.translated {
         log(&render::translate_log(plan.cues.all.len(), code));
+    }
+    // S3: a line that stayed in the source language is said out loud, not left for a viewer to notice.
+    for t in tracked.iter().filter(|t| t.warning.is_some()) {
+        log(t.warning.as_deref().unwrap_or_default());
     }
     log(&plan.mux.log);
     match spawn(&plan.mux) {
@@ -672,14 +677,24 @@ where
         }
     }
 
-    // S9 — the sidecars beside the video, each one logged.
+    // S9 — the sidecars beside the video, each one logged. A `.code` track carries the TRANSLATED cues
+    // (never a copy of the session's track, which is what made a German file say English); the bare-stem
+    // one keeps the originals, since that is the track the viewer hears.
+    let by_code: BTreeMap<String, Vec<subs::Cue>> = tracked
+        .into_iter()
+        .map(|t| (t.language.clone(), t.cues))
+        .collect();
     for sidecar in &plan.sidecars {
-        if let Err(why) = write_sidecar(sidecar) {
+        let out = match &sidecar.language {
+            None => sidecar.clone(),
+            Some(code) => Sidecar { cues: by_code.get(code).cloned().unwrap_or_default(), ..sidecar.clone() },
+        };
+        if let Err(why) = write_sidecar(&out) {
             ran.failed = Some(why);
             return ran;
         }
-        log(&sidecar.log);
-        ran.sidecars.push(sidecar.srt.display().to_string());
+        log(&out.log);
+        ran.sidecars.push(out.srt.display().to_string());
     }
 
     ran
@@ -772,7 +787,7 @@ where
 {
     let started = std::time::Instant::now();
     let plan = plan(run, tree, mats);
-    let ran = walk(&plan, &mut log, speak, ask, spawn);
+    let ran = walk(&plan, mats, &mut log, speak, ask, spawn);
     let stamp_ok = write_stamp(&plan, tree, &ran, &mut log);
     if let Some(why) = &ran.failed {
         log(&format!("produce FAILED: {why}"));

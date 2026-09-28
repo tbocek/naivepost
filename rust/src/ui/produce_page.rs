@@ -918,6 +918,9 @@ fn produce_settings(s: &ProduceState) -> crate::project::Produce {
         vfr: s.vfr,
         mono: s.mono,
         blurred_edges: s.blurred_edges,
+        // The ticked languages travel with the settings, or the render never learns that a translation
+        // was asked for (§F5.4 S7/S9 write one sidecar per language, in this order).
+        translate: s.translate.clone(),
         ..Default::default()
     }
 }
@@ -1101,6 +1104,20 @@ fn wire_settings(window: &adw::ApplicationWindow) {
             set_toggle(&w, &row, tick.is_active());
         });
     }
+    // The Translate row's ticks live in `produce_languages` (this file is at its size budget); the
+    // guard and the state mutation are handed over as shared closures so that module stays out of this
+    // one's thread-locals.
+    let w = window.clone();
+    crate::ui::produce_languages::wire_ticks(
+        window,
+        std::rc::Rc::new(|| SETTINGS_GUARD.with(|guard| guard.get())),
+        std::rc::Rc::new(move |language, on| {
+            mutate(|s| crate::ui::produce_languages::apply(s, language, on));
+            refresh(&w);
+            let said = crate::ui::produce_languages::status_line(language, on);
+            say(&w, &said);
+        }),
+    );
 }
 
 /// Stand in for the file chooser Change… opens. A headless run has no chooser, so the picture name is
@@ -1348,6 +1365,19 @@ fn finish_produce(
             // closure takes what it captures and both of these run inside one call.
             let sources_for_stamp = project.sources.clone();
             let sources_for_clips = project.clone();
+            // S1 (§F5.4): the clip's own speech, read off the session word list F1.13 saved once for
+            // exactly this purpose ("the list then carries ... over the recogniser's bare words", and it is
+            // shared by retakes, joins, `final.txt` and subtitles). The narrator's own recordings are
+            // excluded — §F5.4 says so outright — because their words are what the narration replaced; the
+            // `written` field is the fixed transcript's spelling, not the recogniser's.
+            let session_words: Vec<crate::word_list::Word> =
+                crate::word_list::load(&tree).ok().flatten().unwrap_or_default();
+            let narrator_sources: Vec<String> = project
+                .sources
+                .iter()
+                .filter(|src| src.narrator != 0)
+                .map(|src| src.path.clone())
+                .collect();
             let render = crate::produce_exec::run_render(
                 run,
                 &tree,
@@ -1361,6 +1391,14 @@ fn finish_produce(
                         all: Vec::new(),
                         languages: run.settings.translate.clone(),
                     },
+                    words: &move |clip| crate::produce_clip_cues::words_for(
+                        clip,
+                        &session_words,
+                        &narrator_sources,
+                    ),
+                    // S3 (§F5.4): the scripted reply when a test loaded one, else a real refusal that
+                    // ships every line as the original with the merge's warning.
+                    translate: &crate::produce_translate::scripted_ask(),
                     sources: &move || sources_for_stamp.clone(),
                     // S5's picture input: an insert reads its own asset, footage and a `copy:` stretch read
                     // the first footage recording. Resolved here, where the project is held, by the same
@@ -1388,7 +1426,7 @@ fn finish_produce(
                 |line| crate::ui::window::log_line(line),
                 speak_a_line,
                 |at, which| render_asked(at, which),
-                crate::produce_exec::spawn_tool,
+                crate::ui::produce_languages::spawn,
             );
             // A render that stopped or failed says so in the log with the spec's own line, on top of the
             // ending's word on the status line: `run_with` turns the report into "production stopped" or

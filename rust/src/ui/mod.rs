@@ -1,6 +1,9 @@
 pub mod settings;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_page;
+/// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
+/// render's spawner seam. Split out of `produce_page`, which is at its size budget.
+pub mod produce_languages;
 /// §08-produce#1-screen item **7** — the ✎ dialog of the thumbnail's text-overlay editor.
 pub mod produce_words;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
