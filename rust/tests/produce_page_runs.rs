@@ -546,6 +546,8 @@ fn f5_7_s8_the_produce_rows_stay_few_and_all_named() {
             "P.eng.titleBand",
             "P.policy.publishFrames",
             "P.eng.publishMaxFrames",
+            // §F5.6 S1's bound on the upload brief, catalogued where the brief reads it.
+            "P.machine.briefMaxChars",
         ]
     );
     for param in &rows {

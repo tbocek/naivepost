@@ -365,19 +365,25 @@ fn sec_08_produce_4_parameters_used_s7_the_servers_deadlines_the_poster_and_the_
 #[test]
 fn sec_08_produce_4_parameters_used_s8_the_brief_bound_and_the_one_row_per_parameter() {
     assert_eq!(ITEM, "§08-produce#4-parameters-used");
-    // P.machine.briefMaxChars (120 kB) bounds F5.6 S1's upload brief, and this tree does not build that brief
-    // yet — so it has no row, and cannot get one before its rule exists. Asserting the reader is absent is
-    // what makes adding the row later a real change rather than a copy-paste.
+    // P.machine.briefMaxChars (120 kB) bounds F5.6 S1's upload brief, and the brief now exists in
+    // `produce_upload`, so its row must exist with it: the two are asserted together rather than one being
+    // absent because nothing read it.
     let sources = [
+        include_str!("../src/produce_upload.rs"),
         include_str!("../src/produce_screen.rs"),
-        include_str!("../src/produce_render.rs"),
         include_str!("../src/publish.rs"),
     ];
     assert!(
-        !sources.iter().any(|text| text.contains("THE FINISHED VIDEO")),
-        "the upload brief exists, so P.machine.briefMaxChars needs a row"
+        sources.iter().any(|text| text.contains("THE FINISHED VIDEO")),
+        "the upload brief is built, so this test must keep watching its bound"
     );
-    assert!(anywhere("P.machine.briefMaxChars").is_none());
+    assert_eq!(number("P.machine.briefMaxChars"), 120_000.0);
+    let rows = params::produce()
+        .into_iter()
+        .filter(|p| p.id == "P.machine.briefMaxChars")
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 1, "exactly one row for the brief bound");
+    assert_eq!(rows[0].from, "produce_upload::BRIEF_MAX_CHARS");
 
     // One row per parameter: the two fitting numbers §4 borrows from F4.3 live in §7 and are not repeated here.
     let in_produce = params::produce().into_iter().filter(|p| p.id == "P.eng.narrationTailSeconds").count();
@@ -418,6 +424,8 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
             "P.eng.titleBand",
             "P.policy.publishFrames",
             "P.eng.publishMaxFrames",
+        // F5.6 S1's upload-brief bound, catalogued where the brief reads it.
+        "P.machine.briefMaxChars",
         ]
     );
     // §10's spelling won: the F5.7 round's invented id is gone rather than kept beside it.

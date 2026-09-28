@@ -56,6 +56,7 @@ use crate::preview;
 use crate::project;
 use crate::produce_render;
 use crate::produce_screen;
+use crate::produce_upload;
 use crate::produce_subtitles;
 use crate::produce_runs;
 use crate::tools::{clips, cutpass, describe, retakes, textedit};
@@ -1091,6 +1092,7 @@ pub fn produce() -> Vec<Param> {
         param("P.eng.titleBand", title_band_spelled(), "project::TitleBox::default"),
         param("P.policy.publishFrames", produce_screen::FIRST_IMAGES.to_string(), "produce_screen::FIRST_IMAGES"),
         param("P.eng.publishMaxFrames", produce_screen::MAX_IMAGES.to_string(), "produce_screen::MAX_IMAGES"),
+        param("P.machine.briefMaxChars", produce_upload::BRIEF_MAX_CHARS.to_string(), "produce_upload::BRIEF_MAX_CHARS"),
     ]
 }
 

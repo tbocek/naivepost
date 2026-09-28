@@ -106,6 +106,7 @@ pub mod produce_subtitles;
 pub mod produce_tag_page;
 pub mod produce_translate;
 pub mod produce_stamp;
+pub mod produce_upload;
 pub mod publish;
 pub mod probes;
 pub mod rescan;

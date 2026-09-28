@@ -242,7 +242,9 @@ fn sources_text(sources: &[project::Source], file_facts: &impl Fn(&Path) -> (u64
 /// [`crate::fix_transcripts::block_key`]: the value only has to be stable and unique enough to answer "the
 /// same render?", it is read by nothing but this module, and `Hasher`'s output is documented as an API
 /// surface that may change between compilers. FNV-1a over the canonical text; 16 hex characters.
-fn hash_text(text: &str) -> String {
+/// `pub` because the thumbnail's own stamp ([`crate::produce_upload::thumbnail_stamp`]) hashes the same
+/// way: two FNV copies that must agree byte-for-byte is one bug waiting to be written.
+pub fn hash_text(text: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in text.as_bytes() {
         hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3);

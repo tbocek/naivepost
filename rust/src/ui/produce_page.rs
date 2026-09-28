@@ -1356,7 +1356,7 @@ fn finish_produce(
     // the subprocesses and reports back what it made.
     let ending = crate::produce_flow::run_with(
         &run,
-        |_| match words_half() {
+        |run| match words_half(run) {
             Ok(()) => (true, None),
             Err(why) => {
                 crate::ui::window::log_line(&crate::produce_flow::words_failed(&why));
@@ -1485,8 +1485,9 @@ fn render_failure_note(render: &crate::produce_flow::Rendered) -> Option<String>
     Some(render.size.clone())
 }
 
-/// F5.6's half of the run, as seen from here: no image server in this container, so it reports why.
-/// F5.6 replaces this one function with the sd.cpp call; nothing else about the run changes.
-fn words_half() -> Result<(), String> {
-    Err("no image server here".to_string())
+/// F5.6's half of the run, forwarded to `produce_languages::upload_half`, which builds the brief, asks
+/// the model and drives the picture. It reports its own failure; `finish_produce` logs it with the spec's
+/// tail and the render carries on.
+fn words_half(run: &crate::produce_flow::Run) -> Result<(), String> {
+    crate::ui::produce_languages::upload_half(run)
 }
