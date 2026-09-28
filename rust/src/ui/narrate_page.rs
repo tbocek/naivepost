@@ -711,10 +711,6 @@ pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// S3's answer when no upload was scripted: the reference is on disk but nothing carried it to the server.
-const NO_UPLOAD: &str = "no voice reference was uploaded for this line \u{2014} the speech request has no \
-                     server path to name";
-
 /// S4/S5's answer when no speech reply was scripted: the request went out and nothing answered it.
 const NO_SPEECH_REPLY: &str = "the audio.cpp server did not answer POST /v1/audio/speech";
 

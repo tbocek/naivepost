@@ -17,7 +17,6 @@ use crate::cut_line;
 use crate::layout;
 use crate::new_project;
 use crate::project;
-use crate::shell::Page;
 use crate::ui;
 
 /// Screen names the window can render: the spec's images, mapped onto a page.

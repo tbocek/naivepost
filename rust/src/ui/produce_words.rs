@@ -20,7 +20,7 @@ const DIALOG_TITLE: &str = "Words on the thumbnail";
 
 // The dialog this module has open, if any. An `adw::MessageDialog` is its OWN top-level window rather
 // than a child of the page, so it is not reachable by walking the page's content tree; holding it
-// here is how a caller finds the box it just opened (and what `last_entry_text` reads back).
+// here is how a caller finds the box it just opened, through [`open_dialog`].
 thread_local! {
     static OPEN_DIALOG: std::cell::RefCell<Option<adw::MessageDialog>> =
         const { std::cell::RefCell::new(None) };
@@ -29,11 +29,6 @@ thread_local! {
 /// The dialog currently open, if any.
 pub fn open_dialog() -> Option<adw::MessageDialog> {
     OPEN_DIALOG.with(|held| held.borrow().clone())
-}
-
-/// The words typed in the open dialog's entry — "" when no dialog is open.
-pub fn last_entry_text() -> String {
-    open_dialog().map(|d| entry_of(&d)).unwrap_or_default()
 }
 
 /// Record (or clear) the open dialog. Called by the two openers.

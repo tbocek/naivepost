@@ -13,7 +13,6 @@ use gtk4 as gtk;
 use crate::add_sources;
 use crate::bench;
 use crate::cut::{self, Cut};
-use crate::cut_effect_decisions;
 use crate::fx_record;
 use crate::cut_cards;
 use crate::cut_cam;
@@ -6752,19 +6751,6 @@ thread_local! {
 /// The Open button's tooltip, §1's wording for badge **2**.
 const OPEN_TIP: &str = "Load a project \u{2014} sources, prompts and settings";
 
-/// F2.1's own ▶ on the Cut page: the label and the tooltip §F2.1 S2 gives ("play from the red line ·
-/// every second plays, cuts and all"). Kept apart so the widget test can pin the wording against the
-/// spec rather than against whatever was typed into the button.
-const RECORD_PLAY_LABEL: &str = "\u{25b6} Play the recording";
-
-/// F2.2's label. The glyph pair is the button's whole identity in §A (▶ vs ▶✂), so it leads the
-/// words rather than sitting alone as an icon a person has to memorise.
-const PLAY_CUT_LABEL: &str = "\u{25b6}\u{2702} Play the cut";
-
-/// F2.3's label — the third of the transport group, spelled with two scissors so it cannot be
-/// mistaken for ▶✂ at a glance.
-const REVIEW_CUTS_LABEL: &str = "\u{25b6}\u{2702}\u{2702} Review every cut";
-
 /// F2.4's four line-step buttons, in the spec's left-to-right order: `‹‹f ‹f f› ››`. Each entry is
 /// (widget name, label, signed frames) — the sign is the direction and the magnitude the count, so a
 /// button's own name cannot disagree with what it does. A `bool` could: wiring `shift=true` to
@@ -6775,8 +6761,6 @@ const LINE_STEP_BUTTONS: [(&str, &str, i64); 4] = [
     ("line-step-forward", "f \u{203a}  step forward 1 frame", 1),
     ("line-step-forward-five", "f \u{203a}\u{203a}  step forward 5 frames", 5),
 ];
-const RECORD_PLAY_TIP: &str =
-    "Play the recording from the red line \u{2014} every second of it, cuts and all";
 
 /// The reason ▶ had nothing to play. Spec silent on a session with no filmed stretch; §0 asks for a
 /// named, local reason rather than a silent button.
@@ -11728,17 +11712,6 @@ pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
         // `now` is irrelevant here: leaving the tab writes whatever is owed, even a beat early.
         shell.borrow_mut().narration_pending.touched(std::time::Duration::from_secs(0));
     }
-}
-
-/// The narration this window is holding — newest slot wins, the same rule [`tab_info_button`] uses,
-/// so a test or a flow reaches the lines of the window that was built last rather than one left over
-/// from an earlier window in the same process. A window with nothing held reads as empty narration,
-/// which is what a project with no `narration.json` shows anyway.
-fn held_narration() -> Narration {
-    HELD_NARRATION
-        .with(|held| held.borrow().last().cloned())
-        .map(|held| held.borrow().clone())
-        .unwrap_or_default()
 }
 
 /// §1's badge **6** — the header ⓘ (not the per-page copies), newest slot wins so a test reads the

@@ -12,6 +12,27 @@ use adw::prelude::*;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
 
+    // GTK's own `--help` only prints after a display opens, and this program is routinely started in a
+    // container that has none, so the two modes are answered here instead: before any display is asked
+    // for, and on stdout with exit 0.
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!(
+            "naivepost — a cut-and-narrate editor for sessions already recorded.\n\
+             \n\
+             Usage:\n\
+             \x20 naivepost [project.naivepost]\n\
+             \x20     Open the window, optionally over one project folder (the desktop can\n\
+             \x20     hand one over too). With no argument the last opened project is used.\n\
+             \x20 naivepost --snapshot <screen> [--project <dir>] [--out <file.png>]\n\
+             \x20     Render one screen to a PNG without a user, for checking against spec/img.\n\
+             \x20     Screens: 03-window, 04-prepare, 05-cut, 06-preview, 07-narrate, 08-produce, …\n\
+             \n\
+             Both need a display; headless runs use `just snapshot <screen>` from rust/, which wraps\n\
+             the call in xvfb-run with GSK_RENDERER=cairo."
+        );
+        return ExitCode::SUCCESS;
+    }
+
     if args.iter().any(|a| a == "--snapshot") {
         return match parse_snapshot(&args)
             .and_then(|(screen, dir, out)| naivepost::snapshot::run(&screen, &dir, &out))

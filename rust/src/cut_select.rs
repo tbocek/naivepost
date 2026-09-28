@@ -194,13 +194,6 @@ pub const PLACEHOLDER_BANDS: SurfaceBands = SurfaceBands {
     wave_height: 12.0,
 };
 
-impl SurfaceBands {
-    /// y at the bottom of row `index`'s wave strip — where the next row (or the lanes) would start.
-    fn row_bottom(&self, index: usize) -> f64 {
-        self.first_picture + (index as f64 + 1.0) * (self.row_height + self.wave_height)
-    }
-}
-
 /// F2.6 S1: which ground a press at `y` was drawn on. Ruler band → [`Surface::Ruler`]; the empty
 /// selection band → [`Surface::SelectionBand`]; the effects lane → [`Surface::FxLane`]; below
 /// `first_picture` the y falls in row `i`'s picture half → [`Surface::PictureRow(i)`] or its wave half

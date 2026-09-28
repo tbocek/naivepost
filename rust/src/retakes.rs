@@ -23,8 +23,8 @@ use crate::roles::RETAKE_RUNS_POOLED;
 use crate::textfmt::{self, Retake};
 use crate::project::{MarkingPass, Project, Source};
 use crate::tools::retakes::{
-    pause_before, Line, Mark, Marks, Trim, RETAKE_CEIL, RETAKE_FRAGMENT_SECONDS,
-    RETAKE_MIN_SECONDS, RETAKE_PAUSE_SECONDS, RETAKE_REACH_SECONDS,
+    pause_before, Line, Mark, Marks, RETAKE_CEIL, RETAKE_FRAGMENT_SECONDS,
+    RETAKE_MIN_SECONDS, RETAKE_PAUSE_SECONDS,
 };
 
 /// The cache folder name under `cache/llm/<step>/` and the name the progress line uses.
