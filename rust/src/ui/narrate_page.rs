@@ -18,6 +18,7 @@ use crate::bodies::ServerPath;
 use crate::cut::Seg;
 use crate::narrate_details;
 use crate::narrate_off;
+use crate::narrate_preview;
 use crate::narrate_screen::{self, Audition, Fit};
 use crate::narration::Entry;
 
@@ -59,6 +60,11 @@ pub struct NarrateState {
     /// A synthesis is running: it outranks the other refusals on the row's ▶.
     pub busy: bool,
     pub narration_off: bool,
+    /// The session spans a recording actually covers, published by the flow that read Prepare. F4.5 S1 asks
+    /// these before cueing: a start landing off every span would report itself as playing over a black frame.
+    /// Empty means "nothing was published", which `preview_covered` reads as full coverage so a page driven
+    /// without that fact still previews rather than refusing everything.
+    pub covered_spans: Vec<(f64, f64)>,
 }
 
 thread_local! {
@@ -83,6 +89,7 @@ thread_local! {
             playing: false,
             busy: false,
             narration_off: false,
+            covered_spans: Vec::new(),
             language: String::new(),
             audio_healthy: false,
             audio_models: Vec::new(),
@@ -172,6 +179,15 @@ pub fn build() -> gtk::Widget {
     // `connect_draw` handler exists (there is none anywhere in `src/`), so headless and live alike the
     // frame was invisible. CSS gives it the dark 16:9 field with a stroke, which is what §2's image shows.
     picture.add_css_class("narrate-plate");
+    // F4.5 S1 (`click the picture or ▶`): the picture is its own toggle. A bare `DrawingArea` takes a
+    // gesture controller fine (it has no button handler of its own), and this page's picture is NOT the Cut
+    // page's `preview-panel`, whose single-button-1 rule exists because that widget already carries a drag.
+    // One click gesture per widget still holds here: there is no second gesture on `narrate-picture` to race.
+    let picture_click = gtk::GestureClick::new();
+    picture_click.connect_released(move |_click, _n, _x, _y| {
+        press_preview_picture(&crate::ui::window::main_window());
+    });
+    picture.add_controller(picture_click);
     preview.append(&picture);
     left.append(&preview);
 
@@ -591,11 +607,63 @@ pub fn press_forward(window: &adw::ApplicationWindow) -> String {
     say(window, &narrate_screen::clock_line(s.session, s.cut_at, s.length))
 }
 
-/// The preview's play/pause. §1 gives it no sentence, so the clock at the new position is reported.
-pub fn press_narrate_play(window: &adw::ApplicationWindow) -> String {
-    mutate(|s| s.playing = !s.playing);
+/// The session spans the preview may cue against. An unpublished state (empty) is read as full coverage of
+/// the cut: the refusal exists for a recording that does not reach the cue, not for a flow that never said.
+fn preview_covered(s: &NarrateState) -> Vec<(f64, f64)> {
+    if s.covered_spans.is_empty() {
+        return s.segs.iter().map(|seg| (seg.s, seg.e)).collect();
+    }
+    s.covered_spans.clone()
+}
+
+/// F4.5 S1: one click on the picture, or the transport's ▶ — the same door, so the two cannot drift.
+/// Asks `narrate_preview::press_picture` with what this page knows: the kept clips, the line under the
+/// playhead (if any) at its own start second, and the covered spans. Stores the answer in `playing` and says
+/// the refusal verbatim, or names the second playback starts from.
+pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
     let s = read_state();
-    say(window, &narrate_screen::clock_line(s.session, s.cut_at, s.length))
+    let line_start = narrate_preview::line_at(s.session, &s.entries)
+        .map(|index| s.entries[index].s + s.entries[index].at);
+    let pressed = narrate_preview::press_picture(s.playing, &s.segs, line_start, &preview_covered(&s));
+    let next_playing = pressed.playing();
+    mutate(|state| state.playing = next_playing);
+    match pressed {
+        narrate_preview::Pressed::Refused(why) => say(window, &why),
+        narrate_preview::Pressed::Playing { from } => say(
+            window,
+            &format!(
+                "playing the cut from {} \u{2014} \u{23f9} stops both players",
+                narrate_screen::time_field(from)
+            ),
+        ),
+        narrate_preview::Pressed::Paused => {
+            say(window, "paused \u{2014} \u{25b6} plays on from here")
+        }
+    }
+}
+
+/// The preview's play/pause. Routes through the picture's door: inventory §A.3/§A.4 are one toggle wearing
+/// two faces, and two implementations would disagree about what "play" means after an edit.
+pub fn press_narrate_play(window: &adw::ApplicationWindow) -> String {
+    press_preview_picture(window)
+}
+
+/// Whether the preview is running right now. Exported so the run bar can ask before reading a ⏹ press as the
+/// end of a run: while a preview runs, ⏹ belongs to the preview (F4.5 S6).
+pub fn narrate_preview_playing() -> bool {
+    read_state().playing
+}
+
+/// F4.5 S6: ⏹ over the preview. Stops the picture and the voice riding along with it and hands ▶ back to
+/// the step; the sentence comes from `narrate_preview::hand_play_back`, so the bar cannot claim ▶ back while
+/// a player is still going.
+pub fn press_preview_stop(window: &adw::ApplicationWindow) -> String {
+    let stopped = narrate_preview::stop();
+    mutate(|state| state.playing = false);
+    let said = narrate_preview::hand_play_back(stopped)
+        .unwrap_or("the preview did not stop \u{2014} see log")
+        .to_string();
+    say(window, &said)
 }
 
 /// **4** ＋ a line at this second. Ok pushes the entry where the rule put it.

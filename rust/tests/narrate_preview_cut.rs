@@ -225,3 +225,149 @@ fn f4_5_s7_a_failed_line_is_sticky_per_wav_until_its_own_button_retries_it() {
     failed.add("a.wav");
     assert!(!failed.holds("b.wav"));
 }
+
+/// S1 again, one floor up: what the composed step answers, as opposed to `start_point`'s verdict about the
+/// second. The page stores exactly this `playing()` value, so a wrong answer here is a preview that lies
+/// about itself in the state bar.
+#[test]
+fn f4_5_s8_the_composed_press_answers_pause_refusal_or_a_start_second() {
+    let clips = [seg(10.0, 20.0), seg(30.0, 40.0)];
+
+    // Already playing: pause, and nothing else is asked of the cut (no start second, no refusal).
+    let paused = view::press_picture(true, &clips, Some(35.0), &covered());
+    assert_eq!(paused, view::Pressed::Paused);
+    assert!(!paused.playing(), "a pause leaves the preview not running -- the state stored must go false");
+    assert_eq!(paused.refused(), None, "pausing is not a refusal");
+
+    // No clips at all: the whole answer is the sentence, verbatim.
+    let empty = view::press_picture(false, &[], None, &covered());
+    assert_eq!(empty, view::Refused(view::NOTHING_TO_PREVIEW.to_string()));
+    assert_eq!(
+        empty.refused(),
+        Some("nothing to preview yet \u{2014} cut some clips first"),
+        "S1's sentence is the string the status line gets"
+    );
+    assert!(!empty.playing());
+
+    // A line under the playhead wins: start from ITS second, not from the top of the cut.
+    let from_line = view::press_picture(false, &clips, Some(35.0), &covered());
+    assert_eq!(from_line, view::Playing { from: 35.0 });
+    assert!(from_line.playing(), "this press leaves the preview running");
+    assert_eq!(from_line.refused(), None);
+
+    // No line chosen: the cut's own start, which is the first kept clip's `s`.
+    let from_top = view::press_picture(false, &clips, None, &covered());
+    assert_eq!(from_top, view::Playing { from: 10.0 });
+
+    // The cue lands off every covered span: refused, and with the recording sentence rather than the
+    // empty-cut one -- the clips exist, it is the footage that does not reach there.
+    let off_recording = view::press_picture(false, &clips, Some(35.0), &[(0.0, 12.0)]);
+    assert_eq!(off_recording, view::Refused(view::NO_RECORDING_AT_START.to_string()));
+    assert_ne!(
+        off_recording.refused(),
+        Some(view::NOTHING_TO_PREVIEW),
+        "an uncovered cue is not the same complaint as no clips"
+    );
+    assert!(!off_recording.playing(), "a refused cue must never set playing");
+
+    // P.eng.narrationMaxExtendSeconds and the four-second boundary hold are S2's rule and belong to the
+    // tick test above (`f4_5_s2_the_tick_follows_the_picture_and_the_narration_rides_along`, which pins
+    // MAX_EXTEND_SECONDS == 4.0 and the Hold branch): a press never consults them, since the picture has
+    // not moved yet when this answer is given.
+}
+
+/// S2's sticky failure, through the door F4.4's row ▶ actually calls: the retry clears first, so the
+/// second attempt is allowed, while a key nobody retried keeps answering mute.
+#[test]
+fn f4_5_s9_retrying_a_take_clears_its_key_so_the_next_attempt_is_allowed() {
+    let mut failed = view::Failed::default();
+    failed.add("take-7.wav");
+    failed.add("take-9.wav");
+
+    // Never-retried keys stay sticky: the run past them speaks nothing, however many times it comes round.
+    assert!(failed.holds("take-9.wav"));
+    assert!(failed.holds("take-9.wav"), "sticky means sticky across repeat asks");
+
+    // The retried key is cleared by its own press, so this attempt is allowed through.
+    assert!(view::retry_line(&mut failed, "take-7.wav"), "there was a failure to clear");
+    assert!(!failed.holds("take-7.wav"), "cleared, so the next synthesis may run");
+    assert!(
+        failed.holds("take-9.wav"),
+        "clearing one take must not free the others -- stickiness is per wav"
+    );
+
+    // Pressing ▶ on a take that never failed answers false: the caller reads that as a first attempt, not a
+    // retry, and does not claim to have rescued anything.
+    assert!(!view::retry_line(&mut failed, "never-failed.wav"));
+    // And a second retry of the rescued take also answers false: it is already free.
+    assert!(!view::retry_line(&mut failed, "take-7.wav"));
+
+    // Re-editing a line gives it a new key, so the freed take and the fresh one are different questions.
+    failed.add("take-7.wav");
+    assert!(failed.holds("take-7.wav"), "it failed again after the retry");
+    assert!(!failed.holds("take-7-edited.wav"), "a new take is not punished for its predecessor");
+}
+
+/// S2's resume halves: where the picture goes when a synthesis ends, and the two sentences that tell the
+// person which half they are in.
+#[test]
+fn f4_5_s10_resume_lands_on_the_line_after_success_and_on_frozen_after_failure() {
+    // Success resumes at the line's own start, not at the second the picture froze: a hold can land
+    // mid-line, and starting a shorter take at the stale offset would begin it past its end.
+    assert_eq!(view::resume_after_synthesis(17.4, 16.0, true), 16.0);
+    // Failure has no new audio to land on, so the picture carries on from where it stopped.
+    assert_eq!(view::resume_after_synthesis(17.4, 16.0, false), 17.4);
+    // The two halves really do differ -- if they collapsed to one value the failure path would silently
+    // replay the line instead of playing on without it.
+    assert_ne!(
+        view::resume_after_synthesis(17.4, 16.0, true),
+        view::resume_after_synthesis(17.4, 16.0, false)
+    );
+
+    // The two sentences are different strings too, and keep their own punctuation: `failed_playing_on` is
+    // written with two hyphens, `sticky_failed` with an em dash and its own ▶.
+    let played_on = view::failed_playing_on(6);
+    let sticky = view::sticky_failed(6);
+    assert_eq!(played_on, "line 7 failed -- see log; playing on without it");
+    assert!(played_on.contains("--"), "two hyphens, as the prototype writes them");
+    assert!(!played_on.contains('\u{2014}'), "not the sticky sentence's em dash");
+    assert_eq!(
+        sticky,
+        "line 7 failed to synthesize \u{2014} see log; its \u{25b6} retries"
+    );
+    assert!(sticky.contains('\u{2014}'), "the em dash belongs to this one");
+    assert!(sticky.contains('\u{25b6}'), "and it names the row's own button as the way out");
+    assert_ne!(played_on, sticky, "one is said once, the other every time round");
+    // Row numbers are 1-based in both: index 6 is spoken of as line 7.
+    assert!(played_on.starts_with("line 7 ") && sticky.starts_with("line 7 "));
+}
+
+/// S6: what ⏹ reports -- both players stopped, the triangle returned, and the sentence that says so.
+#[test]
+fn f4_5_s11_stop_reports_both_players_stopped_and_play_returned() {
+    let stopped = view::stop();
+    assert!(stopped.picture_paused, "the picture stopped");
+    assert!(stopped.voice_paused, "the narration riding along stopped with it");
+    assert!(!stopped.started, "nothing is left cued: the preview is ended, not parked");
+    assert_eq!(stopped.play_button, view::PLAY_ICON, "\u{25b6} is handed back, not kept");
+
+    // Both really stopped: the ownership sentence is handed out.
+    assert_eq!(view::hand_play_back(stopped), Some(view::HANDED_BACK));
+    assert_eq!(
+        view::HANDED_BACK,
+        "\u{25b6} is the step's again \u{2014} the preview stopped"
+    );
+
+    // A Stopped that still has a player going must NOT announce itself as stopped: the bar reads `None` as
+    // "do not hand ▶ back", so a half-stopped preview cannot be reported as ended.
+    let voice_running = view::Stopped { voice_paused: false, ..stopped };
+    assert_eq!(view::hand_play_back(voice_running), None);
+    let picture_running = view::Stopped { picture_paused: false, ..stopped };
+    assert_eq!(view::hand_play_back(picture_running), None);
+    let still_cued = view::Stopped { started: true, ..stopped };
+    assert_eq!(
+        view::hand_play_back(still_cued),
+        None,
+        "a preview parked part-way is not 'stopped', so ▶ stays the preview's"
+    );
+}

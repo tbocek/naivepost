@@ -184,6 +184,8 @@ fn narrate_window(
         audio_healthy: false,
         audio_models: Vec::new(),
         tts_model: String::new(),
+        // F4.5's coverage spans: unpublished, read as full coverage of the cut.
+        covered_spans: Vec::new(),
     });
     ui::refresh(&window);
     settle();

@@ -87,6 +87,55 @@ pub enum Start {
     Uncovered { at: f64 },
 }
 
+/// S1: what a press of ▶ or a click on the picture amounts to. ONE answer serves both controls because
+/// inventory §A.3 and §A.4 describe them as the same toggle — "click the picture to play the cut with its
+/// narration, and again to pause" is the transport's play/pause wearing a different face. Routing both
+/// through here is what keeps a picture click and a button press from disagreeing about what "play" means.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pressed {
+    /// Nothing to preview: carries the sentence to say ([`NOTHING_TO_PREVIEW`] or [`NO_RECORDING_AT_START`]).
+    Refused(String),
+    /// Cue here and start the two players.
+    Playing { from: f64 },
+    /// It was playing; stop the picture and the voice riding along with it.
+    Paused,
+}
+
+impl Pressed {
+    /// The refusal's sentence, `None` when the press started or paused playback.
+    pub fn refused(&self) -> Option<&str> {
+        match self {
+            Self::Refused(why) => Some(why),
+            _ => None,
+        }
+    }
+
+    /// Whether this press leaves the preview running (the state the page stores).
+    pub fn playing(&self) -> bool {
+        matches!(self, Self::Playing { .. })
+    }
+}
+
+/// S1: the whole of one click. Already playing means pause — nothing else is asked of the cut. Otherwise the
+/// start point decides: no clips at all is [`NOTHING_TO_PREVIEW`], a cue landing off every recording is
+/// [`NO_RECORDING_AT_START`], and anything else plays from the line's second or, with no line under the
+/// playhead, from the cut's own start (`start_point`'s answer for `line: None`).
+pub fn press_picture(
+    playing: bool,
+    segs: &[Seg],
+    line_start: Option<f64>,
+    covered: &[(f64, f64)],
+) -> Pressed {
+    if playing {
+        return Pressed::Paused;
+    }
+    match start_point(segs, line_start, covered) {
+        Start::Play(at) => Pressed::Playing { from: at },
+        Start::NoClips => Pressed::Refused(NOTHING_TO_PREVIEW.to_string()),
+        Start::Uncovered { .. } => Pressed::Refused(NO_RECORDING_AT_START.to_string()),
+    }
+}
+
 /// S1: the second to start from, and whether anything can be shown there. A selected line wins over the top
 /// of the cut — that is what "play from the line" means — and either way the second has to be inside a
 /// recording, which `covered` answers ([`crate::timeline::filmed_runs`] is who computes it).
@@ -243,6 +292,16 @@ impl Failed {
     }
 }
 
+/// S2 (`a failed line is sticky per wav until its own ▶ retries it, which first clears the failure`):
+/// free this take to be spoken again. Returns whether a failure was actually cleared, so the caller can tell a
+/// retry from a first attempt without asking twice. This is the door F4.4's row ▶ goes through before it
+/// dials the speech server: without it a take that failed once would stay mute forever, however many times
+/// its own button was pressed. Kept apart from [`Failed::retry`] only in name-free shape so a caller holding
+/// the set does not have to know the type — the behaviour is that method's, not a second copy.
+pub fn retry_line(failed: &mut Failed, line_wav_key: &str) -> bool {
+    failed.retry(line_wav_key)
+}
+
 // --- S3 the sound is the render's ------------------------------------------------------------------------------
 
 /// S3 (`ducked by the game volume`): how loud the whole clip is while a line speaks. The value is the
@@ -346,5 +405,20 @@ pub fn stop() -> Stopped {
         voice_paused: true,
         started: false,
         play_button: PLAY_ICON,
+    }
+}
+
+/// S6 (`hands ▶ back to the step`): the sentence the run bar shows once ⏹ has stopped the preview, naming
+/// whose button the triangle is again. Held here rather than written where it is painted so the bar cannot
+/// claim ▶ back while the preview still holds it.
+pub const HANDED_BACK: &str = "\u{25b6} is the step's again \u{2014} the preview stopped";
+
+/// What ⏹ hands back: the ownership sentence when both players really stopped, `None` when the struct says
+/// otherwise (a `Stopped` built by hand with a player left running must not announce itself as stopped).
+pub fn hand_play_back(stopped: Stopped) -> Option<&'static str> {
+    if stopped.picture_paused && stopped.voice_paused && !stopped.started {
+        Some(HANDED_BACK)
+    } else {
+        None
     }
 }

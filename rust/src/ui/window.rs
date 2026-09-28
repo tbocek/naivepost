@@ -5663,6 +5663,23 @@ fn wire_stop(
     let log_view = log_view.clone();
     let queue = queue.clone();
     stop_.connect_clicked(move |stop_| {
+        // F4.5 S6: while the Narrate preview is running, ⏹ belongs to the PREVIEW, not to a run. Stopping it
+        // here stops both players and hands ▶ back to the step; only when no preview is going does the press
+        // mean "end the long job", which is `run::RunBar::press_stop`'s rule unchanged.
+        if crate::ui::narrate_page::narrate_preview_playing() {
+            let said = crate::ui::narrate_page::press_preview_stop(&crate::ui::window::main_window());
+            // Repaint from the page's own state now that nothing is playing: ▶ goes back to the step's face
+            // and ⏹ loses its sensitivity unless a run is under way.
+            paint_run_bar(
+                &play,
+                stop_,
+                &bar.borrow(),
+                shell.borrow().page,
+                run::Transport::default(),
+            );
+            status.set_text(&said);
+            return;
+        }
         let stopped = bar.borrow_mut().press_stop(
             shell.borrow().page,
             run::Transport::default(),
