@@ -10937,15 +10937,15 @@ pub fn narrate_session_tree() -> Option<layout::Tree> {
     layout::Tree::new(&dir).ok()
 }
 
-/// F4.1 S1–S7 on this window, with no model dialled. Headless there is no endpoint wired for the
-/// narration call, so nothing is written and the run says so rather than inventing lines.
+/// F4.1 S1–S7 on this window. With no scripted reply this is the LIVE path: ▶ telephones the address
+/// the Settings hold through `narrate_live`, over real HTTP, three attempts at most (§F4.2).
 pub fn press_narrate_run(window: &adw::ApplicationWindow) -> String {
     // The scripted reply lives in a thread-local so the shell's own ▶ can reach it too: the real
     // button's handler calls THIS function, and a test that wants the written-and-spoken case drives
-    // the button rather than the seam. Empty means "no model dialled", exactly as before.
+    // the button rather than the seam. Empty means "ask for real", which is what the app does.
     let reply = NARRATE_SCRIPT.with(|cell| cell.borrow().clone());
     if reply.is_empty() {
-        return run_narrate_on(window, |_tree, _clips| Ok(Vec::new()));
+        return run_narrate_on(window, live_narrate_reply);
     }
     run_narrate_on(window, move |_tree, clips| {
         Ok(reply
@@ -10962,6 +10962,15 @@ pub fn press_narrate_run(window: &adw::ApplicationWindow) -> String {
             })
             .collect())
     })
+}
+
+/// The live narration leg: with no scripted reply, ▶ comes here (§F4.2's call over real HTTP). All the
+/// gathering and driving lives in `narrate_ask`, so this file stays a shell.
+fn live_narrate_reply(
+    tree: &layout::Tree,
+    bounds: &[(f64, f64)],
+) -> Result<Vec<narrate_run::Written>, String> {
+    crate::narrate_ask::run(tree, &live_project(), bounds)
 }
 
 /// One narration reply handed to the shell's ▶ by a test: `(clip number from 1, clip-relative second,
@@ -11136,20 +11145,6 @@ where
         .collect();
     clips.sort_by(|a, b| a.0.total_cmp(&b.0));
     let plan = narrate_run::plan_run(rewrite, &clips, &existing, &voice);
-
-    // F4.2 S1/S2: the two messages this run would send, built here — after every refusal in
-    // `run_narrate_on` has returned, so a press that is turned away builds nothing. This build ships no
-    // baked prompt wording (`bench::SHIPPED_FOR_TESTS` is empty), so both wordings come from
-    // `settings::prompt_text` with an empty fallback, which is what the settings box shows when this
-    // machine holds no edit. Assembled and held: headless there is no endpoint to carry it, and the
-    // reply still arrives through the injected closure below.
-    let paths = settings_for_narrate();
-    let narrate_rules = crate::settings::prompt_text(&paths, "narrate", "")
-        .unwrap_or_default();
-    let system_rules = crate::settings::prompt_text(&paths, "system", "")
-        .unwrap_or_default();
-    let _request =
-        crate::narrate_call::request_from_tree(&tree, project, &voice, &narrate_rules, &system_rules);
 
     // S2: pull half-typed rows into the record, then keep the previous generation before anything
     // overwrites it. Both happen before the save so the file on disk matches what the run believes.

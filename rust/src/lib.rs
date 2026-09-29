@@ -48,6 +48,8 @@ pub mod narrate_call;
 pub mod narrate_reply;
 pub mod narrate_rewrite;
 pub mod narrate_run;
+pub mod narrate_live;
+pub mod narrate_ask;
 pub mod narrate_rules;
 pub mod narrate_tts;
 pub mod cut_suggest;
