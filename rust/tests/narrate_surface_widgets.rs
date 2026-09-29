@@ -22,6 +22,15 @@ use naivepost::narration::Entry;
 use naivepost::shell::Page;
 use naivepost::ui;
 
+use naivepost::narrate_tts;
+
+/// The session folder this window's own press resolves its sample into, so the assertion is the leg's
+/// real answer read from the real path rather than a copy of its wording typed in twice.
+fn session_tree() -> naivepost::layout::Tree {
+    let dir = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
+    naivepost::layout::Tree::new(&dir).expect("the session folder ends in .naivepost")
+}
+
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
@@ -450,8 +459,10 @@ fn narrate_round(app: &adw::Application) {
     settle();
     assert_eq!(
         status_text(&window),
-        narrate_details::sample_status(),
-        "with a voice and words the sample is being synthesized"
+        narrate_tts::reference_problem(&session_tree()).unwrap(),
+        "the ladder passed and the press reached the speak leg, which answered with the one thing the \
+         demo session lacks: a voice reference to clone (F4.6). The synthesising sentence is not the \
+         final word here, because this press really dials."
     );
     button(&window, "sample-stop").emit_by_name::<()>("clicked", &[]);
     settle();

@@ -183,44 +183,24 @@ pub enum ReferencePlan {
 
 /// S2: decide what the reference is cut from, against the session's own Prepare output.
 ///
-/// This is the S2 rule itself plus one fact the rule cannot see from inside: whether the recording the
-/// narration is meant to be cut from was ever tagged. A slot with no recording is S2's first answer
-/// (`nothing_tagged`), and it outranks the diarization question, because "run Prepare" would be the
-/// wrong advice for a session whose project never named a recording to run it on.
-///
 /// `takes` are the hand-picked takes (empty when nobody picked any); `turns` the diarized turns of the
-/// narrator's recording; `words` the count of transcript words falling inside each candidate window,
+/// narrator's recording; `words_in` the count of transcript words falling inside each candidate window,
 /// paired with that window. Turns are given in seconds rather than samples because the caller has
 /// already converted them — see the module doc.
+///
+/// The one thing this rule does NOT answer is whether a recording was tagged at all: only
+/// `naivepost.json` says that, and it is asked by [`recut_for_voice`] before this runs, because
+/// "run Prepare" would be wrong advice for a project that never named a recording to run it on.
 pub fn plan_reference(
     takes: &[(f64, f64)],
     turns: &[(f64, f64, u32)],
     words_in: impl Fn(f64, f64) -> usize,
     narrator_speaker: u32,
 ) -> ReferencePlan {
-    plan_reference_tagged(takes, turns, words_in, narrator_speaker, true)
-}
-
-/// F4.6 S2 with the taggedness question carried explicitly, which is what [`recut_for_voice`]
-/// needs: the project file, not the diarization, is what says whether a slot has a recording at all.
-/// `recording_tagged == false` answers S2's first refusal (`nothing_tagged`), which outranks the
-/// diarization question — telling someone to "run Prepare" would be wrong advice for a project that
-/// never named a recording to run it on. Callers that have no way to know (a bare rule test) use
-/// [`plan_reference`], which assumes the recording is there.
-pub fn plan_reference_tagged(
-    takes: &[(f64, f64)],
-    turns: &[(f64, f64, u32)],
-    words_in: impl Fn(f64, f64) -> usize,
-    narrator_speaker: u32,
-    recording_tagged: bool,
-) -> ReferencePlan {
     if !takes.is_empty() {
         return ReferencePlan::HandPicked(
             takes.iter().map(|&(start, end)| Piece { start, end }).collect(),
         );
-    }
-    if !recording_tagged {
-        return ReferencePlan::Unavailable(nothing_tagged(narrator_speaker as usize));
     }
     if turns.is_empty() {
         return ReferencePlan::Unavailable(NO_DIARIZATION.to_string());
@@ -407,11 +387,13 @@ pub fn recut_for_voice(
 
     let base = narrate_data::base_reference(tree);
     let served = narrate_data::served_reference(tree);
-    // S2's first question is not about diarization at all but about the project: the spec's "nothing is
-    // tagged as narrator N on the Prepare step" is answered of the recording this build was asked to
-    // cut from. `nothing_tagged` reaches the refusal through the plan rather than being retyped here.
-    let untagged = nothing_is_tagged(tree, source);
-    let plan = plan_reference_tagged(&takes_of(tree, source), turns, words_in, 1, !untagged);
+    // S2's first question is not about diarization at all but about the project: the spec's "nothing
+    // is tagged as narrator N on the Prepare step" is answered of the recording this build was asked
+    // to cut from, and it comes BEFORE the rule because the rule cannot see the project file.
+    if nothing_is_tagged(tree, source) {
+        return Err(nothing_tagged(FLOW_SLOT));
+    }
+    let plan = plan_reference(&takes_of(tree, source), turns, words_in, FLOW_SLOT as u32);
     let pieces = match plan {
         ReferencePlan::HandPicked(pieces) | ReferencePlan::Automatic(pieces) => pieces,
         ReferencePlan::Unavailable(why) => return Err(why),
@@ -470,6 +452,11 @@ fn nothing_is_tagged(tree: &Tree, source: &str) -> bool {
         .iter()
         .any(|project_source| project_source.narrator != 0 && same_file(&project_source.path, source))
 }
+
+/// The slot this flow cuts for. §1 makes the first tagged recording the one the narration is spoken
+/// in, so the automatic reference is always built for narrator 1; the same number appears in the
+/// `nothing_tagged` sentence the refusal carries.
+const FLOW_SLOT: usize = 1;
 
 /// Whether two paths name the same recording, by file name: `takes.json` and the prepare folders are
 /// keyed by stem for the same reason, so the comparison here stays on the same identity the rest of
@@ -589,6 +576,55 @@ pub fn adopt_existing_reference(tree: &Tree) -> Option<PathBuf> {
     }
     None
 }
+
+/// S5's key for one sample: the voice and the words, and nothing else.
+///
+/// The spec caches the sample "per voice and text", and the sample is not a line of the narration — it
+/// has no clip bounds, no delivery tag and no re-roll count that mean anything. `narration::tts_key`
+/// takes an `Entry` and would fold all three into the digest, so re-rolling or moving a line would
+/// re-synthesise a sample whose words and voice never changed. The Entry here is a carrier for the text
+/// alone; the voice rides in `Option` so a switch to another voice misses the cache, which is the
+/// whole point of the key.
+pub fn sample_key(voice: &str, text: &str) -> String {
+    let carrier = crate::narration::Entry {
+        text: text.to_string(),
+        ..Default::default()
+    };
+    crate::narration::tts_key(&carrier, Some(voice), None)
+}
+
+/// Where one sample lives: `narrate/samples/<voice>_<hash>.wav`, named by who speaks and what they
+/// read, so hearing a voice again is instant and a different voice never overwrites another's take.
+pub fn sample_file(tree: &Tree, voice: &str, text: &str) -> PathBuf {
+    narrate_data::sample_path(tree, voice, &sample_key(voice, text))
+}
+
+/// S5: the same sample bytes, if this voice and text were spoken before. A zero-length file is no
+/// sample at all — an interrupted write must not be replayed as silence.
+pub fn sample_cached(tree: &Tree, voice: &str, text: &str) -> Option<Vec<u8>> {
+    let bytes = std::fs::read(sample_file(tree, voice, text)).ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+    Some(bytes)
+}
+
+/// S5's last step: file the take under the sample's own name. Returns nothing — the caller keeps the
+/// bytes it read; this only says whether they could be written where they belong.
+pub fn store_sample(
+    tree: &Tree,
+    voice: &str,
+    text: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let file = sample_file(tree, voice, text);
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
+    }
+    std::fs::write(&file, bytes).map_err(|err| format!("{}: {err}", file.display()))?;
+    Ok(())
+}
+
 
 /// Run ffmpeg and turn any failure into a named error, the way the other legs do. The output folder is
 /// made first: the reference's working files live under `narrate/reference/`, which a fresh session

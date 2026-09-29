@@ -21,6 +21,7 @@ use crate::narrate_data;
 use crate::narrate_preview;
 use crate::narrate_preview_leg::{self, PreviewPage};
 use crate::narrate_screen::{self, Audition, Fit};
+use crate::narrate_tts;
 use crate::narration::Entry;
 use crate::voice_ref;
 
@@ -1004,14 +1005,166 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
 }
 
 /// **12** ▶ speaks the sample, or says which click would clear what stops it.
+///
+/// The refusal ladder runs first because a sample asked of a voice that cannot speak one must not put a
+/// request on the wire; past the ladder the sample is really synthesised over the same TTS leg a line
+/// uses, then heard from `narrate/samples/` on every later press of the same voice and words (S5).
 pub fn press_sample_play(window: &adw::ApplicationWindow) -> String {
+    let text = widget_in(window, "sample-sentence")
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        .map(|e| e.text().to_string())
+        .unwrap_or_default();
+    // The ladder first: §6 lists busy / no-voice / empty-text as refusals that come BEFORE anything is
+    // heard, so a press with a cached take but the page busy still says "still synthesizing" rather
+    // than playing over the top of the run.
+    let said = sample_ladder(&read_state(), &text);
+    if said != narrate_details::sample_status() {
+        return say(window, said);
+    }
+    // Past the ladder: a take already on disk answers at once, and hearing what exists is not a
+    // synthesis, so it must not set `busy` — that flag is what makes a later press read as work in
+    // flight, and a cache hit leaves nothing running.
+    if let Some(heard) = sample_already_heard(&text) {
+        return say(window, &heard);
+    }
+    // Said BEFORE the leg starts: §6 names this sentence precisely so the bar never reads as done while
+    // the synthesis is out on the wire. The flag goes with it, for the next press.
+    say(window, said);
+    mutate(|s| s.busy = true);
+    let outcome = run_sample_leg(window, 0);
+    mutate(|s| s.busy = false);
+    match outcome {
+        Ok(status) => say(window, &status),
+        Err(why) => say(window, &why),
+    }
+}
+
+/// Read the plate's own words and hand them to the speak. Split out so both ▶ and ⟳ pass the same text
+/// they show rather than each re-reading the entry and risking disagreeing with it.
+fn run_sample_leg(window: &adw::ApplicationWindow, roll: usize) -> Result<String, String> {
     let s = read_state();
     let text = widget_in(window, "sample-sentence")
         .and_then(|w| w.downcast::<gtk::Entry>().ok())
         .map(|e| e.text().to_string())
         .unwrap_or_default();
-    let said = sample_ladder(&s, &text);
-    say(window, said)
+    let tree = crate::ui::window::narrate_session_tree()
+        .ok_or_else(|| "no project folder is open \u{2014} nowhere to keep the sample".to_string())?;
+    speak_fresh_sample(&tree, &s.voice, s.pitch, &text, roll)
+}
+
+/// S5's door, before any dial: is this voice and these words already on disk? Answering here rather
+/// than inside the speak keeps the busy flag honest — hearing a take that exists is instant, so it is
+/// not a synthesis and must not make the page look busy.
+fn sample_already_heard(text: &str) -> Option<String> {
+    let voice = read_state().voice;
+    let tree = crate::ui::window::narrate_session_tree()?;
+    let file = voice_ref::sample_file(&tree, &voice, text);
+    let cached = voice_ref::sample_cached(&tree, &voice, text)?;
+    crate::ui::window::log_line(&narrate_details::sample_file_log(
+        &file_name(&file),
+        cached.len() as u64,
+        None,
+    ));
+    play_sample(&file).ok()
+}
+
+/// S5's speech itself, shared by ▶ and ⟳ so neither copies the other's legs. `roll` is the re-roll
+/// count, and its absence from the log line (`>>> sample:` against `>>> sample take 2:`) is the point:
+/// a sample's first take is not worth naming.
+///
+/// Returns the status the caller should print. It does NOT write the status bar itself, because the
+/// press that started it owns the bar: the synthesising sentence goes up first, and whatever comes back
+/// replaces it, whether that is the take or the reason there is none.
+pub fn speak_fresh_sample(
+    tree: &crate::layout::Tree,
+    voice: &str,
+    pitch: f64,
+    text: &str,
+    roll: usize,
+) -> Result<String, String> {
+    // §6: every sample logs WHO spoke WHAT before anything can go wrong, since a sample has no output
+    // file to inspect afterwards if the dial never happens.
+    crate::ui::window::log_line(&narrate_details::sample_log(
+        voice,
+        pitch,
+        if roll == 0 { None } else { Some(roll) },
+        text,
+    ));
+    // F4.4 S1 asks this before ANY dial: with no reference there is nothing to clone, and asking a live
+    // server about its health would put two requests on the wire for a sample that cannot be spoken.
+    if let Some(problem) = narrate_tts::reference_problem(tree) {
+        return Err(problem);
+    }
+    let key = voice_ref::sample_key(voice, text);
+    let seed = crate::narration::tts_seed(&key);
+    let language = crate::project::load(tree.dir())
+        .map(|project| project.language)
+        .unwrap_or_default();
+    match crate::speak_leg::speak(tree, text, "", seed, &key, &language) {
+        crate::narrate_tts::Outcome::Refused(why) => Err(why),
+        crate::narrate_tts::Outcome::Take(take) => {
+            let bytes = std::fs::read(&take).map_err(|err| format!("{}: {err}", take.display()))?;
+            voice_ref::store_sample(tree, voice, text, &bytes)?;
+            let file = voice_ref::sample_file(tree, voice, text);
+            crate::ui::window::log_line(&narrate_details::sample_file_log(
+                &file_name(&file),
+                bytes.len() as u64,
+                Some("just now"),
+            ));
+            play_sample(&file)
+        }
+    }
+}
+
+/// Hand the sample to the player. The player program is the same seam the preview uses (`ffplay` by
+/// default, overridable in Settings), so a test points it at a stub and the program is unchanged.
+/// The child is left to exit on its own: `-autoexit` was passed, and ⏹ reaches a still-running one
+/// through [`stop_sample_player`], which kills whatever the last play spawned.
+fn play_sample(file: &std::path::Path) -> Result<String, String> {
+    let player = narrate_preview_leg::voice_program();
+    let path = file.to_string_lossy().into_owned();
+    let args: Vec<String> = ["-nodisp", "-autoexit", "-loglevel", "quiet", "-i", &path]
+        .iter()
+        .map(|a| a.to_string())
+        .collect();
+    let child = narrate_preview_leg::spawn_player(&player, &args)
+        .map_err(|_| format!("{player} could not play the sample \u{2014} it is at {}", file.display()))?;
+    SAMPLE_PLAYER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(child);
+    Ok(narrate_details::sample_playing_status().to_string())
+}
+
+/// The sample players still alive. Held so ⏹ can reach them; each entry leaves when the player exits.
+static SAMPLE_PLAYER: std::sync::LazyLock<
+    std::sync::Mutex<Vec<std::process::Child>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+
+/// ⏹'s side of the sample: kill every sample player still running. Kept separate from the preview's
+/// `stop_running` because the sample spawns its own single player and is not a `Preview`; the two
+/// never share a child, so neither can stop the other's audio by accident.
+fn stop_sample_player() -> usize {
+    let mut killed = 0usize;
+    SAMPLE_PLAYER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain_mut(|child| match child.try_wait() {
+            Ok(Some(_)) => false,
+            Ok(None) => {
+                let _ = child.kill();
+                killed += 1;
+                false
+            }
+            Err(_) => false,
+        });
+    killed
+}
+
+fn file_name(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// The four ways ▶ Sample refuses, in the order §6 lists them, then the working answer.
@@ -1032,18 +1185,38 @@ fn sample_ladder(s: &NarrateState, text: &str) -> &'static str {
 }
 
 pub fn press_sample_stop(window: &adw::ApplicationWindow) -> String {
+    // ⏹ gives up on the sample, which means both halves: the flag, and the player that may be holding
+    // the audio. Clearing only the flag would leave a take playing after the page says it stopped.
+    let killed = stop_sample_player();
     mutate(|s| s.busy = false);
+    if killed > 0 {
+        return say(
+            window,
+            &format!("{} \u{2014} {} player(s) stopped", narrate_details::sample_stopped_status(), killed),
+        );
+    }
     say(window, narrate_details::sample_stopped_status())
 }
 
 pub fn press_sample_reroll(window: &adw::ApplicationWindow) -> String {
-    let s = read_state();
     let text = widget_in(window, "sample-sentence")
         .and_then(|w| w.downcast::<gtk::Entry>().ok())
         .map(|e| e.text().to_string())
         .unwrap_or_default();
-    let said = sample_ladder(&s, &text);
-    say(window, said)
+    let said = sample_ladder(&read_state(), &text);
+    if said != narrate_details::sample_status() {
+        return say(window, said);
+    }
+    // ⟳ is a NEW take of the same words, so it must not read from the cache: the speak runs with its
+    // roll count, which is what makes the log line say `take 2` and the file land under a fresh key.
+    say(window, said);
+    mutate(|s| s.busy = true);
+    let outcome = run_sample_leg(window, 1);
+    mutate(|s| s.busy = false);
+    match outcome {
+        Ok(status) => say(window, &status),
+        Err(why) => say(window, &why),
+    }
 }
 
 /// **13** pitch: clamped to the slider's ends, reported with the voice it will clone from.
