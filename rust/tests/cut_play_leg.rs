@@ -195,15 +195,62 @@ fn f2_2_s6_the_leg_returns_only_removed_stretches_to_dim() {
         inside.0 < 255 && inside.1 < 255 && inside.2 < 255,
         "inside the span is dimmed toward black, got {inside:?}"
     );
+    let expected = (cut_play_leg::DIM_GREY * 255.0) as u8;
     assert!(
-        inside.0 > 180,
-        "dimmed but faint, at DIM_ALPHA {}: got {inside:?}",
-        cut_play_leg::DIM_ALPHA
+        inside.0.abs_diff(expected) <= 2
+            && inside.1.abs_diff(expected) <= 2
+            && inside.2.abs_diff(expected) <= 2,
+        "the fill is the solid dim grey: expected ~{expected}, got {inside:?}"
     );
-    let expected = ((255.0 * (1.0 - cut_play_leg::DIM_ALPHA)) as u8,);
+}
+
+/// S6, the visibility claim in numbers rather than by eye: a removed stretch must read darker than
+/// BOTH things it sits beside on the strip — the empty ground (0.95) and the kept footage fill
+/// (`rgba(0.2, 0.8, 0.3, 0.3)` over that ground). A gap only lighter than one of them is invisible
+/// against the other, which is exactly what the 0.18-alpha wash did.
+#[test]
+fn f2_2_s6_the_dim_reads_darker_than_ground_and_kept() {
+    // Same strip recipe `paint_track_strip` uses, painted in the same order, on one surface.
+    const GROUND: f64 = 0.95;
+    let mut surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, 300, 20).expect("an image surface");
+    {
+        let cr = cairo::Context::new(&surface).expect("a cairo context");
+        cr.set_source_rgb(GROUND, GROUND, GROUND);
+        cr.paint().expect("ground");
+        // Kept footage first, then the dim over its own spans: the real strip paints the dim BEFORE
+        // the boxes, so sample each where only it was laid down.
+        cr.set_source_rgba(0.2, 0.8, 0.3, 0.3);
+        cr.rectangle(0.0, 0.0, 100.0, 20.0);
+        cr.fill().expect("kept green");
+        // pps 2.0 puts the 25..50 s span at x 50..100, inside the kept block painted just above:
+        // this is the strip's real situation, a removed stretch sitting in filmed material.
+        cut_play_leg::paint_dimmed(&cr, &[(25.0, 50.0)], 0.0, 20.0, 2.0);
+        // The plain ground region is x 200..300 (nothing painted over it).
+    }
+    let data = surface.data().expect("read the pixels back").to_vec();
+    let stride = surface.stride() as usize;
+    let pixel_at = |x: usize| -> (u8, u8, u8) {
+        let base = 10 * stride + x * 4;
+        // ARgb32 little-endian is B,G,R,A.
+        (data[base + 2], data[base + 1], data[base])
+    };
+    let lum = |p: (u8, u8, u8)| -> f64 {
+        (0.2126 * p.0 as f64 + 0.7152 * p.1 as f64 + 0.0722 * p.2 as f64) / 255.0
+    };
+    let ground = lum(pixel_at(250));
+    let kept = lum(pixel_at(20));
+    let dim = lum(pixel_at(75));
     assert!(
-        inside.0.abs_diff(expected.0) <= 2,
-        "the fill matches DIM_ALPHA: expected ~{}, got {inside:?}",
-        expected.0
+        ground > 0.9,
+        "the ground reads as the strip's light grey, got {ground:.3}"
+    );
+    assert!(
+        dim < ground - 0.15,
+        "the removed stretch reads clearly darker than the empty ground: dim {dim:.3} vs ground {ground:.3}"
+    );
+    assert!(
+        dim < kept - 0.15,
+        "and clearly darker than the kept footage fill: dim {dim:.3} vs kept {kept:.3}"
     );
 }

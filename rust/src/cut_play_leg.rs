@@ -118,12 +118,18 @@ pub fn dimmed(cut: &Cut, filmed: &[(f64, f64)]) -> Vec<(f64, f64)> {
     cut_play::dimmed_spans(filmed, cut)
 }
 
-/// How far the removed stretches are dimmed: black at alpha 0.18.
+/// How far the removed stretches are dimmed: a solid neutral grey, `rgb(0.45, 0.45, 0.45)`.
 ///
-/// Chosen against the two fills the strip already uses — kept footage `rgba(0.2, 0.8, 0.3, 0.3)` and
-/// insert `rgba(0.55, 0.35, 0.75, 0.55)` (`src/ui/window.rs`, `paint_track_strip`) over a 0.95 grey
-/// ground. At 0.18 the gap reads clearly darker than the ground and clearly lighter than a border, so
-/// it looks like "material that is not in the cut" rather than a third track someone could click.
+/// A translucent black wash cannot satisfy S6 here: over the strip's 0.95 ground it is a function of
+/// the alpha alone, and any alpha high enough to beat the ground also muddies the kept fills it must
+/// stay distinct from. A solid mid-grey settles both sides at once — clearly darker than the 0.95
+/// ground and than the pale kept green (lit ~0.71), while the kept boxes paint AFTER this so they
+/// always win, and it matches the 0.45 "dimmed black" weight `fx_lane::DIM_ALPHA` already uses for
+/// the same idea on the paused frame.
+pub const DIM_GREY: f64 = 0.45;
+
+/// The old name stays as the alpha this replaced, so a reader who knows the number finds the reason it
+/// went: 0.18 was measured invisible against the ground in `rust/shots/05-cut.png` (§F2.2 S6 redo).
 pub const DIM_ALPHA: f64 = 0.18;
 
 /// S6: paint the dimmed stretches across one bar row of the strip.
@@ -137,7 +143,7 @@ pub fn paint_dimmed(
     height: f64,
     pps: f64,
 ) {
-    cr.set_source_rgba(0.0, 0.0, 0.0, DIM_ALPHA);
+    cr.set_source_rgb(DIM_GREY, DIM_GREY, DIM_GREY);
     for &(start, end) in spans {
         let x = start * pps;
         let w = (end - start).max(0.0) * pps;
