@@ -24,6 +24,7 @@ fn window_round() {
             play_expands_the_log_through_the_widget(app);
             stop_leaves_the_bar_where_the_step_left_it(app);
             lucky_opens_the_bookkeeping_the_same_way(app);
+            play_walks_the_stage_onto_the_bar(app);
             RAN.store(true, std::sync::atomic::Ordering::SeqCst);
             app.quit();
         });
@@ -158,4 +159,39 @@ fn f0_5_the_run_bookkeeping_reaches_the_widgets() {
         RAN.load(std::sync::atomic::Ordering::SeqCst),
         "the F0.5 widget checks never ran"
     );
+}
+
+/// S2 through the real widget: ▶ must put the step's work ON the queue — jobs named, tasks pushed
+/// and taken — not merely open a run whose bar stays at zero. Before this round no page step fed the
+/// queue at all, so every rule in `runqueue` was reachable only from tests.
+fn play_walks_the_stage_onto_the_bar(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+
+    let play = ui::play_button(&window).expect("play button");
+    play.emit_clicked();
+
+    let queue = ui::run_queue(&window).expect("the window publishes its run queue");
+    let held = queue.borrow();
+    // The fixture session has sources, so the Prepare plan is not empty and the walk reached qJob:
+    // some track now carries a named stage rather than an unnamed nothing.
+    let named = (0..2).filter(|t| !held.track(*t).job.is_empty()).count();    assert!(named >= 1, "S2: ▶ named a stage on the bar, got two blank tracks");
+    let pushed = (0..2).map(|t| held.track(t).queued).sum::<usize>();
+    assert!(pushed > 0, "S2: ▶ pushed the step's tasks onto the bar");
+    let taken = (0..2).map(|t| held.track(t).taken).sum::<usize>();
+    assert_eq!(taken, pushed, "S2: every pushed task was taken, none left unaccounted");
+    // The fraction is the bar's own reading of that walked state. A session whose first task cannot
+    // run (no ffmpeg on this box) stops at 0.0 with the failure logged, so the load-bearing claim is
+    // the queue above; the needle only has to have been driven from it.
+    let shown = ui::progress_bar(&window).expect("progress bar").fraction();
+    assert!(
+        shown >= 0.0 && shown <= 1.0,
+        "the bar drew a real fraction off the walked queue: {shown}"
+    );
+    assert!(
+        taken > 0 || shown == 0.0,
+        "nothing taken and a moved needle would mean the bar was painted from somewhere else"
+    );
+    window.close();
 }

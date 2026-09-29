@@ -36,6 +36,7 @@ pub use settings::press_test;
 pub use settings::settings_button;
 pub use settings::test_button;
 /// F0.7 S5 — the policy form and the two ways into it (the run bar's ⚙ and each tab's ⓘ).
+pub use window::run_queue;
 pub use window::close_policy_forms;
 pub use window::open_policy_form;
 pub use window::forget_policy_form;

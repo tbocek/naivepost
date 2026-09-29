@@ -87,3 +87,18 @@ pub fn run<F: FnMut(&str)>(program: &str, args: &[&str], mut log: F) -> Result<S
     }
     Err(failure(program, args, &combined))
 }
+
+/// Spawn a tool with piped stdio and hand back the still-running child.
+///
+/// [`run`] cannot serve a caller that must be able to stop what it started: `.output()` reaps the
+/// child before any registry can hold its pid, so F0.3's ⏹ would find nothing to kill. This is the
+/// same spawn minus the wait — the caller registers `child.id()` immediately and waits itself, and
+/// formats any failure through [`failure`] so the log reads identically either way.
+pub fn spawn_piped(program: &str, args: &[&str]) -> Result<std::process::Child, std::io::Error> {
+    std::process::Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}

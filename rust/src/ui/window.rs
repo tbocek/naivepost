@@ -4763,6 +4763,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         &log_view,
         &queue,
         &exchange_log,
+        &procs,
         project,
     );
     wire_stop(
@@ -5393,6 +5394,7 @@ fn wire_play(
     log_view: &gtk::TextView,
     queue: &Rc<RefCell<runqueue::Queue>>,
     exchange_log: &Rc<RefCell<exchanges::RunLog>>,
+    procs: &Rc<RefCell<run::Subprocesses>>,
     project: &Project,
 ) {
     let bar = bar.clone();
@@ -5405,6 +5407,7 @@ fn wire_play(
     let log_view = log_view.clone();
     let queue = queue.clone();
     let exchange_log = exchange_log.clone();
+    let procs = procs.clone();
     play.connect_clicked(move |play| {
         // F1.1 S1: Prepare refuses at its own start, BEFORE the bar is opened — a run that started
         // and was then sorry would leave ⏸/⏹ showing for work that never began. So the refusal is
@@ -5624,6 +5627,16 @@ fn wire_play(
                 &mut exchange_log.borrow_mut(),
                 run::step(shell.borrow().page),
                 run::snapshot_sources(&project),
+            );
+            // F0.5 S2/S3: the step's own work is walked under the bookkeeping, its checkpoint asked
+            // between every task; rules live in `run_stages`, this hands over the live session.
+            let asked = PLAY_SESSION.with(|s| s.borrow().last().map(|h| h.borrow().clone()).unwrap_or_else(|| project.clone()));
+            crate::run_stages::drive_page(
+                run::step(shell.borrow().page),
+                &asked,
+                &queue,
+                &bar,
+                &procs,
             );
         }
         paint_run_bar(
@@ -11817,6 +11830,12 @@ pub fn session_sources(window: &adw::ApplicationWindow) -> Vec<String> {
             })
             .unwrap_or_default()
     })
+}
+
+/// The run bar's queue (F0.5) this window shows, so a test reads the state `drive_page` writes
+/// rather than only the painted fraction. Newest slot wins, as every published handle here does.
+pub fn run_queue(_window: &adw::ApplicationWindow) -> Option<Rc<RefCell<runqueue::Queue>>> {
+    WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned())
 }
 
 /// The tooltip Open carries, which is how a test reads §1's wording for badge **2**.
