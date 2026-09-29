@@ -10510,7 +10510,7 @@ pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
         // One attempt, then the retry `retries` allows, then give up on THIS batch only.
         let mut accepted: Option<Vec<crate::cut::Fx>> = None;
         for runs_so_far in 1..=2u32 {
-            let reply = ask_captions(&user_context(window), &clips, runs_so_far);
+            let reply = ask_captions(window, &user_context(window), &clips, &runs, runs_so_far);
             match crate::cut_captions::place(&clips, &reply) {
                 crate::cut_captions::Reply::Accepted(fx) => {
                     accepted = Some(fx);
@@ -10554,11 +10554,31 @@ pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
     said
 }
 
-/// F3.9 S2/S3: ask for one batch. In the app this is the model round; headless there is none, so an empty
-/// answer is returned and S5 skips everything rather than inventing words nobody proposed. A test drives the
-/// real placement rule through [`run_captions_pass_with_reply`] instead.
-fn ask_captions(_context: &str, _clips: &[(u32, f64)], _attempt: u32) -> Vec<crate::cut_captions::Call> {
-    Vec::new()
+/// F3.9 S2/S3: ask one batch of clips of the model, over HTTP at the address the settings hold
+/// (re-read per call). `captions_ask::ask` returns the captions it asked for as clip-relative calls,
+/// which `cut_captions::place` then lets §3.7's `add_caption` tool judge. The word lines are read off
+/// disk (`hand_edit::session_words`) and turned into offsets inside each kept clip by
+/// `captions_ask::offsets_in_clips`, so the model never sees a session second. A wire or parse failure
+/// is logged where it happened (§00-principles: name the reason) and answers with no calls, leaving this
+/// batch to its own retry/skip rule.
+fn ask_captions(
+    window: &adw::ApplicationWindow,
+    context: &str,
+    clips: &[(u32, f64)],
+    runs: &[(f64, f64)],
+    attempt: u32,
+) -> Vec<crate::cut_captions::Call> {
+    let Some(tree) = narrate_session_tree() else {
+        log_line("!!! captions: no project folder to read words from -- nothing asked");
+        return Vec::new();
+    };
+    let (words, times) = hand_edit::session_words(&tree, &session_sources(window));
+    let offsets = crate::captions_ask::offsets_in_clips(runs, &words, &times);
+    let asked = crate::captions_ask::ask(&tree, context, clips, &offsets, attempt, &crate::cancel_leg::cancel_check_now());
+    if asked.failed {
+        log_line(&format!("!!! captions: {reason}", reason = asked.reason));
+    }
+    asked.calls
 }
 
 /// F3.9 S4/S5/S6 with a scripted reply: the same route the pass takes, minus the telephone. Feeding a batch

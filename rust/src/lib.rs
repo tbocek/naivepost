@@ -9,6 +9,7 @@ pub mod decision_audit;
 pub mod decision_homes;
 pub mod degraded;
 pub mod cut;
+pub mod captions_ask;
 pub mod cut_captions;
 pub mod cut_copy;
 pub mod cut_delete;
