@@ -131,31 +131,27 @@ fn run_round(app: &adw::Application) {
     // real window. `narrate-picture` is a bare DrawingArea (AGENT.md §07-narrate#1-screen), so a
     // Button lookup fails; calling the seam is how the other rounds drive the page and it runs the
     // real legs over the socket.
-    let _ = ui::narrate_page::press_preview_picture(&window);
+    // The seam's RETURN value is what this asserts on, not the status label: the label has two writers,
+    // the seam's own `say` and the preview's tick loop (`tick_loop` -> `stepped_said`), so under a
+    // loaded suite a tick repaints between the press and the read and whatever string is there is
+    // timing-dependent. The returned string is made synchronously from the press's own branch, so a
+    // refusal still fails here and no timer can rewrite it.
+    let play_said = ui::narrate_page::press_preview_picture(&window);
     settle();
-    // The play seam is synchronous: two settles are enough for the status label to show what the
-    // press answered. A long polling loop here only hides a slow or hanging leg instead of proving it.
-    for _ in 0..8 {
-        let s = status_text(&window);
-        if s.contains("synthesizing") || s.contains("playing") || s.contains("spoken") || s.contains("line") {
-            break;
-        }
-        settle();
-    }
-    let played = status_text(&window);
     assert!(
-        played.contains("synthesizing") || played.contains("playing") || played.contains("spoken") || played.contains("line"),
-        "the play seam started something over the socket: {played}"
+        play_said.contains("playing") || play_said.contains("synthesizing") || play_said.contains("line"),
+        "the play seam started something over the socket: {play_said}"
     );
     RAN_PLAY.store(true, Ordering::SeqCst);
 
-    // S6: the page's OWN stop seam, the same function the transport's ⏹ calls.
+    // S6: the page's OWN stop seam, the same function the transport's ⏹ calls. Same reason as above:
+    // the seam's answer is the observation point, pinned to the const that says whose ▶ it is now.
     let stopped_said = ui::narrate_page::press_preview_stop(&window);
     settle();
-    let stopped = status_text(&window);
-    assert!(
-        !stopped.contains("playing") && !stopped.contains("synthesizing"),
-        "the stop seam handed ▶ back to the step: {stopped} (said: {stopped_said})"
+    assert_eq!(
+        stopped_said,
+        naivepost::narrate_preview::HANDED_BACK,
+        "⏹ handed ▶ back to the step"
     );
     RAN_STOP.store(true, Ordering::SeqCst);
 

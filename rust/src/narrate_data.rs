@@ -246,6 +246,17 @@ pub fn served_reference(tree: &Tree) -> PathBuf {
     tree.voice_ref_wav()
 }
 
+/// §07-narrate#3-data: one stitched piece of the voice reference, levelled on its way to the base.
+/// Lives under `narrate/reference/` and is read by nothing after the concat.
+pub fn reference_part(tree: &Tree, index: usize) -> PathBuf {
+    tree.reference_dir().join(format!("ref_part_{index}.wav"))
+}
+
+/// The concat list naming those parts in playing order (§F4.6 S3's stitching pass).
+pub fn reference_list(tree: &Tree) -> PathBuf {
+    tree.reference_dir().join("ref_parts.txt")
+}
+
 /// §07-narrate#3-data: the unshifted reference, rebuilt from the recording or the picked voice.
 /// Kept separate from [`served_reference`] so changing the pitch costs a re-shift and not a
 /// re-cut (prototype `refBase`).

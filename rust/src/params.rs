@@ -1054,6 +1054,13 @@ pub fn narrate() -> Vec<Param> {
             loudnorm_spelled(narrate_data::REF_LOUDNESS),
             "narrate_data::REF_LOUDNESS",
         ),
+        // --- the automatic voice reference (§F4.6 S2) -------------------------------------------------
+        // These four are deliberately NOT catalogued. §7 spells none of them, and §07-narrate#6 keeps
+        // them out of `params::narrate()` on purpose (its own note: "the five automatic-reference
+        // values ... stay out of the catalogue"; `tests/narrate_details.rs` asserts exactly that, so a
+        // later round cannot add one by accident). They are still one value in one place, the constant
+        // whose rule uses them: `voice_ref::REF_MIN_TAKE_SECONDS`, `REF_WANT_SECONDS`, `REF_TAKE_MAX`
+        // and `REF_MIN_WORDS_PER_SECOND`, each carrying its `P.*` id here for the reader.
     ]
 }
 

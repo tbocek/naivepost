@@ -17,10 +17,12 @@ use gtk4 as gtk;
 use crate::cut::Seg;
 use crate::narrate_details;
 use crate::narrate_off;
+use crate::narrate_data;
 use crate::narrate_preview;
 use crate::narrate_preview_leg::{self, PreviewPage};
 use crate::narrate_screen::{self, Audition, Fit};
 use crate::narration::Entry;
+use crate::voice_ref;
 
 /// What the page shows. Published by the flows, read by every handler.
 #[derive(Debug, Clone, Default)]
@@ -953,6 +955,10 @@ pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) ->
         s.takes = narrate_screen::add_takes(&s.takes, selection);
         s.takes.clone()
     });
+    // S4: the reference was cut from the OLD take set, so it is wrong the moment this one lands.
+    if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Takes);
+    }
     refresh(window);
     say(
         window,
@@ -971,6 +977,10 @@ pub fn press_take_remove(window: &adw::ApplicationWindow, selection: (f64, f64))
         s.takes = narrate_screen::remove_takes(&s.takes, selection);
         s.takes.clone()
     });
+    // S4: same rule as adding — subtracting seconds changes what the base was cut from.
+    if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Takes);
+    }
     refresh(window);
     if takes.is_empty() {
         return say(window, narrate_details::no_takes_left());
@@ -1042,6 +1052,10 @@ pub fn press_pitch(window: &adw::ApplicationWindow, delta: f64) -> String {
         s.pitch = narrate_screen::clamp_pitch(s.pitch + delta);
         s.pitch
     });
+    // S4: a pitch change invalidates only the shifted copy; the base stays and re-shifts.
+    if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Pitch);
+    }
     let voice = read_state().voice;
     say(window, &narrate_details::voice_line(&voice, pitch))
 }
@@ -1074,6 +1088,56 @@ pub fn set_narration_off(window: &adw::ApplicationWindow, off: bool) -> String {
     say(window, &said)
 }
 
+/// F4.6 S1: the voice picker's own seam — one choice, resolved against what Prepare tagged and what
+/// the voices folder holds, then persisted and reported. A refusal is printed verbatim and changes
+/// nothing at all: a half-switched voice would leave the page showing one voice while the next line is
+/// cloned from another.
+pub fn press_voice(window: &adw::ApplicationWindow, id: &str) -> String {
+    let s = read_state();
+    // The folder named in the refusal is the one the app actually reads (§7: `AUDIOCPP_VOICES`, else
+    // the legacy models root, else Flatpak/dev default), not a string this page invented.
+    let dir = voices_dir_label();
+    match voice_ref::pick_voice(id, s.narrators, &s.voice_files, &dir) {
+        voice_ref::VoiceChoice::Refused(why) => say(window, &why),
+        voice_ref::VoiceChoice::Silent(said) => {
+            // Captions speak nothing, so there is no reference to cut or keep: drop it the way a voice
+            // change drops it, and remember the choice.
+            if let Some(tree) = crate::ui::window::narrate_session_tree() {
+                let _ = narrate_data::write_voice(&tree, id);
+                voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Voice);
+            }
+            mutate(|state| state.voice = id.to_string());
+            refresh(window);
+            say(window, &said)
+        }
+        voice_ref::VoiceChoice::Chosen { id, said } => {
+            if let Some(tree) = crate::ui::window::narrate_session_tree() {
+                if let Err(why) = narrate_data::write_voice(&tree, &id) {
+                    crate::ui::window::log_line(&why);
+                    return say(window, voice_ref::INSTALL_FAILED);
+                }
+                voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Voice);
+            }
+            mutate(|state| state.voice = id.clone());
+            refresh(window);
+            say(window, &said)
+        }
+    }
+}
+
+/// The voices folder as it should be spelled in S1's "no longer in DIR" sentence. Read per press so a
+/// Settings change shows up in the next refusal rather than naming where the last one looked.
+fn voices_dir_label() -> String {
+    let shown = crate::settings::from_environment()
+        .and_then(|paths| crate::settings::read(&paths).ok())
+        .map(|conf| conf.voices.clone())
+        .unwrap_or_default();
+    if !shown.is_empty() {
+        return shown;
+    }
+    crate::settings::DEFAULT_VOICES.to_string()
+}
+
 /// Attach every handler. Called from `build_window` after `set_content`, like every other control on
 /// every page: a click handler attached before the widget is inside the realized tree never fires.
 pub fn wire(window: &adw::ApplicationWindow) {
@@ -1100,6 +1164,25 @@ pub fn wire(window: &adw::ApplicationWindow) {
         let w = win.clone();
         button.connect_clicked(move |_| {
             press_narrate_add_line(&w);
+        });
+    }
+    if let Some(picker) = widget_in(&win, "voice-picker")
+        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+    {
+        let w = win.clone();
+        // The picker answers by row, not by id: resolve the row through the same option list the page
+        // drew, so a wire cannot pick an id that was never offered.
+        picker.connect_selected_notify(move |picker| {
+            let s = read_state();
+            let files: Vec<&str> = s.voice_files.iter().map(String::as_str).collect();
+            let options = narrate_screen::voice_options(s.narrators, &files);
+            let row = picker.selected() as usize;
+            if let Some(option) = options.get(row) {
+                let id = option.id.clone();
+                if id != read_state().voice {
+                    press_voice(&w, &id);
+                }
+            }
         });
     }
     if let Some(button) = crate::ui::line_step_button(&win, "take-play") {

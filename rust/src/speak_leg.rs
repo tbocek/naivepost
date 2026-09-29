@@ -28,6 +28,7 @@ use crate::requests::Request as TimedRow;
 use crate::server_leg::{self, Dial};
 use crate::services::{self, Endpoint, Kind, Server};
 use crate::settings::{self, Conf};
+use crate::voice_ref;
 
 /// The step column every row this module lands carries. `speak` is what a person reads beside the
 /// job name in `requests.tsv`; the job stays `narrate` because that is the run they started.
@@ -276,7 +277,26 @@ pub fn speak(
     // S1 first, before ANY dial: with no reference there is nothing to clone, and asking a live
     // server about its health would put two requests on the wire for a line that cannot be spoken.
     if let Some(problem) = narrate_tts::reference_problem(tree) {
-        return Outcome::Refused(problem);
+        // F4.6 S1: a voice pick "re-cuts the reference on the next line spoken", so a missing
+        // reference is BUILT here before it is refused — from the recording the project tagged, at the
+        // pitch the page holds. Only when that build cannot be done is the F4.4 refusal said, and its
+        // wording is the one F4.4 pins, unchanged.
+        match build_missing_reference(tree) {
+            Ok(built) => {
+                for line in &built.said {
+                    crate::ui::window::log_line(line);
+                }
+                crate::ui::window::log_line(&format!(
+                    "voice reference rebuilt: {} and {}",
+                    built.base.display(),
+                    built.served.display()
+                ));
+            }
+            Err(why) => {
+                crate::ui::window::log_line(&why);
+                return Outcome::Refused(problem);
+            }
+        }
     }
     let conf = current_conf();
     let model = services::tts_model(&conf).to_string();
@@ -300,6 +320,104 @@ pub fn speak(
         // shape while still recording into this session and dialling this address.
         move |body| speech_call(tree, &dial, body),
     )
+}
+
+/// F4.6's door into F4.4: build the reference the session is missing, from the recording the project
+/// tagged as the narrator's. Every part of the decision is voice_ref's (S2's floors and cap, S3's
+/// level/shift); this resolves only what this leg already has to know — the source, the diarized turns
+/// and the word counts that go with them — and which ffmpeg to run.
+fn build_missing_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
+    let source = narrator_source(tree).ok_or_else(|| voice_ref::nothing_tagged(1))?;
+    let lane = source_lane(&source);
+    let turns = speaker_turns(tree, &lane);
+    let words = transcript_words(tree, &lane);
+    let conf = current_conf();
+    let ffmpeg = ffmpeg_program(&conf);
+    voice_ref::recut_for_voice(tree, &ffmpeg, &source, &turns, |from, until| {
+        words_in(&words, from, until)
+    })
+}
+
+/// The recording the narration is cut from: the project's narrator 1. Only slot 1 is ever cloned from
+/// automatically (§1's "the first recording carries voice 1"); a project that tagged nothing cannot
+/// have a reference built and says so.
+fn narrator_source(tree: &Tree) -> Option<String> {
+    let project = crate::project::load(tree.dir()).ok()?;
+    project
+        .sources
+        .iter()
+        .find(|source| source.narrator == 1)
+        .map(|source| source.path.clone())
+}
+
+/// Prepare keys everything per source by the file's own stem, not by its full path; that is what
+/// `prepare/inputs/<lane>/` is named after.
+fn source_lane(source: &str) -> String {
+    std::path::Path::new(source)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| source.to_string())
+}
+
+/// The diarized turns of one source, in seconds. `turns.json` stores samples at the 16 kHz mono file
+/// Prepare transcribed from, and 16 000 is that file's rate by §6, so samples over 16 000 is the only
+/// conversion needed. No file is no turns, which voice_ref answers as S2's "run Prepare, or pick the
+/// seconds by hand under the video".
+fn speaker_turns(tree: &Tree, lane: &str) -> Vec<(f64, f64, u32)> {
+    const PREPARED_RATE: f64 = 16_000.0;
+    let Ok(turns) = crate::requests::read_turns(tree, lane) else {
+        return Vec::new();
+    };
+    turns
+        .iter()
+        .map(|turn| {
+            (
+                turn.start_sample as f64 / PREPARED_RATE,
+                turn.end_sample as f64 / PREPARED_RATE,
+                turn.speaker_id,
+            )
+        })
+        .collect()
+}
+
+/// The transcript's own lines, seconds and words, for the words-per-second floor. Prefers the fixed
+/// file (what the fix pass settled on) and falls back to the raw transcript; neither means zero words,
+/// which sends S2 to "no clean solo stretch found" rather than inventing a density.
+fn transcript_words(tree: &Tree, lane: &str) -> Vec<(f64, f64, usize)> {
+    for path in [
+        tree.transcript_fixed_tsv(lane),
+        tree.transcript_tsv(lane),
+        tree.commentary_fixed_tsv(lane),
+    ] {
+        if let Ok(lines) = crate::textfmt::read_lines(&path) {
+            return lines
+                .iter()
+                .map(|line| (line.start, line.end, line.text.split_whitespace().count()))
+                .collect();
+        }
+    }
+    Vec::new()
+}
+
+/// How many transcript words fall inside a candidate window — the number S2's
+/// P.eng.refMinWordsPerSecond is checked against.
+fn words_in(lines: &[(f64, f64, usize)], from: f64, until: f64) -> usize {
+    lines
+        .iter()
+        .filter(|(start, end, _)| *start >= from && *end <= until)
+        .map(|(_, _, count)| *count)
+        .sum()
+}
+
+/// The ffmpeg this call runs: the Settings box, else the bare program name so PATH answers. Clearing
+/// `FFMPEG` is a real answer the other legs read the same way, and a missing program is named by
+/// `voice_ref`'s own error rather than guessed around here.
+fn ffmpeg_program(conf: &settings::Conf) -> String {
+    if conf.ffmpeg.trim().is_empty() {
+        "ffmpeg".to_string()
+    } else {
+        conf.ffmpeg.clone()
+    }
 }
 
 thread_local! {

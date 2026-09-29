@@ -147,6 +147,7 @@ pub mod llm_liveness;
 pub mod llm_retry;
 pub mod web_tools;
 pub mod tools;
+pub mod voice_ref;
 pub mod word_list;
 pub mod wave;
 pub mod ui;

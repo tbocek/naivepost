@@ -311,6 +311,12 @@ impl Tree {
         self.narrate_dir().join("voice_ref_base.wav")
     }
 
+    /// The folder the reference's own working files live in, under `narrate/`: the levelled pieces and
+    /// the concat list that stitches them.
+    pub fn reference_dir(&self) -> PathBuf {
+        self.narrate_dir().join("reference")
+    }
+
     pub fn voice_ref_wav(&self) -> PathBuf {
         self.narrate_dir().join("voice_ref.wav")
     }

@@ -21,7 +21,7 @@ pub use settings::badge;
 pub use narrate_page::{
     press_back, press_forward, press_line_add_below, press_line_remove, press_line_reroll,
     press_line_speak, press_narrate_add_line, press_narrate_play, press_pitch, press_sample_play, press_sample_reroll,
-    press_sample_stop, press_take_add, press_take_remove, read_state, refresh,
+    press_sample_stop, press_take_add, press_take_remove, press_voice, read_state, refresh,
     set_narration_off, set_state, NarrateState,
 };
 pub use settings::dialog_log;
