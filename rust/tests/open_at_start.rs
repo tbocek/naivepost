@@ -12,16 +12,9 @@ use std::path::{Path, PathBuf};
 use naivepost::project::{self, Project};
 use naivepost::settings::{self, Conf};
 use naivepost::startup::{self, Opened};
-
-/// A directory under the temp dir that no other test run shares.
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-open-at-start-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{temp_dir};
 
 /// A project folder on disk — what S2's "still on disk" and S3's "exists" both mean: the folder is
 /// there, since a project is a folder holding `naivepost.json`.

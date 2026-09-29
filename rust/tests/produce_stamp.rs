@@ -14,6 +14,9 @@ use naivepost::narration::Entry;
 use naivepost::produce_render;
 use naivepost::produce_stamp as stamp;
 use naivepost::project::{self, Codec, Container, Crop, Preset, Produce, Publish, Subtitles};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::entry_span_default as entry;
 
 const ITEM: &str = "F5.3";
 
@@ -68,13 +71,6 @@ fn seg(s: f64, e: f64) -> Seg {
     clip
 }
 
-fn entry(s: f64, e: f64, text: &str) -> Entry {
-    let mut line = Entry::default();
-    line.s = s;
-    line.e = e;
-    line.text = text.to_string();
-    line
-}
 
 fn source(path: &str, footage: bool) -> project::Source {
     let mut row = project::Source::default();

@@ -10,15 +10,9 @@ use std::path::{Path, PathBuf};
 use naivepost::project::{self, Crop, Publish, TextMark, TitleBox};
 use naivepost::publish;
 use naivepost::layout::Tree;
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-publish-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{temp_dir};
 
 /// A project folder inside a throwaway root, holding the given file text at wherever
 /// this project's publish.json lives (or no file).

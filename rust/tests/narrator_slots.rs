@@ -8,19 +8,14 @@
 //! then has none to give · S6 a slot past the bound is stripped on load.
 
 use naivepost::narrate_rules as rules;
-use naivepost::project::{Project, Source};
+use naivepost::project::Project;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::source_row as row;
 use naivepost::params::{self, Family};
 use naivepost::run::{self, NARRATOR_SLOTS};
 use naivepost::sources;
 
-fn row(path: &str, footage: bool, narrator: u32) -> Source {
-    Source {
-        path: path.into(),
-        footage,
-        narrator,
-        ..Default::default()
-    }
-}
 
 /// One untagged row per slot, plus one extra — the case with no room left.
 fn untagged(count: usize) -> Project {

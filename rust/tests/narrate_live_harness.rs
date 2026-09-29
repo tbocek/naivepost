@@ -21,6 +21,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use naivepost::cut::{Cut, Seg};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::seg;
+
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
 use naivepost::settings::{self, Conf, Paths};
@@ -264,11 +268,6 @@ pub fn settings_folder() -> Paths {
 /// How many fixtures this process has built. Each re-points the process-wide environment, so counting
 /// keeps every scenario's folder separate — and guards the one-per-binary rule.
 static FIXTURES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-/// The clip segments this scenario's cut holds.
-pub fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
-}
 
 /// Read a file the scenario wrote; empty-string-free assertions read this (panics with the path).
 pub fn read(path: &PathBuf) -> String {

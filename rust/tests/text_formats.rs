@@ -5,31 +5,14 @@
 //! This item's text cites one parameter, P.policy.minTakeSeconds, which belongs to the
 //! short-take silence of part 2; no `tool:*` is cited.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use naivepost::layout::Tree;
 use naivepost::textfmt::{self, FrameEvent, Line, Retake, SessionLine};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{project_tree as project, read_file_text as read};
 
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-textfmt-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
 
-/// A project folder inside a throwaway root.
-fn project(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_dir(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap()
-}
 
 /// Plant a file's text at a path, making its directory.
 fn plant(path: &Path, text: &str) {

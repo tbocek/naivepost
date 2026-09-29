@@ -11,7 +11,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::cut::{Cut, Seg};
 use naivepost::layout::Tree;
 use naivepost::narration::Entry;
@@ -22,7 +21,7 @@ use naivepost::ui;
 
 #[allow(dead_code)]
 mod common;
-use common::{hold_last_window, release_last_window, settle, status_text, widget_in};
+use common::{hold_last_window, release_last_window, settle, status_text, narrate_button as button};
 
 #[path = "speak_tts_wire_harness.rs"]
 mod harness;
@@ -30,11 +29,6 @@ use harness::{wav_bytes, FakeAudio, Script};
 
 static RAN_SPEAK_WIRE: AtomicBool = AtomicBool::new(false);
 
-fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
-    widget_in(window, name)
-        .and_then(|w| w.downcast::<gtk::Button>().ok())
-        .unwrap_or_else(|| panic!("the Narrate page carries {name}"))
-}
 
 /// The session folder the page resolves its take into: `startup::session_dir(current_dir())`.
 fn session_tree() -> Tree {

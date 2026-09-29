@@ -8,16 +8,10 @@ use std::collections::BTreeMap;
 use naivepost::cut::Seg;
 use naivepost::cut_select;
 use naivepost::cut_trim as trim;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::clip;
 
-/// A footage scene on camera 0.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg {
-        s,
-        e,
-        cam: 0,
-        ..Default::default()
-    }
-}
 
 /// The fixture S1's bounds are read against: previous clip ends at 9.5, held runs 10–30, next starts at 40.
 /// The recording itself runs 0–100.

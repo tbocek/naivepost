@@ -5,7 +5,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use naivepost::checks::TestLog;
@@ -14,20 +13,9 @@ use naivepost::{checks, probes, services};
 use naivepost::project::{self, Project};
 use naivepost::save_as;
 use naivepost::settings::{self, Conf, Paths};
-
-static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-/// A directory under the temp dir that no other test run shares.
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "np-shell8-{tag}-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::SeqCst)
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_tagged as temp_dir;
 
 /// Config and data folders under one temp root.
 fn paths(tag: &str) -> Paths {

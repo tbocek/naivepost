@@ -2,31 +2,14 @@
 //! the eighteen timed columns of the request log, the four JSON documents a recording leaves
 //! behind, the short-take silence that asks no server, `meta.env`, `.frames` and `scenes.tsv`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use naivepost::layout::Tree;
 use naivepost::requests::{self, Outcome, Request, SceneChange, Service, WordsDoc, Word};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{project_tree as project, read_file_text as read};
 
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-requests-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
 
-/// A project folder inside a throwaway root.
-fn project(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_dir(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap()
-}
 
 fn plant(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

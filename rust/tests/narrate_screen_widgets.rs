@@ -5,16 +5,14 @@
 //! [`naivepost::narrate_screen`], so all of it is checked here without a window. The widgets are the page's
 //! business; they hold no rule (spec/00-principles.md §5).
 
-use naivepost::cut::Seg;
 use naivepost::narrate_screen::{self as page, Audition, BoxRole, Fit, RowStatus, TakePress};
 use naivepost::narration::{self, Entry};
 use naivepost::params;
 use naivepost::tools;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{seg as clip};
 
-/// A kept stretch of footage: what §1's Inputs row counts as a clip.
-fn clip(start: f64, end: f64) -> Seg {
-    Seg { s: start, e: end, ..Default::default() }
-}
 
 /// A line on the clip `s..e`, starting `at` seconds into it.
 fn line(s: f64, e: f64, at: f64, words: &str) -> Entry {

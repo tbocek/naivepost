@@ -13,6 +13,9 @@ use naivepost::layout::Tree;
 use naivepost::requests::{self, Outcome, Request, Service};
 use naivepost::services as svc;
 use naivepost::settings::{self, Conf, Paths};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_tagged as temp_dir;
 
 /// A settings tree with nothing in it: the state a fresh install is in, where every box is empty.
 fn paths(root: &Path) -> Paths {
@@ -659,15 +662,4 @@ fn sec_02_services_1_the_four_servers_s14_model_choice_survives_the_settings_fil
     let conf = settings::read(&paths).expect("read back again");
     assert_eq!(svc::asr_model(&conf), "nemotron-asr");
     assert_eq!(svc::pick_aligner(&conf.align_model, &models).as_deref(), Some("qwen3-aligner"));
-}
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "naivepost-services-{tag}-{}-{}",
-        std::process::id(),
-        tag
-    ));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("create temp dir");
-    root
 }

@@ -11,8 +11,16 @@ pub mod produce_press_wiring;
 pub mod produce_words;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
+/// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are
+/// re-exported below under the `ui::` names the tests and the shell already call.
+mod cut_cameras;
 /// F3.5 ▨ SVG drawing by hand: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
+mod cut_speed_hand;
+mod cut_volume_hand;
+mod cut_label_hand;
+mod cut_text_hand;
+mod cut_folds;
 mod cut_svg;
 /// F0.7 S5 — the policy form: every field with its value, source and reason.
 mod narrate_lines;
@@ -149,7 +157,6 @@ pub use window::press_paste;
 pub use window::press_lane;
 pub use window::review_cut_segs_count;
 // F2.7: the three verb buttons, the ⌦ key and the two "what is in hand" seams.
-pub use window::delete_key_controller;
 pub use window::find_status;
 pub use window::held_clip;
 pub use window::held_edge;
@@ -158,34 +165,18 @@ pub use window::set_held_edge;
 pub use window::apply_pick;
 pub use window::watched_row;
 pub use window::set_watched_row;
-// F2.10: the camera/hearing seams — the row click, the lens badge, the speaker badge, the gutter switch,
-// and ▶'s hand-back of the preview.
-pub use window::camera_watch;
-pub use window::hand_preview_back;
-pub use window::press_gutter_switch;
-pub use window::press_lens_row;
-pub use window::press_speaker_badge;
-pub use window::press_watch_row;
+pub use cut_cameras::{
+    camera_rows_box, camera_watch, hand_preview_back, press_gutter_switch, press_lens_row,
+    press_speaker_badge, press_watch_row, refresh_camera_rows, toggle_button,
+};
 // F2.10: the row list itself, rebuilt from the live cut by every refresh above.
-pub use window::refresh_camera_rows;
-// F2.10: the named row box and its per-row controls, so a widget test can find them by name.
-pub use window::camera_rows_box;
 // F2.11: the fold badges and the two ✕, drawn as named widgets and forwarded by these seams.
-pub use window::fold_badges_box;
-pub use window::fold_gaps;
-pub use window::folded_gap_at;
-pub use window::press_fold_all;
-pub use window::press_fold_gap;
-pub use window::press_lane_cross;
-pub use window::press_row_cross;
-pub use window::refresh_fold_badges;
-// F2.11: what the session filmed, which is NOT the kept segments — a dropped stretch only exists inside
-// a run longer than the clips kept in it, so the fold half reads this list (see `page_recordings`).
-pub use window::page_recordings;
-pub use window::set_session_recordings;
-// F2.11: the whole cut (folds included) as the page holds it, for a test that fired a real widget.
-pub use window::review_fold_rows;
-pub use window::toggle_button;
+pub use cut_folds::{
+    fold_badges_box, fold_gaps, folded_gap_at, page_recordings,
+    press_fold_all, press_fold_gap, press_lane_cross, press_row_cross, refresh_fold_badges,
+    review_fold_rows, set_session_recordings,
+};
+pub use window::delete_key_controller;
 pub use window::line_click_gesture;
 pub use window::held_effect;
 // F2.12: the insert button's wire, the form's seams and its read-back for tests.
@@ -198,26 +189,20 @@ pub use window::press_insert_apply;
 pub use window::note_place;
 pub use window::refresh_insert_button;
 pub use window::press_effect_item;
-pub use window::press_aspect;
 pub use window::press_zoom_item;
-pub use window::press_speed_apply;
-pub use window::press_speed_cancel;
-pub use window::press_speed_esc;
-pub use window::press_speed_item;
-pub use window::speed_form_open;
+pub use cut_speed_hand::{
+    band_esc_controller, press_speed_apply, press_speed_cancel, press_speed_esc, press_speed_item,
+    speed_custom_rate_visible, speed_form_open,
+};
 /// F3.6 Volume by hand — the form's doors, so a test can press them the way the dropdown row does.
-pub use window::paused_preview_gain;
-pub use window::press_volume_apply;
-pub use window::press_volume_cancel;
-pub use window::press_volume_esc;
-pub use window::press_volume_item;
-pub use window::volume_form_open;
+pub use cut_volume_hand::{
+    paused_preview_gain, press_volume_apply, press_volume_cancel, press_volume_esc,
+    press_volume_item, volume_form_open,
+};
 /// F3.7 Label by hand — the form's doors, so a test can press them the way the dropdown row does.
-pub use window::label_form_open;
-pub use window::press_label_apply;
-pub use window::press_label_cancel;
-pub use window::press_label_esc;
-pub use window::press_label_item;
+pub use cut_label_hand::{
+    label_form_open, press_label_apply, press_label_cancel, press_label_esc, press_label_item,
+};
 // F3.9 Captions proposed by the model: the pass's seams, so a test can fire ✐ Captions by name and read the
 // placed captions through the same cut state the logic tests check.
 pub use window::run_captions_pass;
@@ -247,17 +232,12 @@ pub use window::pull_half_typed;
 pub use window::refuse_narrate_run;
 pub use window::set_decorations_pass;
 pub use window::CaptionBatch;
-pub use window::speed_custom_rate_visible;
-pub use window::drag_text_edge;
-pub use window::nudge_text_box;
-pub use window::press_text_apply;
-pub use window::press_text_cancel;
-pub use window::press_text_esc;
-pub use window::press_text_item;
-pub use window::text_armed;
-pub use window::text_drag_ended;
-pub use window::text_drag_ended_with_source;
-pub use window::text_form_open;
+/// F3.4 Text (caption) by hand, and F3.2's aspect door — the same seams, so a test presses them by name.
+pub use cut_text_hand::{
+    drag_text_edge, nudge_text_box, press_aspect, press_text_apply, press_text_cancel,
+    press_text_esc, press_text_item, text_armed, text_drag_ended, text_drag_ended_with_source,
+    text_form_open,
+};
 pub use window::note_zoom_place;
 pub use window::zoom_armed;
 pub use window::PREVIEW_PANEL_H;
@@ -330,4 +310,3 @@ pub use window::press_effect_bar;
 pub use window::press_edit_effect;
 pub use window::remove_effect_at;
 pub use window::remove_held_effect;
-pub use window::band_esc_controller;

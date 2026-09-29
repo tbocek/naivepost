@@ -10,14 +10,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{self, Seg};
+use naivepost::cut;
 use naivepost::cut_trim as trim;
 use naivepost::shell::Page;
 use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, settle, status_text};
+use common::{clip, fixture_dir, settle, status_text};
 
 static RAN_MOVE: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
@@ -28,15 +28,6 @@ static RAN_SEL_SLIDE: AtomicBool = AtomicBool::new(false);
 static RAN_RIGHT_TRIM: AtomicBool = AtomicBool::new(false);
 static RAN_UNMOVED: AtomicBool = AtomicBool::new(false);
 
-/// A footage scene on camera 0.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg {
-        s,
-        e,
-        cam: 0,
-        ..Default::default()
-    }
-}
 
 /// A window on the Cut page with a three-scene cut seeded, so a slide has neighbours to be bounded by.
 fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {

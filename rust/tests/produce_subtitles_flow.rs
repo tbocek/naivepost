@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 use naivepost::cut::{Cut, Lane, Seg};
 use naivepost::layout::Tree;
 use naivepost::narration::Entry;
-use naivepost::params;
 use naivepost::produce_exec as exec;
 use naivepost::produce_flow as flow;
 use naivepost::produce_render as render;
@@ -39,31 +38,21 @@ fn tree_in(tag: &str) -> (PathBuf, Tree) {
     (root, Tree::new(&dir).unwrap())
 }
 
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
 
 /// An insert segment: `ins` names an asset, which is what makes the clip not-footage downstream.
 fn insert_seg(s: f64, e: f64, asset: &str) -> Seg {
     Seg { s, e, cam: 0, ins: asset.to_string(), ..Default::default() }
 }
 
-fn entry(s: f64, e: f64, text: &str) -> Entry {
-    Entry { s, e, text: text.to_string(), ..Default::default() }
-}
 
 fn cut_of(segs: Vec<Seg>) -> Cut {
     Cut { segs, aspect: "16:9".into(), ..Default::default() }
 }
 
-fn project() -> Project {
-    Project {
-        sources: vec![Source { path: "/media/take.mp4".into(), footage: true, ..Default::default() }],
-        ..Default::default()
-    }
-}
 
-use naivepost::project::Project;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{clip as seg, produce_project as project, entry_span as entry, produce_row as row};
 
 /// The words a footage clip heard, at a rhythm that keeps them in one cue per breath pair.
 fn words(texts: &[&str], start: f64) -> Vec<subs::Word> {
@@ -266,14 +255,6 @@ fn f5_4_s1_subtitlebreakseconds_row_is_what_splits_a_cue() {
     assert_eq!(sheet(&plan).len(), 2, "the break survives the wiring: {:?}", sheet(&plan));
 }
 
-/// §10 rows, read from the catalogue rather than restated.
-fn row(id: &str) -> String {
-    params::produce()
-        .into_iter()
-        .find(|param| param.id == id)
-        .unwrap_or_else(|| panic!("{} is catalogued in §10's Produce rows", id))
-        .spelled
-}
 
 // ---- S2: the produced clock, across the whole track ------------------------------
 

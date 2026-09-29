@@ -12,17 +12,9 @@ use naivepost::layout::Tree;
 use naivepost::requests::{self, AlignedDoc, Turn, Word, WordsDoc};
 use naivepost::textfmt;
 use naivepost::transcribe::{self, Align};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = PathBuf::from(format!(
-        "/tmp/naivepost-transcribe-{}-{}",
-        tag,
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 /// A project folder with the one source this flow reads, so "already on disk" is a real file rather
 /// than a path that merely looks plausible.

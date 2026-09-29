@@ -18,13 +18,10 @@ use naivepost::narrate_pass;
 use naivepost::render_fx;
 use naivepost::tools;
 
-/// Floats from a rule, never `assert_eq!`: 0.4 is not exactly representable, so a bound built by addition is a
-/// hair off the literal and must be compared with slack.
-const EPS: f64 = 1e-9;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::assert_close;
 
-fn assert_close(asked: &str, got: f64, want: f64) {
-    assert!((got - want).abs() < EPS, "{asked}: got {got}, want {want}");
-}
 
 /// A placed label: the name lives in `text`, the same field a caption's words use (§1's note on the shared key).
 fn marked(name: &str, t: f64, dur: f64) -> Fx {

@@ -5,27 +5,12 @@
 //! build and a byte in the wrong place is a lane drawn from the wrong recording.
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 
-use naivepost::layout::Tree;
 use naivepost::wave::{self, Wave};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::project_tree as project;
 
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-wave-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
-
-/// A project folder inside a throwaway root.
-fn project(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_dir(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
 
 const SIZE: i64 = 4_096_000;
 const MTIME: i64 = 1_758_030_330;

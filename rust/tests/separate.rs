@@ -11,17 +11,9 @@ use std::path::{Path, PathBuf};
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
 use naivepost::separate::{self, CHUNK_MAX_SECONDS};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = PathBuf::from(format!(
-        "/tmp/naivepost-separate-{}-{}",
-        tag,
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 /// A project folder holding the two recordings a session might split: one video with a timestamp in
 /// its name (the shape S5 cares about) and one plain audio file.

@@ -33,7 +33,7 @@ fn session_tree() -> naivepost::layout::Tree {
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, widget_in};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, widget_in, narrate_button as button};
 
 static RAN_TICK: AtomicBool = AtomicBool::new(false);
 static RAN_TRANSPORT: AtomicBool = AtomicBool::new(false);
@@ -53,11 +53,6 @@ static RAN_OFF_WIRE: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
-fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
-    widget_in(window, name)
-        .and_then(|w| w.downcast::<gtk::Button>().ok())
-        .unwrap_or_else(|| panic!("the Narrate page carries {name}"))
-}
 
 fn label_text(window: &adw::ApplicationWindow, name: &str) -> String {
     widget_in(window, name)

@@ -15,13 +15,9 @@ use naivepost::narration::{self, Entry};
 use naivepost::project::{Project, Publish, Source};
 use naivepost::publish;
 use naivepost::shell::{self, Move, Outcome, Page, Pending, Refresh, Shell, NARRATION_AUTOSAVE};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "naivepost-switch-tab-{}-{tag}",
-        std::process::id()
-    ))
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_noclean as temp_dir;
 
 /// A project folder plus the tree inside it, created so the two refreshes that read disk have
 /// something to read. Same fixture shape as tests/layout.rs.

@@ -29,7 +29,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, entry, widget};
+use common::{assert_close, entry, settle, status_text, widget, label_text, cut_page_unpainted as cut_page};
 
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
 static RAN_LINE: AtomicBool = AtomicBool::new(false);
@@ -41,10 +41,6 @@ static RAN_PAUSED: AtomicBool = AtomicBool::new(false);
 
 const EPS: f64 = 1e-9;
 
-fn assert_close(asked: &str, got: f64, want: f64) {
-    assert!((got - want).abs() < EPS, "{asked}: got {got}, want {want}");
-}
-
 /// Let the main context run what the widget emissions queued.
 
 fn dropdown(window: &adw::ApplicationWindow, name: &str) -> gtk::DropDown {
@@ -53,13 +49,6 @@ fn dropdown(window: &adw::ApplicationWindow, name: &str) -> gtk::DropDown {
         .unwrap_or_else(|_| panic!("`{name}` is a DropDown"))
 }
 
-fn label_text(window: &adw::ApplicationWindow, name: &str) -> String {
-    widget(window, name)
-        .downcast::<gtk::Label>()
-        .unwrap_or_else(|_| panic!("`{name}` is a Label"))
-        .text()
-        .to_string()
-}
 
 fn tooltip(window: &adw::ApplicationWindow, name: &str) -> String {
     widget(window, name)
@@ -101,25 +90,6 @@ fn form_visible(window: &adw::ApplicationWindow) -> bool {
     form_holder(window).get_visible()
 }
 
-/// Build a window sitting on the Cut tab over `seeded`, dropping the previous check's window first.
-fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
-    release_last_window();
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    assert!(
-        model.sources.iter().any(|source| source.footage),
-        "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
-    );
-    let window = ui::build_window(app, &model, "Prepare");
-    hold_last_window(window.clone());
-    window.present();
-    ui::tab_button(&window, Page::Cut)
-        .expect("the shell has a Cut tab")
-        .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
-    settle();
-    window
-}
 
 /// Fire a named button the way a press does: the `clicked` signal, then let the queued handlers run.
 fn click(window: &adw::ApplicationWindow, name: &str) {

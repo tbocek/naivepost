@@ -18,6 +18,9 @@ use naivepost::narration::{self, Entry, Narration, Silent};
 use naivepost::params;
 use naivepost::run::{self, Transport};
 use naivepost::shell::{self, Page};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::seg;
 
 fn tree(tag: &str) -> (PathBuf, naivepost::layout::Tree) {
     let root = std::env::temp_dir().join(format!(
@@ -30,13 +33,6 @@ fn tree(tag: &str) -> (PathBuf, naivepost::layout::Tree) {
     (root, naivepost::layout::Tree::new(&dir).unwrap())
 }
 
-fn seg(s: f64, e: f64) -> Seg {
-    Seg {
-        s,
-        e,
-        ..Default::default()
-    }
-}
 
 fn line(s: f64, e: f64, at: f64, text: &str) -> Entry {
     Entry {

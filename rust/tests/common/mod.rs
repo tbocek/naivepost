@@ -36,6 +36,49 @@ pub fn all_rows() -> Vec<params::Param> {
         .collect()
 }
 
+/// A directory under the temp dir that no other test run shares; `tag` says which test made it.
+/// The copy every JSON/format test file carried, with the per-file prefix replaced by one, so two
+/// runs never read each other's leftovers and a leftover is attributable to one suite.
+pub fn temp_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "naivepost-test-{}-{tag}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
+/// A `temp_dir` that also EXISTS on return, and is re-exported under the name a caller's tests already
+/// use it by (`use common::temp_dir_created as temp_dir;`).
+pub fn temp_dir_created(tag: &str) -> std::path::PathBuf {
+    let dir = temp_dir(tag);
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    dir
+}
+
+/// [`temp_dir`] WITHOUT the `remove_dir_all` first — for the rare test that reads a folder another
+/// check just left behind and expects to find it.
+pub fn temp_dir_noclean(tag: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "naivepost-test-{}-{tag}",
+        std::process::id()
+    ))
+}
+
+/// [`temp_dir`] with `tag` FIRST in the name and a per-call counter after it, so a test that asks for
+/// the same tag twice still gets a distinct folder, and the folder EXISTS on return.
+pub fn temp_dir_tagged(tag: &str) -> std::path::PathBuf {
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "naivepost-{tag}-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    dir
+}
+
 /// The project every test loads: `fixtures/demo.naivepost`, resolved from the crate root. `env!` is
 /// expanded where this module is compiled, which is the same `rust/` directory for every test binary,
 /// so moving the 42 copies here leaves each file's path exactly where it was.
@@ -168,4 +211,171 @@ pub fn anywhere(id: &str) -> params::Param {
     let found = all_rows().into_iter().filter(|row| row.id == id).collect::<Vec<_>>();
     assert!(!found.is_empty(), "{id} catalogued nowhere");
     found.into_iter().next().unwrap()
+}
+
+/// Floats from arithmetic, never `assert_eq!` on a difference. One copy for the seven files whose local
+/// version read a file-local `const EPS: f64 = 1e-9`; the tolerance is the constant below now.
+pub const EPS: f64 = 1e-9;
+
+/// [`EPS`] spelled out where a test wants the bound in its own words.
+pub fn assert_close(asked: &str, got: f64, want: f64) {
+    assert!((got - want).abs() < EPS, "{asked}: got {got}, want {want}");
+}
+
+/// The same check with the tolerance in the message, which is how the floor tests print it.
+pub fn assert_close_nano(what: &str, got: f64, want: f64) {
+    assert!((got - want).abs() < 1e-9, "{what}: got {got}, want {want} (±1e-9)");
+}
+
+/// A Cut-page step button by name, panicking with the page's own words when it was never drawn.
+pub fn cut_button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
+    ui::line_step_button(window, name).unwrap_or_else(|| panic!("the Cut page drew no {name}"))
+}
+
+/// [`cut_button`] where the file's panic says "carries" rather than "drew no".
+pub fn cut_button_carries(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
+    ui::line_step_button(window, name).unwrap_or_else(|| panic!("the Cut page carries {name}"))
+}
+
+/// A Narrate-page widget narrowed to a button, panicking with the page's own words.
+pub fn narrate_button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
+    widget_in(window, name)
+        .and_then(|w| w.downcast::<gtk::Button>().ok())
+        .unwrap_or_else(|| panic!("the Narrate page carries {name}"))
+}
+
+/// A project folder inside a throwaway root.
+pub fn project_tree(tag: &str) -> (std::path::PathBuf, naivepost::layout::Tree) {
+    let root = temp_dir(tag);
+    let dir = root.join("demo.naivepost");
+    std::fs::create_dir_all(&dir).unwrap();
+    (root, naivepost::layout::Tree::new(&dir).unwrap())
+}
+
+/// A session project with one footage row, the shape the produce flows start from.
+pub fn produce_project() -> naivepost::project::Project {
+    naivepost::project::Project {
+        sources: vec![naivepost::project::Source {
+            path: "/media/take.mp4".into(),
+            footage: true,
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+/// A project file's text — the two files that read the whole tree's own file.
+pub fn read_tree(t: &naivepost::layout::Tree) -> String {
+    std::fs::read_to_string(t.project_file()).unwrap()
+}
+
+/// A file's text as written, for the sidecar tests.
+pub fn read_file_text(path: &std::path::Path) -> String {
+    std::fs::read_to_string(path).unwrap()
+}
+
+/// A source row as §B stores it.
+pub fn source_row(path: &str, footage: bool, narrator: u32) -> naivepost::project::Source {
+    naivepost::project::Source { path: path.into(), footage, narrator, ..Default::default() }
+}
+
+/// One session-timeline line, as `textfmt` prints it.
+pub fn session_row(
+    start: f64,
+    end: f64,
+    source: &str,
+    who: &str,
+    text: &str,
+) -> naivepost::textfmt::SessionLine {
+    naivepost::textfmt::SessionLine {
+        start,
+        end,
+        source: source.into(),
+        who: who.into(),
+        text: text.into(),
+    }
+}
+
+/// A Produce row's spelled label, from §10's catalogue.
+pub fn produce_row(id: &str) -> String {
+    params::produce()
+        .into_iter()
+        .find(|param| param.id == id)
+        .unwrap_or_else(|| panic!("{} is catalogued in §10's Produce rows", id))
+        .spelled
+}
+
+/// A narration line with only its span and text.
+pub fn entry_span(s: f64, e: f64, text: &str) -> naivepost::narration::Entry {
+    naivepost::narration::Entry { s, e, text: text.to_string(), ..Default::default() }
+}
+
+/// [`entry_span`] built through `default()` so every other field is whatever the type starts at.
+pub fn entry_span_default(s: f64, e: f64, text: &str) -> naivepost::narration::Entry {
+    let mut line = naivepost::narration::Entry::default();
+    line.s = s;
+    line.e = e;
+    line.text = text.to_string();
+    line
+}
+
+/// A narration line with its spoken position set as well.
+pub fn entry_at(s: f64, e: f64, at: f64, text: &str) -> naivepost::narration::Entry {
+    let mut line = naivepost::narration::Entry::default();
+    line.s = s;
+    line.e = e;
+    line.at = at;
+    line.text = text.to_string();
+    line
+}
+
+/// A window sitting on the Cut page with `seeded` as its review cut and history open over it, without the
+/// effects-lane repaint [`cut_page`] does — the shape the form tests seed to.
+pub fn cut_page_unpainted(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
+    release_last_window();
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    assert!(
+        model.sources.iter().any(|source| source.footage),
+        "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
+    );
+    let window = ui::build_window(app, &model, "Prepare");
+    hold_last_window(window.clone());
+    window.present();
+    ui::tab_button(&window, Page::Cut)
+        .expect("the shell has a Cut tab")
+        .emit_by_name::<()>("clicked", &[]);
+    ui::reopen_history_on(&window, seeded);
+    ui::seed_review_cut(&window, seeded);
+    settle();
+    window
+}
+
+/// [`cut_page_unpainted`] with one settle before the seeding as well — the drawing-flow tests' order.
+pub fn cut_page_settled_first(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
+    release_last_window();
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    assert!(
+        model.sources.iter().any(|source| source.footage),
+        "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
+    );
+    let window = ui::build_window(app, &model, "Prepare");
+    hold_last_window(window.clone());
+    window.present();
+    ui::tab_button(&window, Page::Cut)
+        .expect("the shell has a Cut tab")
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
+    ui::reopen_history_on(&window, seeded);
+    ui::seed_review_cut(&window, seeded);
+    settle();
+    window
+}
+
+/// A readout label's text, by the name its builder gave it.
+pub fn label_text(window: &adw::ApplicationWindow, name: &str) -> String {
+    widget(window, name)
+        .downcast::<gtk::Label>()
+        .unwrap_or_else(|_| panic!("`{name}` is a Label"))
+        .text()
+        .to_string()
 }

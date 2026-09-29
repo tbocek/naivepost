@@ -19,19 +19,13 @@
 //! the §09 §7 pass over the page itself.
 
 use std::fs;
-use std::path::PathBuf;
 
 use naivepost::exchanges::{self, Call, Message, Mode, Page, Part, ToolCall, REPLY_PENDING};
 use naivepost::layout::Tree;
 use naivepost::tool_loop;
-
-/// A directory no other test run shares.
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("naivepost-xchg09-{tag}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 /// A project folder the page can be filed under.
 fn tree(tag: &str) -> Tree {

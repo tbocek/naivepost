@@ -19,16 +19,11 @@ use naivepost::produce_render as render;
 use naivepost::produce_stamp as stamp;
 use naivepost::project::{self, Container, Publish};
 use naivepost::publish;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{temp_dir};
 
 const ITEM: &str = "§08-produce#3-data";
-
-fn temp_dir(tag: &str) -> PathBuf {
-    // Removed here rather than at the end of each test: a case that fails on an assertion never
-    // reaches its own cleanup, and a folder left in /tmp is a folder the next reader explains.
-    let dir = std::env::temp_dir().join(format!("naivepost-pdata-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
 
 /// A project folder inside a throwaway root. Nothing is created under `produce/` — §3's files appear
 /// only when a run or a save puts them there, which is what [`data::written`] reports on.

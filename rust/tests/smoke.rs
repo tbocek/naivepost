@@ -1,6 +1,5 @@
 //! Smoke tests: the project file round-trips, and GTK actually links and draws.
 
-use std::path::PathBuf;
 
 use adw::prelude::*;
 use glib;
@@ -8,17 +7,7 @@ use naivepost::project::{self, Project, Source};
 use naivepost::shell::{self, Page};
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir};
-
-/// A directory under the temp dir that no other test run shares.
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-smoke-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
+use common::{fixture_dir,temp_dir};
 
 #[test]
 fn project_round_trip() {

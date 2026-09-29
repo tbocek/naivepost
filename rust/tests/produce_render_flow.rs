@@ -10,11 +10,13 @@
 
 use naivepost::cut::{Fx, Lane, Seg};
 use naivepost::narrate_off;
-use naivepost::narration::Entry;
 use naivepost::produce_render as r;
 use naivepost::project::{self, Container, Codec, Produce, Subtitles};
 use naivepost::render_fx;
 use naivepost::tools::cutpass;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::entry_at as entry;
 
 const ITEM: &str = "f5_2";
 
@@ -32,14 +34,6 @@ fn seg(s: f64, e: f64) -> Seg {
     clip
 }
 
-fn entry(s: f64, e: f64, at: f64, text: &str) -> Entry {
-    let mut line = Entry::default();
-    line.s = s;
-    line.e = e;
-    line.at = at;
-    line.text = text.to_string();
-    line
-}
 
 fn lane(name: &str, at: f64, dur: f64) -> Lane {
     let mut row = Lane::default();

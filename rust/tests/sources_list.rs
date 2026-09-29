@@ -12,16 +12,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::project::{Project, Source};
+use naivepost::project::Project;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::source_row as row;
 use naivepost::sources::{self, Control, TrackInfo};
 use naivepost::ui;
 
 /// The item's id, interpolated into every assertion message so a failure names the item.
 const ITEM: &str = "sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it";
 
-fn row(path: &str, footage: bool, narrator: u32) -> Source {
-    Source { path: path.into(), footage, narrator, ..Default::default() }
-}
 
 /// A camera recording with two voices, a separate mic, and a screen capture: three rows covering video,
 /// audio and an untagged row. Every check takes its own copy so one rule cannot leak into the next.

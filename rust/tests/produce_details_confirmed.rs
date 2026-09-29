@@ -17,7 +17,7 @@
 //! `machine.labelledLinesMax`).
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use naivepost::cut::{Fx, Seg};
 use naivepost::produce_data as data;
@@ -30,15 +30,11 @@ use naivepost::produce_subtitles as subs;
 use naivepost::project::{self, Codec, Container, Produce, Subtitles};
 use naivepost::render_fx;
 use naivepost::roles::Language;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 const ITEM: &str = "§08-produce#6-details-confirmed-against-the-code-verification-pass";
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("np-details-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 fn tree_in(dir: &Path) -> naivepost::layout::Tree {
     naivepost::layout::Tree::new(dir).expect("a project is a folder ending in .naivepost")

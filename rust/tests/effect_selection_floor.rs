@@ -10,6 +10,10 @@
 use naivepost::fx_lane;
 use naivepost::{cut_clamp, cut_select, cut_speed, fx_volume, params};
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::assert_close_nano as assert_close;
+
 /// Every id this value could be filed under, searched across the three lists that carry `P.` rows. Asserting
 /// exactly one match is what keeps a row from being catalogued twice, once per page. (Copied from
 /// `tests/effect_parameters.rs`, where the same helper plays the same role.)
@@ -33,15 +37,6 @@ fn number_anywhere(id: &str) -> f64 {
         .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
-/// A dragged second compared as a second, not as a bit pattern: 0.2 is not representable in binary, so a band's
-/// width lands a ulp either side of it. What matters is whether the press counted the band or threw it away as a
-/// slipped click, which 1e-9 s cannot tell apart from a real difference.
-fn assert_close(what: &str, got: f64, want: f64) {
-    assert!(
-        (got - want).abs() < 1e-9,
-        "{what}: got {got}, want {want} (±1e-9)"
-    );
-}
 
 /// S1: `P.eng.effectMinSelectionSeconds` = 0.2, held by `cut_speed::MIN_MARKED_SECONDS`, catalogued once under
 /// the family §10 files it in.

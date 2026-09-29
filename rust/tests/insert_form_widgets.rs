@@ -24,7 +24,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip, cut_button as button};
 
 static RAN_REFUSE: AtomicBool = AtomicBool::new(false);
 static RAN_LIVE: AtomicBool = AtomicBool::new(false);
@@ -88,9 +88,6 @@ fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
     fresh
 }
 
-fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
-    ui::line_step_button(window, name).unwrap_or_else(|| panic!("the Cut page drew no {name}"))
-}
 
 /// Find a widget THIS window drew, by name — the same walk the page's own accessors use. A tree-wide search
 /// from another window can hand back a stale copy, so every lookup here starts at this window.

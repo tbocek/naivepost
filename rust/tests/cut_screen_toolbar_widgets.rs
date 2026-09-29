@@ -18,7 +18,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, settle, status_text, seg};
+use common::{fixture_dir, settle, status_text, seg, cut_button_carries as button};
 
 static RAN_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_UNDO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -53,9 +53,6 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
 /// Let the main context run what the widget emissions queued.
 
-fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
-    ui::line_step_button(window, name).unwrap_or_else(|| panic!("the Cut page carries {name}"))
-}
 
 /// Every widget name under `root`, depth-first, skipping unnamed ones. `observe_children` gives the
 /// direct children of a box in pack order, which is the order the page assembled them in.

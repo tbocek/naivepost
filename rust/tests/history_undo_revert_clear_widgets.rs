@@ -24,7 +24,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip, cut_button as button};
 
 static RAN_ADD_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_REDO: AtomicBool = AtomicBool::new(false);
@@ -70,9 +70,6 @@ fn tape() -> Vec<Recording> {
 
 /// Let the main context run what the widget emissions queued.
 
-fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
-    ui::line_step_button(window, name).unwrap_or_else(|| panic!("the Cut page drew no {name}"))
-}
 
 fn click(window: &adw::ApplicationWindow, name: &str) {
     button(window, name).emit_by_name::<()>("clicked", &[]);

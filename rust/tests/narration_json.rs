@@ -7,15 +7,9 @@ use std::path::PathBuf;
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
 use naivepost::narration::{self, Entry, Narration, Silent};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-narration-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{temp_dir, entry_span as entry};
 
 /// A project folder inside a throwaway root, holding the given file text (or no file).
 fn with_file(tag: &str, text: Option<&str>) -> (PathBuf, Tree) {
@@ -37,10 +31,6 @@ fn read(t: &Tree) -> String {
 const SPEC_NARRATION: &str = r#"{"entries": [{"s": 1.5, "e": 34.7, "at": 2.0, "text": "We start with …", "emotion": "calm", "pos": "", "roll": 0}],
  "silent": [{"s": 40.0, "e": 65.0}]}"#;
 
-/// One line over one clip, as the cut hands it over.
-fn entry(s: f64, e: f64, text: &str) -> Entry {
-    Entry { s, e, text: text.to_string(), ..Default::default() }
-}
 
 #[test]
 fn sec_01_project_and_files_4_narratenarrationjson_the_specs_example_round_trips() {

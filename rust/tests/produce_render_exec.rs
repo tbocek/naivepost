@@ -53,15 +53,9 @@ fn cut_of(segs: Vec<Seg>) -> Cut {
     Cut { segs, aspect: "16:9".into(), ..Default::default() }
 }
 
-fn project() -> Project {
-    Project {
-        sources: vec![Source { path: "/media/take.mp4".into(), footage: true, ..Default::default() }],
-        ..Default::default()
-    }
-}
-
-use naivepost::project::Project;
-
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::produce_project as project;
 /// A take synthesized in an earlier run, standing in for a line that needs no voice. Created by the test
 /// that uses it, because `speech_plan` asks whether the file is actually there.
 static SYNTHESIZED: LazyLock<PathBuf> =

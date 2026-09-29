@@ -9,7 +9,10 @@
 use std::collections::BTreeMap;
 
 use naivepost::narration::Entry;
-use naivepost::params;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::entry_span_default as entry;
+use common::produce_row as row;
 use naivepost::produce_subtitles as sub;
 
 const ITEM: &str = "F5.4";
@@ -22,13 +25,6 @@ fn cue(s: f64, e: f64, text: &str) -> sub::Cue {
     sub::Cue { s, e, text: text.to_string(), pos: String::new() }
 }
 
-fn entry(s: f64, e: f64, text: &str) -> Entry {
-    let mut line = Entry::default();
-    line.s = s;
-    line.e = e;
-    line.text = text.to_string();
-    line
-}
 
 fn entry_at(s: f64, e: f64, text: &str, pos: &str) -> Entry {
     let mut line = entry(s, e, text);
@@ -41,14 +37,6 @@ fn steady(count: usize) -> Vec<sub::Word> {
     (0..count).map(|i| word(&format!("w{i}"), i as f64 * 0.3, i as f64 * 0.3 + 0.2)).collect()
 }
 
-/// §10's six rows, read from the catalogue this build writes rather than from a second copy of the numbers.
-fn row(id: &str) -> String {
-    params::produce()
-        .into_iter()
-        .find(|param| param.id == id)
-        .unwrap_or_else(|| panic!("{} is catalogued in §10's Produce rows", id))
-        .spelled
-}
 
 // ---- S1: what a clip contributes --------------------------------------------------
 

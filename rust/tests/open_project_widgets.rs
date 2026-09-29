@@ -16,7 +16,7 @@ use naivepost::project::PROJECT_FILE;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir};
+use common::{fixture_dir, temp_dir_created as temp_dir};
 
 /// One running GTK application for this test binary, taken in turn by the checks below.
 fn window_round() {
@@ -40,17 +40,6 @@ fn window_round() {
 }
 
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// A directory under the temp dir that no other test run shares.
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-open09w-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 /// A project folder holding `body` as its `naivepost.json`, with real files for `present`.
 fn project_folder(dir: &Path, body: &str, present: &[&str]) -> PathBuf {

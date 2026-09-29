@@ -5,15 +5,9 @@ use std::path::{Path, PathBuf};
 
 use naivepost::layout::Tree;
 use naivepost::project::{self, Crop, Publish, Source, TextMark};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-json-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{temp_dir, read_tree as read};
 
 /// A project folder holding the given file text; returns its tree and the root.
 fn with_file(tag: &str, text: &str) -> (PathBuf, Tree) {
@@ -24,9 +18,6 @@ fn with_file(tag: &str, text: &str) -> (PathBuf, Tree) {
     (root, Tree::new(&dir).unwrap())
 }
 
-fn read(t: &Tree) -> String {
-    std::fs::read_to_string(t.project_file()).unwrap()
-}
 
 #[test]
 fn sec_01_project_and_files_2_naivepostjson_empty_file_holds_the_table_defaults() {

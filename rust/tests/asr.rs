@@ -13,15 +13,11 @@ use naivepost::asr::{self, Answer, Silence};
 use naivepost::layout::Tree;
 use naivepost::requests;
 use naivepost::transcribe::seconds;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 const SOURCE: &str = "mic.wav";
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = PathBuf::from(format!("/tmp/naivepost-asr-{}-{}", tag, std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 /// A project folder with the one file this flow reads. Its length is probed by the caller, so its
 /// contents do not matter — only that it is there.

@@ -12,15 +12,10 @@ use naivepost::fx_lane;
 use naivepost::fx_zoom;
 use naivepost::params;
 use naivepost::render_fx as render;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::seg;
 
-/// A footage scene from `s` to `e`.
-fn seg(s: f64, e: f64) -> Seg {
-    Seg {
-        s,
-        e,
-        ..Default::default()
-    }
-}
 
 /// A spliced card: no footage under it, its own length.
 fn card(dur: f64) -> Seg {

@@ -12,18 +12,9 @@ use std::path::{Path, PathBuf};
 use naivepost::add_sources::{self, Progress};
 use naivepost::layout;
 use naivepost::project::{Project, Source};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    // One process id is not enough when a test hands the same tag twice, so the tag carries the pid
-    // and each workspace gets its own throwaway root.
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-add-sources-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{temp_dir_created as temp_dir};
 
 /// A throwaway application root with a project folder in it and a `card/` beside that, standing for
 /// where a session's files land from the camera: outside the project, which is what makes "copy into

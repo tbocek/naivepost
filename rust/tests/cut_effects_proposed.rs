@@ -20,14 +20,8 @@ use naivepost::tools::clips::Clips;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
-use common::{row};
+use common::{assert_close, row};
 
-/// Floats from a rule, never `assert_eq!`: this flow's numbers are all quotients.
-const EPS: f64 = 1e-9;
-
-fn assert_close(asked: &str, got: f64, want: f64) {
-    assert!((got - want).abs() < EPS, "{asked}: got {got}, want {want}");
-}
 
 /// One row of the catalogue, by id. `params::find` answers Prepare's list only and this flow's rows live in §6's
 /// (`params::cut`), so look through both — and assert exactly one hit, since two homes for one bound is what the

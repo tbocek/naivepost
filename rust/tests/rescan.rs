@@ -13,16 +13,9 @@ use naivepost::narration::{self, Entry, Narration};
 use naivepost::project::{Project, Source};
 use naivepost::rescan::{self, Refreshed, RESCANNED};
 use naivepost::shell::{Page, Shell};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-rescan-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 /// A project folder with the three recordings a session names, so "gone" and "there" are both real
 /// files rather than paths that merely look plausible.

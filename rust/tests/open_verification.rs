@@ -8,14 +8,9 @@ use std::path::{Path, PathBuf};
 
 use naivepost::layout::Tree;
 use naivepost::{migrate, project, startup};
-
-/// A directory under the temp dir that no other test run shares.
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("naivepost-open-{}-{tag}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 fn folder(dir: &Path, name: &str) -> PathBuf {
     let path = dir.join(name);

@@ -12,17 +12,9 @@ use std::path::{Path, PathBuf};
 use naivepost::new_project::{self as new_project, Gate};
 use naivepost::project::{self, Project};
 use naivepost::startup;
-
-/// A directory under the temp dir that no other test run shares.
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-new-project-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 /// A folder that is a project already, holding something recognisable so an overwrite would show.
 fn project_folder(dir: &Path) -> PathBuf {

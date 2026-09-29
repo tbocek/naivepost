@@ -20,14 +20,7 @@ use naivepost::tools::Tool;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
-use common::{row};
-
-/// Floats from a rule, never `assert_eq!`: 1.2 - 1.0 is not 0.2, and this flow's numbers are all differences.
-const EPS: f64 = 1e-9;
-
-fn assert_close(asked: &str, got: f64, want: f64) {
-    assert!((got - want).abs() < EPS, "{asked}: got {got}, want {want}");
-}
+use common::{EPS, assert_close, row};
 
 /// One row of the catalogue, by id. Both of this flow's ids are catalogued — `P.machine.captionBatch` in §4's list
 /// (which [`params::find`] answers) and `P.policy.captionMinSeconds` in §6's (`params::cut`) — so this looks through

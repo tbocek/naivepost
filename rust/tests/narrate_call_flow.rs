@@ -13,7 +13,6 @@ use naivepost::narrate_pass as pass;
 use naivepost::narrate_reply::{
     self, ENTRY_MATCH_TOLERANCE_SECONDS, all_silent_fault, clip_without_entry, unmatched_entry_fault,
 };
-use naivepost::textfmt::SessionLine;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
@@ -22,9 +21,6 @@ use common::{seg};
 /// The transcript's own lane name: what `session.tsv` writes in the source column.
 const MIC: &str = "2026-09-16 17-26-20";
 
-fn row(start: f64, end: f64, source: &str, who: &str, text: &str) -> SessionLine {
-    SessionLine { start, end, source: source.into(), who: who.into(), text: text.into() }
-}
 
 fn effect(kind: &str, t: f64, dur: f64, text: &str) -> Fx {
     Fx { kind: kind.into(), t, dur, text: text.into(), ..Default::default() }

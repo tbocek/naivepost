@@ -24,7 +24,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, cut_button as button};
 
 static RAN_VOLUME_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_ZOOM_ROW: AtomicBool = AtomicBool::new(false);
@@ -32,9 +32,6 @@ static RAN_UNDO: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
-fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
-    ui::line_step_button(window, name).unwrap_or_else(|| panic!("the Cut page drew no {name}"))
-}
 
 /// The dropdown's trigger is a `MenuButton`, not a plain Button, so it needs its own lookup.
 fn menu_button(window: &adw::ApplicationWindow, name: &str) -> gtk::MenuButton {

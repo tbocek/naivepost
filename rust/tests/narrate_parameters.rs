@@ -6,7 +6,6 @@
 // — or is absent because no rule in this tree reads it yet, which is asserted too, so a number arriving with
 // nothing behind it is caught here rather than shipping. Same shape as §06-effects#6's tests.
 
-use naivepost::cut::Seg;
 use naivepost::narrate_data::{self, Take};
 use naivepost::narrate_pass as pass;
 use naivepost::narrate_preview as preview;
@@ -16,6 +15,9 @@ use naivepost::narration::{self, Entry};
 use naivepost::params;
 use naivepost::shell;
 use naivepost::textfmt::SessionLine;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::seg;
 
 fn narrate_rows() -> Vec<params::Param> {
     params::narrate()
@@ -49,13 +51,6 @@ fn number(id: &str) -> f64 {
     row(id).spelled.parse().unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
-fn seg(s: f64, e: f64) -> Seg {
-    Seg {
-        s,
-        e,
-        ..Default::default()
-    }
-}
 
 fn line(at: f64, text: &str) -> Entry {
     Entry {

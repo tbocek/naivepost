@@ -5,15 +5,9 @@ use std::path::{Path, PathBuf};
 
 use naivepost::layout::Tree;
 use naivepost::project::{self, Autosave};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-legacy-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{temp_dir, read_tree as read};
 
 fn with_file(tag: &str, text: &str) -> (PathBuf, Tree) {
     let root = temp_dir(tag);
@@ -23,9 +17,6 @@ fn with_file(tag: &str, text: &str) -> (PathBuf, Tree) {
     (root, Tree::new(&dir).unwrap())
 }
 
-fn read(t: &Tree) -> String {
-    std::fs::read_to_string(t.project_file()).unwrap()
-}
 
 /// Every report line mentioning one of these strings.
 fn mentions(report: &[String], word: &str) -> bool {

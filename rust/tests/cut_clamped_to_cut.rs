@@ -6,15 +6,10 @@
 
 use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_clamp as clamp;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::seg;
 
-/// A footage scene from `s` to `e`.
-fn seg(s: f64, e: f64) -> Seg {
-    Seg {
-        s,
-        e,
-        ..Default::default()
-    }
-}
 
 /// A spliced insert of `dur` seconds — its own picture, and no footage for an effect to sit on.
 fn card(dur: f64) -> Seg {

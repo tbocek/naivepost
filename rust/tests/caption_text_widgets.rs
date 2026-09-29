@@ -22,7 +22,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, entry, widget};
+use common::{settle, status_text, entry, widget, label_text, cut_page_settled_first as cut_page};
 
 static RAN_ARM: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
@@ -35,13 +35,6 @@ static RAN_BOX: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
-fn label_text(window: &adw::ApplicationWindow, name: &str) -> String {
-    widget(window, name)
-        .downcast::<gtk::Label>()
-        .unwrap_or_else(|_| panic!("`{name}` is a Label"))
-        .text()
-        .to_string()
-}
 
 fn click(window: &adw::ApplicationWindow, name: &str) {
     ui::line_step_button(window, name)
@@ -91,26 +84,6 @@ fn form_visible(window: &adw::ApplicationWindow) -> bool {
     form_holder(window).get_visible()
 }
 
-/// Build a window sitting on the Cut tab over `seeded`, dropping the previous check's window first.
-fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
-    release_last_window();
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    assert!(
-        model.sources.iter().any(|source| source.footage),
-        "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
-    );
-    let window = ui::build_window(app, &model, "Prepare");
-    hold_last_window(window.clone());
-    window.present();
-    ui::tab_button(&window, Page::Cut)
-        .expect("the shell has a Cut tab")
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
-    settle();
-    window
-}
 
 /// Mark a stretch on the selection ground — the same seam a drag leaves behind — so S2 has a band.
 fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {

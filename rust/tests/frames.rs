@@ -13,16 +13,12 @@ use naivepost::clock::{self, read_frame};
 use naivepost::frames::{self, GRID, SCENE_MIN_GAP, SCENE_THRESHOLD, TINY_JOB_FRAMES, WORKERS_MAX};
 use naivepost::layout::Tree;
 use naivepost::requests;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_created as temp_dir;
 
 const SOURCE: &str = "mic.wav";
 const BASE: &str = "mic";
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = PathBuf::from(format!("/tmp/naivepost-frames-{}-{}", tag, std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 /// A project folder with the frames directory this flow writes into.
 fn project(tag: &str) -> (PathBuf, Tree) {

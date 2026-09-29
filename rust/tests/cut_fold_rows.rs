@@ -7,6 +7,9 @@ use naivepost::cut::{Cut, Lane, Seg, Snapshot};
 use naivepost::cut_fold as fold;
 use naivepost::cut_screen::GUTTER_PX;
 use naivepost::timeline::{self, filmed_runs, Recording, Span};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::{seg as clip};
 
 /// The one camera of the fixture: 0–120 filmed, so `filmed_runs` answers a single run.
 const CAM: &str = "17-25-06";
@@ -25,10 +28,6 @@ fn one() -> Vec<Recording> {
     vec![recording(CAM, 0.0, 120.0)]
 }
 
-/// Kept footage from `s` to `e`.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
-}
 
 /// A card at `at`: it owns no footage of its own.
 fn card(at: f64) -> Seg {

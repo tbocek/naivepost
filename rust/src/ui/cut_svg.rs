@@ -56,6 +56,13 @@ pub fn press_svg_item(window: &adw::ApplicationWindow) -> String {
 /// Open the native file chooser over `dir` for a drawing. Kept apart from [`press_svg_item`] so the decision
 /// (where, which title, which filter) is testable without a display: a headless run simply never answers the
 /// dialog, exactly as `open_insert_chooser` is. Its answer forwards to [`svg_chosen`].
+/// GTK 4.10 replaced the file chooser with `gtk::FileDialog` and deprecated everything below it; the
+/// replacement offers no filtered native chooser, so this stays on the old calls and takes their
+/// warnings here rather than silencing them crate-wide.
+#[expect(
+    deprecated,
+    reason = "the 4.10 replacement cannot offer a filtered native chooser"
+)]
 fn open_svg_chooser(
     window: &adw::ApplicationWindow,
     title: &str,

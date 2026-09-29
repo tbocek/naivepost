@@ -17,12 +17,10 @@ use naivepost::fx_volume::{self, Pressed};
 use naivepost::fx_zoom;
 use naivepost::tools;
 
-/// Floats from a rule, never `assert_eq!`: this is the tolerance the F3.4 round needed and did not have.
-const EPS: f64 = 1e-9;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::assert_close;
 
-fn assert_close(asked: &str, got: f64, want: f64) {
-    assert!((got - want).abs() < EPS, "{asked}: got {got}, want {want}");
-}
 
 /// A volume over its own seconds. `gain` is what the file stores — a linear multiplier, not the form's percent.
 fn vol(gain: f64, t: f64, dur: f64, fade: f64) -> Fx {

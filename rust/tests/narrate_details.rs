@@ -17,8 +17,11 @@ use naivepost::narrate_preview::{self, Take, Tick};
 use naivepost::narrate_rules as rules;
 use naivepost::narrate_screen as screen;
 use naivepost::narrate_reply as reply;
-use naivepost::narration::{Entry, Narration, Silent};
+use naivepost::narration::{Narration, Silent};
 use naivepost::params::Param;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::entry_at as entry;
 
 const ITEM: &str = "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass";
 
@@ -31,14 +34,6 @@ fn seg(s: f64, e: f64) -> Seg {
     clip
 }
 
-fn entry(s: f64, e: f64, at: f64, text: &str) -> Entry {
-    let mut line = Entry::default();
-    line.s = s;
-    line.e = e;
-    line.at = at;
-    line.text = text.to_string();
-    line
-}
 
 /// §10's own spelling of one id, from the catalogue.
 fn spelled(rows: &[Param], id: &str) -> Option<String> {

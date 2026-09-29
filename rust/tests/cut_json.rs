@@ -10,16 +10,7 @@ use naivepost::layout::Tree;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
-use common::{seg};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-cut-{}-{tag}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
+use common::{seg,temp_dir};
 
 /// A project folder inside a throwaway root, holding the given file text (or no file).
 fn with_file(tag: &str, text: Option<&str>) -> (PathBuf, Tree) {

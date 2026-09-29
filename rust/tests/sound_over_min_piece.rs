@@ -14,7 +14,7 @@ use naivepost::{cut_select, fx_lane, fx_volume, params};
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{all_rows};
+use common::{all_rows, assert_close_nano as assert_close};
 
 /// The recording a lane names — same fixture name `tests/cut_copy_paste_lane.rs` uses.
 const REC: &str = "2026-09-16 17-26-20";
@@ -39,11 +39,6 @@ fn number_anywhere(id: &str) -> f64 {
         .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
-/// A second compared as a second, not as a bit pattern: 0.05 is not representable in binary, so an overlap
-/// clipped to the floor lands a ulp either side of it.
-fn assert_close(what: &str, got: f64, want: f64) {
-    assert!((got - want).abs() < 1e-9, "{what}: got {got}, want {want} (±1e-9)");
-}
 
 /// A cut keeping the given spans of footage, as `tests/cut_copy_paste_lane.rs::kept` builds one.
 fn kept(spans: &[(f64, f64)]) -> Cut {
