@@ -361,10 +361,13 @@ fn narrate_round(app: &adw::Application) {
     );
     button(&window, "line-reroll-0").emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(
-        status_text(&window),
-        narrate_details::new_take_status(0),
-        "↻ on a written line says a new take is coming"
+    // F4.7's ↻ is roll + 1 and then the SAME real speak leg a row's ▶ uses. This state has neither a
+    // reference on disk nor a checked server, so the flow refuses at F4.4 S1 and says what is missing —
+    // where the old bare "new take, speaking it" used to promise work it never did.
+    let re_rolled = status_text(&window);
+    assert!(
+        re_rolled.contains("voice_ref.wav") || re_rolled.contains("/health"),
+        "a re-roll with nothing in place names what is missing rather than promising a take: {re_rolled}"
     );
     // ＋ below where the clip ends first: pull the written row to its clip's last seconds.
     let mut squeezed = base_state();

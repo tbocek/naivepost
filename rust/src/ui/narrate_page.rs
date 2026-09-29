@@ -20,6 +20,7 @@ use crate::narrate_off;
 use crate::narrate_data;
 use crate::narrate_preview;
 use crate::narrate_preview_leg::{self, PreviewPage};
+use crate::narrate_edit;
 use crate::narrate_screen::{self, Audition, Fit};
 use crate::narrate_sample;
 use crate::narration::Entry;
@@ -105,7 +106,7 @@ pub fn read_state() -> NarrateState {
     NARRATE_STATE.with(|held| held.borrow().clone())
 }
 
-fn mutate<T>(f: impl FnOnce(&mut NarrateState) -> T) -> T {
+pub(crate) fn mutate<T>(f: impl FnOnce(&mut NarrateState) -> T) -> T {
     NARRATE_STATE.with(|held| f(&mut held.borrow_mut()))
 }
 
@@ -458,8 +459,17 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
         row.set_widget_name(&format!("narrate-line-{index}"));
         let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let session_second = entry.s + entry.at;
-        let time = gtk::Label::new(Some(&narrate_screen::time_field(session_second)));
+        // §A.5-1: the row's time is an ENTRY, not a label — typing a second in it is how a line is
+        // moved, and `press_line_move` reads this widget on Enter. Seven chars holds "mm:ss.s" and no
+        // more: an entry with no max width asks for a natural width past what it can ever hold and takes
+        // the row from the status label beside it.
+        let time = gtk::Entry::new();
         time.set_widget_name(&format!("line-time-{index}"));
+        time.set_width_chars(7);
+        time.set_max_width_chars(7);
+        time.set_hexpand(false);
+        time.set_text(&narrate_screen::time_field(session_second));
+        time.set_tooltip_text(Some(crate::ui::narrate_lines::TIME_FIELD_TIP));
         box_.append(&time);
         let status = gtk::Label::new(Some(&narrate_screen::status_line(narrate_screen::status(
             entry, false,
@@ -490,6 +500,8 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
         box_.append(&below);
         let text = gtk::Entry::new();
         text.set_widget_name(&format!("line-text-{index}"));
+        // §A.5 calls the box monospace: an `Entry` has no such property, so the CSS class carries it.
+        text.add_css_class("monospace");
         text.set_text(&narrate_screen::write_box(entry));
         text.set_tooltip_text(Some(&narrate_screen::row_tooltip()));
         text.set_hexpand(true);
@@ -579,7 +591,7 @@ fn apply_greys(window: &adw::ApplicationWindow, off: bool) {
     }
 }
 
-fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
+pub(crate) fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     let content = window.content()?;
     crate::ui::window::find_widget_by_name(&content, name)
 }
@@ -645,7 +657,7 @@ impl narrate_preview_leg::PreviewPage for PageDriver {
 }
 
 /// Say it on the status line and in the log, the page's two output channels.
-fn say(window: &adw::ApplicationWindow, said: &str) -> String {
+pub(crate) fn say(window: &adw::ApplicationWindow, said: &str) -> String {
     if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
         status.set_text(said);
     }
@@ -772,30 +784,63 @@ pub fn press_preview_stop(window: &adw::ApplicationWindow) -> String {
 
 /// **4** ＋ a line at this second. Ok pushes the entry where the rule put it.
 pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
+    // §F4.7: "preview paused first, picture and voice" — ⏹'s own door stops both players, so a new
+    // line is never laid down while the old audio is still running under it.
+    if read_state().playing {
+        press_preview_stop(window);
+    }
     let s = read_state();
     match narrate_screen::add_at_playhead(s.session, &s.segs, &s.entries) {
         Ok(at) => {
-            mutate(|state| {
-                let clip = state
-                    .segs
-                    .iter()
-                    .find(|seg| seg.s <= at && at < seg.e)
-                    .cloned()
-                    .unwrap_or_default();
-                state.entries.push(Entry {
-                    s: clip.s,
-                    e: clip.e,
-                    at: 0.0,
-                    ..Default::default()
+            // `add_at_playhead` answers with the clip's start, which is what the marker question and
+            // the status sentence are both about.
+            let said = if narrate_edit::silent_marker_on(at, &s.entries).is_some() {
+                // §F4.7: when the clip's only entry is the empty "deliberately silent" marker, THAT
+                // entry moves to the playhead and becomes the line — no second row. The spec gives no
+                // sentence of its own here, so the page says what happened plainly rather than reusing
+                // "a line starts at", which would hide that nothing was added.
+                mutate(|state| {
+                    if let Some(index) = narrate_edit::silent_marker_on(at, &state.entries) {
+                        state.entries[index].at = (s.session - at).max(0.0);
+                    }
                 });
-            });
+                format!(
+                    "the silent marker became this line at {}",
+                    narrate_screen::time_field(s.session)
+                )
+            } else {
+                mutate(|state| {
+                    let clip = state
+                        .segs
+                        .iter()
+                        .find(|seg| seg.s <= at && at < seg.e)
+                        .cloned()
+                        .unwrap_or_default();
+                    state.entries.push(Entry {
+                        s: clip.s,
+                        e: clip.e,
+                        at: 0.0,
+                        ..Default::default()
+                    });
+                });
+                format!("a line starts at {}", narrate_screen::time_field(at))
+            };
             refresh(window);
-            say(
-                window,
-                &format!("a line starts at {}", narrate_screen::time_field(at)),
-            )
+            say(window, &said)
         }
-        Err(refused) => say(window, &refused),
+        Err(refused) => {
+            // §F4.7's node J: a press within 1 s of a line does not argue with the person, it takes the
+            // playhead to that line and repeats the sentence naming it. Every other refusal leaves the
+            // picture where it was.
+            if let Some(start) = narrate_screen::near_line_start(s.session, &s.entries) {
+                mutate(|state| {
+                    state.session = start;
+                    state.cut_at = start;
+                });
+                refresh(window);
+            }
+            say(window, &refused)
+        }
     }
 }
 
@@ -895,55 +940,23 @@ pub fn press_line_reroll(window: &adw::ApplicationWindow, index: usize) -> Strin
         .get(index)
         .map(|entry| !entry.text.is_empty())
         .unwrap_or(false);
-    let said = match narrate_screen::re_roll_refusal(index + 1, has_line) {
-        Some(refused) => refused,
-        None => narrate_details::new_take_status(index),
+    let Some(refused) = narrate_screen::re_roll_refusal(index + 1, has_line) else {
+        // §F4.7: roll + 1 first, so the take that is spoken next is keyed on the new roll and the old
+        // wav stays untouched (it is what an undo reads back). Then the same real speak leg a row's ▶
+        // uses — nothing scripted here.
+        mutate(|state| {
+            if let Some(entry) = state.entries.get_mut(index) {
+                entry.roll = narrate_edit::reroll(entry.roll);
+            }
+        });
+        let after = read_state();
+        let Some(entry) = after.entries.get(index) else {
+            return say(window, narrate_details::nothing_picked());
+        };
+        refresh(window);
+        return speak_this_line(window, &after, entry);
     };
-    say(window, &said)
-}
-
-/// **18** ＋ a line below this one.
-pub fn press_line_add_below(window: &adw::ApplicationWindow, index: usize) -> String {
-    let s = read_state();
-    let Some(entry) = s.entries.get(index) else {
-        return say(window, narrate_details::nothing_picked());
-    };
-    let audio_end = entry.s + entry.at;
-    let clip_end = entry.e;
-    match narrate_screen::add_below(audio_end, clip_end) {
-        Ok(at) => {
-            mutate(|state| {
-                if let Some(row) = state.entries.get_mut(index) {
-                    row.at = at - row.s;
-                }
-            });
-            refresh(window);
-            say(
-                window,
-                &format!("a line added below at {}", narrate_screen::time_field(at)),
-            )
-        }
-        Err(refused) => say(window, &refused),
-    }
-}
-
-/// **19** 🗑 remove this line.
-pub fn press_line_remove(window: &adw::ApplicationWindow, index: usize) -> String {
-    let s = read_state();
-    let Some(entry) = s.entries.get(index) else {
-        return say(window, narrate_details::nothing_picked());
-    };
-    let clip_s = entry.s;
-    let other_on_clip = s
-        .entries
-        .iter()
-        .any(|other| other.s == clip_s && !(other.s == entry.s && other.at == entry.at));
-    let said = narrate_screen::remove_line(other_on_clip, clip_s);
-    mutate(|state| {
-        state.entries.remove(index);
-    });
-    refresh(window);
-    say(window, &said)
+    say(window, &refused)
 }
 
 /// **8** ＋ makes the selection a take, refused under P.eng.takeMinSeconds.
@@ -1386,13 +1399,33 @@ fn wire_row_buttons(window: &adw::ApplicationWindow) {
         if let Some(button) = crate::ui::line_step_button(window, &format!("line-add-below-{index}")) {
             let w = window.clone();
             button.connect_clicked(move |_| {
-                press_line_add_below(&w, index);
+                crate::ui::narrate_lines::press_line_add_below(&w, index);
             });
         }
         if let Some(button) = crate::ui::line_step_button(window, &format!("line-remove-{index}")) {
             let w = window.clone();
             button.connect_clicked(move |_| {
-                press_line_remove(&w, index);
+                crate::ui::narrate_lines::press_line_remove(&w, index);
+            });
+        }
+        // Enter commits the typed second; a refusal writes the box back (§F4.7's time field).
+        if let Some(field) = crate::ui::narrate_page::widget_in(window, &format!("line-time-{index}"))
+            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        {
+            let w = window.clone();
+            field.connect_activate(move |field| {
+                crate::ui::narrate_lines::press_line_move(&w, index, &field.text());
+            });
+        }
+        // §F4.7 (**Text**): every keystroke goes through `note_typing`, which parses the tag, updates the
+        // entry at once, and re-arms the 400 ms autosave. `changed` (not Enter) is the signal, because a
+        // person who types and walks away still gets their words on disk.
+        if let Some(field) = crate::ui::narrate_page::widget_in(window, &format!("line-text-{index}"))
+            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        {
+            let w = window.clone();
+            field.connect_changed(move |field| {
+                crate::ui::narrate_text::note_typing(&w, index, &field.text());
             });
         }
     }

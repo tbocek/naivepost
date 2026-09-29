@@ -4,6 +4,7 @@ FROM alpine:3.24
 RUN apk update && apk add --no-cache \
         ca-certificates curl git sudo openssh-client gcompat \
         bash shadow \
+        grep coreutils procps \
         firefox-esr
 
 # rust/GTK rewrite toolchain (rust/), plus virtual display, fonts and icons so

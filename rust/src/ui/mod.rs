@@ -12,6 +12,9 @@ pub mod produce_words;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
 /// F0.7 S5 — the policy form: every field with its value, source and reason.
+mod narrate_lines;
+/// F4.7 (**Text**) — the row's text box: what a typed tag does to the line, and when it reaches disk.
+mod narrate_text;
 pub mod policy_form;
 pub mod window;
 
@@ -19,11 +22,16 @@ pub use settings::badge;
 // §07-narrate#1-screen — the page's seams: the state it renders, the refresh that paints it, and one
 // function per press so a widget test can compare what the click printed with what the rule answered.
 pub use narrate_page::{
-    press_back, press_forward, press_line_add_below, press_line_remove, press_line_reroll,
+    press_back, press_forward, press_line_reroll,
     press_line_speak, press_narrate_add_line, press_narrate_play, press_pitch, press_sample_play, press_sample_reroll,
     press_sample_stop, press_take_add, press_take_remove, press_voice, read_state, refresh,
     set_narration_off, set_state, NarrateState,
 };
+// F4.7's row edits live in their own file; re-exported here so `ui::press_line_*` resolves as before.
+pub use narrate_lines::{press_line_add_below, press_line_move, press_line_remove};
+// F4.7 (**Text**): the box's parse-and-write seam, reached from the row's `changed` handler and from
+// the two flush doors (window close, Produce's read).
+pub use narrate_text::{apply_box, flush_owed, note_typing};
 pub use settings::dialog_log;
 pub use settings::dialog_log_open;
 pub use settings::dialog_open;

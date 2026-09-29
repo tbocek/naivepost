@@ -804,11 +804,11 @@ pub fn add_at_playhead(at: f64, segs: &[Seg], entries: &[Entry]) -> Result<f64, 
             "the playhead is between clips \u{2014} the cut has nothing to narrate here".to_string(),
         );
     };
-    if let Some(near) = entries.iter().find(|entry| (entry.s + entry.at - at).abs() < ADD_NEAR_SECONDS) {
+    if let Some(start) = near_line_start(at, entries) {
         // Not a refusal the person has to argue with: the page jumps to the line instead, and says so.
         return Err(format!(
             "a line already starts here \u{2014} edit it, or move the playhead (it is at {})",
-            preview::clock(Some(near.s + near.at))
+            preview::clock(Some(start))
         ));
     }
     // §1's `a line is speaking here until mm:ss — add after it`, and F4.7's flowchart asks the same of every line on
@@ -824,6 +824,17 @@ pub fn add_at_playhead(at: f64, segs: &[Seg], entries: &[Entry]) -> Result<f64, 
         ));
     }
     Ok(clip.s)
+}
+
+/// The start of the line that already begins within [`ADD_NEAR_SECONDS`] of `at`, if any (§F4.7's node
+/// J: "within 1 s of a line \u2192 jump to it"). One function owns both halves of that branch \u2014 the
+/// second named in the refusal and the second the page moves the playhead to \u2014 so the sentence and the
+/// jump can never disagree about which line was meant.
+pub fn near_line_start(at: f64, entries: &[Entry]) -> Option<f64> {
+    entries
+        .iter()
+        .find(|entry| (entry.s + entry.at - at).abs() < ADD_NEAR_SECONDS)
+        .map(|entry| entry.s + entry.at)
 }
 
 /// §1's row ＋ (`starting where its audio ends`): [`ADD_BELOW_SECONDS`] after the line above, refused when the clip

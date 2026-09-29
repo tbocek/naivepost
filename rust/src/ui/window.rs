@@ -5029,6 +5029,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         let closing = window.clone();
         window.connect_close_request(move |_| {
             flush_line_on_close(&closing);
+            // §F4.7 (**Text**): closing the window flushes a half-typed line too, not only a tab switch.
+            crate::ui::narrate_text::flush_owed(&closing);
             glib::Propagation::Proceed
         });
     }
@@ -5448,6 +5450,9 @@ fn wire_play(
         }
 
         if produce_asked {
+            // §F4.7 (**Text**): "flushed ... before Produce reads the file" — the render keys its gate on
+            // `narration.json`, so a line typed and not yet written would be missing from what it stamps.
+            crate::ui::narrate_text::flush_owed(&main_window());
             let has_cut = !review_cut_of(&main_window()).segs.is_empty();
             if let Some(reason) = crate::produce_flow::refuse(bar.borrow().running.is_some(), has_cut) {
                 // §F5.1 S1: refused before the bar opened — no ⏸ shows for a run that never began.
@@ -6757,7 +6762,7 @@ thread_local! {
     /// The live `Shell` of each window, newest last — the newest-slot rule every other window-level
     /// piece here uses. Held so the S3 pending-write seam can mark a write owed on the shell that is
     /// actually showing, instead of a copy the caller happens to have.
-    static WINDOW_SHELLS: std::cell::RefCell<Vec<Rc<RefCell<Shell>>>> =
+    pub(crate) static WINDOW_SHELLS: std::cell::RefCell<Vec<Rc<RefCell<Shell>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -6765,7 +6770,7 @@ thread_local! {
     /// The narration this window holds, newest last — the same newest-slot rule as [`WINDOW_SHELLS`].
     /// S5's refit and S3's flush are two different switches over one set of lines, so the lines live
     /// here rather than in whatever a single switch happened to read from disk.
-    static HELD_NARRATION: std::cell::RefCell<Vec<Rc<RefCell<Narration>>>> =
+    pub(crate) static HELD_NARRATION: std::cell::RefCell<Vec<Rc<RefCell<Narration>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -11810,9 +11815,9 @@ pub fn outputs_folder_button(window: &adw::ApplicationWindow) -> Option<gtk::But
 /// Mark this window's narration write as owed — the state a half-typed line leaves behind.
 ///
 /// S3 owns the decision whether leaving the tab writes (`shell::Pending::owe`); this only raises
-/// the flag, through the same type the switch reads. The Narrate page has no text view yet, so that
-/// page's typing cannot raise it — this is the seam F4.7 will call, and what `switch_tab_widgets`
-/// drives in its place.
+/// the flag, through the same type the switch reads. The Narrate page's row boxes raise it from their
+/// own `changed` handler (`crate::ui::narrate_text::note_typing`), which is what makes typing on the
+/// page owe a write rather than only a test being able to.
 pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
     let _ = window;
     if let Some(shell) = WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()) {
