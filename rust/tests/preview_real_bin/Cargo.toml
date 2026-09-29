@@ -1,0 +1,13 @@
+[package]
+name = "preview_real"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "preview_real"
+path = "src/main.rs"
+
+[dependencies]
+naivepost = { path = "../.." }
+
+[workspace]

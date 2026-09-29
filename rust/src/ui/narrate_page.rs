@@ -18,6 +18,7 @@ use crate::cut::Seg;
 use crate::narrate_details;
 use crate::narrate_off;
 use crate::narrate_preview;
+use crate::narrate_preview_leg::{self, PreviewPage};
 use crate::narrate_screen::{self, Audition, Fit};
 use crate::narration::Entry;
 
@@ -584,6 +585,62 @@ fn label(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Label> {
     widget_in(window, name)?.downcast().ok()
 }
 
+/// F4.5: the page as the preview leg sees it — the same seam shape `window.rs` offers
+/// [`crate::cut_play_leg::CutPreviewPage`]. Every method is a one-line read of published state; no
+/// rule lives here, so the leg's tick and the page cannot drift about what the cut, the record or the
+/// loudness numbers are.
+pub struct PageDriver(adw::ApplicationWindow);
+
+impl narrate_preview_leg::PreviewPage for PageDriver {
+    fn running(&self) -> bool {
+        read_state().playing
+    }
+
+    fn head(&self) -> f64 {
+        read_state().session
+    }
+
+    fn set_head(&self, at: f64) {
+        mutate(|s| s.session = at);
+    }
+
+    fn tree(&self) -> Option<crate::layout::Tree> {
+        crate::ui::window::narrate_session_tree()
+    }
+
+    fn cut(&self) -> crate::cut::Cut {
+        // The session's own cut file wins: the page's `segs` mirror only what a flow last published,
+        // and a lap of the cut must hear the effects that are actually saved.
+        self.tree()
+            .map(|tree| crate::cut::load(&tree).unwrap_or_default())
+            .unwrap_or_else(|| narrate_preview_leg::cut_of(read_state().segs, Vec::new()))
+    }
+
+    fn entries(&self) -> Vec<Entry> {
+        read_state().entries
+    }
+
+    fn game_volume(&self) -> f64 {
+        // P.policy.gameVolume off the project; with nothing to read, the project's OWN default rather
+        // than 0.0, which would duck the bed into silence on a session that never stated a level.
+        self.tree()
+            .map(|tree| narrate_preview_leg::game_volume_for(&tree))
+            .unwrap_or_else(|| crate::project::Produce::default().game_volume)
+    }
+
+    fn volume(&self) -> f64 {
+        // The shared preview volume slider (§A.4), read off the widget so the page holds no copy of it.
+        widget_in(&self.0, "narrate-volume")
+            .and_then(|w| w.downcast::<gtk::Scale>().ok())
+            .map(|scale| scale.value())
+            .unwrap_or(1.0)
+    }
+
+    fn say(&self, said: &str) {
+        say(&self.0, said);
+    }
+}
+
 /// Say it on the status line and in the log, the page's two output channels.
 fn say(window: &adw::ApplicationWindow, said: &str) -> String {
     if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
@@ -638,14 +695,37 @@ pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
     mutate(|state| state.playing = next_playing);
     match pressed {
         narrate_preview::Pressed::Refused(why) => say(window, &why),
-        narrate_preview::Pressed::Playing { from } => say(
-            window,
-            &format!(
-                "playing the cut from {} \u{2014} \u{23f9} stops both players",
-                narrate_screen::time_field(from)
-            ),
-        ),
+        narrate_preview::Pressed::Playing { from } => {
+            // F4.5 S1: the decision above is only half the press — the players have to actually run.
+            // A picture that will not spawn is said, not swallowed: claiming a preview with no process
+            // behind it is worse than naming the program that failed.
+            if let Some(tree) = crate::ui::window::narrate_session_tree() {
+                let cut = crate::cut::load(&tree).unwrap_or_default();
+                if let Err(why) = narrate_preview_leg::start_running(
+                    &tree,
+                    &cut,
+                    &s.entries,
+                    from,
+                    PageDriver(window.clone()).game_volume(),
+                    PageDriver(window.clone()).volume(),
+                    &mut narrate_preview_leg::spawn_player,
+                ) {
+                    return say(window, &why);
+                }
+            }
+            say(
+                window,
+                &format!(
+                    "playing the cut from {} \u{2014} \u{23f9} stops both players",
+                    narrate_screen::time_field(from)
+                ),
+            )
+        }
         narrate_preview::Pressed::Paused => {
+            // A killed player keeps no position, so pausing ends both children and leaves `session`
+            // where it stands: the next press re-cues from the page's own playhead rather than from a
+            // second the dead process once held.
+            let _ = narrate_preview_leg::stop_running();
             say(window, "paused \u{2014} \u{25b6} plays on from here")
         }
     }
@@ -667,11 +747,23 @@ pub fn narrate_preview_playing() -> bool {
 /// the step; the sentence comes from `narrate_preview::hand_play_back`, so the bar cannot claim ▶ back while
 /// a player is still going.
 pub fn press_preview_stop(window: &adw::ApplicationWindow) -> String {
-    let stopped = narrate_preview::stop();
+    // Read the pids BEFORE the stop: after `stop_running` the slot is empty and F0.3's drain would
+    // have nothing to name. The log line is what makes the ownership visible — these are the ids ⏹
+    // is responsible for killing (§F4.5 S6, §F0.3).
+    let pids = narrate_preview_leg::running_children();
+    let (stopped, killed) = narrate_preview_leg::stop_running();
     mutate(|state| state.playing = false);
     let said = narrate_preview::hand_play_back(stopped)
         .unwrap_or("the preview did not stop \u{2014} see log")
         .to_string();
+    crate::ui::window::log_line(&format!(
+        "stopped the preview players {} -> {} killed",
+        pids.iter()
+            .map(|pid| pid.to_string())
+            .collect::<Vec<_>>()
+            .join(" "),
+        killed.len()
+    ));
     say(window, &said)
 }
 
@@ -764,6 +856,11 @@ fn speak_this_line(
     };
     let key = crate::narration::tts_key(entry, Some(&s.voice), None);
     let seed = crate::narration::tts_seed(&key);
+    // F4.5 S2: the preview keys its takes on the same voice this row speaks with, and this press is
+    // the retry that clears any earlier failure of THIS wav before dialling, so a second failure reads
+    // as a second failure rather than as the first one still standing.
+    narrate_preview_leg::set_voice(&s.voice);
+    narrate_preview_leg::retry_wav(&key);
     // P.policy.ttsLanguage is the PROJECT's language, so it is read off the project here rather
     // than trusted to what was last published: a flow that never published one must not silently
     // speak English over a Polish recording. An unreadable project leaves the state's value (or
@@ -779,6 +876,11 @@ fn speak_this_line(
         &key,
         &language,
     );
+    if outcome.refused().is_some() {
+        // Sticky per wav: a lap of the cut that reaches this line must run mute and say so again rather
+        // than dial the server for a take that was already refused.
+        narrate_preview_leg::note_failed_wav(&key);
+    }
     say(window, &crate::narrate_tts::outcome_said(&outcome))
 }
 
@@ -1058,6 +1160,62 @@ pub fn wire(window: &adw::ApplicationWindow) {
     refresh(&win);
     // Rows are drawn by `refresh`, so their handlers go on after it: before this they do not exist yet.
     wire_row_buttons(&win);
+
+    // F4.5 S4: the scrub slider seeks, and a seek lands on the cut — the snapped second is what the
+    // player was asked for, not merely what the bar shows.
+    if let Some(slider) = widget_in(&win, "narrate-slider")
+        .and_then(|w| w.downcast::<gtk::Scale>().ok())
+    {
+        let w = win.clone();
+        slider.connect_value_changed(move |scale| {
+            let target = scale.value();
+            let forward = target >= read_state().session;
+            if let Some(tree) = crate::ui::window::narrate_session_tree() {
+                let cut = crate::cut::load(&tree).unwrap_or_default();
+                if let Some((snapped, _rate)) = narrate_preview_leg::seek(
+                    &tree,
+                    &cut,
+                    target,
+                    forward,
+                    &mut narrate_preview_leg::spawn_player,
+                ) {
+                    mutate(|s| s.session = snapped);
+                }
+            }
+            let _ = w;
+        });
+    }
+
+    // F4.5 S5 (§A.5): selecting a row is the only place the preview jumps by itself, and it jumps to
+    // the line's lead-in — three seconds ahead unless those seconds belong to the line before.
+    if let Some(list) = widget_in(&win, "narrate-lines")
+        .and_then(|w| w.downcast::<gtk::ListBox>().ok())
+    {
+        list.connect_row_selected(|list, row| {
+            let Some(row) = row else { return };
+            // The empty-state placeholder carries no entry, so it must not move the picture.
+            if row.widget_name() == "narrate-lines-empty" {
+                return;
+            }
+            // `row_at_index` is the only index lookup gtk4-rs 0.11 gives a ListBox, so the position is
+            // found by walking the rows until this one turns up rather than by asking the row.
+            let mut index = 0usize;
+            loop {
+                match list.row_at_index(index as i32) {
+                    Some(candidate) if candidate == *row => break,
+                    Some(_) => index += 1,
+                    None => return,
+                }
+            }
+            let entries = read_state().entries;
+            if let Some(at) = narrate_preview_leg::lead_in_of(&entries, index) {
+                mutate(|s| s.session = at);
+            }
+        });
+    }
+
+    // F4.5 S2: the 100 ms tick that follows the picture, once per window.
+    narrate_preview_leg::start_tick(std::rc::Rc::new(PageDriver(win.clone())));
 }
 
 /// The per-row buttons, wired for however many rows the page currently holds. Called after every refresh
