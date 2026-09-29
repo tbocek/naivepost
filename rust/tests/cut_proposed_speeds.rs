@@ -16,6 +16,10 @@ use naivepost::cut_speed_pass::{self as pass, Answer, Call};
 use naivepost::params;
 use naivepost::tools::clips::Clips;
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{row};
+
 /// Floats from a rule, never `assert_eq!`: this flow's numbers are all quotients and differences.
 const EPS: f64 = 1e-9;
 
@@ -26,16 +30,6 @@ fn assert_close(asked: &str, got: f64, want: f64) {
 /// One row of the catalogue, by id. `params::find` answers Prepare's list only, and this flow's rows live in §6's
 /// (`params::cut`), so look through both — and assert exactly one hit, since two homes for one bound is what the
 /// catalogue exists to prevent.
-fn row(id: &str) -> params::Param {
-    let mut found = params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .filter(|row| row.id == id)
-        .collect::<Vec<_>>();
-    assert_eq!(found.len(), 1, "{id} catalogued {} times", found.len());
-    found.pop().unwrap()
-}
-
 /// The cut S1–S6 argue about: five clips of ten seconds at their session seconds. Ten is exact in binary and so are
 /// the multiples, which is what lets every expected number below be derived by hand.
 fn five_clips() -> Clips {

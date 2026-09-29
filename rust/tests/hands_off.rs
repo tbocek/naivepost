@@ -28,6 +28,10 @@ use naivepost::tools::clips::Clips;
 use naivepost::tools::cutpass::Plan;
 use naivepost::wave::Wave;
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{seg};
+
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
 const WORD: u8 = 120;
@@ -41,10 +45,6 @@ fn wave(total: f64, spans: &[(f64, f64, u8)]) -> Wave {
         }
     }
     Wave { hz: HZ, chans: vec![peaks] }
-}
-
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
 }
 
 fn fx(kind: &str, t: f64, dur: f64) -> Fx {

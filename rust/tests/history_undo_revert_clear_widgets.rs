@@ -24,7 +24,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip};
 
 static RAN_ADD_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_REDO: AtomicBool = AtomicBool::new(false);
@@ -33,10 +33,6 @@ static RAN_CLEAR: AtomicBool = AtomicBool::new(false);
 static RAN_KEYS: AtomicBool = AtomicBool::new(false);
 
 /// A footage scene on camera 0.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
-
 /// Build a window sitting on the Cut tab with the given tape and cut, dropping the previous check's
 /// window first.
 fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &Cut) -> adw::ApplicationWindow {

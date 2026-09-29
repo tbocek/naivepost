@@ -18,6 +18,10 @@ use naivepost::roles;
 use naivepost::tools::clips::Clips;
 use naivepost::tools::cutpass::{self, Plan};
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{seg};
+
 /// Look a parameter up across the homes this round's ids live in: `params::find` answers Prepare's list
 /// only, and these rows are spread over §6 (`params::cut`) and §06#6 (`params::effects`).
 fn row(id: &str) -> naivepost::params::Param {
@@ -41,10 +45,6 @@ fn error_of(reply: &str) -> String {
 }
 
 /// A footage scene from `s` to `e`.
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
-}
-
 /// An effect record of one kind at one span.
 fn fx(kind: &str, t: f64, dur: f64) -> Fx {
     Fx { kind: kind.into(), t, dur, ..Default::default() }

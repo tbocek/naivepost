@@ -9,12 +9,12 @@ use naivepost::narrate_screen;
 use naivepost::roles;
 use naivepost::textfmt::SessionLine;
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{seg};
+
 /// The transcript's own lane name: what `session.tsv` writes in the source column.
 const MIC: &str = "2026-09-16 17-26-20";
-
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
-}
 
 fn row(start: f64, end: f64, source: &str, who: &str, text: &str) -> SessionLine {
     SessionLine { start, end, source: source.into(), who: who.into(), text: text.into() }

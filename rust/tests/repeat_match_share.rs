@@ -12,18 +12,12 @@ use naivepost::prepare_decisions as pd;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{all_rows};
+use common::{all_rows, anywhere};
 
 /// A row found anywhere in the catalogue. Asserted NON-EMPTY rather than exactly-one: some ids are deliberately
 /// catalogued twice in this tree (`P.eng.minPieceSeconds` has a Prepare row and a Cut-page row), so a strict
 /// helper would trip on sibling ids named below. This round's own single-row check is done explicitly in s1.
 #[allow(dead_code)]
-fn anywhere(id: &str) -> params::Param {
-    let found = all_rows().into_iter().filter(|row| row.id == id).collect::<Vec<_>>();
-    assert!(!found.is_empty(), "{id} catalogued nowhere");
-    found.into_iter().next().unwrap()
-}
-
 /// S1: `P.eng.repeatShare` = 0.7, held by `prepare_decisions::TAIL_MATCH_MIN`, catalogued once under the family
 /// §10 files it in.
 #[test]

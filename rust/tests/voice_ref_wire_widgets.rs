@@ -21,7 +21,7 @@ use naivepost::ui;
 
 #[allow(dead_code)]
 mod common;
-use common::{hold_last_window, release_last_window, settle, status_text};
+use common::{hold_last_window, release_last_window, settle, status_text, widget_in};
 
 static RAN_VOICE_WIRE: AtomicBool = AtomicBool::new(false);
 
@@ -50,25 +50,6 @@ fn session_tree() -> (Tree, std::path::PathBuf, std::path::PathBuf) {
     std::fs::write(&base, b"base wav").expect("base written");
     std::fs::write(&served, b"served wav").expect("served written");
     (tree, base, served)
-}
-
-fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if node.widget_name() == name {
-            return Some(node.clone());
-        }
-        if let Some(child) = node.first_child() {
-            let mut cursor = Some(child);
-            while let Some(current) = cursor {
-                if let Some(found) = walk(&current, name) {
-                    return Some(found);
-                }
-                cursor = current.next_sibling();
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
 }
 
 fn read_voice_txt(tree: &Tree) -> String {

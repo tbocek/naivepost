@@ -22,7 +22,7 @@ use naivepost::wave::Wave;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{all_rows};
+use common::{all_rows, word, anywhere};
 
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
@@ -45,10 +45,6 @@ fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
     Edges::new(wave(total, spans), 0.0)
 }
 
-fn word(text: &str, s: f64, e: f64) -> AlignedWord {
-    AlignedWord { word: text.into(), s, e }
-}
-
 #[allow(dead_code)]
 fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {
     Retake { s, e, again, to, text: String::new(), whole: String::new() }
@@ -65,12 +61,6 @@ fn none(_: f64) -> Option<&'static Edges> {
 /// in this tree, so a strict helper would trip on sibling ids named below. This round's own single-row
 /// check is done explicitly in s1.
 #[allow(dead_code)]
-fn anywhere(id: &str) -> params::Param {
-    let found = all_rows().into_iter().filter(|row| row.id == id).collect::<Vec<_>>();
-    assert!(!found.is_empty(), "{id} catalogued nowhere");
-    found.into_iter().next().unwrap()
-}
-
 /// S1: `P.eng.edgeTailDB` = 12, held by `edges::EDGE_TAIL_DB`, catalogued once under the family §10
 /// files it in.
 #[test]

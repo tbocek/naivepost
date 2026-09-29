@@ -24,7 +24,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip};
 
 static RAN_REFUSE: AtomicBool = AtomicBool::new(false);
 static RAN_LIVE: AtomicBool = AtomicBool::new(false);
@@ -35,10 +35,6 @@ static RAN_EDIT: AtomicBool = AtomicBool::new(false);
 static RAN_LANE_ONLY: AtomicBool = AtomicBool::new(false);
 
 /// A footage scene on camera 0.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
-
 /// A spliced card: `s == e` with a `dur`, which is what makes it an insert (`Seg::is_insert`).
 fn card(at: f64, dur: f64, path: &str) -> Seg {
     Seg { s: at, e: at, dur, ins: path.to_string(), ..Default::default() }

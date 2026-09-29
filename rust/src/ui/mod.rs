@@ -11,6 +11,9 @@ pub mod produce_press_wiring;
 pub mod produce_words;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
+/// F3.5 ▨ SVG drawing by hand: the page half of the flow, split out of `window.rs`. Its doors are
+/// re-exported below under the `ui::` names the tests and the shell already call.
+mod cut_svg;
 /// F0.7 S5 — the policy form: every field with its value, source and reason.
 mod narrate_lines;
 /// F4.7 (**Text**) — the row's text box: what a typed tag does to the line, and when it reaches disk.
@@ -19,6 +22,13 @@ pub mod policy_form;
 pub mod window;
 
 pub use settings::badge;
+// F3.5 ▨ SVG drawing by hand: the doors this shell and the widget tests call, under the `ui::` names they
+// always had (they lived in `window.rs` until they moved to `cut_svg`).
+pub use cut_svg::{
+    press_svg_apply, press_svg_cancel, press_svg_choose, press_svg_esc, press_svg_item,
+    release_svg_arm_only, svg_armed, svg_chosen, svg_chosen_file, svg_drag_ended,
+    svg_drag_ended_with_source, svg_form_open, svg_raster_state, swap_svg_file,
+};
 // §07-narrate#1-screen — the page's seams: the state it renders, the refresh that paints it, and one
 // function per press so a widget test can compare what the click printed with what the rule answered.
 pub use narrate_page::{
@@ -248,20 +258,6 @@ pub use window::text_armed;
 pub use window::text_drag_ended;
 pub use window::text_drag_ended_with_source;
 pub use window::text_form_open;
-pub use window::press_svg_apply;
-pub use window::press_svg_cancel;
-pub use window::press_svg_choose;
-pub use window::press_svg_esc;
-pub use window::press_svg_item;
-pub use window::release_svg_arm_only;
-pub use window::svg_armed;
-pub use window::svg_chosen;
-pub use window::svg_chosen_file;
-pub use window::svg_drag_ended;
-pub use window::svg_drag_ended_with_source;
-pub use window::svg_form_open;
-pub use window::swap_svg_file;
-pub use window::svg_raster_state;
 pub use window::note_zoom_place;
 pub use window::zoom_armed;
 pub use window::PREVIEW_PANEL_H;

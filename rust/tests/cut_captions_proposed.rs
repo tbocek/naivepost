@@ -18,6 +18,10 @@ use naivepost::tools::clips::{self, Clips};
 use naivepost::roles::Job;
 use naivepost::tools::Tool;
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{row};
+
 /// Floats from a rule, never `assert_eq!`: 1.2 - 1.0 is not 0.2, and this flow's numbers are all differences.
 const EPS: f64 = 1e-9;
 
@@ -29,16 +33,6 @@ fn assert_close(asked: &str, got: f64, want: f64) {
 /// (which [`params::find`] answers) and `P.policy.captionMinSeconds` in §6's (`params::cut`) — so this looks through
 /// both rather than guessing which page a row was filed under. A duplicate would be two homes for one bound, which
 /// is what the catalogue test counts; asserting one here keeps that honest from this round's side too.
-fn row(id: &str) -> params::Param {
-    let mut found = params::prepare()
-        .into_iter()
-        .chain(params::cut())
-        .filter(|row| row.id == id)
-        .collect::<Vec<_>>();
-    assert_eq!(found.len(), 1, "{id} catalogued {} times", found.len());
-    found.pop().unwrap()
-}
-
 /// The batch S4 and S5 argue about: clips 6 to 10, ten seconds each. Ten is exact in binary, so every offset below
 /// is derived by addition of whole or halved numbers rather than by a run. Starting at 6 rather than 1 is what makes
 /// S4's refusal interesting — "clip 3" is then a clip that exists somewhere but not in this batch.

@@ -7,9 +7,9 @@
 use naivepost::cut::Seg;
 use naivepost::cut_trim as trim;
 
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{clip};
 
 /// An insert is `s == e` with a `dur` (`Seg::is_insert`): material spliced in beside the footage, which
 /// rule 8 of `spec/05-cut.md` keeps out of every trim reach. The box it gets on the strip stands for its

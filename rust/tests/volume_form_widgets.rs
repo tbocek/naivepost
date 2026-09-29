@@ -29,7 +29,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, entry, widget};
 
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
 static RAN_LINE: AtomicBool = AtomicBool::new(false);
@@ -46,16 +46,6 @@ fn assert_close(asked: &str, got: f64, want: f64) {
 }
 
 /// Let the main context run what the widget emissions queued.
-
-fn widget(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
-    ui::find_source_widget(window, name).unwrap_or_else(|| panic!("the Cut page drew no {name}"))
-}
-
-fn entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
-    widget(window, name)
-        .downcast::<gtk::Entry>()
-        .unwrap_or_else(|_| panic!("`{name}` is an Entry"))
-}
 
 fn dropdown(window: &adw::ApplicationWindow, name: &str) -> gtk::DropDown {
     widget(window, name)

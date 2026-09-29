@@ -9,11 +9,11 @@ use naivepost::cut::Seg;
 use naivepost::cut_select;
 use naivepost::cut_trim as trim;
 
-/// The clip under the hand throughout: 10–30 s of camera 0, in a recording that runs 0–100.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{clip};
 
+/// The clip under the hand throughout: 10–30 s of camera 0, in a recording that runs 0–100.
 /// The same fixtures S1's bounds are read against: a previous clip ending at 9.5 and a next one starting at 40.
 fn neighbours() -> Vec<Seg> {
     vec![clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)]

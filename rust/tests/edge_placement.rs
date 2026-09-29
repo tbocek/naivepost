@@ -10,6 +10,10 @@ use naivepost::layout::Tree;
 use naivepost::textfmt::Retake;
 use naivepost::wave::{self, Wave};
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{word};
+
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
 const WORD: u8 = 120;
@@ -28,10 +32,6 @@ fn wave(total: f64, spans: &[(f64, f64, u8)]) -> Wave {
 /// One recording filling the session clock from second nought.
 fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
     Edges::new(wave(total, spans), 0.0)
-}
-
-fn word(text: &str, s: f64, e: f64) -> AlignedWord {
-    AlignedWord { word: text.into(), s, e }
 }
 
 fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {

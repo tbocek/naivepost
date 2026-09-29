@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 use naivepost::cut::{self, cut_segments, Cut, EffectKind, Fx, Lane, Seg, NO_CUT_YET};
 use naivepost::layout::Tree;
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{seg};
+
 fn temp_dir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "naivepost-cut-{}-{tag}",
@@ -263,10 +267,6 @@ fn sec_01_project_and_files_3_cutcutjson_one_function_writes_the_file_and_a_miss
     std::fs::write(t.cut_json(), "{ not json").unwrap();
     let err = cut::load(&t).unwrap_err();
     assert!(err.contains("cut.json"), "{err}");
-}
-
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
 }
 
 /// The maps are BTreeMap so a save is byte-stable; pinned here because the autosave

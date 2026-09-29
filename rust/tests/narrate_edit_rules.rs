@@ -6,9 +6,9 @@ use naivepost::narrate_edit::{self as edit, MoveResult};
 use naivepost::narrate_screen;
 use naivepost::narration::{Entry, Narration, Silent};
 
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
-}
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{seg};
 
 fn line(s: f64, e: f64, at: f64, text: &str, emotion: &str, pos: &str) -> Entry {
     Entry { s, e, at, text: text.into(), emotion: emotion.into(), pos: pos.into(), roll: 0 }

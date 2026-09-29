@@ -7,7 +7,13 @@
 //! becoming a warning attributed to whoever added the last `mod common;`.
 
 use adw::prelude::*;
-use naivepost::{params, ui};
+use gtk4 as gtk;
+use naivepost::{
+    cut::{Cut, Seg},
+    edges::AlignedWord,
+    shell::Page,
+    params, ui,
+};
 
 /// The shell's status line as plain text — where the app says what a press did, so most widget tests
 /// end by reading this rather than reaching into the widget that was pressed.
@@ -71,4 +77,95 @@ pub fn release_last_window() {
         }
     });
     settle();
+}
+
+/// Find a widget by the name its builder gave it, walking the whole tree below the window. Several
+/// widget tests need this and none of them reached for `gtk::WidgetExt::child` chains, so the walk lives
+/// here once; the three files whose version differs keep their own.
+pub fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
+    fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+        if node.widget_name() == name {
+            return Some(node.clone());
+        }
+        if let Some(child) = node.first_child() {
+            let mut cursor = Some(child);
+            while let Some(current) = cursor {
+                if let Some(found) = walk(&current, name) {
+                    return Some(found);
+                }
+                cursor = current.next_sibling();
+            }
+        }
+        None
+    }
+    walk(window.upcast_ref(), name)
+}
+
+/// One kept clip of the cut. The plain form — every other field at its default.
+pub fn seg(s: f64, e: f64) -> Seg {
+    Seg { s, e, ..Default::default() }
+}
+
+/// The same clip with the camera layer explicitly down, which is how the lane tests state "no drawing".
+pub fn clip(s: f64, e: f64) -> Seg {
+    Seg { s, e, cam: 0, ..Default::default() }
+}
+
+/// A parameter row from the PREPARE and CUT pages only — where a test wants to prove an id is catalogued
+/// on exactly one of those two lists rather than anywhere in the catalogue.
+pub fn row(id: &str) -> params::Param {
+    let mut found = params::prepare()
+        .into_iter()
+        .chain(params::cut())
+        .filter(|row| row.id == id)
+        .collect::<Vec<_>>();
+    assert_eq!(found.len(), 1, "{id} catalogued {} times", found.len());
+    found.pop().unwrap()
+}
+
+/// The Cut page's source widget by name, panicking with the page's own words when it was never drawn.
+pub fn widget(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
+    ui::find_source_widget(window, name).unwrap_or_else(|| panic!("the Cut page drew no {name}"))
+}
+
+/// That widget narrowed to an editable entry.
+pub fn entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
+    widget(window, name)
+        .downcast::<gtk::Entry>()
+        .unwrap_or_else(|_| panic!("`{name}` is an Entry"))
+}
+
+/// A window sitting on the Cut page with `seeded` as its review cut and history open over it — the shape
+/// every lane/effect widget test starts from, so the seeding order lives once.
+pub fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
+    release_last_window();
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    assert!(
+        model.sources.iter().any(|source| source.footage),
+        "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
+    );
+    let window = ui::build_window(app, &model, "Prepare");
+    hold_last_window(window.clone());
+    window.present();
+    ui::tab_button(&window, Page::Cut)
+        .expect("the shell has a Cut tab")
+        .emit_by_name::<()>("clicked", &[]);
+    ui::reopen_history_on(&window, seeded);
+    ui::seed_review_cut(&window, seeded);
+    ui::refresh_effects_lane(&window);
+    settle();
+    window
+}
+
+/// One aligned word, as the aligner's file prints it.
+pub fn word(text: &str, s: f64, e: f64) -> AlignedWord {
+    AlignedWord { word: text.into(), s, e }
+}
+
+/// The parameter row with this id, from whichever page catalogues it — `all_rows()` first, so an id that
+/// appears on two pages is caught by those rows' own uniqueness check rather than by this one.
+pub fn anywhere(id: &str) -> params::Param {
+    let found = all_rows().into_iter().filter(|row| row.id == id).collect::<Vec<_>>();
+    assert!(!found.is_empty(), "{id} catalogued nowhere");
+    found.into_iter().next().unwrap()
 }

@@ -21,7 +21,7 @@ use naivepost::shell::Page;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, widget_in};
 
 static RAN_PLATE: AtomicBool = AtomicBool::new(false);
 static RAN_SETTINGS: AtomicBool = AtomicBool::new(false);
@@ -54,25 +54,6 @@ const WIDGETS: [&str; 15] = [
 /// A widget somewhere in THIS window's tree, found from the window itself rather than from any global
 /// slot: a closed window survives, so a tree-wide search can land on another window's copy.
 /// `sec_08_produce_1_screen` uses this for every one of §A's fifteen widgets.
-fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if node.widget_name() == name {
-            return Some(node.clone());
-        }
-        if let Some(child) = node.first_child() {
-            let mut cursor = Some(child);
-            while let Some(current) = cursor {
-                if let Some(found) = walk(&current, name) {
-                    return Some(found);
-                }
-                cursor = current.next_sibling();
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
-
 fn click(window: &adw::ApplicationWindow, name: &str) {
     ui::line_step_button(window, name)
         .unwrap_or_else(|| panic!("the Produce page drew no {name}"))

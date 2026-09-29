@@ -33,7 +33,7 @@ fn session_tree() -> naivepost::layout::Tree {
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, widget_in};
 
 static RAN_TICK: AtomicBool = AtomicBool::new(false);
 static RAN_TRANSPORT: AtomicBool = AtomicBool::new(false);
@@ -52,25 +52,6 @@ static RAN_FIT_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_OFF_WIRE: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
-
-fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if node.widget_name() == name {
-            return Some(node.clone());
-        }
-        if let Some(child) = node.first_child() {
-            let mut cursor = Some(child);
-            while let Some(current) = cursor {
-                if let Some(found) = walk(&current, name) {
-                    return Some(found);
-                }
-                cursor = current.next_sibling();
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
 
 fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
     widget_in(window, name)

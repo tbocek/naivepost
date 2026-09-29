@@ -22,7 +22,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, widget_in, cut_page};
 
 static RAN_CLICK_PLACES: AtomicBool = AtomicBool::new(false);
 static RAN_REJECTED_WHOLE_REPLY: AtomicBool = AtomicBool::new(false);
@@ -33,46 +33,7 @@ static RAN_UNDO_TAKES_PASS: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
-fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if node.widget_name() == name {
-            return Some(node.clone());
-        }
-        if let Some(child) = node.first_child() {
-            let mut cursor = Some(child);
-            while let Some(current) = cursor {
-                if let Some(found) = walk(&current, name) {
-                    return Some(found);
-                }
-                cursor = current.next_sibling();
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
-
 /// Build a window sitting on the Cut tab with the given cut seeded, dropping the previous check's window first.
-fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
-    release_last_window();
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    assert!(
-        model.sources.iter().any(|source| source.footage),
-        "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
-    );
-    let window = ui::build_window(app, &model, "Prepare");
-    hold_last_window(window.clone());
-    window.present();
-    ui::tab_button(&window, Page::Cut)
-        .expect("the shell has a Cut tab")
-        .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
-    ui::refresh_effects_lane(&window);
-    settle();
-    window
-}
-
 /// Three kept runs of ten seconds each: three clips the pass can be asked about, with clean arithmetic
 /// (clip 2 starts at 10.0 s, clip 3 at 20.0 s) so a placed caption's second is checkable by hand.
 fn three_clips() -> Cut {

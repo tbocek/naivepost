@@ -8,9 +8,9 @@ use naivepost::cut::{Cut, Seg};
 use naivepost::cut_review::{self as cut_review, Start, Window};
 use naivepost::preview::Player;
 
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
-}
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{seg};
 
 /// Three clips with a gap between each: the joins are at 60 and 160, their windows [50,110] and [150,210].
 fn three_clips() -> Cut {

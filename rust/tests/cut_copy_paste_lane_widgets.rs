@@ -18,7 +18,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, settle, status_text};
+use common::{fixture_dir, settle, status_text, clip};
 
 static RAN_SHORT: AtomicBool = AtomicBool::new(false);
 static RAN_TAKEN: AtomicBool = AtomicBool::new(false);
@@ -28,10 +28,6 @@ static RAN_ESC: AtomicBool = AtomicBool::new(false);
 static RAN_PASTE_LENGTHENS: AtomicBool = AtomicBool::new(false);
 
 /// A footage scene on camera 0.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
-
 /// The Cut page with a three-clip cut seeded, so there is kept footage to copy from and to paste over.
 fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");

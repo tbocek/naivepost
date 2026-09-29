@@ -19,11 +19,11 @@ use naivepost::shell::{self, Page};
 use naivepost::timeline::{self, Recording, Span};
 use naivepost::tools::cutpass;
 
-const REC: &str = "2026-09-16 17-26-20";
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{clip};
 
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
+const REC: &str = "2026-09-16 17-26-20";
 
 fn card(s: f64, e: f64, dur: f64) -> Seg {
     Seg { s, e, ins: "assets/tier.svg".into(), dur, ..Default::default() }

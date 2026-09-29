@@ -22,7 +22,7 @@ use naivepost::cut_fold;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip};
 
 static RAN_FOLD: AtomicBool = AtomicBool::new(false);
 static RAN_UNFOLD: AtomicBool = AtomicBool::new(false);
@@ -36,10 +36,6 @@ static RAN_LANE_CROSS: AtomicBool = AtomicBool::new(false);
 const PPS: f64 = ui::TRACK_STRIP_PPS;
 
 /// Kept footage on camera 0.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
-
 /// A window on the Cut tab with `seeded` as its cut and `tape` as the session's filmed recordings.
 /// The tape is written into the session's own `cut.json` beside a `recordings` sidecar the page reads
 /// through `timeline::kept_footage_recordings`; here it is passed in so each check controls both

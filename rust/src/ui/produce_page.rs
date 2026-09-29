@@ -673,13 +673,7 @@ pub fn press_transcode_again(window: &adw::ApplicationWindow) -> String {
     crate::ui::produce_press_wiring::transcode_again(window)
 }
 
-/// **10** ⤓ Save video: a copy out, so `produce/final` keeps its place as the stamped output. The path is
-/// what the shell's save dialog answered; headless there is no chooser, so the seam takes it as an argument.
-pub fn press_save_video(window: &adw::ApplicationWindow, to: &str, bytes: u64) -> String {
-    crate::ui::produce_press_wiring::save_video(window, to, bytes)
-}
-
-/// **10** ⤓ Save video as the widget fires it — the project-named default for the destination, read by
+/// **10** Save video as the widget fires it — the project-named default for the destination, read by
 /// `produce_press_wiring::save_video_from_button`.
 pub fn press_save_video_from_button(window: &adw::ApplicationWindow) -> String {
     crate::ui::produce_press_wiring::save_video_from_button(window)

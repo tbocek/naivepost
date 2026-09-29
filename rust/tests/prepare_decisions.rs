@@ -21,6 +21,10 @@ use naivepost::tools::retakes::{Line, Marks, Trim};
 use naivepost::tools::textedit::{self, Join, Side};
 use naivepost::exchanges::ToolCall;
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{word};
+
 const ITEM: &str = "§12-decisions#prepare";
 
 fn json(body: &str) -> serde_json::Value {
@@ -37,10 +41,6 @@ fn error(reply: &str) -> String {
 /// No envelope anywhere on the clock (same helper shape as tests/edge_placement.rs).
 fn no_envelope(_: f64) -> Option<&'static edge::Edges> {
     None
-}
-
-fn word(text: &str, s: f64, e: f64) -> AlignedWord {
-    AlignedWord { word: text.into(), s, e }
 }
 
 #[test]

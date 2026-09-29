@@ -18,7 +18,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, settle, status_text};
+use common::{fixture_dir, settle, status_text, seg};
 
 static RAN_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_UNDO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -49,10 +49,6 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     seeded.segs = vec![seg(0.0, 30.0), seg(30.0, 60.0), seg(70.0, 90.0)];
     ui::seed_review_cut(&window, &seeded);
     window
-}
-
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
 }
 
 /// Let the main context run what the widget emissions queued.

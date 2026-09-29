@@ -11,9 +11,9 @@ use naivepost::narrate_preview::Take;
 use naivepost::narrate_screen::AUDITION_LEAD_SECONDS;
 use naivepost::narration::Entry;
 
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
-}
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{seg};
 
 /// A line written against the clip `s..e`, starting `at` seconds into it.
 fn clip(s: f64, e: f64, text: &str, at: f64) -> Entry {

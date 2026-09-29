@@ -23,7 +23,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, widget_in, cut_page};
 
 static RAN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
@@ -35,25 +35,6 @@ static RAN_NO_ANSWER: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued. Bounded, and NON-blocking: `iteration(false)`
 /// returns immediately when nothing is ready, where a blocking wait would park the test thread forever.
-
-fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if node.widget_name() == name {
-            return Some(node.clone());
-        }
-        if let Some(child) = node.first_child() {
-            let mut cursor = Some(child);
-            while let Some(current) = cursor {
-                if let Some(found) = walk(&current, name) {
-                    return Some(found);
-                }
-                cursor = current.next_sibling();
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
 
 /// Every `fx-bar-*` name under the effects lane. Which kinds earn a bar is `fx_lane::paused_scene`'s decision
 /// (a volume is heard, not drawn), so this collects what the view drew rather than tallying a number by hand.
@@ -96,26 +77,6 @@ fn sibling_row(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
 }
 
 /// Build a window sitting on the Cut tab with the given cut seeded, dropping the previous check's window first.
-fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
-    release_last_window();
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    assert!(
-        model.sources.iter().any(|source| source.footage),
-        "the fixture must carry a footage row or the Cut tab is locked (shell::lock)"
-    );
-    let window = ui::build_window(app, &model, "Prepare");
-    hold_last_window(window.clone());
-    window.present();
-    ui::tab_button(&window, Page::Cut)
-        .expect("the shell has a Cut tab")
-        .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
-    ui::refresh_effects_lane(&window);
-    settle();
-    window
-}
-
 /// Three kept clips of ten seconds each: clip 1 = 0–10, clip 2 = 10–20, clip 3 = 20–30, so every second the
 /// pass writes down is checkable by hand and clip 4 is outside the batch.
 fn three_clips() -> Cut {

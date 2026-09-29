@@ -10,6 +10,10 @@ use naivepost::cut_copy as cp;
 use naivepost::cut_delete as del;
 use naivepost::cut_select::{Scope, Selection};
 
+#[allow(dead_code)] // every test binary compiles this whole module
+mod common;
+use common::{clip};
+
 const REC: &str = "2026-09-16 17-26-20";
 const GONE: &str = "2026-01-01 09-00-00";
 const FILE: &str = "assets/audio.wav";
@@ -20,10 +24,6 @@ fn footage(start: f64, end: f64) -> Selection {
 
 fn sound(start: f64, end: f64) -> Selection {
     Selection { start, end, scope: Scope::Sound { recording: REC.into() } }
-}
-
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
 }
 
 /// §05-cut#8-details-confirmed-against-the-code-verification-pass — `Copy refuses with both of its sentences`:
