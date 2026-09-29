@@ -114,6 +114,7 @@ pub mod rescan;
 pub mod requests;
 pub mod request_timing;
 pub mod server_leg;
+pub mod stop_legs;
 pub mod settings_probe;
 pub mod roles;
 pub mod lucky;

@@ -24,3 +24,6 @@ sha1 = "0.11.0"
 sha2 = "0.11"
 regex = "1.13.1"
 ureq = "3.4.2"
+# F0.3 ⏹ kills the subprocesses a run registered (`stop_legs::signal`); already in the lock as a
+# transitive dep, so this adds no new download.
+libc = "0.2"

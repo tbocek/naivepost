@@ -4,6 +4,9 @@
 //! this mirrors: stop the page's preview first, then bring the run down, and never treat a child
 //! killed by that stop as a failure.
 
+use std::os::unix::process::ExitStatusExt;
+use std::time::Duration;
+
 use naivepost::run::{self, RunBar, Subprocesses, Transport};
 use naivepost::shell::Page;
 
@@ -187,4 +190,188 @@ fn f0_3_s5_a_stop_inside_describe_arms_a_restart_from_the_start() {
     let mut idle = Subprocesses::default();
     let _ = elsewhere.press_stop(Page::Narrate, Transport::default(), false, &mut idle);
     assert!(!elsewhere.describe_restarts(), "no Describe involved, no restart armed");
+}
+
+// ---- the legs that leave the process: F0.3 S3's kill, S4's excuse, S5's restart ----
+
+/// S3: a registered child is really terminated, not merely listed. The proof is the wait status:
+/// `sleep 60` died of a signal rather than running out its minute, so something outside this process
+/// ended it.
+#[test]
+fn f0_3_s3_stop_terminates_a_registered_child_for_real() {
+    let mut child = std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .expect("spawn sleep 60");
+    let pid = child.id();
+
+    let mut bar = bar_with_run(run::Step::Prepare, false);
+    let mut procs = Subprocesses::default();
+    procs.register(pid);
+
+    // The press drains the registry and hands the pids over; the leg signals them.
+    let stopped = bar.press_stop(Page::Prepare, Transport::default(), false, &mut procs);
+    let killed = match &stopped {
+        run::Stopped::RunStopped { killed } => killed.clone(),
+        other => panic!("expected the run to stop, got {other:?}"),
+    };
+    let signalled = naivepost::stop_legs::signal(&killed);
+    assert_eq!(signalled, vec![pid], "the pid was actually signalled");
+    assert!(procs.is_empty(), "and the registry was drained by the press");
+
+    // The child is gone, killed by the signal rather than by finishing its own sleep. Polled with
+    // `try_wait` rather than blocked on `wait`: if nothing had been signalled this would hang for the
+    // full minute, and a test that hangs proves less than one that says "still alive".
+    let status = wait_killed(&mut child);
+    assert!(status.code().is_none(), "a signalled death carries no exit code: {status:?}");
+    // Which signal depends on whether the target took SIGTERM or had to be killed outright; either one
+    // means ⏹'s leg reached it, and neither is the exit code `sleep` would have on finishing.
+    assert!(
+        matches!(status.signal(), Some(libc::SIGTERM) | Some(libc::SIGKILL)),
+        "it was ended by a signal from the stop leg, got {status:?}"
+    );
+}
+
+/// Poll a child until it has exited, up to five seconds, and report why it did.
+///
+/// std's `Child::wait_timeout` is unstable in this toolchain, so the same thing by hand: `try_wait` is
+/// non-blocking and returns `Ok(None)` while the child still runs.
+fn wait_killed(child: &mut std::process::Child) -> std::process::ExitStatus {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match child.try_wait().expect("try_wait on the child") {
+            Some(status) => return status,
+            None if std::time::Instant::now() >= deadline => panic!(
+                "child {} was still running after 5 s — nothing signalled it",
+                child.id()
+            ),
+            None => std::thread::sleep(Duration::from_millis(20)),
+        }
+    }
+}
+
+/// Same effect through the one call `wire_stop` makes, so what the button reaches is what is tested.
+#[test]
+fn f0_3_s3_the_button_leg_terminates_every_registered_child() {
+    let first = std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .expect("spawn first sleep");
+    let second = std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .expect("spawn second sleep");
+    let (one, two) = (first.id(), second.id());
+
+    let bar = bar_with_run(run::Step::Prepare, false);
+    let mut procs = Subprocesses::default();
+    procs.register(one);
+    procs.register(two);
+
+    let killed = naivepost::stop_legs::stop_registered(&mut procs);
+    assert_eq!(killed.len(), 2, "both were signalled: {killed:?}");
+    assert!(procs.is_empty(), "drained, so a second press cannot kill a recycled pid");
+
+    for mut child in [first, second] {
+        let status = wait_killed(&mut child);
+        assert!(
+            matches!(status.signal(), Some(libc::SIGTERM) | Some(libc::SIGKILL)),
+            "ended by the stop leg's signal: {status:?}"
+        );
+    }
+}
+
+/// S4: a child that was already gone when the stop reached it is neither reported nor a failure — and
+/// signalling it twice never raises an error either way.
+#[test]
+fn f0_3_s4_a_child_already_gone_is_not_reported_and_not_a_failure() {
+    let mut child = std::process::Command::new("sleep")
+        .arg("0.1")
+        .spawn()
+        .expect("spawn a short sleep");
+    let pid = child.id();
+    // Let it finish on its own, so the pid is dead before anything signals it.
+    let finished = child.wait().expect("the short sleep finishes");
+    assert!(finished.success(), "it ended by itself, unaided");
+
+    let mut bar = bar_with_run(run::Step::Prepare, false);
+    let mut procs = Subprocesses::default();
+    procs.register(pid);
+    let stopped = bar.press_stop(Page::Prepare, Transport::default(), false, &mut procs);
+    let killed = match &stopped {
+        run::Stopped::RunStopped { killed } => killed.clone(),
+        other => panic!("expected the run to stop, got {other:?}"),
+    };
+
+    // First pass: the pid is already reaped, so nothing is reported as signalled.
+    let first_pass = naivepost::stop_legs::signal(&killed);
+    assert!(first_pass.is_empty(), "a gone pid is not claimed as killed: {first_pass:?}");
+    // And again: still nothing, and no error surfaced anywhere.
+    let second_pass = naivepost::stop_legs::signal(&killed);
+    assert!(second_pass.is_empty(), "signalling a gone pid twice stays quiet: {second_pass:?}");
+    // The rule S4 states, applied to the same fact: with the stop flag up, the death reads as stopped.
+    assert!(run::stopped_is_not_failure(true, true));
+}
+
+/// S5: the arming comes from the stage seam, not from a literal the caller remembers to pass.
+#[test]
+fn f0_3_s3_describe_stage_is_what_the_press_reads() {
+    assert!(!naivepost::stop_legs::describe_stage(), "outside the stage");
+    naivepost::stop_legs::enter_describe();
+    assert!(naivepost::stop_legs::describe_stage(), "inside the stage");
+
+    // A press while inside arms the restart, reading the seam rather than being told.
+    let mut bar = bar_with_run(run::Step::Prepare, false);
+    let mut procs = Subprocesses::default();
+    let _ = bar.press_stop(
+        Page::Prepare,
+        Transport::default(),
+        naivepost::stop_legs::describe_stage(),
+        &mut procs,
+    );
+    assert!(bar.describe_restarts(), "armed through the stage seam");
+
+    naivepost::stop_legs::leave_describe();
+    assert!(!naivepost::stop_legs::describe_stage(), "closed again");
+    // After leaving, the same press does not arm: a stale flag would arm every later stop.
+    let mut later = bar_with_run(run::Step::Prepare, false);
+    let _ = later.press_stop(
+        Page::Prepare,
+        Transport::default(),
+        naivepost::stop_legs::describe_stage(),
+        &mut procs,
+    );
+    assert!(!later.describe_restarts(), "leaving the stage really closed it");
+}
+
+/// S5's consequence, all four arms. Armed and marker-present are two ways of saying the same thing —
+/// the middle of the description cannot be trusted — so either one alone starts the description over:
+/// a ⏹ cut through Describe (`armed`), or the last run left its working files unfinished on disk
+/// (`resume_marker_present`, the lane's `events.tsv` / `state.txt` F1.1 S3 reads). Only with neither
+/// is there nothing to restart. What starting over keeps (scaled frames, extracted frames,
+/// transcripts) is what spec/00-principles #4 protects; only the untrustworthy event stream goes.
+#[test]
+fn f0_3_s5_an_armed_stop_describes_from_the_start() {
+    use naivepost::stop_legs::describes_from_the_start as from_start;
+    // Armed by a stop inside Describe, nothing on disk: start from the beginning.
+    assert!(from_start(true, false), "armed with nothing on disk: start over");
+    // Armed AND a marker left behind: still starts over — both say the middle is untrusted.
+    assert!(from_start(true, true), "armed with a marker: start over");
+    // A marker without the arming says the same about the files: start over.
+    assert!(from_start(false, true), "marker present, not armed: start over");
+    // Neither: nothing was stopped inside Describe, so nothing restarts.
+    assert!(!from_start(false, false), "nothing at all: nothing to restart");
+}
+
+/// S5: the arming is consumed on read, so one stop affects exactly one Prepare run — the same
+/// contract `RunBar::describe_restarts` holds for the bar's own flag.
+#[test]
+fn f0_3_s5_one_armed_stop_arms_exactly_one_run() {
+    assert!(!naivepost::stop_legs::take_describe_restart(), "starts unarmed");
+    naivepost::stop_legs::arm_describe_restart();
+    assert!(naivepost::stop_legs::take_describe_restart(), "the armed stop is taken up once");
+    assert!(
+        !naivepost::stop_legs::take_describe_restart(),
+        "and never again: the arming does not leak into a third run"
+    );
 }

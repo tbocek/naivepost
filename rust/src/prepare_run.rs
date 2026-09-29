@@ -281,8 +281,17 @@ pub fn begin(project: &Project, tree: &Tree) -> Start {
     if let Err(error) = save_project(project, tree.dir()) {
         return Start::SaveFailed { error };
     }
-    // S3, then S4.
-    let cleared = clear_stopped_describe(tree, project);
+    // S3, then S4. Whether this run starts the description over is decided by F0.3's rule: armed by a
+    // ⏹ that cut through Describe, or a lane left holding its working files from an unfinished run.
+    let armed = crate::stop_legs::take_describe_restart();
+    let marker_present = project.sources.iter().any(|source| {
+        tree.events_tsv(&lane(source)).exists() || tree.describe_state(&lane(source)).exists()
+    });
+    let cleared = if crate::stop_legs::describes_from_the_start(armed, marker_present) {
+        clear_stopped_describe(tree, project)
+    } else {
+        Cleared::default()
+    };
     let mut lines = clear_lines(&cleared);
     lines.extend(start_log(project, &prepare::count(tree, project)));
     Start::Started { lines, cleared }

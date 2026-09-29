@@ -624,6 +624,7 @@ dependencies = [
  "gsk4",
  "gtk4",
  "libadwaita",
+ "libc",
  "regex",
  "serde",
  "serde_json",

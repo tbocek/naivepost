@@ -467,3 +467,37 @@ fn f1_1_s7_failure_carries_its_reason_or_points_at_the_log() {
         "whitespace is not a reason either"
     );
 }
+
+// ---- F0.3 S5 through this flow: the arming reaches the run that owns the restart ----
+
+/// F0.3 S5 end to end: a stop that landed inside Describe arms the NEXT `begin` to describe from the
+/// start, and only that one. The arming travels in `stop_legs`, not in the project file, so this is
+/// the check that the seam is joined — with nothing but a lane's `state.txt` on disk (the marker an
+/// unfinished description leaves), the armed run clears it.
+#[test]
+fn f0_3_s5_a_stop_inside_describe_arms_the_next_prepare_run() {
+    let (_keep, tree) = scratch("f03arm");
+    fs::create_dir_all(tree.describe_dir("lecture")).unwrap();
+    fs::write(tree.describe_state("lecture"), b"halfway\n").unwrap();
+    let project = with_sources(&["project:sources/lecture.mkv"]);
+
+    naivepost::stop_legs::arm_describe_restart();
+    match prepare_run::begin(&project, &tree) {
+        Start::Started { cleared, .. } => {
+            assert!(
+                cleared.removed.iter().any(|f| f == "state.txt"),
+                "the armed stop reached the flow that owns the restart: {:?}",
+                cleared.removed
+            );
+        }
+        other => panic!("expected Started, got {other:?}"),
+    }
+    // The arming was consumed by that run: with no marker left and nothing re-armed, the next begin is
+    // idle-safe and clears nothing.
+    match prepare_run::begin(&project, &tree) {
+        Start::Started { cleared, .. } => {
+            assert!(cleared.quiet(), "one stop arms one run, no further: {cleared:?}");
+        }
+        other => panic!("expected Started, got {other:?}"),
+    }
+}

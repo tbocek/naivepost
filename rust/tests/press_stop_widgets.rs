@@ -23,8 +23,11 @@ fn window_round() {
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.connect_activate(|app| {
+            APP.with(|held| *held.borrow_mut() = Some(app.clone()));
             stops_a_run(app);
             says_nothing_when_there_is_nothing_to_stop(app);
+            stops_the_playing_cut_preview_through_the_button();
+            RAN_PLAY.store(true, std::sync::atomic::Ordering::SeqCst);
             RAN.store(true, std::sync::atomic::Ordering::SeqCst);
             app.quit();
         });
@@ -33,6 +36,68 @@ fn window_round() {
 }
 
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_PLAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The one application this binary runs its checks inside. Set at the top of `connect_activate`, read
+/// by the checks that were not handed it as an argument.
+thread_local! {
+    static APP: std::cell::RefCell<Option<adw::Application>> = const { std::cell::RefCell::new(None) };
+}
+
+/// S1 through the real widget with a preview that is genuinely playing: ⏹ must stop the PLAYER, not
+/// only write a status line. Before this round the handler passed a hard-coded stopped `Transport`
+/// into `press_stop`, so the transport half of S1 could never fire from a click at all.
+fn stops_the_playing_cut_preview_through_the_button() {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    // Cut owns a preview (`transport_for` answers Some there), so this is the page where S1 applies.
+    let window = ui::build_window(
+        &APP.with(|held| held.borrow().clone()).expect("the round's application"),
+        &model,
+        "Cut",
+    );
+    window.present();
+
+    // Put the player in ✂ cut mode and playing, through the same setter the other Cut tests use.
+    ui::set_preview_state(
+        &window,
+        true,
+        false,
+        naivepost::run::Transport { playing: true, started: true },
+    );
+    assert!(
+        ui::preview_player(&window).transport.playing,
+        "the fixture really has the preview playing"
+    );
+
+    let stop = ui::stop_button(&window).expect("⏹ exists on the Cut page's run bar");
+    stop.emit_clicked();
+
+    // The player itself stopped — the check that proves S1's transport half is wired.
+    assert!(
+        !ui::preview_player(&window).transport.playing,
+        "⏹ stopped the player, not just the sentence: {:?}",
+        ui::preview_player(&window).transport
+    );
+    // And the press said what S1 says when only the preview was going: this window has no run behind
+    // the player, so there is nothing to fall through to and the line reads "playback stopped".
+    // (With a run under way the same press ends both and reads 'stopping…' — that fall-through is
+    // pinned by `stops_a_run` above and by `f0_3_s1_stops_the_page_transport_and_still_stops_the_run`.)
+    assert_eq!(
+        ui::state(&window).status,
+        run::PLAYBACK_STOPPED,
+        "S1's own sentence reaches the status line"
+    );
+    window.close();
+}
+
+#[test]
+fn f0_3_s1_pressing_stop_while_the_cut_preview_plays_stops_the_player() {
+    window_round();
+    assert!(
+        RAN_PLAY.load(std::sync::atomic::Ordering::SeqCst),
+        "the playing-preview ⏹ check never ran"
+    );
+}
 
 /// S1 → S3 through the real widget: ▶ starts a run, ⏹ ends it, and the status line reads
 /// "stopping…" rather than staying on the run's own progress.

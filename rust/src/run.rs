@@ -29,6 +29,9 @@ pub const PLAYBACK_STOPPED: &str = "playback stopped";
 pub const STOPPING: &str = "stopping\u{2026}";
 /// ⏹'s icon. The prototype uses the same GTK icon name for its stop button.
 pub const STOP_ICON: &str = "media-playback-stop-symbolic";
+/// ⏹'s tooltip, §2's own words: what it ends, and why ⏸ is a different control.
+pub const STOP_TOOLTIP: &str =
+    "Stop the run or the playback \u{2014} \u{23f8} is what parks one to carry on later";
 
 /// The page's own preview: the recording on Cut, the voice sample on Narrate.
 ///

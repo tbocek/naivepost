@@ -4686,6 +4686,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // ⏹ beside ▶, in the order §2's run bar reads: play, stop, then the status line.
     let stop_ = gtk::Button::from_icon_name(run::STOP_ICON);
     stop_.set_widget_name("stop-button");
+    stop_.set_tooltip_text(Some(run::STOP_TOOLTIP));
     // The gears after ⏹: labelled rather than icon-only, because §03 names the control by its words and
     // the spec's run-bar image shows the phrase on the button.
     let lucky = gtk::Button::with_label(lucky::LUCKY_LABEL);
@@ -5549,6 +5550,7 @@ fn wire_play(
                         // vision server is contacted — the requests themselves arrive with the runner
                         // rounds; what lands now is the plan the person can read while ▶ is pressed.
                         let freq = asked.interval;
+                        crate::stop_legs::enter_describe();
                         for source in &asked.sources {
                             if !source.footage {
                                 continue;
@@ -5568,6 +5570,7 @@ fn wire_play(
                                 log_line(&line);
                             }
                         }
+                        crate::stop_legs::leave_describe();
                         // F1.13's session word list is built FIRST, before either marking pass reads
                         // it: retakes and joins both dress their words off this one list, so a pass
                         // that ran without it would be matching against spellings nothing wrote. The
@@ -5705,12 +5708,22 @@ fn wire_stop(
             status.set_text(&said);
             return;
         }
-        let stopped = bar.borrow_mut().press_stop(
-            shell.borrow().page,
-            run::Transport::default(),
-            false,
-            &mut procs.borrow_mut(),
-        );
+        // S1 reads the player's real transport; `press_stop` cannot know what is playing.
+        let window = crate::ui::window::main_window();
+        let transport = preview_player(&window).transport;
+        let in_describe = crate::stop_legs::describe_stage();
+        let stopped = bar.borrow_mut().press_stop(shell.borrow().page, transport, in_describe, &mut procs.borrow_mut());
+        // S1: stop the player itself, not only the sentence (the leg decides if this page owns one).
+        if let Some(stopped) = crate::stop_legs::stop_page_preview(shell.borrow().page, transport) {
+            let held = preview_player(&window);
+            set_preview_state(&window, held.cut_only, held.reviewing, stopped);
+        }
+        // S5: a stop inside Describe arms the next Prepare run to start over.
+        if in_describe {
+            crate::stop_legs::arm_describe_restart();
+        }
+        // S3's kill: drain-and-signal, so nothing survives the press nor stays listed to be killed twice.
+        crate::stop_legs::stop_registered(&mut procs.borrow_mut());
         // Repaint both: stopping a run changes ▶'s face as well as ⏹'s sensitivity.
         paint_run_bar(
             &play,
