@@ -28,6 +28,7 @@ use crate::fx_lane;
 use crate::fx_zoom;
 use crate::cut_insert;
 use crate::cut_play;
+use crate::cut_play_leg;
 use crate::cut_review;
 use crate::cut_select;
 use crate::cut_delete;
@@ -4947,6 +4948,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     if let Some(cut_) = play_cut_button(&window) {
         wire_play_cut(&cut_, &window);
     }
+    // F2.2 S5/S6: the tick loop that skips removed stretches, arms the spare pipeline ahead of each
+    // jump and prints the cut's own clock. No-ops until ▶✂ makes the preview the plain cut.
+    cut_play_leg::start_cut_preview_tick(&window, Rc::new(CutPreviewSlot(window.clone())));
     // F2.3: this window's cut slot is registered here for the same reason the player slot is — after
     // `set_content`, so the button being wired is the one inside the realized tree. Seeded from the
     // project's own `cut/cut.json` when it has one, because that file IS the cut (§3): the strip paints
@@ -7601,6 +7605,19 @@ pub fn place_line_from_click(
     at: f64,
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
+    // F2.2 S2: a click on the picture is another way in that cannot switch the preview, so an empty
+    // cut refuses it here rather than placing a line over nothing. The rule lives in `cut_play`.
+    // F2.2 S2: a click on the picture is another way in that cannot switch the preview, so an empty
+    // cut refuses it here rather than placing a line over nothing. The rule lives in `cut_play`.
+    if on_picture && cut_play_leg::other_way_in(&review_cut_of(window)).is_some() {
+        return cut_line::ClickOutcome {
+            line_at: at,
+            line_moved: false,
+            takes_scene: false,
+            clears_selection: false,
+            watches: None,
+        };
+    }
     let outcome = cut_line::click_outcome(at, on_picture, on_scene_picture, playing, sources, gutter);
     if outcome.line_moved {
         move_line_and_save(window, cut_line::LinePos { t: outcome.line_at }, now_ms);
@@ -7668,9 +7685,20 @@ pub fn arrow_steps(
 }
 
 /// F2.4 S3: Space toggles the preview unless a text box has the focus.
+///
+/// F2.2 S2 adds the refusal in front of the toggle: Space is one of the ways in that CANNOT switch the
+/// preview (only ▶✂ does that), so on an empty cut it says what to do instead of starting a player
+/// with nothing to play. The sentence comes from `cut_play_leg::other_way_in`, i.e. from `cut_play`.
 pub fn space_toggles(window: &adw::ApplicationWindow, text_focus: bool) -> bool {
     let toggle = cut_line::space_toggles_preview(text_focus);
     if toggle && !text_focus {
+        // S2: an empty cut refuses this way in and leaves the transport where it was.
+        if let Some(refusal) = cut_play_leg::other_way_in(&review_cut_of(window)) {
+            if let Some(status) = find_status(window.upcast_ref()) {
+                status.set_text(refusal);
+            }
+            return false;
+        }
         if let Some(player) = live_player(window) {
             let mut held = player.borrow_mut();
             held.transport.playing = !held.transport.playing;
@@ -10100,6 +10128,16 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     draw_strip_labels(cr, &ticks, w);
 
     let boxes = cut_trim::clip_boxes(&cut_.segs, TRACK_STRIP_PPS);
+    // F2.2 S6: the removed stretches inside filmed material are painted dim BEFORE the kept boxes go
+    // on top, so a clip always wins over the dim and only the gaps show it. Dimmed whether or not ▶✂
+    // is running: the kept bar already shows only kept material, so the gap IS the removed stretch.
+    cut_play_leg::paint_dimmed(
+        cr,
+        &cut_play_leg::dimmed(&cut_, &crate::timeline::filmed_runs(page_recordings().as_slice())),
+        cut_trim::RULER_H,
+        cut_trim::BAR_H,
+        TRACK_STRIP_PPS,
+    );
     if boxes.is_empty() {
         cr.select_font_face("Sans", cairo::FontSlant::Normal, gtk::cairo::FontWeight::Normal);
         cr.set_font_size(11.0);
@@ -10301,6 +10339,21 @@ pub fn preview_volume_scale(window: &adw::ApplicationWindow) -> Option<gtk::Scal
     find_widget_by_name(window.upcast_ref(), "preview-volume")?
         .downcast()
         .ok()
+}
+
+/// F2.2 S5: this window's side of the ▶✂ tick loop, over the SAME player and cut slots the buttons use.
+struct CutPreviewSlot(adw::ApplicationWindow);
+
+impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
+    fn cut_only(&self) -> bool { preview_player(&self.0).cut_only }
+    fn playhead(&self) -> Option<f64> { preview_player(&self.0).playhead }
+    fn set_playhead(&self, at: f64) { set_playhead(&self.0, at) }
+    fn cut(&self) -> Cut { review_cut_of(&self.0) }
+    fn say_clock(&self, clock: f64, ended: bool) {
+        if let Some(status) = find_status(self.0.upcast_ref()) {
+            status.set_text(&cut_play_leg::clock_line(clock, ended));
+        }
+    }
 }
 
 /// The seam F2.2's ▶✂ calls: [`cut_play::pressed`] decides whether the press switches to the cut,

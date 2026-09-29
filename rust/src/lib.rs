@@ -19,6 +19,7 @@ pub mod cut_effects_pass;
 pub mod cut_hear;
 pub mod cut_line;
 pub mod cut_play;
+pub mod cut_play_leg;
 pub mod cut_review;
 pub mod cut_select;
 pub mod cut_trim;

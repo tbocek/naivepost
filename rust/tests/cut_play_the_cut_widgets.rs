@@ -15,6 +15,7 @@ use naivepost::{cut_play, ui};
 
 static RAN_SWITCH: AtomicBool = AtomicBool::new(false);
 static RAN_GREYED: AtomicBool = AtomicBool::new(false);
+static RAN_OTHER_WAYS: AtomicBool = AtomicBool::new(false);
 
 fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
@@ -154,6 +155,51 @@ fn check_s1_greyed_with_no_clips(app: &adw::Application) {
     window.close();
 }
 
+/// S2's other ways in through the real window: Space on an EMPTY cut must refuse with S2's own
+/// sentence and leave the transport exactly where it was. Driven through `ui::space_toggles`, the same
+/// function the window's key controller calls from its `connect_key_pressed` closure for
+/// `gdk::Key::space` (gtk4-rs 0.11 offers no way to feed a synthetic `GdkEventKey` to a controller
+/// from Rust, so the shared entry point is fired rather than the raw event).
+fn check_other_ways_refuse_an_empty_cut(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Cut");
+    window.present();
+    settle();
+
+    // Publish an empty cut into this window's slot -- the seam the page itself uses.
+    ui::seed_review_cut(&window, &Cut::default());
+
+    // Start from a paused recording preview so "did not change" means something.
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        naivepost::run::Transport { playing: false, started: false },
+    );
+    let before = ui::preview_player(&window);
+    assert!(!before.playhead.unwrap_or(0.0).is_nan(), "the player is readable");
+
+    assert!(
+        !ui::space_toggles(&window, false),
+        "Space on an empty cut is refused, not toggled"
+    );
+    assert_eq!(
+        ui::state(&window).status, naivepost::cut_play::EMPTY_CUT_REFUSAL,
+        "the status line says what the way-in cannot do -- the same string f2_2_s2 asserts"
+    );
+    let after = ui::preview_player(&window);
+    assert!(!after.transport.playing, "the refusal left the transport paused");
+    assert!(!after.cut_only, "and did not switch the preview behind the person's back");
+    assert_eq!(after.playhead, before.playhead, "nor did it move the line");
+
+    // The key controller really is attached to this window -- that is the widget the closure runs in.
+    assert!(
+        ui::line_key_controller(&window).is_some(),
+        "the Cut window carries the line key controller Space arrives through"
+    );
+    window.close();
+}
+
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -166,6 +212,8 @@ fn window_round() {
             RAN_SWITCH.store(true, Ordering::SeqCst);
             check_s1_greyed_with_no_clips(app);
             RAN_GREYED.store(true, Ordering::SeqCst);
+            check_other_ways_refuse_an_empty_cut(app);
+            RAN_OTHER_WAYS.store(true, Ordering::SeqCst);
             app.quit();
         });
         let _ = app.run_with_args::<String>(&[]);
@@ -182,5 +230,9 @@ fn f2_2_s2_play_cut_button_switches_through_the_widget() {
     assert!(
         RAN_GREYED.load(Ordering::SeqCst),
         "the S1 greyed check never ran"
+    );
+    assert!(
+        RAN_OTHER_WAYS.load(Ordering::SeqCst),
+        "the S2 other-ways-in refusal check never ran"
     );
 }
