@@ -14,7 +14,6 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::bodies::ServerPath;
 use crate::cut::Seg;
 use crate::narrate_details;
 use crate::narrate_off;
@@ -35,12 +34,10 @@ pub struct NarrateState {
     /// Empty means the project states none, and `narrate_tts::language` then answers its fallback — it is
     /// never hard-coded here, because a model told to speak English reads Polish spelling as English.
     pub language: String,
-    /// S2's two answers, published with the rest of the state so the page asks for no server probe of its
-    /// own; both false on a default state, which is what "nothing checked yet" looks like downstream.
-    pub audio_healthy: bool,
-    pub audio_models: Vec<crate::services::AudioModel>,
-    /// The TTS model id to ask for (`services::tts_model`), empty meaning the compiled-in default.
-    pub tts_model: String,
+    /// S2 is asked of the server on every speak ([`crate::speak_leg::health`]), not carried in state:
+    /// speaking is not a repaint, so an answer published at the last paint could be minutes stale by
+    /// the click. Nothing here holds health, the model list or the TTS id — `speak_leg` reads all
+    /// three off the Settings file per call (§02-services#1).
     /// Session second under the red line.
     pub session: f64,
     /// Where that second falls in the finished video, and the video's length.
@@ -91,9 +88,6 @@ thread_local! {
             narration_off: false,
             covered_spans: Vec::new(),
             language: String::new(),
-            audio_healthy: false,
-            audio_models: Vec::new(),
-            tts_model: String::new(),
         }) };
 }
 
@@ -415,7 +409,6 @@ pub fn refresh(window: &adw::ApplicationWindow) {
             picker.set_selected(row as u32);
         }
     }
-    let before = read_state().entries.len();
     draw_rows(window, &s);
     // Always re-wired: the rows are rebuilt whole on every refresh, so their handlers go with the old
     // ones. A guard on the count would leave a same-length refresh with dead buttons.
@@ -711,44 +704,6 @@ pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// S4/S5's answer when no speech reply was scripted: the request went out and nothing answered it.
-const NO_SPEECH_REPLY: &str = "the audio.cpp server did not answer POST /v1/audio/speech";
-
-thread_local! {
-    /// A scripted TTS reply for one press, shaped `(status, bytes)` — the same trick `window.rs`'s
-    /// `NARRATE_SCRIPT` plays for the F4.2 narration call: the real row button's handler reads THIS, so a
-    /// test drives the widget and never opens a socket. Empty means no server dialled, which is a refusal
-    /// rather than a silent pass.
-    static SPEECH_SCRIPT: std::cell::RefCell<Option<(u16, Vec<u8>)>> =
-        const { std::cell::RefCell::new(None) };
-    /// How many times the reference went up. Held apart from the reply so a test can assert S3 ran for every
-    /// line without reading the take back off disk.
-    static UPLOAD_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// Script the reply this window's ▶ gets from `POST /v1/audio/speech`.
-pub fn set_speech_script(reply: Option<(u16, Vec<u8>)>) {
-    SPEECH_SCRIPT.with(|cell| *cell.borrow_mut() = reply);
-}
-
-/// Whether a TTS reply is loaded — exported so a test can assert the button read the script rather than
-/// falling through to the no-server path.
-pub fn speech_script_loaded() -> bool {
-    SPEECH_SCRIPT.with(|cell| cell.borrow().is_some())
-}
-
-/// How many uploads have happened since the last reset (S3 re-uploads per line; see
-/// [`crate::bodies::VOICE_REF_REUPLOADED_EVERY_LINE`]).
-pub fn upload_count() -> usize {
-    UPLOAD_COUNT.get()
-}
-
-/// Forget the scripted reply and the upload tally.
-pub fn clear_speech_script() {
-    SPEECH_SCRIPT.with(|cell| *cell.borrow_mut() = None);
-    UPLOAD_COUNT.set(0);
-}
-
 /// **16** ▶ speak this line: whichever of the six answers the row's own state gives.
 pub fn press_line_speak(window: &adw::ApplicationWindow, index: usize) -> String {
     let s = read_state();
@@ -794,6 +749,11 @@ pub fn press_line_speak(window: &adw::ApplicationWindow, index: usize) -> String
 /// answers from the published state, and the two network legs from the script thread-locals above (empty =
 /// no server dialled). Every step's own sentence reaches the status line verbatim: the module names the
 /// model and the reason, and the page adds nothing to that diagnosis.
+/// F4.4 for one row, over the real wire: the take's key and seed come from the record itself, the
+/// address, the key, the model id and the server's health off the Settings file as it stands NOW
+/// ([`crate::speak_leg`], which re-reads per call), and the project's language off the state the
+/// flow published. Every step's own sentence reaches the status line verbatim: the module names the
+/// reason where it failed and the page adds nothing to that diagnosis.
 fn speak_this_line(
     window: &adw::ApplicationWindow,
     s: &NarrateState,
@@ -804,30 +764,20 @@ fn speak_this_line(
     };
     let key = crate::narration::tts_key(entry, Some(&s.voice), None);
     let seed = crate::narration::tts_seed(&key);
-    let model = if s.tts_model.is_empty() {
-        crate::services::TTS_MODEL.to_string()
-    } else {
-        s.tts_model.clone()
-    };
-    let outcome = crate::narrate_tts::speak_line(
+    // P.policy.ttsLanguage is the PROJECT's language, so it is read off the project here rather
+    // than trusted to what was last published: a flow that never published one must not silently
+    // speak English over a Polish recording. An unreadable project leaves the state's value (or
+    // empty), and `narrate_tts::language` answers its fallback for empty alone.
+    let language = crate::project::load(tree.dir())
+        .map(|project| project.language)
+        .unwrap_or_else(|_| s.language.clone());
+    let outcome = crate::speak_leg::speak(
         &tree,
         &entry.text,
         &entry.emotion,
         seed,
         &key,
-        &s.language,
-        s.audio_healthy,
-        &s.audio_models,
-        &model,
-        |_tree| {
-            UPLOAD_COUNT.with(|count| count.set(count.get() + 1));
-            Ok(ServerPath::from_upload("/tmp/naivepost-voice-ref.wav")
-                .expect("a literal absolute path is a server path"))
-        },
-        |_body| match SPEECH_SCRIPT.with(|cell| cell.borrow().clone()) {
-            Some(reply) => Ok(reply),
-            None => Err(NO_SPEECH_REPLY.to_string()),
-        },
+        &language,
     );
     say(window, &crate::narrate_tts::outcome_said(&outcome))
 }

@@ -121,6 +121,7 @@ pub mod request_timing;
 pub mod server_leg;
 pub mod stop_legs;
 pub mod settings_probe;
+pub mod speak_leg;
 pub mod roles;
 pub mod lucky;
 pub mod cancel_leg;

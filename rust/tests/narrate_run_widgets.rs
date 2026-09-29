@@ -154,9 +154,6 @@ fn narrate_window(
         narration_off: project.no_narration,
         // F4.4's inputs, left at "nothing checked": this file drives the F4.1 run, not the speak flow.
         language: String::new(),
-        audio_healthy: false,
-        audio_models: Vec::new(),
-        tts_model: String::new(),
         // F4.5's coverage spans: unpublished, read as full coverage of the cut.
         covered_spans: Vec::new(),
     });

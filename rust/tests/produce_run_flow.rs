@@ -37,7 +37,14 @@ const SPEC_NO_UNDO: &str = "The encode takes minutes and there is no undo for it
 fn temp_root(tag: &str) -> PathBuf {
     // Removed at the start rather than the end: a case that fails on an assertion never reaches its own
     // cleanup, and a folder left in /tmp is one the next reader has to explain.
-    let dir = std::env::temp_dir().join(format!("np-f51-{}-{tag}", std::process::id()));
+    //
+    // Unique per CALL, not just per tag: `run_over` is reached by six tests in this binary and cargo
+    // runs them on parallel threads, so a shared folder means one thread's `remove_dir_all` deletes
+    // what another just made and its `create_dir_all` answers NotFound. The tag still says which case
+    // the folder belongs to; the counter only keeps two of them from ever naming the same path.
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("np-f51-{}-{tag}-{seq}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     dir
 }

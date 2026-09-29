@@ -387,9 +387,11 @@ impl Outcome {
 /// * `model` — the TTS id to ask for ([`crate::services::tts_model`], default [`crate::services::TTS_MODEL`]).
 /// * `key` — the take's cache key ([`crate::narration::tts_key`]); the filename comes from
 ///   [`crate::narration::tts_file`] through [`take_path`].
-/// A refusal returns immediately and touches nothing later: no upload after a missing reference, no speech
-/// call after a refused upload, no file after a bad reply. That ordering is what makes "the server was never
-/// asked" a checkable fact rather than a hope.
+///
+/// A refusal returns immediately and touches nothing later: no upload after a missing reference, no
+/// speech call after a refused upload, no file after a bad reply. That ordering is what makes "the
+/// server was never asked" a checkable fact rather than a hope.
+#[allow(clippy::too_many_arguments)] // eleven: the line, its key and S2's two answers are all data, not behaviour
 pub fn speak_line<FUpload, FPost>(
     tree: &Tree,
     text: &str,
