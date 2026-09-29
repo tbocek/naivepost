@@ -90,6 +90,7 @@ pub mod prepare_decisions;
 pub mod prepare_run;
 pub mod describe;
 pub mod joins;
+pub mod join_ask;
 pub mod retakes;
 pub mod preview;
 pub mod prompt_assembly;

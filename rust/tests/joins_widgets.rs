@@ -147,13 +147,14 @@ fn check_a_seam_reaches_the_pass_through_the_button(app: &adw::Application) {
         .position(|line| line.starts_with(">>> text edit:"))
         .expect("the joins line follows Prepare's opening line");
     assert!(stage > 0, "the pass speaks after the run opened: {mine:?}");
-    // No files yet on THIS path: with a seam present the pass only plans, and both files are written
-    // at S6 once the answers arrive (which needs the textedit server). The no-seam check below is
-    // where the writing is proven, because that branch settles with no answer to wait for.
+    // Both files land on THIS path too: the pass runs the live ask, and a seam whose answers could
+    // not arrive still writes `final.txt` and `retakes.tsv` together (spec F1.10 step 5) so Cut
+    // reads what it wrote rather than guessing whether the pass ran at all.
     assert!(
-        !tree.final_txt().exists(),
-        "a planned-but-unanswered join writes nothing: {:?}",
-        tree.final_txt()
+        tree.final_txt().exists() && tree.retakes_tsv().exists(),
+        "a seam pass whose answers could not arrive still leaves both files for Cut to read: {:?} {:?}",
+        tree.final_txt(),
+        tree.retakes_tsv()
     );
 }
 

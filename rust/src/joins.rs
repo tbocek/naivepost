@@ -644,7 +644,10 @@ pub fn press_joins(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<Str
     if pass != MarkingPass::Joins {
         return Vec::new();
     }
-    let (words, times) = session_words(tree, project);
+    // The words come off F1.13's saved session list where one exists, so a join is shown the
+    // spellings and the aligned times every other pass works from; `session_words` is the raw
+    // fallback for a session that never built the list.
+    let (words, times) = session_words_with_list(tree, project);
     let sources: Vec<String> = words.iter().map(|word| word.source.clone()).collect();
     if too_few(&words) {
         // S1: nothing to repair, and both files still owed.
@@ -664,9 +667,60 @@ pub fn press_joins(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<Str
         }
         return vec![no_seam_log()];
     }
-    // Seams exist; the answers are the model's. Say what would be asked, so the person sees the
-    // pass started and knows how many joins it will visit.
-    vec![brief_log(&words, seams.len())]
+    // Seams exist; the answers come from the textedit model, asked here over the wire. The brief
+    // line goes first so the person sees the pass start, then each seam's own line: applied, kept,
+    // or refused with its reason.
+    let pass = crate::join_ask::run_seams(tree, project, &words, &times);
+    let mut lines = vec![brief_log(&words, seams.len())];
+    let spoke = !pass.logs.is_empty();
+    lines.extend(pass.logs);
+    if !spoke {
+        // Nothing was applied and nothing was refused — every seam had no words left to ask about.
+        // S6's own line says that, so the pass does not end on a silence that reads "not run".
+        lines.push(written_log(0, words.len(), 0));
+    }
+    lines
+}
+
+/// Reads the session's joinable words out of F1.13's saved list — the SAME list the retakes pass
+/// marks against — falling back to [`session_words`] when it has not been built yet.
+///
+/// `session_words` reads each lane's raw `words.json` and so shows a join the words as heard,
+/// lower case and unpunctuated. §F1.10 wants each word "printed as the fix pass spelled it", and
+/// the word list F1.13 writes is exactly that (with its own raw fallback where the fix pass left a
+/// word no spelling of its own). Two reasons to prefer it beyond the wording: it is the list the
+/// retakes pass and `final.txt` are built from, so a join that worked on a different list would
+/// drop indices that mean something else to the next pass; and it already runs the aligner-over-ASR
+/// preference, so a session that was aligned gets the finer times (§F1.13).
+///
+/// The list is filtered the way S1 asks: the narrator mic out, and, on the live path, the words an
+/// earlier pass already dropped stay out because they are not in the surviving list at all.
+fn session_words_with_list(tree: &Tree, project: &Project) -> (Vec<Word>, Vec<(f64, f64)>) {
+    if let Ok(Some(list)) = crate::word_list::load(tree) {
+        let words = list.to_vec();
+        // A session whose every word is joinable gets its own list; one with a narrator mic gets it
+        // stripped out through the S1 rule rather than by hand.
+        let joinable = match narrator_of(project) {
+            Some(mic) => joinable_words(&words, Some(mic.as_str()), &[]),
+            None => words,
+        };
+        if !joinable.is_empty() {
+            let times = joinable.iter().map(|word| (word.start, word.end)).collect();
+            return (joinable, times);
+        }
+    }
+    session_words(tree, project)
+}
+
+/// The narrator mic's source name, if this project has one: its words are heard and not played, so
+/// no seam into them is a seam in the film (S1). Owned rather than borrowed, so the caller can
+/// hand it to [`joinable_words`] without tying a lifetime to the project.
+fn narrator_of(project: &Project) -> Option<String> {
+    project
+        .sources
+        .iter()
+        .find(|source| source.narrator != 0)
+        .map(lane_of)
 }
 
 /// S2/S3 as a log line: the size of the job, in the units the pass counts in.
