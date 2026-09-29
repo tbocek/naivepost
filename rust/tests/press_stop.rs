@@ -150,6 +150,12 @@ fn f0_3_s3_flag_cancel_and_kill_all() {
     );
     assert!(procs.is_empty(), "drained, so the next ⏹ cannot kill a recycled pid twice");
     assert_eq!(bar.status, run::STOPPING, "the status line reads 'stopping…'");
+    // The same press reaches the legs that are already on the wire: the shared switch is what an
+    // HTTP call reads with no borrow on this bar (§S3's "aborts model and audio calls").
+    assert!(
+        naivepost::cancel_leg::cancelled_at(bar.run_epoch),
+        "S3 cancels THIS run's generation on the thread-shared switch"
+    );
 }
 
 /// S4: a subprocess that died because we killed it is not a failure, and the stop only lands in the gap

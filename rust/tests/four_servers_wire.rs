@@ -358,11 +358,14 @@ fn sec_02_services_1_the_four_servers_s18_the_unload_leg_is_bounded_at_twenty_se
 
     // And the ceiling really bites: a server that answers after it makes the call return within a
     // small margin rather than hanging until the reply arrives.
+    // The reply is deliberately set FAR past the ceiling (26 s against a 20 s bound), not just over
+    // it: at 20.5 s a loaded parallel run can answer inside the client's own timeout and the test
+    // reads a success where the rule says a timeout. 26 s cannot be mistaken for on time.
     let server = FakeServer::start(
         "slow-unload",
         200,
         r#"{"unloaded":true}"#.to_string(),
-        Duration::from_millis(20_500),
+        Duration::from_secs(26),
     );
     let tree = Tree::new(project_dir("s18")).expect("a project folder");
     let endpoint = endpoint_at(&server.url(), "");

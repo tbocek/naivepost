@@ -290,7 +290,8 @@ pub struct RunBar {
     /// that was stopped clears it when it has finished unwinding, so a later run cannot inherit it.
     pub stop_flag: bool,
     /// F0.3 S3: the run context was cancelled. Model and audio calls check this to abort in place;
-    /// they are HTTP, not children, so `kill_all` cannot reach them.
+    /// they are HTTP, not children, so `kill_all` cannot reach them. The live copy of this flag,
+    /// readable from a worker thread with no borrow on the bar, is [`crate::cancel_leg`.
     pub cancelled: bool,
     /// F0.3 S5: a stop landed inside Describe, so the next Prepare run describes from the start.
     pub describe_from_start: bool,
@@ -340,6 +341,10 @@ impl RunBar {
         run.paused = false;
         self.stop_flag = true;
         self.cancelled = true;
+        // The same press has to reach the legs already in flight on another thread, which cannot
+        // borrow this bar: §S3's "cancel the run context (aborts model and audio calls)" lands
+        // through the shared switch (§02-services#1 puts every request on it).
+        crate::cancel_leg::cancel_now();
         let killed = procs.kill_all();
         self.status = STOPPING.to_string();
 

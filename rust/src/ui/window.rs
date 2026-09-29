@@ -5722,6 +5722,9 @@ fn wire_stop(
         if in_describe {
             crate::stop_legs::arm_describe_restart();
         }
+        // S3/S4: report whatever is still out on the wire, off the stop's own clock (cancel_leg owns
+        // the wording and the wait; window.rs only asks).
+        crate::cancel_leg::report_abandoned(std::time::Duration::from_millis(200));
         // S3's kill: drain-and-signal, so nothing survives the press nor stays listed to be killed twice.
         crate::stop_legs::stop_registered(&mut procs.borrow_mut());
         // Repaint both: stopping a run changes ▶'s face as well as ⏹'s sensitivity.

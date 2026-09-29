@@ -118,6 +118,7 @@ pub mod stop_legs;
 pub mod settings_probe;
 pub mod roles;
 pub mod lucky;
+pub mod cancel_leg;
 pub mod run;
 pub mod runqueue;
 pub mod save_as;

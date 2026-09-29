@@ -117,6 +117,10 @@ fn ask(
 
 /// [`ask`] with the sd.cpp job id a poll or cancel acts on. Settings probes never pass one today;
 /// the parameter exists so the job-scoped kinds reach the same leg the flows use, not a copy of it.
+///
+/// The cancel closure is the live session switch ([`crate::cancel_leg`]), not a stub: §02-services#1's
+/// last paragraph puts EVERY request on the run context, and a settings probe is a request. A ⏹
+/// pressed while a probe is in flight therefore ends it rather than leaving the dialog waiting.
 fn ask_job(
     tree: &Option<crate::layout::Tree>,
     server: Server,
@@ -127,11 +131,12 @@ fn ask_job(
     body: Option<&str>,
 ) -> Result<String, String> {
     let base = crate::server_leg::base_row(server, model, kind.method(), "", "settings", "");
+    let cancelled = crate::cancel_leg::cancel_check_now();
     match tree {
         Some(tree) => {
-            crate::server_leg::call(tree, &base, server, endpoint, kind, job, body, &never).1
+            crate::server_leg::call(tree, &base, server, endpoint, kind, job, body, &cancelled).1
         }
-        None => crate::server_leg::send(server, endpoint, kind, job, body, &never),
+        None => crate::server_leg::send(server, endpoint, kind, job, body, &cancelled),
     }
     .map(|reply| reply.body)
 }
@@ -147,7 +152,17 @@ pub fn fire_unload(kind: Kind) {
     if kind != Kind::UnloadAll {
         return;
     }
-    std::thread::spawn(|| {
+    // F0.5 S4 / F0.3 S4: opening the housekeeping leg IS the hand-off — the run that ended does
+    // not wait on a server, and this thread owns the request from here.
+    let handle = std::thread::spawn(|| {
+        // F0.3 S3: this leg rides the cancel context too — a ⏹ while it waits means the user wants
+        // nothing more from the servers, so the wait is abandoned and nothing is dialled.
+        if crate::cancel_leg::cancelled() {
+            return;
+        }
+        // Counted so [`crate::cancel_leg::await_stop`], which a stopping run calls before it walks
+        // away, knows whether there is anything left out on the wire to give up on.
+        crate::cancel_leg::leg_started();
         let conf = current_conf();
         let endpoint = Endpoint {
             url: services::server_url(&conf.audio_server).unwrap_or_else(services::audio_default),
@@ -161,13 +176,29 @@ pub fn fire_unload(kind: Kind) {
         match ask(&tree, Server::Audio, &endpoint, Kind::UnloadAll, "unload", None) {
             Ok(_) => crate::ui::window::note_unload("models unloaded"),
             Err(why) => crate::ui::window::note_unload(&format!("unload skipped: {why}")),
-        }
+        };
+        crate::cancel_leg::leg_finished();
     });
+    *UNLOADING.lock().unwrap() = Some(handle);
 }
 
-/// The run's cancel context as seen from the settings dialog: nothing cancels a probe.
-fn never() -> bool {
-    false
+/// The end-of-run housekeeping thread, kept so a stop can say whether one is still out there rather
+/// than leaving it uncounted and invisible.
+static UNLOADING: std::sync::Mutex<Option<std::thread::JoinHandle<()>>> =
+    std::sync::Mutex::new(None);
+
+
+/// Wait for the end-of-run unload to land, or give up when ⏹ says to — whichever comes first.
+///
+/// §1 makes the unload best-effort with a 20 s ceiling, and F0.3 S4 makes a late stop a non-failure:
+/// so a run that is being brought down reports how many legs it is abandoning instead of hanging on
+/// them. Returns immediately when no housekeeping thread is standing.
+pub fn drain_unload(budget: std::time::Duration) -> crate::cancel_leg::StoppedLegs {
+    let stopped = crate::cancel_leg::await_stop(budget);
+    // The handle is released either way: once the run is gone nothing downstream waits on this
+    // thread, and joining here would put the 20 s ceiling back where §1 asked for none.
+    UNLOADING.lock().unwrap().take();
+    crate::cancel_leg::StoppedLegs { waited: stopped.waited, legs: crate::cancel_leg::legs_outstanding() }
 }
 
 /// The settings as they are ON DISK right now — re-read per request, which is what makes a change

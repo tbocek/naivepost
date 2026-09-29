@@ -327,7 +327,28 @@ pub fn bump_cancel_context(bar: &mut RunBar) -> u64 {
         run.paused = false;
     }
     bar.cancelled = false;
+    // Open the matching switch in [`crate::cancel_leg`] at the SAME generation number, so a leg
+    // that captured this epoch is cancellable by the next ⏹ and untouched by the last one's.
+    cancel_switch(cancel_epoch(bar));
     bar.run_epoch
+}
+
+/// The generation of the cancel context a leg is riding, read off the bar that owns it.
+///
+/// A flow hands this to [`crate::cancel_leg::cancel_check`] when it starts a request: capturing the
+/// number at start is what makes a stop cancel THIS run's legs and leave a previous run's alone
+/// (F0.5 S1's note on why the context is a counter rather than a channel).
+pub fn cancel_epoch(bar: &RunBar) -> u64 {
+    bar.run_epoch
+}
+
+/// Keep the thread-shared cancel switch aligned with the bar's own epoch counter.
+///
+/// Both hold the same generation number on purpose: [`crate::cancel_leg::cancelled_at`] then means
+/// exactly what [`is_cancelled`] means, one read off the bar and one off the atomic, with no second
+/// source of truth about which run is which.
+pub fn cancel_switch(epoch: u64) {
+    crate::cancel_leg::reset_to(epoch);
 }
 
 /// S4: what ending a run handed over.
@@ -351,6 +372,9 @@ pub struct EndRun {
 pub fn end_run(bar: &mut RunBar, next: Option<Page>) -> EndRun {
     bar.running = None;
     bar.status.clear();
+    // F0.3 S4: the run has unwound, so its stop is spent — clearing the shared switch here is what
+    // keeps a ⏹ aimed at the previous run from cancelling the next one's legs.
+    crate::cancel_leg::clear();
     EndRun {
         audio_unload: Kind::UnloadAll,
         chain_moves_on: next.is_some(),
