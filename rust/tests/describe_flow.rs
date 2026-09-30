@@ -220,7 +220,7 @@ fn f1_7_s2_resume_reads_the_pair_off_disk() {
     fs::create_dir_all(tree.describe_dir("lecture")).unwrap();
     fs::write(
         tree.events_tsv("lecture"),
-        "0.0\ttitle slide\n1.0\tsame\n2.0\tthe speaker points left\n",
+        "0.00\t1.00\ttitle slide\n1.00\t2.00\tsame\n2.00\t3.00\tthe speaker points left\n",
     )
     .unwrap();
     fs::write(tree.describe_state("lecture"), "Mid-slide.\n").unwrap();
@@ -228,6 +228,23 @@ fn f1_7_s2_resume_reads_the_pair_off_disk() {
     let rows = describe::read_events(&tree, "lecture");
     assert_eq!(rows.len(), 3, "three rows parsed: {rows:?}");
     assert_eq!(describe::seed_history(&rows), vec!["title slide", "same", "the speaker points left"]);
+    // §6's middle column is the row's END, so it must never reach the text: a reading whose words
+    // begin with a number would otherwise be handed to the model as an event that says "4.00 ...".
+    fs::write(tree.events_tsv("lecture"), "0.00\t4.00\t4.00 slides on screen\n").unwrap();
+    assert_eq!(
+        describe::read_events(&tree, "lecture").first().map(|row| row.text.as_str()),
+        Some("4.00 slides on screen"),
+        "the third field is the text, whatever it starts with"
+    );
+    assert_eq!(describe::read_events(&tree, "lecture").first().map(|row| row.at), Some(0.0));
+    // The older two-column shape (this file before §6's three columns) still resumes: its second
+    // field IS the text, and the row's own second is its start.
+    fs::write(tree.events_tsv("lecture"), "0.0\ttitle slide\n1.0\tsame\n").unwrap();
+    assert_eq!(
+        describe::read_events(&tree, "lecture").iter().map(|r| r.text.clone()).collect::<Vec<_>>(),
+        vec!["title slide", "same"]
+    );
+    fs::write(tree.events_tsv("lecture"), "0.0\tok\n1.0\tha").unwrap();
     assert_eq!(describe::read_state(&tree, "lecture").map(|s| s.trim().to_string()), Some("Mid-slide.".into()));
 
     // A half-written trailing line from a killed run is skipped, not fatal.
@@ -487,11 +504,15 @@ fn f1_7_s5_an_unknown_tool_is_refused_not_fatal() {
 fn f1_7_s6_one_row_per_frame_with_same_as_the_fallback() {
     let frames = vec![0.0, 1.0, 2.0];
     let events = vec![Event { frame: 2, text: "a slide changes".into(), calm: false }];
-    let rows = describe::events_rows(&frames, &events, true);
+    let rows = describe::events_rows(&frames, &events, true, 3.0);
     assert_eq!(
         rows,
-        vec!["0\tsame", "1\ta slide changes", "2\tsame"],
-        "every frame gets a row, unanswering ones say `same`: {rows:?}"
+        vec![
+            "0.00\t1.00\tsame",
+            "1.00\t2.00\ta slide changes",
+            "2.00\t3.00\tsame",
+        ],
+        "every frame gets a row ending where the next one starts, unanswering ones say `same`: {rows:?}"
     );
 }
 
@@ -500,12 +521,12 @@ fn f1_7_s6_one_row_per_frame_with_same_as_the_fallback() {
 #[test]
 fn f1_7_s6_the_first_frame_of_a_cold_batch_is_never_written_same() {
     let frames = vec![0.0, 1.0];
-    let rows = describe::events_rows(&frames, &[], false);
-    assert_eq!(rows, vec!["1\tsame"], "frame 1 is not asserted about: {rows:?}");
-    assert!(!rows.iter().any(|r| r.starts_with("0\tsame")), "no cold `same` at t=0");
+    let rows = describe::events_rows(&frames, &[], false, 2.0);
+    assert_eq!(rows, vec!["1.00\t2.00\tsame"], "frame 1 is not asserted about: {rows:?}");
+    assert!(!rows.iter().any(|r| r.starts_with("0.00")), "no cold `same` at t=0");
     // Same frames, but with history: now `same` is a true statement.
-    let warm = describe::events_rows(&frames, &[], true);
-    assert_eq!(warm, vec!["0\tsame", "1\tsame"]);
+    let warm = describe::events_rows(&frames, &[], true, 2.0);
+    assert_eq!(warm, vec!["0.00\t1.00\tsame", "1.00\t2.00\tsame"]);
     // The condition matches what the tool reports, so the two cannot drift apart.
     let mut batch = Batch::new(0.0, 1.0, 2);
     let missing = batch.finish();

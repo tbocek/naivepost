@@ -216,6 +216,13 @@ pub struct EventRow {
 /// S2: read `events.tsv`. Tolerant by design — a half-written last line from a killed run must not
 /// stop a resume. A line with no parsable leading second is dropped; a line whose text was cut off
 /// mid-write still describes its frame, so it is kept rather than thrown away.
+///
+/// §6's row is `start\tend\ttext`, but resuming only ever asks WHEN a frame was answered (a chunk is
+/// done when its start has a row) and WHAT the last readings said — never how long one held, which is
+/// a read-side fold ([`crate::textfmt::read_events`]). So [`EventRow`] keeps the start in `at` and the
+/// text in `text`, and §6's middle field (the end) is parsed to tell the two shapes apart and then
+/// dropped. A row whose middle field is not a number is the older two-column spelling (`start\ttext`),
+/// which projects on disk hold: there the second field IS the text.
 pub fn parse_events(tsv: &str) -> Vec<EventRow> {
     let mut out = Vec::new();
     for line in tsv.lines() {
@@ -223,13 +230,21 @@ pub fn parse_events(tsv: &str) -> Vec<EventRow> {
         if line.is_empty() {
             continue;
         }
-        let mut fields = line.splitn(2, '\t');
+        let mut fields = line.splitn(3, '\t');
         let at = match fields.next().and_then(|head| head.parse::<f64>().ok()) {
             Some(at) => at,
             None => continue,
         };
-        let text = fields.next().unwrap_or("").to_string();
-        out.push(EventRow { at, text });
+        let first = match fields.next() {
+            Some(first) => first,
+            None => continue,
+        };
+        // Three fields and a numeric middle: §6's shape, so the text is the third field.
+        let text = match (first.parse::<f64>(), fields.next()) {
+            (Ok(_), Some(text)) => text,
+            _ => first,
+        };
+        out.push(EventRow { at, text: text.to_string() });
     }
     out
 }
@@ -454,7 +469,13 @@ pub fn apply_tool(batch: &mut Batch, name: &str, args: &serde_json::Value) -> St
 
 // ---- S6: writing the log ---------------------------------------------------
 
-/// S6: the rows to append for one chunk — one per frame, in frame order.
+/// S6: the rows to append for one chunk — one per frame, in frame order, each an §6 events row
+/// ([`crate::textfmt::event_row`], times with two decimals).
+///
+/// A row's END is the second until which that reading still held: the next frame of this batch, and
+/// for the batch's last frame `batch_end` — the second the request said its frames covered
+/// ([`message`]'s `to`). That is what makes §6's read-side fold land where it should: consecutive
+/// `same` rows extend the real event behind them to the last second it still described.
 ///
 /// A frame the model left unanswering is written `same`, which is what the word means here: nothing
 /// changed since the row before. The exception is the batch's FIRST frame with no history: there is
@@ -462,15 +483,22 @@ pub fn apply_tool(batch: &mut Batch, name: &str, args: &serde_json::Value) -> St
 /// watched. That frame is left OUT of these rows, which is what makes it visible to the caller as
 /// still unanswered — the same condition [`Batch::finish`] reports as
 /// [`describe::MissingReason::FirstFrameWithNoHistory`].
-pub fn events_rows(frames: &[f64], events: &[Event], has_history: bool) -> Vec<String> {
+pub fn events_rows(
+    frames: &[f64],
+    events: &[Event],
+    has_history: bool,
+    batch_end: f64,
+) -> Vec<String> {
     let mut rows = Vec::new();
     for (index, at) in frames.iter().enumerate() {
         let frame = index + 1;
-        match events.iter().find(|event| event.frame == frame) {
-            Some(event) => rows.push(format!("{}\t{}", trim_seconds(*at), event.text)),
+        let end = frames.get(index + 1).copied().unwrap_or(batch_end);
+        let text = match events.iter().find(|event| event.frame == frame) {
+            Some(event) => event.text.clone(),
             None if frame == 1 && !has_history => continue,
-            None => rows.push(format!("{}\tsame", trim_seconds(*at))),
-        }
+            None => "same".to_string(),
+        };
+        rows.push(crate::textfmt::event_row(*at, end, &text));
     }
     rows
 }
@@ -668,5 +696,3 @@ pub fn frames_on_disk(dir: &Path) -> Vec<f64> {
     }
     out
 }
-
-

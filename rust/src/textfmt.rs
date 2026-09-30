@@ -194,17 +194,21 @@ pub fn is_same(text: &str) -> bool {
     t == "same" || t == "(same)"
 }
 
+/// The ONE spelling of an `events.tsv` row (§6's `start\tend\ttext`). It lives here rather than
+/// inline in either caller so the stage that appends rows chunk by chunk and the writer that lays a
+/// whole file down cannot drift into two shapes — which they had: the describe stage wrote
+/// `at\ttext`, and every reader of this file then refused it.
+pub fn event_row(start: f64, end: f64, text: &str) -> String {
+    format!("{}\t{}\t{}", secs(start), secs(end), text)
+}
+
 /// Write `events.tsv`, one row per frame as given — the folding is a read-side rule
 /// ([`read_events`]), so a file keeps every frame it was written with.
 pub fn write_events(events: &[FrameEvent], path: &Path) -> Result<(), String> {
     let mut out = String::new();
     for event in events {
-        out.push_str(&format!(
-            "{}\t{}\t{}\n",
-            secs(event.start),
-            secs(event.end),
-            event.text
-        ));
+        out.push_str(&event_row(event.start, event.end, &event.text));
+        out.push('\n');
     }
     write_rows(path, &out)
 }
@@ -220,9 +224,21 @@ pub fn read_events(path: &Path) -> Result<Vec<FrameEvent>, String> {
     let mut out: Vec<FrameEvent> = Vec::new();
     for row in rows(&text) {
         let fields: Vec<&str> = row.splitn(3, '\t').collect();
-        let [start, end, text] = <[&str; 3]>::try_from(fields.as_slice())
-            .map_err(|_| format!("{}: {row}: expected start, end and text", path.display()))?;
-        let (start, end) = (number(start, path, row)?, number(end, path, row)?);
+        // A two-field row is the older spelling (`start\ttext`, no end), which projects on disk hold:
+        // the describe stage wrote that shape before §6's three columns landed here. Refusing it would
+        // be swallowed by both readers' callers (`fix_transcripts::load_events`, the upload brief's
+        // `read_all_events`) and silently empty the picture context those steps send. Such a row ends
+        // where it started, which is what a frame-only reading always meant.
+        let (start, end, text): (&str, Option<&str>, &str) = match fields.as_slice() {
+            [start, end, text] => (*start, Some(*end), *text),
+            [start, text] => (*start, None, *text),
+            _ => return Err(format!("{}: {row}: expected start, end and text", path.display())),
+        };
+        let start = number(start, path, row)?;
+        let end = match end {
+            Some(end) => number(end, path, row)?,
+            None => start,
+        };
         if is_same(text) {
             // Nothing to extend before the first event: a file that opens on a frame
             // where nothing changed has not yet said what it was the same as.
