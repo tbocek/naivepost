@@ -35,9 +35,6 @@ pub struct Tracked {
 }
 
 thread_local! {
-    /// A scripted reply, loaded by a test in place of a model. Same shape as `ui::set_narrate_script`:
-    /// the page reads it through [`scripted_ask`] and cannot tell the two apart.
-    static REPLY: RefCell<Option<Vec<(usize, String)>>> = const { RefCell::new(None) };
     /// A scripted spawner, so the press can reach S9 in a container with no ffmpeg
     /// (`command -v ffmpeg` finds nothing). See [`crate::ui::produce_page::page_spawn`].
     static SPAWN: RefCell<Option<SpawnSlot>> = const { RefCell::new(None) };
@@ -45,17 +42,6 @@ thread_local! {
 
 /// The scripted-spawner shape. `Rc` because a `dyn Fn` is unsized and cannot sit in a `Cell` directly.
 pub type SpawnSlot = Rc<dyn Fn(&crate::produce_exec::Command) -> Result<(), String>>;
-
-/// Load a scripted translation for the next asks on this thread.
-pub fn set_reply_for_test(reply: Vec<(usize, String)>) {
-    REPLY.with(|cell| cell.replace(Some(reply)));
-}
-
-/// Whether a scripted reply is loaded — exported so a test can assert the ask really read the script
-/// rather than falling through to the no-server path.
-pub fn reply_for_test() -> Option<Vec<(usize, String)>> {
-    REPLY.with(|cell| cell.borrow().clone())
-}
 
 /// Load a scripted spawner for the next render on this thread.
 pub fn set_spawn_for_test(spawn: SpawnSlot) {
@@ -65,24 +51,6 @@ pub fn set_spawn_for_test(spawn: SpawnSlot) {
 /// The scripted spawner, if one is loaded.
 pub fn spawn_for_test() -> Option<SpawnSlot> {
     SPAWN.with(|cell| cell.borrow().clone())
-}
-
-/// The page's real ask: the script when one is loaded, otherwise a refusal that is itself a reachable
-/// answer — every line then ships as the original with the merge's warning, which is what §F5.4 says to
-/// do when the model does not answer, so the branch is exercised rather than stubbed out.
-pub fn scripted_ask() -> Box<Ask> {
-    match reply_for_test() {
-        Some(script) => Box::new(move |_message: &str, numbers: &[usize]| {
-            Ok(script
-                .iter()
-                .filter(|(number, _)| numbers.contains(number))
-                .cloned()
-                .collect())
-        }),
-        None => Box::new(|_message: &str, _numbers: &[usize]| {
-            Err("no translation server here".to_string())
-        }),
-    }
 }
 
 /// S3: every ticked language's track, in the order [`subs::track_languages`] lists them. The session's
@@ -115,7 +83,10 @@ fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask) -> Tracked {
         let part: Vec<(usize, String)> = original[range.0..range.1].to_vec();
         let numbers: Vec<usize> = part.iter().map(|(number, _)| *number).collect();
         let mut batch = subs::Batch::new(range);
-        if let Ok(answers) = ask(&subs::message(part.len(), language), &numbers) {
+        // The request is §3.10's sentence PLUS the numbered lines themselves: `subs::message` is only the
+        // heading, so sending it alone asks for a translation of lines the model never got.
+        let request = format!("{}\n{}", subs::message(part.len(), language), subs::numbered(&part));
+        if let Ok(answers) = ask(&request, &numbers) {
             for (number, text) in answers {
                 // A line the batch rejects (a number it never asked for, empty text) leaves that line
                 // missing rather than poisoning the track: `missing` is what decides the re-ask.

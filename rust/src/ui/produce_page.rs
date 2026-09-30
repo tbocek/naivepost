@@ -1403,9 +1403,7 @@ fn finish_produce(
                         &session_words,
                         &narrator_sources,
                     ),
-                    // S3 (§F5.4): the scripted reply when a test loaded one, else a real refusal that
-                    // ships every line as the original with the merge's warning.
-                    translate: &crate::produce_translate::scripted_ask(),
+                    translate: &translate_leg(),
                     sources: &move || sources_for_stamp.clone(),
                     // S5's picture input: an insert reads its own asset, footage and a `copy:` stretch read
                     // the first footage recording. Resolved here, where the project is held, by the same
@@ -1467,6 +1465,16 @@ fn speak_a_line(line: &crate::produce_exec::ToSpeak) -> Result<(), String> {
         "no speech server here: {} was not synthesized",
         line.text.chars().take(24).collect::<String>()
     ))
+}
+
+/// The render's translation leg (§F5.4 S3): the real leg — each batch re-reads the settings and dials
+/// the LLM over HTTP through `server_leg`, so a ticked language reaches whatever `LLM_SERVER` names and
+/// every ask writes its timed row. A server that is not there answers `Err`, which the walk ships as the
+/// original text with the merge's warning.
+fn translate_leg() -> Box<crate::produce_translate::Ask> {
+    let tree = session_tree();
+    let stop: std::rc::Rc<dyn Fn() -> bool> = std::rc::Rc::new(|| false);
+    crate::produce_translate_ask::ask(&tree, &stop)
 }
 
 /// S10's checkpoint question. This page runs the whole render inside one press and the shell's cancel

@@ -481,6 +481,24 @@ fn tick_language(window: &adw::ApplicationWindow, language: &str) {
 }
 
 /// The check: press the real ▶ and read the ticked language's `.srt` back off disk.
+/// A name nothing listens on, in the shape the settings box holds it. The leg dials this and gets a
+/// refused connection, which is §F5.4 S3's unanswered batch: the track ships as the original with the
+/// warning. `just test` runs one binary per process, so reading it here touches no other test's env.
+fn dead_server_url() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
+    let port = listener.local_addr().expect("a local address").port();
+    drop(listener);
+    format!("http://127.0.0.1:{port}")
+}
+
+/// Rewrite the settings' LLM address — the seam the real leg reads per batch.
+fn point_at(url: &str) {
+    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let mut conf = naivepost::settings::read(&paths).expect("settings read back");
+    conf.server = url.to_string();
+    naivepost::settings::save(&paths, &conf).expect("new address written");
+}
+
 fn check_press_writes_the_translated_sidecar(root: &Path) {
     let tree = session(root);
     // The page reads `cut/cut.json` as its second answer for "what is the cut".
@@ -494,10 +512,12 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     std::fs::write(&file, serde_json::to_string_pretty(&cut).unwrap()).unwrap();
     write_words(&tree);
 
-    // One scripted translation, distinct from every original word, so a copied track cannot pass.
-    trans::set_reply_for_test(vec![(1, "uebersetzt alpha bravo charlie".to_string())]);
+    // The settings address is the seam (§F5.4 S3, round rule 5): the leg reads `settings::read` per
+    // batch and dials whatever the file names, so pointing it at an unused port is what the program does
+    // when the translation server is simply not there. S3's own rule answers that way — every line ships
+    // as the ORIGINAL with the merge's warning, and the render carries on rather than failing over a model.
+    point_at(&dead_server_url());
     trans::set_spawn_for_test(scripted_spawn());
-    assert!(trans::reply_for_test().is_some(), "the script is loaded");
 
     let window = produce_window(&app_in_round());
     ui::seed_review_cut(
@@ -545,13 +565,24 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     assert!(bare.exists(), "the session's own .srt is beside it at {}", bare.display());
     assert!(srt.exists(), "the ticked language's .srt was written at {}", srt.display());
     let text = std::fs::read_to_string(&srt).expect("the sidecar reads back");
+    // S3's unanswered-batch rule, reached through the real leg: no server answers, so this track is the
+    // original text and the run says so out loud rather than dropping the language.
     assert!(
-        text.contains("uebersetzt alpha bravo charlie"),
-        "the file carries the TRANSLATION: {text}"
+        text.contains("alpha bravo charlie"),
+        "with no server the sidecar ships the original text: {text}"
+    );
+    let said_logs = ui::window::window_logs();
+    assert!(
+        said_logs.iter().any(|l| l.contains("did not answer") || l.contains("original")),
+        "the unanswered translation is said, not swallowed: {:?}",
+        said_logs
+            .iter()
+            .filter(|l| l.contains("subtitles") || l.contains("translate"))
+            .collect::<Vec<&String>>()
     );
     assert!(
-        !text.contains("alpha bravo charlie\n") || text.contains("uebersetzt"),
-        "the file is not a copy of the session track: {text}"
+        !text.contains("uebersetzt"),
+        "nothing invented can appear in a track the model never answered: {text}"
     );
     // The originals are still where a player looks first: the bare stem, untranslated.
     let bare = tree.final_srt(None);
