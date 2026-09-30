@@ -30,6 +30,8 @@ static RAN_IMAGES: AtomicBool = AtomicBool::new(false);
 static RAN_CHANGE: AtomicBool = AtomicBool::new(false);
 static RAN_SETTINGS_WIRE: AtomicBool = AtomicBool::new(false);
 static RAN_WORDS: AtomicBool = AtomicBool::new(false);
+static RAN_SLOTS: AtomicBool = AtomicBool::new(false);
+static RAN_TEXT: AtomicBool = AtomicBool::new(false);
 
 /// §A's fifteen, by the name a test finds each one by. The item id is spelled in every entry's comment
 /// so the gate log shows which of the fifteen each check was about.
@@ -401,6 +403,138 @@ fn produce_round(_app: &adw::Application) {
     RAN_WORDS.store(true, Ordering::SeqCst);
     window.close();
     settle();
+
+    // --- (g) §1 items 2/3: each slot is a PICTURE with its name, its base/reference tag, and the
+    // crop box the base wears when its shape differs from the video's.
+    let window = produce_page(_app);
+    let mut two = published();
+    two.frames = vec![
+        "project:produce/publish/base.jpg".to_string(),
+        "project:produce/publish/ship.jpg".to_string(),
+    ];
+    // The base came from a tall phone recording; the finished video is wide, so the thumbnail keeps
+    // only a band of it and §1 says the base must show that.
+    two.base_shape = Some((1080, 1920));
+    two.video_shape = (1920, 1080);
+    ui::produce_page::set_state(two);
+    ui::produce_page::refresh(&window);
+    for index in 0..2 {
+        assert!(
+            widget_in(&window, &format!("image-picture-{index}")).is_some(),
+            "§A: slot {index} shows its picture, not just its filename"
+        );
+    }
+    assert_eq!(
+        widget_in(&window, "image-base-tag-0")
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+            .map(|l| l.text().to_string())
+            .unwrap_or_default(),
+        "base",
+        "§1: the FIRST image is the one the image model edits, and the row says so"
+    );
+    assert_eq!(
+        widget_in(&window, "image-base-tag-1")
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+            .map(|l| l.text().to_string())
+            .unwrap_or_default(),
+        "reference",
+        "and every later image is a reference the instruction can name"
+    );
+    assert!(
+        widget_in(&window, "image-crop-box-0").is_some(),
+        "§1: a base whose shape differs from the video's wears a crop box"
+    );
+    assert!(
+        widget_in(&window, "image-crop-box-1").is_none(),
+        "and a reference never does -- only the base gets cropped to the video's shape"
+    );
+    assert!(
+        widget_in(&window, "image-make-base-1").is_some(),
+        "the reference still offers Make base"
+    );
+    assert!(
+        widget_in(&window, "image-make-base-0").is_none(),
+        "and the base still does not"
+    );
+    // Same shapes: nothing is being cut away, so no box.
+    let mut same = ui::produce_page::read_state();
+    same.base_shape = Some((1920, 1080));
+    ui::produce_page::set_state(same);
+    ui::produce_page::refresh(&window);
+    assert!(
+        widget_in(&window, "image-crop-box-0").is_none(),
+        "a base already the video's shape wears no crop box"
+    );
+    // No shape known for the video yet (the page invents no default): also no box, rather than a box
+    // drawn against a guessed frame.
+    let mut unknown = ui::produce_page::read_state();
+    unknown.base_shape = Some((1080, 1920));
+    unknown.video_shape = (0, 0);
+    ui::produce_page::set_state(unknown);
+    ui::produce_page::refresh(&window);
+    assert!(
+        widget_in(&window, "image-crop-box-0").is_none(),
+        "an unknown video shape draws no crop box"
+    );
+    RAN_SLOTS.store(true, Ordering::SeqCst);
+    // A dialog left open by an earlier check is still a live top level when this window closes, and the
+    // next `produce_page(_app)` then finds its own widgets through that stale tree -- GTK answers with
+    // `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL'` on the following refresh. Close
+    // anything still standing before moving on.
+    if let Some(left_open) = naivepost::ui::produce_words::open_dialog() {
+        left_open.close();
+        settle();
+    }
+
+    window.close();
+    settle();
+
+    // --- (h) §1 items 4/5/8/9: the four boxes a person TYPES into reach the page's state -----------
+    // sec_08_produce_1_screen S11 — typed text read back through each widget's own `changed` signal.
+    let window = produce_page(_app);
+    ui::produce_page::set_state(published());
+    ui::produce_page::refresh(&window);
+    for (name, said) in [
+        ("edit-instruction", "put the ship on the water, keep the sky calm"),
+        ("negative-prompt", "no logos, no lettering"),
+        ("description-box", "a talk about pipes, recorded in one take"),
+    ] {
+        let view = widget_in(&window, name)
+            .and_then(|w| w.downcast::<gtk::TextView>().ok())
+            .unwrap_or_else(|| panic!("the Produce page drew {name} as a text box"));
+        // Typed the way GTK types it: the buffer holds the new text, then emits its own `changed`.
+        view.buffer().set_text(said);
+        view.buffer().emit_by_name::<()>("changed", &[]);
+        settle();
+    }
+    let title = widget_in(&window, "title-entry")
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        .expect("the Produce page drew its title entry");
+    title.set_text("pipes, from first to last");
+    title.emit_by_name::<()>("changed", &[]);
+    settle();
+    let typed = ui::produce_page::read_state();
+    assert_eq!(typed.instruction, "put the ship on the water, keep the sky calm");
+    assert_eq!(typed.negative, "no logos, no lettering");
+    assert_eq!(typed.description, "a talk about pipes, recorded in one take");
+    assert_eq!(typed.title, "pipes, from first to last");
+    // A repaint must not clobber what was typed: the state is the source of truth, and the guard keeps
+    // the page's own `set_text` from coming back as an edit.
+    ui::produce_page::refresh(&window);
+    let after_repaint = ui::produce_page::read_state();
+    assert_eq!(after_repaint.instruction, typed.instruction, "refresh kept the instruction");
+    assert_eq!(after_repaint.negative, typed.negative, "refresh kept the negative prompt");
+    assert_eq!(after_repaint.description, typed.description, "refresh kept the description");
+    assert_eq!(after_repaint.title, typed.title, "refresh kept the title");
+    // The guard came back clean: a button on another part of the page still answers.
+    click(&window, "add-image-button");
+    assert!(
+        !ui::produce_page::read_state().frames.is_empty(),
+        "the images row still works after the text wires ran"
+    );
+    RAN_TEXT.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
 }
 
 /// The setting rows the page actually drew, by their widget names.
@@ -426,13 +560,9 @@ fn screen_rows(window: &adw::ApplicationWindow) -> Vec<String> {
     found
 }
 
-#[test]
-fn sec_08_produce_1_screen_s1_s4_plate_rows_forcing_and_images_wire_the_named_widgets() {
-    // Pin cwd to our own temp root BEFORE anything builds.
-    let root = std::env::temp_dir().join(format!("np-produce-{}", std::process::id()));
-    std::fs::create_dir_all(&root).expect("temp root created");
-    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
-
+/// Start the shared GTK application if it has not been started yet. `Once` makes the second call free,
+/// which is what lets two `#[test]`s in this binary share one app run and one ordered round.
+fn run_app_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         let app = adw::Application::builder()
@@ -442,6 +572,15 @@ fn sec_08_produce_1_screen_s1_s4_plate_rows_forcing_and_images_wire_the_named_wi
         app.connect_activate(produce_round);
         app.run();
     });
+}
+
+#[test]
+fn sec_08_produce_1_screen_s1_s4_plate_rows_forcing_and_images_wire_the_named_widgets() {
+    // Pin cwd to our own temp root BEFORE anything builds.
+    let root = std::env::temp_dir().join(format!("np-produce-{}", std::process::id()));
+    std::fs::create_dir_all(&root).expect("temp root created");
+    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
+    run_app_round();
 
     assert!(RAN_PLATE.load(Ordering::SeqCst), "the fifteen-widget check never ran");
     assert!(RAN_SETTINGS.load(Ordering::SeqCst), "the rows check never ran");
@@ -453,4 +592,38 @@ fn sec_08_produce_1_screen_s1_s4_plate_rows_forcing_and_images_wire_the_named_wi
         "the settings-signal check never ran"
     );
     assert!(RAN_WORDS.load(Ordering::SeqCst), "the word-chip / dialog check never ran");
+    assert!(
+        RAN_SLOTS.load(Ordering::SeqCst),
+        "the slot picture / base tag / crop box check never ran"
+    );
+}
+
+/// §1 items **2**/**3** through the real widgets: every slot is a picture with its name, the first is
+/// tagged `base` and the rest `reference`, and the base wears a crop box only while its shape differs
+/// from the video's.
+/// §1 items **2**/**3** through the real widgets: every slot is a picture with its name, the first is
+/// tagged `base` and the rest `reference`, and the base wears a crop box only while its shape differs
+/// from the video's. The assertions live in the app round's block (g); this test waits for the round and
+/// reports its flag, which is how every other check in this file counts as run.
+#[test]
+fn sec_08_produce_1_screen_s12_slot_pictures_base_tag_and_crop_box() {
+    // Same shape as the sibling check: `ONCE` makes `app.run()` a no-op the second time it is asked,
+    // so whichever of the two tests runs second only has to wait for the round the first one drove.
+    run_app_round();
+    assert!(
+        RAN_SLOTS.load(Ordering::SeqCst),
+        "the slot picture / base tag / crop box check never ran inside the app round"
+    );
+}
+
+/// §1 items **4**, **5**, **8**, **9** through the real widgets: what a person types into Edit
+/// instruction, Negative prompt, Title and YouTube description lands in the page's state, and a repaint
+/// does not lose it. The assertions live in the app round's block (h).
+#[test]
+fn sec_08_produce_1_screen_s11_typing_into_the_four_boxes_reaches_the_state() {
+    run_app_round();
+    assert!(
+        RAN_TEXT.load(Ordering::SeqCst),
+        "the four typed boxes were never checked inside the app round"
+    );
 }

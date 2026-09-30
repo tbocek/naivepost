@@ -299,6 +299,50 @@ fn sec_08_produce_1_screen_s6_images_row_eight_slots() {
     assert!(!ps::shows_crop_box(None, (1080, 1920)));
 }
 
+/// §1 items **2**/**3**: the pairs the slot row draws its crop box from. The page asks this rule for
+/// every shape it holds, so each answer here is a box that appears or disappears on the page.
+#[test]
+fn sec_08_produce_1_screen_s12b_the_shapes_a_slot_draws_its_crop_box_from() {
+    assert_eq!(ITEM, "sec_08_produce_1_screen");
+    // A base of another shape: the thumbnail keeps only a band of it, so the box is drawn.
+    assert!(ps::shows_crop_box(Some((1080, 1920)), (1920, 1080)));
+    assert!(ps::shows_crop_box(Some((1280, 720)), (1920, 1080)));
+    // Already the video's own shape: nothing is being cut away.
+    assert!(!ps::shows_crop_box(Some((1920, 1080)), (1920, 1080)));
+    // No picture in the base slot at all: there is no frame to crop.
+    assert!(!ps::shows_crop_box(None, (1920, 1080)));
+    assert!(!ps::shows_crop_box(None, (0, 0)));
+    // An unknown VIDEO shape must not read as "differs": the page holds (0, 0) until something reads
+    // the finished file, and inventing a default would draw a box over a frame that may need none.
+    assert!(!ps::shows_crop_box(Some((1080, 1920)), (0, 0)));
+}
+
+/// §1 items **4**, **5**, **8**, **9**: what the page stores for each of the four typed boxes. The spec
+/// gives no trimming, case or length rule for any of them, so the machine invents none — every byte a
+/// person typed is what the flows later send.
+#[test]
+fn sec_08_produce_1_screen_s11b_the_four_fields_are_stored_verbatim() {
+    assert_eq!(ITEM, "sec_08_produce_1_screen");
+    let store = |field: &str, text: &str| -> naivepost::ui::produce_page::ProduceState {
+        naivepost::ui::produce_page::set_text_field(field, text);
+        naivepost::ui::produce_page::read_state()
+    };
+    // Each field takes its own text and nothing else changes.
+    assert_eq!(store("edit-instruction", "  lead with the ship  ").instruction, "  lead with the ship  ");
+    assert_eq!(store("negative-prompt", "\u{0a}no logos\tand no lettering").negative, "\u{0a}no logos\tand no lettering");
+    assert_eq!(store("description-box", "MiXeD CaSe kept").description, "MiXeD CaSe kept");
+    assert_eq!(store("title-entry", "Pipes: a talk").title, "Pipes: a talk");
+    // Whitespace-only is text too: an all-blank instruction is a deliberate state, not an empty one.
+    assert_eq!(store("edit-instruction", "   ").instruction, "   ");
+    // An unknown box name stores nothing at all — the seam cannot be talked into writing a field it was
+    // not wired to.
+    let before = naivepost::ui::produce_page::read_state();
+    naivepost::ui::produce_page::set_text_field("setting-codec", "vp9");
+    let after = naivepost::ui::produce_page::read_state();
+    assert_eq!(after.codec, before.codec, "a settings row's name is not a text field");
+    assert_eq!(after.title, before.title, "and it does not touch the title either");
+}
+
 // ---- s7: the thumbnail is a text-overlay editor ----------------------------------
 
 #[test]

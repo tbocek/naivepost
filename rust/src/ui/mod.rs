@@ -9,6 +9,12 @@ pub mod produce_languages;
 pub mod produce_press_wiring;
 /// §08-produce#1-screen item **7** — the ✎ dialog of the thumbnail's text-overlay editor.
 pub mod produce_words;
+/// §08-produce#1-screen items **4**, **5**, **8**, **9** — the four boxes a person TYPES into: their
+/// `changed` wires. Split out of `produce_page`, which is at its size budget.
+pub mod produce_text;
+/// §08-produce#1-screen items **2**/**3** — the Images row's slots: each slot's picture, which one is
+/// the base, the crop box the base wears, and its four buttons. Split out of `produce_page`, at its budget.
+pub mod produce_slots;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are

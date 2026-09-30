@@ -298,7 +298,14 @@ pub fn slot_actions(slot: usize, count: usize) -> &'static [&'static str] {
 
 /// §1: the base wears a crop box when its shape differs from the video's, because the thumbnail keeps only
 /// the video's own shape of it. No image, no box; the same shape needs none either.
+/// §1: the base wears a crop box when its shape differs from the video's, because the thumbnail keeps only
+/// the video's own shape of it. No image, no box; the same shape needs none either. A video shape with a
+/// zero side means NO SHAPE IS KNOWN YET (the page holds `(0, 0)` until something reads the finished file),
+/// and an unknown frame is not a difference — guessing one would draw a box over a picture that needs none.
 pub fn shows_crop_box(base_shape: Option<(u32, u32)>, video_shape: (u32, u32)) -> bool {
+    if video_shape.0 == 0 || video_shape.1 == 0 {
+        return false;
+    }
     match base_shape {
         Some(shape) => shape != video_shape,
         None => false,

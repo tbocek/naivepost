@@ -70,6 +70,11 @@ pub struct ProduceState {
     pub out_bytes: u64,
     /// A render is running: ⤓ Save video and ↻ Transcode both refuse while it is.
     pub rendering: bool,
+    /// The base picture's own shape, unknown until something reads the file (`None`).
+    pub base_shape: Option<(u32, u32)>,
+    /// The finished video's shape. `(0, 0)` means NO SHAPE IS KNOWN YET — the page invents no default,
+    /// because a guessed shape would draw a crop box over a frame that may not need one at all.
+    pub video_shape: (u32, u32),
 }
 
 thread_local! {
@@ -86,6 +91,7 @@ thread_local! {
         cut_line: String::new(), first_spoken: String::new(), mixed_sizes: Vec::new(),
         voice: String::new(),
         out_files: 0, out_bytes: 0, rendering: false,
+        base_shape: None, video_shape: (0, 0),
     }) };
 }
 
@@ -124,7 +130,9 @@ fn install_page_css_once() {
     if PAGE_CSS_LOADED.with(|cell| cell.get()) {
         return;
     }
-    let css = ".produce-plate { background-color: #1c1c1d; border: 1px solid #000000; }\n";
+    let css = ".produce-plate { background-color: #1c1c1d; border: 1px solid #000000; }\n\
+               .produce-crop-box { border: 2px solid #d0a215; background-color: alpha(#d0a215, 0.15); }\n\
+               .produce-word-box { border: 2px dashed #8a5fd0; }\n";
     let provider = gtk::CssProvider::new();
     let _ = provider.load_from_data(css);
     gtk::StyleContext::add_provider_for_display(
@@ -241,7 +249,7 @@ to resize, the middle to move, and press its \u{270e} to reword or remove it.",
 fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
     let s = read_state();
     for name in screen::settings_rows_shown(s.narration_off) {
-        let name: &str = name.as_ref();
+        let name: &str = name;
         // The label is what §A prints left of the control; every branch attaches it at column 0 and its
         // control at column 1, so hiding or showing a row moves both halves together.
         match name {
@@ -265,7 +273,7 @@ fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
                 );
                 scale.set_widget_name(&row_widget("Quality (CRF)"));
                 scale.set_hexpand(true);
-                scale.set_value(s.crf as f64);
+                scale.set_value(s.crf);
                 scale.set_tooltip_text(Some(screen::tooltip("Quality (CRF)")));
                 grid.attach(&scale, 1, row, 2, 1);
             }
@@ -304,7 +312,7 @@ fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
                 grid.attach(&ticks, 1, row, 2, 1);
             }
             other => {
-                grid.attach(&setting_label(&other), 0, row, 1, 1);
+                grid.attach(&setting_label(other), 0, row, 1, 1);
                 let choices = screen::options(name).unwrap_or(&[]);
                 let picker = gtk::DropDown::from_strings(choices);
                 picker.set_widget_name(&row_widget(name));
@@ -438,7 +446,7 @@ pub fn build() -> gtk::Widget {
     // Publish the root before drawing: the empty-images note is drawn by `draw_slots`, which finds its
     // holder through ROOT, and at build time `wire` has not stored it yet.
     ROOT.with(|held| *held.borrow_mut() = Some(split.clone().upcast()));
-    draw_slots(&read_state());
+    draw_into(&read_state());
     split.upcast()
 }
 
@@ -467,7 +475,9 @@ fn find(node: &gtk::Widget, name: &str) -> Option<gtk::Box> {
 }
 
 thread_local! {
-    /// The page's own root, remembered at `build()` so its seams can reach their widgets.
+    /// The page's own root, remembered at `build()` so its seams can reach their widgets before any
+    /// window exists. ONE per process: `build()` runs once and every later window embeds that same
+    /// widget tree, which is why a second window cannot also claim it (see `wire`).
     static ROOT: std::cell::RefCell<Option<gtk::Widget>> = const { std::cell::RefCell::new(None) };
 }
 
@@ -533,7 +543,7 @@ fn say(window: &adw::ApplicationWindow, said: &str) -> String {
 /// Repaint everything the held state owns: slots, the settings' values, the readouts.
 pub fn refresh(window: &adw::ApplicationWindow) {
     let s = read_state();
-    draw_slots(&s);
+    draw_into(&s);
     // The ✎ chips belong to the marks, so they are redrawn by the same door that redraws the slots.
     draw_word_chips(window, &s);
     // §A: a row's presence is itself drawn, so the grid is rebuilt whole rather than updated in place.
@@ -541,6 +551,9 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     // why no guarded set-value pass is needed here: nothing emits a change signal during construction,
     // so a repaint cannot be mistaken for an edit.
     rebuild_settings(window, &s);
+    // The four typed boxes are the exception: these `set_text` calls DO emit `changed`, and a keystroke
+    // wire would otherwise answer our own repaint as an edit (and, for the title, re-enter `refresh`).
+    SETTINGS_GUARD.with(|guard| guard.set(true));
     if let Some(entry) = widget_in(window, "title-entry")
         .and_then(|w| w.downcast::<gtk::Entry>().ok())
     {
@@ -557,6 +570,7 @@ pub fn refresh(window: &adw::ApplicationWindow) {
             view.buffer().set_text(text);
         }
     }
+    SETTINGS_GUARD.with(|guard| guard.set(false));
     if let Some(inputs) = label(window, "produce-inputs") {
         inputs.set_text(&screen::inputs_line(
             s.clips,
@@ -933,6 +947,17 @@ fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
         holder.remove(&child);
     }
     for (index, mark) in s.texts.iter().enumerate() {
+        // §A: the box itself is visible on the picture (dashed violet), not only as its chip below.
+        let box_on_picture = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        box_on_picture.set_widget_name(&format!("words-box-{index}"));
+        box_on_picture.add_css_class("produce-word-box");
+        box_on_picture.set_halign(gtk::Align::Start);
+        box_on_picture.set_size_request(
+            (mark.wf * 320.0).max(28.0) as i32,
+            (mark.hf * 180.0).max(28.0) as i32,
+        );
+        box_on_picture.set_tooltip_text(Some(&mark.text));
+        holder.append(&box_on_picture);
         let chip = gtk::Button::with_label(&format!("\u{270e} {}", mark.text));
         chip.set_widget_name(&format!("words-chip-{index}"));
         chip.set_tooltip_text(Some("reword or remove this box"));
@@ -987,10 +1012,44 @@ fn install_words_gesture(window: &adw::ApplicationWindow) {
     picture.add_controller(gesture);
 }
 
+/// Store one typed box's whole text, under the widget's own name. Verbatim: §1 gives no trimming, case
+/// or length rule for any of the four, and an instruction or a description is prose whose spacing,
+/// leading blank line and trailing space belong to whoever wrote them — so the machine keeps the bytes.
+/// Store one typed box's whole text, under the widget's own name. The page's seam for the four typed
+/// boxes: `produce_text`'s wires call it, and a test can check the storing rule without a display.
+/// Verbatim: §1 gives no trimming, case or length rule for any of the four, and an instruction or a
+/// description is prose whose spacing, leading blank line and trailing space belong to whoever wrote them
+/// — so the machine keeps the bytes rather than inventing a tidy-up of its own.
+pub fn set_text_field(field: &str, text: &str) -> String {
+    let stored = mutate(|s| {
+        match field {
+            "edit-instruction" => {
+                s.instruction = text.to_string();
+            }
+            "negative-prompt" => {
+                s.negative = text.to_string();
+            }
+            "description-box" => {
+                s.description = text.to_string();
+            }
+            // The title is stored like the rest; whether it repaints the picture is `title_seeded`'s call.
+            "title-entry" => {
+                s.title = text.to_string();
+            }
+            _ => return false,
+        }
+        true
+    });
+    if stored { "".to_string() } else { "no such text box on this page".to_string() }
+}
+
 /// Attach every handler. Called from `build_window` after `set_content`, like every other control on
 /// every page: a handler attached before the widget is inside the realized tree never fires.
+///
+/// ONE PAGE, ONE WINDOW. `build()` runs once per window and each build publishes ITS OWN root, so a
+/// second window gets its own widgets and its own wires — which is what makes this safe to call again.
 pub fn wire(window: &adw::ApplicationWindow) {
-    // Hold the WINDOW, not just the content root: `draw_slots` needs it to attach its per-slot buttons,
+    // Hold the WINDOW, not just the content root: the slot row needs it to attach its per-slot buttons,
     // which are looked up by name from the window root.
     ROOT.with(|held| *held.borrow_mut() = Some(window.clone().upcast()));
     let win = window.clone();
@@ -1031,6 +1090,17 @@ pub fn wire(window: &adw::ApplicationWindow) {
     // The thirteen settings rows, wired before the slot buttons because `refresh` below rebuilds the
     // grid whole and the wires must exist by the time a person touches a control.
     wire_settings(&win);
+    // §1 items 4/5/8/9: the four boxes a person TYPES into. Same hand-over as the Translate row — the
+    // guard and the state mutation stay this file's, so `produce_text` touches no thread-local of ours.
+    let text_win = win.clone();
+    crate::ui::produce_text::wire_text(
+        &win,
+        std::rc::Rc::new(|| SETTINGS_GUARD.with(|guard| guard.get())),
+        std::rc::Rc::new(move |field, text| {
+            set_text_field(field, text);
+            refresh(&text_win);
+        }),
+    );
     // The overlay editor's drag lives on the picture itself; the ✎ chips arrive with each refresh.
     install_words_gesture(&win);
     refresh(&win);
@@ -1118,60 +1188,12 @@ fn wire_settings(window: &adw::ApplicationWindow) {
     );
 }
 
-/// Stand in for the file chooser Change… opens. A headless run has no chooser, so the picture name is
-/// synthesised here, exactly as ＋ Add image synthesises `frame-{n}.jpg`. It counts presses rather than
-/// reading the row, because the whole point of the door is that the slot's picture MOVES; deriving the
-/// name from the current state would hand back what a previous press already put there.
-static CHANGE_STAND_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-/// The per-slot buttons for however many slots the page holds.
-fn wire_slot_buttons(window: &adw::ApplicationWindow) {
-    let count = read_state().frames.len();
-    for index in 0..count {
-        // The file chooser belongs to the host desktop and there is none headless, so Change… stands in
-        // with a name synthesised at press time by `CHANGE_STAND_IN`, just as ＋ Add image does.
-        for (prefix, door) in [
-            ("image-make-base", Door::MakeBase),
-            ("image-set-thumbnail", Door::SetThumbnail),
-            ("image-change", Door::Change),
-            ("image-remove", Door::Remove),
-        ] {
-            let name = format!("{prefix}-{index}");
-            if let Some(button) = crate::ui::line_step_button(window, &name) {
-                let w = window.clone();
-                button.connect_clicked(move |_| {
-                    match door {
-                        Door::MakeBase => press_make_base(&w, index),
-                        Door::SetThumbnail => press_set_thumbnail(&w, index),
-                        // What this door proves is that the slot KEEPS ITS PLACE and only its picture
-                        // changes (`screen::change_image`), not which filename arrived.
-                        Door::Change => {
-                            let pick = CHANGE_STAND_IN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                            let stood_in_for = format!("project:produce/publish/chosen-{pick}.jpg");
-                            press_change_image(&w, index, &stood_in_for)
-                        }
-                        Door::Remove => press_remove_image(&w, index),
-                    };
-                });
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Door {
-    MakeBase,
-    SetThumbnail,
-    Change,
-    Remove,
-}
-
-
-/// The row's widget name: lowercased, spaces and parens turned to dashes ("Quality (CRF)" →
-/// "quality-crf"), so a test can find any setting by the §A row it belongs to.
-/// The control name one settings row carries, the page's ONE spelling: "Quality (CRF)" →
-/// `setting-quality--crf`, "Translate" → `setting-translate`. A test finds any row by its §A name
-/// without knowing whether that row is a dropdown, a scale or a box of ticks.
+/// The row's widget name, the page's ONE spelling: "Quality (CRF)" → `setting-quality--crf`,
+/// "Translate" → `setting-translate`. A test finds any row by its §A name without knowing whether that
+/// row is a dropdown, a scale or a box of ticks.
+/// The row's widget name, the page's ONE spelling: "Quality (CRF)" → `setting-quality--crf`,
+/// "Translate" → `setting-translate`. A test finds any row by its §A name without knowing whether that
+/// row is a dropdown, a scale or a box of ticks.
 pub fn row_widget(row: &str) -> String {
     format!(
         "setting-{}",
@@ -1181,59 +1203,45 @@ pub fn row_widget(row: &str) -> String {
     )
 }
 
-/// `refresh`, rebuilt whole because the base changes when slot 0 is removed.
-fn draw_slots(s: &ProduceState) {
-    let Some(list) = widget_in_root("publish-images") else {
-        return;
+/// Draw the Images row into its holder and wire whatever buttons the drawing created. Called from
+/// `build` (before any window exists) and from `refresh`; the slots' rules live in `produce_slots`.
+pub(crate) fn draw_into(s: &ProduceState) {
+    // A box that is being drawn into again still holds what the last draw left in it: `build()` runs once
+    // per WINDOW, so a second window's page has its own holder while ROOT still points at the first one's,
+    // and emptying the wrong box leaves the live one to accumulate rows -- GTK's
+    // `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL'`. So the holder is found through
+    // the window being refreshed when there is one, and only falls back to ROOT for the draw `build()` does
+    // before any window exists.
+    let list = match held_window().and_then(|w| widget_in(&w, "publish-images"))
+        .and_then(|w| w.downcast::<gtk::Box>().ok())
+    {
+        Some(list) => list,
+        None => match widget_in_root("publish-images") {
+            Some(list) => list,
+            None => return,
+        },
     };
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
-    if s.frames.is_empty() {
-        // §A's empty state: two sentences where the slots would be, so the page reads as empty rather
-        // than broken. No buttons wired into it — there is no slot for them to point at.
-        let note = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        note.set_widget_name("publish-images-empty");
-        let first = gtk::Label::new(Some(screen::EMPTY_IMAGES));
-        first.set_xalign(0.0);
-        first.add_css_class("dim-label");
-        note.append(&first);
-        let second = gtk::Label::new(Some(screen::EMPTY_IMAGES_HINT));
-        second.set_xalign(0.0);
-        second.add_css_class("dim-label");
-        note.append(&second);
-        list.append(&note);
-        return;
-    }
-    let count = s.frames.len();
-    for (index, path) in s.frames.iter().enumerate() {
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        row.set_widget_name(&format!("image-slot-{index}"));
-        let name = gtk::Label::new(Some(path.rsplit('/').next().unwrap_or(path)));
-        name.set_xalign(0.0);
-        name.set_hexpand(true);
-        name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-        row.append(&name);
-        // The buttons a slot offers come from `slot_actions`: `Make base` only on a reference,
-        // `Set Thumbnail` / `Change\u{2026}` / `remove` on every one.
-        for action in screen::slot_actions(index, count) {
-            let (widget_name, label) = match *action {
-                "Make base" => (format!("image-make-base-{index}"), "Make base"),
-                "Set Thumbnail" => (format!("image-set-thumbnail-{index}"), "Set Thumbnail"),
-                "Change\u{2026}" => (format!("image-change-{index}"), "Change\u{2026}"),
-                _ => (format!("image-remove-{index}"), "remove"),
-            };
-            let button = gtk::Button::with_label(label);
-            button.set_widget_name(&widget_name);
-            row.append(&button);
-        }
-        list.append(&row);
-    }
-    // The buttons are found by name from the window root, so they can be wired the moment they exist:
-    // `wire` runs before the first `refresh`, when there are no slots yet and nothing to attach to.
-    if let Some(window) = held_window() {
-        wire_slot_buttons(&window);
-    }
+    let doors = crate::ui::produce_slots::Doors {
+        make_base: std::rc::Rc::new(|w, i| {
+            press_make_base(w, i);
+        }),
+        set_thumbnail: std::rc::Rc::new(|w, i| {
+            press_set_thumbnail(w, i);
+        }),
+        // Change… stands in for the file chooser with a name synthesised at press time, just as
+        // ＋ Add image does; `next_stood_in` counts presses so a repeat press still moves the picture.
+        change: std::rc::Rc::new(|w, i| {
+            let stood_in_for = crate::ui::produce_slots::next_stood_in();
+            press_change_image(w, i, &stood_in_for);
+        }),
+        remove: std::rc::Rc::new(|w, i| {
+            press_remove_image(w, i);
+        }),
+    };
+    crate::ui::produce_slots::draw(&list, s, held_window().as_ref(), &doors);
 }
 
 /// The F5.1 run, driven from the page. Kept here rather than in `window.rs` so the shell's play handler
@@ -1247,10 +1255,8 @@ fn draw_slots(s: &ProduceState) {
 pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
     let s = read_state();
     let project = crate::ui::window::live_project();
-    let tree = crate::layout::Tree::new(&crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .ok();
+    let root = std::env::current_dir().unwrap_or_default();
+    let tree = crate::layout::Tree::new(crate::startup::session_dir(&root)).ok();
     // S3: ONE function answers "what is the cut", and the Cut page's own segments win so a tweak that
     // was never saved still renders. `review_cut_of` is that live cut.
     let cut = match tree.as_ref() {
@@ -1305,9 +1311,8 @@ fn finish_produce(
     // S2: a stale video standing here gets the overwrite question, in §S2's own two paragraphs. Nothing
     // is written by asking; the answer's own door is what runs the encode.
     if gate == crate::produce_flow::Gate::ConfirmOverwrite {
-        let video = crate::layout::Tree::new(&crate::startup::session_dir(
-            &std::env::current_dir().unwrap_or_default(),
-        ))
+        let root = std::env::current_dir().unwrap_or_default();
+        let video = crate::layout::Tree::new(crate::startup::session_dir(&root))
         .map(|t| t.final_video(container_name(parse_container(&s.container))))
         .unwrap_or_default();
         let base = video
@@ -1415,19 +1420,17 @@ fn finish_produce(
                         }
                         let root = std::env::current_dir().unwrap_or_default();
                         // `Seg::insert_asset` is the one path rule of §1; the clip carries the same spelling.
-                        let mut probe = crate::cut::Seg::default();
-                        probe.ins = clip.source.clone();
                         Some(
-                            probe
+                            crate::cut::Seg { ins: clip.source.clone(), ..Default::default() }
                                 .insert_asset(&root, &root)
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_else(|| clip.source.clone()),
                         )
                     },
                 },
-                |line| crate::ui::window::log_line(line),
+                crate::ui::window::log_line,
                 speak_a_line,
-                |at, which| render_asked(at, which),
+                render_asked,
                 crate::ui::produce_languages::spawn,
             );
             // A render that stopped or failed says so in the log with the spec's own line, on top of the
@@ -1451,9 +1454,8 @@ fn finish_produce(
 
 /// The session's folder, resolved the way the page resolves everything else on this path.
 fn session_tree() -> crate::layout::Tree {
-    crate::layout::Tree::new(&crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
+    let root = std::env::current_dir().unwrap_or_default();
+    crate::layout::Tree::new(crate::startup::session_dir(&root))
     .unwrap_or_else(|_| crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap())
 }
 

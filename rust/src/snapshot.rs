@@ -353,6 +353,21 @@ no words, no logos.".into();
             state.negative = "watermarks, lettering, extra limbs".into();
             state.title = "Ethereum, one lecture at a time".into();
             state.thumb_title = state.title.clone();
+            // One marked box, so the shot shows the text-overlay editor's ✎ chip rather than an
+            // empty chip row (§A: "press its ✎ to reword or remove it").
+            state.texts = vec![crate::project::TextMark {
+                cx: 0.5,
+                cy: 0.25,
+                wf: 1.0,
+                hf: 0.4,
+                text: "one lecture at a time".into(),
+            }];
+            // §1 prints the title across the picture, so the shot's picture carries its words.
+            state.title_seeded = true;
+            // The crop box the base wears: §A draws it only when the base's shape differs from the
+            // video's, and both are unknown in the fixture, so a bare shot shows no crop box at all.
+            state.base_shape = Some((1080, 1920));
+            state.video_shape = (1920, 1080);
             state.description = "Lecture two of the series: gas, smart contracts and accounts, with the \
 architecture behind them.
 ".into();
@@ -380,6 +395,15 @@ architecture behind them.
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.
         let subject: Option<gtk::Widget> = match screen.as_str() {
+            // §08's second image is the ✎ dialog, not the page behind it, so the dialog is the subject
+            // here -- same reason `03-settings` paints its own window. Opened the way the chip opens it,
+            // with the mark's own words already in the box.
+            "08-words" => {
+                ui::produce_words::open_reword(&window, 0, "Ethereum, one lecture at a time");
+                let shown = ui::produce_words::open_dialog().expect("the chip opens its dialog");
+                shown.set_default_size(420, 220);
+                Some(shown.upcast())
+            }
             // No parent: a transient of the window is kept alive by it, and this run ends when the
             // last window closes. Painted on its own, which is how the spec image shows it.
             "03-new-confirm" => {
