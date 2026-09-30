@@ -152,6 +152,7 @@ pub mod textfmt;
 pub mod transcribe;
 pub mod tool_loop;
 pub mod llm_liveness;
+pub mod llm_watch_leg;
 pub mod llm_retry;
 pub mod llm_retry_leg;
 pub mod web_browser;

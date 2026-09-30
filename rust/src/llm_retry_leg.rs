@@ -48,7 +48,7 @@ const NAP_POLL: Duration = Duration::from_millis(50);
 
 /// Wait `seconds`, giving up the moment ⏹ lands. True = the whole wait happened; false = the run was stopped.
 pub fn nap(seconds: u64) -> bool {
-    let left = Duration::from_secs(seconds);
+    let left = nap_duration(seconds);
     // One deadline read fresh each slice, so a thread that got no timeslice for a second cannot make the wait
     // longer or shorter than it was asked.
     let started = Instant::now();
@@ -61,6 +61,18 @@ pub fn nap(seconds: u64) -> bool {
     // A stop landing in the last slice still counts as stopped: the caller must not report a server problem for
     // a run the user ended.
     !cancel_leg::cancelled()
+}
+
+/// How long a §3 wait actually takes. `NAIVEPOST_RETRY_SCALE` divides it, which is how a live test sits through the
+/// whole 5 s → 4 min ladder in seconds; the log keeps naming the SECONDS §3 spells, because that is the truth about
+/// the patience, and only the wall time shrinks. Unset in every real run, where a wait is a wait.
+fn nap_duration(seconds: u64) -> Duration {
+    let scale = std::env::var("NAIVEPOST_RETRY_SCALE")
+        .ok()
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .filter(|factor| *factor > 0)
+        .unwrap_or(1);
+    Duration::from_millis(seconds * 1000 / scale)
 }
 
 /// Either leg's failure, unified so one loop can hold both. `run` needs `Display` on it and a closure that says
@@ -215,15 +227,21 @@ pub fn dial(
         if cancelled() {
             return Err(Failure::Stopped);
         }
-        let (_row, reply) = server_leg::call(
+        let (_row, reply) = server_leg::call_dialed(
             tree,
             base,
-            crate::services::Server::Llm,
-            endpoint,
-            Kind::Chat,
-            None,
-            Some(body),
-            cancelled,
+            &server_leg::Dial {
+                server: crate::services::Server::Llm,
+                endpoint,
+                kind: Kind::Chat,
+                job: None,
+                body: Some(body),
+                filename: None,
+                cancelled,
+                // §4: every chat call is streamed, so the stall rule holds for all of them — the same decision that
+                // puts `"stream": true` in the body (`llm_request::body`), carried here rather than re-derived.
+                liveness: Some(crate::llm_watch_leg::Liveness::streamed(step)),
+            },
         );
         match reply {
             Ok(sent) if sent.ok() => {

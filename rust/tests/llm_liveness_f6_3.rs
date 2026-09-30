@@ -5,6 +5,10 @@
 //! and no threads: every moment is a `now` in whole seconds handed to the module, so 4m45s and 5m00s are both
 //! just numbers and the boundary between them is an assertion rather than a wait.
 //!
+//! The live half — a real socket that answers nothing, under the same rules — lives in its own binary,
+//! `tests/llm_liveness_f6_3_live.rs`, because §4's two bounds are read once per process and a pure call here would
+//! fix them at their real values before a live check could shorten them.
+//!
 //! # Ids used
 //!
 //! `P.eng.llmStallMinutes` (5), `P.eng.llmWholeMinutes` (10), `P.machine.slots` (default 1, one count per model)
@@ -27,6 +31,8 @@ fn silent() -> live::Watch {
 fn item(part: &str) -> String {
     format!("{ITEM} {part}")
 }
+
+// ---- s1: the stall ------------------------------------------------------------------
 
 // ---- s1: the stall ------------------------------------------------------------------
 
@@ -476,12 +482,13 @@ fn f6_3_s5_the_three_numbers_are_catalogued_and_have_one_home() {
         rest[..end].to_string()
     };
     let poll = body("poll");
-    assert!(poll.contains("STALL_MINUTES * 60") && poll.contains("WHOLE_MINUTES * 60"), "{poll}");
-    for literal in ["300", "600", "(5)", "(10)"] {
+    // The bounds are read through the watch's own fields, which hold `STALL_MINUTES * 60` / `WHOLE_MINUTES * 60`
+    // unless a caller supplied a configured value — so the constants still have exactly one home.
+    assert!(poll.contains("self.stall_seconds") && poll.contains("WHOLE_MINUTES * 60"), "{poll}");    for literal in ["300", "600", "(5)", "(10)"] {
         assert!(!poll.contains(literal), "{literal} in poll is a second copy of a bound: {poll}");
     }
     let blame = body("blame");
-    assert!(blame.contains("STALL_MINUTES * 60"), "{blame}");
+    assert!(source.contains("STALL_MINUTES * 60"), "{blame}");
     // The tail bound too: `tail_of` reads TAIL_BYTES, never 90.
     let tail = body("tail_of");
     assert!(tail.contains("TAIL_BYTES"), "{tail}");

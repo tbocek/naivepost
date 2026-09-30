@@ -135,6 +135,24 @@ pub fn send_named(
     filename: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Sent, String> {
+    send_pinged(server, endpoint, kind, job, body, filename, cancelled, None)
+}
+
+/// [`send_named`] with the §4 probe: every byte this read comes off the wire is a heartbeat's evidence, so the
+/// reader pings here rather than anywhere the event parser would have to be involved.
+fn send_pinged(
+    server: Server,
+    endpoint: &Endpoint,
+    kind: Kind,
+    job: Option<&str>,
+    body: Option<&str>,
+    filename: Option<&str>,
+    cancelled: &dyn Fn() -> bool,
+    probe: Option<&crate::llm_watch_leg::Probe>,
+) -> Result<Sent, String> {
+    // The eighth argument is §4's byte ping, which only a watched leg has; folding it into `Dial` would make every
+    // unwatched caller carry a field it never sets.
+    #![allow(clippy::too_many_arguments)]
     if services::rides_cancel_context(kind) && cancelled() {
         return Err(format!("{}: cancelled before sending", kind.path(job)));
     }
@@ -148,9 +166,10 @@ pub fn send_named(
     // The timeouts come straight out of §1's table. `Some(d)` bounds the whole call; `None`
     // bounds only the connect, per CONNECT_TIMEOUT's note above.
     let overall = services::timeout_for(kind);
-    // One builder type for both verbs. `WithoutBody` cannot meet `WithBody` in a `match`, so the
-    // GET is widened with `force_send_body()` and then sends nothing (`send_empty` below): one
-    // config chain — timeouts, bearer header — for every kind rather than two that can drift.
+    // Timeouts straight out of §1's table, and deliberately nothing about silence: a chat ask has no whole-call
+    // ceiling (§1), and §4's silence rule is NOT the socket's business — `guarded` watches it from outside, so this
+    // read may block as long as the server makes it and the call still ends on time. Bounding the read here would put
+    // ureq's timeout in the race for the caller's error sentence, which is §4's to say.
     let builder = match kind.method() {
         "POST" => ureq::post(&url),
         _ => ureq::get(&url).force_send_body(),
@@ -158,6 +177,7 @@ pub fn send_named(
     let builder = builder
         .config()
         .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_body(overall)
         .timeout_global(overall)
         // 4xx/5xx come back as a response we read, not as an error: §1's upload rule
         // (`services::upload_refused`) needs the status AND the server's own message, which a
@@ -211,6 +231,10 @@ pub fn send_named(
             Ok(0) => break started.elapsed().as_millis() as i64,
             Ok(n) => {
                 let elapsed = started.elapsed().as_millis() as i64;
+                // Any byte at all counts (§4), including one the event parser never turns into anything.
+                if let Some(probe) = probe {
+                    probe.byte();
+                }
                 buf.extend_from_slice(&chunk[..n]);
                 // First successful read is the first byte, unless the body was empty.
                 if buf.len() == n {
@@ -283,6 +307,7 @@ pub fn call(
             body,
             filename: None,
             cancelled,
+            liveness: None,
         },
     )
 }
@@ -301,6 +326,9 @@ pub struct Dial<'a> {
     pub filename: Option<&'a str>,
     /// The run's cancel context.
     pub cancelled: &'a dyn Fn() -> bool,
+    /// §4's watch for this call: `Some` puts the request under the stall rule and the heartbeat. Only a chat ask
+    /// sets it — an audio or image job has no silence bound of its own (§1 bounds those by kind).
+    pub liveness: Option<crate::llm_watch_leg::Liveness>,
 }
 
 /// [`call`] from a [`Dial`], so a caller names each leg instead of counting positions.
@@ -311,15 +339,47 @@ pub fn call_dialed(
 ) -> (Request, Result<Sent, String>) {
     let attempt = request_timing::next_attempt(None);
     let timer_start = epoch_ms();
-    let result = send_named(
-        dial.server,
-        dial.endpoint,
-        dial.kind,
-        dial.job,
-        dial.body,
-        dial.filename,
-        dial.cancelled,
-    );
+    let result = match &dial.liveness {
+        // Under §4's watch: the send runs where a blocked read cannot stop the ticker, and the probe is what tells
+        // the ticker that bytes are arriving.
+        Some(liveness) => {
+            let probe = crate::llm_watch_leg::Probe::new();
+            // The worker is detached (see `guarded`), so it must OWN everything: the endpoint, and copies of the two
+            // borrowed strings it sends. Nothing here may borrow the caller's `Dial`.
+            let ping = Some(probe.clone());
+            // `Dial.cancelled` is a `&dyn Fn`, which cannot cross into the worker thread. The switch itself is a
+            // process-wide atomic, so the worker takes the same live read the callers elsewhere use.
+            let cancelled_now = crate::cancel_leg::cancel_check_now();
+            let server = dial.server;
+            let endpoint = dial.endpoint.clone();
+            let kind = dial.kind;
+            let job = dial.job.map(str::to_owned);
+            let body = dial.body.map(str::to_owned);
+            let filename = dial.filename.map(str::to_owned);
+            crate::llm_watch_leg::guarded(liveness, &probe, move || {
+                send_pinged(
+                    server,
+                    &endpoint,
+                    kind,
+                    job.as_deref(),
+                    body.as_deref(),
+                    filename.as_deref(),
+                    &cancelled_now,
+                    ping.as_deref(),
+                )
+            })
+        }
+        None => send_pinged(
+            dial.server,
+            dial.endpoint,
+            dial.kind,
+            dial.job,
+            dial.body,
+            dial.filename,
+            dial.cancelled,
+            None,
+        ),
+    };
     let mut timer = Timer::sent(timer_start);
     match &result {
         Ok(reply) => {

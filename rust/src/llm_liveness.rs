@@ -64,6 +64,33 @@ pub const TAIL_KEPT_BYTES: usize = 360;
 /// 1"). One row covers all seven models; each keeps its own value in [`crate::settings::Slots`].
 pub const DEFAULT_SLOTS: u32 = 1;
 
+/// The silence bound the live watch uses, in seconds. `llmStallMinutes` is §4's number; `NAIVEPOST_LLM_STALL_SECONDS`
+/// is the seam a live test reads to watch a five-minute stall without living through five minutes of it, which is why
+/// the bound is read rather than inlined. Unset in every real run, where this is the constant.
+///
+/// Read once at startup for the same reason [`heartbeat_seconds`] is: the watch holds its bound, and a value that
+/// changed mid-call would make the bound a moving target.
+pub fn stall_seconds() -> u64 {
+    static BOUND: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *BOUND.get_or_init(|| configured("NAIVEPOST_LLM_STALL_SECONDS").unwrap_or(STALL_MINUTES * 60))
+}
+
+/// The heartbeat's period the LIVE watch is measured against, in seconds.
+///
+/// A process-wide seam (`NAIVEPOST_LLM_HEARTBEAT_SECONDS`), read once at startup rather than at every call: the
+/// minute is §4's number, and shortening it is only how a live test sees several heartbeats inside a short call.
+/// Reading it per call would let one test's value change another test's already-running watch, because a test binary
+/// shares one process.
+pub fn heartbeat_seconds() -> u64 {
+    static MINUTE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *MINUTE.get_or_init(|| configured("NAIVEPOST_LLM_HEARTBEAT_SECONDS").unwrap_or(HEARTBEAT_SECONDS))
+}
+
+/// One override read from the environment: set and parseable wins, anything else means "not configured".
+fn configured(key: &str) -> Option<u64> {
+    std::env::var(key).ok()?.trim().parse().ok()
+}
+
 /// §5's spin button range: 1 to 16.
 pub const SLOTS_MIN: u32 = 1;
 
@@ -189,6 +216,10 @@ pub struct Watch {
     /// When a heartbeat was last said, so the first is a minute in and not immediately.
     pub last_said: u64,
     pub streamed: bool,
+    /// The silence that ends this call, in seconds. [`STALL_MINUTES`] converted, unless the caller set it through
+    /// [`Self::with_stall_seconds`] — the live leg reads the configured value, so a test drives the same rule at
+    /// two seconds instead of five minutes.
+    pub stall_seconds: u64,
     pub thinking_bytes: usize,
     pub reply_bytes: usize,
     /// Kept for the tail only, and only [`TAIL_KEPT_BYTES`] of it. Reasoning is counted and shown, never returned.
@@ -209,6 +240,13 @@ impl Watch {
         Self::new(step, now, false)
     }
 
+    /// Judge this call's silence by `seconds` rather than by [`STALL_MINUTES`]. §4's bound is one number for the
+    /// program; this only lets the caller supply the value it read from settings, never a different rule.
+    pub fn with_stall_seconds(mut self, seconds: u64) -> Self {
+        self.stall_seconds = seconds;
+        self
+    }
+
     fn new(step: &str, now: u64, streamed: bool) -> Self {
         Self {
             step: step.to_string(),
@@ -216,6 +254,7 @@ impl Watch {
             last_byte: None,
             last_said: now,
             streamed,
+            stall_seconds: STALL_MINUTES * 60,
             thinking_bytes: 0,
             reply_bytes: 0,
             thinking: String::new(),
@@ -292,7 +331,7 @@ impl Watch {
     /// on. An unstreamed call skips the silence rule entirely and ends only at the ceiling.
     pub fn poll(&mut self, now: u64) -> Poll {
         let quiet = self.quiet(now);
-        if self.streamed && quiet >= STALL_MINUTES * 60 {
+        if self.streamed && quiet >= self.stall_seconds {
             return Poll::GaveUp {
                 log: format!(
                     ">>> {}: nothing for {} \u{2014} giving up",
@@ -317,7 +356,7 @@ impl Watch {
         // The guard ticks from the last line *said*, not from the last byte — otherwise a call streaming at one
         // byte a minute would go a full silent minute without ever speaking, which is the opposite of what §4
         // wants. Bytes move `last_byte`; this moves `last_said`, and each has its own job.
-        if now.saturating_sub(self.last_said) < HEARTBEAT_SECONDS {
+        if now.saturating_sub(self.last_said) < heartbeat_seconds() {
             return Poll::Idle;
         }
         self.last_said = now;
@@ -356,10 +395,11 @@ impl Watch {
     /// prompt's size rather than the connection — and it comes from the watch, which is the only thing holding both
     /// moments; [`blame`] spells the pair once `now` and the start are known.
     pub fn blame(&self, now: u64) -> String {
-        blame(
+        blame_at(
             now.saturating_sub(self.started),
             self.quiet(now),
             self.ever_arrived(),
+            self.stall_seconds,
         )
     }
 }
@@ -373,7 +413,13 @@ impl Watch {
 /// A ⏹ press is not this function's business: the caller reports its own stop, because only the run knows whether
 /// the user ended it or the guard did.
 pub fn blame(ran_for: u64, quiet: u64, ever_arrived: bool) -> String {
-    let stall = duration_spelling(STALL_MINUTES * 60);
+    blame_at(ran_for, quiet, ever_arrived, STALL_MINUTES * 60)
+}
+
+/// [`blame`] with the bound spelled out, which is what a watch holding a configured [`Watch::stall_seconds`] needs:
+/// the sentence must name the bound that actually ended the call, not the compiled-in default.
+pub fn blame_at(ran_for: u64, quiet: u64, ever_arrived: bool, bound_seconds: u64) -> String {
+    let stall = duration_spelling(bound_seconds);
     if !ever_arrived {
         return format!("nothing arrived in {stall}");
     }
