@@ -171,18 +171,13 @@ pub fn brief(segs: &[Seg], rows: &[SessionLine], fx: &[Fx], narrator: &str) -> S
         }
         for effect in fx {
             let (from, to) = effect.spans();
-            let text = effect.text.trim();
-            if text.is_empty() || to <= seg.s || from >= seg.e {
+            if to <= seg.s || from >= seg.e {
                 continue;
             }
-            // Only a label and a caption are worth reading here: a zoom, a speed or a volume says something
-            // about the footage that the writer has no way to speak to.
-            let tag = match effect.kind.as_str() {
-                "label" => "MARKED",
-                "text" => "CAPTION",
-                _ => continue,
-            };
-            out.push_str(&format!("  [{:+.0}s] {tag}: {text}\n", from - seg.s));
+            // \u00a712 #29: every kind is read here, not only a label and a caption. A zoom, a burned-in graphic
+            // or a mute are decisions about the picture the writer can speak to and cannot otherwise see.
+            let Some((tag, words)) = effect_tag(effect) else { continue };
+            out.push_str(&format!("  [{:+.0}s] {tag}: {words}\n", from - seg.s));
         }
     }
     out
@@ -264,18 +259,29 @@ pub const EMOTION_KIN: [(&str, &[&str]); 8] = [
     ("calm", &["natural", "neutral", "calm", "deadpan", "flat", "plain", "even", "relaxed", "matter-of-fact"]),
 ];
 
-/// `list_emotions(–)` (§3.8: "the eight bases with their kin words"): the table above, one line per base, so
-/// the writer is never asked to guess a spelling it has not been shown.
+/// `list_emotions(–)` (§3.8: "the eight bases with their kin words **and the named blends with recipes**
+/// \u{2014} the table the prototype keeps to itself"): the bases first, one line each, then every named blend
+/// spelled as its recipe over the base names. §12 #25's other half: a writer shown only the eight bases
+/// invents a blend word, the client resolves it to nothing, and the line goes to a different model. A blend
+/// that is published cannot be missed.
 pub fn list_emotions() -> String {
-    EMOTION_KIN
+    let mut lines: Vec<String> = EMOTION_KIN
         .iter()
         .map(|(base, kin)| {
             let words = kin.iter().copied().filter(|word| *word != *base).collect::<Vec<_>>();
             format!("{base}: {}", words.join(", "))
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect();
+    lines.push(String::new());
+    lines.push(BLENDS_HEAD.to_string());
+    for blend in crate::narrate_tts::BLENDS.iter() {
+        lines.push(crate::narrate_tts::blend_recites(blend));
+    }
+    lines.join("\n")
 }
+
+/// The heading the blends section gets, so a reader knows the lines under it are recipes and not more kin.
+const BLENDS_HEAD: &str = "named blends, as their recipes over the eight bases:";
 
 /// §3.8's `pos?`: the three placements Produce can burn, normalised to what the record stores. `"bottom"` is
 /// the default and therefore stored as nothing at all — the same bytes a line with no placement gets. A word
@@ -362,16 +368,73 @@ pub fn write_line(clips: &[Seg], clip: u32, at: f64, text: &str, emotion: &str, 
     let seg = &clips[(clip - 1) as usize];
     let screen = on_screen(seg);
     let placed = at_offset(at, screen);
-    crate::tools::ok(&serde_json::json!({
+    // \u00a712 #23 / \u00a7 F4.2's flow box: the answer carries "whether it will be squeezed", in the render's
+    // own logged sentence, so a long line can be rewritten here instead of sped up silently later. The
+    // clip's other lines are unknown to one call (the writer may place them in any order, \u00a712 #27), so
+    // the note is about THIS line and the room it has \u{2014} `narrate_ask` measures the WHOLE run at
+    // `finish`, where every line of the clip is known.
+    let mut body = serde_json::json!({
         "clip": clip,
         "at": placed,
         "seconds_on_screen": screen,
         "words": text.split_whitespace().count(),
         "at_most_words": word_ceiling(screen),
         "emotion": emotion.trim(),
+        // \u00a73.8: "the emotion resolved into its eight weights" \u{2014} the same string the engine is sent
+        // (``narrate_tts::weights_of``), so one intent makes one performance. A tag with no weights answers
+        // null: the judge reads those lines as words, and saying so beats printing eight floats nobody asked
+        // for.
+        "weights": crate::narrate_tts::weights_of(emotion),
         "pos": place,
         "text": text.trim(),
-    }))
+    });
+    // \u00a712 #23 / \u00a7 F4.2's flow box: the answer carries "whether it will be squeezed", in the render's
+    // own logged sentence, so a long line can be rewritten here instead of sped up silently later.
+    if let Some(squeeze) = pack_warning(screen, placed, text.trim().chars().count(), &[], clip) {
+        body["squeeze"] = serde_json::json!(squeeze);
+    }
+    crate::tools::ok(&body)
+}
+
+/// The clip's whole run of lines packed, the lead and the gap behind the line above included: F4.3's
+/// arithmetic, kept short on purpose because the render's own copy is the real one (`produce_render::fit`,
+/// whose `MAX_TEMPO` is quoted below) and this is only what the TOOL can say before any render runs.
+/// `before` is the clip's other lines as `(at, characters)` in whatever order they arrived \u{2014} order is
+/// never a complaint (\u00a712 #27) \u{2014} and speech is the page's estimate, the only length there is
+/// before a take exists. `None` when the packed run lands inside the clip.
+pub fn pack_warning(
+    screen: f64,
+    at: f64,
+    chars: usize,
+    before: &[(f64, usize)],
+    clip: u32,
+) -> Option<String> {
+    let speech_of = |count: usize| {
+        crate::narrate_screen::page_speech_seconds(count, crate::narrate_screen::SPEECH_CHARS_PER_SECOND)
+    };
+    let speech: f64 = before.iter().map(|(_, count)| speech_of(*count)).sum::<f64>() + speech_of(chars);
+    // Pack in clip order, as the render does: each line starts after the one above it finishes + gap + tail.
+    let mut placed: Vec<(f64, f64)> = before
+        .iter()
+        .map(|(line_at, line_chars)| (*line_at, speech_of(*line_chars)))
+        .chain(std::iter::once((at, speech_of(chars))))
+        .collect();
+    placed.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut end = 0.0_f64;
+    for (line_at, seconds) in placed {
+        let start = line_at
+            .max(crate::produce_render::LEAD_SECONDS)
+            .max(end + crate::produce_render::GAP_SECONDS + crate::produce_render::TAIL_SECONDS);
+        end = start + seconds;
+    }
+    if end + crate::produce_render::TAIL_SECONDS <= screen {
+        return None;
+    }
+    // The tempo the render would need, floored at 1 and held to the ceiling it may not pass: promising a
+    // remedy the render does not have is the mistake \u00a712 #23 was written about.
+    let needed = (end + crate::produce_render::TAIL_SECONDS) / screen.max(f64::MIN_POSITIVE);
+    let tempo = needed.clamp(1.0, crate::produce_render::MAX_TEMPO);
+    Some(crate::produce_render::sped_up_log(clip as usize, speech, screen, tempo))
 }
 
 /// `leave_silent(clip)` — ok, and nothing else. Silence has to be *said*: a clip with no entry at all is a
@@ -433,6 +496,54 @@ pub fn get_lines(rows: &[SessionLine], anchor: f64, from: f64, to: f64, narrator
         "lines": lines,
         "truncated": truncated,
     }))
+}
+
+/// `{}` on a whole f64 prints "2", which is what "at 2x" reads as; a trailing tail of decimals is not wanted
+/// in a brief line. The same spelling [`plays`] gives the clip heading.
+pub fn rate_words(rate: f64) -> String {
+    if rate == rate.trunc() {
+        format!("{}", rate as i64)
+    } else {
+        format!("{rate}")
+    }
+}
+
+/// \u00a712 #29: the narration brief passes EVERY effect kind \u{2014} "the narration brief carries only `label`
+/// and `text` effects: a zoom, an SVG burned over the picture, a volume mute \u{2014} all invisible to the
+/// writer \u{2192} pass every kind". A decoration is a decision about the picture, and a moment the writer
+/// cannot see is a moment it walks past. `MARKED` and `CAPTION` keep the words \u00a7 F4.2 spells for them;
+/// the others are named by what the writer would have to speak to (a stop is not a rate).
+/// `None` is the one case the old rule had right: a mark with no word in it says nothing about anything.
+pub fn effect_tag(effect: &Fx) -> Option<(&'static str, String)> {
+    let text = effect.text.trim();
+    match effect.kind.as_str() {
+        "label" => (!text.is_empty()).then(|| ("MARKED", text.to_string())),
+        "text" => (!text.is_empty()).then(|| ("CAPTION", text.to_string())),
+        "zoom" => Some((
+            "ZOOM",
+            if text.is_empty() { "the picture is punched in here".to_string() } else { text.to_string() },
+        )),
+        // A rate of nought is a stop, the same reading the cut and the render give it.
+        "speed" | "stop" => Some(if effect.rate == 0.0 {
+            ("STOP", "the picture holds here".to_string())
+        } else {
+            ("SPEED", format!("the footage runs at {}x here", rate_words(effect.rate)))
+        }),
+        "volume" => Some((
+            "VOLUME",
+            format!("the sound runs at {}x of its own level here", rate_words(effect.gain)),
+        )),
+        "svg" => Some((
+            "GRAPHIC",
+            if text.is_empty() { "a graphic is burned over the picture".to_string() } else { text.to_string() },
+        )),
+        // An unknown kind is still said rather than dropped, under its own word: not knowing what it does is
+        // not a reason to hide that it is there.
+        other => Some((
+            "EFFECT",
+            format!("{other}{}", if text.is_empty() { String::new() } else { format!(": {text}") }),
+        )),
+    }
 }
 
 /// `describe_insert(clip)` — §3.8: "what is actually on an inserted card: its text, parameters, length.

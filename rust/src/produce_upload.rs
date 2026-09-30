@@ -78,14 +78,26 @@ pub struct BriefClip {
     pub seen: Vec<String>,
     /// What was said in it, one string per transcript line.
     pub said: Vec<String>,
+    /// The clip's own rate on the produced clock \u{2014} 1.0 for a clip nobody sped up (\u00a712 #30: "a 4\u00d7
+    /// clip's stamps are on a clock it is not told about"). Printed in the header only when it is not 1.0,
+    /// so an ordinary clip's header stays exactly as \u00a7 F5.6 S1 spells it.
+    pub rate: f64,
+    /// Every decoration standing on the clip, spelled by `crate::narrate_pass::effect_tag` and printed under
+    /// the word `MARKED:` \u{2014} a marker's own text is not a label for itself, so the tag words ride inside
+    /// the string: `MARKED: MARKED: boss fight`, `MARKED: ZOOM: the face`. One spelling for one thing across
+    /// both briefs (\u00a712 #30: a moment marked "the reveal" must not reach the description writer as nothing).
+    pub marked: Vec<String>,
 }
 
 /// S1: the upload brief. Head, then the clips with what was seen and said, then the narration at its time
 /// in the finished video, or the explicit "(no narration has been written for this video)".
 ///
-/// Unlike the narration brief (F4.2) there are **no `MARKED` or `CAPTION` lines and no effects**: the writer
-/// of a YouTube description is not placing decorations, and §3's decision 30 asks only that the rate be
-/// printed and the moments named — which the clip header and the narration times do between them.
+/// Unlike the narration brief (F4.2) there are **no `CAPTION` lines**: the writer of a YouTube description
+/// is not placing subtitles. Everything else §12 #30 asks for is here — the decorations as `MARKED:` lines
+/// and the clip's own rate in its header ("a moment marked 'the reveal' reaches the description writer as
+/// nothing; a 4× clip's stamps are on a clock it is not told about → pass the effects, print the rate").
+/// `spec/08-produce.md` F5.6 S1 still reads "no MARKED or CAPTION lines; effects not passed": §12 #30 is the
+/// later ruling on that same behaviour and wins.
 pub fn brief(clips: &[BriefClip], lines: &[crate::narration::Entry], max_chars: usize) -> String {
     let total = clips.iter().map(|c| c.seconds.max(0.0)).sum::<f64>();
     let mut out = format!(
@@ -108,15 +120,30 @@ pub fn brief(clips: &[BriefClip], lines: &[crate::narration::Entry], max_chars: 
         } else {
             Vec::new()
         };
+        let marked_owned: Vec<String> = if folded {
+            clip.marked.iter().take(FOLDED_LINES).cloned().collect()
+        } else {
+            Vec::new()
+        };
         let seen: &[String] = if folded { &seen_owned } else { &clip.seen };
         let said: &[String] = if folded { &said_owned } else { &clip.said };
+        let marked: &[String] = if folded { &marked_owned } else { &clip.marked };
         for event in seen {
             out.push_str(&format!("  SEEN: {event}\n"));
         }
         for spoken in said {
             out.push_str(&format!("  SAID: {spoken}\n"));
         }
-        if folded && (clip.seen.len() > FOLDED_LINES || clip.said.len() > FOLDED_LINES) {
+        // \u00a712 #30: the decorations, under the same word the narration brief uses for a marker so one thing
+        // has one spelling. This is what a moment marked "the reveal" amounts to on this clock.
+        for decoration in marked {
+            out.push_str(&format!("  MARKED: {decoration}\n"));
+        }
+        if folded
+            && (clip.seen.len() > FOLDED_LINES
+                || clip.said.len() > FOLDED_LINES
+                || clip.marked.len() > FOLDED_LINES)
+        {
             out.push_str("  (folded \u{2014} read the rest with get_lines)\n");
         }
     }
@@ -144,28 +171,64 @@ pub fn brief(clips: &[BriefClip], lines: &[crate::narration::Entry], max_chars: 
     out
 }
 
-/// One clip's header line, exactly as S1 spells it.
+/// One clip's header line, exactly as S1 spells it \u{2014} plus, only when it is true of this clip, the rate its
+/// source runs at (\u00a712 #30: a sped clip's stamps are on a clock the writer has not been told about).
 fn clip_head(clip: &BriefClip) -> String {
-    format!(
+    let mut head = format!(
         "CLIP {} (at {} in the video, {}): session {}",
         clip.number,
         crate::tools::mm_ss(clip.at_output),
         crate::tools::tenths(clip.seconds),
         clip.session
-    )
+    );
+    if (clip.rate - 1.0).abs() > f64::EPSILON {
+        head.push_str(&format!(
+            ", the source runs at {}x here",
+            crate::narrate_pass::rate_words(clip.rate)
+        ));
+    }
+    head
 }
 
 /// The brief's length if nothing were folded — the number compared against `max_chars`. Measured rather than
-/// guessed so the fold decision reads the same text it is about to shorten.
+/// guessed so the fold decision reads the same text it is about to shorten, which now includes `MARKED:`.
 fn unbounded_length(clips: &[BriefClip], lines: &[crate::narration::Entry]) -> usize {
     let mut chars = 128;
     for clip in clips {
         chars += clip_head(clip).len()
             + clip.seen.iter().map(|s| s.len() + 8).sum::<usize>()
-            + clip.said.iter().map(|s| s.len() + 8).sum::<usize>();
+            + clip.said.iter().map(|s| s.len() + 8).sum::<usize>()
+            + clip.marked.iter().map(|s| s.len() + 11).sum::<usize>();
     }
     chars += lines.iter().map(|l| l.text.len() + 16).sum::<usize>();
     chars
+}
+
+/// The clip's rate as the brief prints it: a rate of nought is a stop, and a stop leaves the source running
+/// on at 1\u00d7 with a still over it \u{2014} the same reading `produce_render::plan_clips` gives a clip.
+pub fn brief_rate(seg: &crate::cut::Seg) -> f64 {
+    if seg.rate > 0.0 {
+        seg.rate
+    } else {
+        1.0
+    }
+}
+
+/// \u00a712 #30: the decorations standing on one clip, spelled by the ONE rule that spells effects
+/// (`crate::narrate_pass::effect_tag`) so both briefs say a zoom the same way. `fx` is the cut's whole list;
+/// overlap is asked the way the render asks it, with [`crate::cut::Fx::spans`].
+pub fn brief_marks(fx: &[crate::cut::Fx], seg: &crate::cut::Seg) -> Vec<String> {
+    fx.iter()
+        .filter(|effect| {
+            let (from, to) = effect.spans();
+            to > seg.s && from < seg.e
+        })
+        .filter_map(|effect| crate::narrate_pass::effect_tag(effect))
+        // A caption is the viewer's text, not a decoration on the picture: this writer is not placing
+        // subtitles (\u00a7 F5.6 S1 keeps that part), so `CAPTION` lines stay out of this brief.
+        .filter(|(tag, _)| *tag != "CAPTION")
+        .map(|(tag, words)| format!("{tag}: {words}"))
+        .collect()
 }
 
 // ---- S6: the draw -----------------------------------------------------------------

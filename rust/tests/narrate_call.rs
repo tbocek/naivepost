@@ -119,29 +119,35 @@ fn f4_2_s4_an_insert_is_described_by_its_file_and_parameters_rather_than_by_the_
     assert!(!brief.contains(pass::NO_LINES), "{brief}");
 }
 
-/// F4.2 (`effects as "[+Ns] MARKED: name" / "[+Ns] CAPTION: text"`): only a label and a caption are read here.
+/// F4.2 (`effects as "[+Ns] MARKED: name" / "[+Ns] CAPTION: text"`) and \u00a712 #29, which widened it: **every**
+/// kind is read, a label and a caption under those two words and a zoom, a speed, a volume, a graphic and a
+/// stop under their own.
 #[test]
-fn f4_2_s5_a_marked_moment_and_a_caption_are_read_but_an_effect_that_changes_the_picture_is_not() {
+fn f4_2_s5_every_effect_kind_is_read_and_a_label_or_caption_keeps_its_word() {
     let clips = [seg(100.0, 120.0)];
     let fx = [
         effect("label", 102.0, 3.0, "boss fight"),
         effect("text", 104.0, 3.0, "a caption the viewer reads"),
-        // Three kinds that say something about the footage the writer has no way to speak to.
+        // \u00a712 #29: these three were invisible to the writer. A moment marked "the reveal" is worth a line,
+        // and a mute or a fast stretch changes what the viewer sees and hears.
         effect("zoom", 106.0, 3.0, "the reveal"),
-        effect("volume", 108.0, 3.0, "quieter"),
-        effect("speed", 110.0, 3.0, "faster"),
+        Fx { kind: "volume".into(), t: 108.0, dur: 3.0, gain: 0.2, text: "quieter".into(), ..Default::default() },
+        Fx { kind: "speed".into(), t: 110.0, dur: 3.0, rate: 2.0, text: "faster".into(), ..Default::default() },
+        effect("svg", 112.0, 3.0, "a lower-third burns in"),
+        // A stop is a speed whose rate is 0, and the writer needs the difference.
+        Fx { kind: "speed".into(), t: 114.0, dur: 3.0, rate: 0.0, text: String::new(), ..Default::default() },
         // And a label with no word in it is not the editor's word for anything.
-        effect("label", 112.0, 3.0, "   "),
+        effect("label", 116.0, 3.0, "   "),
     ];
     let brief = pass::brief(&clips, &[], &fx, MIC);
 
     assert!(brief.contains("  [+2s] MARKED: boss fight\n"), "{brief}");
     assert!(brief.contains("  [+4s] CAPTION: a caption the viewer reads\n"), "{brief}");
-    for absent in ["the reveal", "quieter", "faster", "MARKED:"] {
-        let hits = brief.matches(absent).count();
-        let expected = if absent == "MARKED:" { 1 } else { 0 };
-        assert_eq!(hits, expected, "{absent} in {brief}");
-    }
+    assert!(brief.contains("  [+6s] ZOOM: the reveal\n"), "{brief}");
+    assert!(brief.contains("  [+8s] VOLUME: the sound runs at 0.2x of its own level here"), "{brief}");
+    assert!(brief.contains("  [+10s] SPEED: the footage runs at 2x here"), "{brief}");
+    assert!(brief.contains("  [+12s] GRAPHIC: a lower-third burns in\n"), "{brief}");
+    assert!(brief.contains("  [+14s] STOP: the picture holds here\n"), "{brief}");
     // A mark over the clip *before* is not this clip's moment.
     let elsewhere = [effect("label", 90.0, 3.0, "the previous scene")];
     assert!(!pass::brief(&clips, &[], &elsewhere, MIC).contains("previous scene"));
@@ -327,10 +333,21 @@ fn f4_2_s11_an_emotion_is_a_base_or_one_of_its_kin_and_the_table_shows_both() {
     assert_eq!(bases, narrate_screen::EMOTIONS.to_vec());
 
     let table = pass::list_emotions();
-    let lines: Vec<&str> = table.lines().collect();
-    assert_eq!(lines.len(), 8, "{table}");
-    assert!(lines[0].starts_with("happy: ") && lines[0].contains("joyful"), "{}", lines[0]);
-    assert!(lines[7].contains("matter-of-fact") && lines[7].contains("neutral"), "{}", lines[7]);
+    // The eight bases first, in \u00a71's order, each with its kin \u{2014} unchanged wording, because other
+    // tests and the prompt quote a line of this table.
+    let bases: Vec<&str> = table.lines().take(8).collect();
+    assert_eq!(bases.len(), 8, "{table}");
+    assert!(bases[0].starts_with("happy: ") && bases[0].contains("joyful"), "{}", bases[0]);
+    assert!(bases[7].contains("matter-of-fact") && bases[7].contains("neutral"), "{}", bases[7]);
+    // \u00a73.8: the table also carries "the named blends with recipes \u{2014} the table the prototype keeps to
+    // itself" (\u00a712 #25): every blend is published, spelled over the base names it is made of.
+    assert!(table.contains("named blends"), "{table}");
+    for blend in naivepost::narrate_tts::BLENDS.iter() {
+        for name in blend.names {
+            assert!(table.contains(name), "blend {name} is published");
+        }
+    }
+    assert!(table.contains("excited / thrilled = happy 1 + surprised 0.55".replace(" / thrilled", "").as_str()) || table.contains("= happy 1 + surprised 0.55"), "{table}");
 }
 
 /// F4.2's last paragraph: three attempts, thinking off after a call that wrote nothing, progress only ever

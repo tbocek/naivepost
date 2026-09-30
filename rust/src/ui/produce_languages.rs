@@ -175,6 +175,8 @@ fn brief_clips(
                 seen
             },
             said,
+            rate: crate::produce_upload::brief_rate(seg),
+            marked: crate::produce_upload::brief_marks(&run.cut.fx, seg),
         });
         at += output_length(seg);
     }
@@ -577,6 +579,10 @@ fn upload_brief(spans: Vec<(f64, f64)>) -> String {
             ),
             seen: vec![],
             said: vec![],
+            // The re-word's brief is a title question over spans the page holds, with no cut segment behind
+            // each one: nothing to read a rate off and nothing to mark, so the header keeps S1's plain form.
+            rate: 1.0,
+            marked: vec![],
         })
         .collect();
     crate::produce_upload::brief(&clips, &[], crate::produce_upload::BRIEF_MAX_CHARS)

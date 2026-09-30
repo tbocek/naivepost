@@ -187,6 +187,32 @@ pub fn emotion_vector(tag: &str) -> Option<[f64; 8]> {
     (sum > 0.0).then_some(v)
 }
 
+/// The eight floats as §3.8's `write_line` answer must spell them: the same string [`options`] puts in
+/// `emotion_vector`, so what the writer is TOLD and what the engine is SENT cannot disagree (§12 #25's whole
+/// complaint was two performances made from one intent, neither number told). `None` for a tag with no
+/// weights, which is what [`emotion_text`] words are for.
+pub fn weights_of(tag: &str) -> Option<String> {
+    emotion_vector(tag).map(|vector| vector_string(&vector))
+}
+
+/// One blend as §3.8's `list_emotions` publishes it: its names, then its recipe spelled with the BASE NAMES
+/// the weights point at, so a writer reads "excited = happy 1 + surprised 0.55" rather than a row of floats
+/// whose axis order it would have to be told. Names come first because that is what the writer searches for.
+pub fn blend_recites(blend: &Blend) -> String {
+    let recipe: Vec<String> = blend
+        .weights
+        .iter()
+        .enumerate()
+        .filter(|(_, share)| **share > 0.0)
+        .map(|(axis, share)| {
+            let base = crate::narrate_pass::EMOTION_KIN[axis].0;
+            let rounded = (share * 100.0).round() / 100.0;
+            format!("{base} {rounded}")
+        })
+        .collect();
+    format!("{} = {}", blend.names.join(" / "), recipe.join(" + "))
+}
+
 /// S4's `emotion_text`: the same tag with the weights taken off, so a tag that names an axis this client does
 /// not know (`"wistful=1, smug=0.3"`) still arrives as words the judge can score. An unweighted tag is those
 /// words already and passes through untouched.

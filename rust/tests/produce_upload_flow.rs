@@ -34,21 +34,34 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle};
 // ---- logic helpers -------------------------------------------------------------------------------
 
 /// A clip list of `n` twelve-second clips starting at 0, each with one event and one spoken line.
-fn clips(n: usize) -> Vec<up::BriefClip> {
+/// A clip list of `n` twelve-second clips starting at 0, each with one event and one spoken line. `rate`
+/// and `marked` come from the closure so a test can hand over a sped clip or a decorated one.
+fn clips_with(n: usize, mark: impl Fn(usize) -> (f64, Vec<String>)) -> Vec<up::BriefClip> {
     (0..n)
-        .map(|i| up::BriefClip {
-            number: i + 1,
-            at_output: i as f64 * 12.0,
-            seconds: 12.0,
-            session: format!(
-                "{}\u{2013}{}",
-                naivepost::tools::mm_ss(i as f64 * 12.0),
-                naivepost::tools::mm_ss(i as f64 * 12.0 + 12.0)
-            ),
-            seen: vec![format!("a screen showing thing {}", i + 1)],
-            said: vec![format!("someone said line {}", i + 1)],
+        .map(|i| {
+            let (rate, marked) = mark(i);
+            up::BriefClip {
+                number: i + 1,
+                at_output: i as f64 * 12.0,
+                seconds: 12.0,
+                session: format!(
+                    "{}\u{2013}{}",
+                    naivepost::tools::mm_ss(i as f64 * 12.0),
+                    naivepost::tools::mm_ss(i as f64 * 12.0 + 12.0)
+                ),
+                seen: vec![format!("a screen showing thing {}", i + 1)],
+                said: vec![format!("someone said line {}", i + 1)],
+                rate,
+                marked,
+            }
         })
         .collect()
+}
+
+/// An unsped clip with nothing standing on it: the header then reads exactly as \u00a7 F5.6 S1 spells it,
+/// which is what most of this file's assertions compare against.
+fn clips(n: usize) -> Vec<up::BriefClip> {
+    clips_with(n, |_| (1.0, vec![]))
 }
 
 fn line(at: f64, text: &str) -> Entry {
@@ -198,8 +211,11 @@ fn publish_with(frames: &[&str], title: &str, prompt: &str) -> Publish {
 
 // ---- S1: the brief -------------------------------------------------------------------------------
 
+/// \u00a712 #30 widened this brief: the decorations and the clip's rate are passed now, because a moment marked
+/// "the reveal" reaching the description writer as nothing was the complaint. Only the `CAPTION` lines stay
+/// out \u{2014} this writer is not placing subtitles.
 #[test]
-fn f5_6_s1_the_brief_is_the_finished_video_clip_by_clip() {
+fn f5_6_s1_the_brief_is_the_finished_video_clip_by_clip_and_carries_marks_and_rate() {
     let text = up::brief(&clips(2), &[line(0.0, "the first line")], up::BRIEF_MAX_CHARS);
     assert!(
         text.starts_with("THE FINISHED VIDEO: 2 clips, 00:24 long."),
@@ -219,15 +235,38 @@ fn f5_6_s1_the_brief_is_the_finished_video_clip_by_clip() {
         "{text}"
     );
     assert!(text.contains("the first line"), "{text}");
-    // Unlike F4.2's narration brief: no marked/caption lines, and no effect kinds passed.
-    assert!(!text.contains("MARKED"), "the upload brief carries no MARKED lines: {text}");
+    // A caption is the viewer's text, not a decoration on the picture: still not passed.
     assert!(!text.contains("CAPTION"), "nor CAPTION lines: {text}");
-    for kind in ["zoom", "stop", "volume", "label", "svg"] {
-        assert!(
-            !text.to_lowercase().contains(kind),
-            "no effect kind reaches the upload brief ({kind}): {text}"
-        );
-    }
+
+    // \u00a712 #30: a decorated, sped clip says both. The words are `narrate_pass::effect_tag`'s, so a zoom is
+    // spelled one way in both briefs.
+    let decorated = clips_with(1, |i| {
+        (
+            if i == 0 { 4.0 } else { 1.0 },
+            vec![
+                "MARKED: the reveal".to_string(),
+                "ZOOM: the face".to_string(),
+                "VOLUME: the sound runs at 0x of its own level here".to_string(),
+            ],
+        )
+    });
+    let shown = up::brief(&decorated, &[], up::BRIEF_MAX_CHARS);
+    assert!(
+        shown.contains("CLIP 1 (at 00:00 in the video, 12.0 s): session 00:00\u{2013}00:12, the source runs at 4x here"),
+        "{shown}"
+    );
+    assert!(shown.contains("  MARKED: MARKED: the reveal"), "{shown}");
+    assert!(shown.contains("  MARKED: ZOOM: the face"), "{shown}");
+    assert!(
+        shown.contains("  MARKED: VOLUME: the sound runs at 0x of its own level here"),
+        "{shown}"
+    );
+    assert!(shown.contains("the source runs at 4x here"), "{shown}");
+    // An undecorated clip's header keeps S1's form with no rate clause bolted on.
+    assert!(
+        !text.contains("the source runs at"),
+        "an unsped clip says nothing about a rate: {text}"
+    );
 }
 
 #[test]

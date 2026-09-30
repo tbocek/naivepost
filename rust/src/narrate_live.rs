@@ -332,6 +332,8 @@ fn run_narrate_tool(
             let line = text("text");
             let emotion = text("emotion");
             let pos = text("pos");
+            // \u00a712 #23, the half that belongs to the tool: the writer is told NOW whether this line will be
+            // squeezed \u{2014} `write_line` answers that itself, in the render's own logged sentence.
             let answer = narrate_pass::write_line(clips, clip, at, &line, &emotion, &pos);
             // Only a refusal leaves nothing collected: the tool's answer is what the model sees, and
             // a rejected line is not a line.

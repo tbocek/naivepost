@@ -58,11 +58,50 @@ pub fn run(
             .map(|round| round.answer)
         },
         |_written, _total| {},
-        // No render runs headless, so nothing measures a line against its clip here: `finish` answers
-        // on completeness alone and an empty unfitted list is the honest answer rather than a guess.
-        |_written| Vec::new(),
+        // \u00a712 #23: a refusal has to say WHICH clip's lines will not fit, so they get rewritten shorter here
+        // instead of squeezed by the render later. The page's mirror IS that measurement \u{2014} the same
+        // ladder the render runs (`narrate_screen::mirror_fit` over `produce_render::fit`), with speech
+        // estimated the way a row estimates it, since a take written by this run does not exist yet.
+        |written| unfitted_clips(&segs, written),
         log,
     )
+}
+
+/// Which clip numbers hold a line that will not fit: every written line is put back on its own clip with the
+/// others that share it, and the clip is named when the ladder has to slide or speed to land them. A clip
+/// whose bounds no longer match a segment is skipped rather than guessed at \u{2014} `run` dropped such a
+/// bound for the same reason.
+fn unfitted_clips(segs: &[Seg], written: &[Written]) -> Vec<u32> {
+    let mut bad: Vec<u32> = Vec::new();
+    for (number, seg) in segs.iter().enumerate() {
+        let mine: Vec<&Written> = written
+            .iter()
+            .filter(|line| (line.start - seg.s).abs() < 1e-6 && (line.end - seg.e).abs() < 1e-6)
+            .collect();
+        if mine.is_empty() {
+            continue;
+        }
+        let room = crate::narrate_pass::on_screen(seg);
+        let lines: Vec<(usize, f64, f64)> = mine
+            .iter()
+            .enumerate()
+            .map(|(index, line)| {
+                (
+                    index,
+                    line.at,
+                    crate::narrate_screen::page_speech_seconds(
+                        line.text.chars().count(),
+                        crate::narrate_screen::SPEECH_CHARS_PER_SECOND,
+                    ),
+                )
+            })
+            .collect();
+        let fit = crate::narrate_screen::mirror_fit(room, &lines);
+        if matches!(fit, crate::narrate_screen::Fit::Overruns { .. }) {
+            bad.push(number as u32 + 1);
+        }
+    }
+    bad
 }
 
 /// Where a rejected attempt is said. The window owns the visible log; this module has no widget, so the
