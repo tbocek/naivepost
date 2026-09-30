@@ -185,12 +185,96 @@ fn lay_plain_picture() {
     let tree = session_tree();
     let plain = tree.thumbnail_plain_png();
     std::fs::create_dir_all(plain.parent().unwrap()).ok();
-    std::fs::write(&plain, b"a drawn picture").ok();
+    // A real PNG: the print leg reads this file back and letters it, so a token string would make every
+    // press that prints fail on the base rather than on anything it is being tested for.
+    naivepost::produce_upload_print::flat_png_for_test(&plain, 320, 180, 0.3).expect("a flat base to print onto");
 }
 
-/// Script every leg this round fires: the picture answers at once, the model answers with three things, and
-/// nothing dials a socket or spawns a process. Counters start clean so each check reads its own press.
-fn script_legs() {
+/// A loopback LLM answering `/v1/chat/completions` with one scripted reply, repeated for every request — so
+/// each press of the page's buttons gets the same answer. This replaces the SERVER, not the work: the program
+/// dials it through the address in the settings file (§02-services#1 re-reads them per request), exactly as it
+/// dials a real llama.cpp. Same harness `tests/produce_upload_wire.rs` proves the wire with.
+struct FakeLlm {
+    address: String,
+}
+
+impl FakeLlm {
+    fn start(reply: &str) -> FakeLlm {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
+        let address = format!("http://127.0.0.1:{}", listener.local_addr().expect("an address").port());
+        let reply = reply.to_string();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                serve_one(stream, &reply);
+            }
+        });
+        FakeLlm { address }
+    }
+
+    fn address(&self) -> &str {
+        &self.address
+    }
+}
+
+/// Answer one request with the scripted content wrapped in the chat envelope, then close: the client reads to
+/// EOF, so a kept-open socket would make every round wait for a timeout.
+fn serve_one(mut stream: std::net::TcpStream, reply: &str) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let mut reader = BufReader::new(stream.try_clone().expect("a clone to read with"));
+    let mut request_line = String::new();
+    let _ = reader.read_line(&mut request_line);
+    let mut length = 0usize;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).ok().filter(|read| *read > 0).is_none() {
+            break;
+        }
+        if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            length = rest.trim().parse().unwrap_or(0);
+        }
+        if line.trim().is_empty() {
+            break;
+        }
+    }
+    let mut payload = vec![0u8; length];
+    if length > 0 && reader.read_exact(&mut payload).is_err() {
+        return;
+    }
+    let body = serde_json::json!({ "choices": [ { "message": { "content": reply }, "finish_reason": "stop" } ] }).to_string();
+    let framed = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    let _ = stream.write_all(framed.as_bytes());
+    let _ = stream.flush();
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+}
+
+/// Point the SETTINGS at that fake: temp config/data folders through the XDG variables, the fake's address as
+/// `server`, and an sd.cpp address no poll could wait on (the draw leg is scripted here anyway).
+fn point_settings_at(url: &str) {
+    let root = std::env::current_dir().expect("cwd pinned before this runs");
+    let config = root.join("config");
+    let data = root.join("data");
+    std::fs::create_dir_all(&config).expect("config folder");
+    std::fs::create_dir_all(&data).expect("data folder");
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", &config);
+        std::env::set_var("XDG_DATA_HOME", &data);
+    }
+    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let mut conf = naivepost::settings::Conf::default();
+    conf.model = "presses-model".to_string();
+    conf.server = url.to_string();
+    conf.sd_server = "http://127.0.0.1:1".to_string();
+    naivepost::settings::save(&paths, &conf).expect("settings written");
+}
+
+/// Script every leg this round fires: the picture answers at once, the model answers with three things over
+/// the fake server, and nothing spawns a process. Counters start clean so each check reads its own press.
+fn script_legs() -> FakeLlm {
     reset_counters();
     // The picture: counted, then accepted, with the plain PNG laid down for the print leg's base.
     ui::produce_languages::set_draw_for_test(std::rc::Rc::new(|_body| {
@@ -198,12 +282,14 @@ fn script_legs() {
         lay_plain_picture();
         Ok(naivepost::produce_upload::DrawnJob { id: "job-1".to_string() })
     }));
-    // The model: a reply whose three answers the walk keeps whether or not it also draws.
-    naivepost::produce_upload::set_reply_for_test(
+    // The model: a local fake the settings name, whose reply's three answers the walk keeps whether or not it
+    // also draws.
+    let fake = FakeLlm::start(
         "TITLE: a rewritten title\nTHUMBNAIL: an instruction of its own\nDESCRIPTION: a paragraph about \
-the video"
-            .to_string(),
+the video",
     );
+    point_settings_at(fake.address());
+    fake
 }
 
 /// The session folder the scripted legs write into.
@@ -242,7 +328,7 @@ fn log_mark() -> usize {
 /// REDRAW_DONE.
 fn check_redraw(root: &Path) {
     let tree = session(root);
-    script_legs();
+    let _fake = script_legs();
     let window = produce_window(&app_in_round());
 
     // Refusal first: no cut seeded yet, so the press must say its own sentence and touch NOTHING.
@@ -288,7 +374,7 @@ fn check_redraw(root: &Path) {
 /// ↻ suggest: one LLM call answering three things, and NO draw — the picture stays exactly as it was.
 fn check_reword(root: &Path) {
     let _tree = session(root);
-    script_legs();
+    let _fake = script_legs();
     // A picture already exists: a re-word prints over it and must not draw a new one.
     lay_plain_picture();
     let window = produce_window(&app_in_round());
@@ -320,7 +406,7 @@ fn check_reword(root: &Path) {
 /// Set Thumbnail: the chosen picture as it is, with the words printed on it and no draw.
 fn check_taken(root: &Path) {
     let _tree = session(root);
-    script_legs();
+    let _fake = script_legs();
     // The chosen picture is the base the words print onto; lay it as if a draw had produced it earlier.
     lay_plain_picture();
     let window = produce_window(&app_in_round());
@@ -358,7 +444,7 @@ fn check_taken(root: &Path) {
 /// ⤓ export: refused with its own sentence while no picture exists; once one does, the ladder's rung is
 /// chosen and the exported path and weight are reported.
 fn check_export(_root: &Path) {
-    script_legs();
+    let _fake = script_legs();
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
     let said = press(&window, "thumbnail-export");
@@ -398,7 +484,7 @@ fn check_export(_root: &Path) {
 /// because the destination comes from a file chooser that does not exist headless.
 fn check_save(root: &Path) {
     let tree = session(root);
-    script_legs();
+    let _fake = script_legs();
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
     // No video on disk yet: the press names ▶ rather than copying nothing. Its one line is the refusal, so
@@ -439,7 +525,7 @@ fn check_save(root: &Path) {
 /// ↻ Transcode: ffmpeg with the row's own settings and no model call, no draw and no reprint.
 fn check_transcode(root: &Path) {
     let tree = session(root);
-    script_legs();
+    let _fake = script_legs();
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
     let video = tree.final_video("mp4");
@@ -466,7 +552,7 @@ fn check_transcode(root: &Path) {
 /// The two refusals §F5.7 puts ahead of every run, checked in one window: no cut for the picture presses,
 /// no video for the copy, no picture for the export. Both must leave every counter at zero.
 fn check_refusals(_root: &Path) {
-    script_legs();
+    let _fake = script_legs();
     let window = produce_window(&app_in_round());
     // Nothing seeded: no cut, no video, no picture.
     let redraw = press(&window, "thumbnail-redraw");

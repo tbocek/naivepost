@@ -11,9 +11,11 @@
 //! `run_with_args` inside a `static ONCE`, cwd pinned before the run, checks inside `catch_unwind`.
 
 use std::cell::RefCell;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use adw::prelude::*;
 use naivepost::cut::Seg;
@@ -64,6 +66,14 @@ fn line(at: f64, text: &str) -> Entry {
 thread_local! {
     /// The kinds the print leg was asked to print, in the order it was asked — what `print_order` drove.
     static PRINTED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+
+    /// The record the `save_publish` leg was handed, i.e. what publish.json would have held.
+    static PUBLISHED: RefCell<Option<Publish>> = const { RefCell::new(None) };
+}
+
+/// What the last walk's publish leg received.
+fn published() -> Publish {
+    PUBLISHED.with(|cell| cell.borrow().clone()).expect("the publish leg ran")
 }
 
 /// The legs a walk needs, all recording into one shared log of call names.
@@ -96,6 +106,7 @@ fn walk_with(
     edited_by_hand: bool,
     draw_fails: bool,
 ) -> up::Outcome {
+    PUBLISHED.with(|cell| cell.replace(None));
     let ask_model = {
         let rec = rec.clone();
         move |_b: &str| {
@@ -105,8 +116,11 @@ fn walk_with(
     };
     let save_publish = {
         let rec = rec.clone();
-        move |_p: &Publish| {
+        move |p: &Publish| {
             rec.mark("publish");
+            // The publish leg is the only place a test can see what the ROW held at the moment the text
+            // landed, which is what S4 and S3 are about.
+            PUBLISHED.with(|cell| cell.replace(Some(p.clone())));
             Ok(())
         }
     };
@@ -140,6 +154,8 @@ fn walk_with(
         }
     };
     let nearest = |_at: f64| Some(34.0f64);
+    // S4's three frames, as the page would hand them over: `frame:<seconds>` entries off the kept footage.
+    let spread = || vec!["frame:5.0".to_string(), "frame:15.0".to_string(), "frame:25.0".to_string()];
     let write_stamp = {
         let rec = rec.clone();
         move |_h: &str| {
@@ -154,6 +170,9 @@ fn walk_with(
         poll: &poll,
         print: &print,
         nearest_frame: &nearest,
+        // S4: the three moments that fill an empty row. A test says what the cut yields; `walk` only puts
+        // them in the row, which is the part of S4 this file can prove.
+        spread_frames: &spread,
         stored_stamp: stored.map(|s| s.to_string()),
         write_stamp: &write_stamp,
         edited_by_hand,
@@ -668,12 +687,110 @@ fn scripted_spawn() -> naivepost::produce_translate::SpawnSlot {
 fn scripted_draw(tree: Tree) -> ui::produce_languages::DrawSlot {
     Rc::new(move |_body: &serde_json::Value| {
         let plain = tree.thumbnail_plain_png();
-        if let Some(dir) = plain.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        std::fs::write(&plain, b"a drawn picture").map_err(|e| e.to_string())?;
+        // A REAL picture, not a token string: the print leg reads this PNG back and letters it (S7), so a
+        // placeholder would make the print pass fail for the wrong reason.
+        naivepost::produce_upload_print::flat_png_for_test(&plain, 640, 360, 0.25)
+            .map_err(|why| why.to_string())?;
         Ok(up::DrawnJob { id: "scripted-1".into() })
     })
+}
+
+/// The print leg's output check: `thumbnail.png` must exist AND differ from the plain picture, because
+/// S7 prints the title onto it. Byte-for-byte different is the whole point — a copy proves nothing.
+fn assert_letters_landed(tree: &naivepost::layout::Tree) {
+    let plain = std::fs::read(tree.thumbnail_plain_png()).expect("the plain picture is on disk");
+    let printed = std::fs::read(tree.thumbnail_png()).expect("the printed picture is on disk");
+    assert!(
+        plain != printed,
+        "the print leg copied instead of printing: both files are {} bytes",
+        printed.len()
+    );
+    assert!(printed.len() > 200, "the printed picture looks truncated: {} bytes", printed.len());
+}
+
+// ---- the fake LLM: the SERVER the settings point at ----------------------------------------------
+
+/// A loopback server answering `/v1/chat/completions` from one scripted reply, which it repeats for every
+/// later request (so each press of ▶ gets the same answer). This replaces the SERVER, not the work: the
+/// program dials it through the address in the settings file, exactly as it dials a real llama.cpp, so the
+/// request, §3.9's tools and the prose fallback all run for real. Same harness `tests/produce_upload_wire.rs`
+/// proves the wire with. The thread holds what it needs by move; the handle is only the address.
+struct FakeLlm {
+    address: String,
+}
+
+impl FakeLlm {
+    fn start(reply: &str) -> FakeLlm {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
+        let address = format!("http://127.0.0.1:{}", listener.local_addr().expect("an address").port());
+        let reply = reply.to_string();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                serve_one(stream, &reply);
+            }
+        });
+        FakeLlm { address }
+    }
+
+    fn address(&self) -> &str {
+        &self.address
+    }
+}
+
+/// Answer one request with the scripted content wrapped in the chat envelope, then close: the client reads
+/// to EOF, so a kept-open socket would make every round wait for a timeout.
+fn serve_one(mut stream: TcpStream, reply: &str) {
+    let mut reader = BufReader::new(stream.try_clone().expect("a clone to read with"));
+    let mut request_line = String::new();
+    let _ = reader.read_line(&mut request_line);
+    let mut length = 0usize;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).ok().filter(|read| *read > 0).is_none() {
+            break;
+        }
+        if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            length = rest.trim().parse().unwrap_or(0);
+        }
+        if line.trim().is_empty() {
+            break;
+        }
+    }
+    let mut payload = vec![0u8; length];
+    if length > 0 && reader.read_exact(&mut payload).is_err() {
+        return;
+    }
+    let body = serde_json::json!({ "choices": [ { "message": { "content": reply }, "finish_reason": "stop" } ] }).to_string();
+    let framed = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    let _ = stream.write_all(framed.as_bytes());
+    let _ = stream.flush();
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+}
+
+/// Point the SETTINGS at the fake — the seam §02-services#1 says the program re-reads per request: temp
+/// config/data folders through the XDG variables, the fake's address as `server`, and an sd.cpp address no
+/// poll would wait on (the draw leg is scripted here anyway).
+fn point_settings_at(fake_url: &str) {
+    let root = std::env::current_dir().expect("cwd pinned before this runs");
+    let config = root.join("config");
+    let data = root.join("data");
+    std::fs::create_dir_all(&config).expect("config folder");
+    std::fs::create_dir_all(&data).expect("data folder");
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", &config);
+        std::env::set_var("XDG_DATA_HOME", &data);
+    }
+    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let mut conf = naivepost::settings::Conf::default();
+    conf.model = "upload-flow-model".to_string();
+    conf.server = fake_url.to_string();
+    conf.sd_server = "http://127.0.0.1:1".to_string();
+    naivepost::settings::save(&paths, &conf).expect("settings written");
 }
 
 /// The check: press the real ▶ and read the upload text and the picture's stamp off disk.
@@ -703,12 +820,14 @@ fn check_press_writes_the_upload_text(root: &Path) {
     .expect("the transcript line is written");
     assert!(!tree.publish_json().exists(), "the fixture root starts with no publish folder");
 
-    up::set_reply_for_test(
-        "TITLE: The comeback nobody saw coming\nTHUMBNAIL: brighten the final scoreboard\n\nThe session was close until the last round, and then it was not.".to_string(),
+    // The model leg gets a SERVER, not a slot: a local fake LLM the settings name, answering with the three
+    // labelled lines plus a description — §3.9's prose shape, peeled by the program's own parser.
+    let fake = FakeLlm::start(
+        "TITLE: The comeback nobody saw coming\nTHUMBNAIL: brighten the final scoreboard\n\nThe session was close until the last round, and then it was not.",
     );
+    point_settings_at(fake.address());
     ui::produce_languages::set_draw_for_test(scripted_draw(tree.clone()));
     naivepost::produce_translate::set_spawn_for_test(scripted_spawn());
-    assert!(up::reply_for_test().is_some(), "the script is loaded");
 
     let window = produce_window(&app_in_round());
     ui::seed_review_cut(&window, &cut);
@@ -747,6 +866,7 @@ fn check_press_writes_the_upload_text(root: &Path) {
         "the printed thumbnail is on disk at {}",
         tree.thumbnail_png().display()
     );
+    assert_letters_landed(&tree);
     let stamp = std::fs::read_to_string(tree.thumbnail_stamp())
         .unwrap_or_else(|_| panic!("thumbnail.stamp was not written at {}", tree.thumbnail_stamp().display()));
     assert_eq!(stamp.trim().len(), 16, "the stamp is a hash: {stamp}");
@@ -810,6 +930,82 @@ fn f5_6_s1_pressing_produce_runs_the_upload_half_through_the_real_button() {
 
 
 #[test]
+fn f5_6_s4_three_frames_from_the_cut_fill_the_row() {
+    // S4 is not only a log line: the three frames go INTO the row, because `base_of`/`refs_of` read
+    // `publish.frames` and an empty row would send sd.cpp nothing to edit.
+    let rec = Recorder::new();
+    let answers = up::Answers {
+        title: Some("A win nobody expected".into()),
+        instruction: Some("brighten the last frame".into()),
+        negative: None,
+        description: Some("the body".into()),
+        picked_frame: None,
+    };
+    let out = walk_with(&rec, &publish_with(&[], "old", "draw me"), &answers, None, false, false);
+    assert!(out.took_three, "S4 says it took three");
+    let row = published().frames;
+    assert_eq!(
+        row,
+        vec!["frame:5.0".to_string(), "frame:15.0".to_string(), "frame:25.0".to_string()],
+        "the row holds the three spread frames before the draw: {row:?}"
+    );
+    // And the base really comes off that row — the point of filling it at all.
+    assert_eq!(naivepost::publish::base(&published()), Some("frame:5.0"));
+}
+
+#[test]
+fn f5_6_s4_spread_skips_inserts_and_freezes() {
+    use naivepost::produce_upload_frames as frames;
+    // Two kept footage stretches with an insert between them: the ruler is the KEPT footage only, so the
+    // three moments land at the thirds of 0–30 (a 10 s + 20 s pair), never inside the card.
+    let mut card = common::seg(10.0, 14.0);
+    card.ins = "tier.svg".to_string();
+    let segs = vec![common::seg(0.0, 10.0), card, common::seg(14.0, 34.0)];
+    let moments = frames::spread_moments(&segs);
+    assert_eq!(moments.len(), 3, "{moments:?}");
+    for at in &moments {
+        assert!(
+            !(*at >= 10.0 && *at < 14.0),
+            "a moment fell inside the insert: {moments:?}"
+        );
+    }
+    // A zero-length stretch (a freeze) contributes nothing either: two 10 s clips give the thirds of 20 s.
+    let plain = vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0)];
+    assert_eq!(
+        frames::spread_moments(&plain),
+        vec![10.0 / 3.0 * 1.0, 10.0 / 3.0 * 3.0, 10.0 / 3.0 * 5.0],
+        "evenly spread over the kept total"
+    );
+    // Nothing kept at all: no moments, which is what makes the walk log NO_FRAMES_LOG instead of lying.
+    let frozen = vec![common::seg(3.0, 3.0)];
+    assert!(frames::spread_moments(&frozen).is_empty(), "nothing kept, nothing to show");
+    // The row spelling is the one the model's own `frame:` line uses, and `frame_at` reuses the ONE nearest
+    // rule so a spread frame resolves like a picked one.
+    assert_eq!(frames::row_entry(12.34), "frame:12.3");
+    assert_eq!(frames::frame_at(&[1.0, 9.0], 8.0), Some(9.0));
+    assert_eq!(frames::spread_rows(&plain).len(), 3);
+}
+
+#[test]
+fn f5_6_s4_a_chosen_frame_blocks_the_three() {
+    // S3 first: a picked frame means the row holds THAT frame only, so S4 must not append three behind it.
+    let rec = Recorder::new();
+    let answers = up::Answers {
+        title: Some("A win nobody expected".into()),
+        instruction: Some("brighten the last frame".into()),
+        negative: None,
+        description: Some("the body".into()),
+        picked_frame: Some(12.0),
+    };
+    let out = walk_with(&rec, &publish_with(&[], "old", "draw me"), &answers, None, false, false);
+    assert!(out.own, "a picked frame is the user's own picture");
+    assert!(!out.took_three, "S4 does not run once a frame was chosen");
+    let row = published().frames;
+    assert_eq!(row.len(), 1, "the row holds the chosen frame only: {row:?}");
+    assert!(row[0].starts_with("frame:"), "{}", row[0]);
+}
+
+#[test]
 fn f5_6_s4_no_images_chosen_takes_three_from_the_cut() {
     assert_eq!(
         up::take_three_log(),
@@ -838,4 +1034,36 @@ fn f5_6_s4_no_images_chosen_takes_three_from_the_cut() {
         "{}",
         naivepost::produce_details::NO_FRAMES_LOG
     );
+}
+
+/// S7 on the real leg: one print call draws letters. A flat PNG goes in, a DIFFERENT PNG comes out, and the
+/// bytes differ because ink is on them — not because a file was copied.
+#[test]
+fn f5_6_s7_the_title_lands_on_the_picture() {
+    let root = std::env::temp_dir().join(format!("np-f56s7print-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp root created");
+    let plain = root.join("plain.png");
+    let out = root.join("out.png");
+    naivepost::produce_upload_print::flat_png_for_test(&plain, 480, 270, 0.2).expect("a flat base");
+    let before = std::fs::read(&plain).expect("the base is a PNG");
+    let band = naivepost::project::TitleBox { cx: 0.5, cy: 0.3, wf: 0.9, hf: 0.3 };
+    naivepost::produce_upload_print::print_words(
+        &plain,
+        &out,
+        &["The comeback nobody saw coming".to_string()],
+        &band,
+    )
+    .expect("the print leg drew the title");
+    let after = std::fs::read(&out).expect("the printed picture exists");
+    assert!(before != after, "printing letters left the picture byte-identical to the base");
+    assert!(after.len() > 200, "the printed picture looks truncated: {} bytes", after.len());
+    // An empty word list prints nothing and says so by leaving the base alone rather than erroring.
+    let bare = root.join("bare.png");
+    naivepost::produce_upload_print::print_words(&plain, &bare, &[], &band).expect("nothing to print is ok");
+    // A missing base refuses with the file named, which is where an operator would look first.
+    let why = naivepost::produce_upload_print::print_words(&root.join("nope.png"), &out, &["x".into()], &band)
+        .expect_err("a missing base must refuse");
+    assert!(why.contains("nope.png"), "{why}");
+    let _ = std::fs::remove_dir_all(&root);
 }

@@ -16,7 +16,6 @@
 //! - **Each tool answers what it did** (§3.9): the fitted size, the distance a frame landed, the refusal
 //!   when a frame and an instruction are both claimed.
 
-use std::cell::RefCell;
 
 use crate::produce_details as details;
 use crate::project::{Publish, TitleBox};
@@ -347,6 +346,10 @@ pub struct Materials<'a> {
     pub print: &'a PrintWords,
     /// The nearest extracted frame to a moment on the produced clock (S3).
     pub nearest_frame: &'a dyn Fn(f64) -> Option<f64>,
+    /// S4: three moments evenly spread over the KEPT footage, as `frame:<seconds>` row entries — what fills
+    /// the image row when nothing was chosen and no frame was picked. Paths/moments come from the caller
+    /// because only it holds the live cut; [`crate::produce_upload_frames`] computes the three.
+    pub spread_frames: &'a dyn Fn() -> Vec<String>,
     /// The picture stamp already on disk, if any.
     pub stored_stamp: Option<String>,
     /// Write the new picture stamp.
@@ -445,8 +448,17 @@ pub fn walk(
         }
     }
 
-    // S4: nothing in the row and no frame chosen → three frames spread over the kept footage.
+    // S4: nothing in the row and no frame chosen → three frames spread over the kept footage, IN THE ROW,
+    // so the draw gets a base and references rather than an empty list (`base_of`/`refs_of` read `frames`).
     if next.frames.is_empty() && !out.own {
+        let spread = (mats.spread_frames)();
+        if spread.is_empty() {
+            // Nothing kept at all: say so and carry on drawing from the instruction alone (§F5.6 S4's own
+            // fallback), rather than sending an empty row to sd.cpp without a word.
+            log(crate::produce_details::NO_FRAMES_LOG);
+        } else {
+            next.frames = spread;
+        }
         out.took_three = true;
         log(take_three_log());
     }
@@ -610,32 +622,6 @@ fn body_refs(body: &serde_json::Value) -> usize {
     body.get("ref_images")
         .and_then(|v| v.as_array())
         .map_or(0, |a| a.len())
-}
-
-// A scripted model reply, loaded by a test in place of the `youtube` call — the same seam
-// [`crate::produce_translate::set_reply_for_test`] uses, so the page cannot tell the two apart.
-thread_local! {
-    static REPLY: RefCell<Option<String>> = const { RefCell::new(None) };
-}
-
-/// Load a scripted reply for the next asks on this thread.
-pub fn set_reply_for_test(reply: String) {
-    REPLY.with(|cell| cell.replace(Some(reply)));
-}
-
-/// The scripted reply, if any.
-pub fn reply_for_test() -> Option<String> {
-    REPLY.with(|cell| cell.borrow().clone())
-}
-
-/// The page's real model leg: the script when one is loaded, otherwise an honest refusal. A refusal is a
-/// reachable answer — `walk` stops before writing anything and `finish_produce` logs it with the spec's own
-/// tail, which is what makes the branch exercised rather than stubbed out.
-pub fn scripted_ask() -> Box<AskModel> {
-    match reply_for_test() {
-        Some(script) => Box::new(move |_brief: &str| Ok(script.clone())),
-        None => Box::new(|_brief: &str| Err("no llm server here".to_string())),
-    }
 }
 
 // ---- S2 / §3.9: what each tool answers -------------------------------------------

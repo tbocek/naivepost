@@ -87,13 +87,19 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     let events = read_all_events(&tree, run);
     let clips = brief_clips(run, &rows, &events);
     let brief = crate::produce_upload::brief(&clips, &run.lines, crate::produce_upload::BRIEF_MAX_CHARS);
-    // The model answers through the scripted seam when a test loaded one, and honestly refuses otherwise:
-    // `walk` then stops before writing anything and `finish_produce` logs `words_failed`, which keeps the
-    // failure branch reachable instead of stubbed out.
-    let ask = crate::produce_upload::scripted_ask();
+    // A test that loaded a script answers through it; otherwise the real `youtube` call goes out (§3.9):
+    // thinking on, its tools offered, each answered by the rule that owns it. A refusal names the model and
+    // stops `walk` before anything is written, which `finish_produce` logs as `words_failed`.
+    let publish = crate::publish::load(&tree).unwrap_or_default();
+    let ask = upload_ask(
+        &tree,
+        &publish,
+        extracted_frames(&tree, run),
+        starts_of(run),
+        publish.own || !publish.prompt.trim().is_empty(),
+    );
     let reply = ask(&brief)?;
     let answers = answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at));
-    let publish = crate::publish::load(&tree).unwrap_or_default();
     let mats = crate::produce_upload::Materials {
         save_publish: &|next| save_publish(&tree, next),
         ask_model: &|_| Ok(String::new()),
@@ -101,6 +107,11 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
         poll: &poll_leg(),
         print: &print_leg(),
         nearest_frame: &|at| nearest_frame(&tree, run, at),
+        // S4: the three moments spread over the kept footage. Moments on the produced clock, rendered as
+        // `frame:<seconds>` row entries — the page holds the cut, so it decides what is in the video.
+        spread_frames: &|| {
+            crate::produce_upload_frames::spread_rows(&run.cut.segs)
+        },
         stored_stamp: read_picture_stamp(&tree),
         write_stamp: &|hash| write_picture_stamp(&tree, hash),
         // The picture is the user's own once they hold a frame or have written an edit instruction of their
@@ -301,9 +312,10 @@ fn frame_seconds(name: &str) -> Option<f64> {
     Some(hours * 3600.0 + minutes * 60.0 + secs)
 }
 
-/// The nearest extracted frame to a produced-clock moment (S3 / decision 32).
+/// The nearest extracted frame to a produced-clock moment (S3 / decision 32), through the ONE nearest rule
+/// [`crate::produce_upload_frames::frame_at`] so a spread frame and a picked frame resolve the same way.
 fn nearest_frame(tree: &crate::layout::Tree, run: &crate::produce_flow::Run, at: f64) -> Option<f64> {
-    crate::produce_upload::nearest(&extracted_frames(tree, run), at)
+    crate::produce_upload_frames::frame_at(&extracted_frames(tree, run), at)
 }
 
 /// publish.json + description.txt, both through the existing writer so one spelling of each path backs
@@ -343,16 +355,24 @@ pub fn set_draw_for_test(draw: DrawSlot) {
 
 /// The scripted draw leg: the script when one is loaded, otherwise an honest refusal that leaves the
 /// already-saved text standing (S5) and gets logged by `produce_flow::words_failed`.
+/// The scripted draw leg: the script when one is loaded, otherwise the REAL submit at the address the
+/// settings name (§F5.6 S6). A server that is down answers `Err` naming it, which the walk turns into the
+/// failed-draw branch — publish.json already written, so the thinking survives (S5).
 fn draw_leg() -> Box<crate::produce_upload::AskDraw> {
     match DRAW.with(|cell| cell.borrow().clone()) {
         Some(script) => Box::new(move |body| script(body)),
-        None => Box::new(|_| Err("no image server here".to_string())),
+        None => {
+            let tree = session_tree();
+            Box::new(move |body| crate::produce_upload_draw::submit(&tree, body))
+        }
     }
 }
 
-/// The poll leg. With a scripted draw the job is reported done at once — a test asserts the status line,
-/// not the waiting — and without one there is nothing to poll, which the walk turns into the same failure
-/// the submit leg gave.
+/// The poll leg: the drawing server asked about at the address the settings name. The one-per-second
+/// cadence (§F5.6 S6) lives inside [`crate::produce_upload_draw::wait_until_done`], which logs each status
+/// line as it goes and answers only once the job reports done — so `walk`'s loop sees a finished state on its
+/// first ask. With a scripted draw the job is reported done at once: a test asserts the status line, not the
+/// waiting.
 fn poll_leg() -> Box<crate::produce_upload::Poll> {
     match DRAW.with(|cell| cell.borrow().clone()) {
         Some(_) => Box::new(|job| {
@@ -362,25 +382,38 @@ fn poll_leg() -> Box<crate::produce_upload::Poll> {
                 done: true,
             })
         }),
-        None => Box::new(|_| Err("no image server here".to_string())),
+        None => {
+            let tree = session_tree();
+            Box::new(move |job| {
+                crate::produce_upload_draw::wait_until_done(
+                    &tree,
+                    job,
+                    &|| false,
+                    crate::ui::window::log_line,
+                )
+            })
+        }
     }
 }
 
-/// The print leg: one pass of words onto the picture. It copies `thumbnail-plain.png` over `thumbnail.png`
-/// on every call (idempotent — the plain picture is the base of both passes) and refuses when nothing has
-/// been drawn, which reads as the same honest refusal as the draw leg's absence. The lettering of a kind's
-/// words is the local draw that `crate::produce_runs::reprint` sizes; this leg stands in for it until that
-/// draw is wired to the page.
+/// The print leg: one pass of words onto the picture, drawn for real (§F5.6 S7). It starts from
+/// `thumbnail-plain.png` (the plain picture is the base of both passes, so the second pass never prints over
+/// the first's letters) and writes `thumbnail.png` through [`crate::produce_upload_print::print_words`],
+/// which sizes the words with the repo's ONE fitter. Refuses when nothing has been drawn, which reads as the
+/// same honest refusal as the draw leg's absence.
 fn print_leg() -> Box<crate::produce_upload::PrintWords> {
-    Box::new(|_kind: &str, _words: &[String]| {
+    Box::new(|_kind: &str, words: &[String]| {
         let tree = session_tree();
         let plain = tree.thumbnail_plain_png();
         if !plain.is_file() {
             return Err("nothing has been drawn to print onto".to_string());
         }
         let out = tree.thumbnail_png();
-        std::fs::copy(&plain, &out).map_err(|why| format!("{}: {why}", out.display()))?;
-        Ok(())
+        let band = crate::publish::load(&tree)
+            .ok()
+            .and_then(|record| record.title_box)
+            .unwrap_or_default();
+        crate::produce_upload_print::print_words(&plain, &out, words, &band)
     })
 }
 
@@ -392,7 +425,63 @@ fn session_tree() -> crate::layout::Tree {
     .unwrap_or_else(|_| crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap())
 }
 
+/// The page's model leg: the REAL `youtube` call, always. Nothing here consults a scripted answer — a test
+/// replaces the SERVER, not the work, by pointing the settings' address at a local fake LLM (the same seam
+/// `tests/produce_upload_wire.rs` proves), so every green test goes through the request, the tools and the
+/// prose fallback a live server drives. The closure returns the reply text `upload_half` reads.
+pub fn upload_ask(
+    tree: &crate::layout::Tree,
+    publish: &crate::project::Publish,
+    moments: Vec<f64>,
+    starts: Vec<f64>,
+    edited_by_hand: bool,
+) -> Box<crate::produce_upload::AskModel> {
+    let tree = tree.clone();
+    let publish = publish.clone();
+    Box::new(move |brief: &str| {
+        let frames = crate::produce_upload_call::Frames {
+            moments: &moments,
+            starts: &starts,
+        };
+        let cancelled = || false;
+        let collected = crate::produce_upload_call::call(
+            &tree,
+            brief,
+            &publish,
+            &frames,
+            edited_by_hand,
+            &cancelled,
+            crate::ui::window::log_line,
+        )?;
+        // The conversation wrote the record directly; hand back the text form `answers_from` reads, so
+        // prose and tools land through the same parser and cannot drift apart.
+        Ok(render_answers(&collected))
+    })
+}
+
+/// The record a finished call left behind, in the labelled-line form `peel`/`answers_from` read.
+fn render_answers(collected: &crate::produce_upload_call::Collected) -> String {
+    let publish = &collected.publish;
+    let mut lines = Vec::new();
+    if !publish.thumb_title.trim().is_empty() {
+        lines.push(format!("TITLE: {}", publish.thumb_title));
+    }
+    if publish.own {
+        if let Some(frame) = publish.frames.first() {
+            lines.push(format!("THUMBNAIL: {frame}"));
+        }
+    } else if !publish.prompt.trim().is_empty() {
+        lines.push(format!("THUMBNAIL: {}", publish.prompt));
+    }
+    // §3.9's prose shape is "the three labelled lines, then the description as plain text": a fourth label
+    // would not be peeled at all (`peel_labels` takes at most three), so the body rides unlabelled.
+    lines.extend(publish.description.lines().map(str::to_string));
+    lines.join("\n")
+}
+
+
 /// F5.7: the six page presses, driven through [`crate::produce_presses`]. Built here rather than in
+/// `produce_page` because that file is at its size budget, and because three of the legs are already this
 /// `produce_page` because that file is at its size budget, and because three of the legs are already this
 /// module's private seams for the words half — reading them from one place keeps a redraw and the run's own
 /// words half drawing with the SAME legs, so the two can never disagree about what was sent.
@@ -450,7 +539,13 @@ pub fn legs(
         ask_draw: draw_leg(),
         poll: poll_leg(),
         print: print_leg(),
-        ask_model: crate::produce_upload::scripted_ask(),
+        ask_model: upload_ask(
+            &session_tree(),
+            &crate::publish::load(&session_tree()).unwrap_or_default(),
+            Vec::new(),
+            Vec::new(),
+            true,
+        ),
         encode: Box::new(spawn_argv),
         copy: Box::new(move |file: &str| copy_video_out(file, &for_copy())),
         jpeg_sizes: Box::new(jpeg_ladder_sizes),
