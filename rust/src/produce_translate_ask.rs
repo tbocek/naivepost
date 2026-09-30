@@ -135,14 +135,13 @@ fn base_row(model: &str) -> Request {
 ///
 /// Per §3.10 a number outside this batch, or an empty text, is REFUSED: the line simply stays missing,
 /// which is what triggers `produce_translate`'s one re-ask rather than poisoning the track with it.
-pub fn parse_answer(reply: &str, numbers: &[usize]) -> BTreeMap<usize, String> {
-    let parsed: serde_json::Value = match serde_json::from_str(reply) {
-        Ok(parsed) => parsed,
+pub fn parse_answer(content_type: &str, reply: &str, numbers: &[usize]) -> BTreeMap<usize, String> {
+    let model_reply = match llm_request::reply_from(content_type, reply) {
+        Ok(reply) => reply,
         // Not a chat envelope at all: treat the whole body as the numbered answer, which is what a
-        // plain-text server hands back.
+        // plain-text server hands back. An event stream that framed nothing falls here too.
         Err(_) => return parse_numbered(reply, numbers),
     };
-    let model_reply = llm_request::parse_reply(&parsed);
     let mut got: BTreeMap<usize, String> = BTreeMap::new();
     for call in model_reply
         .tool_calls
@@ -236,7 +235,7 @@ pub fn ask_at(
         // A cached answer costs no wire and writes no row: the request that earned it is already in
         // `requests.tsv` (§09 §10). Only a COMPLETE answer is ever stored, so a cache hit here is a
         // whole answer by construction.
-        return Ok(parse_answer(&cached, numbers));
+        return Ok(parse_answer("application/json", &cached, numbers));
     }
     // No model configured is §02-services' own refusal, named, not a silent empty track.
     let body = body(&model, &system, message)?;
@@ -254,7 +253,7 @@ pub fn ask_at(
     match reply {
         Ok(sent) => {
             let text = sent.body.clone();
-            let got = parse_answer(&text, numbers);
+            let got = parse_answer(&sent.content_type, &text, numbers);
             // S3: `cached only when complete`. A partial answer stored is a partial answer forever, so
             // the re-ask's chance is thrown away on every later run.
             if subs::cached(got.len() == numbers.len() && !numbers.is_empty()) {

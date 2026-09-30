@@ -262,6 +262,13 @@ fn sec_09_llm_and_tools_1_request_contract_s3_streaming() {
     assert_eq!(none.ended, llm::Ended::Eof);
 }
 
+// ---- S3 over a real socket: the program answers a server that streams ------------------
+
+/// The same rules, but off a socket: the fake answers with a `Content-Type` of the test's choosing and the
+/// program's own chat leg reads it. A unit test of `from_events` proves the framing; this proves the ROUTE —
+/// that a server answering `text/event-stream` is answered at all instead of being thrown away as "not JSON".
+mod wire;
+
 // ---- S4: the cancel context ----------------------------------------------------------
 
 #[test]

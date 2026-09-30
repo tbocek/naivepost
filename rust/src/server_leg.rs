@@ -37,6 +37,10 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct Sent {
     pub status: u16,
     pub body: String,
+    /// The response's `content-type` header, lower-cased, empty when the server sent none. §09 §1 routes the
+    /// answer on it: only a `text/event-stream` reply is read as an event stream, anything else as one JSON
+    /// object — so this has to survive from the wire to whoever parses the body.
+    pub content_type: String,
     /// Bytes of the request body that went out; `None` for a GET, which sends none.
     pub sent_bytes: Option<i64>,
     pub received_bytes: i64,
@@ -193,6 +197,12 @@ pub fn send_named(
         Err(err) => return Err(down(server, &url, &err.to_string())),
     };
     let status = response.status().as_u16();
+    // ureq drops the headers once the body is taken, so the content type is grabbed here.
+    let header = response
+        .headers()
+        .get("content-type")
+        .map(|value| value.to_str().unwrap_or_default().trim().to_string())
+        .unwrap_or_default();
     let mut reader = response.into_body().into_reader();
     let mut buf = Vec::new();
     let first = loop {
@@ -216,6 +226,8 @@ pub fn send_named(
     };
     let total = started.elapsed().as_millis() as i64;
     let text = String::from_utf8_lossy(&buf).to_string();
+    // The header was read off the response before its body reader was taken; keep it for §1's routing rule.
+    let content_type = header.to_ascii_lowercase();
 
     if cancelled() {
         return Err(format!("{}: cancelled mid-reply", kind.path(job)));
@@ -224,6 +236,7 @@ pub fn send_named(
     Ok(Sent {
         status,
         body: text,
+        content_type,
         sent_bytes,
         received_bytes: buf.len() as i64,
         wait_ms: 0,

@@ -272,6 +272,26 @@ pub fn is_event_stream(content_type: &str) -> bool {
     content_type.trim().to_ascii_lowercase().starts_with(EVENT_STREAM)
 }
 
+/// §1's response contract in one door: read a chat reply the way its `content-type` says.
+///
+/// "Streaming only when the response is `text/event-stream`" — so an event-stream body is read as `data:`
+/// chunks (tool calls reassembled by index, EOF without `[DONE]` keeping what arrived), and anything else is
+/// read as ONE JSON envelope through [`parse_reply`]. Every chat route goes through here rather than parsing
+/// the body itself, because a server that streams cannot otherwise be answered at all. The routes that read
+/// an ANSWER are the ask sites (`join_ask`, `captions_ask`, `narrate_live`, `produce_translate_ask`,
+/// `produce_upload_call`); the chat calls left elsewhere take a body no chat answer lives in — the settings
+/// probe asks `/v1/models` and its verdict is the model list (`settings_probe::probe`'s `"llm"` row), the
+/// F0.13 probes pass on any non-blank reply (`model_list::probe_passes`) — so those keep reading text.
+pub fn reply_from(content_type: &str, body: &str) -> Result<Reply, String> {
+    if is_event_stream(content_type) {
+        let lines: Vec<&str> = body.lines().collect();
+        return Ok(from_events(&lines).reply);
+    }
+    let parsed: Value =
+        serde_json::from_str(body).map_err(|_| "the server's answer is not JSON".to_string())?;
+    Ok(parse_reply(&parsed))
+}
+
 /// What the event stream ended with: `[DONE]`, or the connection closing first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ended {

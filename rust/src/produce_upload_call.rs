@@ -172,15 +172,10 @@ where
             dial_error.get_or_insert(why.clone());
             return Err(why);
         }
-        let parsed: serde_json::Value = match serde_json::from_str(&sent.body) {
-            Ok(parsed) => parsed,
-            Err(_) => {
-                let why = format!("{STEP}: the server's answer is not JSON");
-                dial_error.get_or_insert(why.clone());
-                return Err(why);
-            }
-        };
-        let reply = llm_request::parse_reply(&parsed);
+        let reply = llm_request::reply_from(&sent.content_type, &sent.body).inspect_err(|why| {
+            dial_error.get_or_insert(why.clone());
+        });
+        let reply = reply?;
         let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
         let turn = tool_loop::Turn {
             content: reply.answer().to_string(),

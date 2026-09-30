@@ -131,7 +131,7 @@ pub fn ask_at(
     );
     match reply {
         Ok(sent) => {
-            let text = answer_of(&sent.body);
+            let text = answer_of(&sent.content_type, &sent.body);
             match parse_captions(&text) {
                 Ok(calls) => {
                     // Only a readable answer is cached. A reply we could not read must go out again
@@ -235,13 +235,13 @@ fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
     Ok(body.to_string())
 }
 
-/// The answer text out of a chat reply: `content`, never the reasoning.
-fn answer_of(reply: &str) -> String {
-    let parsed: serde_json::Value = match serde_json::from_str(reply) {
-        Ok(parsed) => parsed,
-        Err(_) => return String::new(),
-    };
-    llm_request::parse_reply(&parsed).answer().to_string()
+/// The answer text out of a chat reply: `content`, never the reasoning. Routed by §1's rule — an
+/// event-stream body is read as chunks, anything else as one JSON envelope.
+fn answer_of(content_type: &str, reply: &str) -> String {
+    llm_request::reply_from(content_type, reply)
+        .map(|parsed| parsed.answer().to_string())
+        // Neither JSON nor a stream: nothing to place, which the caller reads as the batch failing.
+        .unwrap_or_default()
 }
 
 /// Read the CAPTIONS document the prompt specifies into the calls this pass places:

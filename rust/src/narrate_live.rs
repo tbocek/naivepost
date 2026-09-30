@@ -139,9 +139,8 @@ pub fn ask_round(
                 status = sent.status
             ));
         }
-        let parsed: serde_json::Value = serde_json::from_str(&sent.body)
-            .map_err(|_| format!("{STEP}: the server's answer is not JSON"))?;
-        let reply = llm_request::parse_reply(&parsed);
+        let reply = llm_request::reply_from(&sent.content_type, &sent.body)
+            .map_err(|why| format!("{STEP}: {why}"))?;
         // `finish` closes the flow, and `tool_loop` reads it off the TURN, not off the call list — so
         // the leg says it here when the writer called it. Detected on the call NAMES rather than by
         // running them, so the closing round is not counted as one that wrote a line.

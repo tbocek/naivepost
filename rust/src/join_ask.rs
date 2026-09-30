@@ -218,7 +218,7 @@ pub fn ask_at(
     );
     match reply {
         Ok(sent) => {
-            let text = answer_of(&sent.body);
+            let text = answer_of(&sent.content_type, &sent.body);
             let outcome = judge(&text, before, after);
             if outcome.usable() {
                 llm_cache::store(tree, joins::STEP, &parts, &text);
@@ -280,13 +280,14 @@ fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
     Ok(body.to_string())
 }
 
-/// The answer text out of a chat reply: `content`, never the reasoning.
-fn answer_of(reply: &str) -> String {
-    let parsed: serde_json::Value = match serde_json::from_str(reply) {
-        Ok(parsed) => parsed,
-        Err(_) => return String::new(),
-    };
-    llm_request::parse_reply(&parsed).answer().to_string()
+/// The answer text out of a chat reply: `content`, never the reasoning. Routed by §1's rule — an
+/// event-stream body is read as chunks, anything else as one JSON envelope.
+fn answer_of(content_type: &str, reply: &str) -> String {
+    llm_request::reply_from(content_type, reply)
+        .map(|parsed| parsed.answer().to_string())
+        // A body that is neither JSON nor a stream answers with nothing here; `judge` turns the empty
+        // answer into the step's own degraded verdict, which is what it did before this door existed.
+        .unwrap_or_default()
 }
 
 /// The deciding parts for one join ask. The retry's slot rides in `state` — the texts, model and
