@@ -902,7 +902,7 @@ fn speak_this_line(
     let Some(tree) = crate::ui::window::narrate_session_tree() else {
         return say(window, "no project folder is open \u{2014} nowhere to keep the take");
     };
-    let key = crate::narration::tts_key(entry, Some(&s.voice), None);
+    let key = crate::narration::key_for(entry, Some(&s.voice));
     let seed = crate::narration::tts_seed(&key);
     // F4.5 S2: the preview keys its takes on the same voice this row speaks with, and this press is
     // the retry that clears any earlier failure of THIS wav before dialling, so a second failure reads

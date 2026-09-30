@@ -166,6 +166,16 @@ pub fn tts_key(
     format!("{}|{}", TTS_PREFIX, key_body(entry, voice, &emotion))
 }
 
+/// The key the PROGRAM builds for one line: the same [`tts_key`], with the emotion field derived from the
+/// entry's own tag through [`crate::narrate_tts::emotion_vector`] — the one mapping that also decides what
+/// the engine is sent (`narrate_tts::options`). Filename, seed and request therefore cannot disagree: a
+/// weighted tag names its take by the eight floats it resolves to, so moving a named blend's recipe moves
+/// the take's identity instead of serving an old performance under a new intent. A bare tag has no vector
+/// and keeps naming itself, which is §4's "deliberately stable across versions".
+pub fn key_for(entry: &Entry, voice: Option<&str>) -> String {
+    tts_key(entry, voice, crate::narrate_tts::emotion_vector(&entry.emotion))
+}
+
 /// The eight axes the engine mixes, joined as the key wants them. Rounded to three
 /// decimals and written shortest-form: a blend scaled by a weight lands on numbers like
 /// 0.16499999999999998, and this string is part of a filename.

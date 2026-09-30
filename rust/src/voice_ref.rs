@@ -590,7 +590,7 @@ pub fn sample_key(voice: &str, text: &str) -> String {
         text: text.to_string(),
         ..Default::default()
     };
-    crate::narration::tts_key(&carrier, Some(voice), None)
+    crate::narration::key_for(&carrier, Some(voice))
 }
 
 /// Where one sample lives: `narrate/samples/<voice>_<hash>.wav`, named by who speaks and what they

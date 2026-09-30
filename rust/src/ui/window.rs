@@ -8295,7 +8295,7 @@ where
     NARRATE_QUEUE
         .with(|queue| queue.borrow_mut().push(1, to_speak.len().max(1), "line"));
     let speaks = narrate_run::speak_pass(&voice, to_speak.as_slice(), |entry| {
-        let key = narration::tts_key(entry, Some(&voice), None);
+        let key = narration::key_for(entry, Some(&voice));
         tree.tts_wav(&narration::tts_file(&key)).is_file()
     });
     for (index, speak) in speaks.iter().enumerate() {

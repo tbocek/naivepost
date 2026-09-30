@@ -84,7 +84,9 @@ fn run_round(app: &adw::Application) {
         pos: String::new(),
         roll: 0,
     };
-    let key = naivepost::narration::tts_key(&entry, Some(""), None);
+    // The key the PROGRAM will build for this row: its tag is weighted, so the take is filed under the
+    // vector name (§4's `<emotion or 8-float vector>`), not under the words "angry=1".
+    let key = naivepost::narration::key_for(&entry, Some(""));
     let expected = naivepost::narrate_tts::take_path(&tree, &key);
 
     release_last_window();

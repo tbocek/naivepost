@@ -56,7 +56,7 @@ pub fn wav_of(tree: &Tree, line: &Entry, voice: Option<&str>, roll: i32) -> Opti
     salted.roll = roll;
     Some(narrate_tts::take_path(
         tree,
-        &narration::tts_key(&salted, voice, None),
+        &narration::key_for(&salted, voice),
     ))
 }
 

@@ -608,10 +608,10 @@ pub fn take_states(tree: &crate::layout::Tree, entries: &[Entry], failed: &Faile
         .collect()
 }
 
-/// The take's key, spelled the way F4.4 spells it (`narration::tts_key`), so the file the preview
+/// The take's key, spelled the way F4.4 spells it (`narration::key_for`), so the file the preview
 /// looks for and the file the speech leg wrote are named by one rule.
 fn take_key(entry: &Entry) -> String {
-    narration::tts_key(entry, Some(&voice_of(entry)), None)
+    narration::key_for(entry, Some(&voice_of(entry)))
 }
 
 /// S2: the wav path of one line, for the voice to play and for a failure to name.
