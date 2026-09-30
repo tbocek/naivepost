@@ -78,6 +78,44 @@ fn f6_2_s1_transport_death_words_are_matched_whole() {
     assert!(retry::went_away("dial tcp 127.0.0.1:8731: connect: connection refused", None, ""));
 }
 
+/// The address this app's own wire layer writes into every failure is not a status the server sent.
+/// `server_leg::down` formats a death as `llm (http://127.0.0.1:8731/…) is not answering: …`, and that URL holds
+/// both the label (`http`) and a three-digit quad (`127`) — read together they claimed every loopback death was an
+/// answer with status 127, which switched §3's ladder off for every LLM the app actually talks to.
+#[test]
+fn f6_2_s1_a_urls_own_message_is_not_read_as_a_status() {
+    const DEATH: &str = "llm (http://127.0.0.1:8731/v1/chat/completions) is not answering: io: Peer disconnected";
+    assert_eq!(retry::status_of(DEATH), None, "the address must not be read as a status: {DEATH}");
+    // The same wording with a longer port and with the other scheme: the whole URL goes, not one shape of it.
+    assert_eq!(
+        retry::status_of("llm (http://127.0.0.1:45321/v1/chat/completions) is not answering: io: eof"),
+        None,
+        "a five-digit port leaves its first quad behind if only the port is skipped"
+    );
+    assert_eq!(
+        retry::status_of("llm (https://llm.local.test:8731/v1/chat/completions) is not answering: io: eof"),
+        None,
+        "an https address reads the same way"
+    );
+    // And once the address stops masquerading as a status, §3's own words about a death apply: this is the message
+    // a mid-call death arrives as, so it walks the ladder rather than taking the short patience.
+    assert!(retry::transport_death(DEATH), "§3 lists this wording as a death: {DEATH}");
+    assert!(retry::went_away(DEATH, None, ""), "and the door asks it the same question");
+}
+
+/// Blanking an address must not cost §3 the statuses it DOES honour: a labelled status stays a status, and an
+/// unlabelled number stays prose ("a status code is never the server went away" cuts both ways).
+#[test]
+fn f6_2_s1_a_labelled_status_still_reads_after_the_url_goes() {
+    assert_eq!(retry::status_of("HTTP 500 internal server error"), Some(500), "a labelled status still reads");
+    assert_eq!(retry::status_of("the request with tools was answered 400: bad schema"), None, "no label, no status");
+    assert!(!retry::transport_death("HTTP 500 internal server error"), "a named status is not a death");
+    // A death that also names the address AND a real labelled status: the address goes, the status stands, and §3
+    // files it as an answer because the server did answer.
+    let both = "llm (http://127.0.0.1:8731/v1/models) answered HTTP 503: overloaded";
+    assert_eq!(retry::status_of(both), Some(503), "the status survives the blanking: {both}");
+}
+
 #[test]
 fn f6_2_s1_the_ladder_and_its_log() {
     assert_eq!(ITEM, "F6.2");

@@ -33,8 +33,7 @@ use crate::llm_request;
 use crate::narrate_call::Request;
 use crate::narrate_pass;
 use crate::requests::{Request as TimedRow, Service};
-use crate::server_leg;
-use crate::services::{self, Kind};
+use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tool_loop::{self, Turn};
 use crate::tools::Tool;
@@ -73,7 +72,7 @@ fn assistant_content(reply: &llm_request::Reply) -> String {
 /// so both shapes of answer are read the same way; `last_answer` is kept where it was because only the ordinary
 /// leg needs it (the resend replaces the round that failed).
 fn turn_of(
-    sent: &server_leg::Sent,
+    sent: &crate::server_leg::Sent,
     last_answer: &mut String,
 ) -> Result<Turn, String> {
     let reply = llm_request::reply_from(&sent.content_type, &sent.body)
@@ -155,17 +154,17 @@ pub fn ask_round(
         let offered = crate::llm_tools_offer::tools_for(&endpoint.url, tools);
         let body = llm_request::body(&model, conversation, mode, offered.as_deref(), false)?.to_string();
         let base = base_row(&model, attempt);
-        let (_row, reply) = server_leg::call(
+        let reply = crate::llm_retry_leg::dial(
+            STEP,
             tree,
             &base,
-            services::Server::Llm,
             &endpoint,
-            Kind::Chat,
-            None,
-            Some(&body),
+            &body,
             cancelled,
+            &crate::ui::window::log_line,
+            &crate::llm_retry_leg::nap,
         );
-        let sent = match reply {
+        let sent = match reply.answer {
             Ok(sent) => sent,
             Err(why) => {
                 // S5's other half: an error on the loop's FIRST round that is not a stop is read as the server
@@ -178,17 +177,18 @@ pub fn ask_round(
                     crate::ui::window::log_line(&tool_loop::refused_log(STEP, &why));
                     requests += 1;
                     let bare = llm_request::body(&model, conversation, mode, None, false)?.to_string();
-                    let (_bare_row, bare_reply) = server_leg::call(
+                    let bare_reply = crate::llm_retry_leg::dial(
+                        STEP,
                         tree,
                         &base,
-                        services::Server::Llm,
                         &endpoint,
-                        Kind::Chat,
-                        None,
-                        Some(&bare),
+                        &bare,
                         cancelled,
+                        &crate::ui::window::log_line,
+                        &crate::llm_retry_leg::nap,
                     );
                     return bare_reply
+                        .answer
                         .map(|sent| turn_of(&sent, &mut last_answer))
                         .map_err(|again| format!("{STEP} call to {model}: {again}"))?;
                 }
@@ -213,17 +213,18 @@ pub fn ask_round(
                 crate::ui::window::log_line(&tool_loop::refused_log(STEP, &why));
                 requests += 1;
                 let bare = llm_request::body(&model, conversation, mode, None, false)?.to_string();
-                let (_bare_row, bare_reply) = server_leg::call(
+                let bare_reply = crate::llm_retry_leg::dial(
+                    STEP,
                     tree,
                     &base,
-                    services::Server::Llm,
                     &endpoint,
-                    Kind::Chat,
-                    None,
-                    Some(&bare),
+                    &bare,
                     cancelled,
+                    &crate::ui::window::log_line,
+                    &crate::llm_retry_leg::nap,
                 );
                 return bare_reply
+                    .answer
                     .map(|sent| turn_of(&sent, &mut last_answer))
                     .map_err(|again| format!("{STEP} call to {model}: {again}"))?;
             }

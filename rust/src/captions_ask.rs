@@ -5,7 +5,7 @@
 //! *telephone*: `ask_captions` in the shell returned an empty list, so pressing ✐ Captions placed
 //! nothing and the pass reported its own emptiness as if that were the answer. This module is that
 //! leg. It builds the two messages §F3.9 spells, dials the LLM over HTTP through
-//! [`crate::server_leg`] (so each ask writes its timed `requests.tsv` row), reads the CAPTIONS
+//! [`crate::llm_retry_leg`] (so each ask writes its timed `requests.tsv` row and rides §3's patience), reads the CAPTIONS
 //! reply back into [`cut_captions::Call`]s, and hands those to `cut_captions::place`, which lets
 //! §3.7's `add_caption` tool — not a copy of it — decide what may land.
 //!
@@ -25,8 +25,7 @@ use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
 use crate::requests::{Request, Service};
-use crate::server_leg;
-use crate::services::{self, Kind, Server};
+use crate::services;
 use crate::roles::Job;
 use crate::settings::{self, Conf, Paths};
 use crate::tools::Tool;
@@ -119,15 +118,14 @@ pub fn ask_at(
     };
     let base = base_row(&model);
     let endpoint = services::llm_endpoint(conf);
-    let (_row, reply) = server_leg::call(
+    let reply = crate::llm_retry_leg::chat(
+        STEP,
         tree,
         &base,
-        Server::Llm,
         &endpoint,
-        Kind::Chat,
-        None,
-        Some(&body),
+        &body,
         cancelled,
+        &crate::ui::window::log_line,
     );
     match reply {
         Ok(sent) => {

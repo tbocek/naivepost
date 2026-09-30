@@ -4,7 +4,8 @@
 //! means, the ceilings, the marks and both files. What it never did was *telephone*: on a session
 //! with seams the pass stopped at its own brief line, so the answers that decide the cut arrived
 //! from nobody. This module is that leg. It builds the two messages §F1.10 spells, dials the LLM
-//! over HTTP through the same [`crate::server_leg`] the settings probes use, and hands the reply
+//! over HTTP through the same [`crate::llm_retry_leg`] every chat ask rides (which is [`crate::server_leg`]
+//! plus §3's patience), and hands the reply
 //! to [`crate::joins::answer_join`] so the tool's ceilings — not a copy of them — decide what
 //! may go.
 //!
@@ -32,8 +33,7 @@ use crate::llm_request;
 use crate::project::Project;
 use crate::requests::{Request, Service};
 use crate::seam_retries::{self, Asking};
-use crate::server_leg;
-use crate::services::{self, Kind, Server};
+use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tools::textedit::{Join, SEAM_REACH_WORDS};
 use crate::word_list::{self, Word};
@@ -206,15 +206,14 @@ pub fn ask_at(
     };
     let base = base_row(&model);
     let endpoint = services::llm_endpoint(conf);
-    let (_row, reply) = server_leg::call(
+    let reply = crate::llm_retry_leg::chat(
+        joins::STEP,
         tree,
         &base,
-        Server::Llm,
         &endpoint,
-        Kind::Chat,
-        None,
-        Some(&body),
+        &body,
         cancelled,
+        &crate::ui::window::log_line,
     );
     match reply {
         Ok(sent) => {

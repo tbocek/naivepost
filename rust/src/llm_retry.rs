@@ -52,6 +52,7 @@ pub const RETRY_SECONDS: u64 = 2;
 /// perfectly well. That is why §3's loose condition words are matched only alongside their noun (see
 /// [`DEATH_CONDITIONS`]) — net/http, Go's h2 transport and Rust's client all say `connection reset` /
 /// `connection refused`, so nothing real is lost, and a sentence about the model refusing is left alone.
+/// A reply carrying an HTTP status is never one of these; see [`status_of`] and [`GONE_REPLY`].
 const DEATH_WORDS: [&str; 7] = [
     "eof",
     "connection reset",
@@ -61,6 +62,21 @@ const DEATH_WORDS: [&str; 7] = [
     "no such host",
     "transport is closing",
 ];
+
+/// What this app's own wire layer writes when a call got no reply: [`crate::server_leg::down`] formats every
+/// connect failure and mid-reply death as "‹server› (‹url›) is not answering: …". Named here rather than left to
+/// the word list because it is OUR wording, and its cancellation cases are not transport deaths at all: a ⏹ that
+/// landed before the send or during the reply is the user ending the run, not a server going away, and walking
+/// the ladder through eight minutes for a run already stopped would be worse than no retry.
+pub const GONE_REPLY: &str = "is not answering";
+
+/// The two ways `server_leg` says the USER ended a call rather than the server dying.
+const CANCELLED_CASES: [&str; 2] = ["cancelled before sending", "cancelled mid-reply"];
+
+/// Whether a `server_leg` failure string is a death rather than a stop dressed in the same words.
+fn leg_says_gone(lower: &str) -> bool {
+    lower.contains(GONE_REPLY) && !CANCELLED_CASES.iter().any(|case| lower.contains(case))
+}
 
 /// §3's condition words — reset, refused, unreachable. `reset` and `refused` only count beside the noun that
 /// says what was reset or refused: net/http, Go's h2 transport and Rust's client all write `connection reset` /
@@ -74,14 +90,18 @@ const DEATH_CONDITIONS: [(&str, bool); 3] = [("reset", true), ("refused", true),
 /// what a wait fixes.
 ///
 /// §3 names the two kinds and not the words, so these are the phrases llama.cpp-family servers actually print:
-/// `out of memory` / `OOM` / `alloc` for memory, `CUDA` / `device` / `VRAM` / `GPU` for the device.
+/// `out of memory` / `OOM` for memory, `CUDA` / `VRAM` / `GPU` for the device, plus the verbs that only ever
+/// appear beside them (`allocate`, `alloc`, `realloc`). Each is matched as a whole word (see [`contains_word`]),
+/// which is what keeps "resettable" out of the transport list and "allocation strategy" out of this one; the
+/// loose noun `device` is deliberately absent, because a 500 naming the model file on a device path is not an
+/// out-of-memory and would cost a healthy server eight minutes of waiting.
 pub const DEVICE_FAILURE_PHRASES: [&str; 8] = [
     "out of memory",
     "oom",
     "cannot allocate",
+    "allocate",
     "alloc",
     "cuda",
-    "device",
     "vram",
     "gpu",
 ];
@@ -90,12 +110,17 @@ pub const DEVICE_FAILURE_PHRASES: [&str; 8] = [
 /// answer" is prose and `refused` inside "connection refused" is a dead socket: the words are matched as pairs
 /// (`connection refused`, not bare `refused`) precisely so a sentence about the model's behaviour cannot be read
 /// as a socket's. A message naming an HTTP status is never one — see [`status_of`] and §3's rule.
+///
+/// `server_leg`'s own wording for a call that got no reply ("llm (http://…) is not answering: …") counts as one
+/// by name as well as by its words: it is what a refused connect arrives as, and §3 lists "refused" outright —
+/// the restart policy leaves the port closed while weights load, so waiting is the whole point of the ladder.
 pub fn transport_death(error: &str) -> bool {
     if status_of(error).is_some() {
         return false;
     }
     let lower = error.to_lowercase();
-    DEATH_WORDS.iter().any(|word| contains_word(&lower, word))
+    leg_says_gone(&lower)
+        || DEATH_WORDS.iter().any(|word| contains_word(&lower, word))
         || DEATH_CONDITIONS.iter().any(|(word, needs_noun)| {
             contains_word(&lower, word) && (!needs_noun || contains_word(&lower, "connection"))
         })
@@ -114,7 +139,7 @@ pub fn device_failure(status: Option<u16>, body: &str) -> bool {
         return false;
     }
     let lower = body.to_lowercase();
-    DEVICE_FAILURE_PHRASES.iter().any(|phrase| lower.contains(phrase))
+    DEVICE_FAILURE_PHRASES.iter().any(|phrase| contains_word(&lower, phrase))
 }
 
 /// The HTTP status a message names, if it names one.
@@ -125,7 +150,7 @@ pub fn device_failure(status: Option<u16>, body: &str) -> bool {
 /// opposite reason ("a status code is never the server went away").
 pub fn status_of(text: &str) -> Option<u16> {
     const LABELS: [&str; 5] = ["status", "http", "http/", "code", "response"];
-    let lower = text.to_lowercase();
+    let lower = without_urls(text);
     if !LABELS.iter().any(|label| lower.contains(label)) {
         return None;
     }
@@ -143,6 +168,21 @@ pub fn status_of(text: &str) -> Option<u16> {
         at = end + 1;
     }
     None
+}
+
+/// The message with every URL blanked, lower-cased.
+///
+/// A URL is the one thing in a `server_leg` failure string that breaks [`status_of`] on its own: the address makes
+/// the label check fire (`http`) and its first quad (`127`, `873`… ) looks exactly like a status. §3 forbids reading
+/// a status out of a transport failure at all — "a status code is never the server went away" — so an address must
+/// be made unreadable to both scans rather than skipped by digit rules that would also hide real statuses. Only a
+/// whitespace-delimited word holding `://` goes; nothing else in this app's wording carries that sequence.
+fn without_urls(text: &str) -> String {
+    text.to_lowercase()
+        .split_whitespace()
+        .map(|word| if word.contains("://") { " " } else { word })
+        .collect::<Vec<&str>>()
+        .join(" ")
 }
 
 /// Is `word` present in `lower` as a whole word? The boundaries are anything that is not a letter or digit, plus
@@ -215,16 +255,20 @@ pub fn waited_log(step: &str, reason: &str) -> String {
 /// What a retrying call ended with. `answer` is `None` when the step fails; `stopped` says ⏹ ended it, which the
 /// caller must not report as a server problem.
 #[derive(Debug, Clone)]
-pub struct Run<T> {
+pub struct Run<T, E> {
     pub answer: Option<T>,
     /// Every line this call logged, in order — including the ones from attempts that did not fail.
     pub logs: Vec<String>,
     /// How many failures it took (0 when the first attempt answered).
     pub failures: u32,
     pub stopped: bool,
+    /// The last failure seen, so a caller can act on WHICH kind it was rather than only on there having been
+    /// one. `llm_retry_leg` uses this to hand a refusal the caller declined to retry back as the server's own
+    /// wording instead of as "the patience ran out".
+    pub last: Option<E>,
 }
 
-impl<T> Run<T> {
+impl<T, E> Run<T, E> {
     /// The lines joined for an assertion message.
     pub fn joined(&self) -> String {
         self.logs.join("\n")
@@ -246,8 +290,8 @@ pub fn run<T, E: Display>(
     sleep: &dyn Fn(u64) -> bool,
     stopped: &dyn Fn() -> bool,
     died: &dyn Fn(&E) -> bool,
-) -> Run<T> {
-    let mut out = Run { answer: None, logs: Vec::new(), failures: 0, stopped: false };
+) -> Run<T, E> {
+    let mut out = Run { answer: None, logs: Vec::new(), failures: 0, stopped: false, last: None };
     loop {
         match call() {
             Ok(answer) => {
@@ -258,13 +302,14 @@ pub fn run<T, E: Display>(
                 let attempt = out.failures;
                 out.failures += 1;
                 let died = died(&problem);
+                let reason = problem.to_string();
+                out.last = Some(problem);
                 let Some(wait) = wait_seconds(died, attempt) else {
                     // No patience left: the step fails, and says nothing about waiting because it is not.
                     return out;
                 };
                 // Only the death branch has a line in §3. The short retry gets one too: a run that pauses two
                 // seconds between two identical requests should say that it did.
-                let reason = problem.to_string();
                 out.logs.push(if died {
                     gone_log(step, &reason, wait, attempt)
                 } else {

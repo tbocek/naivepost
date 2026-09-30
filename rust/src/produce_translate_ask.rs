@@ -28,8 +28,7 @@ use crate::llm_request;
 use crate::produce_subtitles as subs;
 use crate::produce_translate::Ask;
 use crate::requests::{Request, Service};
-use crate::server_leg;
-use crate::services::{self, Kind, Server};
+use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tools::Tool;
 
@@ -240,15 +239,14 @@ pub fn ask_at(
     // No model configured is §02-services' own refusal, named, not a silent empty track.
     let body = body(&model, &system, message)?;
     let endpoint = services::llm_endpoint(conf);
-    let (_row, reply) = server_leg::call(
+    let reply = crate::llm_retry_leg::chat(
+        STEP,
         tree,
         &base_row(&model),
-        Server::Llm,
         &endpoint,
-        Kind::Chat,
-        None,
-        Some(&body),
+        &body,
         cancelled,
+        &crate::ui::window::log_line,
     );
     match reply {
         Ok(sent) => {

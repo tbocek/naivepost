@@ -380,7 +380,15 @@ fn f6_1_s5_a_dead_server_is_not_read_as_a_refusal() {
     assert!(outcome.is_err(), "a dead server fails the call, it does not degrade it: {outcome:?}");
     let asked = llm.next();
     assert!(offers_tools(&asked), "the request went out with its tools: {asked}");
-    llm.expect_silent();
+    // §3 (F6.2) now gives an answered-but-unusable 500 its one short retry, so the fake sees that second,
+    // identical request. What this check is about is unchanged and still holds: none of them was a
+    // resend-WITHOUT-tools, and no refusal was claimed for a server that merely died.
+    let rest = llm.all(std::time::Duration::from_millis(600));
+    assert!(
+        rest.iter().all(|body| offers_tools(body)),
+        "every request still offered the job's tools -- nothing was resent without the field: {} more",
+        rest.len()
+    );
     assert!(
         window_refusals().is_empty(),
         "no refusal is claimed for a server that merely died: {:?}",

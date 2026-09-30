@@ -16,7 +16,7 @@ use crate::produce_upload as upload;
 use crate::project::Publish;
 use crate::roles::Job;
 use crate::server_leg;
-use crate::services::{self, Kind, Server};
+use crate::services::{self, Server};
 use crate::settings::{self, Conf, Paths};
 use crate::tool_loop;
 use crate::tools::Tool;
@@ -50,10 +50,20 @@ fn resend_without_tools(
     spoken: &std::rc::Rc<std::cell::RefCell<String>>,
 ) -> Result<tool_loop::Turn, String> {
     let bare = llm_request::body(model, conversation, mode, None, false)?.to_string();
-    let (_row, reply) = server_leg::call(
-        tree, base, Server::Llm, endpoint, Kind::Chat, None, Some(&bare), cancelled,
+    // §3's patience is for a transient. A 4xx that refuses the `tools` FIELD is not one: F6.1's own rule is to
+    // resend the identical messages WITHOUT the field, which only the caller can do, so those are handed back
+    // unretried (see [`crate::llm_retry_leg::answered`]). Everything else, including a plain 500, gets its retry.
+    let reply = crate::llm_retry_leg::dial(
+        STEP,
+        tree,
+        base,
+        endpoint,
+        &bare,
+        cancelled,
+        &crate::ui::window::log_line,
+        &crate::llm_retry_leg::nap,
     );
-    match reply {
+    match reply.answer {
         Ok(sent) => read_turn(&sent, dial_error, spoken),
         Err(again) => {
             let again = format!("{STEP} call to {model}: {again}");
@@ -226,17 +236,19 @@ where
         };
         let endpoint = services::llm_endpoint(&conf);
         let base = server_leg::base_row(Server::Llm, &model, "chat", "", STEP, "upload");
-        let (_row, reply) = server_leg::call(
+        // §3's patience, except for a 4xx that refuses the `tools` field: that answer is not transient and the
+        // caller's own resend-without-tools is the next move, so the door hands it back unretried.
+        let reply = crate::llm_retry_leg::dial(
+            STEP,
             tree,
             &base,
-            Server::Llm,
             &endpoint,
-            Kind::Chat,
-            None,
-            Some(&sent_body),
+            &sent_body,
             cancelled,
+            &crate::ui::window::log_line,
+            &crate::llm_retry_leg::nap,
         );
-        let sent = match reply {
+        let sent = match reply.answer {
             Ok(sent) => sent,
             Err(why) => {
                 let why = format!("{STEP} call to {model}: {why}");

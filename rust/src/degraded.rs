@@ -268,6 +268,34 @@ pub fn tools_refused(error: &str) -> bool {
     lower.contains("tool")
 }
 
+/// A status that says the request itself was rejected — the shape a schema-refusing server answers with (400, or
+/// the 422 some servers use for a body they cannot parse). §3's short retry is for a transient; this is not one,
+/// because the same body gets the same answer: F6.1's rule is to resend WITHOUT the `tools` field instead, which
+/// only the caller can do. A 5xx never qualifies, so an out-of-memory keeps its patience.
+pub fn refused_field(status: u16) -> bool {
+    matches!(status, 400 | 422)
+}
+
+/// Whether a dialled response is the server refusing the `tools` FIELD: §1 keeps the body beside the status for
+/// exactly this decision, and "answered 400" alone cannot tell a schema it dislikes from a broken server. This
+/// is what every chat ask hands [`crate::llm_retry_leg::dial`] as its "worth re-sending unchanged?" answer — a
+/// 400 about anything else still gets §3's one short retry.
+///
+/// The wording of the reason matters as much as the verdict: F6.1's legs read their own refusal decision back out
+/// of the error string through [`crate::tool_loop::retry_without_tools`], which asks whether the message names a
+/// tool problem at all. So the door quotes the server's message with the words "the request with tools" in front
+/// of it — the same shape §2's refusal line has — rather than a bare "answered 400", which would say nothing
+/// about tools and lose the resend.
+pub fn refused_answer(status: u16, body: &str) -> bool {
+    refused_field(status) && tools_refused(body)
+}
+
+/// The refusal as a caller reads it back: enough that [`crate::tool_loop::retry_without_tools`] recognises it as
+/// a field refusal, and the server's own sentence beside it so the log line can name the reason.
+pub fn refused_reason(status: u16, body: &str) -> String {
+    format!("the request with tools was answered {status}: {}", body.trim())
+}
+
 /// What a `tools` problem means for the call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolsFallback {
