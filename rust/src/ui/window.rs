@@ -2322,6 +2322,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // about. Published here for the same reason `SESSION` is.
     PLAY_SESSION.with(|slots| slots.borrow_mut().push(Rc::clone(&session)));
 
+    crate::project_autosave::install(Rc::clone(&session), crate::project_autosave::session_dir());
+    crate::project_autosave::start();
+
     // The status line: the shell's sentence, right-aligned in the bottom row (§1's "status line").
     // Also before the pages, for the same reason — a row's press reports itself there.
     let status = gtk::Label::new(Some(""));
@@ -2820,6 +2823,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
             flush_line_on_close(&closing);
             // §F4.7 (**Text**): closing the window flushes a half-typed line too, not only a tab switch.
             crate::ui::narrate_text::flush_owed(&closing);
+            // §2 S6: and the project itself, which is what an interrupted session would lose.
+            crate::project_autosave::flush_session();
             glib::Propagation::Proceed
         });
     }

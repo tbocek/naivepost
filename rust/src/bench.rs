@@ -56,7 +56,9 @@ pub fn title(row: &Row) -> String {
     if is_context(row) {
         return row.title.to_string();
     }
-    format!("{} prompt", row.title)
+    // §04's badge **2** writes the heading as "‹Name› prompt", and its own screenshot reads that
+    // way ("‹Describe› prompt"); the plain form was the app inventing its own wording.
+    format!("\u{2039}{}\u{203a} prompt", row.title)
 }
 
 /// Whether this row is the User Context: no key, so nothing on this machine to differ

@@ -102,8 +102,10 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
     app.connect_activate(move |app| {
         // A screen that wants the bench to open somewhere other than row 0 must say so BEFORE the
         // window is built: `bench_box` reads this once and paints from it, and a later call would
-        // arrive after the heading was already drawn.
-        if screen == "04-prompt-picker" {
+        // arrive after the heading was already drawn. §04's own picture is "the Prepare page with the
+        // Describe prompt open", so `04-prepare` asks for that row too -- without it the two screens
+        // render byte-identical PNGs and one of them says nothing.
+        if matches!(screen.as_str(), "04-prepare" | "04-prompt-picker") {
             ui::set_bench_open_row(2);
         }
         let window = ui::build_window(app, &model, page);

@@ -91,6 +91,7 @@ pub mod params;
 pub mod new_project;
 pub mod open_project;
 pub mod project;
+pub mod project_autosave;
 pub mod project_settings;
 pub mod prompts;
 pub mod prepare;
