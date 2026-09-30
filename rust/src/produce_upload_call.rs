@@ -35,6 +35,65 @@ pub struct Collected {
     pub answers: Vec<String>,
 }
 
+/// S5's resend: the SAME messages and mode with no `tools` field, dialled through the same timed leg so the
+/// refused request and its resend both leave a row behind (§09 §10: one line per request).
+#[allow(clippy::too_many_arguments)]
+fn resend_without_tools(
+    tree: &Tree,
+    conversation: &[Message],
+    model: &str,
+    mode: Mode,
+    endpoint: &services::Endpoint,
+    base: &crate::requests::Request,
+    cancelled: &dyn Fn() -> bool,
+    dial_error: &std::rc::Rc<std::cell::RefCell<Option<String>>>,
+    spoken: &std::rc::Rc<std::cell::RefCell<String>>,
+) -> Result<tool_loop::Turn, String> {
+    let bare = llm_request::body(model, conversation, mode, None, false)?.to_string();
+    let (_row, reply) = server_leg::call(
+        tree, base, Server::Llm, endpoint, Kind::Chat, None, Some(&bare), cancelled,
+    );
+    match reply {
+        Ok(sent) => read_turn(&sent, dial_error, spoken),
+        Err(again) => {
+            let again = format!("{STEP} call to {model}: {again}");
+            dial_error.borrow_mut().get_or_insert(again.clone());
+            Err(again)
+        }
+    }
+}
+
+/// Say S5's refusal where every headless flow says its lines: the run's own `log` closure cannot be reached from
+/// inside the ask closure (it borrows the loop's state), and the window's log is the sink both a test and the
+/// user read. §2 wants this line said ONCE per server, which [`crate::llm_tools_offer`] is what guarantees.
+fn say_refused(why: &str) {
+    crate::ui::window::log_line(&tool_loop::refused_log(STEP, why));
+}
+
+/// Read one dialled response as the loop's turn, recording the prose it spoke. A plain function rather than a
+/// closure so every leg -- the ordinary one and S5's resend-without-tools -- can call it without the borrow
+/// checker holding two closures over the same state.
+fn read_turn(
+    sent: &server_leg::Sent,
+    dial_error: &std::rc::Rc<std::cell::RefCell<Option<String>>>,
+    spoken: &std::rc::Rc<std::cell::RefCell<String>>,
+) -> Result<tool_loop::Turn, String> {
+    let reply = llm_request::reply_from(&sent.content_type, &sent.body).inspect_err(|why| {
+        dial_error.borrow_mut().get_or_insert(why.clone());
+    })?;
+    let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+    let turn = tool_loop::Turn {
+        content: reply.answer().to_string(),
+        calls: reply.tool_calls.clone(),
+        finish: finishing,
+    };
+    // The last quiet round wins; a round that said nothing alongside its calls does not clear what was said.
+    if !turn.content.trim().is_empty() {
+        *spoken.borrow_mut() = turn.content.clone();
+    }
+    Ok(turn)
+}
+
 /// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6). With no
 /// settings folder at all, the shipped `spec/prompts/youtube.md` is what goes out.
 fn wording(paths: Option<&Paths>, key: &str) -> String {
@@ -114,13 +173,32 @@ where
         edited_by_hand,
     };
     let offered = crate::tools::offered(Job::UploadText);
+    // §2: the web tools ride on this job only if a browser can actually be driven, and the reason they do not is
+    // said once. Offering `web_search` to a machine with no firefox costs a call and buys an error line.
+    let web_firefox = paths
+        .as_ref()
+        .and_then(|paths| settings::read(paths).ok())
+        .map(|conf| conf.firefox)
+        .unwrap_or_default();
+    let (web_found, web_reason) = crate::web_browser::availability(&web_firefox);
+    let offered = crate::web_tools::filter(&offered, web_found);
+    if let Some(line) = crate::web_tools::unavailable_log(STEP, &web_firefox, false, web_found, &web_reason) {
+        log(&line);
+    }
     // The first dial error, kept so a call that never got an answer can name the model and the reason
     // instead of reporting an empty success.
-    let mut dial_error: Option<String> = None;
+    let dial_error: std::rc::Rc<std::cell::RefCell<Option<String>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(None));
     // The prose the model spoke on a round that called no tool. `tool_loop` only records an assistant turn when
     // that round carried calls, so a §3.9 prose answer (three labelled lines, no calls) would otherwise be
     // heard by nobody but this closure — and it is the whole of what the record gets.
-    let mut spoken: String = String::new();
+    // The prose a round spoke, held behind a share so both `ask` and the shared turn-reader can write it while
+    // the loop holds only one of them at a time.
+    let spoken_ref = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    // How many times this call has dialled, so S5's resend is honoured only on the loop's first round.
+    let mut rounds = 0u32;
+    // Read one dialled response as the loop's turn, recording the prose it spoke. Declared before `ask` because
+    // every leg -- the ordinary one and S5's resend-without-tools -- ends by calling it.
     let mut conversation = messages(&system, brief);
     // One dial per round, each writing its own timed row: a five-round conversation leaves five lines behind.
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
@@ -129,17 +207,20 @@ where
             Some(Ok(conf)) => conf,
             Some(Err(reason)) => {
                 let why = format!("settings could not be read: {reason}");
-                dial_error.get_or_insert(why.clone());
+                dial_error.borrow_mut().get_or_insert(why.clone());
                 return Err(why);
             }
             None => Conf::default(),
         };
         let model = conf.model.clone();
         let mode = if crate::prompts::thinking("youtube") { Mode::Thinking } else { Mode::Execute };
-        let sent_body = match llm_request::body(&model, conversation, mode, Some(tools), false) {
+        rounds += 1;
+        // S5: this server has already refused the field -> ask without it and say nothing more.
+        let offered = crate::llm_tools_offer::tools_for(&services::llm_endpoint(&conf).url, tools);
+        let sent_body = match llm_request::body(&model, conversation, mode, offered.as_deref(), false) {
             Ok(sent_body) => sent_body.to_string(),
             Err(why) => {
-                dial_error.get_or_insert(format!("{STEP} call to {model}: {why}"));
+                dial_error.borrow_mut().get_or_insert(format!("{STEP} call to {model}: {why}"));
                 return Err(format!("{STEP} call to {model}: {why}"));
             }
         };
@@ -159,36 +240,57 @@ where
             Ok(sent) => sent,
             Err(why) => {
                 let why = format!("{STEP} call to {model}: {why}");
-                dial_error.get_or_insert(why.clone());
+                // S5: the loop's first round, offered with tools, and an error that says the FIELD is the problem
+                // -- resend the identical request without it, said once. A remembered refusal or a dead server
+                // falls through to the plain failure, because re-asking a down box answers the same way.
+                if offered.is_some()
+                    && rounds == 1
+                    && crate::llm_tools_offer::honour_refusal(&endpoint.url, &why, 1)
+                {
+                    say_refused(&why);
+                    rounds += 1;
+                    return resend_without_tools(
+                        tree, conversation, &model, mode, &endpoint, &base, cancelled,
+                        &dial_error, &spoken_ref,
+                    );
+                }
+                dial_error.borrow_mut().get_or_insert(why.clone());
                 return Err(why);
             }
         };
         if !sent.ok() {
+            // The server's OWN message is what says whether this is a refusal of the `tools` field: §1 keeps the
+            // body beside the status for exactly this reason, and "answered 400" alone cannot tell a schema it
+            // dislikes from a broken server.
             let why = format!(
-                "{STEP} call to {model} at {} answered {status}",
+                "{STEP} call to {model} at {} answered {}: {}",
                 endpoint.url,
-                status = sent.status
+                sent.status,
+                sent.body.trim()
             );
-            dial_error.get_or_insert(why.clone());
+            // A status answering "the tools field is not supported" arrives as a 400, not as a transport error,
+            // so the same door applies here: honour it once and resend without the field.
+            if offered.is_some()
+                && rounds == 1
+                && crate::llm_tools_offer::honour_refusal(&endpoint.url, &why, 1)
+            {
+                say_refused(&why);
+                rounds += 1;
+                return resend_without_tools(
+                    tree, conversation, &model, mode, &endpoint, &base, cancelled,
+                    &dial_error, &spoken_ref,
+                );
+            }
+            dial_error.borrow_mut().get_or_insert(why.clone());
             return Err(why);
         }
-        let reply = llm_request::reply_from(&sent.content_type, &sent.body).inspect_err(|why| {
-            dial_error.get_or_insert(why.clone());
-        });
-        let reply = reply?;
-        let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
-        let turn = tool_loop::Turn {
-            content: reply.answer().to_string(),
-            calls: reply.tool_calls.clone(),
-            finish: finishing,
-        };
-        // The last quiet round wins; a round that said nothing alongside its calls does not clear what was said.
-        if !turn.content.trim().is_empty() {
-            spoken = turn.content.clone();
-        }
-        Ok(turn)
+        read_turn(&sent, &dial_error, &spoken_ref)
     };
     let mut run_tool = |asked: &ToolCall| -> String {
+        // The web tools are answered by the real browser leg (§2), everything else by §3.9's own tools.
+        if let Some(answer) = crate::web_browser::dispatch(STEP, &web_firefox, asked) {
+            return answer;
+        }
         let answer = state.run_tool(asked);
         if answer.is_empty() {
             "ok".to_string()
@@ -205,7 +307,7 @@ where
     if let tool_loop::Outcome::Exhausted = run.outcome {
         // `take` rather than `is_some()` + `expect`: the loop only logs a failure when its ask returned one.
         if state.answers.is_empty() {
-            if let Some(why) = dial_error.take() {
+            if let Some(why) = dial_error.borrow_mut().take() {
                 return Err(why);
             }
         }
@@ -213,7 +315,7 @@ where
     // The prose a round spoke but no tool wrote: kept on `spoken` because a quiet round's text never enters the
     // loop's messages (see above). Only when nothing was heard at all falls back to reading the conversation.
     if state.answers.is_empty() {
-        let text = if spoken.trim().is_empty() { state.content_of(&run).unwrap_or_default() } else { spoken };
+        let text = if spoken_ref.borrow().trim().is_empty() { state.content_of(&run).unwrap_or_default() } else { spoken_ref.borrow().clone() };
         state.wrote |= peel_into(&mut state.publish, &text);
     }
     Ok(Collected {

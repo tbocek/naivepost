@@ -69,6 +69,26 @@ fn assistant_content(reply: &llm_request::Reply) -> String {
     reply.answer().to_string()
 }
 
+/// One dialled response as the tool loop reads it. Shared by the ordinary leg and S5's resend-without-tools leg
+/// so both shapes of answer are read the same way; `last_answer` is kept where it was because only the ordinary
+/// leg needs it (the resend replaces the round that failed).
+fn turn_of(
+    sent: &server_leg::Sent,
+    last_answer: &mut String,
+) -> Result<Turn, String> {
+    let reply = llm_request::reply_from(&sent.content_type, &sent.body)
+        .map_err(|why| format!("{STEP}: {why}"))?;
+    // `finish` closes the flow, and `tool_loop` reads it off the TURN, not off the call list — so
+    // the leg says it here when the writer called it. Detected on the call NAMES rather than by
+    // running them, so the closing round is not counted as one that wrote a line.
+    let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+    let answer = assistant_content(&reply);
+    if !answer.is_empty() {
+        *last_answer = answer.clone();
+    }
+    Ok(Turn { content: answer, calls: reply.tool_calls, finish: finishing })
+}
+
 /// One round of the narration call, live. `attempt` rides into the log so a retry reads as a retry,
 /// and `thinking` is whatever `narrate_call::drive` decided this attempt gets (§F4.2: thinking starts
 /// ON and is switched off after a call that wrote nothing) — this module obeys it rather than owning it.
@@ -98,7 +118,19 @@ pub fn ask_round(
     };
     let model = conf.model.clone();
     let endpoint = services::llm_endpoint(&conf);
-    let offered = offered_tools();
+    // §2: whether this step gets the web at all, said once with the reason. A machine with no browser is told
+    // WHY its job has two fewer tools, and the offer drops them rather than promising a tool nothing answers.
+    let (web_found, web_reason) = crate::web_browser::availability(&conf.firefox);
+    let offered = crate::web_tools::filter(&offered_tools(), web_found);
+    if let Some(line) = crate::web_tools::unavailable_log(
+        STEP,
+        &conf.firefox,
+        false,
+        web_found,
+        &web_reason,
+    ) {
+        crate::ui::window::log_line(&line);
+    }
 
     // Shape of the first round: the two messages, thinking as told, tools offered. Later rounds grow
     // inside the tool loop, which pushes assistant and tool turns onto this same list.
@@ -119,7 +151,9 @@ pub fn ask_round(
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<Turn, String> {
         requests += 1;
         let mode = if thinking { Mode::Thinking } else { Mode::Execute };
-        let body = llm_request::body(&model, conversation, mode, Some(tools), false)?.to_string();
+        // S5: a server that already refused the `tools` field is asked without it and nothing more is said.
+        let offered = crate::llm_tools_offer::tools_for(&endpoint.url, tools);
+        let body = llm_request::body(&model, conversation, mode, offered.as_deref(), false)?.to_string();
         let base = base_row(&model, attempt);
         let (_row, reply) = server_leg::call(
             tree,
@@ -131,32 +165,71 @@ pub fn ask_round(
             Some(&body),
             cancelled,
         );
-        let sent = reply.map_err(|why| format!("{STEP} call to {model}: {why}"))?;
+        let sent = match reply {
+            Ok(sent) => sent,
+            Err(why) => {
+                // S5's other half: an error on the loop's FIRST round that is not a stop is read as the server
+                // refusing the `tools` field, so the identical request goes out again without it. A refusal
+                // already honoured (or a dead server) falls through to the plain failure below.
+                if offered.is_some()
+                    && requests == 1
+                    && crate::llm_tools_offer::honour_refusal(&endpoint.url, &why, 1)
+                {
+                    crate::ui::window::log_line(&tool_loop::refused_log(STEP, &why));
+                    requests += 1;
+                    let bare = llm_request::body(&model, conversation, mode, None, false)?.to_string();
+                    let (_bare_row, bare_reply) = server_leg::call(
+                        tree,
+                        &base,
+                        services::Server::Llm,
+                        &endpoint,
+                        Kind::Chat,
+                        None,
+                        Some(&bare),
+                        cancelled,
+                    );
+                    return bare_reply
+                        .map(|sent| turn_of(&sent, &mut last_answer))
+                        .map_err(|again| format!("{STEP} call to {model}: {again}"))?;
+                }
+                return Err(format!("{STEP} call to {model}: {why}"));
+            }
+        };
         if !sent.ok() {
-            return Err(format!(
-                "{STEP} call to {model} at {} answered {status}",
+            // The server's own message decides whether this is a refusal of the `tools` field; §3's wording is
+            // what a schema-refusing server answers with, so the leg reads the body beside the status.
+            let why = format!(
+                "{STEP} call to {model} at {} answered {status}: {}",
                 endpoint.url,
+                sent.body.trim(),
                 status = sent.status
-            ));
+            );
+            // A status that says the field is what a schema-refusing server answers with; §1's own verdict on
+            // the body decides whether that reads as a refusal or as a bad answer.
+            if offered.is_some()
+                && requests == 1
+                && crate::llm_tools_offer::honour_refusal(&endpoint.url, &why, 1)
+            {
+                crate::ui::window::log_line(&tool_loop::refused_log(STEP, &why));
+                requests += 1;
+                let bare = llm_request::body(&model, conversation, mode, None, false)?.to_string();
+                let (_bare_row, bare_reply) = server_leg::call(
+                    tree,
+                    &base,
+                    services::Server::Llm,
+                    &endpoint,
+                    Kind::Chat,
+                    None,
+                    Some(&bare),
+                    cancelled,
+                );
+                return bare_reply
+                    .map(|sent| turn_of(&sent, &mut last_answer))
+                    .map_err(|again| format!("{STEP} call to {model}: {again}"))?;
+            }
+            return Err(why);
         }
-        let reply = llm_request::reply_from(&sent.content_type, &sent.body)
-            .map_err(|why| format!("{STEP}: {why}"))?;
-        // `finish` closes the flow, and `tool_loop` reads it off the TURN, not off the call list — so
-        // the leg says it here when the writer called it. Detected on the call NAMES rather than by
-        // running them, so the closing round is not counted as one that wrote a line.
-        let finishing = reply
-            .tool_calls
-            .iter()
-            .any(|call| call.name == Tool::Finish.name());
-        let answer = assistant_content(&reply);
-        if !answer.is_empty() {
-            last_answer = answer.clone();
-        }
-        Ok(Turn {
-            content: answer,
-            calls: reply.tool_calls,
-            finish: finishing,
-        })
+        turn_of(&sent, &mut last_answer)
     };
 
     // The loop's `call` closure: run one tool through the tools that ALREADY answer these (§3.8), and
@@ -165,12 +238,22 @@ pub fn ask_round(
     let mut used_tools = false;
     let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
         used_tools = true;
+        // The web tools go through the real browser leg (§2); everything else is §3.8's own answers.
+        if let Some(answer) = crate::web_browser::dispatch(STEP, &conf.firefox, asked) {
+            return answer;
+        }
         run_narrate_tool(asked, clips, transcript, narrator, &mut collected)
     };
 
     // The loop's result is not read: the answer was taken at each dial (`last_answer`) and the tool
     // calls at each dispatch (`collected`), so nothing here needs the finished conversation.
-    let _run = tool_loop::run(STEP, messages, &offered, &mut ask, &mut run_tool);
+    let run = tool_loop::run(STEP, messages, &offered, &mut ask, &mut run_tool);
+    // §2 S2/S4's lines reach the user's log: "round i of 8 — the model asked for …" and the
+    // "!!! still calling tools after 8 rounds" refusal are what tells a reader why a step answered nothing,
+    // and they existed only in the returned Run before. Same sink every other headless flow writes to.
+    for line in run.joined().lines() {
+        crate::ui::window::log_line(line);
+    }
 
     // A content answer with no tool calls at all: the prototype's own shape, handed on untouched so
     // `drive`'s forward-only ±0.5 s match is what decides, exactly as for a scripted reply.
