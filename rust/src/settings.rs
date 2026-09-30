@@ -94,6 +94,12 @@ impl Paths {
         self.data_dir.join("applications/ch.bocek.naivepost.desktop")
     }
 
+    /// Whether a dump with this stamp is already there. §7 names the file `hang-*.txt`, and one
+    /// stall must be one file: two dumps in the same second would bury the first.
+    pub fn has_hang_dump(&self, stamp: &str) -> bool {
+        self.hang_path(stamp).exists()
+    }
+
     /// The MIME package declaring the project type (§7).
     pub fn mime_package(&self) -> PathBuf {
         self.data_dir.join("mime/packages/ch.bocek.naivepost.xml")
@@ -781,7 +787,7 @@ pub fn write_hang_dump(
 }
 
 /// How long a component had been unresponsive, printed the way Go prints a duration.
-fn seconds_for(wait: std::time::Duration) -> String {
+pub(crate) fn seconds_for(wait: std::time::Duration) -> String {
     let ms = wait.as_millis();
     if ms % 1000 == 0 {
         format!("{}s", ms / 1000)

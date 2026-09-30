@@ -2288,6 +2288,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
 
     let window = adw::ApplicationWindow::new(app);
     window.set_default_size(1400, 900);
+    // §7's launch lines wait until there is a log to put them in.
+    note_startup(&[]);
 
     // Where the window is and what it has to say: every rule behind a switch lives in shell.rs.
     let shell = Rc::new(RefCell::new(start_shell(page)));
@@ -8669,11 +8671,15 @@ pub fn open_folder(
             // migration runs first, because it reads the applied value the swap consumes.
             let migration = open_project::finish(&applied);
             let remembered = REMEMBERED.with(|list| {
-                open_project::remember(
-                    &mut list.borrow_mut(),
-                    &applied.root,
-                    &open_project::project_file_in(&applied.out),
-                )
+                // §7's state: the pair reaches `llm.conf` through one door, which also records it in
+                // this launch's map. A conf that cannot be read costs the memory, never the open.
+                match crate::settings::from_environment()
+                    .map(|paths| crate::machine_store::persist_project(&paths, &mut list.borrow_mut(), &applied.root, &open_project::project_file_in(&applied.out)))
+                {
+                    Some(Ok(_)) | None => {}
+                    Some(Err(why)) => log_line(&format!("!!! could not remember this project -- {why}")),
+                }
+                open_project::remember(&mut list.borrow_mut(), &applied.root, &open_project::project_file_in(&applied.out))
             });
             // The lines are taken out before the project is moved into the session, so `applied` is
             // not read after that point.
@@ -8791,6 +8797,20 @@ thread_local! {
     /// to …` and the `!!!` refusals have nowhere to be drawn until that row exists, and a test has
     /// to be able to see that they were said at all.
     static LOGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The launch's own log lines (§7's desktop registration), held until a window exists to read them.
+static PENDING_LOGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// §7's launch lines: `main` produces them while there is still no log to write into, so they wait in
+/// [`PENDING_LOGS`] and the first [`build_window`] drains them through [`note_startup`].
+pub fn note_startup(lines: &[String]) {
+    if let Ok(mut pending) = PENDING_LOGS.lock() {
+        pending.extend(lines.iter().cloned());
+    }
+    for line in PENDING_LOGS.lock().map(|mut p| p.drain(..).collect::<Vec<_>>()).unwrap_or_default() {
+        log_line(&line);
+    }
 }
 
 pub(crate) fn log_line(line: &str) {

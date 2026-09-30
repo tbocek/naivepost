@@ -195,6 +195,10 @@ pub fn guarded<T: Send + 'static>(
             Poll::Heartbeat(line) => crate::ui::window::log_line(&line),
             Poll::GaveUp { log, blame } => {
                 crate::ui::window::log_line(&log);
+                // §7's watchdog dump: the give-up is exactly the stall a `hang-*.txt` exists to
+                // record, so it is written here rather than by a second watcher nobody wired up.
+                // Failing to write it changes nothing about the call's ending (principle 8).
+                crate::machine_store::note_hang(&liveness.step, std::time::Duration::from_secs(watch.quiet(now)));
                 // §4's give-up ENDS the call here and now: no wait on the worker, no wait on the server. Dropping the
                 // receiver leaves the abandoned read to finish on its own and drop its own socket.
                 return Err(blame);

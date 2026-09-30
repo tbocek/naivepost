@@ -17,6 +17,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::checks;
+use crate::machine_store;
 use crate::model_list;
 
 /// What a probe hands back for one row: the detail that goes on the ✓, or the reason that goes on ✗.
@@ -106,6 +107,13 @@ thread_local! {
 /// failure ([`checks::TestLog`]).
 struct Dialog {
     window: adw::Window,
+    /// §5's no-Save write: what is on disk, when the next one is due, and where it goes. Built over
+    /// the conf as it stood when the dialog opened, which is also what seeds the boxes.
+    store: RefCell<Option<machine_store::Store>>,
+    /// Wall-clock origin for the 600 ms beat, so `flush`/`touched` get one consistent "now".
+    started: std::time::Instant,
+    /// The dialog's own bookkeeping, so a timer can reach it after `build_owned` returns.
+    this: RefCell<Option<Rc<Dialog>>>,
     entries: RefCell<Vec<(String, gtk::Entry)>>,
     badges: RefCell<Vec<(String, gtk::Label)>>,
     buttons: RefCell<Vec<(String, gtk::Button)>>,
@@ -113,6 +121,8 @@ struct Dialog {
     /// actually served rather than trusting the widget's memory.
     fetched: RefCell<Vec<String>>,
     list: gtk::DropDown,
+    /// Set while a save timer is waiting, so a burst of keystrokes arms one timeout, not fifty.
+    save_armed: Rc<std::cell::Cell<bool>>,
     log_view: gtk::TextView,
     log_expander: gtk::Expander,
     test_log: RefCell<checks::TestLog>,
@@ -120,6 +130,106 @@ struct Dialog {
 }
 
 impl Dialog {
+    /// The moment the dialog opened, as the beat measures it.
+    fn now(&self) -> std::time::Duration {
+        self.started.elapsed()
+    }
+
+    /// Every box's key and current text — the whole store as the user sees it, which is what a save
+    /// writes (§5 has no per-row save: the file always holds all of the boxes).
+    fn typed_all(&self) -> Vec<(String, String)> {
+        self.entries
+            .borrow()
+            .iter()
+            .map(|(key, entry)| (key.clone(), entry.text().to_string()))
+            .collect()
+    }
+
+    /// Put the conf's own values into the boxes, so the dialog shows what is on disk rather than
+    /// placeholders. A key with no conf field (Vision) keeps its placeholder.
+    fn seed_entries(&self) {
+        let seeded: Vec<(String, String)> = {
+            let store = self.store.borrow();
+            match store.as_ref() {
+                Some(store) => self
+                    .entries
+                    .borrow()
+                    .iter()
+                    .filter_map(|(key, _)| {
+                        store.value_for(key).map(|value| (key.clone(), value.to_string()))
+                    })
+                    .collect(),
+                None => Vec::new(),
+            }
+        };
+        for (key, value) in seeded {
+            if let Some(entry) = self.entries.borrow().iter().find(|(row, _)| *row == key) {
+                entry.1.set_text(&value);
+            }
+        }
+    }
+
+    /// A keystroke anywhere: arm the beat, and make sure a timer is waiting to land it.
+    fn touched(self: &Rc<Self>) {
+        let owed = {
+            let mut store = self.store.borrow_mut();
+            match store.as_mut() {
+                Some(store) => {
+                    store.touched(self.now());
+                    store.due_at()
+                }
+                None => return,
+            }
+        };
+        if owed.is_none() || self.save_armed.get() {
+            return;
+        }
+        self.save_armed.set(true);
+        let owned = Rc::clone(&self.this.borrow().clone().expect("the dialog holds itself while open"));
+        glib::timeout_add_local(checks::CONF_SAVE_WAIT, move || {
+            owned.land_save()
+        });
+    }
+
+    /// The timer's job: write if the beat elapsed, say so in both logs, and stop until the next key.
+    fn land_save(self: &Rc<Self>) -> glib::ControlFlow {
+        self.save_armed.set(false);
+        let line = {
+            let mut store = self.store.borrow_mut();
+            match store.as_mut() {
+                Some(store) => store.flush(self.now(), &self.typed_all()),
+                None => return glib::ControlFlow::Break,
+            }
+        };
+        if let Ok(Some(line)) = line {
+            self.note(&line);
+        }
+        // One shot: a later keystroke arms a fresh beat, so the file is written once typing stops.
+        glib::ControlFlow::Break
+    }
+
+    /// Closing the dialog: land whatever is still owed, then forget the store.
+    fn close_store(&self) {
+        let line = {
+            let mut store = self.store.borrow_mut();
+            match store.take() {
+                Some(mut store) => store.on_close(&self.typed_all()),
+                None => return,
+            }
+        };
+        if let Ok(Some(line)) = line {
+            self.note(&line);
+        }
+    }
+
+    /// One line into the dialog's log pane and the main log, the way a Test verdict reports (§5).
+    fn note(&self, line: &str) {
+        let buffer = self.log_view.buffer();
+        let mut end = buffer.end_iter();
+        buffer.insert(&mut end, &format!("settings: {line}\n"));
+        crate::ui::window::log_line(&format!("settings: {line}"));
+    }
+
     /// What the box named `entry-<key>` holds right now — the value the press tests.
     fn typed(&self, key: &str) -> String {
         self.entries
@@ -525,9 +635,33 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         log_expander,
         test_log: RefCell::new(checks::TestLog::new()),
         provider,
+        // §5's no-Save write, over the conf as it stands now. No config folder at all (a bare test
+        // box with no XDG_HOME) leaves it `None`: the dialog still tests, it just has nowhere to save.
+        store: RefCell::new(crate::settings::from_environment().and_then(|paths| machine_store::Store::open(&paths).ok())),
+        started: std::time::Instant::now(),
+        save_armed: Rc::new(std::cell::Cell::new(false)),
+        this: RefCell::new(None),
     });
+    *dialog.this.borrow_mut() = Some(Rc::clone(&dialog));
+    // The Test wiring is what fills `entries`, so the save wiring has to come after it: a box created
+    // before this point would be typed into with nothing listening.
     wire_buttons(&dialog);
+    // The boxes show what is on disk, and every keystroke arms the 600 ms beat that writes it back.
+    dialog.seed_entries();
+    wire_entries_to_store(&dialog);
     dialog
+}
+
+/// Every value box reports its keystrokes to the store (§5: written 600 ms after the last one).
+fn wire_entries_to_store(dialog: &Rc<Dialog>) {
+    for (key, entry) in dialog.entries.borrow().iter() {
+        let owned = Rc::clone(dialog);
+        let key = key.clone();
+        entry.connect_changed(move |_| {
+            let _ = &key;
+            owned.touched();
+        });
+    }
 }
 /// Each `test-<key>-button` gets the row whose entry shares its key.
 fn wire_buttons(dialog: &Rc<Dialog>) {
@@ -613,6 +747,12 @@ pub fn no_probe() -> Provider {
 /// Open the dialog over `parent`, answering from `provider`.
 pub fn open_with(parent: &adw::ApplicationWindow, provider: Provider) -> adw::Window {
     let dialog = build_owned(Some(parent.upcast_ref()), provider);
+    // Closing lands whatever the last keystroke still owes: "settings saved to <path>", again on close.
+    let owned = Rc::clone(&dialog);
+    dialog.window.connect_close_request(move |_| {
+        owned.close_store();
+        glib::Propagation::Proceed
+    });
     OPEN.with(|open| open.borrow_mut().push(Rc::clone(&dialog)));
     dialog.window.present();
     dialog.window.clone()

@@ -72,17 +72,13 @@ fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
     // The environment is read here and handed to settings.rs as strings, which is how that module
     // keeps its own tests off the real `$HOME`. No config folder at all means no settings.
     let paths = settings_paths();
-    // §6's "legacy `<root>/llm.conf`, migrated once": a machine that has been cutting for months
-    // keeps its endpoints without retyping them. A migration that cannot be done must not cost the
-    // launch either, which is the same rule the read below states for an unreadable file.
-    if let Some(paths) = paths.as_ref() {
-        let _ = naivepost::settings::migrate_legacy(paths, &root);
-    }
-    // A settings file that cannot be read must not cost the user their session: the fallback opens
-    // the working copy like any other machine's, and the broken file stays for them to look at.
+    // §7's launch job, in one call: take over a legacy `<root>/llm.conf`, read the conf, and when it
+    // holds no `PROJECT_*` pairs recover them from the legacy `settings.json` and write them back so
+    // that file is never asked about again. A settings file that cannot be read must not cost the
+    // user their session: the fallback opens the working copy like any other machine's.
     let conf = paths
         .as_ref()
-        .and_then(|paths| naivepost::settings::read(paths).ok())
+        .and_then(|paths| naivepost::machine_store::open_and_recover(paths, &root).ok())
         .unwrap_or_default();
 
     let project = match naivepost::startup::decide(&root, &conf, handed) {
@@ -103,6 +99,22 @@ fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
     };
     // "" is Prepare, the page a session always starts on (§1).
     naivepost::ui::build_window(app, &project, "").present();
+    // §7's other launch job: register with the desktop unless this run is a build cache or a Flatpak,
+    // then tell the MIME and desktop databases what changed. The lines reach the window's log through
+    // `note_startup`, which holds them until the first window is built — there is no log before one.
+    if let (Some(paths), Some(exe)) = (paths.as_ref(), std::env::current_exe().ok()) {
+        let mut databases = naivepost::icons::Databases::new();
+        let (log, commands) = naivepost::machine_store::register_with_desktop(
+            paths,
+            &exe,
+            naivepost::machine_store::inside_flatpak(),
+            naivepost::machine_store::in_build_cache(&exe),
+            &mut databases,
+        );
+        naivepost::ui::window::note_startup(
+            &log.into_iter().chain(naivepost::machine_store::run_refresh(&commands)).collect::<Vec<_>>(),
+        );
+    }
 }
 
 /// Where this machine keeps `llm.conf`, or `None` when there is nowhere to keep anything.
