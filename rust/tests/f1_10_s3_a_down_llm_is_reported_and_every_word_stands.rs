@@ -28,16 +28,15 @@ fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
         lines.iter().any(|line| line.contains("nothing removed there")),
         "the join ends with nothing removed: {lines:?}"
     );
-    // §3 (F6.2) gives a call that died in transit its one short retry, so the wire is now dialled THREE times for
-    // this seam (the first ask and its seam_retries re-ask, one of them retried after 2 s) -- three only: the
-    // ladder is for a mid-call death (§3's own line says "went away mid-call") and this endpoint has never
-    // answered, so no 5 s-to-4 min wait is spent on a box nobody started. `seam_retries` still counts refusals of
-    // ANSWERS and spends none of its retries on a dead wire, which is what keeps this bounded.
+    // §3 (F6.2) gives this branch ONE retry after 2 s, so the wire is dialled TWICE for this seam and never a
+    // third: a server this app has never had an answer from is not "gone away mid-call", so no rung of the 5 s-to-4
+    // min ladder is spent on a box nobody started. `seam_retries` counts refusals of ANSWERS and spends none of its
+    // retries on a dead wire, which is what keeps this bounded.
     let rows = read(&fixture.tree.requests_tsv())
         .lines()
         .filter(|line| line.contains("chat"))
         .count();
-    assert_eq!(rows, 3, "two asks of the seam, one of them retried once after 2 s -- no ladder, no storm: {rows}");
+    assert_eq!(rows, 2, "§3's short patience is one retry after 2 s: two asks, no ladder, no storm: {rows}");
     let text = read(&fixture.tree.final_txt());
     assert!(
         text.contains("today") && text.contains("now"),

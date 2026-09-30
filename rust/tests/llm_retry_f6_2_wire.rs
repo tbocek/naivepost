@@ -428,6 +428,30 @@ fn f6_2_s2_a_400_is_asked_again_once_after_2_s_then_stops() {
     assert_eq!(asked[0], asked[1], "the retry sent the identical body");
 }
 
+/// The count §3's short patience allows, counted where it can be counted exactly: a server that never answers is
+/// dialled TWICE — the ask and its one retry after 2 s — and never a third. `tests/f1_10_s3_a_down_llm_is_reported_and_every_word_stands.rs`
+/// checks the same bound through `requests.tsv` from a whole flow; this pins it at the door itself, with no caller
+/// counters in the way.
+#[test]
+fn f6_2_s2_a_down_server_is_asked_exactly_twice_over_the_wire() {
+    // A live listener that answers NOTHING: every attempt sends its request and gets an eof, so the number of
+    // bodies on the wire IS the number of asks (a dead port would deliver none and prove nothing).
+    let llm = FakeLlm::start(vec![Reply::died()]);
+    let scene = fixture("twice", &llm.url());
+    // No mid-call history for this fresh port: §3 files it as a box nobody started, which is the short-patience
+    // branch rather than the ladder.
+    let sink = Sink::default();
+    let waits = Waits::default();
+    let outcome = ask(&scene, &scene.endpoint, "q", &sink, &waits.recorder());
+    let why = outcome.expect_err("a server that dies on every ask leaves the step without an answer");
+    assert_eq!(waits.seconds(), vec![2], "one wait of 2 s, and no ladder: {:?}", waits.seconds());
+    assert_eq!(sink.short_lines().len(), 1, "the short retry is said once: {:?}", sink.short_lines());
+    assert!(sink.gone_lines().is_empty(), "no death line for the short branch: {:?}", sink.gone_lines());
+    assert!(why.contains("not answering"), "the reason names the server: {why}");
+    let asked = llm.all(std::time::Duration::from_millis(800));
+    assert_eq!(asked.len(), 2, "two asks over the wire, never a third: {}", asked.len());
+}
+
 // ---- s3: the new rule — a 5xx naming a device ----------------------------------------------------
 
 /// §3's NEW rule, asserted through the door rather than only through the classifier: a 5xx whose body names a
