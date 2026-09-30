@@ -44,7 +44,8 @@ pub struct Cut {
     pub folds: Vec<[f64; 2]>,
     /// Legacy whole-cut `sound`: one recording the cut was heard on, before each scene
     /// said for itself. Read by [`Cut::migrate_sound`], and public only so a test can
-    /// hand it a file's contents — `save` never writes it (§3).
+    /// hand it a file's contents — `save` never writes it, because saving migrates it
+    /// into the scenes' `quiet` lists first (§3).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sound: Option<String>,
 }
@@ -441,16 +442,51 @@ pub fn load(tree: &layout::Tree) -> Result<Cut, String> {
         })
 }
 
-/// The one function that writes `cut.json` (§3): every change to the cut lands here,
-/// so there is no second writer whose shape could disagree with this one.
+/// The lane names this cut itself knows, in the order it lists them: its own `lanes`, and nothing else.
+/// [`Cut::migrate_sound`] needs "every recording there is" and §3 gives the writer no other source than
+/// the file's own contents. The cameras are deliberately NOT among them: a footage scene's own camera is
+/// the sound running under it, so naming `cam0` would silence the very lane the whole-cut `sound` was
+/// heard on whenever an old file spelled that hearing by camera — and the page's row model is not
+/// available at a save anyway.
+pub fn lane_names(cut: &Cut) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for lane in &cut.lanes {
+        add_lane_name(&mut names, &lane.name);
+    }
+    names
+}
+
+fn add_lane_name(names: &mut Vec<String>, name: &str) {
+    if !name.is_empty() && !names.iter().any(|have| have == name) {
+        names.push(name.to_string());
+    }
+}
+
+/// The one function that writes `cut.json` (§3): every change to the cut lands here, so there is no
+/// second writer whose shape could disagree with this one — and because it is the one writer, it is
+/// also where §3's first-save migration happens: a legacy whole-cut `sound` is spread into per-scene
+/// `quiet` here, on the way out, so the key is read once and never written again. [`load`] stays
+/// lossless about it (it migrates only the `fx` spellings), which is what makes "on first save" mean
+/// something: reading an old file changes nothing until the project is actually saved.
+///
+/// The caller's `Cut` is left as it was: the migration belongs to the FILE, and a page that keeps
+/// working after a save must not find its segments rewritten by a write it asked for. What the
+/// migration has to say goes to the log, because silently folding a hearing decision into scene lists
+/// is exactly the kind of change §0 asks to be stated.
 pub fn save(cut: &Cut, tree: &layout::Tree) -> Result<(), String> {
-    let text = serde_json::to_string_pretty(cut).map_err(|err| err.to_string())?;
+    let mut migrated = cut.clone();
+    let note = migrated.migrate_sound(&lane_names(&migrated));
+    let text = serde_json::to_string_pretty(&migrated).map_err(|err| err.to_string())?;
     // The path comes from layout, so there is one spelling of it; only its prefix
     // inside the project is taken back off, which is what lets write_file create the
     // directory and set §1's 0644.
     let file = tree.cut_json();
     let rel = file.strip_prefix(tree.dir()).unwrap_or(Path::new("cut/cut.json"));
-    tree.write_file(rel, text.as_bytes())
+    tree.write_file(rel, text.as_bytes())?;
+    if let Some(said) = note {
+        crate::ui::window::log_line(&said);
+    }
+    Ok(())
 }
 
 /// §7 (`its existence unlocks Narrate and Produce`): the gate is the file being there, not its contents being
