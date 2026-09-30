@@ -834,6 +834,8 @@ fn check_press_writes_the_upload_text(root: &Path) {
     seed_page(&window);
 
     let button = ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
+    // The wire this check fires is the run bar's own ▶, found by its stable name and nothing else.
+    assert!(ui::line_step_button(&window, "play-button").is_some(), "the run bar drew its play-button");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
 
