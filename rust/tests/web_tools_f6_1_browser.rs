@@ -6,6 +6,15 @@
 //! executable written into the scenario folder, so a real `Command::new` runs, prints a rendered DOM, and exits.
 //! No network is involved: DuckDuckGo is not reachable from this container, so hit extraction is checked against
 //! a canned result-page DOM rather than a live query.
+//!
+//! # Why one scenario at a time
+//!
+//! Pointing the settings at a stub means re-pointing PROCESS-WIDE state — `cwd`, `XDG_CONFIG_HOME`,
+//! `XDG_DATA_HOME` and the settings file every later read goes through — so two checks in this binary may not be
+//! inside their scenarios at the same moment: while one wrote its stub name into `FIREFOX`, another's default
+//! `Conf` would overwrite it, and the first would silently dial the machine's own firefox instead. Hence
+//! [`fixture`]'s scenario guard, the same shape `tests/wire.rs` needs for the same reason (it cannot even be a
+//! standalone binary because of it).
 
 use std::path::{Path, PathBuf};
 
@@ -59,10 +68,41 @@ fn point_at(browser: &Path) {
     settings::save(&paths, &conf).expect("settings written");
 }
 
-/// The scenario root: settings + data under one temp folder, cwd pinned there. One scenario per binary would be
-/// required if two tests shared a binary and each re-pointed the env, so these tests each build their own root
-/// and run serially (`--test-threads=1` in the verify recipe, as the other wire suites need).
-fn fixture(tag: &str) -> PathBuf {
+/// Held while a scenario re-points the process-wide settings env. Poisoned means a check panicked mid-scenario;
+/// the env is still ours to set, so the guard is taken anyway rather than unwrapping into a second panic.
+fn scenario_lock() -> &'static std::sync::Mutex<()> {
+    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
+}
+
+/// A scenario: the temp root plus the guard that keeps this the only test inside the process-wide env. Derefs to
+/// the root so a caller writes `write_stub(&root, ..)` and never has to know about the guard.
+struct Scenario {
+    root: PathBuf,
+    /// Dropped last, which is why the folder goes in `Drop`: the removal must happen while no other test can be
+    /// writing its own settings into the same place.
+    _scenario: std::sync::MutexGuard<'static, ()>,
+}
+
+impl std::ops::Deref for Scenario {
+    type Target = std::path::Path;
+    fn deref(&self) -> &std::path::Path {
+        &self.root
+    }
+}
+
+impl Drop for Scenario {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+/// The scenario root: settings + data under one temp folder, cwd pinned there, exclusive until the returned
+/// scenario is dropped — see the module's "why one scenario at a time".
+fn fixture(tag: &str) -> Scenario {
+    let scenario = scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-f61browser-{tag}"));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("scenario root");
@@ -73,7 +113,7 @@ fn fixture(tag: &str) -> PathBuf {
     }
     let paths = settings::from_environment().expect("settings from the pinned env");
     settings::save(&paths, &Conf::default()).expect("settings written");
-    root
+    Scenario { root, _scenario: scenario }
 }
 
 /// A DuckDuckGo-shaped result page: `<article>` blocks, each with an `<h2><a href>` title and a snippet line.
@@ -293,6 +333,32 @@ fn f6_1_web_s5_a_step_without_a_browser_drops_the_tools_and_says_why_once() {
     let line = web_tools::unavailable_log("narrate", "/no/such/firefox-either", false, found, &reason)
         .expect("the reason is said");
     assert!(line.starts_with(">>> narrate: no web search"), "{line}");
+}
+
+/// The setting is honoured, not merely consulted: a named binary that answers is what the leg uses, with no
+/// fallback to the firefox on this machine. That fallback is the whole failure mode this pins — a lost settings
+/// value does not announce itself, it quietly sends the call to a real browser, which here means a 45 s wait and
+/// a timeout instead of the page the test wrote.
+#[test]
+fn f6_1_web_s5_a_named_browser_is_the_one_that_answers() {
+    let root = fixture("named");
+    let marker = "the stub browser answered with this marker";
+    let stub = write_stub(&root, &long_page(marker), 0);
+    point_at(&stub);
+    let conf = settings::read(&settings::from_environment().unwrap()).expect("the settings the box holds");
+    assert_eq!(
+        conf.firefox,
+        stub.to_string_lossy(),
+        "the settings file really names the stub before anything is asked of it"
+    );
+
+    let fetch = web_browser::read_page_for(&conf.firefox, web_browser::read_budget());
+    let page = fetch("https://named.example/").expect("the named browser answered");
+    assert!(page.contains(marker), "the stub's own page came back: {page}");
+    // A system firefox here reaches nothing and gives an error or an empty document; either way the marker could
+    // not appear in what it printed, so this is the difference between the two browsers having answered.
+    assert!(!page.trim().is_empty(), "an answer, not an empty document");
+    assert!(launches(&root) >= 1, "and it was the stub that ran: {}", launches(&root));
 }
 
 /// The old DuckDuckGo markup (`result__snippet`, no `<article>`) is still read: engines change this without asking.
