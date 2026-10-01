@@ -397,7 +397,7 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
 
     // Five columns: section | label | value | badge | Test. The section label appears once per
     // group, on its first row, as the inventory draws it.
-    let mut add = |section: Option<&str>,
+    let add = |section: Option<&str>,
                   label: &str,
                   entry_key: &str,
                   placeholder: &str,

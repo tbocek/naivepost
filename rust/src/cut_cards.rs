@@ -698,7 +698,6 @@ fn number(v: f64, additive: bool) -> String {
     // not to this animation — so the caller adds it. The flag is deliberately not applied to the number here; doing
     // so would add the base twice on the second frame. Kept as an argument so both branches format identically and a
     // reader cannot mistake the omission for an oversight.
-    debug_assert!(additive || !additive);
     if v == v.trunc() {
         return format!("{}", v as i64);
     }

@@ -515,7 +515,7 @@ fn f5_2_s7_translation_is_asked_after_every_encode() {
         .position(|l| l.contains("translating"))
         .expect("S7: the translation was asked for");
     assert!(
-        last_encode < steps.len() && first_translate >= 0,
+        last_encode < steps.len(),
         "both halves of the order exist"
     );
     // The translation is logged after every encode command was logged too, so the encoder never idles

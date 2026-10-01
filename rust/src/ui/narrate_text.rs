@@ -18,12 +18,6 @@ use crate::ui::narrate_page;
 use adw::prelude::*;
 use gtk4 as gtk;
 
-/// §F4.7 (**Text**): "autosaved 400 ms after typing". The beat itself is [`crate::shell::NARRATION_AUTOSAVE`]
-/// (catalogued as `narrate.autosaveMs`); this only converts it for the timer, so one number owns the rule.
-fn autosave_ms() -> u64 {
-    crate::shell::NARRATION_AUTOSAVE.as_millis() as u64
-}
-
 /// Whether this window owes a narration write, read off the newest shell (the same slot
 /// `window::mark_narration_owed` raises). The autosave, the close and Produce's read all answer to it.
 fn write_owed() -> bool {
@@ -117,18 +111,10 @@ pub fn note_typing(window: &adw::ApplicationWindow, index: usize, typed: &str) -
     }
     let said = apply_box(window, index, typed);
     crate::ui::window::mark_narration_owed(window);
-    // The beat is re-armed per keystroke: each new timeout replaces the wait, and the one that survives a
-    // pause is the one that writes. No repaint in the timer, for the reason stated in the module header.
-    glib::timeout_add_local(
-        std::time::Duration::from_millis(autosave_ms()),
-        {
-            let w = window.clone();
-            move || {
-                flush_owed(&w);
-                glib::ControlFlow::Break
-            }
-        },
-    );
+    // The beat is re-armed by pushing the shell's own deadline out (`Pending::touched`, which
+    // `mark_narration_owed` just did), so one timer walks and each keystroke only moves when it may
+    // write. No repaint in the timer, for the reason stated in the module header.
+    crate::ui::shell_beats::arm_autosave(window);
     said
 }
 

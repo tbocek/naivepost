@@ -3156,6 +3156,7 @@ fn paint_progress(
     log: &gtk::Expander,
     log_view: &gtk::TextView,
     queue: &runqueue::Queue,
+    line: crate::ui::shell_beats::StatusLine<'_>,
     expanded: bool,
 ) {
     let (_text, tip) = queue.text_and_tip();
@@ -3164,6 +3165,8 @@ fn paint_progress(
     if !tip.is_empty() {
         progress.set_tooltip_text(Some(&tip));
     }
+    // §2: the bar draws no text -- the tracks' joined line goes to the status line.
+    crate::ui::shell_beats::status_from_queue(line.status, queue, line.owned);
     log.set_expanded(expanded);
     if expanded {
         let mut body = String::new();
@@ -3433,6 +3436,8 @@ fn wire_play(
                 run::step(shell.borrow().page),
                 run::snapshot_sources(&project),
             );
+            // §2: while nothing is countable the bar pulses; it stops itself when a track reports.
+            crate::ui::shell_beats::arm_pulse(&progress, &bar, &queue);
             // F0.5 S2/S3: the step's own work is walked under the bookkeeping, its checkpoint asked
             // between every task; rules live in `run_stages`, this hands over the live session.
             let asked = PLAY_SESSION.with(|s| s.borrow().last().map(|h| h.borrow().clone()).unwrap_or_else(|| project.clone()));
@@ -3453,10 +3458,8 @@ fn wire_play(
         );
         status.set_text(&bar.borrow().status);
         paint_progress(
-            &progress,
-            &log,
-            &log_view,
-            &queue.borrow(),
+            &progress, &log, &log_view, &queue.borrow(),
+            crate::ui::shell_beats::StatusLine { status: &status, owned: false }, // this press owns the line
             bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
         );
         // Last write wins on the label: F1.12's refusal is why ▶ did not do what it was pressed for,
@@ -3545,6 +3548,8 @@ fn wire_stop(
         crate::cancel_leg::report_abandoned(std::time::Duration::from_millis(200));
         // S3's kill: drain-and-signal, so nothing survives the press nor stays listed to be killed twice.
         crate::stop_legs::stop_registered(&mut procs.borrow_mut());
+        // §2: the pulse belongs to the run, so it ends with the run rather than outliving it.
+        crate::ui::shell_beats::stop_pulse();
         // Repaint both: stopping a run changes ▶'s face as well as ⏹'s sensitivity.
         paint_run_bar(
             &play,
@@ -3559,10 +3564,8 @@ fn wire_stop(
             status.set_text(stopped.status());
         }
         paint_progress(
-            &progress,
-            &log,
-            &log_view,
-            &queue.borrow(),
+            &progress, &log, &log_view, &queue.borrow(),
+            crate::ui::shell_beats::StatusLine { status: &status, owned: false }, // nothing repaints over "stopping…"
             bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
         );
     });
@@ -3632,7 +3635,13 @@ fn wire_lucky(
             run::step(shell.borrow().page),
             run::snapshot_sources(&project),
         );
-        paint_progress(&progress, &log, &log_view, &queue.borrow(), true);
+        paint_progress(
+            &progress, &log, &log_view, &queue.borrow(),
+            crate::ui::shell_beats::StatusLine { status: &status, owned: false },
+            true,
+        );
+        // §2: with nothing countable yet (a model thinking) the bar pulses until a track reports.
+        crate::ui::shell_beats::arm_pulse(&progress, &bar, &queue);
 
         // S2: the gears turn while the chain runs. Animation itself is cosmetic; what matters is that
         // the button cannot be pressed a second time mid-chain, which S1 would also refuse.
@@ -3689,13 +3698,6 @@ fn wire_lucky(
         queue.borrow_mut().reset();
         button.set_sensitive(true);
         button.remove_css_class("lucky-running");
-        paint_progress(
-            &progress,
-            &log,
-            &log_view,
-            &queue.borrow(),
-            log.is_expanded(),
-        );
         let _ = procs.borrow();
     });
 }
@@ -4534,7 +4536,7 @@ const TRACK_IMPORT: usize = 0;
 thread_local! {
     /// The run bar `build_window` created, published for the same reason as [`SESSION`]: so the
     /// seam in [`open_from`] can reach the copy this window actually uses.
-    static WINDOW_BAR: std::cell::RefCell<Vec<Rc<std::cell::RefCell<run::RunBar>>>> =
+    pub(crate) static WINDOW_BAR: std::cell::RefCell<Vec<Rc<std::cell::RefCell<run::RunBar>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 

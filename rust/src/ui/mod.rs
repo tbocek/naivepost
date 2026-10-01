@@ -2,6 +2,9 @@
 /// `cache/waves`. Split out of `window.rs`, at its size budget.
 pub mod wave_snap;
 pub mod settings;
+/// F0.1 §S2/§S4 and §2 — the narration autosave timer, the bar's idle pulse and the run line that goes
+/// to the status row. Split out of `window.rs`, which is at its size budget.
+pub mod shell_beats;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_page;
 /// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
@@ -70,7 +73,12 @@ pub use settings::settings_button;
 pub use settings::test_button;
 /// F0.7 S5 — the policy form and the two ways into it (the run bar's ⚙ and each tab's ⓘ).
 pub use window::run_queue;
+pub use shell_beats::run_bar;
 pub use window::close_policy_forms;
+// The shell's own seams and the beats `shell_beats` stands: a test drives these rather than reaching for a
+// private flag, which is what makes the autosave and the pulse observable from outside `ui`. The two whose
+// name says `_for_test` are read by a check only; every other rule here runs inside the program's own timers.
+pub use shell_beats::{advance_clock_for_test, needs_timer, should_pulse};
 pub use window::open_policy_form;
 pub use window::forget_policy_form;
 pub use window::derive_policy;

@@ -219,33 +219,32 @@ impl Chain {
             }
         }
 
-        // Walk forward to the first step that is neither skipped nor already dealt with.
-        loop {
-            let Some((page, name)) = self.pending.first().copied() else {
-                return self.end("done");
-            };
-            if page == Page::Narrate && self.narration_off {
-                self.pending.remove(0);
-                // The sentence comes from F4.8's owner, not from this module's const: one rule, one
-                // wording. `NARRATE_SKIPPED` is kept as the drift check the branch itself asserts.
-                let owned = crate::narrate_off::skips(run::Step::Narrate, true)
-                    .unwrap_or_else(|| NARRATE_SKIPPED.to_string());
-                assert_eq!(owned, NARRATE_SKIPPED, "the skip line and narrate_off's must be one string");
-                return Advance::Skipped { line: owned };
-            }
-            if page == Page::Cut && self.hand_edits {
-                self.pending.remove(0);
-                return Advance::Skipped {
-                    line: CUT_SKIPPED.to_string(),
-                };
-            }
-            // Hand it over. It leaves `pending` here and lives in `running` until its outcome lands,
-            // so "left" never counts a step that is already under way.
+        // Walk to the first step that is neither skipped nor already dealt with. At most one skip can
+        // be pending at a time (each branch returns), so this reads one step rather than looping.
+        let Some((page, name)) = self.pending.first().copied() else {
+            return self.end("done");
+        };
+        if page == Page::Narrate && self.narration_off {
             self.pending.remove(0);
-            self.running = Some(name);
-            self.last_reported = Some(name);
-            return Advance::Run { page, name };
+            // The sentence comes from F4.8's owner, not from this module's const: one rule, one
+            // wording. `NARRATE_SKIPPED` is kept as the drift check the branch itself asserts.
+            let owned = crate::narrate_off::skips(run::Step::Narrate, true)
+                .unwrap_or_else(|| NARRATE_SKIPPED.to_string());
+            assert_eq!(owned, NARRATE_SKIPPED, "the skip line and narrate_off's must be one string");
+            return Advance::Skipped { line: owned };
         }
+        if page == Page::Cut && self.hand_edits {
+            self.pending.remove(0);
+            return Advance::Skipped {
+                line: CUT_SKIPPED.to_string(),
+            };
+        }
+        // Hand it over. It leaves `pending` here and lives in `running` until its outcome lands,
+        // so "left" never counts a step that is already under way.
+        self.pending.remove(0);
+        self.running = Some(name);
+        self.last_reported = Some(name);
+        Advance::Run { page, name }
     }
 
     /// S6: the end line and its status mirror. Which of the three forms is chosen by why the chain
