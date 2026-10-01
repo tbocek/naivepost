@@ -8,6 +8,8 @@ pub mod shell_beats;
 /// F0.4 §S2/§S6 — the driver that feeds [`crate::lucky`]'s chain real outcomes, and the CSS rule that
 /// makes the gears turn. Split out of `window.rs`, which is past its size budget.
 pub mod lucky_run;
+/// F0.5 S4 — the one door a run closes through, for every way a run ends.
+pub mod run_close;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_page;
 /// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the

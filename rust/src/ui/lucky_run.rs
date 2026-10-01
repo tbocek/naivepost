@@ -112,12 +112,23 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
     button.set_sensitive(false);
     button.add_css_class(RUNNING_CLASS);
 
-    // The first hand-over asks the chain for its next step without reporting an outcome; `next` with a
-    // Declined would close a step that never ran, so the chain answers this one itself.
     let mut advance = chain.next_first();
+    // Whether a step has been handed over and not yet closed: the first one opens the press's run, and
+    // every later hand-over closes the previous one (§S4's "moves on"). `closed` says whether the end
+    // line already did the last close, so the press never closes twice.
+    let mut started_step = false;
+    let mut closed = false;
     loop {
         match advance {
             Advance::Run { page, name } => {
+                // §S4: the step that just finished closes its own bookkeeping and MOVES ON to this one,
+                // so `end_run` is handed the page about to run -- the only place in the program where a
+                // run has somewhere to move on to. The unload goes over after the move, because the next
+                // step usually wants the same models back.
+                if started_step {
+                    crate::ui::run_close::close_chain_step(handles, Some(page));
+                }
+                started_step = true;
                 // F0.1's synchronous move: the step's work belongs to the widgets of its own page.
                 *handles.guard.borrow_mut() = true;
                 handles.stack.set_visible_child_name(page.label());
@@ -141,6 +152,7 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
                 window::log_line(&line);
                 handles.status.set_text(&short);
                 close_run(handles);
+                closed = true;
                 break;
             }
             Advance::Idle => break,
@@ -156,11 +168,11 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
         }
     }
 
-    // The chain is over either way: give the button back and close whatever bookkeeping is still open.
-    let ended = runqueue::end_run(&mut handles.bar.borrow_mut(), None);
-    // §1: every run ends with `unload_all_models`, quietly and off-thread.
-    crate::settings_probe::fire_unload(ended.audio_unload);
-    handles.queue.borrow_mut().reset();
+    // The chain is over either way: give the button back. The last step's bookkeeping is closed here
+    // unless the end line already closed it (`close_run`), which is why `press` tracks the close.
+    if !closed {
+        crate::ui::run_close::close_chain_step(handles, None);
+    }
     button.set_sensitive(true);
     button.remove_css_class(RUNNING_CLASS);
 }
@@ -173,8 +185,7 @@ fn bar_wants_stop(handles: &Handles) -> bool {
 
 /// Close the run's bookkeeping when the chain ends early (an end line landed mid-walk).
 fn close_run(handles: &Handles) {
-    runqueue::end_run(&mut handles.bar.borrow_mut(), None);
-    handles.queue.borrow_mut().reset();
+    crate::ui::run_close::close_chain_step(handles, None);
 }
 
 /// Is this session's `final.txt` newer than its marks? Same two files and same comparison §F1.12 uses;

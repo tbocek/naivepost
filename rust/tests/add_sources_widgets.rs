@@ -71,6 +71,17 @@ fn check_refused_during_a_run(app: &adw::Application) {
     window.present();
 
     ui::play_button(&window).expect("the run bar has a ▶").emit_clicked();
+    // F0.5 S4 closes what a single-step press opens, so the busy state is stood up as an open run --
+    // `start_run`, the call ▶ itself makes before it walks the step.
+    if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
+        naivepost::runqueue::start_run(
+            &mut bar.borrow_mut(),
+            &mut queue.borrow_mut(),
+            &mut naivepost::exchanges::RunLog::new(),
+            naivepost::run::Step::Prepare,
+            naivepost::run::snapshot_sources(&model),
+        );
+    }
     // ▶ is one button that becomes ⏸ (F0.2): the press above started the run and had nothing to say,
     // so what this asserts is the Add button's own sentence, not the run bar's.
     ui::add_sources_button(&window)
@@ -175,8 +186,19 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
     assert_eq!(ui::state(&window).status, "already in the session \u{2014} nothing added");
     assert_eq!(ui::session_sources(&window), before, "a repeat pick adds nothing");
 
-    // S0 on this same path: with a run on, the seam refuses before any byte moves.
+    // S0 on this same path: with a run on, the seam refuses before any byte moves. F0.5 S4 closes what
+    // a single-step ▶ opens, so the busy state is stood up as an open run -- `start_run`, the call ▶
+    // itself makes before it walks the step.
     ui::play_button(&window).expect("the run bar has a ▶").emit_clicked();
+    if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
+        naivepost::runqueue::start_run(
+            &mut bar.borrow_mut(),
+            &mut queue.borrow_mut(),
+            &mut naivepost::exchanges::RunLog::new(),
+            naivepost::run::Step::Prepare,
+            naivepost::run::snapshot_sources(&model),
+        );
+    }
     assert!(!ui::add_files(&window, &[cam]), "a copy is a run of its own, so it waits");
     assert_eq!(ui::state(&window).status, add_sources::RUN_REFUSAL);
     assert_eq!(ui::session_sources(&window), before, "refused before touching the session");

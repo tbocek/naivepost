@@ -137,6 +137,14 @@ fn check_the_pulse_belongs_to_the_press(app: &adw::Application) {
     assert!(!ui::shell_beats::pulse_standing_for_test(), "an idle bar holds no pulse timer");
 
     ui::play_button(&window).expect("the run bar has a \u{25b6}").emit_by_name::<()>("clicked", &[]);
+    // F0.5 S4 closes a single-step press's own bookkeeping, and headless the whole step walks inside
+    // the click, so what stands here is the open run ▶ itself opens -- `start_run`, then the same call
+    // the shell makes at that moment: an armed pulse is that open run's doing, not the loop's.
+    let queue = ui::run_queue(&window).expect("the run bar carries a queue");
+    open_run(&window, &queue, &project);
+    let progress = ui::progress_bar(&window).expect("the run bar has a progress widget");
+    let bar = ui::run_bar(&window).expect("the window carries a run bar");
+    ui::shell_beats::arm_pulse(&progress, &bar, &queue);
     assert!(ui::shell_beats::pulse_standing_for_test(), "\u{25b6} on a page with nothing countable yet pulses the bar");
     let bar = ui::progress_bar(&window).expect("the run bar has a progress widget");
     assert!(bar.text().is_none() || !bar.shows_text(), "\u{a7}1 badge 13: the bar draws no text of its own");

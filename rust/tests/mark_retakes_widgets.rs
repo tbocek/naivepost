@@ -131,7 +131,7 @@ fn check_briefing_lands_through_the_button(app: &adw::Application) {
 
     let logs = ui::window_logs();
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "the run opened, so the pass ran inside it: {logs:?}"
     );
@@ -190,7 +190,7 @@ fn check_too_few_lines_refuses_and_still_writes_the_file(app: &adw::Application)
         "and it is empty, which is the point"
     );
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "a short session does not stop the run: {logs:?}"
     );
@@ -247,7 +247,7 @@ fn check_a_different_pass_says_nothing_at_all(app: &adw::Application) {
         .expect("this press logged its own source line");
     let mine = &logs[joined_at - 1..];
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "the run still opens under the joins pass"
     );

@@ -121,8 +121,11 @@ fn check_plan_lands_through_the_button(app: &adw::Application) {
         .emit_clicked();
 
     let logs = ui::window_logs();
+    // F0.5 S4 closes what a single-step press opens, so "the stage ran inside a run" is pinned by the
+    // snapshot ▶ recorded when it opened the bookkeeping -- `running_step` is legitimately empty now
+    // that the step's own run ends with the press.
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "the run opened, so the stage ran inside it: {logs:?}"
     );
@@ -170,7 +173,7 @@ fn check_every_frame_refusal_lands_through_the_button(app: &adw::Application) {
         "a refused source reports no plan: {logs:?}"
     );
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "one bad source does not stop the run — the refusal is local (§00-principles: failure is specific)"
     );
@@ -197,7 +200,7 @@ fn check_a_source_without_frames_is_reported_not_fatal(app: &adw::Application) {
         "the empty folder is named in the log rather than swallowed: {logs:?}"
     );
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "and the run is still open: {logs:?}"
     );

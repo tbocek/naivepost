@@ -53,13 +53,24 @@ fn refuses_while_a_run_is_going(app: &adw::Application) {
     // Nothing going yet, so the gears are live.
     assert!(gears.is_sensitive(), "an idle bar leaves the gears pressable");
 
-    // Start a run with ▶ so the bar is busy.
-    play.emit_clicked();
+    // Start a run with ▶ so the bar is busy. F0.5 S4 closes what a single-step press opens, so the
+    // busy state has to be stood up as an open run rather than inferred from a ▶ that already ended --
+    // the same `start_run` the press itself calls.
+    if let Some(bar) = naivepost::ui::shell_beats::run_bar(&window) {
+        if let Some(queue) = ui::run_queue(&window) {
+            naivepost::runqueue::start_run(
+                &mut bar.borrow_mut(),
+                &mut queue.borrow_mut(),
+                &mut naivepost::exchanges::RunLog::new(),
+                naivepost::run::Step::Prepare,
+                naivepost::run::snapshot_sources(&model),
+            );
+        }
+    }
     assert!(
-        ui::state(&window).page == naivepost::shell::Page::Prepare,
-        "▶ started Prepare's step"
+        ui::run_bar(&window).expect("the bar").borrow().running.is_some(),
+        "a run is under way for the gears to refuse over"
     );
-
     gears.emit_clicked();
     assert_eq!(
         ui::state(&window).status,

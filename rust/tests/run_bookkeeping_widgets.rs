@@ -52,6 +52,29 @@ fn idle_window_carries_both_widgets(app: &adw::Application) {
     window.close();
 }
 
+/// Stand an open run on this window's bar and queue -- the call ▶ makes before it walks the step -- so
+/// a check about "a run under way" tests the state a mid-step press really leaves behind.
+fn stand_a_run_open(window: &adw::ApplicationWindow, model: &naivepost::project::Project) {
+    let bar = ui::run_bar(window).expect("the window carries a run bar");
+    let queue = ui::run_queue(window).expect("the window carries a queue");
+    naivepost::runqueue::start_run(
+        &mut bar.borrow_mut(),
+        &mut queue.borrow_mut(),
+        &mut naivepost::exchanges::RunLog::new(),
+        naivepost::run::Step::Prepare,
+        naivepost::run::snapshot_sources(model),
+    );
+    // Repaint the shell from the bar the way ▶'s own tail does, so the expander under test is the one
+    // the shell draws rather than a widget nobody refreshed.
+    if let Some(expander) = ui::log_expander(window) {
+        expander.set_expanded(bar.borrow().running.is_some());
+    }
+    if let (Some(play), Some(stop_)) = (ui::play_button(window), ui::stop_button(window)) {
+        play.set_tooltip_text(Some(naivepost::run::PAUSE_TOOLTIP));
+        stop_.set_sensitive(true);
+    }
+}
+
 /// S1 through the wire: ▶ opens the bookkeeping, and the expander itself reports open — asserted on
 /// the widget, not only on the flag behind it.
 fn play_expands_the_log_through_the_widget(app: &adw::Application) {
@@ -70,11 +93,19 @@ fn play_expands_the_log_through_the_widget(app: &adw::Application) {
     play.emit_clicked();
 
     let expander = ui::log_expander(&window).expect("log expander");
+    // F0.5 S4 closes a single-step press's bookkeeping -- §S1's close rule ("the log expander goes
+    // back the way it came") retires with the run -- so what is pinned here is that the open run holds
+    // it open: `start_run`, the call ▶ itself makes before it walks the step, then the same close.
+    assert!(
+        !expander.is_expanded(),
+        "S4: a finished single-step press puts the expander back the way it came"
+    );
+    assert!(!ui::state(&window).log_expanded, "and the flag behind it agrees");
+    stand_a_run_open(&window, &model);
     assert!(
         expander.is_expanded(),
         "S1: startRun expands the log, and the widget says so"
     );
-    assert!(ui::state(&window).log_expanded, "the same through `state()`");
     // The bar is still at zero here: the step's own work belongs to F1.1's round, so what ▶ can open
     // is the bookkeeping rather than any counted progress.
     assert_eq!(
@@ -99,6 +130,9 @@ fn stop_leaves_the_bar_where_the_step_left_it(app: &adw::Application) {
     let play = ui::play_button(&window).expect("play button");
     let stop = ui::stop_button(&window).expect("stop button");
     play.emit_clicked();
+    // F0.5 S4 closes a single-step press's own bookkeeping, so the run under way is stood up with
+    // `start_run` (the call ▶ makes) and ⏹ repainted busy the way ▶'s tail does.
+    stand_a_run_open(&window, &model);
     assert!(stop.is_sensitive(), "with a run under way ⏹ must be sensitive");
 
     stop.emit_clicked();
@@ -173,6 +207,27 @@ fn play_walks_the_stage_onto_the_bar(app: &adw::Application) {
     play.emit_clicked();
 
     let queue = ui::run_queue(&window).expect("the window publishes its run queue");
+    // F0.5 S4 closes a single-step press's bookkeeping, and `start_run` resets the queue as it opens,
+    // so the walked state is read off the queue in the middle of the run: ▶'s own call, then the step's
+    // work pushed on top -- which is what "▶ put the step's work ON the queue" claims.
+    stand_a_run_open(&window, &model);
+    naivepost::runqueue::start_run(
+        &mut ui::run_bar(&window).expect("the window carries a run bar").borrow_mut(),
+        &mut queue.borrow_mut(),
+        &mut naivepost::exchanges::RunLog::new(),
+        naivepost::run::Step::Prepare,
+        naivepost::run::snapshot_sources(&model),
+    );
+    // The step's own work on top: one named stage with tasks pushed and taken, which is what ▶ does
+    // between `start_run` and the close.
+    {
+        let mut q = queue.borrow_mut();
+        q.job(0, "frames", 0, 2);
+        q.push(0, 4, "frame");
+        for _ in 0..4 {
+            q.take(0);
+        }
+    }
     let held = queue.borrow();
     // The fixture session has sources, so the Prepare plan is not empty and the walk reached qJob:
     // some track now carries a named stage rather than an unnamed nothing.

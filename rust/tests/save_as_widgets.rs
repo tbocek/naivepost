@@ -78,8 +78,18 @@ fn check_refused_during_a_run(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
 
-    // A run under way, started the way a user starts one.
+    // A run under way, started the way a user starts one. F0.5 S4 closes what a single-step press
+    // opens, so the busy state is stood up as an open run -- `start_run`, the call ▶ itself makes.
     ui::play_button(&window).expect("the run bar has a ▶").emit_clicked();
+    if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
+        naivepost::runqueue::start_run(
+            &mut bar.borrow_mut(),
+            &mut queue.borrow_mut(),
+            &mut naivepost::exchanges::RunLog::new(),
+            naivepost::run::Step::Prepare,
+            naivepost::run::snapshot_sources(&model),
+        );
+    }
     ui::save_button(&window)
         .expect("the header bar has a Save button")
         .emit_clicked();

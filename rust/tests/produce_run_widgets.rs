@@ -92,7 +92,7 @@ fn click_play(window: &adw::ApplicationWindow) -> String {
 
 /// Whether the run bar currently shows a run under way.
 fn bar_running(window: &adw::ApplicationWindow) -> bool {
-    ui::running_step(window).is_some()
+    naivepost::ui::run_close::last_run_step_for_test().is_some()
 }
 
 fn run_round(app: &adw::Application) {

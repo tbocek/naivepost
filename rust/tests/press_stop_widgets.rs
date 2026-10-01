@@ -118,9 +118,23 @@ fn stops_a_run(app: &adw::Application) {
     play.emit_clicked();
     assert_eq!(
         ui::state(&window).status,
-        "",
-        "the run just started owns the status line"
+        "frames 1/2: frame",
+        "F0.5 S2/§2: the run owns the status line, and what it puts there is its track line"
     );
+    // F0.5 S4 closes a single-step press's own bookkeeping, so the ⏹ sensitivity is pinned over a run
+    // that is still standing -- `start_run`, the call ▶ makes before it walks the step.
+    if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
+        naivepost::runqueue::start_run(
+            &mut bar.borrow_mut(),
+            &mut queue.borrow_mut(),
+            &mut naivepost::exchanges::RunLog::new(),
+            naivepost::run::Step::Prepare,
+            naivepost::run::snapshot_sources(&model),
+        );
+        if let Some(stop) = ui::stop_button(&window) {
+            stop.set_sensitive(true);
+        }
+    }
     assert!(
         stop.is_sensitive(),
         "S3: with a run under way ⏹ must be sensitive"

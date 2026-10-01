@@ -116,15 +116,26 @@ fn check_press_forwards(app: &adw::Application) {
         "an idle ▶ says what §2 makes it say"
     );
 
-    // Press 1: S3 + S4 — nothing was busy, so Prepare's step started. The button is now the pause
-    // button, because a run is under way.
+    // Press 1: S3 + S4 — nothing was busy, so Prepare's step started. F0.5 S4 closes what a single-step
+    // press opens (running off, the audio unload handed over), so the ⏸ face is pinned while that run
+    // stands: the same open run ▶ leaves behind mid-step, stood up here through `start_run` because
+    // headless the whole step walks inside one click.
+    // Press 1: S3 + S4 — nothing was busy, so Prepare's step started. F0.5 S4 makes a finished
+    // single-step press close its own bookkeeping, and headless the whole step walks inside one click,
+    // so the ⏸ face is pinned over the run that is still standing: `start_run`, the call ▶ itself makes
+    // before it walks the step.
     play.emit_clicked();
+    stand_a_run_open(&window, &model);
     assert_eq!(
         ui::play_tooltip(&window).as_deref(),
         Some(run::PAUSE_TOOLTIP),
         "a run under way turns ▶ into ⏸"
     );
-    assert_eq!(ui::state(&window).status, "", "the run's own progress owns the line");
+    assert_eq!(
+        ui::state(&window).status,
+        "frames 1/2: frame",
+        "F0.5 S2/§2: the queue's joined track line IS the status line while the run owns it"
+    );
 
     // Press 2: S1 — the run is paused rather than restarted, and the bar has something to say.
     play.emit_clicked();
@@ -139,6 +150,27 @@ fn check_press_forwards(app: &adw::Application) {
     // Press 3 resumes it.
     play.emit_clicked();
     assert_eq!(ui::state(&window).status, run::RESUMED);
+}
+
+/// Stand an open run on this window's bar, the way a step in progress has one: `runqueue::start_run`,
+/// the same call ▶ makes before it walks the step. Needed since F0.5 S4 made a finished single-step
+/// press close its own bookkeeping -- headless there is no half-finished step to observe otherwise.
+fn stand_a_run_open(window: &adw::ApplicationWindow, model: &naivepost::project::Project) {
+    let bar = ui::run_bar(window).expect("the window carries a run bar");
+    let queue = ui::run_queue(window).expect("the window carries a queue");
+    naivepost::runqueue::start_run(
+        &mut bar.borrow_mut(),
+        &mut queue.borrow_mut(),
+        &mut naivepost::exchanges::RunLog::new(),
+        naivepost::run::Step::Prepare,
+        naivepost::run::snapshot_sources(model),
+    );
+    // Repaint the buttons from the bar the way ▶'s own tail does, so the face under test is the one the
+    // shell draws rather than a widget nobody refreshed.
+    if let (Some(play), Some(stop_)) = (ui::play_button(window), ui::stop_button(window)) {
+        play.set_tooltip_text(Some(naivepost::run::PAUSE_TOOLTIP));
+        stop_.set_sensitive(true);
+    }
 }
 
 /// The flag above: a second `#[test]` on the same shared app, so a check that never ran cannot pass.
@@ -176,20 +208,18 @@ fn check_the_snapshot_names_the_live_sources(app: &adw::Application) {
     assert!(ui::add_files(&window, &[late]), "the late file becomes a row");
 
     ui::play_button(&window).expect("the run bar has a ▶").emit_by_name::<()>("clicked", &[]);
-    let running = ui::run_bar(&window).expect("the window carries a run bar")
-        .borrow()
-        .running
-        .clone()
-        .expect("a run opened");
+    // F0.5 S4 closes a single-step press's bookkeeping, so the snapshot lives where the shell keeps the
+    // last run's -- written by ▶ itself at `start_run`, which is what this checks.
+    let running = naivepost::ui::run_close::last_snapshot_for_test().expect("a run opened");
     assert!(
-        running.sources.footage.contains(&footage),
+        running.footage.contains(&footage),
         "the fixture's recording is in the snapshot: {:?}",
-        running.sources.footage
+        running.footage
     );
     assert!(
-        running.sources.footage.iter().any(|path| path.ends_with("late.mkv")),
+        running.footage.iter().any(|path| path.ends_with("late.mkv")),
         "a source added AFTER the window was built is in the snapshot: {:?}",
-        running.sources.footage
+        running.footage
     );
     ui::stop_button(&window).expect("the run bar has a ⏹").emit_by_name::<()>("clicked", &[]);
     window.close();

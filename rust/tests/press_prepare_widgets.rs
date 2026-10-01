@@ -133,7 +133,7 @@ fn check_no_sources_refuses(app: &adw::Application) {
         "the log says why the press was answered at all: {logs:?}"
     );
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         None,
         "a refused press never opened a run, so ⏸ was never shown"
     );
@@ -168,7 +168,7 @@ fn check_name_clash_refuses(app: &adw::Application) {
         logs.contains(&naivepost::sources::clash_log(first, second)),
         "the log names the folder the two rows would share: {logs:?}"
     );
-    assert_eq!(ui::running_step(&window), None, "no run was opened");
+    assert_eq!(naivepost::ui::run_close::last_run_step_for_test(), None, "no run was opened");
     assert_eq!(
         ui::play_tooltip(&window).as_deref(),
         Some(run::PLAY_TOOLTIP),
@@ -179,6 +179,26 @@ fn check_name_clash_refuses(app: &adw::Application) {
 /// S1 vs F0.2: while a run is open, the pause wins over Prepare's start. The session folder holds no
 /// project file, so press 1's S2 cannot rewrite anything that press 2 would then read — the only
 /// thing that changes between presses is the bar's own state.
+/// Stand an open run on the window's bar and repaint ▶/⏹ the way ▶'s own tail does, so a check about
+/// "a run under way" tests the state a mid-step press really leaves behind.
+fn stand_a_run_open(window: &adw::ApplicationWindow, model: &naivepost::project::Project) {
+    let bar = ui::run_bar(window).expect("the window carries a run bar");
+    let queue = ui::run_queue(window).expect("the window carries a queue");
+    naivepost::runqueue::start_run(
+        &mut bar.borrow_mut(),
+        &mut queue.borrow_mut(),
+        &mut naivepost::exchanges::RunLog::new(),
+        naivepost::run::Step::Prepare,
+        naivepost::run::snapshot_sources(model),
+    );
+    if let (Some(play), Some(stop_)) =
+        (ui::play_button(window), ui::stop_button(window))
+    {
+        play.set_tooltip_text(Some(naivepost::run::PAUSE_TOOLTIP));
+        stop_.set_sensitive(true);
+    }
+}
+
 fn check_busy_prepare_pauses_first(app: &adw::Application) {
     let (_keep, _tree) = pin_session("busy");
     let model = with_sources(&["project:sources/lecture.mkv"]);
@@ -186,10 +206,13 @@ fn check_busy_prepare_pauses_first(app: &adw::Application) {
     window.present();
     let play = ui::play_button(&window).expect("the run bar has a ▶");
 
-    // Press 1: nothing busy, so the step started and the same button became ⏸.
+    // Press 1: nothing busy, so the step started and the same button became ⏸. F0.5 S4 closes a
+    // single-step press's own bookkeeping (headless the whole step walks inside one click), so the run
+    // under way is stood up with `start_run`, the call ▶ itself makes before it walks the step.
     play.emit_clicked();
+    stand_a_run_open(&window, &model);
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "press 1 opened Prepare's run"
     );
@@ -213,7 +236,7 @@ fn check_busy_prepare_pauses_first(app: &adw::Application) {
         "a busy Prepare is never told to add a source it already has"
     );
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "pausing keeps the run rather than clearing it"
     );
@@ -222,7 +245,7 @@ fn check_busy_prepare_pauses_first(app: &adw::Application) {
     play.emit_clicked();
     assert_eq!(ui::state(&window).status, run::RESUMED);
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "still the same run"
     );
@@ -270,7 +293,7 @@ fn check_start_clears_and_logs(app: &adw::Application) {
         "and so are the extracted frames themselves"
     );
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "a clean start opens the run like any other page's ▶"
     );

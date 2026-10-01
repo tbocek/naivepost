@@ -130,7 +130,7 @@ fn check_a_seam_reaches_the_pass_through_the_button(app: &adw::Application) {
 
     let logs = ui::window_logs();
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "the run opened, so the pass ran inside it: {logs:?}"
     );
@@ -177,7 +177,7 @@ fn check_one_recording_reports_no_seam_and_still_writes_both_files(app: &adw::Ap
 
     let logs = ui::window_logs();
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "a single take does not stop the run: {logs:?}"
     );
@@ -230,7 +230,7 @@ fn check_another_pass_says_nothing_at_all(app: &adw::Application) {
         .expect("this press logged its own source line");
     let mine = &logs[right_at - 1..];
     assert_eq!(
-        ui::running_step(&window),
+        naivepost::ui::run_close::last_run_step_for_test(),
         Some(run::Step::Prepare),
         "the run still opens under the retakes pass"
     );

@@ -3131,7 +3131,7 @@ fn paint_readouts(
 /// The run bar's icon and tooltip are the whole of what F0.2 puts on screen. `transport` is the
 /// visible page's preview, which only Cut and Narrate have — [`run::transport_for`] answers `None`
 /// for the other two, and that is why their ▶ runs the step while a preview plays.
-fn paint_run_bar(
+pub(crate) fn paint_run_bar(
     play: &gtk::Button,
     stop_: &gtk::Button,
     bar: &run::RunBar,
@@ -3439,13 +3439,15 @@ fn wire_play(
             }
             // S3 snapshots the LIVE session: a source added after `build_window` is part of this run.
             let asked = PLAY_SESSION.with(|s| s.borrow().last().map(|h| h.borrow().clone()).unwrap_or_else(|| project.clone()));
+            let snapshot = run::snapshot_sources(&asked);
             runqueue::start_run(
                 &mut bar.borrow_mut(),
                 &mut queue.borrow_mut(),
                 &mut exchange_log.borrow_mut(),
                 run::step(shell.borrow().page),
-                run::snapshot_sources(&asked),
+                snapshot,
             );
+            crate::ui::run_close::note_started_run(&bar);
             // §2: while nothing is countable the bar pulses; it stops itself when a track reports.
             crate::ui::shell_beats::arm_pulse(&progress, &bar, &queue);
             // F0.5 S2/S3: the step's own work is walked under the bookkeeping, its checkpoint asked
@@ -3459,9 +3461,16 @@ fn wire_play(
         paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page,
             preview_player(&main_window()).transport);
         status.set_text(&bar.borrow().status);
+        // F0.5 S4: a single-step press closes what it opened (running off, the unload handed over,
+        // the queue's line onto the status row). Narrate and Produce close theirs in their own flow.
+        if matches!(pressed, run::Pressed::Started { .. }) && started {
+            crate::ui::run_close::close_step_run(&bar, &queue, &exchange_log, &status, &progress, &log, &log_view, None);
+        }
         paint_progress(
             &progress, &log, &log_view, &queue.borrow(),
-            crate::ui::shell_beats::StatusLine { status: &status, owned: false }, // this press owns the line
+            // §2: while this press owns the run its track line IS the status line; a bar sentence
+            // (the empty opening line, F1.12's refusal) keeps the row instead of being overwritten.
+            crate::ui::shell_beats::StatusLine { status: &status, owned: matches!(pressed, run::Pressed::Started { .. }) && refusal.is_none() && !bar.borrow().status.is_empty() },
             bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
         );
         // Last write wins on the label: F1.12's refusal is why ▶ did not do what it was pressed for,
@@ -4460,7 +4469,7 @@ thread_local! {
     /// The F0.5 queue `build_window` created, published for the same reason as [`WINDOW_BAR`]: so
     /// the seam in [`add_files`] can drive the bar this window actually shows. A copy is a run of
     /// its own (F0.12 S0), so it reports through the bookkeeping rather than painting its own bar.
-    static WINDOW_QUEUE: std::cell::RefCell<Vec<Rc<std::cell::RefCell<runqueue::Queue>>>> =
+    pub(crate) static WINDOW_QUEUE: std::cell::RefCell<Vec<Rc<std::cell::RefCell<runqueue::Queue>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -8059,13 +8068,10 @@ fn set_status_line(window: &adw::ApplicationWindow, said: &str) {
     }
 }
 
-/// Put this window's run bar back to idle after a narrate run that ran to its end in one go.
+/// Put this window's run bar back to idle after a narrate run that ran to its end in one go, through
+/// the one close door F0.5 S4 gives every run (running off, controls, the audio unload handed over).
 fn clear_narrate_bar() {
-    RUN_BARS.with(|bars| {
-        if let Some(bar) = bars.borrow().last().cloned() {
-            runqueue::end_run(&mut bar.borrow_mut(), None);
-        }
-    });
+    crate::ui::run_close::close_last_narrate_run();
 }
 
 /// F4.1 with a scripted narration reply: the same route minus the telephone. Each entry is

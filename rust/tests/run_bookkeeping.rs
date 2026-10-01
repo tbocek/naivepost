@@ -382,6 +382,24 @@ fn f0_5_s3_the_two_clocks_are_200ms_and_150ms() {
     );
 }
 
+// --- S2/S4 through the shell's own close door (F0.5) ---------------------------------------------
+
+#[test]
+fn f0_5_s2_the_joined_line_is_what_the_close_writes() {
+    // §2: the bar draws no text of its own; the tracks' JOINED line goes to the status row. The pair
+    // must be one value, so both doors are read here: `Queue::text` and `text_and_tip().0`.
+    let mut queue = Queue::new();
+    queue.job(naivepost::runqueue::TRACK_FRAMES, "frames", 1, 2);
+    queue.push(naivepost::runqueue::TRACK_FRAMES, 4, "frame");
+    queue.prog(naivepost::runqueue::TRACK_FRAMES, 0.5, "frame 2/4");
+    assert_eq!(
+        queue.text(),
+        queue.text_and_tip().0,
+        "the status row shows exactly the joined line"
+    );
+    assert!(queue.text().contains("frames 1/2: frame 2/4"), "\u{a7}2's shape: {}", queue.text());
+}
+
 // --- S4: endRun -------------------------------------------------------------------------------------
 
 #[test]
