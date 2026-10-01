@@ -120,6 +120,12 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
             if !describe.tasks.is_empty() {
                 stages.push(describe);
             }
+            // §F1.8 fix after §F1.7 describe: the respelling reads the transcript ingest wrote, and
+            // §04 S6's understand phase runs describe → fix → marking in that order.
+            let fix = crate::fix_call::stage(project);
+            if !fix.tasks.is_empty() {
+                stages.push(fix);
+            }
             stages
         }
         // Cut's suggest step reads what Prepare wrote; its own subprocess work is the align clip cut.
@@ -135,6 +141,10 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
 /// their own (`separate_run::SEPARATE_MARK`) and a third kind would make the branch read arguments
 /// for a question the row can answer by its own program name.
 pub const VISION_TASK: &str = "naivepost:vision";
+
+/// The marker [`drive_walk`] reads as “dial the text model for this row” rather than “spawn this”: the
+/// clean-transcript job of §2, one chat request per block of lines.
+pub const TEXT_TASK: &str = "naivepost:text";
 
 /// The marker [`drive_walk`] reads as “dial the servers for this row” rather than “spawn this”.
 pub const AUDIO_TASK: &str = "naivepost:audio";
@@ -292,6 +302,17 @@ where
             // `take`, different door. `drive_walk` does not decide which, the row says by its program.
             if task.program == VISION_TASK {
                 if let Err(error) = crate::describe_call::run_task(task, &mut log) {
+                    return Drive::Failed { stage: stage.name, error };
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, position(progress.done, total), &task.label);
+                continue;
+            }
+            // The fix rows are a chat request too, same checkpoint and same door shape: the row says
+            // which job by its program, `drive_walk` does not decide.
+            if task.program == TEXT_TASK {
+                if let Err(error) = crate::fix_call::run_task(task, &mut log) {
                     return Drive::Failed { stage: stage.name, error };
                 }
                 ran += 1;

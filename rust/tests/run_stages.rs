@@ -262,7 +262,9 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
         tracks: vec![],
     });
     let stages = run_stages::plan(run::Step::Prepare, &project);
-    assert_eq!(stages.len(), 2, "frames and speech, one stage each");
+    // §04 S6's order: ingest first (frames on one half of the bar, speech on the other), then the two
+    // understanding stages that read what those wrote — describe over the footage row, fix over both.
+    assert_eq!(stages.len(), 4, "frames, speech, describe, fix: one stage each");
     assert_eq!(stages[0].track, TRACK_FRAMES, "frames ride their own half of the bar");
     assert_eq!(stages[1].track, TRACK_STT, "speech rides the other half");
     assert_eq!(stages[0].tasks[0].program, run_stages::FFMPEG, "the frames pass is ffmpeg's");
@@ -273,6 +275,12 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
         stages[1].tasks[0].program,
         run_stages::AUDIO_TASK,
         "speech is a dial of audio.cpp, not a spawned cut"
+    );
+    // The fix stage rides after describe and its rows are the same kind of work: a chat request.
+    assert_eq!(
+        stages[3].tasks[0].program,
+        run_stages::TEXT_TASK,
+        "the fix rows are a chat dial, named by their own program"
     );
     // The row carries what the door needs and nothing it has to compute: the recording and the language.
     // Where each chunk is cut is the door's own plan (§F1.3), pinned in `tests/audio_task_dial.rs`'s
