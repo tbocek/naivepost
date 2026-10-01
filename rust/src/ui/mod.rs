@@ -1,3 +1,6 @@
+/// §02-services.md §4.1 — the Cut page's snap points when no aligner is named: read out of
+/// `cache/waves`. Split out of `window.rs`, at its size budget.
+pub mod wave_snap;
 pub mod settings;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_page;

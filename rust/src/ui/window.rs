@@ -5918,9 +5918,10 @@ pub fn press_delete_key(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
 pub fn press_add(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
     let (cut_, _) = selection_snap_inputs(window);
     let band = selection(window);
-    // No snap candidates of the page's own yet: word edges and silences arrive with the aligner round,
-    // so an empty list means the ends stay where they were drawn rather than inventing points.
-    let outcome = cut_verbs::add(band.as_ref(), &cut_.segs, &[]);
+    // F2.7's own snap list. Word edges arrive with the aligner round; with no aligner §4.1 puts the
+    // points on the waveform instead, which `wave_snap_points` reads. Either way an empty list means the
+    // ends stay where they were drawn rather than inventing points.
+    let outcome = cut_verbs::add(band.as_ref(), &cut_.segs, &crate::ui::wave_snap::snap_points(band.as_ref()));
     report_verb(window, &outcome);
     outcome
 }
@@ -5929,8 +5930,7 @@ pub fn press_add(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
 pub fn press_split(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
     let (cut_, _) = selection_snap_inputs(window);
     let band = selection(window);
-    let outcome = cut_verbs::split(band.as_ref(), preview_playhead(window), &cut_.segs);
-    report_verb(window, &outcome);
+    let outcome = cut_verbs::split(band.as_ref(), preview_playhead(window), &cut_.segs);    report_verb(window, &outcome);
     outcome
 }
 

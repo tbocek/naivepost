@@ -26,6 +26,7 @@ pub mod cut_review;
 pub mod cut_select;
 pub mod cut_trim;
 pub mod cut_verbs;
+pub mod cut_wave_edges;
 /// F0.7 — the User Context in, the editing policy out: derivation, validation, and which flows the
 /// result turns on. No UI here; `ui::window` draws the form and forwards to this.
 pub mod policy;
