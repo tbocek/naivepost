@@ -183,6 +183,13 @@ impl Chain {
         self.ran.join(", ")
     }
 
+    /// The first hand-over, before any step has reported anything: `next` with a real outcome would
+    /// close a step that never ran, so the driver asks for the opening step through this door, which is
+    /// [`StepOutcome::Skipped`]'s meaning already -- "nothing about the last step to record".
+    pub fn next_first(&mut self) -> Advance {
+        self.next(StepOutcome::Skipped)
+    }
+
     /// S4 → S6. Feed it the outcome of the step last handed over and it says what comes next: another
     /// step, a skip sentence, or the end.
     ///

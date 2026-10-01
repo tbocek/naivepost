@@ -1,0 +1,285 @@
+//! F0.4 "I'm feeling lucky" — the press's own body: what each step of the chain actually does.
+//!
+//! [`crate::lucky`] is the state machine (what the press means); this module is the driver that feeds it
+//! real outcomes, so every sentence in §S3-S6 is paid for by work that happened. It lives apart from
+//! `window.rs` because that file is past its size budget; `wire_lucky` only hands its handles over and
+//! calls [`press`].
+//!
+//! The four bodies are the same ones ▶ reaches for on each page, not a second version of them:
+//! Prepare and Cut walk their stages through [`crate::run_stages::drive_page`] (the ▶ call at
+//! `window.rs`'s `Started` branch), Narrate goes through [`window::press_narrate_run`] (F4.1) and
+//! Produce through [`super::produce_page::press_produce_run`] (F5.1). A step that has nothing to do
+//! declines, which §S4 carries past rather than waiting for.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::{Instant, SystemTime};
+
+use gtk4 as gtk;
+use gtk4::prelude::WidgetExt;
+
+use crate::exchanges;
+use crate::hand_edit;
+use crate::layout;
+use crate::lucky::{self, Advance, StepOutcome};
+use crate::project::Project;
+use crate::run::{self, RunBar, Subprocesses};
+use crate::run_stages::Drive;
+use crate::runqueue::{self, Queue};
+use crate::shell::Shell;
+use crate::ui::window;
+
+/// The CSS class the gears carry while the chain runs. One const because the driver adds/removes it and
+/// [`gears_css`] styles it: two spellings would let the button stop turning without any test noticing.
+pub const RUNNING_CLASS: &str = "lucky-running";
+
+/// S2: the rule that makes the gears turn. GTK 4 animates a widget with a CSS `@keyframes` block plus
+/// an `animation` shorthand (the library ships the same shape for its own spinner), and a class with no
+/// rule behind it is inert: the driver has been adding [`RUNNING_CLASS`] since F0.4's first round and
+/// nothing moved, because no such rule existed anywhere in `src/` or `assets/`.
+///
+/// A rotation rather than a pulse: the spec's word is "the gears start turning", and one full turn per
+/// 1.6 s reads as machinery rather than as a blink. Installed once beside the lane's own classes, at
+/// application priority, so a theme cannot override the animation away.
+pub fn gears_css() -> String {
+    format!(
+        "@keyframes lucky-gears {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(360deg); }} }}\n\
+         .{RUNNING_CLASS} {{ animation: lucky-gears 1.6s linear infinite; }}\n"
+    )
+}
+
+/// Everything the driver needs, as the handles the shell already holds. Owned `Rc`s rather than borrows
+/// because `connect_clicked` keeps its closure, and a closure cannot hold a borrow of the frame that made
+/// it — `wire_lucky` clones what it is handed and moves the clones in.
+#[derive(Clone)]
+pub struct Handles {
+    pub bar: Rc<RefCell<RunBar>>,
+    pub shell: Rc<RefCell<Shell>>,
+    pub stack: adw::ViewStack,
+    pub guard: Rc<RefCell<bool>>,
+    pub status: gtk::Label,
+    pub progress: gtk::ProgressBar,
+    pub log: gtk::Expander,
+    pub log_view: gtk::TextView,
+    pub queue: Rc<RefCell<Queue>>,
+    pub exchange_log: Rc<RefCell<exchanges::RunLog>>,
+    pub procs: Rc<RefCell<Subprocesses>>,
+}
+
+/// One press of the gears. `button` gets disabled and styled while the chain walks, and handed back
+/// either way.
+pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
+    // S1: busy comes from the same bar ▶ and ⏹ answer for, so the three buttons cannot disagree.
+    let busy = handles.bar.borrow().running.is_some() || handles.bar.borrow().stop_flag;
+    let (mut chain, opening) = match lucky::Chain::start(busy) {
+        Ok(started) => started,
+        Err(refusal) => {
+            handles.status.set_text(refusal);
+            return;
+        }
+    };
+    window::log_line(&opening);
+
+    // S4's two skip conditions, both read from live state rather than passed in: F4.8's Narration tick
+    // for Narrate, and §F1.12's mtime question for Cut. `hand_edit::before_cut` is NOT the door here —
+    // it remakes and writes `retakes.tsv` as a side effect, which is ▶'s remedy, whereas the chain only
+    // skips and must change nothing. So the flag comes from `hand_edit::edited`, the pure half of the
+    // same rule, over the same two files. No session folder means no text anyone could have edited.
+    chain.set_narration_off(project.no_narration);
+    chain.set_hand_edits(session_hand_edits());
+
+    // F0.5 S1: the chain is a run like any other, so it opens the bookkeeping the same way.
+    let asked = window::live_project();
+    runqueue::start_run(
+        &mut handles.bar.borrow_mut(),
+        &mut handles.queue.borrow_mut(),
+        &mut handles.exchange_log.borrow_mut(),
+        run::step(handles.shell.borrow().page),
+        run::snapshot_sources(&asked),
+    );
+    window::paint_progress(
+        &handles.progress,
+        &handles.log,
+        &handles.log_view,
+        &handles.queue.borrow(),
+        crate::ui::shell_beats::StatusLine { status: &handles.status, owned: false },
+        true,
+    );
+    // §2: with nothing countable yet the bar pulses until a track reports.
+    crate::ui::shell_beats::arm_pulse(&handles.progress, &handles.bar, &handles.queue);
+
+    // S2: the gears turn for the length of the chain, and the button cannot be pressed again meanwhile.
+    button.set_sensitive(false);
+    button.add_css_class(RUNNING_CLASS);
+
+    // The first hand-over asks the chain for its next step without reporting an outcome; `next` with a
+    // Declined would close a step that never ran, so the chain answers this one itself.
+    let mut advance = chain.next_first();
+    loop {
+        match advance {
+            Advance::Run { page, name } => {
+                // F0.1's synchronous move: the step's work belongs to the widgets of its own page.
+                *handles.guard.borrow_mut() = true;
+                handles.stack.set_visible_child_name(page.label());
+                *handles.guard.borrow_mut() = false;
+                handles.shell.borrow_mut().page = page;
+                window::log_line(&lucky::step_line(name));
+                let outcome = run_step(page, handles, &asked);
+                // A ⏹ that landed inside the step outranks whatever the step reported: S5 ends on it.
+                advance = if bar_wants_stop(handles) {
+                    chain.next(StepOutcome::Stopped)
+                } else {
+                    chain.next(outcome)
+                };
+            }
+            Advance::Skipped { line } => {
+                window::log_line(&line);
+                // A skip closes no running step; keep walking.
+                advance = chain.next(StepOutcome::Skipped);
+            }
+            Advance::End { line, status: short } => {
+                window::log_line(&line);
+                handles.status.set_text(&short);
+                close_run(handles);
+                break;
+            }
+            Advance::Idle => break,
+        }
+        // ⏹ pressed between two steps: S5 ends the run here rather than starting the next one.
+        if bar_wants_stop(handles) {
+            if let Advance::End { line, status: short } = chain.next(StepOutcome::Stopped) {
+                window::log_line(&line);
+                handles.status.set_text(&short);
+                close_run(handles);
+            }
+            break;
+        }
+    }
+
+    // The chain is over either way: give the button back and close whatever bookkeeping is still open.
+    let ended = runqueue::end_run(&mut handles.bar.borrow_mut(), None);
+    // §1: every run ends with `unload_all_models`, quietly and off-thread.
+    crate::settings_probe::fire_unload(ended.audio_unload);
+    handles.queue.borrow_mut().reset();
+    button.set_sensitive(true);
+    button.remove_css_class(RUNNING_CLASS);
+}
+
+/// Whether ⏹ has been pressed since the last checkpoint. Read fresh each time because the stop arrives
+/// from another handler while this loop is inside a step.
+fn bar_wants_stop(handles: &Handles) -> bool {
+    handles.bar.borrow().stop_flag
+}
+
+/// Close the run's bookkeeping when the chain ends early (an end line landed mid-walk).
+fn close_run(handles: &Handles) {
+    runqueue::end_run(&mut handles.bar.borrow_mut(), None);
+    handles.queue.borrow_mut().reset();
+}
+
+/// Is this session's `final.txt` newer than its marks? Same two files and same comparison §F1.12 uses;
+/// unreadable mtimes answer "no" because there is then no edit that could be lost.
+///
+/// `pub`: the question is the program's (only [`press`] asks it), and a test that wants to know what the
+/// chain will decide re-asks THIS rather than reimplementing the mtime rule.
+pub fn session_hand_edits() -> bool {
+    let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let Ok(tree) = layout::Tree::new(&dir) else {
+        return false;
+    };
+    hand_edit::edited(mtime(&tree.final_txt()), mtime(&tree.retakes_tsv()))
+}
+
+fn mtime(path: &std::path::Path) -> Option<SystemTime> {
+    std::fs::metadata(path).ok().and_then(|meta| meta.modified().ok())
+}
+
+/// Run one page's step for real and say what became of it (§S4/S5). Timed here because the chain totals
+/// its own durations from what it is told, and a step that ran is worth its seconds in the end line.
+///
+/// The four bodies are the ones ▶ reaches on each page, so a step never runs twice over: Prepare and Cut
+/// walk their stages ([`crate::run_stages::plan`] gives them work), Narrate goes through F4.1's own
+/// forwarder and Produce through F5.1's, both of which answer a refusal by returning the refusal.
+fn run_step(page: crate::shell::Page, handles: &Handles, asked: &Project) -> StepOutcome {
+    let started_at = Instant::now();
+    match run::step(page) {
+        run::Step::Prepare | run::Step::Suggest => stamp(
+            outcome_of_drive(&walk_step(page, handles, asked)),
+            started_at,
+        ),
+        run::Step::Narrate => stamp(
+            outcome_of_sentence(&window::press_narrate_run(&window::main_window())),
+            started_at,
+        ),
+        run::Step::Produce => stamp(
+            outcome_of_sentence(&super::produce_page::press_produce_run(&window::main_window())),
+            started_at,
+        ),
+    }
+}
+
+/// Put the measured duration on an outcome that earned one.
+fn stamp(outcome: StepOutcome, started_at: Instant) -> StepOutcome {
+    match outcome {
+        StepOutcome::Ran { .. } => StepOutcome::Ran { seconds: whole_seconds(started_at) },
+        other => other,
+    }
+}
+
+/// Walk one page's stage plan under the run's bookkeeping and say what came of it in the log. Split out
+/// so a test can watch the SAME walk the gears do, over a project of its own, without a window.
+pub fn walk_step(
+    page: crate::shell::Page,
+    handles: &Handles,
+    asked: &Project,
+) -> Drive {
+    let drive = crate::run_stages::drive_page(
+        run::step(page),
+        asked,
+        &handles.queue,
+        &handles.bar,
+        &handles.procs,
+    );
+    // S5's failing step logs its own reason and the run walks on (§03's note on the prototype).
+    crate::run_stages::say_outcome(&drive, window::log_line);
+    drive
+}
+
+/// Map a walked stage plan onto the chain's vocabulary. An empty plan is a decline — the step had
+/// nothing to do, so it earns no tally entry and the chain carries past it (§S4).
+///
+/// Both mappings are `pub` rather than private: they are the only place a step's result becomes chain
+/// vocabulary, and a test that reimplemented them would pin its own copy instead of the program's.
+pub fn outcome_of_drive(drive: &Drive) -> StepOutcome {
+    match drive {
+        Drive::Done { ran: 0, .. } => StepOutcome::Declined,
+        Drive::Done { .. } => StepOutcome::Ran { seconds: 0 },
+        Drive::Failed { .. } => StepOutcome::Failed,
+        Drive::Stopped { .. } => StepOutcome::Stopped,
+    }
+}
+
+/// Map a Narrate/Produce sentence onto the chain's vocabulary. Both bodies answer a refusal by returning
+/// the refusal itself (`narrate_run::refuse` / `produce_flow::refuse`'s sentences, verbatim), so those
+/// exact strings are what a decline looks like from here; anything else means work was done.
+/// `pub` for the reason stated on [`outcome_of_drive`].
+pub fn outcome_of_sentence(said: &str) -> StepOutcome {
+    if declined_sentence(said) {
+        return StepOutcome::Declined;
+    }
+    StepOutcome::Ran { seconds: 0 }
+}
+
+/// The sentences that mean "this step refused to start", compared exactly against the constants those
+/// refusals come from (the narration-off one is built by `narrate_off`, not a const). A reworded refusal
+/// fails a test here instead of silently counting as a finished step.
+fn declined_sentence(said: &str) -> bool {
+    let said = said.trim_start_matches('!').trim();
+    [crate::cut::NO_CUT_YET, crate::narrate_run::NO_SESSION_TIMELINE, crate::run::PAUSING]
+        .contains(&said)
+        || crate::narrate_off::refuse_run(true).is_some_and(|reason| reason == said)
+}
+
+fn whole_seconds(started_at: Instant) -> u64 {
+    started_at.elapsed().as_secs()
+}

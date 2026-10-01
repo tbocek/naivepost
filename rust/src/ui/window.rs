@@ -1273,6 +1273,8 @@ fn install_lane_css_once() {
     ));
     css.push_str(".drawing-box { border: 1px dashed #ffffff; }\n");
     css.push_str(".preview-dimmed { background-color: rgba(0, 0, 0, 0.45); }\n");
+    // F0.4 S2: the gears' turning rule, installed with the rest so one provider carries both.
+    css.push_str(&super::lucky_run::gears_css());
 
     let provider = gtk::CssProvider::new();
     let _ = provider.load_from_data(&css);
@@ -3151,7 +3153,7 @@ const LOG_OPEN_PX: i32 = 220;
 /// Draw F0.5's two widgets from the bookkeeping state: the bar's fraction and tooltip come from the
 /// queue, the expander's openness from the run's `log_expanded`, and its body from the lines logged
 /// so far. No decisions here — [`runqueue`] decided them, this paints them.
-fn paint_progress(
+pub fn paint_progress(
     progress: &gtk::ProgressBar,
     log: &gtk::Expander,
     log_view: &gtk::TextView,
@@ -3578,11 +3580,11 @@ fn wire_stop(
 ///
 /// Each step is handed over by switching to its page synchronously through the same `stack`/`guard`
 /// path F0.1 uses (a step's own work belongs to the widgets of the page it runs on), logging
-/// `>>> run: <Name>`, and then reporting the outcome back with [`lucky::Chain::next`]. **The real
-/// outcomes arrive with F1.1/F2.14/F4.1/F5.1's rounds** — those step bodies are not implemented yet,
-/// so every step reports [`lucky::StepOutcome::Declined`] here. What this item pins is the wire and the
-/// state machine, not the work behind each step; when a flow lands it replaces that one call with its
-/// own outcome and the chain needs no other change.
+/// `>>> run: <Name>`, and then reporting the outcome back with [`lucky::Chain::next`]. Every body is the
+/// real one — Prepare and Cut walk their stages through [`crate::run_stages::drive_page`], Narrate and
+/// Produce go through their own flows — and all of that lives in [`crate::ui::lucky_run::press`].
+/// F0.4's driver body: the refusal, the bookkeeping, every step's real work and the end sentence all
+/// live in [`crate::ui::lucky_run`]; this handler only hands its handles over (spec/00-principles.md §5).
 fn wire_lucky(
     lucky_button: &gtk::Button,
     bar: &Rc<RefCell<run::RunBar>>,
@@ -3598,109 +3600,23 @@ fn wire_lucky(
     procs: &Rc<RefCell<run::Subprocesses>>,
     project: Project,
 ) {
-    let lucky_button = lucky_button.clone();
-    let bar = bar.clone();
-    let shell = shell.clone();
-    let stack = stack.clone();
-    let guard = guard.clone();
-    let status = status.clone();
-    let procs = procs.clone();
-    let progress = progress.clone();
-    let log = log.clone();
-    let log_view = log_view.clone();
-    let queue = queue.clone();
-    let exchange_log = exchange_log.clone();
-    lucky_button.connect_clicked(move |button| {
-        // S1: busy is read from the same bar state ▶ and ⏹ answer for, so the three buttons cannot
-        // disagree about whether something is going.
-        let busy = bar.borrow().running.is_some() || bar.borrow().stop_flag;
-        let (mut chain, opening) = match lucky::Chain::start(busy) {
-            Ok(started) => started,
-            Err(refusal) => {
-                status.set_text(refusal);
-                return;
-            }
-        };
-        log_line(&opening);
-        // F4.8: this project's Narration tick is the chain's skip condition, so a video with no
-        // narration walks past Narrate instead of running it (the sentence comes from `narrate_off`).
-        chain.set_narration_off(project.no_narration);
-
-        // F0.5 S1: the chain is a run like any other, so it opens the bookkeeping the same way —
-        // fresh cancel context, empty queue, model log closed, log expanded.
-        runqueue::start_run(
-            &mut bar.borrow_mut(),
-            &mut queue.borrow_mut(),
-            &mut exchange_log.borrow_mut(),
-            run::step(shell.borrow().page),
-            run::snapshot_sources(&project),
-        );
-        paint_progress(
-            &progress, &log, &log_view, &queue.borrow(),
-            crate::ui::shell_beats::StatusLine { status: &status, owned: false },
-            true,
-        );
-        // §2: with nothing countable yet (a model thinking) the bar pulses until a track reports.
-        crate::ui::shell_beats::arm_pulse(&progress, &bar, &queue);
-
-        // S2: the gears turn while the chain runs. Animation itself is cosmetic; what matters is that
-        // the button cannot be pressed a second time mid-chain, which S1 would also refuse.
-        button.set_sensitive(false);
-        button.add_css_class("lucky-running");
-
-        loop {
-            let advance = chain.next(lucky::StepOutcome::Declined);
-            match advance {
-                lucky::Advance::Run { page, name } => {
-                    // F0.1's synchronous move: show the page so the step has its widgets. `guard`
-                    // keeps the stack's own write-back from re-entering the tab handler.
-                    *guard.borrow_mut() = true;
-                    stack.set_visible_child_name(page.label());
-                    *guard.borrow_mut() = false;
-                    shell.borrow_mut().page = page;
-                    log_line(&lucky::step_line(name));
-                }
-                lucky::Advance::Skipped { line } => {
-                    log_line(&line);
-                    // A skip closes no running step; keep walking.
-                }
-                lucky::Advance::End { line, status: short } => {
-                    log_line(&line);
-                    status.set_text(&short);
-                    // F0.5 S4: the chain ended, so its bookkeeping ends with it and the bar stops.
-                    runqueue::end_run(&mut bar.borrow_mut(), None);
-                    queue.borrow_mut().reset();
-                    break;
-                }
-                lucky::Advance::Idle => break,
-            }
-            // A Declined outcome never blocks, but a stop flag set from elsewhere (⏹ during the chain)
-            // must end it rather than spin.
-            if bar.borrow().stop_flag {
-                let stopped = chain.next(lucky::StepOutcome::Stopped);
-                if let lucky::Advance::End { line, status: short } = stopped {
-                    log_line(&line);
-                    status.set_text(&short);
-                    runqueue::end_run(&mut bar.borrow_mut(), None);
-                    queue.borrow_mut().reset();
-                }
-                break;
-            }
-        }
-
-        // The chain is over either way: give the button back. F0.5 S4 closes its bookkeeping too —
-        // running off, so nothing downstream thinks a run still stands; the log's own state is kept
-        // as it was painted (open), because that is where the end line and any refusal were read.
-        let ended = runqueue::end_run(&mut bar.borrow_mut(), None);
-        // §1: every run ends with `unload_all_models`, even one that used no audio, quietly and
-        // off-thread, so the window answers now instead of waiting on a server.
-        crate::settings_probe::fire_unload(ended.audio_unload);
-        queue.borrow_mut().reset();
-        button.set_sensitive(true);
-        button.remove_css_class("lucky-running");
-        let _ = procs.borrow();
-    });
+    let button = lucky_button.clone();
+    let handles = crate::ui::lucky_run::Handles {
+        bar: bar.clone(),
+        shell: shell.clone(),
+        stack: stack.clone(),
+        guard: guard.clone(),
+        status: status.clone(),
+        progress: progress.clone(),
+        log: log.clone(),
+        log_view: log_view.clone(),
+        queue: queue.clone(),
+        exchange_log: exchange_log.clone(),
+        procs: procs.clone(),
+    };
+    lucky_button.connect_clicked(move |_| crate::ui::lucky_run::press(&button, &handles, &project));
 }
+
 
 /// The New button's tooltip, §1's wording for badge **1**.
 const NEW_TIP: &str = "New project \u{2014} name it, put it where you want it, and start over";
