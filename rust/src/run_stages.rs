@@ -41,12 +41,16 @@ pub struct Task {
     pub args: Vec<String>,
     /// Already on disk from an earlier run: still taken, never run (§S2's resume rule).
     pub already_done: bool,
+    /// The session folder this row belongs to, for a dial that has to read and write project files.
+    /// `None` means the working folder's own session, which is what a shell walk means. Only the dial
+    /// rows set it; a spawned task is given its paths in its argv.
+    pub session: Option<String>,
 }
 
 impl Task {
     /// A task that must run.
     pub fn run_it(label: &str, program: &str, args: Vec<String>) -> Self {
-        Task { label: label.to_string(), program: program.to_string(), args, already_done: false }
+        Task { label: label.to_string(), program: program.to_string(), args, already_done: false, session: None }
     }
 
     /// A task whose output already exists: counted, taken, and left alone.
@@ -56,6 +60,7 @@ impl Task {
             program: String::new(),
             args: Vec::new(),
             already_done: true,
+            session: None,
         }
     }
 }
@@ -104,6 +109,11 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
             if !speech.tasks.is_empty() {
                 stages.push(speech);
             }
+            // The rows that ticked ✂: split off the voice, same dial door, another stage.
+            let separation = crate::separate_run::stage(project);
+            if !separation.tasks.is_empty() {
+                stages.push(separation);
+            }
             stages
         }
         // Cut's suggest step reads what Prepare wrote; its own subprocess work is the align clip cut.
@@ -146,6 +156,7 @@ fn speech_stage(project: &Project) -> Stage {
             program: AUDIO_TASK.to_string(),
             args: vec![source.path.clone(), project.language.clone()],
             already_done: false,
+            session: None,
         })
         .collect();
     Stage { track: runqueue::TRACK_STT, name: "speech", phase: 1, of: 2, kind: "chunk", tasks }
@@ -251,7 +262,13 @@ where
             // The audio tasks are dials, not processes: same checkpoint, same `take`, same bar, and the
             // work is a request rather than a fork. The door answers with the lines it logged.
             if task.program == AUDIO_TASK {
-                if let Err(error) = dial_task(task, &mut log) {
+                // Same dial door, two different asks: the walk does not decide which, the row says.
+                let worked = if task.args.first().map(String::as_str) == Some(crate::separate_run::SEPARATE_MARK) {
+                    crate::separate_run::run_task(task, &mut log)
+                } else {
+                    dial_task(task, &mut log)
+                };
+                if let Err(error) = worked {
                     return Drive::Failed { stage: stage.name, error };
                 }
                 ran += 1;

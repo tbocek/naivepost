@@ -45,7 +45,7 @@ pub struct Ask<'a> {
 /// read leniently, at the top level or under `result`, and a shape that is not one of these is an
 /// `Err` naming the server and showing the reply rather than a guess — an aligner already does this
 /// ([`crate::align::parse_words`]) and a silent empty answer is how a wrong guess gets filed as work.
-pub fn answer(body: &Value) -> Value {
+fn answer(body: &Value) -> Value {
     body.get("result").cloned().unwrap_or_else(|| body.clone())
 }
 
@@ -77,11 +77,6 @@ pub fn asr_answer(body: &Value) -> Result<WordsDoc, String> {
 /// The text an ASR's word times spell, for a server that sends only times and tokens.
 fn joined(words: &[Word]) -> String {
     words.iter().map(|word| word.word.as_str()).collect::<Vec<_>>().join(" ")
-}
-
-/// Forced alignment's answer: the words with times, in the aligner's own reading.
-pub fn align_answer(body: &Value) -> Result<Vec<Word>, String> {
-    crate::align::parse_words(&answer(body))
 }
 
 /// Diarization's answer: speaker turns as samples.
@@ -488,42 +483,16 @@ pub fn transcribe_asr<'a>(
     }
 }
 
-/// The `join` [`crate::separate::separate`] wants: one finished stem file written at the path it is
-/// given. The stems come back as server paths (§1: every task works inside the server's folders), so
-/// the caller's ffmpeg copies them down; this writes what arrived at the local name the split wants.
-pub fn separate_join<'a>(
-    tree: &'a Option<Tree>,
-    paths: &'a crate::settings::Paths,
-    model: &'a str,
-    mut stems: impl FnMut(&ServerPath, &Path) -> Result<(), String> + 'a,
-) -> impl FnMut(&Path) -> Result<(), String> + 'a {
-    move |out: &Path| {
-        let wanted = out
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let audio = server_path_for(&wanted);
-        let envelope = separation_body(model, &audio, &wanted);
-        let body = dial(
-            tree,
-            paths,
-            Ask { step: "Prepare", job: &wanted, task: "separate" },
-            model,
-            &envelope,
-        )?;
-        let (_kind, voice, rest) = stem_paths(&parse_json(&body)?)?;
-        // `separate` calls join twice, voice first then rest: whichever name asks for the voice gets
-        // the voice stem, the other the rest, so one dial per half and no guessing at the order.
-        let stem = if wanted.contains("voice") { &voice } else { &rest };
-        stems(stem, out)
-    }
-}
-
 /// The envelope a separation request carries. §5 lists no body for it, so this is a decision written
 /// down: the same envelope every task run takes (`{"model","request"}`) with the recording's server
 /// path and the chunk the split is asked for, since a stems task answers with stem paths for the audio
 /// it was given and nothing else.
-fn separation_body(model: &str, audio: &ServerPath, chunk: &str) -> Value {
+///
+/// Public because the run path ([`crate::separate_run`]) puts a decoded recording on the server before
+/// it asks: the thing a task may name is always an upload's answer, so the split needs the upload and
+/// its envelope from the same door, and naming it in one place keeps the two halves of the request
+/// describing the same bytes.
+pub fn separation_body(model: &str, audio: &ServerPath, chunk: &str) -> Value {
     serde_json::json!({
         "model": model,
         "request": { "audio": audio.as_str(), "chunk": chunk },
@@ -781,16 +750,6 @@ fn scratch_file(name: &str) -> std::path::PathBuf {
 
 /// The server path a task is asked about, from the file name the flow module chose.
 ///
-/// A flow names its chunk `c03.wav` or its window `w000001500.wav`; the server knows it under its own
-/// upload folder, and an upload's answer is always absolute. Synthesising the path from the name is
-/// what the upload contract guarantees (audio.cpp serves uploads from one folder), and it is the
-/// only form [`ServerPath`] accepts — a local path cannot be handed here even by mistake.
-fn server_path_for(file: &str) -> ServerPath {
-    let name = file.rsplit('/').next().unwrap_or(file);
-    ServerPath::from_upload(&format!("/uploads/{name}"))
-        .expect("the synthesised upload path is absolute by construction")
-}
-
 /// A reply body that is not JSON is a protocol disagreement, said as one with the reply quoted.
 fn parse_json(body: &str) -> Result<Value, String> {
     serde_json::from_str(body).map_err(|_| format!("the audio.cpp server answered something that is not JSON: {}", trim(body)))

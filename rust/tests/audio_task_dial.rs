@@ -164,6 +164,31 @@ fn wait_for_recorded(needle: &str, in_body: &str) -> Seen {
     }
 }
 
+/// [`wait_for_recorded`] scoped to ONE fake server, which is what makes it safe for a claim about a
+/// header or a byte count.
+///
+/// `wait_for_recorded` searches every fake this binary has started, and cargo runs these tests as
+/// threads of one process: two tests dialling the same model id can each see the other's request, so an
+/// assertion about what THIS test sent (an absent bearer, say) reads whichever landed last. Filtering
+/// by the port this test's own fake listens on attributes the request honestly.
+fn wait_for_recorded_at(url: &str, needle: &str, in_body: &str) -> Seen {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if let Some(seen) = recorded_at(url)
+            .into_iter()
+            .rev()
+            .find(|seen| seen.line.contains(needle) && seen.body.contains(in_body))
+        {
+            return seen;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no request to {needle} carrying {in_body:?} reached {url}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 /// Every request every fake server in this binary has answered, grouped per server, newest last.
 static SEEN: Mutex<Vec<Vec<Seen>>> = Mutex::new(Vec::new());
 
@@ -442,7 +467,7 @@ fn sec_02_services_1_the_four_servers_s1_a_task_run_is_posted_to_the_task_endpoi
     .expect("the task run answers");
 
     assert_eq!(reply, r#"{"text":"hello there","words":[]}"#);
-    let run = wait_for_recorded("/v1/tasks/run", services::ASR_MODEL);
+    let run = wait_for_recorded_at(&url, "/v1/tasks/run", services::ASR_MODEL);
     assert!(run.line.starts_with("POST "), "a task run is a POST: {}", run.line);
     assert!(run.line.contains("/v1/tasks/run"), "the path §1 names: {}", run.line);
     let sent: serde_json::Value = serde_json::from_str(&run.body).expect("a JSON envelope");
@@ -450,8 +475,9 @@ fn sec_02_services_1_the_four_servers_s1_a_task_run_is_posted_to_the_task_endpoi
     assert_eq!(sent["request"]["audio"], "/uploads/c00.wav");
     assert_eq!(sent["request"]["language"], "en");
     // No key box means no Authorization header at all — not an empty bearer (§1, pinned again here on
-    // the task leg because the task leg is the one that carries real work).
-    let run = wait_for_recorded("/v1/tasks/run", services::ASR_MODEL);
+    // the task leg because the task leg is the one that carries real work). Scoped to this test's own
+    // fake: another test dials the same model WITH a key, and an unscoped search would read that one.
+    let run = wait_for_recorded_at(&url, "/v1/tasks/run", services::ASR_MODEL);
     assert_eq!(run.header("authorization"), None, "an empty key box sends no credential");
 }
 
@@ -470,17 +496,29 @@ fn sec_02_services_1_the_four_servers_s1_diarization_and_alignment_ride_the_same
 
     let body = dial_here(&dirs, ask, services::DIAR_MODEL, &bodies::diar_body(services::DIAR_MODEL, &audio))
         .expect("the diarizer answers");
-    let turns = audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(&body).expect("JSON"))
-        .expect("the turns read");
+    // The turns come back through the same reading `diar_ask` applies on its way into
+    // `transcribe::run`, so what is checked is the reply this dial actually got.
+    let turns = audio_task::diar_answer(
+        &serde_json::from_str::<serde_json::Value>(&body).expect("JSON"),
+    )
+    .expect("the turns read");
     assert_eq!(turns.len(), 1);
     assert_eq!(turns[0].speaker_id, 1);
 
     let align = Ask { step: "Prepare", job: "w000001500.wav", task: "align" };
     let envelope = bodies::align_body("qwen3-aligner", &audio, "hello there", "en");
-    let body = dial_here(&dirs, align, "qwen3-aligner", &envelope).expect("the aligner answers");
-    let _ = body;
-    let words = audio_task::align_answer(&serde_json::from_str::<serde_json::Value>(r#"{"words":[{"word":"hello","start":0.0,"end":0.4}]}"#).expect("JSON"))
-        .expect("word times read");
+    // The dial is what is under test here — that alignment rides the same endpoint with its own body —
+    // so the reply itself is only checked to have arrived.
+    let _body = dial_here(&dirs, align, "qwen3-aligner", &envelope).expect("the aligner answers");
+    // The word times come out of the reply the way the alignment stage reads them — `align::run` calls
+    // `parse_words` on whatever its `ask` handed back, so this is the same door's reading rather than a
+    // second copy of it. This fake answers every task with the diarizer's turns, so what is proven here
+    // is that an align reply is readable as words once the stage gets it.
+    let words = naivepost::align::parse_words(
+        &serde_json::from_str::<serde_json::Value>(r#"{"words":[{"word":"hello","start":0.0,"end":0.4}]}"#)
+            .expect("JSON"),
+    )
+    .expect("word times read");
     assert_eq!(words.len(), 1);
 
     let all = recorded_at(&url);
@@ -767,7 +805,7 @@ fn sec_02_services_1_the_four_servers_s3_a_key_goes_as_a_bearer_and_nothing_else
     )
     .expect("the task run answers");
 
-    let last = wait_for_recorded("/v1/tasks/run", services::ASR_MODEL);
+    let last = wait_for_recorded_at(&url, "/v1/tasks/run", services::ASR_MODEL);
     assert_eq!(
         last.header("authorization").as_deref().map(|value| value.to_ascii_lowercase()),
         Some("bearer sk-audio".to_string()),
@@ -787,7 +825,7 @@ fn sec_02_services_1_the_four_servers_s1_an_upload_carries_the_bytes_and_its_nam
         .expect("the upload lands");
     assert_eq!(path.as_str(), "/uploads/c00.wav");
 
-    let upload = wait_for_recorded("/v1/ui/upload", "fake wav bytes");
+    let upload = wait_for_recorded_at(&url, "/v1/ui/upload", "fake wav bytes");
 
     assert!(upload.line.starts_with("POST "), "the upload is a POST: {}", upload.line);
     assert_eq!(

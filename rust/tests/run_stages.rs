@@ -24,6 +24,7 @@ fn marker_task(dir: &std::path::Path, name: &str) -> Task {
         program: "/bin/sh".to_string(),
         args: vec!["-c".to_string(), format!("touch {}", stamp.display())],
         already_done: false,
+        session: None,
     }
 }
 

@@ -165,11 +165,6 @@ fn held_by(map: &HashMap<Key, Slot>, key: &Key) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The slot count this pair's gate was built with, if there is one.
-fn slots_of_key(map: &HashMap<Key, Slot>, key: &Key) -> Option<u32> {
-    map.get(key).map(|slot| slot.slots)
-}
-
 /// Every (server, model) the registry holds a gate for, with who is on it — the diagnostic that tells
 /// "no such gate" from "gate with nothing held", which `holders` alone cannot distinguish.
 fn keys(map: &HashMap<Key, Slot>) -> Vec<(String, String, Vec<String>)> {
@@ -204,24 +199,6 @@ pub fn slots_for_task(conf: &crate::settings::Conf, task: &str) -> u32 {
 pub fn holders(url: &str, model: &str) -> Vec<String> {
     let key = (url.to_string(), model.to_string());
     held_by(&registry().lock().expect("the gate map"), &key)
-}
-
-/// A slot taken and handed back straight away, so a test can prove a gate is live without holding one.
-/// Returns who the gate says held it — the step name it was given.
-pub fn probe(url: &str, model: &str, slots: u32, holder: &str) -> Vec<String> {
-    let key = (url.to_string(), model.to_string());
-    {
-        let (_slot, _) = hold(url, model, slots, holder);
-        return held_by(&registry().lock().expect("the gate map"), &key);
-    }
-}
-
-/// The gate's own view of how many slots `(url, model)` was built with, or `None` when nothing has ever
-/// asked about it. Lets a test tell "no slots are held" from "there is no gate here at all", which
-/// otherwise look identical through [`holders`].
-pub fn slots_of(url: &str, model: &str) -> Option<u32> {
-    let key = (url.to_string(), model.to_string());
-    slots_of_key(&registry().lock().expect("the gate map"), &key)
 }
 
 /// Every gate the registry holds, as (server, model, who is on it). For a test that needs to know what

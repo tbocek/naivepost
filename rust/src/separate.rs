@@ -164,8 +164,11 @@ pub fn lopsided(mix: &str, rest: &str) -> Option<String> {
     ))
 }
 
-/// `volumedetect`'s mean out of a line like `-20.3 dB`; `None` when there is no number to read.
-fn mean_db(level: &str) -> Option<f64> {
+/// The `volumedetect` mean out of a line like `-20.3 dB`; `None` when there is no number to read.
+///
+/// Public because the run path ([`crate::separate_run`]) reads ffmpeg's own output through it: the
+/// number is ffmpeg's, the reading of it is this module's, and nothing should re-parse it elsewhere.
+pub fn mean_db(level: &str) -> Option<f64> {
     let digits = level
         .trim()
         .split_whitespace()
