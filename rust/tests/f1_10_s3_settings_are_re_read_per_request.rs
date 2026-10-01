@@ -29,7 +29,11 @@ fn f1_10_s3_settings_are_re_read_per_request() {
         first.iter().any(|line| line.contains("asking once more")),
         "the first ask went out and was refused: {first:?}"
     );
-    let dead = FakeLlm::dead_port();
+    // A port the OS just handed out that NOBODY ever bound (the listener is dropped), which a dial refuses on
+    // the spot. Do NOT hold a listener open here: an accepted-but-never-answered connect parks the seam for the
+    // whole 10-minute ceiling (job 58). The other case -- keeping a LIVE address from being re-dialled -- is
+    // what `FakeLlm::dead_listener` is for, and it is held only by scenarios that want it.
+    let dead = FakeLlm::dead_listener().local_addr().expect("a port").port();
     point_at(&format!("http://127.0.0.1:{dead}"));
     let lines = press(&fixture.tree, &fixture.project);
     assert!(

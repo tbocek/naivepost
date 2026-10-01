@@ -79,9 +79,24 @@ impl FakeLlm {
     }
 
     /// A port nothing listens on: the down-server case.
+    ///
+    /// The listener is HELD, not dropped: a released ephemeral port goes straight back to the pool, and under a
+    /// full `cargo test` (whose test processes share one machine, and whose own sockets pick ephemeral ports)
+    /// something else can bind the number between here and the dial — then the "dead" wire answers and the pass
+    /// asks once per seam instead of once in all. Holding it is the only way a port stays dead.
+    pub fn dead_listener() -> TcpListener {
+        TcpListener::bind("127.0.0.1:0").expect("bind to hand out a port")
+    }
+
+    /// [`dead_listener`]'s port. The listener is HELD, not dropped and not leaked: a released ephemeral port
+    /// goes back to the OS pool, where another test process can take it and answer a wire a scenario meant to
+    /// keep dead (which shows up as the pass reaching a second seam and asking twice more). Pinning it for the
+    /// process is worse still: this fixture is also used to point a seam at a port whose behaviour must change
+    /// *mid-scenario*, and a forgotten listener keeps the first address unreachable no matter what the scenario
+    /// then dials -- the call blocks to its 10-minute ceiling. So callers get the port only, and a scenario
+    /// that needs the address dead across a whole scenario holds a [`dead_listener`] itself.
     pub fn dead_port() -> u16 {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind to hand out a port");
-        listener.local_addr().expect("a local address").port()
+        Self::dead_listener().local_addr().expect("a local address").port()
     }
 
     pub fn url(&self) -> String {

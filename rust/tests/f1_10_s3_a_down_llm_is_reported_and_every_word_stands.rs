@@ -16,10 +16,16 @@ use joined_answer::{chat, raw};
 
 #[test]
 fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
-    let dead = FakeLlm::dead_port();
-    point_at(&format!("http://127.0.0.1:{dead}"));
+    let dead = harness::FakeLlm::dead_listener();
+    let dead_port = dead.local_addr().expect("the dead port has an address").port();
+    point_at(&format!("http://127.0.0.1:{dead_port}"));
     let fixture = fixture("down");
     let lines = press(&fixture.tree, &fixture.project);
+    // Held for exactly as long as the scenario needs it dead -- see `FakeLlm::dead_listener`. The count is
+    // ONE failed seam (2 rows) rather than one per seam because a transport death on a server that has never
+    // answered spends no ladder at all, and the pass stops asking once it has said the failure: §3's one
+    // retry, and `seam_retries` spends none of its retries on a wire that never answered.
+    drop(dead);
     assert!(
         lines.iter().any(|line| line.contains("llm") && line.contains("not answering")),
         "the failure names the server that is down: {lines:?}"
