@@ -154,15 +154,20 @@ fn check_press_reads_the_typed_value(app: &adw::Application) {
 
     // A fresh dialog per check: the accessors resolve against the LAST dialog opened, so each check
     // installs its own provider this way rather than sharing one across all three.
-    // The dialog the gear itself opened answers nothing, so a press on it says so rather than
-    // showing a check mark nobody probed for. Read here, before the canned dialog supersedes it.
+    // The gear's own dialog is wired to the LIVE provider — a real session has one, and there is no
+    // headless stand-in for a chooser — so a press on it now travels the wire instead of answering
+    // "nothing wired". What still has to be loud is that nothing came back: an empty box names no binary,
+    // so the row refuses with its own reason rather than showing a ✓ nobody probed for.
+    ui::entry(&window, "ffmpeg")
+        .expect("the ffmpeg row has its value box")
+        .set_text("");
     ui::test_button(&window, "ffmpeg")
         .expect("the ffmpeg row has a Test button")
         .emit_clicked();
     let unwired = last_log();
     assert!(
-        unwired.contains("nothing wired"),
-        "S1: an unwired probe fails loudly, got {unwired:?}"
+        !unwired.contains("✓") && (unwired.contains("nothing wired") || unwired.contains("not on PATH")),
+        "S1: a probe that cannot answer fails loudly, got {unwired:?}"
     );
 
     open_canned(&window, echoing());

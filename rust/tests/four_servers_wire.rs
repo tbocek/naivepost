@@ -456,36 +456,60 @@ fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are
 // S20 lives in `four_servers_widget.rs`: a Test button press is a user action and needs a GTK
 // main loop, which this binary does not run.
 
-/// S24: the live provider composes rather than overrides — a row it does not dial keeps answering
+/// S24: the live provider composes rather than overrides — a key it has no live route for keeps answering
 /// from the injected fallback, so a test's canned answer can never be replaced by a wire trip.
+///
+/// §5 grew the dialled set to EVERY Test row (the LLM's two completions, the four audio.cpp model ids,
+/// the aligner, both endpoints and sd.cpp), so delegation now survives only for the two keys that share the
+/// provider without being rows themselves: "Fetch models" and Use. That is what part (b) pins. Part (a)
+/// pins the other half of the same fact — a dialled row must not leak to the fallback, which is what an
+/// earlier shape of this file asserted in reverse (`ffmpeg`/`firefox` are left alone here on purpose: each
+/// runs a real subprocess, and their verdicts belong to `details_confirmed_probes.rs` s6 and s7).
 #[test]
 fn sec_02_services_1_the_four_servers_s24_a_live_provider_delegates_the_rows_it_does_not_dial() {
     let canned: Provider =
         Rc::new(|key, typed| Ok(format!("canned {key}={typed}")));
     let provider = settings_probe::live_over(canned);
 
-    // ffmpeg names no port: its answer comes from the fallback, verbatim, with the typed value kept.
-    assert_eq!(
-        provider("ffmpeg", "/opt/ffmpeg"),
-        Ok("canned ffmpeg=/opt/ffmpeg".to_string()),
-        "a non-HTTP row answers from the injected provider, never from the wire"
-    );
-    for key in ["firefox", "tts", "asr", "diar", "sep", "aligner"] {
+    // A dialled row answers from the wire or not at all, never from the injected provider. The address is
+    // port 1 on loopback: nothing listens there, so the attempt fails on a refused connection immediately
+    // instead of waiting out a DNS lookup or a request timeout.
+    for key in ["llm", "llm-vision", "tts", "asr", "diar", "sep", "aligner", "audio", "sd"] {
+        let answer = provider(key, "127.0.0.1:1");
         assert!(
-            provider(key, "x").is_ok(),
-            "{key} is not one of the three dialled rows, so the fallback must answer it"
+            !answer.as_ref().is_ok_and(|text| text == &format!("canned {key}=127.0.0.1:1")),
+            "{key} is a dialled row, so its answer must come from the leg, not the fallback: {answer:?}"
         );
     }
+
+    // The composition rule §5 did not remove: a key with no live route answers from the fallback verbatim,
+    // typed value kept. These two go through the same provider as the rows because they report through the
+    // same badge and log (§5's mirroring rule), and neither is a service test.
+    assert_eq!(
+        provider("fetch-models", "http://x"),
+        Ok("canned fetch-models=http://x".to_string()),
+        "a key with no live route answers from the injected provider, never from the wire"
+    );
+    assert_eq!(
+        provider("use-model", "qwen3-test"),
+        Ok("canned use-model=qwen3-test".to_string()),
+        "adopting a listed id is not a probe either, so the fallback keeps it"
+    );
 }
 
-/// S25: with nothing else wired, the rows the live provider does not dial say so out loud rather
-/// than showing a ✓ nobody probed for.
+/// S25: with nothing else wired, a key the live provider has no route for says out loud that nobody
+/// connected it, rather than showing a ✓ nobody probed for.
+///
+/// Every Test row is on the live route since §5, so "Fetch models" is the shortest honest way to reach
+/// [`crate::ui::settings::no_probe`]'s sentence through the provider a session really installs. The binary
+/// rows would not do: each runs a subprocess, and ffmpeg is installed in this image (the pipeline needs
+/// it), so an installed one legitimately passes instead of refusing.
 #[test]
 fn sec_02_services_1_the_four_servers_s25_the_default_live_fallback_says_nothing_is_wired() {
-    let reason = settings_probe::live_provider()("tts", "index-tts2")
-        .expect_err("the TTS row is not one of the three HTTP rows, so it falls back");
+    let reason = settings_probe::live_provider()("fetch-models", "http://x")
+        .expect_err("nothing is wired behind the default provider for this key");
     assert!(
-        reason.contains("nothing wired") && reason.contains("tts"),
+        reason.contains("nothing wired") && reason.contains("fetch-models"),
         "the fallback names the row it cannot probe, got {reason:?}"
     );
 }

@@ -136,6 +136,9 @@ pub mod request_timing;
 pub mod server_leg;
 pub mod stop_legs;
 pub mod settings_probe;
+/// §02-services.md §5 — the Settings rows that are not LLM/audio/sd HTTP: the LLM's two completion
+/// tests, the four audio.cpp model ids, the aligner, ffmpeg and firefox.
+pub mod settings_probe_rows;
 pub mod speak_leg;
 pub mod roles;
 pub mod lucky;
@@ -152,6 +155,7 @@ pub mod settings;
 pub mod slot_gate;
 pub mod shell;
 pub mod snapshot;
+pub mod snapshot_settings;
 pub mod sources;
 pub mod startup;
 pub mod subprocess;

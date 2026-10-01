@@ -424,11 +424,18 @@ architecture behind them.
                 Some(shown.upcast())
             }
             // §03's image is the dialog, not the window behind it, so the dialog is the subject here
-            // too. `no_probe` answers every row, so the marks read ✗ — which is what makes this shot
-            // worth looking at: the grid, the badge column and the Fetch models row all show at once.
+            // too. The grid, the badge column and the Fetch models row all show at once.
+            //
+            // One row answers ✓: `no_probe` fails every row, which would leave a column of empty marks —
+            // badges only get painted by a press, and a snapshot presses nothing. So the ffmpeg row is
+            // pressed once through the same seam a click goes through (`press_test`, the one
+            // `wire_buttons` wires), with `checks::ffmpeg_verdict`'s own passing sentence rather than an
+            // invented one: that is what the spec's picture shows ("the ✓ is a passed ffmpeg test").
             "03-settings" => {
                 let shown = ui::settings::build(None, ui::settings::no_probe());
                 shown.present();
+                crate::snapshot_settings::remember(&shown);
+                crate::snapshot_settings::stage_ffmpeg_row();
                 Some(shown.upcast())
             }
             // `spec/img/04-prompt-picker.png` pictures the row picker OPEN on a prompt, so this
@@ -464,6 +471,9 @@ architecture behind them.
         // One more cycle after the map: the map happens before the first frame is drawn. The paint
         // and the quit are synchronous here, so no second mapped window is ever waited on.
         glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+            // The settings dialog's staged ffmpeg verdict goes on now: the map has happened, so the label
+            // can hold a mark, and this runs before the pixels are taken.
+            crate::snapshot_settings::apply_staged_badge();
             match write_png(&painted, &out) {
                 Ok(()) => (),
                 Err(err) => {

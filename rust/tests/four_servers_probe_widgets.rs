@@ -19,7 +19,6 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::settings_probe;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
@@ -143,7 +142,9 @@ fn round() {
             settle();
 
             // The live provider, exactly as a real session installs it: every row's probe goes out
-            // over HTTP to the address in that row's box.
+            // over HTTP to the address in that row's box. A conf with a model id goes down first, because
+            // the dialog seeds its Model box from the file and §5 refuses a completion with no id to ask.
+            install_conf();
             ui::open_settings(&window, settings_probe::live_provider());
             assert!(ui::dialog_open(&window), "the settings dialog is open");
 
@@ -163,6 +164,19 @@ static RAN_LLM: AtomicBool = AtomicBool::new(false);
 static RAN_AUDIO: AtomicBool = AtomicBool::new(false);
 static RAN_SD: AtomicBool = AtomicBool::new(false);
 
+/// Install a conf with a model id BEFORE the dialog opens, so the box the dialog seeds from it is not
+/// empty: §5 refuses a completion when there is no id to ask for. See [`round`]'s ordering.
+fn install_conf() {
+    let root = std::env::temp_dir().join(format!("np-s21-conf-{}", std::process::id()));
+    std::fs::create_dir_all(&root).expect("a config folder");
+    std::env::set_var("XDG_CONFIG_HOME", &root);
+    std::env::set_var("XDG_DATA_HOME", &root);
+    let paths = naivepost::settings::from_environment().expect("an absolute XDG_CONFIG_HOME is a config home");
+    let mut conf = naivepost::settings::Conf::default();
+    conf.model = "qwen3-test".to_string();
+    naivepost::settings::save(&paths, &conf).expect("the conf writes");
+}
+
 fn type_and_test(window: &adw::ApplicationWindow, key: &str, url: &str) {
     ui::entry(window, key)
         .unwrap_or_else(|| panic!("the {key} row has its value box"))
@@ -174,20 +188,41 @@ fn type_and_test(window: &adw::ApplicationWindow, key: &str, url: &str) {
 }
 
 /// S21: a Test press on the LLM row asks the typed address over the wire and badges the verdict.
+///
+/// §5 changed WHAT this row asks: one completion (`max_tokens` 16, thinking off) rather than
+/// `GET /v1/models`, because a server that lists a model and then answers nothing is exactly what the row
+/// has to catch ([`checks::LIST_MODELS_LLM_USES`] keeps the listing for "Fetch models" and sd.cpp's
+/// fallback alone). So the fake serves both routes — the completion is what the row asks, the catalogue
+/// what backs "Fetch models", which the next check presses. The proof it really telephoned the typed
+/// address is unchanged in shape: the path the request arrived at.
 fn check_llm_row_answers_live(window: &adw::ApplicationWindow) {
-    let server = Live::start(&[(
-        "/v1/models",
-        r#"{"data":[{"id":"qwen3-test"},{"id":"llama-vision"}]}"#,
-    )]);
+    let server = Live::start(&[
+        ("/v1/chat/completions", r#"{"choices":[{"message":{"content":"hello"}}]}"#),
+        ("/v1/models", r#"{"data":[{"id":"qwen3-test"},{"id":"llama-vision"}]}"#),
+    ]);
 
+    // The LLM row's Test reads the value typed under its own key (`typed("llm")`) as the ADDRESS, so the
+    // fake's loopback URL goes in that box — the same route `type_and_test` takes for the audio and sd rows.
+    // An id still has to exist for the request to name: with an empty Model box §5 refuses before dialling,
+    // so the conf carries one and the dialog is opened over it (see [`install_conf`]).
     type_and_test(window, "llm", &server.url());
+    ui::test_button(window, "llm")
+        .expect("the llm row has a Test button")
+        .emit_clicked();
+    settle();
 
-    // The row really telephoned the address that was typed, at models' own path.
+    // The completion is what this row asks now (§5), so the first thing to arrive must be that request.
+    // A refusal with nothing on the wire means the Model box was empty, and the badge line below would then
+    // be the only clue — so say which it was here.
     let asked = server.asked(1);
     assert_eq!(
         asked,
-        vec!["/v1/models".to_string()],
-        "the LLM row's Test asked the typed address's /v1/models"
+        vec!["/v1/chat/completions".to_string()],
+        "the LLM row's Test asked the typed address's /v1/chat/completions (an empty list means the row \
+         refused before dialling: {})",
+        ui::badge(window, "llm")
+            .and_then(|badge| badge.tooltip_text().map(String::from))
+            .unwrap_or_default()
     );
 
     let badge = ui::badge(window, "llm").expect("the llm row has a badge");

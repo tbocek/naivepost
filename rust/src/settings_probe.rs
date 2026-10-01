@@ -19,6 +19,7 @@ use crate::checks::{self, SdCaps, SdProbe};
 use crate::services::{self, Endpoint, Kind, Server};
 use crate::settings::Conf;
 use crate::ui::settings::Provider;
+use crate::settings_probe_rows;
 
 /// The provider a real session installs: the three HTTP rows go out over the wire through
 /// [`probe`]; every other row keeps `fallback`. Composed HERE rather than inside
@@ -27,7 +28,10 @@ use crate::ui::settings::Provider;
 /// verdict with a connection error.
 pub fn live_over(fallback: Provider) -> Provider {
     Rc::new(move |key: &str, typed: &str| match key {
-        "llm" | "audio" | "sd" => probe(key, typed),
+        "llm" | "llm-vision" | "tts" | "asr" | "diar" | "sep" | "aligner" => probe(key, typed),
+        "ffmpeg" => settings_probe_rows::ffmpeg_row(typed),
+        "firefox" => settings_probe_rows::firefox_row(typed),
+        "audio" | "sd" => probe(key, typed),
         _ => fallback(key, typed),
     })
 }
@@ -36,6 +40,24 @@ pub fn live_over(fallback: Provider) -> Provider {
 /// say they were never connected ([`crate::ui::settings::no_probe`]).
 pub fn live_provider() -> Provider {
     live_over(crate::ui::settings::no_probe())
+}
+
+/// The four audio.cpp rows as (settings key, declared task): the key is the first word of the row's label
+/// in lowercase, and the task is [`checks::AUDIO_ROWS`]' own pair, so the dialog's list, the probe below
+/// and a test asking "which task does the TTS row check?" all read one table — the TTS row is `clon`.
+pub const AUDIO_ROW_TASKS: [(&str, &str); 4] = [
+    ("tts", "clon"),
+    ("asr", "asr"),
+    ("diar", "diar"),
+    ("sep", "sep"),
+];
+
+/// The (label, task) pair behind one row key, or `None` for a key that is not an audio row.
+fn audio_row_pair(key: &str) -> Option<(&'static str, &'static str)> {
+    let (_, task) = AUDIO_ROW_TASKS.into_iter().find(|(row_key, _)| *row_key == key)?;
+    checks::AUDIO_ROWS
+        .into_iter()
+        .find(|(_, row_task)| *row_task == task)
 }
 
 /// One row's probe, written out per row so each says which call it made.
@@ -54,25 +76,39 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
 
     match key {
         "llm" => {
-            let endpoint = llm_at(&conf, typed);
-            let body = ask(&tree, Server::Llm, &endpoint, Kind::ListModels, "models", None)?;
-            Ok(checks::llm_verdict(
-                conf.model.as_str(),
-                0.0,
-                summarise(&body).as_str(),
-            ))
+            // §5: ONE completion, `max_tokens` 16, thinking forced off, at [`checks::LLM_TEST_SECONDS`].
+            // `GET /v1/models` is NOT this row's test — it backs only Fetch models and sd.cpp's fallback
+            // ([`checks::LIST_MODELS_LLM_USES`]) — because a server that lists a model and then answers
+            // nothing is exactly what the row has to catch.
+            let ask = settings_probe_rows::chat_ask(&conf, typed);
+            settings_probe_rows::llm_row(&conf, &ask)
         }
+        "llm-vision" => {
+            let ask = settings_probe_rows::chat_ask(&conf, typed);
+            settings_probe_rows::vision_row(&conf, &ask)
+        }
+        "tts" | "asr" | "diar" | "sep" => {
+            let models = settings_probe_rows::audio_catalogue(&conf, typed)?;
+            let (label, task) = audio_row_pair(key).unwrap_or(("the model row", key));
+            settings_probe_rows::audio_model_row(&models, typed, task, label)
+        }
+        "aligner" => {
+            let models = settings_probe_rows::audio_catalogue(&conf, typed)?;
+            settings_probe_rows::aligner_row(&models, typed)
+        }
+        "ffmpeg" => settings_probe_rows::ffmpeg_row(typed),
+        "firefox" => settings_probe_rows::firefox_row(typed),
         "audio" => {
             let endpoint = audio_at(&conf, typed);
-            ask(&tree, Server::Audio, &endpoint, Kind::Health, "health", None)?;
+            get(&tree, Server::Audio, &endpoint, Kind::Health, "health", None)?;
             let models = services::parse_models(
-                &ask(&tree, Server::Audio, &endpoint, Kind::ListModels, "models", None)?,
+                &get(&tree, Server::Audio, &endpoint, Kind::ListModels, "models", None)?,
             );
             Ok(checks::audio_health_verdict(0, &models)?)
         }
         "sd" => {
             let endpoint = image_at(&conf, typed);
-            match ask(&tree, Server::Image, &endpoint, Kind::Capabilities, "capabilities", None) {
+            match get(&tree, Server::Image, &endpoint, Kind::Capabilities, "capabilities", None) {
                 Ok(body) => {
                     let caps = sd_caps(&body);
                     Ok(checks::sd_verdict(Ok(&caps))?)
@@ -81,7 +117,7 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
                     // The two failures are fixed differently, so tell them apart rather than
                     // reporting one word for both: an OpenAI-shaped tenant answers /v1/models and
                     // not the sdcpp API; nothing answering is simply not up.
-                    let openai_only = ask(&tree, Server::Image, &endpoint, Kind::ListModels, "models", None)
+                    let openai_only = get(&tree, Server::Image, &endpoint, Kind::ListModels, "models", None)
                         .is_ok();
                     let probe = if openai_only {
                         SdProbe::OpenAiOnly
@@ -100,11 +136,9 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
 ///
 /// With no project open there is nowhere to append `requests.tsv`, so the leg is called directly
 /// and the row dropped — a down server is still worth knowing about before a project exists.
-/// Ask one server something for a settings probe and return its body.
-///
-/// With no project open there is nowhere to append `requests.tsv`, so the leg is called directly
-/// and the row dropped — a down server is still worth knowing about before a project exists.
-fn ask(
+/// `GET` one server for a settings probe: the audio.cpp model rows and the aligner row read its
+/// catalogue, and the sd row's fallback reads it too. Same leg, same cancel context as [`ask`].
+pub fn get(
     tree: &Option<crate::layout::Tree>,
     server: Server,
     endpoint: &Endpoint,
@@ -115,7 +149,21 @@ fn ask(
     ask_job(tree, server, endpoint, kind, None, model, body)
 }
 
-/// [`ask`] with the sd.cpp job id a poll or cancel acts on. Settings probes never pass one today;
+/// A chat completion from the settings dialog: the LLM and vision rows (§5 — one completion, `max_tokens`
+/// 16, thinking off; the picture is in the body the caller already built).
+///
+/// `Kind::Chat` because that is what a completion is: the same leg, the same `requests.tsv` row shape and
+/// the same cancel context every other chat call rides, so ⏹ ends a probe mid-answer.
+pub fn chat_post(
+    tree: &Option<crate::layout::Tree>,
+    endpoint: &Endpoint,
+    model: &str,
+    body: &str,
+) -> Result<String, String> {
+    ask_job(tree, Server::Llm, endpoint, Kind::Chat, None, model, Some(body))
+}
+
+/// [`ask_job`] with the sd.cpp job id a poll or cancel acts on. Settings probes never pass one today;
 /// the parameter exists so the job-scoped kinds reach the same leg the flows use, not a copy of it.
 ///
 /// The cancel closure is the live session switch ([`crate::cancel_leg`]), not a stub: §02-services#1's
@@ -173,7 +221,7 @@ pub fn fire_unload(kind: Kind) {
         ))
         .ok();
         // Best-effort: the result chooses a log line and nothing else. No `?`, no retry, no wait.
-        match ask(&tree, Server::Audio, &endpoint, Kind::UnloadAll, "unload", None) {
+        match get(&tree, Server::Audio, &endpoint, Kind::UnloadAll, "unload", None) {
             Ok(_) => crate::ui::window::note_unload("models unloaded"),
             Err(why) => crate::ui::window::note_unload(&format!("unload skipped: {why}")),
         };
@@ -207,14 +255,6 @@ fn current_conf() -> Conf {
     crate::settings::from_environment()
         .and_then(|paths| crate::settings::read(&paths).ok())
         .unwrap_or_default()
-}
-
-/// The LLM endpoint with the TYPED address overriding the file's, keeping the saved key.
-fn llm_at(conf: &Conf, typed: &str) -> Endpoint {
-    Endpoint {
-        url: services::server_url(typed).unwrap_or_else(services::llm_default),
-        key: conf.key.clone(),
-    }
 }
 
 /// audio.cpp's endpoint, same rule, its own key.
@@ -252,15 +292,5 @@ fn sd_caps(body: &str) -> SdCaps {
         } else {
             parsed.weights
         },
-    }
-}
-
-/// A reply shortened enough to sit in a tooltip.
-fn summarise(body: &str) -> String {
-    let one = body.lines().next().unwrap_or_default().trim();
-    if one.len() > 80 {
-        format!("{}…", &one[..80])
-    } else {
-        one.to_string()
     }
 }
