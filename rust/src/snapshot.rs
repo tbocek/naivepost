@@ -19,12 +19,60 @@ use crate::new_project;
 use crate::project;
 use crate::ui;
 
+/// The bar's ▶ as the picture sees it: its icon, its tooltip, and whether ⏹ can be pressed — the three
+/// properties `paint_run_bar` is the only writer of, read back off the widgets rather than recomputed
+/// from [`crate::run::controls`] so a missed repaint shows up as a wrong face here.
+fn face_of(window: &adw::ApplicationWindow) -> (String, String, bool) {
+    let play = ui::play_button(window).expect("the run bar has a ▶");
+    (
+        play.icon_name().unwrap_or_default().to_string(),
+        play.tooltip_text().unwrap_or_default().to_string(),
+        ui::stop_button(window).expect("the run bar has a ⏹").is_sensitive(),
+    )
+}
+
+/// Draw the run bar's ▶ at a legible size into a PNG on its own. A whole-window shot cannot show which
+/// glyph the button wears: at 1334 px wide the icon is ~16 px and reads as a blue blob whether it is ▶ or
+/// ⏸, so the face this screen exists to record is invisible in it. The widget has to be laid out first --
+/// one painted inside a window that was never mapped produces no render node -- hence its own top level,
+/// the way `03-new-confirm` paints a dialog rather than the window behind it.
+fn write_face_png(face: &gtk::Button, out: &Path) -> Result<(), String> {
+    // A copy, not the bar's own button: reparenting a widget out of a mapped window leaves it with no
+    // render node, which is what made an earlier attempt of this print "window produced no render node".
+    // The copy carries the same icon and tooltip because those ARE the face being recorded.
+    let glyph = gtk::Button::from_icon_name(face.icon_name().unwrap_or_default().as_str());
+    if let Some(tip) = face.tooltip_text() {
+        glyph.set_tooltip_text(Some(tip.as_str()));
+    }
+    for class in face.css_classes() {
+        glyph.add_css_class(class.as_str());
+    }
+    let holder = gtk::Window::new();
+    holder.set_default_size(96, 72);
+    holder.set_child(Some(&glyph));
+    holder.present();
+    // The map must happen before the frame is taken; `write_png` reads the widget's allocated size.
+    let context = glib::MainContext::default();
+    for _ in 0..64 {
+        while context.pending() {
+            context.iteration(false);
+        }
+    }
+    let result = write_png(glyph.upcast_ref(), out);
+    holder.close();
+    result
+}
+
 /// Screen names the window can render: the spec's images, mapped onto a page.
 fn screen_page(screen: &str) -> Option<&'static str> {
     match screen {
         "03-window" | "03-settings" | "03-sources" | "03-new-confirm" | "03-policy-form" => {
             Some("Prepare")
         }
+        // §2's own picture is the RUN BAR at rest: ▶ with "Run this step — or resume what is paused",
+        // ⏸ absent, and the gears still. It renders on Prepare because that is the page whose step ▶
+        // stands for when nothing is playing (§F0.2 S4 → F1.1).
+        "03-runbar" | "03-runbar-busy" => Some("Prepare"),
         "04-prepare" | "04-prompt-picker" => Some("Prepare"),
         "05-cut" | "05-add" | "05-fold" | "05-rows" | "05-split" | "05-trim" | "05-remove"
         | "05-lanes" => Some("Cut"),
@@ -172,6 +220,86 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // where 0:30-0:40 was folded away, `-` over the still-open tail.
             ui::press_fold_gap(&window, 1);
             ui::refresh_camera_rows(&window);
+        }
+        // §2's own picture (`spec/img/03-runbar.svg`) is the run bar WITH WORK GOING ON: "the gears turn
+        // while a run computes", and ▶ has become ⏸ "Pause". No snapshot could show that face until now
+        // — `run()` drove nothing through `wire_play`, so every shot on disk was the idle one (proved by
+        // `03-runbar` rendering byte-identical to `03-window`). Driven through the program's own doors,
+        // the way `06-volume` opens its form, never by poking state:
+        //   1. seed a cut so the Cut page has real kept material;
+        //   2. press the page's own ▶ (F2.1). Its handler passes the filmed stretches it knows, which
+        //      for a headless snapshot is none, so `preview::press_recording` starts from the red line --
+        //      hence the line placed below first; with neither it answers S3's `NoFootage` and nothing
+        //      plays (that refusal is what an earlier attempt of this shot printed on the status row);
+        //   3. the preview now plays, so the bar's ▶ belongs to it.
+        // The shot therefore ends on the BUSY face: the bar's ▶ drawn as ⏸ with tooltip "Pause", because
+        // `run::controls` calls a page transport that is playing busy (§2). A paused-but-started preview
+        // would read as ▶ again (`Transport::cued`) -- that is F0.2 S2's other face, pinned by
+        // tests/press_play_widgets.rs instead of by a picture.
+        if screen == "03-runbar-busy" {
+            // Seeded BEFORE the tab switch: the Cut page draws its strip from this window's cut slot,
+            // and `run()` seeds it after `build_window` (see the note there).
+            ui::seed_review_cut(
+                &window,
+                &cut::Cut {
+                    segs: vec![
+                        cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
+                        cut::Seg { s: 40.0, e: 60.0, cam: 0, ..Default::default() },
+                    ],
+                    ..Default::default()
+                },
+            );
+            ui::tab_button(&window, crate::shell::Page::Cut)
+                .expect("the shell has a Cut tab")
+                .emit_clicked();
+            // The red line at 15 s: inside the first kept clip, so the preview has a place to start.
+            // BOTH doors, because they are two different states in the app: `set_line_position` places the
+            // line the page draws, and `set_playhead` stands the player's own clock there, which is what
+            // `preview::press_recording` plays from (an earlier attempt placed the line only and the press
+            // answered S3's `NoFootage` -- "nothing was filmed", printed on the status row of that shot).
+            ui::set_line_position(&window, crate::cut_line::LinePos { t: 15.0 });
+            ui::set_playhead(&window, 15.0);
+            // The page's own ▶, through the click the widget fires -- the same body `wire_play_recording`
+            // calls, so the bar's ⏸ answers a preview the app really began and not a state poke. The
+            // assert goes on the player, which is the state both buttons read (`run::transport_for` gives
+            // the Cut page its transport, and `run::controls` paints ⏸ from `playing`).
+            ui::play_recording_button(&window).expect("the Cut page carries play-recording-button")
+                .emit_by_name::<()>("clicked", &[]);
+            // §F0.2 S2: the page's preview is going, so the bar's ▶ belongs to it. This press is the
+            // program's own door and the one thing that repaints the bar (F0.3's ⏹ handler reads the player
+            // the same way; nothing else calls `paint_run_bar` outside a bar-button press). It PAUSES the
+            // preview and stops -- no snapshot, no step.
+            ui::play_button(&window).expect("the run bar has a ▶").emit_by_name::<()>("clicked", &[]);
+            let parked = ui::preview_player(&window).transport;
+            let status = ui::state(&window).status;
+            assert!(
+                !parked.playing && parked.started,
+                "S2 should have parked the preview: transport {parked:?}, status {status:?}"
+            );
+            // The face the parked state earns (`Transport::cued`: started, not playing, so ▶ still owes a
+            // resume -- §2's tooltip says exactly that: "Run this step — or resume what is paused"), read
+            // off the widget the shot is judged by rather than only off `run::controls`, so a bar that
+            // forgot to repaint fails here instead of shipping the wrong picture.
+            let parked_face = face_of(&window);
+            assert_eq!(
+                parked_face.0,
+                crate::run::PLAY_ICON,
+                "a parked preview leaves ▶ as the step's button (§2)"
+            );
+            assert_eq!(parked_face.1, crate::run::PLAY_TOOLTIP, "and §2's own word for it");
+            assert!(parked_face.2, "a parked preview still has something to stop");
+            // Now the shot's own subject: resume, and the bar is the BUSY face -- ⏸ "Pause", §2's "While a
+            // run or page transport is busy it shows ⏸". The picture below is taken in this state.
+            ui::play_button(&window).expect("the run bar has a ▶").emit_by_name::<()>("clicked", &[]);
+            assert!(ui::preview_player(&window).transport.playing, "the second press resumes");
+            let busy = face_of(&window);
+            assert_eq!(busy.0, crate::run::PAUSE_ICON, "a playing preview turns ▶ into ⏸ (§2)");
+            assert_eq!(busy.1, crate::run::PAUSE_TOOLTIP, "and the tooltip is §2's own word for it");
+            assert!(busy.2, "and there is still something to stop");
+            // Named as well as painted: a 16 px glyph inside a 1334 px window shot is not legible, so the
+            // face this screen exists to record goes to `shots/03-runbar-busy.face.png` (the ▶ alone) and
+            // is printed here for whoever runs the recipe.
+            println!("snapshot: 03-runbar-busy face = {} {:?}, stop sensitive = {}", busy.0, busy.1, busy.2);
         }
         // F3.5's screen is the drawing form OPEN, so the shot must drive the same doors the widgets use
         // (`tests/svg_drawing_widgets.rs` fires exactly these) rather than poke state: a picture painted
@@ -466,20 +594,36 @@ architecture behind them.
             window.present();
         }
         let painted = subject.clone().unwrap_or_else(|| window.clone().upcast());
+        // `03-runbar-busy` records a GLYPH, and a glyph is not legible in a 1334 px window shot, so this
+        // screen paints the ▶ itself into `<out>` and the whole window beside it as `-window.png`: the
+        // strip is what gets looked at, the page is there to show the bar in place.
+        let face_only = screen == "03-runbar-busy";
+        // The glyph goes beside the window shot as `<name>-face.png`; the whole page stays at `<name>.png`
+        // so every snapshot keeps writing exactly one file under the name it was asked for.
+        let face_out = out.with_extension("face.png");
         let out = out.clone();
         let app = app.clone();
+        let face_out = face_out.clone();
         // One more cycle after the map: the map happens before the first frame is drawn. The paint
         // and the quit are synchronous here, so no second mapped window is ever waited on.
         glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
             // The settings dialog's staged ffmpeg verdict goes on now: the map has happened, so the label
             // can hold a mark, and this runs before the pixels are taken.
             crate::snapshot_settings::apply_staged_badge();
-            match write_png(&painted, &out) {
-                Ok(()) => (),
-                Err(err) => {
+            if face_only {
+                // The glyph the screen exists to record, painted on its own after the window shot.
+                if let Err(err) = write_png(&painted, &out) {
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
+                let play = ui::play_button(&crate::ui::window::main_window()).expect("the run bar has a ▶");
+                if let Err(err) = write_face_png(&play, &face_out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
+            } else if let Err(err) = write_png(&painted, &out) {
+                eprintln!("snapshot: {err}");
+                OUT.with(|e| *e.borrow_mut() = Some(err));
             }
             app.quit();
         });

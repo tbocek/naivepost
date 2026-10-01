@@ -3182,12 +3182,9 @@ fn paint_progress(
     }
 }
 
-/// Where a press of ▶ is decided: ask [`run::RunBar::press`], then redraw the button and put the
-/// bar's sentence on the status line. Same shape as [`wire_switching`] — one handler, one job.
-///
-/// The transport is `Transport::default()` because no page has a preview model yet (the Cut review
-/// and the Narrate voice sample arrive with their own pages' rounds), so nothing is ever playing to
-/// be toggled; ⏹, which would end a preview, is F0.3.
+/// Where a press of ▶ is decided: [`run::RunBar::press`] on the held player's own transport (§F0.2 S2,
+/// which ⏹ reads the same way), then redraw and put the bar's sentence on the status line. A refusal
+/// outlives this handler: `press` leaves its status empty when a run starts, so refusals are remembered.
 fn wire_play(
     play: &gtk::Button,
     stop_: &gtk::Button,
@@ -3214,6 +3211,8 @@ fn wire_play(
     let exchange_log = exchange_log.clone();
     let procs = procs.clone();
     play.connect_clicked(move |play| {
+        // §F0.2 S2 belongs to the page's preview, so this press asks the player what it holds.
+        let transport = preview_player(&main_window()).transport;
         // F1.1 S1: Prepare refuses at its own start, BEFORE the bar is opened — a run that started
         // and was then sorry would leave ⏸/⏹ showing for work that never began. So the refusal is
         // asked first and short-circuits here; every other page (and every non-refused press) falls
@@ -3235,7 +3234,7 @@ fn wire_play(
             if let Some((log, sentence)) = prepare_run::refuse(&live) {
                 log_line(&log);
                 status.set_text(&sentence);
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, run::Transport::default());
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 return;
             }
         }
@@ -3243,7 +3242,7 @@ fn wire_play(
             if let Some(reason) = refuse_narrate_run(&live) {
                 // S1 only: nothing was pulled, nothing was saved, no file was written or copied.
                 status.set_text(&reason);
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, run::Transport::default());
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 return;
             }
         }
@@ -3256,15 +3255,22 @@ fn wire_play(
             if let Some(reason) = crate::produce_flow::refuse(bar.borrow().running.is_some(), has_cut) {
                 // §F5.1 S1: refused before the bar opened — no ⏸ shows for a run that never began.
                 status.set_text(reason);
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, run::Transport::default());
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 return;
             }
         }
 
-        let pressed = bar.borrow_mut().press(shell.borrow().page, run::Transport::default(), &project);
-        // A refusal has to survive to the end of this handler: `run::RunBar::press` leaves its own
-        // status empty when a run starts (the run is meant to overwrite it), and the tail below
-        // copies that empty string onto the label. Writing the refusal earlier would erase it.
+        let pressed = bar.borrow_mut().press(shell.borrow().page, transport, &project);
+        // S2 stops here (no snapshot, no step) and gets no sentence: the button's face carries the toggle.
+        if let run::Pressed::ToggledTransport { resume } = pressed {
+            let held = preview_player(&main_window());
+            // The face answers the transport this press LEFT, not the one it found: parking a playing
+            // preview paints ▶ (it owes a resume), and painting from `held.transport` would leave ⏸ up.
+            let toggled = run::Transport { playing: resume, started: true };
+            set_preview_state(&main_window(), held.cut_only, held.reviewing, toggled);
+            paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, toggled);
+            return;
+        }
         let mut refusal: Option<String> = None;
         // Whether this press may open a run. F1.1's refusals set it false so `start_run` is skipped
         // and the bar never shows a run that was refused before starting.
@@ -3425,37 +3431,31 @@ fn wire_play(
                 }
             }
             if !started {
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, run::Transport::default());
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 status.set_text(refusal.as_deref().unwrap_or(""));
                 return;
             }
+            // S3 snapshots the LIVE session: a source added after `build_window` is part of this run.
+            let asked = PLAY_SESSION.with(|s| s.borrow().last().map(|h| h.borrow().clone()).unwrap_or_else(|| project.clone()));
             runqueue::start_run(
                 &mut bar.borrow_mut(),
                 &mut queue.borrow_mut(),
                 &mut exchange_log.borrow_mut(),
                 run::step(shell.borrow().page),
-                run::snapshot_sources(&project),
+                run::snapshot_sources(&asked),
             );
             // §2: while nothing is countable the bar pulses; it stops itself when a track reports.
             crate::ui::shell_beats::arm_pulse(&progress, &bar, &queue);
             // F0.5 S2/S3: the step's own work is walked under the bookkeeping, its checkpoint asked
             // between every task; rules live in `run_stages`, this hands over the live session.
-            let asked = PLAY_SESSION.with(|s| s.borrow().last().map(|h| h.borrow().clone()).unwrap_or_else(|| project.clone()));
-            crate::run_stages::drive_page(
-                run::step(shell.borrow().page),
-                &asked,
-                &queue,
-                &bar,
-                &procs,
+            // S3 snapshots the LIVE session: a source added after `build_window` is part of this run.
+            let drive = crate::run_stages::drive_page(
+                run::step(shell.borrow().page), &asked, &queue, &bar, &procs,
             );
+            crate::run_stages::say_outcome(&drive, log_line); // S4: a failed stage names itself in the log
         }
-        paint_run_bar(
-            play,
-            &stop_,
-            &bar.borrow(),
-            shell.borrow().page,
-            run::Transport::default(),
-        );
+        paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page,
+            preview_player(&main_window()).transport);
         status.set_text(&bar.borrow().status);
         paint_progress(
             &progress, &log, &log_view, &queue.borrow(),

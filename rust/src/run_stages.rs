@@ -89,6 +89,24 @@ pub enum Drive {
     Failed { stage: &'static str, error: String },
 }
 
+/// Say what a walked step came to, in the log. A failure names the stage and the reason (§Failure-is-
+/// specific: "a step failed" three stages in says nothing about which box to look at); a stop says how
+/// far it got, because that is what the next ▶ resumes from. A finished step says NOTHING -- F0.2 S4:
+/// one step gets no "all done" line. Returns whether anything was logged.
+pub fn say_outcome(drive: &Drive, mut log: impl FnMut(&str)) -> bool {
+    match drive {
+        Drive::Done { .. } => false,
+        Drive::Stopped { ran, left } => {
+            log(&format!(">>> stopped after {ran} task(s), {left} not run"));
+            true
+        }
+        Drive::Failed { stage, error } => {
+            log(&format!("!!! {stage} failed \u{2014} {error}"));
+            true
+        }
+    }
+}
+
 /// The work one page step consists of, planned from the live project.
 ///
 /// Frames come from [`crate::frames::scene_pass_plan`] — the scene-detect pass every Prepare run
