@@ -78,7 +78,7 @@ pub use window::close_policy_forms;
 // The shell's own seams and the beats `shell_beats` stands: a test drives these rather than reaching for a
 // private flag, which is what makes the autosave and the pulse observable from outside `ui`. The two whose
 // name says `_for_test` are read by a check only; every other rule here runs inside the program's own timers.
-pub use shell_beats::{advance_clock_for_test, needs_timer, should_pulse};
+pub use shell_beats::{advance_clock_for_test, needs_timer, pulse_standing_for_test, should_pulse};
 pub use window::open_policy_form;
 pub use window::forget_policy_form;
 pub use window::derive_policy;

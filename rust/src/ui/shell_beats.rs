@@ -207,3 +207,16 @@ pub fn stop_pulse() -> bool {
         None => false,
     }
 }
+
+/// Whether a pulse timer stands right now. The program never asks -- `stop_pulse` already reports the same
+/// fact when it takes one down -- but a check that presses ▶ needs to see the timer exist without leaving it
+/// ticking: reading a `Cell<Option<SourceId>>` needs ownership, so this removes whatever it finds.
+pub fn pulse_standing_for_test() -> bool {
+    match PULSE.with(|held| held.take()) {
+        Some(id) => {
+            id.remove();
+            true
+        }
+        None => false,
+    }
+}

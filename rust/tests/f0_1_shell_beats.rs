@@ -43,7 +43,7 @@ fn seed_session(tree: &Tree, lines: &[Entry]) {
     cut::save(&clip, tree).expect("cut written");
     narration::save(&narration::Narration { entries: lines.to_vec(), ..Default::default() }, tree).unwrap();
 }
-/// One GTK app for the whole binary: `gio` refuses a second `run_with_args`, so both checks share it.
+/// One GTK app for the whole binary: `gio` refuses a second `run_with_args`, so every check shares it.
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -54,6 +54,8 @@ fn window_round() {
             RAN_A.store(true, Ordering::SeqCst);
             check_run_line(app);
             RAN_B.store(true, Ordering::SeqCst);
+            check_the_pulse_belongs_to_the_press(app);
+            RAN_PULSE.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -61,6 +63,7 @@ fn window_round() {
 }
 static RAN_A: AtomicBool = AtomicBool::new(false);
 static RAN_B: AtomicBool = AtomicBool::new(false);
+static RAN_PULSE: AtomicBool = AtomicBool::new(false);
 /// F0.1 S3: nothing here flushes; only the loop is driven, so the timer alone decides when the file changes.
 fn check_autosave_beat(app: &adw::Application) {
     let (project, lines) = seeded_project();
@@ -123,9 +126,28 @@ fn check_run_line(app: &adw::Application) {
     assert!(shown.progress > 0.0, "and the counted fraction reached the bar");
     let _ = std::fs::remove_dir_all(&dir);
 }
+/// §2 through the widgets: ▶ is what stands the idle pulse, ⏹ is what takes it down, and the bar itself
+/// draws no text. Nothing here pumps the loop between the press and the assertion, so the timer that a
+/// press armed cannot have retired itself -- its standing is the press's doing, not the loop's.
+fn check_the_pulse_belongs_to_the_press(app: &adw::Application) {
+    let (project, _) = seeded_project();
+    let (dir, _) = scratch_tree(&project);
+    let window = ui::build_window(app, &project, "Prepare");
+    window.present();
+    assert!(!ui::shell_beats::pulse_standing_for_test(), "an idle bar holds no pulse timer");
+
+    ui::play_button(&window).expect("the run bar has a \u{25b6}").emit_by_name::<()>("clicked", &[]);
+    assert!(ui::shell_beats::pulse_standing_for_test(), "\u{25b6} on a page with nothing countable yet pulses the bar");
+    let bar = ui::progress_bar(&window).expect("the run bar has a progress widget");
+    assert!(bar.text().is_none() || !bar.shows_text(), "\u{a7}1 badge 13: the bar draws no text of its own");
+
+    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
+    assert!(!ui::shell_beats::pulse_standing_for_test(), "\u{23f9} took the pulse down with the run");
+    let _ = std::fs::remove_dir_all(&dir);
+}
 /// The call ▶ makes, on this window's own bar and queue; `start_run` resets the queue as it opens.
 fn open_run(window: &adw::ApplicationWindow, queue: &Rc<RefCell<runqueue::Queue>>, project: &Project) {
-    let (mut bar, mut log) = (ui::run_bar(window).expect("the window carries a run bar"),
+    let (bar, mut log) = (ui::run_bar(window).expect("the window carries a run bar"),
         naivepost::exchanges::RunLog::default());
     let run = runqueue::start_run(&mut bar.borrow_mut(), &mut queue.borrow_mut(), &mut log,
         naivepost::run::Step::Prepare, naivepost::run::snapshot_sources(project));
@@ -167,4 +189,9 @@ fn f0_1_s3_typing_reaches_the_file_on_the_beat() {
 fn sec_02_a_runs_lines_go_to_the_status_line() {
     window_round();
     assert!(RAN_B.load(Ordering::SeqCst), "the run-line check never ran");
+}
+#[test]
+fn f0_1_s3_the_bar_pulses_only_while_the_run_thinks() {
+    window_round();
+    assert!(RAN_PULSE.load(Ordering::SeqCst), "the pulse check never ran");
 }
