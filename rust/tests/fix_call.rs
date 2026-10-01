@@ -230,6 +230,67 @@ fn conf_at(url: &str) -> Conf {
     conf
 }
 
+/// A fake LLM that answers each ask from a QUEUE of replies, popping one per request and repeating the
+/// last once the queue is empty. [`Fake::start`] is the one-reply case; a scenario whose model asks for a
+/// read first needs the answer to depend on which round it is.
+fn scripted(replies: Vec<String>) -> Fake {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("a local address").port();
+    let asks = std::sync::Arc::new(Mutex::new(Asks::default()));
+    let recorder = asks.clone();
+    let queue = std::sync::Arc::new(Mutex::new(replies));
+    let serving = queue.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { continue };
+            let recorder = recorder.clone();
+            let serving = serving.clone();
+            std::thread::spawn(move || {
+                let answer = {
+                    let mut left = serving.lock().expect("the queue lock");
+                    if left.len() > 1 {
+                        left.remove(0)
+                    } else {
+                        left.first().cloned().unwrap_or_default()
+                    }
+                };
+                if let Some(ask) = serve(stream, &answer) {
+                    if let Ok(mut row) = recorder.lock() {
+                        row.bodies.push(ask);
+                    }
+                }
+            });
+        }
+    });
+    Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: std::sync::Arc::new(Mutex::new(String::new())) }
+}
+
+/// One call inside the chat envelope, with whatever arguments the caller built.
+fn call_answer(name: &str, args: serde_json::Value) -> String {
+    let escaped = args.to_string().replace('"', "\\\"");
+    format!(
+        "{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[\n{{\"function\":{{\"name\":\"{name}\",\"arguments\":\"{escaped}\"}}}}\n]}}}}]}}"
+    )
+}
+
+/// The message list of one recorded ask, as JSON — so a test can look at what the model was shown on
+/// its second round, including the tool result the app fed back.
+fn messages_of(ask: &ChatAsk) -> Vec<serde_json::Value> {
+    let sent: serde_json::Value = serde_json::from_str(&ask.body).expect("a JSON body");
+    sent["messages"].as_array().cloned().unwrap_or_default()
+}
+
+/// The text of every message whose role is `tool`, joined: what the app answered the model's calls with.
+fn tool_answers(ask: &ChatAsk) -> String {
+    messages_of(ask)
+        .iter()
+        .filter(|message| message["role"].as_str() == Some("tool"))
+        .flat_map(|message| message["content"].as_array().cloned().unwrap_or_default())
+        .filter_map(|part| part["text"].as_str().map(str::to_string))
+        .collect::<Vec<String>>()
+        .join("\n")
+}
+
 /// Fields of one §6 row: `start`, `end`, speaker, then the text (which may hold anything else).
 fn fields(row: &str) -> Vec<&str> {
     row.split('\t').take(4).collect()
@@ -369,4 +430,72 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
         "the give-up line is what §F1.8 S4 says: {log:?}"
     );
     assert_eq!(scene.fixed(), source, "the originals stand, byte for byte");
+}
+
+/// §3.1's shared reads, answered on the fix leg. The job is OFFERED `get_lines` (and the other three), so
+/// a model may ask for its own rows back before respelling them — and before [`naivepost::tool_reads`] it
+/// got silence, which reads to a model as a tool that does not exist. This drives the whole door: round one
+/// asks for lines 1-2, the app answers from the block in hand, round two gets the answer beside the same
+/// question and then does the actual fix.
+#[test]
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_a_shared_read_reaches_the_model_and_the_answer_comes_back(
+) {
+    let read_first = call_answer("get_lines", serde_json::json!({ "from": 1, "to": 2 }));
+    let fake = scripted(vec![read_first, fix_answer(1, "so the algorithm receives the input")]);
+    let scene = Scene::new("readback", &fake.url);
+    let mut log = Vec::new();
+    scene
+        .fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
+        .expect("a read round does not fail the block");
+    let asks = fake.waited(2);
+    assert_eq!(asks.len(), 2, "the read costs a round: {asks:?}");
+
+    // Not a coincidence: the read was offered on the FIRST ask, so the model had a reason to call it.
+    let offered: Vec<String> = serde_json::from_str::<serde_json::Value>(&asks[0].body)
+        .expect("a JSON body")["tools"]
+        .as_array()
+        .expect("tools are offered")
+        .iter()
+        .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_string))
+        .collect();
+    assert!(offered.iter().any(|name| name == "get_lines"), "get_lines is offered to the fix job: {offered:?}");
+
+    // The second ask carries the answer to the read: both requested rows, stamped, with their speaker.
+    // Read back out of the JSON rather than matched as raw text, so the escaping is not what is tested.
+    let answers = tool_answers(&asks[1]);
+    let body: serde_json::Value = serde_json::from_str(&answers).expect("the read answered in JSON");
+    let rows = body["lines"].as_array().expect("the lines the model asked for");
+    assert_eq!(rows.len(), 2, "both rows came back: {answers}");
+    assert_eq!(rows[0], "00:00-00:01\tS1\tso the algorithum recieves the input");
+    assert_eq!(rows[1], "00:01-00:03\tS1\tand writes it down again");
+
+    // And the fix the model made AFTER reading still lands: the read cost a round, not the answer.
+    let fixed = scene.fixed();
+    assert!(
+        fixed.contains("so the algorithm receives the input"),
+        "the later fix_line is what the file holds: {fixed}"
+    );
+}
+
+/// A read with bad arguments comes back as `{"error": …}` naming what to send (§3: a problem is text the
+/// model can act on, never silence and never a dropped flow).
+#[test]
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s7_a_read_with_bad_arguments_is_answered_with_an_error_not_silence(
+) {
+    let read_first = call_answer("get_lines", serde_json::json!({}));
+    let fake = scripted(vec![read_first, fix_answer(2, "and writes it down again")]);
+    let scene = Scene::new("badread", &fake.url);
+    let mut log = Vec::new();
+    scene
+        .fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
+        .expect("a bad argument is not a failure");
+    let asks = fake.waited(2);
+    let answers = tool_answers(&asks[1]);
+    assert!(answers.contains("\"error\""), "the refusal shape reaches the model: {answers}");
+    assert!(
+        answers.contains("from") && answers.contains("to"),
+        "it names the arguments to send instead: {answers}"
+    );
+    // The flow continued past the error: the next round's fix is in the file.
+    assert!(scene.fixed().contains("and writes it down again"), "the block was still fixed");
 }

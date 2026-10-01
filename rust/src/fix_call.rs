@@ -27,7 +27,9 @@ use crate::roles::Job;
 use crate::services::{self, Server};
 use crate::settings::{self, Paths};
 use crate::textfmt::{FrameEvent, Line};
-use crate::tools::Tool;
+use crate::tool_loop;
+use crate::tool_reads;
+use crate::tools::{self, Tool};
 
 /// The step name this job's cache entries and timed rows carry — the same word `FIX_STEP` uses, so a
 /// `requests.tsv` row and `cache/llm/fix` name the stage in §04 S6's order.
@@ -151,9 +153,7 @@ pub fn stage_chunk(
             }
             None => {
                 asked += 1;
-                fix_transcripts::fix_block(&block, |message| {
-                    ask_once(tree, paths, conf, message)
-                })?
+                fix_transcripts::fix_block(&block, ask_for(tree, paths, conf, &every_event, &block))?
             }
         };
         if !outcome.valid {
@@ -173,14 +173,55 @@ pub fn stage_chunk(
     Ok(total)
 }
 
-/// One block's ask: build the two messages, honour the cache, dial, read the reply into the §3.3
-/// calls. `fix_block` supplies the message, which already carries the previous refusal when there was
-/// one — so a retry is a different question and keys elsewhere in the cache.
+/// The `ask` closure the Prepare walk hands `fix_transcripts::fix_block`, with §3.1's shared reads wired.
+///
+/// This is the ONLY place the clean-transcript role reaches the LLM server, so it is also the only place
+/// those reads can be answered for that job: the rows `fix_block` is walking and this source's event log
+/// are in scope here and nowhere else, and a read must describe THAT block rather than a fresh copy of
+/// the session.
+pub fn ask_for<'a>(
+    tree: &'a Tree,
+    paths: &'a Paths,
+    conf: &'a settings::Conf,
+    events: &'a [(String, FrameEvent)],
+    lines: &'a [Line],
+) -> impl FnMut(&str) -> Result<Vec<Reply>, String> + 'a {
+    let owned: Vec<FrameEvent> = events.iter().map(|(_, event)| event.clone()).collect();
+    move |message: &str| {
+        let ctx = tool_reads::Context {
+            // The User Context belongs to the window's session (§10 §2), which this headless door does
+            // not carry; an empty one is what every other headless caller sends, and `get_context`
+            // answers it as an empty field rather than an error.
+            user_context: "",
+            job: Job::CleanTranscript,
+            policy: &[],
+            lines,
+            events: &owned,
+            frames: &[],
+        };
+        ask_once(tree, paths, conf, message, Some(&ctx))
+    }
+}
+
+/// One block's ask: the two messages, §3.1's tool rounds, and the answer read back into §3.3's calls.
+///
+/// `fix_block` supplies the message, which already carries the previous refusal when there was one — so a
+/// retry is a different question and keys elsewhere in the cache.
+///
+/// The loop is [`crate::tool_loop::run`], the same one narrate drives: this job is OFFERED four shared reads
+/// (`tools::offered(Job::CleanTranscript)`), and a single chat call could not answer one of them — the model
+/// would ask for its lines and get silence. Every round's dial writes its own timed `requests.tsv` row
+/// (§09 §10: a line per request).
+///
+/// `reads` is what makes those reads answerable: `Some` on the program path (`ask_for`), `None` from the
+/// older tests that only pin the shape of one call — with it absent a read comes back as an error sentence
+/// rather than data, which is §3's rule for a tool nothing can serve.
 fn ask_once(
     tree: &Tree,
     paths: &Paths,
     conf: &settings::Conf,
     message: &str,
+    reads: Option<&tool_reads::Context>,
 ) -> Result<Vec<Reply>, String> {
     let system = fix_system(paths);
     let parts = cache_parts(&system, message, &conf.model);
@@ -195,26 +236,87 @@ fn ask_once(
         Message { role: "user".to_string(), parts: vec![Part::Text(message.to_string())] },
     ];
     let offered: Vec<Tool> = crate::tools::offered(Job::CleanTranscript);
-    // §2's row says thinking OFF, which is `Mode::Execute` here: the two modes are the whole switch
-    // and every non-thinking job in the app takes this one.
-    let body = llm_request::body(&conf.model, &messages, Mode::Execute, Some(&offered), false)?
-        .to_string();
     let endpoint = services::llm_endpoint(conf);
-    let base = crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "fix");
-    let sent = crate::llm_retry_leg::chat(
-        STEP,
-        tree,
-        &base,
-        &endpoint,
-        &body,
-        &crate::cancel_leg::cancel_check_now(),
-        &crate::ui::window::log_line,
-    )?;
-    let reply = llm_request::reply_from(&sent.content_type, &sent.body)?;
-    // Only a readable answer is stored: a reply we could not read must go out again on the retry
-    // rather than being replayed from the slot it failed in.
-    crate::llm_cache::store(tree, STEP, &parts, &sent.body);
-    Ok(calls_of(&reply))
+    // What the rounds collect: every `fix_line`/`flag_line` the model actually got answered, and the raw
+    // body of the FIRST readable reply — the pair this block's cache entry stands for.
+    let mut fixes: Vec<Reply> = Vec::new();
+    let mut first_body: Option<String> = None;
+    let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
+        // §2's row says thinking OFF, which is `Mode::Execute` here: the two modes are the whole switch
+        // and every non-thinking job in the app takes this one.
+        let body =
+            llm_request::body(&conf.model, conversation, Mode::Execute, Some(tools), false)?
+                .to_string();
+        let base = crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "fix");
+        let sent = crate::llm_retry_leg::chat(
+            STEP,
+            tree,
+            &base,
+            &endpoint,
+            &body,
+            &crate::cancel_leg::cancel_check_now(),
+            &crate::ui::window::log_line,
+        )?;
+        let reply = llm_request::reply_from(&sent.content_type, &sent.body)
+            .map_err(|why| format!("{STEP}: {why}"))?;
+        // Only the round that ENDED the flow is worth caching, and only if it could be read at all: an
+        // unreadable reply must go out again on the retry rather than being replayed from the slot it
+        // failed in, and a mid-conversation round holds only part of the answer.
+        if reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name()) {
+            first_body = Some(sent.body.clone());
+        }
+        // `finish` closes the flow and the loop reads that off the TURN, not off the call list.
+        let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+        Ok(tool_loop::Turn {
+            content: reply.content.clone(),
+            calls: reply.tool_calls.clone(),
+            finish: finishing,
+        })
+    };
+    let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
+        // §3.1's shared reads first, answered from the block in hand; then this job's own three.
+        if let Some(answer) = reads.and_then(|ctx| tool_reads::dispatch(ctx, asked)) {
+            return answer;
+        }
+        let args: serde_json::Value = serde_json::from_str(&asked.args)
+            .unwrap_or_else(|_| serde_json::json!({}));
+        let number = args.get("n").and_then(|n| n.as_u64()).map(|n| n as u32);
+        match asked.name.as_str() {
+            // The answer only says the call landed. Whether `n` is IN this block is decided further
+            // down the line by `fix_transcripts::fix_block`, which feeds every Reply through
+            // `tools::fix::Block` — so an out-of-range number still comes back as the refusal message
+            // on the next try, which is where that rule belongs.
+            "fix_line" => match (number, args.get("text").and_then(|t| t.as_str())) {
+                (Some(n), Some(text)) => {
+                    fixes.push(Reply::Fix { n, text: text.to_string() });
+                    tools::ok(&serde_json::json!({"n": n, "text": text}))
+                }
+                // DROPPED rather than answered with an invented empty respelling: an empty line would
+                // overwrite a real sentence in `transcript.fixed.tsv`. The model hears why.
+                _ => tools::error("fix_line needs \"n\" and the corrected \"text\""),
+            },
+            "flag_line" => match (number, args.get("why").and_then(|w| w.as_str())) {
+                (Some(n), Some(why)) => {
+                    fixes.push(Reply::Flag { n, why: why.to_string() });
+                    tools::ok(&serde_json::json!({"n": n, "flagged": true}))
+                }
+                _ => tools::error("flag_line needs \"n\" and the \"why\""),
+            },
+            "finish" => tools::ok(&serde_json::json!({"done": true})),
+            other => tools::error(&format!("{other} is not a tool of this call")),
+        }
+    };
+    let run = tool_loop::run(STEP, messages, &offered, &mut ask, &mut run_tool);
+    for line in run.joined().lines() {
+        crate::ui::window::log_line(line);
+    }
+    // Stored under the ORIGINAL two-message key, never the grown conversation: the next run asks the
+    // same opening question and must find this answer. The rows kept are the ones whose text differs
+    // from what ASR heard, which is exactly what `fix_transcripts::cached_block` replays.
+    if let Some(body) = first_body {
+        crate::llm_cache::store(tree, STEP, &parts, &body);
+    }
+    Ok(fixes)
 }
 
 /// The chat reply's tool calls as §3.3's `Reply` values — the one place a chat envelope becomes a fix.

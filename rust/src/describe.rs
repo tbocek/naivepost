@@ -463,7 +463,9 @@ pub fn apply_tool(batch: &mut Batch, name: &str, args: &serde_json::Value) -> St
                 }))
             }
         }
-        other => crate::tools::error(&format!("unknown tool {other} -- describe offers record_event, set_state, finish")),
+        other => crate::tools::error(&format!(
+            "unknown tool {other} -- describe answers record_event, set_state and finish here; get_events, get_frames, get_context and speech_around are answered by the caller (see describe_call::read_answers)"
+        )),
     }
 }
 

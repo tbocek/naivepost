@@ -37,6 +37,7 @@ const FOUR_EVENTS: &str = r#"{"choices":[{"message":{"content":"","tool_calls":[
  {"function":{"name":"finish","arguments":"{}"}}
 ]}}]}"#;
 
+
 /// The §3.2 answer for a batch of ANY size: a `record_event` for every frame of it, then a
 /// `set_state`, then `finish`. One builder rather than one const per chunk size because the last
 /// chunk of nine frames at four a call is a batch of ONE, and an answer written for four frames would
@@ -561,4 +562,146 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
         !Path::new(&scene.session()).join("prepare/describe/lecture/events.tsv").exists(),
         "an incomplete answer writes no event log"
     );
+}
+
+/// `speech_around` answers with every recording's words over the span, not the capped two-per-side extract
+/// the request's own brief carries -- so a word from the OTHER recording that the brief omitted reaches the
+/// model when it asks.
+#[test]
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers_with_every_recording() {
+    let frames = 1;
+    let fake = Fake::start(events_asked(frames, "speech_around"));
+    let scene = Scene::new("speechread", frames, &fake.url);
+    // The scene's project names one source; the tool walks EVERY source the project lists, which is what
+    // the request's own per-side-capped speech block cannot carry. So the second recording has to be in the
+    // project file for its words to be reachable.
+    let project = naivepost::project::Project {
+        sources: vec![
+            naivepost::project::Source {
+                path: "project:sources/lecture.mkv".to_string(),
+                footage: true,
+                narrator: 0,
+                sepvoice: false,
+                tracks: vec![],
+            },
+            naivepost::project::Source {
+                path: "project:sources/commentary.wav".to_string(),
+                footage: false,
+                narrator: 1,
+                sepvoice: false,
+                tracks: vec![],
+            },
+        ],
+        context: "a lecture on linear algebra".to_string(),
+        ..Default::default()
+    };
+    naivepost::project::save(&project, &scene.session()).expect("two sources in the project");
+    naivepost::requests::write_words(
+        &scene.tree(),
+        "commentary",
+        &naivepost::requests::WordsDoc {
+            text: "eigenvalue".to_string(),
+            words: vec![naivepost::requests::Word {
+                word: "eigenvalue".to_string(),
+                start_sample: naivepost::transcribe::SAMPLE_RATE / 2,
+                end_sample: naivepost::transcribe::SAMPLE_RATE,
+            }],
+        },
+    )
+    .expect("the other recording's words");
+    let conf = conf_at(&fake.url);
+    let mut log = Vec::new();
+    scene
+        .describe(&conf, &mut |line| log.push(line.to_string()))
+        .expect("the chunk is described");
+    fake.waited(1);
+    let answered = answer_of(&log, "speech_around");
+    let body: serde_json::Value = serde_json::from_str(&answered).expect("the read answered in JSON");
+    let spoken = body["lines"].as_array().expect("the lines spoken in the span");
+    assert!(
+        spoken.iter().any(|line| line.as_str().is_some_and(|text| text.contains("eigenvalue"))),
+        "the other recording's word came back: {answered}"
+    );
+}
+
+/// The §3.2 answer for a batch of any size, with a READ in front of the `record_event`s: one round asks for
+/// the readings and answers the batch, which is how a model that wants its events before it describes is
+/// shaped. The span it asks about runs past the last frame so a word spoken over that frame is inside it.
+fn events_asked(frames: usize, name: &str) -> String {
+    let args = serde_json::json!({ "from": 0.0, "to": frames as f64 + 1.0 });
+    let escaped = args.to_string().replace('"', "\\\"");
+    let mut calls = format!("{{\"function\":{{\"name\":\"{name}\",\"arguments\":\"{escaped}\"}}}},");
+    for frame in 1..=frames {
+        calls.push_str(&format!(
+            "{{\"function\":{{\"name\":\"record_event\",\"arguments\":\"{{\\\"frame\\\":{frame},\\\"text\\\":\\\"frame {frame} of the take\\\"}}\"}}}},"
+        ));
+    }
+    calls.push_str(
+        "{\"function\":{\"name\":\"set_state\",\"arguments\":\"{\\\"text\\\":\\\"board half full\\\"}\"}},",
+    );
+    calls.push_str("{\"function\":{\"name\":\"finish\",\"arguments\":\"{}\"}}");
+    format!("{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[{calls}]}}}}]}}")
+}
+
+/// The answer the leg gave to one read, taken from the stage's own log: `>>> <name> answered: <json>`.
+fn answer_of(log: &[String], name: &str) -> String {
+    let prefix = format!(">>> {name} answered: ");
+    log.iter()
+        .find(|line| line.starts_with(&prefix))
+        .map(|line| line[prefix.len()..].to_string())
+        .unwrap_or_else(|| panic!("{name} was never answered: {log:?}"))
+}
+
+/// §3.2's Reads row offers the vision job `get_events`, `get_frames`, `get_context` and `speech_around`, and
+/// nothing used to answer them: a model that asked for the readings it was continuing from got silence, and
+/// the retry then told it about frames it had never been given the chance to use. The leg answers a read in
+/// the SAME round that asked, so the chunk is written in full and costs no extra ask.
+#[test]
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_reads_describe_is_offered_are_answered() {
+    let frames = 4;
+    let fake = Fake::start(events_asked(frames, "get_events"));
+    let scene = Scene::new("reads", frames, &fake.url);
+    // Two readings already on the log, at 3 s and 4 s: inside the span the read asks about (0 to frames+1
+    // seconds) but past every chunk START of this four-frame grid, so `starts_already_logged` still leaves
+    // the chunk to ask -- a row at 0 s would skip it and no read would ever be called.
+    std::fs::write(
+        scene.tree().events_tsv("lecture"),
+        "3.00\t11.00\tslide one is up\n4.00\t12.00\tslide two is up\n",
+    )
+    .expect("the event log");
+    let conf = conf_at(&fake.url);
+    let mut log = Vec::new();
+    scene
+        .describe(&conf, &mut |line| log.push(line.to_string()))
+        .expect("the chunk is described");
+    let asks = fake.waited(1);
+    assert_eq!(asks.len(), 1, "a read answered in the round that asked costs no extra ask: {asks:?}");
+
+    // Not a coincidence: the reads were offered on the ask, so the model had a reason to call one.
+    let offered: Vec<String> = serde_json::from_str::<serde_json::Value>(&asks[0].body)
+        .expect("a JSON body")["tools"]
+        .as_array()
+        .expect("tools are offered")
+        .iter()
+        .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_string))
+        .collect();
+    for name in ["get_events", "get_frames", "get_context", "speech_around"] {
+        assert!(offered.iter().any(|n| n == name), "{name} is offered to describe: {offered:?}");
+    }
+
+    // The read came back with the chunk's own readings, and not as an error.
+    let answered = answer_of(&log, "get_events");
+    assert!(!answered.contains("\"error\""), "a well-formed read is not refused: {answered}");
+    let body: serde_json::Value = serde_json::from_str(&answered).expect("the read answered in JSON");
+    let rows = body["events"].as_array().expect("the EVENT lines in the range");
+    assert_eq!(rows.len(), 2, "both readings over 0-5 s: {answered}");
+    assert!(rows[0].as_str().unwrap().contains("slide one is up"), "{answered}");
+    assert!(rows[1].as_str().unwrap().contains("slide two is up"), "{answered}");
+
+    // And the answer still lands: every frame of the chunk got its row beside the readings that stood.
+    let events = scene.events();
+    let written: Vec<&str> = events.lines().filter(|row| !row.is_empty()).collect();
+    assert!(events.contains("frame 1 of the take"), "{events}");
+    assert!(events.contains("frame 4 of the take"), "{events}");
+    assert_eq!(written.len(), frames + 2, "four new rows plus the two that stood: {events}");
 }

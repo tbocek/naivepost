@@ -319,3 +319,115 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_policy_derivation_is_
         );
     }
 }
+
+/// §3.1's four shared reads, answered for real. A job is *offered* these by `tools::offered`; before
+/// [`naivepost::tool_reads`] nothing in `src` answered one, so a model that asked for the lines around
+/// what it was fixing got silence and stopped trying. These drive the dispatcher directly with the rows
+/// a leg would hand it — the same data the request was built from, which is the whole point: a read must
+/// describe the block being answered, not a fresh copy of the session.
+/// The policy pairs `get_context` echoes, leaked once so the borrowed slice can outlive any one test.
+fn policy_pairs() -> &'static [(&'static str, String)] {
+    let built: Vec<(&'static str, String)> = vec![("markingPass", "retakes".to_string())];
+    Box::leak(built.into_boxed_slice())
+}
+
+fn reads_context<'a>(
+    lines: &'a [naivepost::textfmt::Line],
+    events: &'a [naivepost::textfmt::FrameEvent],
+) -> naivepost::tool_reads::Context<'a> {
+    static FRAMES: [f64; 3] = [10.0, 12.5, 15.0];
+    naivepost::tool_reads::Context {
+        user_context: "hand-cut demo, no music",
+        job: Job::CleanTranscript,
+        policy: policy_pairs(),
+        lines,
+        events,
+        frames: &FRAMES,
+    }
+}
+
+fn call(name: &str, args: serde_json::Value) -> naivepost::exchanges::ToolCall {
+    naivepost::exchanges::ToolCall {
+        name: name.to_string(),
+        args: args.to_string(),
+        result: String::new(),
+    }
+}
+
+#[test]
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_lines_answers_with_the_stamped_rows() {
+    let lines = [
+        naivepost::textfmt::Line { start: 0.0, end: 1.5, speaker: "S1".into(), text: "first row".into() },
+        naivepost::textfmt::Line { start: 1.5, end: 62.25, speaker: "S1".into(), text: "second row".into() },
+        naivepost::textfmt::Line { start: 62.25, end: 64.0, speaker: "S2".into(), text: "third row".into() },
+    ];
+    let ctx = reads_context(&lines, &[]);
+    let answer = naivepost::tool_reads::dispatch(&ctx, &call("get_lines", serde_json::json!({"from": 1, "to": 2})))
+        .expect("get_lines is a shared read and must be answered");
+    let body: serde_json::Value = serde_json::from_str(&answer).expect("ok shape");
+    assert_eq!(body["from"], 1.0);
+    assert_eq!(body["to"], 2.0);
+    let rows = body["lines"].as_array().expect("a list of rows");
+    assert_eq!(rows.len(), 2, "line numbers are 1-based over the rows the request numbered");
+    // Stamped the way the request stamps them (mm:ss both ends), then speaker, then text: a number the
+    // model reads back means the second it was shown.
+    assert_eq!(rows[0], "00:00-00:01\tS1\tfirst row");
+    assert_eq!(rows[1], "00:01-01:02\tS1\tsecond row");
+
+    // A quoted number is a spelling, not a wrong argument: refusing "4" would turn format into failure.
+    let quoted = naivepost::tool_reads::dispatch(&ctx, &call("get_lines", serde_json::json!({"from": "2", "to": "4"})))
+        .expect("answered");
+    let body: serde_json::Value = serde_json::from_str(&quoted).unwrap();
+    assert_eq!(body["lines"].as_array().unwrap().len(), 2, "rows 2 and 3, clamped to what exists");
+
+    // Missing arguments come back as one actionable sentence (§3), never silence and never a guess.
+    let missing = naivepost::tool_reads::dispatch(&ctx, &call("get_lines", serde_json::json!({})))
+        .expect("answered");
+    assert!(missing.contains("\"error\""), "bad args are an error sentence: {missing}");
+    assert!(missing.contains("from") && missing.contains("to"), "it names what to send: {missing}");
+}
+
+#[test]
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_events_keeps_rows_that_overlap_the_range() {
+    let events = [
+        naivepost::textfmt::FrameEvent { start: 0.0, end: 5.0, text: "editor open".into() },
+        naivepost::textfmt::FrameEvent { start: 5.0, end: 12.0, text: "clip dragged in".into() },
+        naivepost::textfmt::FrameEvent { start: 20.0, end: 24.0, text: "export dialog".into() },
+    ];
+    let ctx = reads_context(&[], &events);
+    let answer = naivepost::tool_reads::dispatch(&ctx, &call("get_events", serde_json::json!({"from": 4.0, "to": 6.0})))
+        .expect("get_events is a shared read and must be answered");
+    let body: serde_json::Value = serde_json::from_str(&answer).unwrap();
+    let rows = body["events"].as_array().unwrap();
+    // Overlap, not containment: a reading that started before the window still describes the picture
+    // inside it, which is the rule fix_transcripts::context_text already applies unasked.
+    assert_eq!(rows.len(), 2, "the two rows whose span touches 4-6 s: {rows:?}");
+    assert!(rows[0].as_str().unwrap().contains("editor open"));
+    assert!(rows[1].as_str().unwrap().contains("clip dragged in"));
+}
+
+#[test]
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_context_echoes_the_context_and_this_jobs_policy() {
+    let ctx = reads_context(&[], &[]);
+    let answer = naivepost::tool_reads::dispatch(&ctx, &call("get_context", serde_json::json!({})))
+        .expect("get_context is a shared read and must be answered");
+    let body: serde_json::Value = serde_json::from_str(&answer).unwrap();
+    assert_eq!(body["userContext"], "hand-cut demo, no music");
+    assert_eq!(body["policy"]["markingPass"], "retakes", "only the fields this job reads");
+    assert!(body["job"].is_string(), "the job says which rules these answers are under");
+}
+
+#[test]
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_finish_is_left_to_the_job_that_owns_its_check_list() {
+    let ctx = reads_context(&[], &[]);
+    // Every job finishes with ITS OWN check list (§3.2's frames with no event, §3.8's clips with no
+    // line, §3.6's segments and footage), so a generic ok here would pre-empt all of them.
+    assert!(
+        naivepost::tool_reads::dispatch(&ctx, &call("finish", serde_json::json!({}))).is_none(),
+        "finish belongs to the caller's job tools"
+    );
+    assert!(
+        naivepost::tool_reads::dispatch(&ctx, &call("fix_line", serde_json::json!({"n": 1}))).is_none(),
+        "a job's own tool is not the shared layer's to answer"
+    );
+}

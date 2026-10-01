@@ -239,7 +239,29 @@ pub fn ask_round(
     let mut used_tools = false;
     let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
         used_tools = true;
-        // The web tools go through the real browser leg (§2); everything else is §3.8's own answers.
+        // §3.1's three reads this leg has no answer of its own for go to the shared dispatcher.
+        // `get_lines` and `finish` stay with §3.8 below: the writer's surroundings are CLIP-relative
+        // (`narrate_pass::get_lines`) and its finish is the narration check list, not a generic ok.
+        match asked.name.as_str() {
+            "get_context" | "get_events" | "get_frames" => {
+                if let Some(answer) = crate::tool_reads::dispatch(
+                    &crate::tool_reads::Context {
+                        // The User Context lives in the window's session (§10 §2), which this headless
+                        // leg does not carry; an empty one answers as an empty field, not an error.
+                        user_context: "",
+                        job: crate::roles::Job::Narrate,
+                        policy: &[],
+                        lines: &[],
+                        events: &[],
+                        frames: &[],
+                    },
+                    asked,
+                ) {
+                    return answer;
+                }
+            }
+            _ => {}
+        }
         if let Some(answer) = crate::web_browser::dispatch(STEP, &conf.firefox, asked) {
             return answer;
         }

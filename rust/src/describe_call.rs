@@ -21,6 +21,8 @@ use crate::llm_request;
 use crate::roles::Job;
 use crate::services::{self, Server};
 use crate::settings::{self, Paths};
+use crate::textfmt::FrameEvent;
+use crate::tool_reads;
 use crate::tools::describe::Batch;
 use crate::tools::Tool;
 
@@ -280,7 +282,20 @@ fn run_chunk(
         }
         let calls = tool_calls_of(&reply);
         let mut held = batch_of(batch, interval, &history);
+        // The answer the leg gave to a read this round asked for, if it asked for one. `run_chunk` keeps its
+        // reply as the CALL list rather than the raw envelope, so the answer is written back into that list
+        // before it is stored -- which is also what makes a cached chunk replay the same reads it did live.
+        let mut answered: Vec<(String, String)> = Vec::new();
         for (name, args) in &calls {
+            // §3.2's Reads row offers this job four things its own tool surface does not answer. Answering
+            // them is what makes a read round possible: without it the model asks for its events or its
+            // frames and gets silence, and the retry below then tells it about frames it was never given the
+            // chance to use. Each answer is recorded beside the call it answers (below, in the cached reply)
+            // and pushed to THIS stage's log, so the run and the exchange page both show what was handed back.
+            if let Some(answer) = read_answer(tree, lane, user_context, &rows, batch, name, args) {
+                log(&format!(">>> {name} answered: {answer}"));
+                answered.push((name.clone(), answer));
+            }
             describe::apply_tool(&mut held, name, args);
         }
         let missing = held.finish().len();
@@ -290,7 +305,8 @@ fn run_chunk(
             ));
             continue;
         }
-        let text = serde_json::to_string(&calls).map_err(|why| format!("tool answer: {why}"))?;
+        let text = serde_json::to_string(&with_results(&calls, &answered))
+            .map_err(|why| format!("tool answer: {why}"))?;
         let answered = write_batch(tree, lane, batch, interval, &history, &held);
         describe::store_reply(tree, &key, &text)?;
         return Ok(ChunkAnswer { cached: false, missing: answered });
@@ -446,6 +462,120 @@ fn tool_calls_of(reply: &llm_request::Reply) -> Vec<(String, serde_json::Value)>
             )
         })
         .collect()
+}
+
+/// Answer one of §3.2's four reads, or `None` when the call belongs to `describe::apply_tool`.
+///
+/// `get_events`, `get_frames` and `get_context` come from [`tool_reads::dispatch`] with THIS chunk's own
+/// event rows and frame seconds — never a fresh copy of the session, because a read must describe the
+/// batch the pictures are from. `speech_around` is answered here rather than in the shared layer because
+/// every-source speech is this leg's to gather.
+fn read_answer(
+    tree: &Tree,
+    lane: &str,
+    user_context: &str,
+    rows: &[describe::EventRow],
+    batch: &[f64],
+    name: &str,
+    args: &serde_json::Value,
+) -> Option<String> {
+    if name == "speech_around" {
+        return Some(speech_answer(tree, lane, args));
+    }
+    // `EventRow` is describe's resume shape (`at` + text, no end: §6's middle field is a read-side fold).
+    // A read has to say how long a reading held, which is the next row's start.
+    let events: Vec<FrameEvent> = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| FrameEvent {
+            start: row.at,
+            end: rows.get(index + 1).map(|next| next.at).unwrap_or(row.at),
+            text: row.text.clone(),
+        })
+        .collect();
+    let asked = crate::exchanges::ToolCall { name: name.to_string(), args: args.to_string(), result: String::new() };
+    let ctx = tool_reads::Context {
+        user_context,
+        job: Job::Describe,
+        policy: &[],
+        lines: &[],
+        events: &events,
+        frames: batch,
+    };
+    tool_reads::dispatch(&ctx, &asked)
+}
+
+/// The calls as the chunk's cached reply stores them, each with the answer it was given. `apply_and_write`
+/// reads the pair at `0`/`1` and skips anything else, so the third field costs a replay nothing and leaves a
+/// readable record of what the model was handed.
+fn with_results(
+    calls: &[(String, serde_json::Value)],
+    answered: &[(String, String)],
+) -> Vec<serde_json::Value> {
+    calls
+        .iter()
+        .map(|(name, args)| {
+            let answer = answered
+                .iter()
+                .find(|(asked, _)| asked == name)
+                .map(|(_, answer)| answer.clone());
+            serde_json::json!({ "0": name, "1": args, "result": answer })
+        })
+        .collect()
+}
+
+/// `speech_around` (§3.2): every line spoken in that stretch, from EVERY recording — not the two-per-side
+/// extract the request's own brief carries (capped by `describe::CTX_SEGS`, quoting only what the message
+/// builder picked). So this gathers from every source the project lists: a describe runs before the fix
+/// stage merges `session.tsv`, so reading that file alone would answer "nothing" during the very walk
+/// whose brief is short.
+fn speech_answer(tree: &Tree, lane: &str, args: &serde_json::Value) -> String {
+    let number = |key: &str| -> Option<f64> {
+        match args.get(key)? {
+            serde_json::Value::Number(n) => n.as_f64(),
+            serde_json::Value::String(text) => text.trim().parse().ok(),
+            _ => None,
+        }
+    };
+    let (Some(from), Some(to)) = (number("from"), number("to")) else {
+        return crate::tools::error("speech_around needs \"from\" and \"to\" session seconds");
+    };
+    let (from, to) = if from <= to { (from, to) } else { (to, from) };
+    let rate = crate::transcribe::SAMPLE_RATE as f64;
+    let project = crate::project::load(tree.dir()).unwrap_or_default();
+    let mut hits: Vec<(f64, f64, String, String)> = Vec::new();
+    for source in &project.sources {
+        let other = crate::audio_task::source_lane(&source.path);
+        let Some(words) = crate::requests::read_words(tree, &other).ok().flatten() else {
+            continue;
+        };
+        for word in words.words {
+            let (start, end) = (
+                word.start_sample as f64 / rate,
+                word.end_sample as f64 / rate,
+            );
+            if start < to && end > from {
+                hits.push((start, end, other.clone(), word.word.clone()));
+            }
+        }
+    }
+    hits.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.2.cmp(&b.2)));
+    let rows: Vec<String> = hits
+        .iter()
+        .map(|(start, end, source, text)| {
+            format!(
+                "{}\t{source}\t{text}",
+                crate::fix_transcripts::stamp_span(*start, *end)
+            )
+        })
+        .collect();
+    if rows.is_empty() {
+        // "nobody spoke there" said out loud: an empty list cannot tell that from "no words file yet".
+        crate::ui::window::log_line(&format!(
+            ">>> {lane}: speech_around found nothing between {from:.1}s and {to:.1}s"
+        ));
+    }
+    crate::tools::ok(&serde_json::json!({"from": from, "to": to, "lines": rows}))
 }
 
 /// Feed one reply through the §3.2 tool surface and write what it answered. Returns the frames still
