@@ -185,23 +185,22 @@ fn send_pinged(
         .http_status_as_error(false)
         .build();
 
-    // The key becomes a bearer header only when there is one, through the one function that
-    // decides that (§1's rule lives in services::authorization, not here).
-    let builder = match services::authorization(&endpoint.key) {
-        Some(bearer) => builder.header("Authorization", bearer),
-        None => builder,
-    };
+    let sent_bytes = body.map(|text| text.len() as i64);
+    let started = Instant::now();
 
+    // ureq 3's `.header()` takes `self` by value and returns the builder, so each header has to be
+    // threaded through a binding that is then actually sent: a chain that discards its result (the
+    // shape this had) leaves the request going out with neither the bearer nor the upload's file name.
+    let mut builder = builder;
+    if let Some(bearer) = services::authorization(&endpoint.key) {
+        builder = builder.header("Authorization", bearer);
+    }
     // audio.cpp's upload names the file it carries in a header, not in a multipart envelope
     // (§1: `POST /v1/ui/upload` raw body with `X-Audiocpp-Filename`). The name arrives as an
     // extension of `body`: every other kind passes `None` and sends no such header.
-    let builder = match filename {
-        Some(name) => builder.header("X-Audiocpp-Filename", name),
-        None => builder,
-    };
-
-    let sent_bytes = body.map(|text| text.len() as i64);
-    let started = Instant::now();
+    if let Some(name) = filename {
+        builder = builder.header("X-Audiocpp-Filename", name);
+    }
 
     let response = match body {
         Some(text) => builder.send(text),
@@ -308,6 +307,7 @@ pub fn call(
             filename: None,
             cancelled,
             liveness: None,
+            waited_ms: 0,
         },
     )
 }
@@ -329,6 +329,10 @@ pub struct Dial<'a> {
     /// §4's watch for this call: `Some` puts the request under the stall rule and the heartbeat. Only a chat ask
     /// sets it — an audio or image job has no silence bound of its own (§1 bounds those by kind).
     pub liveness: Option<crate::llm_watch_leg::Liveness>,
+    /// Milliseconds this request spent waiting for a slot before the caller got here, 0 when it never queued.
+    /// The socket cannot report that wait — it happens outside the trip — so the holder passes it through here and
+    /// [`call_dialed`] writes it into the row's `wait_s` column (§10's slot-count evidence).
+    pub waited_ms: i64,
 }
 
 /// [`call`] from a [`Dial`], so a caller names each leg instead of counting positions.
@@ -380,7 +384,7 @@ pub fn call_dialed(
             None,
         ),
     };
-    let mut timer = Timer::sent(timer_start);
+    let mut timer = Timer::queued(dial.waited_ms, timer_start);
     match &result {
         Ok(reply) => {
             if let Some(first) = reply.first_byte_ms {

@@ -268,9 +268,18 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
     // The scene-detect filter string comes straight out of frames.rs, unchanged.
     let joined = stages[0].tasks[0].args.join(" ");
     assert!(joined.contains("scdet"), "the planned command carries the scene detector: {joined}");
-    assert!(
-        stages[1].tasks[0].args.join(" ").contains("-ss"),
-        "the speech chunk was cut with asr's own plan"
+    assert_eq!(
+        stages[1].tasks[0].program,
+        run_stages::AUDIO_TASK,
+        "speech is a dial of audio.cpp, not a spawned cut"
+    );
+    // The row carries what the door needs and nothing it has to compute: the recording and the language.
+    // Where each chunk is cut is the door's own plan (§F1.3), pinned in `tests/audio_task_dial.rs`'s
+    // `..._s1_asr_is_asked_per_chunk_with_its_own_cut`.
+    assert_eq!(
+        stages[1].tasks[0].args,
+        vec!["sources/talk.wav".to_string(), project.language.clone()],
+        "the speech row names its source and the session language"
     );
     // Narrate and Produce drive their own queues, so they ask for nothing here rather than being
     // counted twice onto the same bar.
@@ -293,14 +302,19 @@ fn f0_5_s3_drive_page_reads_the_run_flags_at_each_checkpoint() {
     let queue = std::rc::Rc::new(std::cell::RefCell::new(Queue::new()));
     let bar = std::rc::Rc::new(std::cell::RefCell::new(RunBar::default()));
     let procs = std::rc::Rc::new(std::cell::RefCell::new(Subprocesses::default()));
-    // No stop up: the walk runs (and fails on the absent ffmpeg, naming it, which is the honest answer).
+    // No stop up: the walk runs and fails at the first row it cannot do — speech is a dial now, and with
+    // no decoded audio in the session there is nothing to ask audio.cpp about. Naming that reason is the
+    // honest answer, exactly as naming an absent ffmpeg was while this row spawned a cut.
     let drive = run_stages::drive_page(run::Step::Prepare, &project, &queue, &bar, &procs);
     match drive {
         run_stages::Drive::Failed { stage, error } => {
             assert!(matches!(stage, "frames" | "speech"), "a real stage failed: {stage}");
-            assert!(error.contains("ffmpeg"), "it named the missing tool: {error}");
+            assert!(
+                error.contains("no decoded audio") || error.contains("ffmpeg"),
+                "it named why the row could not run: {error}"
+            );
         }
-        other => panic!("with no ffmpeg installed the walk must report that, got {other:?}"),
+        other => panic!("with nothing to transcribe the walk must report that, got {other:?}"),
     }
     // With the stop flag already up, the very first checkpoint ends the walk: nothing ran.
     bar.borrow_mut().stop_flag = true;

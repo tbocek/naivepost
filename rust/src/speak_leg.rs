@@ -82,6 +82,7 @@ fn ask(
             filename,
             cancelled: &cancelled,
             liveness: None,
+            waited_ms: 0,
         },
     )
     .1

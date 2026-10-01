@@ -227,6 +227,11 @@ pub fn dial(
         if cancelled() {
             return Err(Failure::Stopped);
         }
+        // §02 §1's slot rule, on the LLM's own door: at most `LLM_SLOTS` of this model's requests on the
+        // wire at once. The wait is written into the row's wait column (§09 §10), which is how a slot
+        // count gets chosen from the log rather than guessed.
+        let (_slot, waited) = crate::slot_gate::hold(&endpoint.url, &base.model, crate::settings::from_environment().and_then(|paths| crate::settings::read(&paths).ok()).map(|conf| conf.slots.llm).unwrap_or(1), step);
+        let _ = waited;
         let (_row, reply) = server_leg::call_dialed(
             tree,
             base,
@@ -241,6 +246,7 @@ pub fn dial(
                 // §4: every chat call is streamed, so the stall rule holds for all of them — the same decision that
                 // puts `"stream": true` in the body (`llm_request::body`), carried here rather than re-derived.
                 liveness: Some(crate::llm_watch_leg::Liveness::streamed(step)),
+                waited_ms: 0,
             },
         );
         match reply {

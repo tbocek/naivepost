@@ -23,6 +23,7 @@ use crate::project::Project;
 use crate::run::{self, Subprocesses};
 use crate::runqueue::{self, Queue};
 use crate::subprocess;
+use std::path::Path;
 
 /// The program every stage spawns. Same single name the produce tree writes
 /// ([`crate::produce_exec::FFMPEG`]): one place holds the tool's name so a configured path
@@ -113,7 +114,9 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
     }
 }
 
-/// The scene-detect pass: one task per recording source, argv straight from `frames::scene_pass_plan`.
+/// The marker [`drive_walk`] reads as “dial the servers for this row” rather than “spawn this”.
+pub const AUDIO_TASK: &str = "naivepost:audio";
+
 fn frames_stage(project: &Project) -> Stage {
     let args = crate::frames::scene_pass_plan(0.0);
     let tasks = project
@@ -129,17 +132,20 @@ fn frames_stage(project: &Project) -> Stage {
     Stage { track: runqueue::TRACK_FRAMES, name: "frames", phase: 1, of: 2, kind: "frame", tasks }
 }
 
-/// Speech recognition: one chunk per recording, cut with `asr::cut_plan`.
+/// Speech recognition: one row per recording, each a DIAL of audio.cpp through [`crate::audio_task`]
+/// rather than a spawned process — the chunking, the cut of each chunk and the upload are the door's
+/// (§F1.3), so the bar only counts the ask. [`drive_walk`] reads [`AUDIO_TASK`] and calls instead of
+/// forking; the row carries the source and the session language, which is all the dial needs.
 fn speech_stage(project: &Project) -> Stage {
     let tasks = project
         .sources
         .iter()
         .filter(|source| !source.footage)
-        .map(|source| {
-            let mut argv = crate::asr::cut_plan(0.0, CHUNK_SECONDS);
-            argv.push("-i".to_string());
-            argv.push(source.path.clone());
-            Task::run_it("recognising", FFMPEG, argv)
+        .map(|source| Task {
+            label: format!("transcribing {}", crate::audio_task::source_lane(&source.path)),
+            program: AUDIO_TASK.to_string(),
+            args: vec![source.path.clone(), project.language.clone()],
+            already_done: false,
         })
         .collect();
     Stage { track: runqueue::TRACK_STT, name: "speech", phase: 1, of: 2, kind: "chunk", tasks }
@@ -242,6 +248,17 @@ where
                 queue.prog(stage.track, position(progress.done, total), &task.label);
                 continue;
             }
+            // The audio tasks are dials, not processes: same checkpoint, same `take`, same bar, and the
+            // work is a request rather than a fork. The door answers with the lines it logged.
+            if task.program == AUDIO_TASK {
+                if let Err(error) = dial_task(task, &mut log) {
+                    return Drive::Failed { stage: stage.name, error };
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, position(progress.done, total), &task.label);
+                continue;
+            }
             if let Err(why) = spawn_task(task, procs, &mut log) {
                 return Drive::Failed { stage: stage.name, error: why };
             }
@@ -294,6 +311,47 @@ fn position(done: usize, total: usize) -> f64 {
     } else {
         done as f64 / total as f64
     }
+}
+
+/// Run one dial task: the recording's speech, alignment and diarization over audio.cpp, at the
+/// addresses and model ids the settings file says right now (§1's re-read-per-request). The duration is
+/// the one the machine can be asked for — ffprobe on the decoded pcm, whose absence is the honest
+/// reason a row gets nothing rather than a silent zero.
+fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
+    let paths = crate::settings::from_environment().ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
+    let tree = crate::layout::Tree::new(crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())).ok();
+    let source = task.args.first().cloned().unwrap_or_default();
+    let lane = crate::audio_task::source_lane(&source);
+    let conf = crate::settings::read(&paths).unwrap_or_default();
+    let language = task.args.get(1).cloned().unwrap_or_default();
+    let _ = &conf;
+    let pcm = tree
+        .as_ref()
+        .map(|tree| tree.voice16k_wav(&lane))
+        .filter(|path| path.exists())
+        .ok_or_else(|| format!("{}: no decoded audio to transcribe", lane))?;
+    let duration = probe_duration(&crate::settings::read(&paths).unwrap_or_default().ffmpeg, &pcm, log)?;
+    let Some(tree) = tree else {
+        return Err("no project folder to write the transcript into".to_string());
+    };
+    let passage = crate::audio_task::transcribe_source(&tree, &paths, &lane, duration, &language)?;
+    for line in &passage.logs {
+        log(line);
+    }
+    Ok(())
+}
+
+/// Seconds of an audio file, by ffprobe — the tool §1 names for reading, taken from the same folder as
+/// the configured ffmpeg ([`crate::services::ffprobe_for`]'s rule), and its command goes to the log
+/// before it runs like every other subprocess line.
+fn probe_duration(configured_ffmpeg: &str, path: &Path, log: &mut impl FnMut(&str)) -> Result<f64, String> {
+    let ffprobe = crate::services::ffprobe_for(configured_ffmpeg, "ffprobe");
+    let shown = ["-show_entries", "format=duration", "-of", "default=nw=1:nk=1", &path.display().to_string()];
+    let out = subprocess::run(&ffprobe, &shown, |line| log(line))?
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| format!("{}: ffprobe answered no duration", path.display()))?;
+    Ok(out)
 }
 
 /// Spawn one task, registering its pid so ⏹ can reach it, and keep `subprocess`'s logging rule:

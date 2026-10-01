@@ -5,6 +5,8 @@
 //! poll rather than being frozen for the whole draw. This module is that wire: [`submit`] queues the job at
 //! `POST /sdcpp/v1/img_gen`, [`poll`] asks about it at `GET /sdcpp/v1/jobs/{id}`, and [`wait_until_done`]
 //! drives the one-second cadence and logs each status line through [`crate::produce_upload::poll_line`].
+//! [`cancel`] gives up on a job — `POST /sdcpp/v1/jobs/{id}/cancel` — which is what makes ⏹ an abort
+//! rather than a shrug (§02-services#1's last paragraph).
 //! The endpoint rules come from [`crate::services`], the method/path from [`crate::services::Kind`], the
 //! timing from [`crate::bodies::sd_waits`]; nothing here invents a shape.
 
@@ -109,6 +111,10 @@ pub fn poll(tree: &Tree, job: &DrawnJob) -> Result<PollState, String> {
 
 /// Ask once per second until the job reports done, logging each answer's line (§F5.6's cadence). Returns
 /// the last state seen; `Err` when a poll failed or the run was stopped between two asks.
+///
+/// A stop cancels the job before returning: §1 puts the sd.cpp submit and poll on the run's cancel context
+/// "so ⏹ aborts them", and the poll leg is where the stop is first noticed while a job id is still known.
+/// Without this the app stops watching and sd.cpp draws a picture nobody asked for any more.
 pub fn wait_until_done<FLog>(
     tree: &Tree,
     job: &DrawnJob,
@@ -121,6 +127,11 @@ where
     let gap = poll_interval();
     loop {
         if cancelled() {
+            // Best-effort: the stop wins whatever the cancel answers, and its reason is said rather than
+            // swallowed, because "stopped" with a job still running on the server is worth one log line.
+            if let Err(why) = cancel(tree, job) {
+                log(&why);
+            }
             return Err("stopped before the picture finished".to_string());
         }
         let asked = Instant::now();
@@ -137,6 +148,33 @@ where
             std::thread::sleep(gap - elapsed);
         }
     }
+}
+
+/// Give up on a job: `POST /sdcpp/v1/jobs/{id}/cancel`. Its row is logged like every other draw row.
+///
+/// The cancel is sent on an always-false cancel check on purpose: it exists BECAUSE the run stopped, so
+/// gating it on the same flag would refuse the one request whose job is to serve that stop.
+pub fn cancel(tree: &Tree, job: &DrawnJob) -> Result<(), String> {
+    let (_conf, endpoint) = endpoint()?;
+    let base = server_leg::base_row(Server::Image, "sd.cpp", "job", "", STEP, "cancel");
+    let (_row, reply) = server_leg::call(
+        tree,
+        &base,
+        Server::Image,
+        &endpoint,
+        Kind::CancelImage,
+        Some(&job.id),
+        None,
+        &|| false,
+    );
+    let sent = reply.map_err(|why| format!("the drawing server at {}: {why}", endpoint.url))?;
+    if !sent.ok() {
+        return Err(format!(
+            "the drawing server at {} answered {} to cancelling the draw",
+            endpoint.url, sent.status
+        ));
+    }
+    Ok(())
 }
 
 /// The job id out of one answer. sd.cpp answers with `{"id": …}` for a fresh job and echoes it on later

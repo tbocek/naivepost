@@ -98,7 +98,7 @@ impl Timer {
 
 /// Milliseconds as the file's seconds. No rounding here: [`requests::write_line`] formats two decimals,
 /// and rounding twice is how a total stops matching the sum of its parts.
-fn secs(ms: i64) -> f64 {
+pub fn secs(ms: i64) -> f64 {
     ms as f64 / 1000.0
 }
 
