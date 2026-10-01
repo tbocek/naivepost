@@ -100,6 +100,7 @@ pub mod prepare_data;
 pub mod prepare_decisions;
 pub mod prepare_run;
 pub mod describe;
+pub mod describe_call;
 pub mod joins;
 pub mod join_ask;
 pub mod retakes;

@@ -114,6 +114,12 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
             if !separation.tasks.is_empty() {
                 stages.push(separation);
             }
+            // §F1.7 describe → §F1.8 fix come after the ingest stages: understanding is what reads
+            // the frames and the transcript the stages above just produced.
+            let describe = crate::describe_call::stage(project);
+            if !describe.tasks.is_empty() {
+                stages.push(describe);
+            }
             stages
         }
         // Cut's suggest step reads what Prepare wrote; its own subprocess work is the align clip cut.
@@ -123,6 +129,12 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
         run::Step::Narrate | run::Step::Produce => Vec::new(),
     }
 }
+
+/// The marker [`drive_walk`] reads as “dial the vision server for this row” rather than “spawn this”.
+/// A second marker rather than a flag on [`AUDIO_TASK`] because the audio rows already carry one of
+/// their own (`separate_run::SEPARATE_MARK`) and a third kind would make the branch read arguments
+/// for a question the row can answer by its own program name.
+pub const VISION_TASK: &str = "naivepost:vision";
 
 /// The marker [`drive_walk`] reads as “dial the servers for this row” rather than “spawn this”.
 pub const AUDIO_TASK: &str = "naivepost:audio";
@@ -269,6 +281,17 @@ where
                     dial_task(task, &mut log)
                 };
                 if let Err(error) = worked {
+                    return Drive::Failed { stage: stage.name, error };
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, position(progress.done, total), &task.label);
+                continue;
+            }
+            // The vision rows are a chat request rather than an audio task: same checkpoint, same
+            // `take`, different door. `drive_walk` does not decide which, the row says by its program.
+            if task.program == VISION_TASK {
+                if let Err(error) = crate::describe_call::run_task(task, &mut log) {
                     return Drive::Failed { stage: stage.name, error };
                 }
                 ran += 1;
