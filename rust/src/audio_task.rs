@@ -255,6 +255,7 @@ pub fn dial(
                 cancelled: &cancelled,
                 liveness: None,
                 waited_ms,
+                delta: None,
             },
         )
         .1,
@@ -540,6 +541,7 @@ pub fn upload_bytes(
                 cancelled: &cancelled,
                 liveness: None,
                 waited_ms: 0,
+                delta: None,
             },
         )
         .1,

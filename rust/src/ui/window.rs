@@ -2219,7 +2219,13 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // about. Published here for the same reason `SESSION` is.
     PLAY_SESSION.with(|slots| slots.borrow_mut().push(Rc::clone(&session)));
 
-    crate::project_autosave::install(Rc::clone(&session), crate::project_autosave::session_dir());
+    // §2 S6's folder for THIS window, remembered before anything can move the cwd: the close hook writes
+    // the session here rather than into `project_autosave::session_dir()`, which asks the process cwd at
+    // close time — wrong once a flow has moved the session (F0.10's Save as, F0.11's Rescan) or a test has
+    // pinned its cwd, and a close must never create or rewrite somebody else's folder.
+    let session_folder = startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    SESSION_DIRS.with(|held| held.borrow_mut().push(session_folder.clone()));
+    crate::project_autosave::install(Rc::clone(&session), session_folder);
     crate::project_autosave::start();
     // The folder this window has open: the working copy beside its launch root. A rename or an Open
     // moves it afterwards -- that is what `save_target` answers -- but a fresh window always starts on
@@ -2350,6 +2356,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // assertion on `state().status` keeps working unchanged — only its parent moved.
     let log_view = gtk::TextView::new();
     log_view.set_widget_name("log-view");
+    // §1: the run's exchange page is the log's one clickable line; everything else stays plain text.
+    super::log_link::install(&log_view);
     log_view.set_editable(false);
     log_view.set_cursor_visible(false);
     log_view.set_monospace(true);
@@ -2715,8 +2723,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
             flush_line_on_close(&closing);
             // §F4.7 (**Text**): closing the window flushes a half-typed line too, not only a tab switch.
             crate::ui::narrate_text::flush_owed(&closing);
-            // §2 S6: and the project itself, which is what an interrupted session would lose.
-            crate::project_autosave::flush_session();
+            // §2 S6: and the project itself, which is what an interrupted session would lose — resolved
+            // through this window's own folder rather than the process cwd, which a moved session or a
+            // test that pinned its cwd can point somewhere else entirely.
+            flush_session_on_close();
             // §6/§5: and any settings dialog still open — it is a separate top level, so its own close
             // hook never runs when the app comes down through this window.
             crate::ui::settings::flush_owed();
@@ -3062,13 +3072,9 @@ pub fn paint_progress(
     crate::ui::shell_beats::status_from_queue(line.status, queue, line.owned);
     log.set_expanded(expanded);
     if expanded {
-        let mut body = String::new();
-        for line in window_logs() {
-            body.push_str(&line);
-            body.push('\n');
-        }
         let buffer = log_view.buffer();
-        buffer.set_text(&body);
+        buffer.set_text("");
+        super::log_link::paint_lines(&buffer, &window_logs());
         // The newest line is the one worth seeing.
         let mut end = buffer.end_iter();
         log_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 1.0);
@@ -5098,12 +5104,25 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+type WindowFolders = std::cell::RefCell<Vec<std::path::PathBuf>>;
+
 /// The project root this window's line file sits under, newest slot winning like [`REVIEW_CUTS`]. Held
 /// beside [`LINE_STATES`] because the position without its root is a number with nowhere to be saved:
-/// `restore` needs it on open and `flush_line_on_close` needs it on close.
+/// `restore` needs it on open and `flush_line_on_close` needs it on close. `SESSION_DIRS` is the same
+/// shape for the folder §2 S6's close flush writes the session into — `project_autosave::session_dir()`
+/// asks the process cwd, a different answer once a flow has moved the session or a test has pinned it.
 thread_local! {
-    static LINE_ROOTS: std::cell::RefCell<Vec<std::path::PathBuf>> =
-        const { std::cell::RefCell::new(Vec::new()) };
+    static LINE_ROOTS: WindowFolders = const { std::cell::RefCell::new(Vec::new()) };
+    static SESSION_DIRS: WindowFolders = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// §2 S6 as the close hook wants it, resolved through THIS window: write the live session into the
+/// folder that window was built for. Returns whether a file was written.
+fn flush_session_on_close() -> bool {
+    let Some(dir) = SESSION_DIRS.with(|held| held.borrow().last().cloned()) else {
+        return false;
+    };
+    crate::project_autosave::flush_on_close(&live_project(), &dir)
 }
 
 /// What a frame step did (F2.4 S2/S3), so the caller paints the right thing and decides nothing.

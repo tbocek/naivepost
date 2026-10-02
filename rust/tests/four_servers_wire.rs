@@ -316,6 +316,7 @@ fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_head
             cancelled: &never,
             liveness: None,
             waited_ms: 0,
+            delta: None,
         },
     );
     result.expect("the upload reached the fake server");

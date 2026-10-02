@@ -63,12 +63,42 @@ fn write_face_png(face: &gtk::Button, out: &Path) -> Result<(), String> {
     result
 }
 
+/// Open the shell's log and paint what has been logged, through the same door a run repaints it from.
+///
+/// `paint_progress` is the only thing that expands the expander AND fills its body — it reads openness
+/// off the run bar, so a snapshot with no run open cannot get an open log any other way. This hands it
+/// the window's own widgets and the idle queue, asking for the one state a real run shows: expanded.
+fn show_the_log(window: &adw::ApplicationWindow) -> Result<(), String> {
+    let progress = ui::progress_bar(window).ok_or("the shell has no progress bar")?;
+    let expander = ui::log_expander(window).ok_or("the shell has no log expander")?;
+    let view = log_view(window).ok_or("the shell's log has no text view")?;
+    let queue = ui::run_queue(window).ok_or("the shell has no run queue")?;
+    let status = ui::find_status(window.upcast_ref()).ok_or("the shell has no status line")?;
+    ui::window::paint_progress(
+        &progress,
+        &expander,
+        &view,
+        &queue.borrow(),
+        crate::ui::shell_beats::StatusLine { status: &status, owned: false },
+        true,
+    );
+    Ok(())
+}
+
+/// The log's own text view: the expander holds it even while collapsed, which a name search cannot see.
+fn log_view(window: &adw::ApplicationWindow) -> Option<gtk::TextView> {
+    ui::log_expander(window)?.child()?.downcast::<gtk::TextView>().ok()
+}
+
 /// Screen names the window can render: the spec's images, mapped onto a page.
 fn screen_page(screen: &str) -> Option<&'static str> {
     match screen {
         "03-window" | "03-settings" | "03-sources" | "03-new-confirm" | "03-policy-form" => {
             Some("Prepare")
         }
+        // §7's link line as the shell actually draws it, in the OPEN log. Program-side screen: there is
+        // no `spec/img/03-log-link.png`; §1 only says which single line of the log is a link.
+        "03-log-link" => Some("Prepare"),
         // §2's own picture is the RUN BAR at rest: ▶ with "Run this step — or resume what is paused",
         // ⏸ absent, and the gears still. It renders on Prepare because that is the page whose step ▶
         // stands for when nothing is playing (§F0.2 S4 → F1.1).
@@ -581,6 +611,18 @@ architecture behind them.
             // beside the title and Reset it drives — and the row itself was requested above, before
             // `build_window`. Row 2 = "Describe", per `bench::ROWS`.
             "04-prompt-picker" => None,
+            // §7's log lines, then the once-per-run link, in the expander a run would have opened. The
+            // three lines go in through `ui::window::log_line`, the same sink every flow writes to, and
+            // the opening goes through `paint_progress`, the only door that both expands the expander and
+            // fills it — so what is painted is exactly what a live shell paints mid-run.
+            "03-log-link" => {
+                let step = crate::run::step(crate::shell::Page::Prepare).label();
+                ui::window::log_line(&format!(">>> {step}: 451.4 kB of text and 0 image(s) went to the LLM"));
+                ui::window::log_line(&format!(">>> {step}: 28.6 kB came back in 2m39s"));
+                ui::window::log_line(&crate::exchanges::link_line("llm/prepare-page.html"));
+                show_the_log(&window).expect("the shell's log opens for its own snapshot");
+                None
+            }
             // F3.5's screen is the form itself, not the page behind it -- same reason `03-policy-form`
             // paints its dialog: the Cut page's own column collapses to a sliver headless (see the note on
             // the default size above), so painting the whole window would show empty grey instead of the

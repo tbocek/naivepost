@@ -113,8 +113,11 @@ pub fn write_session_now(project: &Project, dir: &Path) -> bool {
     }
 }
 
-/// §2 S6 as the close hook wants it: flush the session that is live RIGHT NOW (so an Open that
-/// replaced it flushes what was opened, not what the launch started with) into [`session_dir`].
+/// §2 S6 as a close hook that does NOT know which window is closing: flush the session that is live
+/// RIGHT NOW (so an Open that replaced it flushes what was opened, not what the launch started with)
+/// into [`session_dir`]. The shell's own hook uses `ui::window`'s per-window folder instead, because a
+/// flow that moved the session (F0.10's Save as, F0.11's Rescan) or a test that pinned its cwd makes
+/// this one write to the wrong folder.
 pub fn flush_session() {
     let held = crate::ui::window::live_project();
     flush_on_close(&held, &session_dir());

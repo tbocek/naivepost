@@ -449,6 +449,9 @@ impl Page {
             None => String::new(),
         };
         self.streamed_raw = Some(streamed.clone());
+        // The meta line changes with the first fragment: `reply pending` was true while nothing had arrived,
+        // and a page that still says it after words landed tells the reader the opposite of what is on disk.
+        let head = mark_answered(head);
         self.sections[open] = format!("{head}{STREAM_PRE}{}{CLOSE_PRE}\n{tail}", esc_reply(&streamed));
         self.write();
         Some(streamed)
@@ -511,6 +514,32 @@ impl RunLog {
         self.page.as_ref().map(Page::rel)
     }
 
+    /// File one call's REQUEST half before its answer exists, so a page opened mid-call shows the request
+    /// with `reply pending` and then grows. Returns the lines for the app log (the send line, plus the
+    /// once-per-run link on the run's first call) — the same first lines [`record`] hands out.
+    pub fn begin(&mut self, tree: &Tree, stamp: &str, step: &str, call: &Call) -> Vec<String> {
+        if self.page.is_none() {
+            self.page = Some(Page::start(tree, stamp, step));
+        }
+        self.page.as_mut().expect("just opened above").begin(call)
+    }
+
+    /// Part of the reply arrived: grow the open section and put the page back on disk. `None` when no
+    /// section is open, which is the ordinary answer for a call nobody began live.
+    pub fn stream(&mut self, text: &str) -> Option<String> {
+        self.page.as_mut()?.stream(text)
+    }
+
+    /// The call is over: rewrite its open section whole from the finished call and hand back the verdict
+    /// lines. With nothing open this is exactly [`record`]'s ending — which is what lets the leg keep one
+    /// safety net for a reply that arrived in some shape nobody streamed.
+    pub fn complete(&mut self, tree: &Tree, stamp: &str, step: &str, call: &Call) -> Vec<String> {
+        if self.page.is_none() {
+            self.page = Some(Page::start(tree, stamp, step));
+        }
+        self.page.as_mut().expect("just opened above").complete(call)
+    }
+
     /// Record one call, opening the run's page under `stamp`/`step` if none is open. Returns the
     /// lines for the app log, which carry the once-per-run link on the first call through.
     pub fn record(&mut self, tree: &Tree, stamp: &str, step: &str, call: &Call) -> Vec<String> {
@@ -543,6 +572,13 @@ const STREAM_PRE: &str = "<pre><!--streamed:";
 /// source text: the search for where an open block ends looks for exactly these bytes, and a stray
 /// copy here would be found before any real one.
 const CLOSE_PRE: &str = concat!("</", "pre>");
+
+/// Swap a pending section's meta line for the growing-answer one. The two differ by exactly the marker
+/// [`REPLY_PENDING`] (see [`meta_line`]), so the swap is that one word — rewriting the whole section here
+/// would need the [`Call`] again, which is what `complete` already does properly.
+fn mark_answered(section: String) -> String {
+    section.replace(REPLY_PENDING, "arriving")
+}
 
 /// The reply as it arrives is the model's words, not markup this app vouches for, so it is escaped
 /// on the way into the page. [`Call::reply`] can contain anything a server sent.

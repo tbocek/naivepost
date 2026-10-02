@@ -8,7 +8,6 @@
 //! the keeping of the live page for the session. Everything it returns is already-worded text —
 //! recording can never fail the call it records (§7), so nothing here hands back an error.
 
-use std::cell::RefCell;
 
 use serde_json::Value;
 
@@ -177,27 +176,277 @@ fn stamp() -> String {
     format!("{month:02}{day:02}{hours:02}{minutes:02}{seconds:02}{year:04}")
 }
 
-thread_local! {
-    /// The page this run is writing, open from its first call and closed when the next run starts.
-    ///
-    /// This holder is THE run's page, not a second bookkeeping copy: `start_run` closes it (§7's "a run
-    /// is the calls between two queue resets") and every chat call files itself here, so a page holds
-    /// every call of the run that opened it whatever step or thread made them.
-    static RUN: RefCell<RunLog> = RefCell::new(RunLog::new());
+/// The page the CALLING THREAD's run is writing, open from its first call and closed when the next run starts.
+///
+/// This holder is THE run's page, not a second bookkeeping copy: `start_run` closes it (§7's "a run
+/// is the calls between two queue resets") and every chat call files itself here, so a page holds
+/// every call of the run that opened it whatever step or thread made them.
+///
+/// Each thread gets its own `Arc<Mutex<RunLog>>`, and both halves of that matter:
+///
+/// - **per-thread** because a run's page belongs to one run. A single shared holder would be used by every
+///   thread in the process — including the unrelated runs cargo's test threads drive at the same time — and
+///   their sections would interleave into one file. So each thread is given its OWN `Arc` on first use, and
+///   that is the only page it ever writes.
+/// - **`Arc`** because §4 puts the socket read on a detached worker (`llm_watch_leg::guarded`). [`Live::hook`]
+///   is built on the thread that started the run, so it can clone that thread's `Arc` and carry the very page
+///   its caller opened across to the worker. A plain `RefCell<RunLog>` would hand the worker an empty page of
+///   its own: request filed on one thread, words landing nowhere — the silent failure this item exists to stop.
+///
+/// The registry is process-wide ONLY as a factory handing each thread its own page; no two runs share a
+/// `RunLog`. It is a map rather than a `thread_local!` because a `thread_local!` cannot be borrowed out of
+/// inside a closure that has to return the value.
+static RUN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<std::thread::ThreadId, std::sync::Arc<std::sync::Mutex<RunLog>>>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// This thread's run page, ready to clone into a hook. Each recorder locks it for ONE operation and never
+/// holds the lock across a `log(...)` call — the log sink is the caller's own thread-local list, and a lock
+/// carried into it would let one run's write wait on another's logging.
+fn page() -> std::sync::Arc<std::sync::Mutex<RunLog>> {
+    let me = std::thread::current().id();
+    let mut held = match RUN.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    held.entry(me)
+        .or_insert_with(|| std::sync::Arc::new(std::sync::Mutex::new(RunLog::new())))
+        .clone()
 }
+
+/// Lock the page for one recorder call. Poisoned is taken as-is: what a panic can leave held here is a page of
+/// already-written text, and losing an exchange page is not worth failing the call recording it (§7).
+fn write_to(run: &std::sync::Arc<std::sync::Mutex<RunLog>>) -> std::sync::MutexGuard<'_, RunLog> {
+    match run.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// The live half of one streamed chat call, in the shape the dialling leg can actually hand over.
+///
+/// # Why it has to exist at all
+///
+/// §7's live rule is that the request goes on the page BEFORE the answer arrives and the reply grows as
+/// chunks land. A leg cannot do that with [`record`] alone: `record` files a finished exchange, which means
+/// the reader sees nothing until the call ends — exactly what "the page fills up while you wait" says must
+/// not happen. So the dial door asks for a sink ([`crate::server_leg::Dial::delta`]) and this type owns
+/// everything about it: when to open the section, how to turn raw SSE bytes into words, and how to close it.
+///
+/// # Why the hook is asked for per attempt
+///
+/// The dial loop retries, and each attempt that goes out owes its own section to the page (§7: two calls, two
+/// sections). A caller that handed over one plain closure could not open a fresh section per trip; asking the
+/// leg to call [`Live::hook`] immediately before each send makes it state what it already knows — which attempt
+/// this is — and keeps the identity of the section (model, mode, messages) inside this module.
+///
+/// # What the hook does NOT do
+///
+/// It never fails a call. Decoding, writing and closing all swallow their own trouble (§7's last sentence).
+/// # Why the hook needs no token and no ownership check
+///
+/// A call §4 gave up on keeps producing bytes on its detached worker after its own dial has returned, so a hook
+/// can outlive its section. That is already harmless: [`RunLog::stream`] grows only an OPEN section, and
+/// [`Live::finish`] closes the section before the dial returns, so a late write finds nothing open and does
+/// nothing. No second mechanism is needed to make a stale hook safe.
+pub struct Live {
+    tree: Tree,
+    step: String,
+    model: String,
+    body: String,
+    /// The page THIS call grows. A clone of the calling thread's holder, taken while `Live` is built — that is
+    /// what lets [`Live::hook`] hand the same page to §4's reader thread (see [`RUN`]).
+    run: std::sync::Arc<std::sync::Mutex<RunLog>>,
+    /// Everything this call streamed, kept for the closing rewrite (see [`Live::streamed_words`]).
+    streamed: std::sync::Arc<std::sync::Mutex<String>>,
+    /// Set when this attempt ends — by [`Live::close_attempt`] or [`Live::finish`] — so a §4 give-up's
+    /// abandoned reader thread stops writing: its late words would land inside the NEXT attempt's section.
+    closed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Whether THIS run owns the page the live section went into. Read at open time: a call made outside a run
+    /// gets a page that ends with itself, the same rule [`record`] applies, and the flag says so at the close.
+    owned_run: std::cell::Cell<bool>,
+}
+
+/// The hook [`crate::server_leg::Dial::delta`] carries: fed every byte of the body received so far, after
+/// each read. `Send + Sync` because §4's watched send reads on its detached worker thread.
+pub type ServerHook = std::sync::Arc<dyn Fn(&[u8]) + Send + Sync>;
+
+/// Whether one request body asked for a streamed reply. Read from the JSON actually going out rather than
+/// passed in as a flag, so the page cannot claim a call was live when the body says it was not — and so a
+/// caller that never thinks about §7 still gets the right answer, because the body is the fact.
+fn stream_asked(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|asked| asked.get("stream").and_then(Value::as_bool))
+        .unwrap_or(false)
+}
+
+impl Live {
+    /// Open the live recorder for one chat ask. `body` is the exact JSON going out — the same string the leg
+    /// sends — because the page's request half and its thinking-mode label are both read from it.
+    pub fn new(tree: &Tree, step: &str, model: &str, body: &str) -> Self {
+        Self {
+            tree: tree.clone(),
+            step: step.to_string(),
+            model: model.to_string(),
+            body: body.to_string(),
+            run: page(),
+            streamed: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+            closed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            owned_run: std::cell::Cell::new(false),
+        }
+    }
+
+    /// Whether this request body deserves a live page at all: only a body that ASKED to be streamed
+    /// (`"stream": true`, §9 §1) has chunks to show. A one-shot ask has no incremental reply, so filing it at
+    /// the end through [`record`] is the whole of what §7 asks for it.
+    pub fn asked_for_live(&self) -> bool {
+        stream_asked(&self.body)
+    }
+
+
+    /// File this ask's REQUEST on the run's page, open its section, and announce it through `log` (the send
+    /// line, plus the once-per-run link if this is the run's first call). Must be called before [`Live::hook`]
+    /// can grow anything, and once per attempt: each retry re-opens its own section, which is why the leg calls
+    /// this and [`Live::hook`] together rather than once per ask.
+    pub fn opened(&self, log: &dyn Fn(&str)) {
+        self.owned_run.set(run_open());
+        let call = call_of(&self.step, &self.model, &self.body, "", "", 0, None);
+        let stamp = stamp();
+        let lines = write_to(&self.run).begin(&self.tree, &stamp, &self.step, &call);
+        for line in lines {
+            log(&line);
+        }
+    }
+
+    /// File this ask's REQUEST on the run's page, open its section, and hand back the hook that grows it —
+    /// [`Live::opened`] and [`Live::hook`] in the one call the dialling leg makes.
+    ///
+    /// Returns `None` (and files nothing) for a body with no stream to show, which is how a caller gets "send
+    /// without a live page" for free: pass the result straight to [`crate::server_leg::Dial::delta`].
+    pub fn opened_then_hook(&self, log: &dyn Fn(&str)) -> Option<ServerHook> {
+        if !self.asked_for_live() {
+            return None;
+        }
+        self.opened(log);
+        self.hook()
+    }
+
+    /// The hook that grows the section [`Live::opened`] put up, or `None` when this body gets no live page.
+    pub fn hook(&self) -> Option<ServerHook> {
+        if !self.asked_for_live() {
+            return None;
+        }
+        // One decoder per attempt, shared between this closure and the socket thread's reads. Its mutex is held
+        // only for the decode, never across a write: two threads may reach one hook only if a retry overlapped a
+        // late read, and then the worst outcome is a fragment written twice, not a deadlock in the read loop.
+        let held = std::sync::Arc::new(std::sync::Mutex::new((
+            crate::llm_stream_leg::Delta::default(),
+            0usize,
+        )));
+        // The page travels by clone, which is what lets a hook built here reach §4's worker thread at all.
+        // The page itself is a mutex for exactly that reason (see `write_to`), so the words go straight onto it
+        // from wherever they are decoded: waiting for the caller's thread to notice them would keep the section
+        // at `reply pending` until the call ended — the failure §7's live rule forbids.
+        let run = self.run.clone();
+        // Every word this attempt produced, kept for [`Live::finish`]: the closing rewrite prints the answer,
+        // not the wire, and it can only do that if someone remembered what the reader decoded.
+        let seen = self.streamed.clone();
+        // This attempt's own stop flag: a §4 give-up leaves the reader thread running (see `guarded`), and its
+        // late words belong to a section the page has already closed.
+        let closed = self.closed.clone();
+        Some(std::sync::Arc::new(move |whole: &[u8]| {
+            if closed.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+            let fresh = {
+                let mut guard = match held.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                let (decoder, read_so_far) = &mut *guard;
+                let fresh = decoder.push(&whole[*read_so_far..]);
+                *read_so_far = whole.len();
+                fresh
+            };
+            if fresh.is_empty() {
+                return;
+            }
+            if let Ok(mut words) = seen.lock() {
+                words.push_str(&fresh);
+            }
+            let _ = write_to(&run).stream(&fresh);
+        }))
+    }
+
+    /// This attempt is over: its hook must write nothing more. The leg calls this the moment an attempt
+    /// returns — success, refusal or §4 give-up — because a given-up call's reader thread is still alive
+    /// (`guarded` detaches it on purpose) and may keep decoding into this closure.
+    pub fn close_attempt(&self) {
+        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Every word this call streamed, in arrival order — what the reader watched appear.
+    pub fn streamed_words(&self) -> String {
+        match self.streamed.lock() {
+            Ok(seen) => seen.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// The call [`Live::hook`] was growing is over: rewrite its section from the finished answer and hand the
+    /// verdict lines to `log`. Every dial ending calls this, including the ones with no reply — a call the
+    /// server never answered is the one a reader opens the page to find.
+    ///
+    /// With nothing open this still files the exchange whole (see [`RunLog::complete`]), which is what lets the
+    /// leg drive one path whether or not the attempt ever got a hook.
+    pub fn finish(&self, reply_body: &str, content_type: &str, took_secs: u64, error: Option<String>, log: &dyn Fn(&str)) {
+        // Nothing from this attempt may touch the page again once its finished section is written.
+        self.close_attempt();
+        let call = call_of(
+            &self.step,
+            &self.model,
+            &self.body,
+            reply_body,
+            content_type,
+            took_secs,
+            error,
+        );
+        let stamp = stamp();
+        let lines = {
+            let mut run = write_to(&self.run);
+            let lines = run.complete(&self.tree, &stamp, &self.step, &call);
+            // A call made outside a run keeps the rule [`record`] applies: its page ends with itself, so the
+            // next run's calls cannot soak into a page nobody opened for them.
+            if !self.owned_run.get() {
+                run.reset();
+            }
+            lines
+        };
+        for line in lines {
+            log(&line);
+        }
+    }
+}
+
 
 /// File one call in the run's page and hand every line it produced to `log` — the two per-call lines
 /// plus, on the run's first call, the once-per-run link (§7). Returns nothing: a page that could not
 /// be written is already worded as a line by `exchanges`, and failing the call it records is not its
 /// job (§7's last sentence).
 ///
-/// The section goes on disk whole. A chat call reports here only once its reply has been read to the
-/// end, so there is no half-arrived answer left to grow; a caller that really does append as chunks
-/// land would drive [`Page::begin`] / [`Page::stream`] / [`Page::complete`] itself instead.
+/// # Two doors for one page, and which calls which
+///
+/// A non-streamed exchange (every audio/image/upload leg, and any chat ask whose body did not ask for a
+/// stream) has no incremental reply to show, so this whole-file door is all §7 asks of it. A STREAMED chat
+/// call instead walks [`Live::opened`] → [`Live::hook`] → [`Live::finish`], because filing it here would mean
+/// the reader sees nothing until the answer is finished — what "the page fills up while you wait" forbids.
+/// [`Live::finish`] keeps this function's ending as its fallback, so a streamed call that never got a hook
+/// still lands on the page.
 pub fn record(tree: &Tree, step: &str, call: &Call, log: &dyn Fn(&str)) {
     let stamp = stamp();
-    let lines = RUN.with(|held| {
-        let mut run = held.borrow_mut();
+    let lines = {
+        let run = page();
+        let mut run = write_to(&run);
         // Only the FIRST call of a page owes the once-per-run link, and `record` hands it out with the
         // send line. Closing the page afterwards retires this call's own boundary (§7: a run is the
         // calls between two resets), so a call with no run open gets a page of its own instead of
@@ -208,7 +457,7 @@ pub fn record(tree: &Tree, step: &str, call: &Call, log: &dyn Fn(&str)) {
             run.reset();
         }
         lines
-    });
+    };
     for line in lines {
         log(&line);
     }
@@ -218,13 +467,14 @@ pub fn record(tree: &Tree, step: &str, call: &Call, log: &dyn Fn(&str)) {
 /// boundary is [`note_run_started`], which closes the previous run's page from `runqueue::start_run`.
 pub fn reset_run_for_test() -> Option<String> {
     RUN_OPEN.with(|cell| cell.set(false));
-    RUN.with(|held| held.borrow_mut().reset())
+    write_to(&page()).reset()
 }
 
 thread_local! {
-    /// Whether a run stands. [`note_run_started`] raises it and [`note_run_ended`] lowers it, following
-    /// `RunBar::running`, so "a run is open" means one thing app-wide. A call found outside one is still
-    /// recorded, in a page that ends with itself: §7 would rather keep a stray exchange than drop it.
+    /// Whether a run stands, and WHY it stays thread-local while [`RUN`] does not: only the thread that owns
+    /// the run raises or reads it (`runqueue::start_run`/`end_run`), whereas the page is written by whichever
+    /// thread holds the socket. A call found outside a run is still recorded, in a page that ends with
+    /// itself: §7 would rather keep a stray exchange than drop it.
     static RUN_OPEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -240,7 +490,7 @@ fn run_open() -> bool {
 /// it.
 pub fn note_run_started() -> bool {
     RUN_OPEN.with(|cell| cell.set(true));
-    RUN.with(|held| held.borrow_mut().reset().is_some())
+    write_to(&page()).reset().is_some()
 }
 
 /// Note for the recorder that the run ended, so a later stray call does not land on a finished run's

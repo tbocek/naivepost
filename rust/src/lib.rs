@@ -87,6 +87,7 @@ pub mod layout;
 pub mod llm_budget;
 pub mod llm_cache;
 pub mod llm_request;
+pub mod llm_stream_leg;
 pub mod llm_tools_offer;
 pub mod migrate;
 pub mod model_calls;

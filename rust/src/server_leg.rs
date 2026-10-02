@@ -136,7 +136,7 @@ pub fn send_named(
     filename: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Sent, String> {
-    send_pinged(server, endpoint, kind, job, body, filename, cancelled, None)
+    send_pinged(server, endpoint, kind, job, body, filename, cancelled, None, None)
 }
 
 /// [`send_named`] with the §4 probe: every byte this read comes off the wire is a heartbeat's evidence, so the
@@ -150,6 +150,7 @@ fn send_pinged(
     filename: Option<&str>,
     cancelled: &dyn Fn() -> bool,
     probe: Option<&crate::llm_watch_leg::Probe>,
+    delta: Option<&Delta>,
 ) -> Result<Sent, String> {
     // The eighth argument is §4's byte ping, which only a watched leg has; folding it into `Dial` would make every
     // unwatched caller carry a field it never sets.
@@ -224,8 +225,16 @@ fn send_pinged(
         .map(|value| value.to_str().unwrap_or_default().trim().to_string())
         .unwrap_or_default();
     let mut reader = response.into_body().into_reader();
+    // §7's live half: a caller that wants the words as they arrive hands over somewhere to put them, and
+    // the read loop below becomes a pump instead of a drain. Everything else (every other leg, every
+    // non-streaming reply) takes the `None` path unchanged and reads straight through.
+    let on_chunk = delta;
     let mut buf = Vec::new();
-    let first = loop {
+    // The first byte's moment, kept separately because the loop must run to the END of the body: breaking on the
+    // first read (the shape this had) truncates any reply that arrives over more than one read to its first chunk,
+    // which is exactly what cut a streamed answer off after its first word.
+    let mut first: Option<i64> = None;
+    let total_reads = loop {
         let mut chunk = [0u8; 8192];
         match reader.read(&mut chunk) {
             Ok(0) => break started.elapsed().as_millis() as i64,
@@ -236,9 +245,15 @@ fn send_pinged(
                     probe.byte();
                 }
                 buf.extend_from_slice(&chunk[..n]);
-                // First successful read is the first byte, unless the body was empty.
-                if buf.len() == n {
-                    break elapsed;
+                // §7's live half, part 1: hand the sink everything received so far. The sink keeps its own
+                // read offset, so a caller decodes only what it has not seen; handing it `&chunk[..n]` instead
+                // would make every caller re-invent that offset for one field's convenience.
+                if let Some(sink) = &on_chunk {
+                    sink(&buf);
+                }
+                // First successful read is the first byte. Nothing breaks here: only `Ok(0)` ends the body.
+                if first.is_none() {
+                    first = Some(elapsed);
                 }
             }
             Err(why) => {
@@ -248,7 +263,7 @@ fn send_pinged(
             }
         }
     };
-    let total = started.elapsed().as_millis() as i64;
+    let total = total_reads;
     let text = String::from_utf8_lossy(&buf).to_string();
     // The header was read off the response before its body reader was taken; keep it for §1's routing rule.
     let content_type = header.to_ascii_lowercase();
@@ -264,7 +279,8 @@ fn send_pinged(
         sent_bytes,
         received_bytes: buf.len() as i64,
         wait_ms: 0,
-        first_byte_ms: Some(first),
+        // An empty body has no first byte of its own; it keeps the old meaning of "the call ended".
+        first_byte_ms: Some(first.unwrap_or_else(|| started.elapsed().as_millis() as i64)),
         on_wire_ms: Some(total),
     })
 }
@@ -309,6 +325,7 @@ pub fn call(
             cancelled,
             liveness: None,
             waited_ms: 0,
+            delta: None,
         },
     )
 }
@@ -334,7 +351,19 @@ pub struct Dial<'a> {
     /// The socket cannot report that wait — it happens outside the trip — so the holder passes it through here and
     /// [`call_dialed`] writes it into the row's `wait_s` column (§10's slot-count evidence).
     pub waited_ms: i64,
+    /// §7's live reply, seen WHILE it arrives: called after every read with EVERY byte of the body received so
+    /// far, so the caller only decodes what it has not seen. `None` (every other leg) reads straight through.
+    ///
+    /// It runs wherever the bytes are read, which under §4 is a detached worker — hence an owned sink
+    /// (`crate::exchange_leg::ServerHook`) rather than a borrow: borrowed data cannot cross into that worker.
+    /// The sink writes the exchange page itself; the page is a mutex for exactly that reason.
+    pub delta: Option<Delta>,
 }
+
+/// What [`Dial::delta`] holds: somewhere to put the body as it grows. A `'static` `Arc`, not a plain `&dyn Fn`,
+/// because §4's watched send runs on its own detached thread (`llm_watch_leg::guarded`) and borrowed data cannot
+/// cross into it — the same reason that worker copies the endpoint and the body instead of borrowing them.
+pub type Delta = std::sync::Arc<dyn Fn(&[u8]) + Send + Sync>;
 
 /// [`call`] from a [`Dial`], so a caller names each leg instead of counting positions.
 pub fn call_dialed(
@@ -361,6 +390,9 @@ pub fn call_dialed(
             let job = dial.job.map(str::to_owned);
             let body = dial.body.map(str::to_owned);
             let filename = dial.filename.map(str::to_owned);
+            // A watched send runs detached, so the live-reply sink crosses into it by clone, exactly as the
+            // two owned strings above do; an unwatched send borrows the caller's `Dial` and needs no copy.
+            let delta = dial.delta.clone();
             crate::llm_watch_leg::guarded(liveness, &probe, move || {
                 send_pinged(
                     server,
@@ -371,6 +403,7 @@ pub fn call_dialed(
                     filename.as_deref(),
                     &cancelled_now,
                     ping.as_deref(),
+                    delta.as_ref(),
                 )
             })
         }
@@ -383,6 +416,7 @@ pub fn call_dialed(
             dial.filename,
             dial.cancelled,
             None,
+            dial.delta.as_ref(),
         ),
     };
     let mut timer = Timer::queued(dial.waited_ms, timer_start);

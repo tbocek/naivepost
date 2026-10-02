@@ -97,7 +97,10 @@ impl Probe {
 /// after the bound rather than up to a whole heartbeat late. Read in real time — the watch's clock is the wall clock,
 /// and what makes a test fast is a short BOUND (`llm_liveness::stall_seconds`), never a warped clock.
 fn poll_wait() -> Duration {
-    // Four looks per heartbeat (§4), floored at 50 ms so a one-second test minute still gets its four looks.
+    // Four looks per heartbeat (§4), floored so a watch still gets its four looks inside a short test minute.
+    // The floor is what makes §7's live hand-off timely: `guarded`'s loop is the only place a watched call's
+    // bytes reach the caller's thread, so at 250 ms a reply written over a second lands on the page within a
+    // quarter of it — often enough for a reader watching the file to see it grow.
     Duration::from_millis((llm_liveness::heartbeat_seconds() * 1000 / 4).max(50))
 }
 

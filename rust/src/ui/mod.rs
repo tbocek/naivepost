@@ -10,6 +10,9 @@ pub mod shell_beats;
 pub mod lucky_run;
 /// F0.5 S4 — the one door a run closes through, for every way a run ends.
 pub mod run_close;
+/// §7's link line — the log's one clickable line, and the launcher that opens it. Split out of
+/// `window.rs`, which is past its size budget.
+pub mod log_link;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_page;
 /// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the

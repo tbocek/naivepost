@@ -209,6 +209,7 @@ pub fn chat_on(
 /// stream). A stream read here has still been read to its end by this function's caller before anyone
 /// looks at the reply, so the section is closed straight away — the open-`<pre>` form §8 describes is
 /// for a caller that appends as chunks land, and none of the chat asks do that; they wait for the body.
+#[allow(clippy::too_many_arguments)]
 fn record_dial(
     step: &str,
     tree: &Tree,
@@ -217,7 +218,12 @@ fn record_dial(
     reply: Result<&Sent, &str>,
     started: Instant,
     log: &dyn Fn(&str),
+    live: &exchange_leg::Live,
 ) {
+    // Decided by the body, not by what arrived: §9 §1 recognises a stream by the response's `content-type`, but
+    // the page's live section was opened (or not) when the request went out, and the two must agree about which
+    // calls this one. `asked_for_live` is that same decision on the request side.
+    let streamed = live.asked_for_live();
     let took = started.elapsed().as_secs();
     let (reply_body, content_type, failure) = match reply {
         // A refused status is the failure this dial ended with, in the same words `Failure::Status`
@@ -233,17 +239,38 @@ fn record_dial(
         // to find — so it goes with the failure's wording and no reply.
         Err(why) => ("", "", why.to_string()),
     };
+    let problem = (!failure.is_empty()).then_some(failure);
+    // A streamed call's own reply is the words that reached the page. The leg hands `reply_body` to `call_of`
+    // as raw SSE framing (`data: {…}` lines), which belongs on an exchange page only once it has been read
+    // back into prose — otherwise the closed section shows the wire, not the answer. The hook did that reading
+    // as it grew the live section, so its copy is what the finished section prints; a call that streamed nothing
+    // (refused, dead) keeps the body as it arrived, which for those endings is the server's own message and
+    // worth seeing.
+    let streamed_words = live.streamed_words();
+    let shown_reply = if streamed && !streamed_words.is_empty() {
+        streamed_words.as_str()
+    } else {
+        reply_body
+    };
+    // And the page's `reply:` line has to describe that same text: `call_of` reads an answer through the
+    // stream parser when the content type says event-stream, and prose handed to it then parses as nothing.
+    let shown_type = if streamed && !streamed_words.is_empty() { "text/plain" } else { content_type };
     let call = exchange_leg::call_of(
         step,
         model,
         body,
-        reply_body,
-        content_type,
+        shown_reply,
+        shown_type,
         took,
-        (!failure.is_empty()).then_some(failure),
+        problem.clone(),
     );
-    // The reply is complete here either way (§9 §1 decides only how it was read), so one call files it.
-    exchange_leg::record(tree, step, &call, log);
+    // A call nobody streamed ends exactly as it always did: one call files the whole exchange. For a streamed
+    // one, `live.finish` closes the section the hook was growing instead, which is §7's other ending.
+    if streamed {
+        live.finish(shown_reply, shown_type, took, problem, log);
+    } else {
+        exchange_leg::record(tree, step, &call, log);
+    }
 }
 
 /// What one dialled chat call came to: the answer, or the reason there is none, plus how many times the wire was
@@ -290,6 +317,12 @@ pub fn dial(
         // count gets chosen from the log rather than guessed.
         let (_slot, waited) = crate::slot_gate::hold(&endpoint.url, &base.model, crate::settings::from_environment().and_then(|paths| crate::settings::read(&paths).ok()).map(|conf| crate::services::llm_slots(&conf)).unwrap_or(1), step);
         let _ = waited;
+        // §7's live half of a chat call. `chat_on` is the one door every chat ask in the app goes through, so
+        // this is where "the page fills up while you wait" happens — no flow had to be changed, and none can
+        // forget it. The recorder reads the body to decide whether there is anything to stream (§9 §1: only a
+        // request that asked for a stream gets chunks), so a one-shot ask still files its exchange at the end.
+        let live = exchange_leg::Live::new(tree, step, &base.model, body);
+        let hook = live.opened_then_hook(log);
         let (_row, reply) = server_leg::call_dialed(
             tree,
             base,
@@ -305,20 +338,24 @@ pub fn dial(
                 // puts `"stream": true` in the body (`llm_request::body`), carried here rather than re-derived.
                 liveness: Some(crate::llm_watch_leg::Liveness::streamed(step)),
                 waited_ms: 0,
+                delta: hook,
             },
         );
+        // §7's live half: this attempt is over, so its hook writes nothing more — a §4 give-up leaves the
+        // reader thread alive, and its late words must not land in the NEXT attempt's section.
+        live.close_attempt();
         match reply {
             Ok(sent) if sent.ok() => {
                 note_answer(&endpoint.url);
-                record_dial(step, tree, &base.model, body, Ok(&sent), started, log);
+                record_dial(step, tree, &base.model, body, Ok(&sent), started, log, &live);
                 Ok(sent)
             }
             Ok(sent) => {
-                record_dial(step, tree, &base.model, body, Ok(&sent), started, log);
+                record_dial(step, tree, &base.model, body, Ok(&sent), started, log, &live);
                 Err(Failure::Status { status: sent.status, body: sent.body })
             }
             Err(why) => {
-                record_dial(step, tree, &base.model, body, Err(why.as_str()), started, log);
+                record_dial(step, tree, &base.model, body, Err(why.as_str()), started, log, &live);
                 Err(Failure::Gone(why))
             }
         }
