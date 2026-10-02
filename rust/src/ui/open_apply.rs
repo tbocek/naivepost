@@ -32,6 +32,12 @@ pub fn opened_status(base: &str) -> String {
 pub(crate) fn finish(applied: &Applied, project: &Project, status: &gtk::Label) {
     let window = crate::ui::window::main_window();
     let opened = applied.root.clone();
+    // F0.10: from here on Save works on the folder just opened, not on the one the launch handed
+    // over -- an open is the window taking on a project, and the save must follow it.
+    crate::ui::save_apply::set_open_dir(&opened);
+    // And the autosave follows it: its slot holds whatever folder a previous save named, and writing
+    // the opened session into THAT would recreate a folder some earlier rename moved away from.
+    crate::project_autosave::install(crate::ui::window::session_handle(&window), opened.clone());
 
     // S4 "refresh every page". The tabs first: whether a page is greyed is asked of the OPENED project
     // (`shell::lock`), so a page whose prerequisites vanished greys before anything reads its rows.

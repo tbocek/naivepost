@@ -29,6 +29,9 @@ pub mod produce_slots;
 /// F0.6 Open at start — the launch's door: which project a start opens, and what it leaves remembered.
 pub mod launch;
 pub mod new_apply;
+/// F0.10 Save as — the window's own half of S3/S4: what moved, which folder the window now believes
+/// is open, and where the next Save goes.
+pub mod save_apply;
 /// F0.9 Open a project — the window's own half of S4: refresh every page, remember this root, say it.
 pub mod open_apply;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.

@@ -887,10 +887,15 @@ fn narrate_round(app: &adw::Application) {
 
 #[test]
 fn sec_07_narrate_1_surface_the_narrate_page_reaches_its_rules() {
-    // Pin cwd to our own temp root BEFORE anything builds: the press resolves the project through
-    // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray
-    // `rust/session.naivepost/` into the repo.
-    let root = std::env::temp_dir().join(format!("np-narrate-{}", std::process::id()));
+    // Pin cwd to a folder that no OTHER test binary shares (the pid alone is shared by every binary
+    // of one `cargo test` run, and a sibling that saves the project under a new name moves this
+    // folder out from under the tick's write -- which is exactly F0.10 S3).
+    let root = std::env::temp_dir().join(format!(
+        "np-narrate-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("round").replace(':', "_")
+    ));
+    std::fs::remove_dir_all(&root).ok();
     std::fs::create_dir_all(&root).expect("temp root created");
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
 

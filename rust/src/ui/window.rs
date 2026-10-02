@@ -33,6 +33,7 @@ use crate::ui::cut_folds::{
     fold_badges_box, page_recordings, press_fold_all, push_session_recordings, refresh_fold_badges,
 };
 use crate::ui::cut_cameras::refresh_camera_rows;
+use crate::ui::save_apply;
 use crate::ui::cut_cameras::hand_preview_back;
 // F3.5 ▨ SVG: the page half of the drawing flow lives in `cut_svg`; these are the doors this shell calls.
 use crate::ui::cut_svg::{
@@ -2357,6 +2358,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
 
     crate::project_autosave::install(Rc::clone(&session), crate::project_autosave::session_dir());
     crate::project_autosave::start();
+    // The folder this window has open: the working copy beside its launch root. A rename or an Open
+    // moves it afterwards -- that is what `save_target` answers -- but a fresh window always starts on
+    // its own root's session, whatever an earlier window in this process left behind.
+    save_apply::set_open_dir(&startup::session_dir(&std::env::current_dir().unwrap_or_default()));
 
     // The status line: the shell's sentence, right-aligned in the bottom row (§1's "status line").
     // Also before the pages, for the same reason — a row's press reports itself there.
@@ -2645,7 +2650,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     save_.set_widget_name("save-button");
     save_.set_tooltip_text(Some(SAVE_TIP));
     header.pack_start(&save_);
-    wire_save(&save_, &bar, &status, project);
+    wire_save(&save_, &bar, &status, &session);
 
     // **8** sits at the RIGHT end of the bar, next to where Settings goes — `pack_end`, not
     // `pack_start`, so it does not join New and Save.
@@ -8657,28 +8662,34 @@ pub(crate) fn remember_opened(root: &Path, file: &Path) -> Result<open_project::
     })
 }
 /// Where a press of Save goes: [`save_as::press`] decides whether it may happen at all, and the
-/// chooser only names the project. Every sentence the user reads comes from [`save_as`].
+/// chooser only names the project. [`save_apply`] says every sentence and moves the open-folder memory.
 ///
-/// As in [`wire_new`], the open project is the working copy beside the root until F0.9 keeps the
-/// window's own project path; a run under way is F0.2's [`run::RunBar`] state.
-fn wire_save(save_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, status: &gtk::Label, project: &Project) {
+/// Save reads the LIVE session (the handle [`wire_new`] and [`wire_open`] swap), not the `&Project`
+/// the window was built from, so what reaches disk is tonight's work.
+fn wire_save(
+    save_: &gtk::Button,
+    bar: &Rc<RefCell<run::RunBar>>,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+) {
     let bar = bar.clone();
     let status = status.clone();
-    let project = project.clone();
+    let session = session.clone();
     save_.connect_clicked(move |_| {
         if let Err(reason) = save_as::press(bar.borrow().running.is_some()) {
-            status.set_text(reason);
-            log_line(reason);
+            save_apply::refused(reason, &status);
             return;
         }
-        ask_save_project(&status, &project, &startup::session_dir(&std::env::current_dir().unwrap_or_default()));
+        // The folder this window took on: a Save's rename or an Open's pick, whichever it was.
+        let open = save_apply::save_target();
+        ask_save_project(&status, &session, &open);
     });
 }
 
 /// S2: the dialog that names the project. `select_folder` rather than `save_folder` because a
 /// project is a folder (01 §1) and a file chooser would insist on a file; the name typed in the
 /// sheet is what S3 renames to, so it starts as the open folder's own name.
-fn ask_save_project(status: &gtk::Label, project: &Project, open: &Path) {
+fn ask_save_project(status: &gtk::Label, session: &Rc<RefCell<Project>>, open: &Path) {
     let dialog = gtk::FileDialog::builder()
         .title(save_as::TITLE)
         .accept_label("Save")
@@ -8690,7 +8701,7 @@ fn ask_save_project(status: &gtk::Label, project: &Project, open: &Path) {
 
     let status = status.clone();
     let open = open.to_path_buf();
-    let project = project.clone();
+    let session = session.clone();
     dialog.select_folder(
         None::<&gtk::Window>,
         None::<&gio::Cancellable>,
@@ -8705,20 +8716,10 @@ fn ask_save_project(status: &gtk::Label, project: &Project, open: &Path) {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            match save_as::save_as(&project, &open, &named) {
-                Ok(saved) => {
-                    for line in &saved.logs {
-                        log_line(line);
-                    }
-                    status.set_text(&saved.status);
-                }
-                // The `!!!` sentence is a log line as much as the status line's: it says where the
-                // files still are, which is what F0.5's log will be for.
-                Err(reason) => {
-                    status.set_text(&reason);
-                    log_line(&reason);
-                }
-            }
+            // The decided save itself belongs to `save_apply` -- the sentences, the log, and moving
+            // the open-folder memory with the folder that moved. A test drives THAT door, because no
+            // headless run can answer the desktop's sheet.
+            save_apply::save_named(&session, &status, &open, &named).ok();
         },
     );
 }
