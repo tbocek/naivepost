@@ -183,14 +183,21 @@ fn keys(map: &HashMap<Key, Slot>) -> Vec<(String, String, Vec<String>)> {
 ///
 /// The mapping is §6's Settings rows: ASR, diarization, alignment, TTS and separation each have their
 /// own count because each is a different model with different memory, and the LLM has its own box.
+/// The slot count for one audio task, read from the settings the caller already resolved.
+///
+/// The mapping is §6's Settings rows: ASR, diarization, alignment, TTS and separation each have their
+/// own count because each is a different model with different memory, and the LLM has its own box.
+/// Only the WORD here is this function's: the key -> field table is [`crate::services::slots_for`]'s,
+/// so the dialog's spin and the gate that holds a request read one answer rather than two copies.
 pub fn slots_for_task(conf: &crate::settings::Conf, task: &str) -> u32 {
-    match task {
-        "diarize" => conf.slots.diar,
-        "align" => conf.slots.align,
-        "tts" => conf.slots.tts,
-        "separate" => conf.slots.sep,
-        _ => conf.slots.asr,
-    }
+    let wanted = match task {
+        "diarize" => crate::services::AudioTask::Diar,
+        "align" => crate::services::AudioTask::Align,
+        "tts" => crate::services::AudioTask::Tts,
+        "separate" => crate::services::AudioTask::Sep,
+        _ => crate::services::AudioTask::Asr,
+    };
+    crate::services::slots_for(conf, wanted)
 }
 
 /// How many requests to `(url, model)` may be on the wire at once, as this build currently reads it.

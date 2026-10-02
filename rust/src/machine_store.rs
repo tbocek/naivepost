@@ -82,6 +82,12 @@ impl Store {
         field_of(key).map(|get| get(&self.base))
     }
 
+    /// The conf behind the boxes, which is what a spin seeds from (a slot count is a number, not a
+    /// string field, so it cannot ride [`Self::value_for`]).
+    pub fn base_conf(&self) -> Conf {
+        self.base.clone()
+    }
+
     /// A keystroke: the pending write is pushed back, so typing a whole address writes once.
     pub fn touched(&mut self, now: Duration) {
         self.draft.state.touched(now);
@@ -147,6 +153,13 @@ pub fn field_of(key: &str) -> Option<fn(&Conf) -> &str> {
 
 /// Write one dialog box's value into its conf field. False when the key stores nothing.
 pub fn set_field(conf: &mut Conf, key: &str, value: &str) -> bool {
+    // A spin's value travels under `<model key>-slots`; clamping here is what makes 99 typed into a
+    // spin land on disk as 16 rather than as a queue the server has to absorb.
+    if let Some(field) = slot_field(&mut conf.slots, key) {
+        let asked = value.trim().parse::<u32>().unwrap_or(SLOT_MIN);
+        *field = asked.clamp(SLOT_MIN, SLOT_MAX);
+        return true;
+    }
     let slot: &mut String = match key {
         "server" => &mut conf.server,
         "llm-key" => &mut conf.key,
@@ -164,6 +177,77 @@ pub fn set_field(conf: &mut Conf, key: &str, value: &str) -> bool {
     };
     *slot = value.to_string();
     true
+}
+
+/// The span §5 gives a Slots spin: 1 to 16, default 1.
+pub const SLOT_MIN: u32 = 1;
+pub const SLOT_MAX: u32 = 16;
+
+/// The seven model boxes that carry a slot count, as their dialog key.
+pub const SLOT_KEYS: [&str; 7] = ["llm", "tts", "asr", "diar", "sep", "aligner", "sd"];
+
+/// The store name of one model box's slot count. A spin shares its row's key with the text box beside
+/// it, so the two are told apart here rather than by renaming either widget.
+pub fn slot_key(model_key: &str) -> String {
+    format!("{model_key}-slots")
+}
+
+/// Which `Slots` field a store name writes, when the name is one of the seven.
+fn slot_field<'s>(slots: &'s mut settings::Slots, name: &str) -> Option<&'s mut u32> {
+    Some(match name {
+        "llm-slots" => &mut slots.llm,
+        "tts-slots" => &mut slots.tts,
+        "asr-slots" => &mut slots.asr,
+        "diar-slots" => &mut slots.diar,
+        "sep-slots" => &mut slots.sep,
+        // §5 lists the forced aligner among the model boxes; its count is `Slots::align`.
+        "aligner-slots" => &mut slots.align,
+        "sd-slots" => &mut slots.sd,
+        _ => return None,
+    })
+}
+
+/// The count a model box's spin shows for this conf. Absent from the file means 1 (§6: "absent = 1"),
+/// which is why this answers for every slot key and never `None`.
+pub fn slot_of_key(conf: &Conf, model_key: &str) -> u32 {
+    // Read through the write side's own table, so a key added there cannot be missed here; the clamp in
+    // `set_field` means whatever it writes is already inside §5's 1..=16.
+    let name = slot_key(model_key);
+    let mut slots = settings::Slots::default();
+    match slot_field(&mut slots, &name) {
+        Some(field) => *field = conf_slot_text(conf, &name),
+        None => return SLOT_MIN,
+    }
+    slot_field(&mut slots, &name).copied().unwrap_or(SLOT_MIN)
+}
+
+/// The number `conf` carries for one slot key — `read` has already parsed the `*_SLOTS` pair into
+/// `Slots`, so the seed side only has to pick the right field out of it.
+fn conf_slot_text(conf: &Conf, name: &str) -> u32 {
+    match name {
+        "llm-slots" => conf.slots.llm,
+        "tts-slots" => conf.slots.tts,
+        "asr-slots" => conf.slots.asr,
+        "diar-slots" => conf.slots.diar,
+        "sep-slots" => conf.slots.sep,
+        "aligner-slots" => conf.slots.align,
+        "sd-slots" => conf.slots.sd,
+        _ => SLOT_MIN,
+    }
+}
+
+/// What a box shows for `key`: the conf's own text, or a slot count when the key NAMES A SPIN.
+///
+/// One model row carries two controls under one dialog key — the id box and its Slots spin — so the
+/// store tells them apart by the STORE-side name (`slot_key`'s `<model>-slots`) and never by the plain
+/// key: a plain `tts` must stay the TTS model id, or every model box would show its slot count.
+pub fn text_for(conf: &Conf, key: &str) -> Option<String> {
+    if let Some(model_key) = key.strip_suffix("-slots") {
+        if SLOT_KEYS.contains(&model_key) {
+            return Some(slot_of_key(conf, model_key).to_string());
+        }
+    }
+    field_of(key).map(|get| get(conf).to_string())
 }
 
 /// Write one watchdog dump (`hang-*.txt`, §7) naming the component that stopped answering.

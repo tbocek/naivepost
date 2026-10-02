@@ -230,7 +230,7 @@ pub fn dial(
         // §02 §1's slot rule, on the LLM's own door: at most `LLM_SLOTS` of this model's requests on the
         // wire at once. The wait is written into the row's wait column (§09 §10), which is how a slot
         // count gets chosen from the log rather than guessed.
-        let (_slot, waited) = crate::slot_gate::hold(&endpoint.url, &base.model, crate::settings::from_environment().and_then(|paths| crate::settings::read(&paths).ok()).map(|conf| conf.slots.llm).unwrap_or(1), step);
+        let (_slot, waited) = crate::slot_gate::hold(&endpoint.url, &base.model, crate::settings::from_environment().and_then(|paths| crate::settings::read(&paths).ok()).map(|conf| crate::services::llm_slots(&conf)).unwrap_or(1), step);
         let _ = waited;
         let (_row, reply) = server_leg::call_dialed(
             tree,

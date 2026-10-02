@@ -100,11 +100,15 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
         "firefox" => settings_probe_rows::firefox_row(typed),
         "audio" => {
             let endpoint = audio_at(&conf, typed);
+            // §5's sentence carries a number: "healthy in N ms". The health call is timed here rather
+            // than assumed, so the row reports what this address actually took to answer.
+            let began = std::time::Instant::now();
             get(&tree, Server::Audio, &endpoint, Kind::Health, "health", None)?;
+            let health_ms = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
             let models = services::parse_models(
                 &get(&tree, Server::Audio, &endpoint, Kind::ListModels, "models", None)?,
             );
-            Ok(checks::audio_health_verdict(0, &models)?)
+            Ok(checks::audio_health_verdict(health_ms, &models)?)
         }
         "sd" => {
             let endpoint = image_at(&conf, typed);

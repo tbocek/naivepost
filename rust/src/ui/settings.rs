@@ -19,6 +19,7 @@ use gtk4 as gtk;
 use crate::checks;
 use crate::machine_store;
 use crate::model_list;
+use crate::settings::Conf;
 
 /// What a probe hands back for one row: the detail that goes on the ✓, or the reason that goes on ✗.
 pub type Answer = Result<String, String>;
@@ -115,6 +116,9 @@ struct Dialog {
     /// The dialog's own bookkeeping, so a timer can reach it after `build_owned` returns.
     this: RefCell<Option<Rc<Dialog>>>,
     entries: RefCell<Vec<(String, gtk::Entry)>>,
+    /// §5's Slots spin beside every model box, keyed by the same dialog key as its box (`llm`, `asr`,
+    /// ...), so one keystroke beat writes boxes and counts together.
+    spins: RefCell<Vec<(String, gtk::SpinButton)>>,
     badges: RefCell<Vec<(String, gtk::Label)>>,
     buttons: RefCell<Vec<(String, gtk::Button)>>,
     /// The ids the last Fetch brought back, kept so Use can check its pick against what the server
@@ -136,36 +140,71 @@ impl Dialog {
     }
 
     /// Every box's key and current text — the whole store as the user sees it, which is what a save
-    /// writes (§5 has no per-row save: the file always holds all of the boxes).
+    /// writes (§5 has no per-row save: the file always holds all of the boxes). A slot count travels
+    /// under its own `<key>-slots` name, which is how the store tells a spin from the text box that
+    /// shares its row.
     fn typed_all(&self) -> Vec<(String, String)> {
-        self.entries
+        let mut values: Vec<(String, String)> = self
+            .entries
             .borrow()
             .iter()
             .map(|(key, entry)| (key.clone(), entry.text().to_string()))
-            .collect()
+            .collect();
+        values.extend(self.spins.borrow().iter().map(|(key, spin)| {
+            (machine_store::slot_key(key), (spin.value().round() as u32).to_string())
+        }));
+        values
     }
 
     /// Put the conf's own values into the boxes, so the dialog shows what is on disk rather than
     /// placeholders. A key with no conf field (Vision) keeps its placeholder.
     fn seed_entries(&self) {
-        let seeded: Vec<(String, String)> = {
-            let store = self.store.borrow();
-            match store.as_ref() {
-                Some(store) => self
-                    .entries
-                    .borrow()
-                    .iter()
-                    .filter_map(|(key, _)| {
-                        store.value_for(key).map(|value| (key.clone(), value.to_string()))
-                    })
-                    .collect(),
-                None => Vec::new(),
-            }
-        };
+        let base = self.store_base();
+        let seeded: Vec<(String, String)> = self
+            .entries
+            .borrow()
+            .iter()
+            .filter_map(|(key, _)| machine_store::text_for(&base, key).map(|value| (key.clone(), value)))
+            .collect();
         for (key, value) in seeded {
             if let Some(entry) = self.entries.borrow().iter().find(|(row, _)| *row == key) {
                 entry.1.set_text(&value);
             }
+        }
+        // Each spin shows its own count; a conf that never wrote one says 1 (§6: "absent = 1").
+        let counts: Vec<(String, u32)> = self
+            .spins
+            .borrow()
+            .iter()
+            .map(|(key, _)| (key.clone(), machine_store::slot_of_key(&base, key)))
+            .collect();
+        for (key, value) in counts {
+            if let Some(spin) = self.spins.borrow().iter().find(|(row, _)| *row == key) {
+                spin.1.set_value(f64::from(value));
+            }
+        }
+    }
+
+    /// The conf the boxes were seeded from, for the spin seeding above.
+    fn store_base(&self) -> Conf {
+        self.store
+            .borrow()
+            .as_ref()
+            .map(|store| store.base_conf())
+            .unwrap_or_default()
+    }
+
+    /// Put `conf`'s ids and counts into the boxes WITHOUT a store, so a picture of the dialog can show
+    // what a real machine's settings look like while §5's no-Save beat stays unarmed (nothing to write
+    // to: a snapshot must not touch `$XDG_CONFIG_HOME`).
+    fn paint_from(&self, conf: &Conf) {
+        for (key, entry) in self.entries.borrow().iter() {
+            if let Some(value) = machine_store::text_for(conf, key) {
+                entry.set_text(&value);
+            }
+        }
+        for (key, spin) in self.spins.borrow().iter() {
+            spin.set_value(f64::from(machine_store::slot_of_key(conf, key)));
         }
     }
 
@@ -255,6 +294,16 @@ impl Dialog {
             .iter()
             .find(|(row, _)| row == key)
             .map(|(_, entry)| entry.clone())
+    }
+
+    /// The Slots spin for `key`, if its row has one (the seven model boxes do; the server, key,
+    /// ffmpeg, firefox and Vision rows do not).
+    fn spin(&self, key: &str) -> Option<gtk::SpinButton> {
+        self.spins
+            .borrow()
+            .iter()
+            .find(|(row, _)| row == key)
+            .map(|(_, spin)| spin.clone())
     }
 
     /// One verdict, painted and mirrored: badge, dialog log, main window log.
@@ -371,9 +420,27 @@ impl Dialog {
     }
 }
 
+/// §5's own wording for what a Slots count means, kept as one string so all seven spins say it alike.
+const SLOT_TIP: &str = "How many requests this model is given at once. Match the server's parallel \
+    slots for this model \u{2014} llama.cpp's --parallel, for one. More than it has only queues them on \
+    the server instead of here; two models on one GPU share it however this is set.";
+
 /// Build the dialog. `provider` answers each row; see [`no_probe`] for what a build without one says.
 pub fn build(parent: Option<&gtk::Window>, provider: Provider) -> adw::Window {
     build_owned(parent, provider).window.clone()
+}
+
+/// The same dialog showing `conf`'s own values, for the `03-settings` picture only: a real session
+/// seeds from the file through [`Dialog::seed_entries`], and this is the one door that paints a conf
+/// handed in rather than read. It writes nothing anywhere.
+pub fn build_from(
+    parent: Option<&gtk::Window>,
+    provider: Provider,
+    conf: &Conf,
+) -> adw::Window {
+    let dialog = build_owned(parent, provider);
+    dialog.paint_from(conf);
+    dialog.window.clone()
 }
 
 /// The same build, returning the bookkeeping so the caller can keep it live in [`OPEN`].
@@ -398,14 +465,15 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     // Five columns: section | label | value | badge | Test. The section label appears once per
     // group, on its first row, as the inventory draws it.
     let add = |section: Option<&str>,
-                  label: &str,
-                  entry_key: &str,
-                  placeholder: &str,
-                  secret: bool,
-                  test_key: Option<&str>,
-                  tip: &str,
-                  row: i32,
-                  grid: &gtk::Grid| {
+              label: &str,
+              entry_key: &str,
+              placeholder: &str,
+              secret: bool,
+              test_key: Option<&str>,
+              slot_key: Option<&str>,
+              tip: &str,
+              row: i32,
+              grid: &gtk::Grid| {
         if let Some(section) = section {
             let title = gtk::Label::new(Some(section));
             title.add_css_class("heading");
@@ -423,18 +491,34 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         if secret {
             entry.set_visibility(false);
         }
-        grid.attach(&entry, 2, row, 2, 1);
+        grid.attach(&entry, 2, row, 1, 1);
+
+        // §5's Slots spin sits between the box and its mark. Seven of them exist, one per model box;
+        // the image block has no model box of its own, so its count rides the sd SERVER row.
+        let mut column = 3;
+        if let Some(slot_key) = slot_key {
+            let spin = gtk::SpinButton::with_range(
+                f64::from(machine_store::SLOT_MIN),
+                f64::from(machine_store::SLOT_MAX),
+                1.0,
+            );
+            spin.set_widget_name(&format!("slots-{slot_key}"));
+            spin.set_tooltip_text(Some(SLOT_TIP));
+            grid.attach(&spin, column, row, 1, 1);
+            column += 1;
+        }
 
         let badge = gtk::Label::new(None);
         badge.set_widget_name(&format!("badge-{entry_key}"));
         badge.set_width_chars(2);
-        grid.attach(&badge, 4, row, 1, 1);
+        grid.attach(&badge, column, row, 1, 1);
+        column += 1;
 
         if let Some(test_key) = test_key {
             let test = gtk::Button::with_label("Test");
             test.set_widget_name(&format!("test-{test_key}-button"));
             test.set_tooltip_text(Some(tip));
-            grid.attach(&test, 5, row, 1, 1);
+            grid.attach(&test, column, row, 1, 1);
         }
     };
 
@@ -445,6 +529,7 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         "server",
         &format!("empty = {}", crate::services::llm_default()),
         false,
+        None,
         None,
         "Ask this server and model for one short completion",
         row,
@@ -458,6 +543,7 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         "",
         true,
         None,
+        None,
         "Sent as a bearer token to the server above",
         row,
         &grid,
@@ -469,6 +555,7 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         "llm",
         "model id exactly as the server lists it",
         false,
+        Some("llm"),
         Some("llm"),
         "Ask this server and model for one short completion",
         row,
@@ -482,6 +569,8 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         "the model above, shown a red square",
         false,
         Some("llm-vision"),
+        // No spin: §5 gives a count per MODEL, and Vision tests the model in the box above.
+        None,
         "Show this model a small sample image and check it names what it sees",
         row,
         &grid,
@@ -523,6 +612,7 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         "empty = PATH (ffprobe taken from the same folder)",
         false,
         Some("ffmpeg"),
+        None,
         "Check the build has the filters and encoders the steps use",
         row,
         &grid,
@@ -535,6 +625,7 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         "path, or \"off\" for no web search",
         false,
         Some("firefox"),
+        None,
         "Run one headless search, or accept \"off\"",
         row,
         &grid,
@@ -549,6 +640,7 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         &format!("empty = {}", crate::services::audio_default()),
         false,
         Some("audio"),
+        None,
         "Check the server answers and can narrate",
         row,
         &grid,
@@ -568,6 +660,9 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
             "model id as the audio.cpp server lists it",
             false,
             Some(key),
+            // The spin's key is the row's own (`tts`/`asr`/`diar`/`sep`), which is how a slot count
+            // lands on the field named for that task.
+            Some(key),
             &format!("Check this id is served and declared for task {task:?}"),
             row,
             &grid,
@@ -580,6 +675,8 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         "aligner",
         "empty = whatever the server serves for \"align\"",
         false,
+        Some("aligner"),
+        // §5 names the aligner among the model boxes; its count is `Slots::align`.
         Some("aligner"),
         "What aligns; none is a success \u{2014} cut points come off the waveform",
         row,
@@ -594,6 +691,9 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         "sd",
         &format!("empty = {}", crate::services::image_default()),
         false,
+        Some("sd"),
+        // The drawing block has no model box, so sd.cpp's count rides its server row: one number per
+        // server here means exactly one model behind that address.
         Some("sd"),
         "Report the weights sd-server has loaded",
         row,
@@ -625,6 +725,7 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     let dialog = Rc::new(Dialog {
         window: window.clone(),
         entries: RefCell::new(vec![]),
+        spins: RefCell::new(vec![]),
         badges: RefCell::new(vec![]),
         buttons: RefCell::new(vec![]),
         fetched: RefCell::new(vec![]),
@@ -637,9 +738,10 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         provider,
         // §5's no-Save write, over the conf as it stands now. No config folder at all (a bare test
         // box with no XDG_HOME) leaves it `None`: the dialog still tests, it just has nowhere to save.
+        // §5's no-Save write, over the conf as it stands now. No config folder at all (a bare test
+        // box with no XDG_HOME) leaves it `None`: the dialog still tests, it just has nowhere to save.
         store: RefCell::new(crate::settings::from_environment().and_then(|paths| machine_store::Store::open(&paths).ok())),
-        started: std::time::Instant::now(),
-        save_armed: Rc::new(std::cell::Cell::new(false)),
+        started: std::time::Instant::now(),        save_armed: Rc::new(std::cell::Cell::new(false)),
         this: RefCell::new(None),
     });
     *dialog.this.borrow_mut() = Some(Rc::clone(&dialog));
@@ -663,6 +765,32 @@ fn wire_entries_to_store(dialog: &Rc<Dialog>) {
         });
     }
 }
+/// The seven model boxes that get a Slots spin, in dialog order: §5's list (the LLM model, each
+/// audio.cpp model and the image model) read back off the widget names, exactly like the Test buttons,
+/// so a box drawn with a spin cannot be left unwired.
+fn slot_keys() -> [&'static str; 7] {
+    ["llm", "tts", "asr", "diar", "sep", "aligner", "sd"]
+}
+
+/// Every spin's `value-changed` joins the keystroke beat here rather than at each row, so a count
+/// changed by clicking an arrow is a changed setting under §5's no-Save rule. Returns how many were
+/// found, which is what makes "a spin exists but nobody listens" impossible to leave behind.
+fn wire_spins(dialog: &Rc<Dialog>) -> usize {
+    let mut wired = 0usize;
+    for key in slot_keys() {
+        let Some(spin) = find_in(dialog.window.upcast_ref(), &format!("slots-{key}"))
+            .and_then(|w| w.downcast::<gtk::SpinButton>().ok())
+        else {
+            continue;
+        };
+        dialog.spins.borrow_mut().push((key.to_string(), spin.clone()));
+        let owned = Rc::clone(dialog);
+        spin.connect_value_changed(move |_| owned.touched());
+        wired += 1;
+    }
+    wired
+}
+
 /// Each `test-<key>-button` gets the row whose entry shares its key.
 fn wire_buttons(dialog: &Rc<Dialog>) {
     for key in test_keys() {
@@ -683,6 +811,14 @@ fn wire_buttons(dialog: &Rc<Dialog>) {
         let key = key.to_string();
         button.connect_clicked(move |_| owned.ask(&key));
     }
+
+    // The spins join the same keystroke beat: a changed count is a changed setting, and §5's no-Save
+    // rule writes every box on one beat rather than one per control.
+    assert_eq!(
+        wire_spins(dialog),
+        slot_keys().len(),
+        "every model box §5 gives a Slots spin to is built AND wired"
+    );
 
     if let Some(all) = find_in(dialog.window.upcast_ref(), "test-all-button").and_then(|w| w.downcast::<gtk::Button>().ok()) {
         let owned = Rc::clone(dialog);
@@ -722,8 +858,7 @@ pub const FETCH_KEY: &str = "fetch-models";
 pub const USE_KEY: &str = "use-model";
 
 /// Every key that has a Test button, in dialog order.
-fn test_keys() -> [&'static str; 11] {
-    [
+fn test_keys() -> [&'static str; 11] {    [
         "llm",
         "llm-vision",
         "ffmpeg",
@@ -824,11 +959,21 @@ pub fn badge(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Label> {
 }
 
 /// One row's value box, by key (`entry-<key>`) — the box a Test press reads what was typed from.
-pub fn entry(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Entry> {
-    last_dialog()
+pub fn entry(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Entry> {    last_dialog()
         .and_then(|dialog| dialog.entry(key))
         .or_else(|| {
             find_in(window.upcast_ref(), &format!("entry-{key}"))?
+                .downcast()
+                .ok()
+        })
+}
+
+/// One row's Slots spin, by model key (`slots-<key>`). `None` for a row §5 gives no count to.
+pub fn spin(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::SpinButton> {
+    last_dialog()
+        .and_then(|dialog| dialog.spin(key))
+        .or_else(|| {
+            find_in(window.upcast_ref(), &format!("slots-{key}"))?
                 .downcast()
                 .ok()
         })

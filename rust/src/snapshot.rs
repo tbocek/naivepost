@@ -563,7 +563,13 @@ architecture behind them.
             // `wire_buttons` wires), with `checks::ffmpeg_verdict`'s own passing sentence rather than an
             // invented one: that is what the spec's picture shows ("the ✓ is a passed ffmpeg test").
             "03-settings" => {
-                let shown = ui::settings::build(None, ui::settings::no_probe());
+                // Painted from `pictured_conf` rather than the bare build: §5 gives every model box a
+                // Slots spin, and the picture has to show the two controls as different numbers.
+                let shown = ui::settings::build_from(
+                    None,
+                    ui::settings::no_probe(),
+                    &crate::snapshot_settings::pictured_conf(),
+                );
                 shown.present();
                 crate::snapshot_settings::remember(&shown);
                 crate::snapshot_settings::stage_ffmpeg_row();

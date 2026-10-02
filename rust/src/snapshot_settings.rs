@@ -27,6 +27,28 @@ pub fn remember(dialog: &adw::Window) {
     SETTINGS.with(|held| *held.borrow_mut() = Some(dialog.clone()));
 }
 
+/// The settings the `03-settings` picture shows, in the boxes.
+///
+/// §03's photograph is of a machine with its models named and its parallel slots set. A snapshot reads
+/// no `$XDG_CONFIG_HOME`, so this conf is built here and painted into the dialog by
+/// [`crate::ui::settings::build_from`] — it is never written anywhere, and every value is one §5 or §6
+/// names: the audio ids are the shipped defaults the app would use for each task, and the slot counts
+/// show that the spin holds a number distinct from the id beside it.
+pub fn pictured_conf() -> crate::settings::Conf {
+    let mut conf = crate::settings::Conf::default();
+    // The four audio.cpp ids §2 names for their tasks, so the rows read as a configured machine.
+    conf.tts_model = "index-tts2".to_string();
+    conf.asr_model = "qwen3-asr".to_string();
+    conf.diar_model = "sortformer-diar".to_string();
+    conf.sep_model = "bs-roformer".to_string();
+    conf.align_model = "qwen3-aligner".to_string();
+    // Two counts above 1, which is also what proves a spin is not just another copy of the box: absent
+    // means 1 (§6), so anything else had to have been set.
+    conf.slots.tts = 2;
+    conf.slots.llm = 4;
+    conf
+}
+
 /// Ask the ffmpeg row what it makes of this machine's binary and stage the answer.
 pub fn stage_ffmpeg_row() {
     // The box names the command so `resolve` looks it up on PATH; `resolve("")` deliberately answers None
