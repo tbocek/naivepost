@@ -429,6 +429,20 @@ pub fn derive(
     let mut out = Derived::default();
     for _ in 0..DERIVE_ROUNDS {
         let proposals = answer(&req, &out.refusals);
+        // A round that could not be dialled at all says so itself (§failure is specific and local): the
+        // sentence naming the model and its fault goes straight into the refusals, rather than being
+        // re-derived from a proposal about a field that does not exist.
+        if let Some(fault) = proposals.iter().find_map(|proposal| match proposal.field.as_str() {
+            crate::policy_call::FAULT_FIELD => Some(proposal.because.clone()),
+            _ => None,
+        }) {
+            if !out.refusals.contains(&fault) {
+                out.refusals.push(fault);
+            }
+            // One dead model is one fault: asking again would spend §3's patience ladder per round over a
+            // server that was missing on the first try and is no more reachable now.
+            break;
+        }
         let before = out.refusals.len();
         for proposal in proposals {
             match apply(policy, &proposal) {

@@ -30,6 +30,8 @@ pub mod cut_wave_edges;
 /// F0.7 — the User Context in, the editing policy out: derivation, validation, and which flows the
 /// result turns on. No UI here; `ui::window` draws the form and forwards to this.
 pub mod policy;
+/// F0.7 S2's live half: the derivation's own HTTP leg, so a non-empty User Context reaches a model.
+pub mod policy_call;
 pub mod cut_cam;
 pub mod cut_clamp;
 pub mod cut_fold;

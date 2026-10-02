@@ -3951,28 +3951,6 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Answer a derivation with nothing but a refusal naming why.
-///
-/// §00's "failure is specific and local": with no model answering, the policy keeps exactly what it
-/// had and the status line says who was not there, rather than pretending a derivation happened or
-/// silently falling back to defaults over a context that asked for something else.
-fn unanswered_model(
-    _req: &policy::DerivationRequest,
-    refusals: &[String],
-) -> Vec<policy::Proposal> {
-    if !refusals.is_empty() {
-        // A second round with nobody listening: say nothing new, so the loop's cap ends it quickly.
-        return Vec::new();
-    }
-    // An unknown field name is refused by `apply`, which is how "nothing was set" reaches the caller
-    // as a sentence rather than as a silent zero.
-    vec![policy::Proposal {
-        field: "llm".to_string(),
-        value: "unreachable".to_string(),
-        because: "the editing-policy derivation could not reach the model".to_string(),
-    }]
-}
-
 /// The newest window this process built. The run-bar handler is wired before the handle is in scope at
 /// the call site, so it reads the window back from [`POLICY_WATCH_WINDOW`] — the same newest-slot rule
 /// every other per-window piece here uses.
@@ -4028,6 +4006,16 @@ pub fn policy_is_current(window: &adw::ApplicationWindow, context: &str) -> bool
         .is_some_and(|tracker| !tracker.borrow().needs_derive(context))
 }
 
+/// The live answer a derivation dials through: the real HTTP leg, with the session's policy handed to it
+/// so `get_context` answers with the fields as they stand. `set_policy_sender_for_tests` still wins when
+/// a check installs one (newest-slot), which is how the widget tests keep injecting.
+fn live_policy_answer(req: &policy::DerivationRequest, refusals: &[String]) -> Vec<policy::Proposal> {
+    // `session_policy` is the same slot the ⚙ form reads, so the model's view of the fields and the
+    // form's cannot drift.
+    crate::policy_call::set_live_policy(&session_policy(&main_window()));
+    crate::policy_call::answer(req, refusals)
+}
+
 /// Derive this window's editing policy from its User Context now (F0.7 S1-S4), and drop the marks a
 /// changed `markingPass` invalidates.
 ///
@@ -4047,7 +4035,7 @@ pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
         let mut policy = session.borrow().policy.clone();
         let out = match POLICY_SENDERS.with(|senders| senders.borrow().last().cloned()) {
             Some(sender) => policy::derive(&mut policy, &context, &mut *sender.borrow_mut()),
-            None => policy::derive(&mut policy, &context, &mut unanswered_model),
+            None => policy::derive(&mut policy, &context, &mut live_policy_answer),
         };
         session.borrow_mut().policy = policy;
         out
