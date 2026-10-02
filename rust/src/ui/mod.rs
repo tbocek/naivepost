@@ -26,6 +26,8 @@ pub mod produce_text;
 /// §08-produce#1-screen items **2**/**3** — the Images row's slots: each slot's picture, which one is
 /// the base, the crop box the base wears, and its four buttons. Split out of `produce_page`, at its budget.
 pub mod produce_slots;
+/// F0.6 Open at start — the launch's door: which project a start opens, and what it leaves remembered.
+pub mod launch;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are

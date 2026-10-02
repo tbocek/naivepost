@@ -148,12 +148,15 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
     // Built when the app has no windows yet: they are added at startup, so the
     // handler runs after GTK has emitted it.
     app.connect_activate(move |app| {
-        // A screen that wants the bench to open somewhere other than row 0 must say so BEFORE the
-        // window is built: `bench_box` reads this once and paints from it, and a later call would
-        // arrive after the heading was already drawn. §04's own picture is "the Prepare page with the
-        // Describe prompt open", so `04-prepare` asks for that row too -- without it the two screens
-        // render byte-identical PNGs and one of them says nothing.
-        if matches!(screen.as_str(), "04-prepare" | "04-prompt-picker") {
+        // The bench opens on row 0, the User Context (§1 **5**), so every shot of this page would show
+        // the same column: one short project note under a "User Context" heading and nothing else. That is
+        // true here and in the reference picture, so it is not a defect to fix -- but it does mean the two
+        // shots have to be compared on the row's own contents, not on a bench state. Measured with no
+        // request for another row, `04-prepare` and `03-window` differ by 552 bytes and nothing else.
+        // A screen that DOES want another row (the picker open on a prompt, `04-prompt-picker`) has to say
+        // so BEFORE the window is built: `bench_box` reads this once and paints from it, and a later call
+        // would arrive after the heading was already drawn.
+        if screen == "04-prompt-picker" {
             ui::set_bench_open_row(2);
         }
         let window = ui::build_window(app, &model, page);

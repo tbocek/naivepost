@@ -34,6 +34,40 @@ pub enum Opened {
     Blank { path: PathBuf },
 }
 
+impl Opened {
+    /// Which door answered, in the words the launch logs: a reader of `>>> opening ...` can tell S1
+    /// from S2 from S3 without knowing this type.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Opened::Desktop { .. } => "handed by the desktop",
+            Opened::Remembered { .. } => "remembered for this root",
+            Opened::Session { .. } => "the session beside the root",
+            Opened::Blank { .. } => "a blank session",
+        }
+    }
+
+    /// The folder this door opened. Every variant names one; S4's is the path a later save writes into.
+    pub fn path(&self) -> &std::path::Path {
+        match self {
+            Opened::Desktop { path }
+            | Opened::Remembered { path }
+            | Opened::Session { path }
+            | Opened::Blank { path } => path,
+        }
+    }
+
+    /// Whether this launch opened something that EXISTS, and so is worth remembering for the next
+    /// launch's S2. A blank session creates nothing (S4), and a handed folder that is not there has
+    /// nothing to remember either -- S2 checks existence itself.
+    pub fn opened_folder(&self) -> Option<std::path::PathBuf> {
+        match self {
+            Opened::Blank { .. } => None,
+            named if named.path().exists() => Some(named.path().to_path_buf()),
+            _ => None,
+        }
+    }
+}
+
 /// S2: the project `llm.conf` remembers for this root, if it is still on disk.
 ///
 /// Absent, empty and unreadable all answer `None`, and none of them *forgets* the entry: this takes
