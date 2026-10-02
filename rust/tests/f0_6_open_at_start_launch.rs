@@ -275,6 +275,12 @@ fn scenario_remembered(app: &adw::Application) {
 fn scenario_session(app: &adw::Application) {
     let root = temp_dir("f06-s3");
     std::fs::create_dir_all(&root).expect("root");
+    // §8's icons bullet needs a tree to find. The launch looks beside the binary, under the app root
+    // and in the working directory; this scenario pins the cwd to `root` two lines below, so an
+    // `icons/` folder planted here is the one it answers with, and the check on slot 3 reads the
+    // resulting log line back. Neither of the two folders above the test binary holds an `icons`
+    // sibling, so nothing earlier can win the search.
+    std::fs::create_dir_all(root.join("icons")).expect("icons tree");
     plant_project(&naivepost::startup::session_dir(&root), "the-working-copy");
     std::env::set_current_dir(&root).expect("cwd pinned");
     let paths = config_home();
@@ -367,6 +373,13 @@ fn f0_6_s3_the_session_beside_the_root_opens() {
     assert!(
         got.log.contains("the session beside the root"),
         "the launch says which door answered: {}",
+        got.log
+    );
+    // §8's icons bullet, read back from a real launch: the tree found beside the working directory is
+    // named once, so an icon the theme cannot look up is at least traceable to a folder that was searched.
+    assert!(
+        got.log.contains("icons from"),
+        "the launch names the icon tree it found: {}",
         got.log
     );
     // The working copy is a real folder, so it is worth remembering for next time too.

@@ -487,3 +487,174 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_duratio
     cache.store(other.clone(), 3.0);
     assert_eq!(cache.lookup(&first), Some(2412.5), "one file's answer is not another's");
 }
+
+#[test]
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s1_the_launch_says_what_the_old_output_folder_was()
+{
+    // The launch used to open its project with `project::load`, which answers the project and drops
+    // the report -- so a session opened at start could carry a legacy `out_dir` without ever saying
+    // the old folder is untouched. `ui::launch::load_for_launch` is the door that stopped that; this
+    // pins the line reaching the LAUNCH, not only reaching `load_report` (pinned in open_verification).
+    let root = temp_dir("s1-outdir");
+    let dir = root.join("show.naivepost");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join(project::PROJECT_FILE),
+        r#"{"out_dir":"/old/out","context":"the weekly lecture"}"#,
+    )
+    .unwrap();
+
+    let (loaded, lines) = naivepost::ui::launch::load_for_launch(&dir);
+    // The project still loads through the seam: the same bytes `project::load` would have read.
+    assert_eq!(loaded.context, "the weekly lecture");
+    assert_eq!(loaded.aud_dir.as_deref(), Some("/old/out"), "the legacy field still migrates");
+    // And what it had to say came along: the exact §8 sentence, named for both folders.
+    assert!(
+        lines.iter().any(|line| *line
+            == project::out_dir_note("/old/out", &dir.display().to_string())),
+        "the launch lost the out_dir line: {lines:?}"
+    );
+
+    // A project that wrote into itself has nothing to say -- the seam adds no line of its own.
+    let same = root.join("same.naivepost");
+    fs::create_dir_all(&same).unwrap();
+    fs::write(same.join(project::PROJECT_FILE), r#"{"out_dir":"same.naivepost"}"#).unwrap();
+    let (_, quiet) = naivepost::ui::launch::load_for_launch(&same);
+    assert!(
+        !quiet.iter().any(|line| line.contains("used to write into")),
+        "{quiet:?}"
+    );
+
+    // An unreadable folder opens blank rather than failing the launch (F0.6's behaviour kept).
+    let missing = root.join("nope.naivepost");
+    let (blank, blank_lines) = naivepost::ui::launch::load_for_launch(&missing);
+    assert_eq!(blank.sources.len(), 0);
+    assert!(blank_lines.is_empty(), "{blank_lines:?}");
+}
+
+#[test]
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s2_the_launch_searches_for_the_icon_tree()
+{
+    // The order §8 fixes -- beside the binary, under the app root, then the working directory -- is
+    // pinned by `icons_are_searched_beside_the_binary...`; what was unpinned is that the LAUNCH asks
+    // in that shape. `icons_for_launch(exe, cwd)` derives exe-dir and app-root from the executable
+    // path exactly as `open_at_start` does, so this calls the launch's own door.
+    let root = temp_dir("s2-icons");
+    let bin = root.join("prefix/bin/naivepost");
+    fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    fs::write(&bin, "not really an exe").unwrap();
+
+    // Nothing anywhere: no tree, and the launch says nothing about icons.
+    assert_eq!(naivepost::ui::launch::icons_for_launch(&bin, &root), None);
+
+    // Only the working directory holds one -- the checkout case (`just run` from rust/) -- and it wins
+    // because there is no other: the returned path is the third search path, `<cwd>/icons`.
+    let here = root.join("icons");
+    fs::create_dir_all(&here).unwrap();
+    assert_eq!(
+        naivepost::ui::launch::icons_for_launch(&bin, &root).as_deref(),
+        Some(here.as_path()),
+        "the launch must find the tree beside where it was started"
+    );
+
+    // Beside the binary beats the working directory: an installed build carries its own tree.
+    let beside = bin.parent().unwrap().join("icons");
+    fs::create_dir_all(&beside).unwrap();
+    assert_eq!(
+        naivepost::ui::launch::icons_for_launch(&bin, &root).as_deref(),
+        Some(beside.as_path()),
+        "the tree next to the binary outranks the working directory's"
+    );
+}
+
+#[test]
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s3_a_header_less_file_is_decoded_once_and_the_answer_is_cached()
+{
+    // The rule lives in `probes`; this drives the SEAM `separate_run` runs every split through, with
+    // ffprobe replaced by a counter -- the seam's own leg parameter, the same shape `source_probe`
+    // takes. Each part gets its own file so the process-wide duration cache cannot answer for another.
+    let root = temp_dir("s3-duration");
+    // The seam takes `&mut impl FnMut`, so the log it fills is shared rather than borrowed by the driver.
+    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    // `RunTool` is a `'static` trait object (the program's leg has no captures), so the scripted
+    // answers and the counter travel in as owned values.
+    let probe = |name: &str, header: String, decode: Option<String>| -> (Result<f64, String>, usize) {
+        let file = root.join(name);
+        fs::write(&file, "audio-bytes").unwrap();
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = std::sync::Arc::clone(&calls);
+        let lines = std::sync::Arc::clone(&log);
+        let answer = naivepost::separate_run::probe_duration(
+            "",
+            &file,
+            &mut move |line| lines.lock().unwrap().push(line.to_string()),
+            &move |_program, args| {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                // The header call asks for `format=duration`; the decode pass asks per-stream.
+                Ok(if args.contains(&"format=duration") {
+                    header.clone()
+                } else {
+                    decode.clone().unwrap_or_default()
+                })
+            },
+        );
+        (answer, calls.load(std::sync::atomic::Ordering::SeqCst))
+    };
+
+    // (a) the header answers: one ffprobe, its number, and no log line (nothing unusual happened).
+    let (header_secs, header_calls) = probe("with-header.wav", "12.5".into(), None);
+    assert_eq!(header_secs, Ok(12.5));
+    assert_eq!(header_calls, 1, "a header that answers costs one probe");
+
+    // (b) a recorder killed mid-write: the header says nothing, so the stream pass pays for the decode.
+    let (killed_secs, killed_calls) = probe("killed.wav", "".into(), Some("8.25".into()));
+    assert_eq!(killed_secs, Ok(8.25));
+    assert_eq!(killed_calls, 2, "header miss, then the decode pass");
+    assert!(
+        log.lock().unwrap().iter().any(|line| line.contains("killed.wav") && line.contains("decoding")),
+        "paying for a decode should be visible in the log: {:?}",
+        log.lock().unwrap()
+    );
+
+    // (c) neither answers: the failure names the file, because "no duration" without a path is useless.
+    let (dead, dead_calls) = probe("silent.wav", "".into(), Some(String::new()));
+    let err = dead.expect_err("neither source has a duration");
+    assert!(err.contains("silent.wav"), "{err}");
+    assert_eq!(dead_calls, 2, "the decode is tried before giving up");
+
+    // (d) the answer is remembered per path + size + mtime: asking again about (a)'s file costs nothing.
+    let again = root.join("with-header.wav");
+    let cached_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = std::sync::Arc::clone(&cached_calls);
+    let cached = naivepost::separate_run::probe_duration(
+        "",
+        &again,
+        &mut |_| {},
+        &move |_, _| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok("99".to_string())
+        },
+    );
+    assert_eq!(cached, Ok(12.5), "the first measurement is the answer");
+    assert_eq!(
+        cached_calls.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "a cached file never reaches ffprobe again"
+    );
+
+    // A changed file is a different file: rewriting it (new size) misses, and pays its own probe.
+    fs::write(&again, "audio-bytes-longer-this-time").unwrap();
+    let rewrote_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = std::sync::Arc::clone(&rewrote_calls);
+    let rewrote = naivepost::separate_run::probe_duration(
+        "",
+        &again,
+        &mut |_| {},
+        &move |_, _| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok("30.0".to_string())
+        },
+    );
+    assert_eq!(rewrote, Ok(30.0));
+    assert_eq!(rewrote_calls.load(std::sync::atomic::Ordering::SeqCst), 1, "a re-recorded file is measured again");
+}

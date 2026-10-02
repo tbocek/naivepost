@@ -6,11 +6,30 @@
 //! files the desktop passed. Which of the four doors answers is [`crate::startup`]'s decision; this
 //! module is the caller that makes the decision real on disk.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
 
 use crate::{icons, machine_store, open_project, project, settings, startup, ui};
+
+/// Open one folder the way a launch opens it: the project AND whatever the load had to say about it.
+///
+/// `project::load` alone answers the project and drops the report, which is how a legacy `out_dir`
+/// could sit in a session opened at start without anyone being told (§8's [F0.9] bullet). A folder
+/// that cannot be read still opens blank — the same behaviour this call replaced (`unwrap_or_default`)
+/// keeps, because losing the session over an unreadable file is worse than opening empty.
+pub fn load_for_launch(path: &Path) -> (project::Project, Vec<String>) {
+    project::load_report(path).unwrap_or_else(|_| (project::Project::default(), Vec::new()))
+}
+
+/// The launch's icon search, in the shape `open_at_start` calls it: beside the binary, under the
+/// app root (the prefix an installed build sits in — the exe's parent), then the working directory.
+/// Split out so a test pins the SAME order the launch uses rather than retyping its argument shapes.
+pub fn icons_for_launch(exe: &Path, cwd: &Path) -> Option<PathBuf> {
+    let exe_dir = exe.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let app_root = exe_dir.parent().unwrap_or(Path::new(".")).to_path_buf();
+    icons::found(&exe_dir, &app_root, cwd)
+}
 
 /// Which project this launch opens and shows (F0.6), decided by [`startup::decide`].
 ///
@@ -38,11 +57,13 @@ pub fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
     // `startup::Opened` is a decision with no widget of its own to show it. It reaches the log through
     // the single `note_startup` at the end, because that sink only exists once a window was built.
     let door = format!(">>> opening {} ({})", opened.kind(), opened.path().display());
-    let project = match &opened {
+    // §8's [F0.9] bullet: a project with a legacy `out_dir` says so when it opens, and the launch is
+    // one of the ways it opens — through `load_report`, which is where that line is produced.
+    let (project, load_lines) = match &opened {
         // A blank session is no file at all, so there is nothing to read.
-        startup::Opened::Blank { .. } => project::Project::default(),
+        startup::Opened::Blank { .. } => (project::Project::default(), Vec::new()),
         // The other three name a folder to open, and all three are opened the same way.
-        named => project::load(named.path()).unwrap_or_default(),
+        named => load_for_launch(named.path()),
     };
     // "" is Prepare, the page a session always starts on (§1).
     ui::build_window(app, &project, "").present();
@@ -64,6 +85,17 @@ pub fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
         startup_lines.extend(log);
         startup_lines.extend(machine_store::run_refresh(&commands));
     }
+    // §8's icons bullet: the tree travels with the app, so the launch looks for it beside the binary,
+    // under the app root, then in the working directory — the order `icons_for_launch` fixes.
+    // Finding nothing is not worth a line: an icon the theme cannot look up is invisible, not broken.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(icons) = icons_for_launch(&exe, &root) {
+            startup_lines.push(format!(">>> icons from {}", icons.display()));
+        }
+    }
+    // What the loaded project had to say (§8's legacy-`out_dir` line among them) reads as part of the
+    // launch's own words, so it goes in before this module's last two lines.
+    startup_lines.extend(load_lines);
     // The two lines this module owns -- which door answered, and whether the pair reached `llm.conf`
     // (§7's state) -- go in here, after the desktop's, so they read as the launch's own last words.
     startup_lines.insert(0, door);

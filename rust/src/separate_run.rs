@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 
 use crate::bodies::ServerPath;
 use crate::layout::Tree;
+use crate::probes;
 use crate::project::Project;
 use crate::requests::{self, Outcome as RowOutcome};
 use crate::run_stages::{self, Stage, Task};
@@ -185,7 +186,11 @@ fn split(
         .as_ref()
         .filter(|path| path.exists())
         .ok_or_else(|| format!("{}: no decoded audio to split", lane))?;
-    let seconds = probe_duration(configured_ffmpeg, decoded, log)?;
+    // `subprocess::run` logs the command line itself (§8's subprocess rule), so this leg has nothing
+    // extra to print; the `log` sink stays with the caller for its own lines.
+    let seconds = probe_duration(configured_ffmpeg, decoded, log, &|program, args| {
+        crate::subprocess::run(program, args, |_| {})
+    })?;
     // The whole decoded recording goes up once: a stems task answers with the two halves of exactly
     // the audio it was given, and §1 puts no client timeout on an audio task, so the split of a long
     // take is one long request rather than a re-cut per chunk (`separate::chunk_plan` sizes that
@@ -324,13 +329,90 @@ fn decoded_audio(tree: &Tree, lane: &str) -> Option<PathBuf> {
 
 /// Seconds of an audio file, by ffprobe — the tool §1 names for reading, from the same folder as the
 /// configured ffmpeg ([`services::ffprobe_for`]'s rule).
-fn probe_duration(configured_ffmpeg: &str, path: &Path, log: &mut impl FnMut(&str)) -> Result<f64, String> {
+///
+/// §8's duration-probing rule lives here: a recorder killed mid-write leaves a container whose header
+/// carries no length (it is written when the file is closed), so a header that answers nothing pays for
+/// one decode pass — ffprobe over the stream entries reads the whole stream and counts it. The answer
+/// is remembered per path + size + mtime (`probes::Cache`): a re-recorded or truncated file misses,
+/// and the same file never pays for the decode twice in one run.
+///
+/// `run` is the leg that starts ffprobe, supplied by the caller for the same reason `source_probe`
+/// takes its own: the rule (header, else decode, cached) must be testable without a real ffprobe.
+/// The leg that starts one ffprobe: (program, args) -> stdout. Named because the type is worth
+/// reading once (`source_probe::run_ffprobe` matches it), and so a test can hand in an answer.
+pub type RunTool = dyn Fn(&str, &[&str]) -> Result<String, String>;
+
+pub fn probe_duration(
+    configured_ffmpeg: &str,
+    path: &Path,
+    log: &mut impl FnMut(&str),
+    run: &RunTool,
+) -> Result<f64, String> {
+    // The command line is logged by `run`'s own leg (`subprocess::run` prints it before starting,
+    // §8's subprocess rule); this rule adds no line of its own while the probe runs.
+    let _ = log;
+    let shown = path.display().to_string();
+    // The key needs real metadata; a file we cannot stat gets measured uncached rather than skipped.
+    let stamp = std::fs::metadata(path).ok().map(|meta| {
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|when| when.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|since| since.as_secs() as i64)
+            .unwrap_or(0);
+        probes::key(&shown, meta.len() as i64, mtime)
+    });
+    if let Some(found) = stamp.as_ref().and_then(|key| durations().lookup(key)) {
+        return Ok(found);
+    }
     let ffprobe = services::ffprobe_for(configured_ffmpeg, "ffprobe");
-    let shown = ["-show_entries", "format=duration", "-of", "default=nw=1:nk=1", &path.display().to_string()];
-    crate::subprocess::run(&ffprobe, &shown, |line| log(line))?
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| format!("{}: ffprobe answered no duration", path.display()))
+    let header = run(
+        &ffprobe,
+        &["-show_entries", "format=duration", "-of", "default=nw=1:nk=1", &shown],
+    )
+    .ok()
+    .and_then(|answer| answer.trim().parse::<f64>().ok())
+    .filter(|secs| *secs > 0.0);
+    // Only a header that said nothing pays for the read of every frame.
+    let decoded = match header {
+        Some(_) => None,
+        None => run(
+            &ffprobe,
+            &[
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                &shown,
+            ],
+        )
+        .ok()
+        .and_then(|answer| answer.trim().lines().next().and_then(|line| line.trim().parse::<f64>().ok()))
+        .filter(|secs| *secs > 0.0),
+    };
+    let (secs, how) = probes::duration(&shown, header, decoded)?;
+    if let Some(key) = stamp {
+        durations().store(key, secs);
+    }
+    // One line when a decode was paid for: "why did this take so long" has an answer in the log then,
+    // and nothing is printed when the header answered as it always does.
+    if matches!(how, probes::Source::Decoded) {
+        log(&format!(">>> {shown} has no header duration; measured by decoding"));
+    }
+    Ok(secs)
+}
+
+/// This run's measured durations (§8: "cached per path+size+mtime like every probe"). Process-wide
+/// because a split runs on whichever thread the queue put it on, and a second measurement of the same
+/// bytes would cost a second decode there.
+fn durations() -> std::sync::MutexGuard<'static, probes::Cache> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<probes::Cache>> = std::sync::OnceLock::new();
+    match CACHE.get_or_init(|| std::sync::Mutex::new(probes::Cache::new())).lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 /// ffmpeg's `volumedetect` mean of a file, as [`crate::separate`] wants it: the number as ffmpeg
