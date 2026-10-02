@@ -151,6 +151,8 @@ pub mod runqueue;
 pub mod save_as;
 pub mod seam_retries;
 pub mod separate;
+/// §4's track menu: how many audio streams a file really holds, asked of the real ffprobe.
+pub mod source_probe;
 pub mod separate_run;
 pub mod services;
 pub mod settings;

@@ -134,6 +134,17 @@ fn base_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
+/// §4's three-line explanation over the track checks: what a tick means, said once instead of on every
+/// check. The lane half of it is §5's rule; this is the sentence the popover shows.
+pub const TRACKS_HELP: &str = "Each ticked track becomes a lane of its own, mixed like a separate\n\
+    recording. Untick one and its audio leaves the session; the last one\n\
+    cannot come off, because a row that hears nothing has no transcript to fix.";
+
+/// Why the last ticked track refused to come off — said where the click happened.
+pub fn last_track_says(track: u32) -> String {
+    format!("track {track} is the only one left -- a row must hear something")
+}
+
 /// Whether this row's voice can still be split off: a half of a split has no voice left to take off a
 /// voice, so its scissors are dead rather than gone. The suffix is the stem's, before the extension —
 /// `mic.split-voice.wav` is a product, `mic.wav` is not (the prototype's `splitProduct`, which lists
@@ -144,6 +155,17 @@ pub fn separable(source: &Source) -> bool {
     // Compare against the stem, so the container's own extension never looks like a split suffix.
     let stem = name.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(name);
     !SUFFIXES.iter().any(|suffix| stem.ends_with(suffix))
+}
+
+pub fn set_sepvoice(project: &mut Project, index: usize, on: bool) -> bool {
+    let Some(source) = project.sources.get_mut(index) else {
+        return false;
+    };
+    if !separable(source) {
+        return false;
+    }
+    source.sepvoice = on;
+    true
 }
 
 /// The footage toggle. Refuses on a row that is not a video: only a video may be footage, and a
@@ -204,11 +226,6 @@ pub fn slot_tip(slot: u32) -> String {
 pub fn warning(source: &Source) -> Option<&'static str> {
     clock::name_stamp(base_name(&source.path)).is_none().then_some(WARN_TIP)
 }
-
-/// 🗑 Remove from this session. The list *is* the session (spec/01 §1), so dropping a row is how a
-/// file leaves a project; the file itself is left alone, which is why nothing here touches a path.
-/// Slot 1 is re-filled when its holder was this row — "after an add, a removal, a rescan that dropped
-/// a row" (§4).
 
 /// The stored path of whoever speaks this slot — §5's lane naming and Produce's readouts both want it.
 pub fn narrator_of(project: &Project, slot: u32) -> Option<&str> {

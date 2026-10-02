@@ -83,6 +83,7 @@ use crate::policy;
 use crate::ui::policy_form;
 use crate::ui::settings;
 use crate::sources::{self, Control};
+use crate::ui::source_rows;
 use crate::startup;
 use crate::narration::{self, Narration};
 use crate::narrate_data;
@@ -1724,11 +1725,9 @@ fn cut_form_column() -> gtk::Grid {
     form
 }
 
-/// §4's list of rows, one per source file, drawn from the project and wired to [`crate::sources`].
-///
-/// The rows are named so a test can find them (`source-row-<index>`), and each control carries its own
-/// widget name — the same reason Add's button is named: so a test presses it the way a user does,
-/// rather than calling the rule behind it.
+/// §4's list of rows, one per source file. The rows and their controls are `source_rows`'s (that file
+/// is where the row rules live now that `window.rs` is past its size budget); this only builds the
+/// container and hands it the handles a row needs.
 fn sources_list(session: &Rc<RefCell<Project>>, status: &gtk::Label) -> gtk::Widget {
     let list = gtk::ListBox::new();
     list.set_widget_name("sources-list");
@@ -1736,10 +1735,11 @@ fn sources_list(session: &Rc<RefCell<Project>>, status: &gtk::Label) -> gtk::Wid
     list.set_tooltip_text(Some(sources::LIST_TIP));
     // One hairline between rows, which is how §4's band reads; the frame around it is the page's.
     list.add_css_class("boxed-list");
-
-    for index in 0..session.borrow().sources.len() {
-        list.append(&source_row(session, status, index));
-    }
+    source_rows::append_all(&source_rows::Rows {
+        session: Rc::clone(session),
+        status: status.clone(),
+        list: list.clone(),
+    });
     list.upcast()
 }
 
@@ -2058,144 +2058,6 @@ fn paint_bench_marks(
     mark.set_visible(bench::shows_mark(row, edited));
     reset.set_visible(bench::shows_reset(row, edited));
     reset.set_sensitive(bench::shows_reset(row, edited));
-}
-
-/// A symbol control: an icon, flat so a row of them reads as one band rather than a row of boxes, and
-/// carrying §4's key to the four symbols at the end of its tooltip.
-fn icon_toggle(icon: &str, name: &str, tip: &str) -> gtk::ToggleButton {
-    let button = gtk::ToggleButton::builder().icon_name(icon).build();
-    button.set_widget_name(name);
-    button.add_css_class("flat");
-    button.set_tooltip_text(Some(&format!("{tip}{}", sources::ROW_KEY)));
-    button
-}
-
-/// The same for a control that is pressed rather than ticked. `icon` empty leaves the face to be set by
-/// the caller, which is how the narrator button shows the slot it holds.
-fn icon_button(icon: &str, name: &str, tip: &str) -> gtk::Button {
-    let button = if icon.is_empty() {
-        gtk::Button::new()
-    } else {
-        gtk::Button::from_icon_name(icon)
-    };
-    button.set_widget_name(name);
-    button.add_css_class("flat");
-    button.set_tooltip_text(Some(&format!("{tip}{}", sources::ROW_KEY)));
-    button
-}
-
-/// One row: the file's name, and the controls §4 gives it. A control that does not apply to this file
-/// is absent rather than insensitive — an audio row has no footage tick to grey out.
-fn source_row(session: &Rc<RefCell<Project>>, status: &gtk::Label, index: usize) -> gtk::ListBoxRow {
-    let source = session.borrow().sources[index].clone();
-    let name = sources::row_name(&source.path);
-
-    let row = gtk::ListBoxRow::new();
-    row.set_widget_name(&format!("source-row-{index}"));
-    row.set_tooltip_text(Some(&source.path));
-
-    let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-
-    if sources::row_controls(&source, source.tracks.len().max(1)).contains(&Control::Footage) {
-        let footage = icon_toggle("camera-video-symbolic", &format!("footage-{index}"), sources::FOOTAGE_TIP);
-        footage.set_active(source.footage);
-        footage.set_active(source.footage);
-        footage.set_tooltip_text(Some(sources::FOOTAGE_TIP));
-        wire_footage(&footage, Rc::clone(session), status, index, name.clone());
-        box_.append(&footage);
-    }
-
-    let narrator = icon_button("", &format!("narrator-{index}"), &sources::NARRATOR_TIP);
-    // The face is the slot, which is the one thing about this control a glance has to catch; slot 1 is
-    // the narration's voice, so it is drawn as suggested (§4's "slot 1 highlighted").
-    narrator.set_label(&source.narrator.to_string());
-    if source.narrator == 1 {
-        narrator.add_css_class("suggested-action");
-    }
-    wire_narrator(&narrator, Rc::clone(session), status, index, name.clone());
-    box_.append(&narrator);
-
-    let label = gtk::Label::new(Some(&name));
-    label.set_widget_name(&format!("source-name-{index}"));
-    label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-    label.set_hexpand(true);
-    label.set_xalign(0.0);
-    box_.append(&label);
-
-    let remove = icon_button("user-trash-symbolic", &format!("remove-{index}"), sources::REMOVE_TIP);
-    wire_remove(&remove, Rc::clone(session), status, index);
-    box_.append(&remove);
-
-    row.set_child(Some(&box_));
-    row
-}
-
-/// The 🎥 toggle. Each of the three handlers below takes the handles it needs by value, which is what
-/// keeps this to one `Rc` clone per control instead of a shadowed local moved into the first closure
-/// and missed by the next — the rule itself is [`sources::toggle_footage`], and the page only repeats
-/// what it did.
-fn wire_footage(
-    footage: &gtk::ToggleButton,
-    session: Rc<RefCell<Project>>,
-    status: &gtk::Label,
-    index: usize,
-    name: String,
-) {
-    let status = status.clone();
-    footage.connect_clicked(move |button| {
-        if sources::toggle_footage(&mut session.borrow_mut(), index, button.is_active()) {
-            status.set_text(&format!(
-                "{name}: {}",
-                if button.is_active() { "footage" } else { "not footage" }
-            ));
-        }
-    });
-}
-
-/// The 🎤 narrator button. `face` is the button's own handle: `connect_clicked` takes the closure by
-/// moving it, so the button cannot also be borrowed into it.
-fn wire_narrator(
-    narrator: &gtk::Button,
-    session: Rc<RefCell<Project>>,
-    status: &gtk::Label,
-    index: usize,
-    name: String,
-) {
-    let status = status.clone();
-    let face = narrator.clone();
-    narrator.connect_clicked(move |_| {
-        let slot = sources::cycle_narrator(&mut session.borrow_mut(), index);
-        // The button's face is the slot it just took, so the row repaints itself.
-        face.set_label(&slot.to_string());
-        face.set_tooltip_text(Some(&format!("{}{}", sources::slot_tip(slot), sources::ROW_KEY)));
-        face.remove_css_class("suggested-action");
-        if slot == 1 {
-            face.add_css_class("suggested-action");
-        }
-        status.set_text(&format!("{name}: narrator {slot}"));
-    });
-}
-
-/// The 🗑 button.
-fn wire_remove(
-    remove: &gtk::Button,
-    session: Rc<RefCell<Project>>,
-    status: &gtk::Label,
-    index: usize,
-) {
-    let status = status.clone();
-    remove.connect_clicked(move |_| {
-        // The path is read before the list changes, so the sentence can name what left. Dropping a row
-        // re-indexes every row below it, and these widgets are drawn once — redrawing the list belongs
-        // to F0.9's live project state, so this page reports the press without pretending to repaint.
-        let Some(path) = session.borrow().sources.get(index).map(|source| source.path.clone()) else {
-            return;
-        };
-        if sources::remove(&mut session.borrow_mut(), index).is_some() {
-            let left = session.borrow().sources.len();
-            status.set_text(&sources::removal_status(&path, left));
-        }
-    });
 }
 
 /// The tab row, drawn from [`Shell`].
@@ -4343,8 +4205,8 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
     match added {
         Ok(answer) => {
             status.set_text(&answer.status);
-            // The list drew its rows once at build time, so the new ones are appended here rather
-            // than the list being rebuilt — rows already on screen keep their own state (S3).
+            // The added rows are drawn by the same door the build used, so an added row carries every
+            // control §4 gives a row (the track menu included) rather than a shorter version of one.
             let total_rows = session.borrow().sources.len();
             if let Some(list) = find_widget_by_name(window.upcast_ref(), "sources-list")
                 .and_then(|widget| widget.downcast::<gtk::ListBox>().ok())
@@ -4359,7 +4221,14 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
                     .filter(|child| child.downcast_ref::<gtk::ListBoxRow>().is_some())
                     .count();
                 for index in drawn..total_rows {
-                    list.append(&source_row(&session, &status, index));
+                    list.append(&source_rows::row_at(
+                        &source_rows::Rows {
+                            session: Rc::clone(&session),
+                            status: status.clone(),
+                            list: list.clone(),
+                        },
+                        index,
+                    ));
                 }
             }
             answer.added > 0

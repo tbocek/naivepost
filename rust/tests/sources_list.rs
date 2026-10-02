@@ -409,3 +409,42 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     window_round();
     assert!(RAN_PRESS.load(Ordering::SeqCst), "{ITEM}: the press check never ran");
 }
+
+/// §4's track menu is built from a count of the FILE's audio streams, and that count comes from the real
+/// ffprobe. The tool leg is the caller's argument -- `source_probe::run_ffprobe` in the program, this
+/// closure here -- so the parse is exercised on the JSON ffprobe actually answers with, without any test
+/// starting a binary.
+#[test]
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_probe_reads_the_audio_streams_the_tool_reports() {
+    let file = Path::new("/tmp/cam.mkv");
+    // Two streams: ffprobe numbers them from 0, one carries a title tag, the other has none; the second
+    // names no channel count at all, which means mono.
+    let answer = r#"{"streams": [
+        {"index": 0, "channels": 2, "tags": {"title": "Camera mic"}},
+        {"index": 1, "channels": 1}
+    ]}"#;
+    let tracks = naivepost::source_probe::streams_of(answer, file).expect("two streams are two tracks");
+    assert_eq!(tracks.len(), 2, "{ITEM}: one entry per stream");
+    // 1-based for the popover, whatever ffprobe numbered them as.
+    assert_eq!(tracks[0].index, 1);
+    assert_eq!(tracks[1].index, 2);
+    assert_eq!(tracks[0].label(), "Track 1 \u{2014} Camera mic (stereo)", "{ITEM}: titled stereo row");
+    assert!(
+        tracks[1].label().starts_with("Track 2 \u{2014} ") && tracks[1].label().ends_with("(mono)"),
+        "{ITEM}: an untitled stream still says which one it is: {}",
+        tracks[1].label()
+    );
+
+    // A probe that finds no audio, or fails outright, is an error naming the file -- never a silent
+    // single-track answer, which would hide a menu over audio nobody measured.
+    let empty = match naivepost::source_probe::streams_of(r#"{"streams": []}"#, file) {
+        Ok(found) => panic!("{ITEM}: no audio stream is a refusal, not a count of one: {found:?}"),
+        Err(err) => err,
+    };
+    assert!(empty.contains("cam.mkv"), "the reason names the file: {empty}");
+    let broken = match naivepost::source_probe::streams_of("not json", file) {
+        Ok(found) => panic!("{ITEM}: unparsable output is refused, not parsed: {found:?}"),
+        Err(err) => err,
+    };
+    assert!(broken.contains("cam.mkv"), "and so does this one: {broken}");
+}

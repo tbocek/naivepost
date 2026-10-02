@@ -37,6 +37,9 @@ pub mod open_apply;
 /// F0.11 Rescan — the window's own half of S1–S3: name the drops, write the pruned list back, and
 /// refresh every tab from what the scan re-read.
 pub mod rescan_apply;
+/// §4's source rows: the controls a file gets, the track menu over the streams ffprobe counted, and the
+/// repaint that keeps row indices honest after a removal.
+pub mod source_rows;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are
