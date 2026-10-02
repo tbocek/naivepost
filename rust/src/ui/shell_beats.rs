@@ -157,14 +157,16 @@ pub struct StatusLine<'a> {
 /// answered: ▶'s handler writes its own sentence (F0.2's empty line on opening, F1.12's refusal) after
 /// this runs, and ▶✂'s "no longer watched" lands before it, so an unowned line is left alone rather than
 /// blanked or overwritten by what this press said.
-pub fn status_from_queue(status: &gtk::Label, queue: &Queue, owned: bool) {
+pub fn status_from_queue(status: &gtk::Label, queue: &Queue, owned: bool) -> bool {
     if !owned {
-        return;
+        return false;
     }
     let line = queue.text();
-    if !line.is_empty() {
-        status.set_text(&line);
+    if line.is_empty() {
+        return false;
     }
+    status.set_text(&line);
+    true
 }
 
 /// Pulse the bar while a run holds nothing countable. `true` when this beat should pulse: a run is on and

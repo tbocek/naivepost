@@ -47,6 +47,69 @@ pub fn last_snapshot_for_test() -> Option<run::Snapshot> {
 pub fn last_run_step_for_test() -> Option<run::Step> {
     LAST_RUN.with(|held| held.borrow().as_ref().map(|run| run.step))
 }
+
+/// For the test binaries only: the line the run's audio housekeeping left in the off-thread record.
+/// `fire_unload`'s thread is its only author, so finding it here means the unload really went out and
+/// reported back — its text says whether audio.cpp answered or why it could not be reached.
+pub fn unload_line_for_test() -> Option<String> {
+    SHARED_LOG
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|line| line.starts_with(UNLOAD_PREFIX))
+        .cloned()
+}
+
+/// Forget every line this process logged. Only a test binary asks: nothing clears the shell's log while
+/// a session runs, so a check about what ONE press printed needs an empty starting point.
+pub fn clear_log_for_test() {
+    SHARED_LOG.lock().unwrap().clear();
+    window::clear_logs_for_test();
+}
+
+/// The record a run's audio housekeeping leaves. `settings_probe::fire_unload`'s thread is its only
+/// author, so a line here means the unload went out and reported back.
+pub const UNLOAD_PREFIX: &str = ">>> audio housekeeping: ";
+
+/// One buffer for the lines §S4's unload thread writes. `window::log_line`'s sink is a thread-local, and
+/// the audio unload answers on its OWN thread — a thread-local there would collect that report where
+/// nobody reads it -- so that one writer funnels here instead of into the user's log: §2 gives the log's
+/// last word to the RUN, and a sentence written by a thread after the close returned would land after it.
+/// The person still hears from it, through the status row ([`report_unload`]).
+static SHARED_LOG: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Add one line to the off-thread record. Only `window::note_unload` calls it: every other log door runs
+/// on the main thread and goes straight into `window::log_line`'s own sink.
+pub(crate) fn log(line: &str) {
+    SHARED_LOG.lock().unwrap().push(line.to_string());
+}
+
+// Where the running chain's status row is right now, so the unload thread can tell the person what it
+// did without disturbing the sentence the chain itself is putting there (§2 gives the row to the run).
+thread_local! {
+    static CHAIN_ROW: std::cell::RefCell<Option<gtk::Label>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Say what the end-of-run housekeeping did, on the row the chain is using if a chain is running. The
+/// thread that dials the unload answers after the run that asked it has already been painted, so the
+/// shell cannot route it itself; `lucky_run::press` marks the row for the length of the chain and hands
+/// it back to the chain's own sentences when it ends.
+pub fn report_unload(said: &str) {
+    window::note_unload(said);
+    CHAIN_ROW.with(|held| {
+        if let Some(row) = held.borrow().as_ref() {
+            row.set_text(said);
+        }
+    });
+}
+
+/// Hand the running chain's status row to [`report_unload`], or take it away again (`None` at the
+/// chain's end, when the chain's own end sentence owns the row again).
+pub fn mark_chain_row(row: Option<&gtk::Label>) {
+    CHAIN_ROW.with(|held| *held.borrow_mut() = row.cloned());
+}
+
+
 /// Close the narrate run that ran to its end inside one press, finding this window's widgets here so
 /// the shell's handler stays a call. Same fallback as before: with no queue or status row to write to,
 /// the bookkeeping still ends.
@@ -113,7 +176,7 @@ pub fn close_step_run(
     }
     // §1/§S4: every run ends with `unload_all_models`, quietly and off-thread, even one that used no
     // audio — weights left loaded are memory nothing is waiting on any more.
-    crate::settings_probe::fire_unload(ended.audio_unload);
+    hand_over_unload(ended.audio_unload);
     // The pulse belongs to the run (§2: it pulses while a model thinks with nothing countable), so a
     // closed run takes it down rather than leaving a timer ticking on an idle bar.
     if !shell_beats::stop_pulse() {
@@ -122,14 +185,25 @@ pub fn close_step_run(
     paint_closed(bar, queue, status, progress, log, log_view);
     // §2: the tracks' line goes to the status row and overwrites what was there. Written after the
     // repaint so the run's own sentence is the last word on the row, and only when there is one — an
-    // empty queue says nothing rather than blanking a refusal someone else just put there.
-    if !said.is_empty() {
+    // empty queue says nothing rather than blanking a refusal someone else just put there. A close
+    // that also has a sentence of its own (F4.1 puts its ending back after this returns) keeps the
+    // row: §S4 asks for controls and the unload, not for the queue's words over a flow's own report.
+    if !said.is_empty() && bar.borrow().running.is_none() {
         status.set_text(&said);
     }
     queue.borrow_mut().reset();
     // The exchange log stays as the run left it: its page is what the log links to, and closing the
     // bookkeeping does not retire the record.
     let _ = exchange_log;
+}
+
+/// Hand the audio unload over -- the one door through which every run's housekeeping goes.
+///
+/// Fire-and-forget on the leg's own thread: §S4 makes the call best-effort, so the press never waits on a
+/// server for it. Its report goes to [`SHARED_LOG`] and to the status row via [`report_unload`], never
+/// into the log, which keeps §2's rule that the run has the log's last word.
+pub(crate) fn hand_over_unload(kind: crate::services::Kind) {
+    crate::settings_probe::fire_unload(kind);
 }
 
 /// Close the bookkeeping of one lucky step as the chain moves on (§S4's "a lucky run moves to its next
@@ -151,7 +225,7 @@ pub fn close_chain_step(handles: &super::lucky_run::Handles, next: Option<Page>)
         // program rather than of a test; the press's own run stays open (see above).
         debug_assert!(runqueue::end_run(&mut RunBar::default(), next).chain_moves_on);
     }
-    crate::settings_probe::fire_unload(crate::services::Kind::UnloadAll);
+    hand_over_unload(crate::services::Kind::UnloadAll);
     shell_beats::stop_pulse();
     if !said.is_empty() {
         handles.status.set_text(&said);

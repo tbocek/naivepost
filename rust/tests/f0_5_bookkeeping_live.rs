@@ -8,6 +8,7 @@
 //! the wires (spec/00-principles.md §5).
 
 use std::cell::RefCell;
+use std::io::{Read, Write};
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -35,7 +36,9 @@ fn ensure_gtk() {
 
 /// One GTK application for the whole binary (`gio` refuses a second `run_with_args`), every scenario
 /// inside one `activate` — the shape every widget test here uses. It also brings GTK up for the two
-/// window-free checks below, which is why they call `window_round()` before building any widget.
+/// window-free checks below, which is why they call `window_round()` before building any widget. The
+/// application the round runs under is handed to each scenario by `connect_activate`; nothing here needs
+/// a global copy of it.
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -47,6 +50,7 @@ fn window_round() {
         app.connect_activate(|app| {
             single_step_closes(app);
             line_overwrites(app);
+            unload_handed_over(app);
             lucky_moves_on();
             the_pulse_belongs_to_the_run();
             RAN.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -228,6 +232,243 @@ fn the_pulse_belongs_to_the_run() {
 fn f0_5_bookkeeping_reaches_the_shell() {
     window_round();
     assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the widget rounds never ran");
+}
+
+#[test]
+fn f0_5_s4_the_chain_close_hands_over_the_unload() {
+    window_round();
+}
+
+/// §S4's "audio models unloaded off-thread", at the door the chain closes through, over a REAL socket.
+/// The seam is the settings file: `fire_unload` reads audio.cpp's address out of it on every run (§1's
+/// re-read-per-request rule), so pointing that one box at a loopback fake makes the check about bytes
+/// that crossed a socket rather than about a stub. `close_chain_step` hands the unload over at each step
+/// boundary; the program's own bounded wait (`settings_probe::drain_unload`) then retires the leg, and
+/// the thread's report — written by nothing else in the program — lands in the log.
+fn unload_handed_over(app: &adw::Application) {
+    // FIRST in the round: this is the one scenario that pins `XDG_CONFIG_HOME` (process-wide), and it
+    // has to write its conf before any other scenario's press dials the default loopback address.
+    let fake = FakeAudioCpp::start();
+    point_settings_at(&fake.url());
+    naivepost::ui::run_close::clear_log_for_test();
+    let handles = handles();
+    handles.bar.borrow_mut().running = Some(run::Run {
+        step: run::Step::Prepare,
+        paused: false,
+        log_expanded: true,
+        sources: run::Snapshot::default(),
+    });
+
+    // §2 at the hand-off: with a chain running the row is the run's, so what the close writes there is
+    // the step's own track line and NOT whatever stood there before -- `lucky_run::press` lends the row
+    // to the run for its length through `mark_chain_row`, and §S4's housekeeping answers into it.
+    handles.status.set_text("a sentence from before the chain");
+    naivepost::ui::run_close::mark_chain_row(Some(&handles.status));
+    report_frames(&handles.queue);
+    let joined = handles.queue.borrow().text_and_tip().0;
+    naivepost::ui::run_close::close_chain_step(&handles, Some(Page::Cut));
+    // The hand-off is counted while it dials (`cancel_leg::leg_started` inside `fire_unload`'s thread).
+    naivepost::settings_probe::drain_unload(std::time::Duration::from_secs(5));
+    let dialed = wait_until(|| fake.hits() > 0, "the unload reached audio.cpp");
+    assert!(dialed, "S4: the unload really telephoned audio.cpp");
+    let said = wait_until(
+        || naivepost::ui::run_close::unload_line_for_test().is_some(),
+        "the run recorded its own housekeeping",
+    )
+    .then(|| naivepost::ui::run_close::unload_line_for_test().unwrap())
+    .expect("the run recorded its own housekeeping");
+    assert_eq!(
+        fake.last_path().as_deref(),
+        Some("/v1/tasks/unload_all_models"),
+        "and asked the endpoint Kind::UnloadAll names, not some other route (log said: {said})"
+    );
+    assert!(
+        said.starts_with(naivepost::ui::run_close::UNLOAD_PREFIX),
+        "on the log line every run leaves: {said}"
+    );
+    assert!(
+        said.contains("models unloaded"),
+        "answered servers say so, rather than the run staying quiet: {said}"
+    );
+    // §2 at the hand-off: the row now carries the step's own line, not the sentence that was there when
+    // the press started. Read through a short wait because the unload answers from its OWN thread (§S4)
+    // and may still be dialling: if it has answered by now, its news is what the row holds instead.
+    let on_row = wait_until(
+        || {
+            let row = handles.status.text().to_string();
+            row == joined || row == said.replacen(naivepost::ui::run_close::UNLOAD_PREFIX, "", 1)
+        },
+        "the row to take the run's words (the step's line, or the housekeeping news once it lands)",
+    );
+    assert!(
+        on_row,
+        "§2: while the chain runs the row belongs to the run, not to what stood there before (row said {:?}, step line {joined:?}, log said {said:?})",
+        handles.status.text(),
+    );
+    // And the pair §S4 pins together: the move happened WITHOUT ending the press's one run.
+    assert!(
+        handles.bar.borrow().running.is_some(),
+        "S4: the chain keeps ONE run open across a step boundary (F0.4 S1 still reads it as busy)"
+    );
+    // The other close door, on the same socket: a single-step ▶ must hand the unload over too.
+    single_step_close_dials(app, &fake);
+}
+
+#[test]
+fn f0_5_s4_the_single_step_close_dials_the_unload() {
+    window_round();
+}
+
+/// §S4's unload at the OTHER door: a single-step ▶. Same fake, same settings seam as
+/// [`unload_handed_over`] (one scenario per binary may pin `XDG_CONFIG_HOME`, so this runs inside it and
+/// shares its fake), but reached through the real button: `ui::play_button(...).emit_by_name("clicked")`
+/// walks Prepare's step and closes what it opened, and the close must hand the audio unload over exactly
+/// as the chain's boundary does — which before this wiring it never did at all.
+fn single_step_close_dials(app: &adw::Application, fake: &FakeAudioCpp) {
+    let project = footage_project();
+    let window = ui::build_window(app, &project, "Prepare");
+    window.present();
+    naivepost::ui::run_close::clear_log_for_test();
+    let before = fake.hits();
+
+    ui::play_button(&window)
+        .expect("the run bar has a ▶")
+        .emit_by_name::<()>("clicked", &[]);
+
+    // The press closed its own bookkeeping (§S4), so the bar is idle again -- the same state the logic
+    // check in `single_step_closes` asserts, read here off the widget press rather than off a call.
+    let bar = ui::run_bar(&window).expect("the window carries a run bar");
+    assert!(
+        bar.borrow().running.is_none(),
+        "S4: the ▶ press closed the run it opened"
+    );
+    naivepost::settings_probe::drain_unload(std::time::Duration::from_secs(5));
+    assert!(
+        wait_until(|| fake.hits() > before, "the single-step close dialled audio.cpp"),
+        "S4: a lone step's close hands the audio unload over too, not only the chain's"
+    );
+    let said = naivepost::ui::run_close::unload_line_for_test()
+        .expect("the press recorded its own housekeeping");
+    assert!(
+        said.contains("models unloaded"),
+        "and the answer came back from the fake: {said}"
+    );
+    window.close();
+}
+
+/// Poll `ask` until it answers true, or fail with `what` after ~5 s. The unload runs on its own thread
+/// by design (§S4 "off-thread"), so a check for its effect must wait for a thread rather than assume
+/// one has finished; the ceiling is well under §1's 20 s so a hung leg still fails the test loudly.
+fn wait_until(ask: impl Fn() -> bool, what: &str) -> bool {
+    for _ in 0..100 {
+        if ask() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    eprintln!("timed out waiting for {what}");
+    false
+}
+
+/// A loopback audio.cpp for this binary only: answers 200 to everything, counts requests, remembers the
+/// last request line's path. Lives here because only the test needs a stand-in server; the program dials
+/// whatever the settings file says and knows nothing about it.
+struct FakeAudioCpp {
+    address: std::net::SocketAddr,
+    hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    last_path: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+}
+
+impl FakeAudioCpp {
+    fn start() -> Self {
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port to fake audio.cpp");
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let last_path = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let counted = hits.clone();
+        let remembered = last_path.clone();
+        let address = listener
+            .local_addr()
+            .expect("the fake server knows its own address");
+        std::thread::spawn(move || {
+            for incoming in listener.incoming() {
+                let Ok(mut stream) = incoming else { continue };
+                // Read the request line and headers (one byte at a time: no buffering to deadlock on),
+                // note the path, then answer.
+                let mut request = Vec::new();
+                let mut byte = [0u8; 1];
+                let mut blanks = 0;
+                while stream.read(&mut byte).unwrap_or(0) == 1 {
+                    request.push(byte[0]);
+                    // End the header block at its blank line. The unload is a GET *with* a body, so
+                    // stopping here (rather than reading to EOF) is what lets the reply go out before the
+                    // client finishes writing — waiting for EOF on a keep-alive connection would hang.
+                    blanks = if byte[0] == b'\r' || byte[0] == b'\n' { blanks + 1 } else { 0 };
+                    if blanks >= 2 || request.len() > 64 * 1024 {
+                        break;
+                    }
+                }
+                let head = String::from_utf8_lossy(&request);
+                let path = head
+                    .split_whitespace()
+                    .nth(1)
+                    .map(|path| path.to_string())
+                    .unwrap_or_default();
+                // A GET sent with a body (`Kind::UnloadAll`'s method) arrives as one request; anything
+                // else that reaches this socket is counted too, but only a real route is remembered, so
+                // the assertion below can name the endpoint the program asked for.
+                if !path.is_empty() && path.starts_with('/') {
+                    *remembered.lock().unwrap() = Some(path);
+                }
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                // Answer EVERY request on this connection: the unload is a GET sent with a body, so one
+                // connection can carry the request line and then the body as a second "request" if the
+                // client's bytes are read in more than one piece. A 200 each time is what audio.cpp
+                // itself would do for a route it knows, and it keeps the reply from depending on how the
+                // bytes happened to be split.
+                let body = "{\"ok\":true}";
+                let _ = stream.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+                let _ = stream.flush();
+                drop(stream);
+            }
+        });
+        Self { address, hits, last_path }
+    }
+
+    /// The address to write into `AUDIOCPP_SERVER`.
+    fn url(&self) -> String {
+        format!("http://{}", self.address)
+    }
+
+    fn hits(&self) -> usize {
+        self.hits.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn last_path(&self) -> Option<String> {
+        self.last_path.lock().unwrap().clone()
+    }
+}
+
+/// Write the audio.cpp address the way the Settings dialog does — into the conf file the program re-reads
+/// per request. `XDG_CONFIG_HOME` and cwd are process-wide, so this runs in exactly one scenario here.
+fn point_settings_at(url: &str) {
+    let root = scratch("unload");
+    std::fs::create_dir_all(root.join("config")).expect("config home");
+    std::env::set_current_dir(&root).expect("cwd pinned to the scenario root");
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
+        std::env::set_var("XDG_DATA_HOME", root.join("data"));
+    }
+    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let mut conf = naivepost::settings::Conf::default();
+    conf.audio_server = url.to_string();
+    naivepost::settings::save(&paths, &conf).expect("audio address written");
 }
 
 /// One frame track, half done: enough for the queue to have a joined line of its own.

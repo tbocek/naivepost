@@ -97,12 +97,18 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
         run::step(handles.shell.borrow().page),
         run::snapshot_sources(&asked),
     );
+    // F0.5 S2 while the run works: this press's first step names its own job on the queue before the
+    // first paint, so §2's joined track line is already on the status row when the page switches rather
+    // than only when the stage's first task reports. Later steps are named at their hand-over below.
+    // The phase is left alone on purpose: naming a job is not claiming work, and a step that pushes
+    // nothing must leave the needle where it was (S4's end leaves an untouched bar at zero).
+    handles.queue.borrow_mut().job(crate::runqueue::TRACK_FRAMES, "prepare", 0, 1);
     window::paint_progress(
         &handles.progress,
         &handles.log,
         &handles.log_view,
         &handles.queue.borrow(),
-        crate::ui::shell_beats::StatusLine { status: &handles.status, owned: false },
+        crate::ui::shell_beats::StatusLine { status: &handles.status, owned: true },
         true,
     );
     // §2: with nothing countable yet the bar pulses until a track reports.
@@ -111,6 +117,10 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
     // S2: the gears turn for the length of the chain, and the button cannot be pressed again meanwhile.
     button.set_sensitive(false);
     button.add_css_class(RUNNING_CLASS);
+    // §S4's unload answers on its own thread, after the step that asked for it has been painted, so the
+    // chain lends its status row to that line for its length (§2 gives the row to the run, and the
+    // housekeeping line is the run's own news). Taken back before the end sentence is written.
+    crate::ui::run_close::mark_chain_row(Some(&handles.status));
 
     let mut advance = chain.next_first();
     // Whether a step has been handed over and not yet closed: the first one opens the press's run, and
@@ -127,6 +137,12 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
                 // step usually wants the same models back.
                 if started_step {
                     crate::ui::run_close::close_chain_step(handles, Some(page));
+                    // §2 at the hand-over: the queue was just reset for this step, so name its job before
+                    // its work starts -- the line on the row is this step's, not the last one's.
+                    handles
+                        .queue
+                        .borrow_mut()
+                        .job(crate::runqueue::TRACK_FRAMES, &name.to_lowercase(), 0, 1);
                 }
                 started_step = true;
                 // F0.1's synchronous move: the step's work belongs to the widgets of its own page.
@@ -175,6 +191,8 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
     }
     button.set_sensitive(true);
     button.remove_css_class(RUNNING_CLASS);
+    // The chain's own end sentence owns the row from here; the housekeeping line stays in the log only.
+    crate::ui::run_close::mark_chain_row(None);
 }
 
 /// Whether ⏹ has been pressed since the last checkpoint. Read fresh each time because the stop arrives
@@ -187,7 +205,6 @@ fn bar_wants_stop(handles: &Handles) -> bool {
 fn close_run(handles: &Handles) {
     crate::ui::run_close::close_chain_step(handles, None);
 }
-
 /// Is this session's `final.txt` newer than its marks? Same two files and same comparison §F1.12 uses;
 /// unreadable mtimes answer "no" because there is then no edit that could be lost.
 ///

@@ -222,8 +222,8 @@ pub fn fire_unload(kind: Kind) {
         .ok();
         // Best-effort: the result chooses a log line and nothing else. No `?`, no retry, no wait.
         match get(&tree, Server::Audio, &endpoint, Kind::UnloadAll, "unload", None) {
-            Ok(_) => crate::ui::window::note_unload("models unloaded"),
-            Err(why) => crate::ui::window::note_unload(&format!("unload skipped: {why}")),
+            Ok(_) => crate::ui::run_close::report_unload("models unloaded"),
+            Err(why) => crate::ui::run_close::report_unload(&format!("unload skipped: {why}")),
         };
         crate::cancel_leg::leg_finished();
     });

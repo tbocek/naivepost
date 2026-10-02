@@ -111,12 +111,18 @@ fn check_run_line(app: &adw::Application) {
     let line = queue.borrow().text();
     assert!(line.contains("describe 1/2: chunk 4/12"), "§2 joins the tracks' lines: {line:?}");
     let status = ui::find_status(window.upcast_ref()).expect("the log header carries the status line");
-    ui::shell_beats::status_from_queue(&status, &queue.borrow(), true);
+    assert!(
+        ui::shell_beats::status_from_queue(&status, &queue.borrow(), true),
+        "§2: the run's own line lands on the row"
+    );
     assert_eq!(ui::state(&window).status, line, "§2: the tracks' line lands on the status line");
     let bar = ui::progress_bar(&window).expect("the run bar has a progress widget");
     assert!(bar.text().is_none() || !bar.shows_text(), "§1 badge 13: the bar draws no text of its own");
     status.set_text(shell::CUT_LOCK); // an idle bar never takes a standing sentence over
-    ui::shell_beats::status_from_queue(&status, &queue.borrow(), false);
+    assert!(
+        !ui::shell_beats::status_from_queue(&status, &queue.borrow(), false),
+        "§2: an unowned row is left alone"
+    );
     assert_eq!(ui::state(&window).status, shell::CUT_LOCK, "an idle bar takes nothing over");
     open_run(&window, &queue, &project); // `start_run` resets the queue, so work is reported after it
     fill(&queue);

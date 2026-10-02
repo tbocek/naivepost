@@ -8741,14 +8741,26 @@ pub(crate) fn log_line(line: &str) {
     LOGS.with(|logs| logs.borrow_mut().push(line.to_string()));
 }
 
+/// Empty the log sinks. Only a test binary asks: nothing clears the shell's log while a session runs.
+pub fn clear_logs_for_test() {
+    LOGS.with(|logs| logs.borrow_mut().clear());
+}
+
 /// The one line a finished run leaves about its audio housekeeping. Called from the unload thread,
 /// so it goes through the same log sink as everything else; `log_line` itself stays `pub(crate)`
 /// because only this crate's own flows are allowed to write to the user's log.
 pub fn note_unload(said: &str) {
-    log_line(&format!(">>> audio housekeeping: {said}"));
+    // Written straight to the shared buffer: this runs on the unload's own thread, whose thread-local
+    // sink no reader ever sees.
+    crate::ui::run_close::log(&format!("{}{said}", crate::ui::run_close::UNLOAD_PREFIX));
 }
 
 /// Every line the window has logged this session, oldest first.
+///
+/// The thread-local is THE record: every reader counts lines in it (a migration note checked as
+/// `before + 1` counts exactly what it added). §S4's unload answers on its own thread and does NOT join
+/// this record -- its news lives in [`crate::ui::run_close::SHARED_LOG`] and on the status row, because a
+/// sentence written after the close returned would land after the run's last word (§2).
 pub fn window_logs() -> Vec<String> {
     LOGS.with(|logs| logs.borrow().clone())
 }
