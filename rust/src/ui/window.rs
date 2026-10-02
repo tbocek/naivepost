@@ -2603,7 +2603,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     new_.set_widget_name("new-button");
     new_.set_tooltip_text(Some(NEW_TIP));
     header.pack_start(&new_);
-    wire_new(&new_, &bar, &status);
+    wire_new(&new_, &bar, &status, &session);
 
     // **2** Open, between New and Save as §1 reads the bar.
     let open_ = gtk::Button::from_icon_name("document-open-symbolic");
@@ -3650,29 +3650,30 @@ pub fn new_project_confirm(
 }
 
 /// Where a press of ＋ New goes: ask [`new_project::press`], then draw what it says. Every string the
-/// user sees comes from that module, including the refusal's and the confirmation's.
-///
-/// The session is never reported empty here because the window has no source list to ask — its
-/// project is the one it was built with, and the pages that own sources arrive with their own rounds.
-/// A run under way is read from F0.2's [`run::RunBar`], which is the same state ▶ answers for.
-fn wire_new(new_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, status: &gtk::Label) {
+/// user sees comes from that module, including the refusal's and the confirmation's. Whether the
+/// session is empty comes from the live handle the pages mutate, so S2 asks only when there is
+/// something to lose; a run under way comes from F0.2's [`run::RunBar`], which ▶ answers for too.
+fn wire_new(new_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, status: &gtk::Label, session: &Rc<RefCell<Project>>) {
     let bar = bar.clone();
     let status = status.clone();
+    let session = session.clone();
     new_.connect_clicked(move |_| {
         let root = std::env::current_dir().unwrap_or_default();
         let open = startup::session_dir(&root);
-        match new_project::press(bar.borrow().running.is_some(), false, &open) {
+        let empty = session.borrow().sources.is_empty();
+        match new_project::press(bar.borrow().running.is_some(), empty, &open) {
             new_project::Gate::Refused { reason } => status.set_text(reason),
-            new_project::Gate::Name => ask_new_project(&status, &root, &open),
+            new_project::Gate::Name => ask_new_project(&status, &root, &open, &session),
             new_project::Gate::Confirm { detail } => {
                 let dialog = new_project_confirm(None, &detail);
                 let status = status.clone();
                 let root = root.clone();
                 let open = open.clone();
+                let session = session.clone();
                 dialog.connect_response(None, move |dialog: &adw::MessageDialog, response| {
                     // Cancel is not pressing on: S3's whole point is that nothing was changed.
                     if response == "start" {
-                        ask_new_project(&status, &root, &open);
+                        ask_new_project(&status, &root, &open, &session);
                     }
                     dialog.destroy();
                 });
@@ -3686,7 +3687,7 @@ fn wire_new(new_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, status: &gtk::La
 /// [`new_project`] is handed the day rather than reading a clock, which is what keeps its tests off
 /// today; the folder chooser is the desktop's own sheet, so the folder it hands back *is* the new
 /// project, and S5's refusal or S6's sentence goes on the status line.
-fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path) {
+fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path, session: &Rc<RefCell<Project>>) {
     // `%F` is the ISO date, which is what the spec's default name is.
     let day = glib::DateTime::now_local()
         .and_then(|today| today.format("%F").map(|day| day.to_string()))
@@ -3701,6 +3702,7 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path) {
 
     let status = status.clone();
     let root = root.to_path_buf();
+    let session = session.clone();
     dialog.select_folder(
         None::<&gtk::Window>,
         None::<&gio::Cancellable>,
@@ -3713,7 +3715,8 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path) {
             let path = file.path().unwrap_or_default();
             let named = path.file_name().unwrap_or_default().to_string_lossy().to_string();
             match new_project::create(&root, &path, &named) {
-                Ok(created) => status.set_text(&created.status),
+                // S6: apply it, not just announce it — log, session swap, remembered pair, status.
+                Ok(created) => crate::ui::new_apply::apply(&created, &session, &status),
                 Err(reason) => status.set_text(&reason),
             }
         },
@@ -4247,6 +4250,11 @@ fn ask_add_sources(
         filter.add_pattern(&format!("*{ext}"));
     }
     chooser.add_filter(&filter);
+    // F0.8 S6: a project created outside the root is where its footage almost certainly is, so the
+    // chooser opens there; with nothing remembered the chooser keeps its own default.
+    if let Some(dir) = crate::ui::new_apply::chooser_dir() {
+        let _ = chooser.set_current_folder(Some(&gio::File::for_path(&dir)));
+    }
 
     let status = status.clone();
     let session = session.clone();
@@ -8895,6 +8903,13 @@ pub fn open_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 /// rows mutate, not a snapshot of it.
 /// The live session — the last window's handle, which is the one this check just opened into. Each
 /// `build_window` publishes its own, so reading the newest avoids mixing in earlier windows' copies.
+/// The live session handle itself, newest-slot like [`session_sources`]. F0.8's apply needs the `Rc`,
+/// not a read of it: swapping this exact copy is what every page sees.
+pub fn session_handle(window: &adw::ApplicationWindow) -> Rc<RefCell<Project>> {
+    let _ = window;
+    SESSION.with(|slots| slots.borrow().last().cloned()).expect("the window has a session")
+}
+
 pub fn session_sources(window: &adw::ApplicationWindow) -> Vec<String> {
     let _ = window;
     SESSION.with(|slots| {

@@ -28,6 +28,7 @@ pub mod produce_text;
 pub mod produce_slots;
 /// F0.6 Open at start — the launch's door: which project a start opens, and what it leaves remembered.
 pub mod launch;
+pub mod new_apply;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are
@@ -137,6 +138,7 @@ pub use window::play_tooltip;
 pub use window::progress_bar;
 pub use window::progress_tooltip;
 pub use window::rescan_button;
+pub use window::session_handle;
 pub use window::session_sources;
 pub use window::set_marking_pass;
 pub use window::rescan_tooltip;
