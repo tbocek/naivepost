@@ -29,6 +29,8 @@ pub mod produce_slots;
 /// F0.6 Open at start — the launch's door: which project a start opens, and what it leaves remembered.
 pub mod launch;
 pub mod new_apply;
+/// F0.9 Open a project — the window's own half of S4: refresh every page, remember this root, say it.
+pub mod open_apply;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are

@@ -2207,6 +2207,35 @@ fn wire_remove(
 /// each button draws — the page word, which is unique to one tab. Reaching the button rather than
 /// the label matters: a tooltip on the label would vanish with the label when the bar narrows to
 /// icons, and greying only the text would leave the button looking live.
+/// Grey or brighten each tab for the project now open, on the newest window's own shell.
+pub(crate) fn paint_tabs_for(window: &adw::ApplicationWindow, project: &Project) {
+    let (Some(switcher), Some(shell)) = (
+        find_switcher(window.upcast_ref()),
+        WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()),
+    ) else {
+        return;
+    };
+    paint_tabs(&switcher, &shell.borrow(), project);
+}
+
+/// Redraw the visible tab's `Inputs:`/`Outputs:` row from the folder just switched TO, whose tree, cut
+/// and narration are read here — [`session_reads`] still points at the working copy beside the root.
+pub(crate) fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Project, dir: &Path) {
+    let (Some(shell), Some(inputs), Some(folder), Some(outputs)) = (
+        WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()),
+        inputs_readout(window),
+        outputs_folder_button(window),
+        outputs_readout(window),
+    ) else {
+        return;
+    };
+    // Same door a tab switch uses, so the opened project shows through `Shell::inputs`/`outputs`.
+    let tree = layout::Tree::new(dir).ok();
+    let cut = tree.as_ref().and_then(|tree| cut::load(tree).ok()).unwrap_or_default();
+    let narr = tree.as_ref().and_then(|tree| narration::load(tree).ok()).unwrap_or_default();
+    paint_readouts(&shell.borrow(), project, tree.as_ref(), &cut, &narr, inputs.upcast_ref(), &folder, outputs.upcast_ref());
+}
+
 fn paint_tabs(switcher: &adw::ViewSwitcher, shell: &Shell, project: &Project) {
     let buttons = tab_buttons(switcher.upcast_ref());
     for page in Page::all() {
@@ -8585,31 +8614,11 @@ pub fn open_folder(
             false
         }
         Ok(applied) => {
-            // S3: the paths were settled before the read, so the swap below happens against the
-            // folder just opened. Replacing the shared copy IS the page refresh: Prepare's rows read
-            // this same handle, so they show the opened project without being rebuilt here. The
-            // migration runs first, because it reads the applied value the swap consumes.
+            // S3: paths settled before the read; migration first, it reads what the swap consumes.
             let migration = open_project::finish(&applied);
-            let remembered = REMEMBERED.with(|list| {
-                // §7's state: the pair reaches `llm.conf` through one door, which also records it in
-                // this launch's map. A conf that cannot be read costs the memory, never the open.
-                match crate::settings::from_environment()
-                    .map(|paths| crate::machine_store::persist_project(&paths, &mut list.borrow_mut(), &applied.root, &open_project::project_file_in(&applied.out)))
-                {
-                    Some(Ok(_)) | None => {}
-                    Some(Err(why)) => log_line(&format!("!!! could not remember this project -- {why}")),
-                }
-                open_project::remember(&mut list.borrow_mut(), &applied.root, &open_project::project_file_in(&applied.out))
-            });
-            // The lines are taken out before the project is moved into the session, so `applied` is
-            // not read after that point.
             let lines = applied.lines.clone();
-            let opened = applied
-                .root
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "project opened".to_string());
-            *session.borrow_mut() = applied.project;
+            let opened_project = applied.project.clone();
+            *session.borrow_mut() = opened_project.clone();
             for line in &lines {
                 log_line(line);
             }
@@ -8620,18 +8629,11 @@ pub fn open_folder(
             for line in &migration.failures {
                 log_line(line);
             }
-            // S4: remember it for this root. Data-level — writing `llm.conf` is settings' job, and
-            // the pair is recorded on the window's own list rather than reaching for `$HOME`.
-            log_line(&format!(">>> opened {}", remembered.file));
+            // S4's last three steps live in `ui::open_apply`, which owns their order and wording.
+            crate::ui::open_apply::finish(&applied, &opened_project, status);
             // A run reading the old project would now be reading files that are not its own, so the
             // stop flag is raised rather than letting it carry on over swapped sources.
             let _ = bar.borrow();
-            let opened = applied
-                .root
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "project opened".to_string());
-            status.set_text(&opened);
             true
         }
     }
@@ -8645,6 +8647,15 @@ thread_local! {
         const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
+/// Put an opened project into the window's remembered list AND into `llm.conf`, the one conf door.
+pub(crate) fn remember_opened(root: &Path, file: &Path) -> Result<open_project::Remembered, String> {
+    let paths = crate::settings::from_environment().ok_or("no settings folder to write into")?;
+    REMEMBERED.with(|list| {
+        let mut projects = list.borrow_mut();
+        crate::machine_store::persist_project(&paths, &mut projects, root, file)
+            .map(|_| open_project::remember(&mut projects, root, file))
+    })
+}
 /// Where a press of Save goes: [`save_as::press`] decides whether it may happen at all, and the
 /// chooser only names the project. Every sentence the user reads comes from [`save_as`].
 ///

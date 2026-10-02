@@ -13,6 +13,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::open_project::{self, CANNOT_OPEN, NOT_A_PROJECT};
 use naivepost::project::PROJECT_FILE;
+use naivepost::shell::Page;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
@@ -32,6 +33,8 @@ fn window_round() {
             an_old_single_file_refuses_through_the_window(app);
             a_folder_that_will_not_open_refuses_through_the_window(app);
             a_valid_project_switches_the_session(app);
+            s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app);
+            s4_the_opened_project_lands_in_the_conf_on_disk(app);
             RAN.store(true, std::sync::atomic::Ordering::SeqCst);
             app.quit();
         });
@@ -42,11 +45,18 @@ fn window_round() {
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// A project folder holding `body` as its `naivepost.json`, with real files for `present`.
+/// A project folder written with `body` as its `naivepost.json`, plus real files for each of the
+/// `present` source names under `sources/`, and one frame file in each footage lane's counted folder
+/// (`prepare/inputs/frames/<lane>/`) so the `Inputs:` readout has a number to show.
 fn project_folder(dir: &Path, body: &str, present: &[&str]) -> PathBuf {
     fs::create_dir_all(dir.join("sources")).unwrap();
     fs::write(dir.join(PROJECT_FILE), body).unwrap();
     for name in present {
         fs::write(dir.join("sources").join(name), "video bytes").unwrap();
+        let lane = name.trim_end_matches(".mkv");
+        let frames = dir.join("prepare").join("inputs").join("frames").join(lane);
+        fs::create_dir_all(&frames).unwrap();
+        fs::write(frames.join("000001.jpg"), "frame").unwrap();
     }
     dir.to_path_buf()
 }
@@ -245,11 +255,11 @@ fn a_valid_project_switches_the_session(app: &adw::Application) {
         "and the open itself is logged: {:?}",
         ui::window_logs()
     );
-    // The status line now names the folder that was opened, not the previous one.
+    // The status line now says what happened, in the same shape as "new project — <base>".
     assert_eq!(
         ui::state(&window).status,
-        "eth.naivepost",
-        "the status line shows what is open now"
+        "opened \u{2014} eth.naivepost",
+        "the status line reports the open, not just the folder name"
     );
     // The log expander is where those lines are drawn; opening a project keeps it open.
     assert!(
@@ -263,10 +273,92 @@ fn a_valid_project_switches_the_session(app: &adw::Application) {
 }
 
 #[test]
-fn f0_9_opening_a_project_goes_through_the_button() {
+fn f0_9_s1_to_s4_through_the_real_open_button() {
     window_round();
     assert!(
         RAN.load(std::sync::atomic::Ordering::SeqCst),
         "the F0.9 widget checks never ran"
+    );
+}
+
+/// S4's first two steps, on the same state the pages read: the tabs are re-greyed from the OPENED
+/// project, and the visible tab's `Inputs:` row counts the opened folder rather than the old session.
+fn s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app: &adw::Application) {
+    let root = temp_dir("s4-refresh");
+    // A project with footage, opened over a session that has none: Cut goes from greyed to live, which
+    // is something only a repaint can do, and the Inputs row changes wording entirely.
+    let folder = project_folder(&root.join("fresh.naivepost"), TWO_SOURCES_ONE_GONE, &["keep.mkv"]);
+
+    let empty = naivepost::project::Project::default();
+    let window = ui::build_window(app, &empty, "Prepare");
+    window.present();
+    assert!(
+        ui::tab_dimmed(&window, Page::Cut),
+        "a session with no footage opens with Cut greyed"
+    );
+    let before = ui::inputs_readout(&window).map(|l| l.text().to_string()).unwrap_or_default();
+
+    assert!(ui::open_from(&window, &folder), "the project opened");
+
+    assert!(
+        !ui::tab_dimmed(&window, Page::Cut),
+        "S4: the tabs were repainted from the opened project — Cut is live now"
+    );
+    let after = ui::inputs_readout(&window).map(|l| l.text().to_string()).unwrap_or_default();
+    assert_ne!(after, before, "S4: the Inputs row was redrawn ({before:?} -> {after:?})");
+    assert!(after.starts_with("Inputs: "), "{after:?}");
+    assert_eq!(
+        ui::state(&window).status,
+        "opened \u{2014} fresh.naivepost",
+        "and the status says which project it switched to"
+    );
+    window.close();
+}
+
+/// S4's third step, in its own `Once` round because `XDG_CONFIG_HOME` is process-wide and this check
+/// owns it. The pair has to be in the FILE: `open_project::remember` only fills a map, so a test that
+/// read the map would pass even with no conf write at all — which is the gap this round closed.
+fn s4_the_opened_project_lands_in_the_conf_on_disk(app: &adw::Application) {
+    let root = temp_dir("s4-conf");
+    let config = root.join("config");
+    fs::create_dir_all(&config).unwrap();
+    let folder = project_folder(
+        &root.join("conf-eth.naivepost"),
+        TWO_SOURCES_ONE_GONE,
+        &["keep.mkv"],
+    );
+    std::env::set_var("XDG_CONFIG_HOME", &config);
+
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    // The conf already holds the project an earlier check in this round opened, because `XDG_CONFIG_HOME`
+    // is process-wide and every open writes through the same file. That is the point: a second open ADDS
+    // its own pair rather than replacing the first, so the numbering here is not PROJECT_1.
+    let opened = ui::open_from(&window, &folder);
+    let status = ui::state(&window).status;
+    let inputs = ui::inputs_readout(&window).map(|l| l.text().to_string()).unwrap_or_default();
+    window.close();
+
+    assert!(opened, "F0.9 S4: the project opened");
+    assert_eq!(status, "opened \u{2014} conf-eth.naivepost", "S4's status sentence");
+    assert!(
+        inputs.starts_with("Inputs: "),
+        "the readout row was repainted, not left blank: {inputs:?}"
+    );
+
+    let conf = config.join("naivepost").join("llm.conf");
+    let body = fs::read_to_string(&conf).expect("the open wrote llm.conf");
+    // The writer quotes every value (`settings::quote`), so the file holds `"‹path›"`, not a bare path.
+    assert!(
+        body.contains(&format!("ROOT=\"{}\"", folder.display())),
+        "the ROOT half is in the file: {body}"
+    );
+    assert!(
+        body.contains(&format!(
+            "FILE=\"{}\"",
+            folder.join(PROJECT_FILE).display()
+        )),
+        "and the FILE half: {body}"
     );
 }
