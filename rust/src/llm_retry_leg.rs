@@ -35,6 +35,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::cancel_leg;
+use crate::exchange_leg;
 use crate::layout::Tree;
 use crate::llm_retry::{self};
 use crate::requests::Request;
@@ -174,6 +175,10 @@ pub fn chat(
 /// [`chat`] with the wait supplied — the seam that lets a test watch the patience without living through eight
 /// minutes of it. The program calls [`chat`], which passes §3's own ladder and [`nap`]; the argument exists so
 /// the waits are observable, not so a caller can pick its own patience.
+///
+/// Every request this door sends is filed in the run's exchange page on its way past [`dial`], which is why no
+/// chat ask has to record anything itself (§7: "recording never fails the call" — the page is written before
+/// the answer is even looked at, and a failed page only ever costs a log line).
 #[allow(clippy::too_many_arguments)]
 pub fn chat_on(
     step: &str,
@@ -187,6 +192,58 @@ pub fn chat_on(
 ) -> Result<Sent, String> {
     // A plain ask treats every failure as retryable: §3's patience is exactly about these.
     dial(step, tree, base, endpoint, body, cancelled, log, sleep).answer
+}
+
+/// File one dialled chat call in the run's exchange page (§7), and hand its log lines to the sink the
+/// caller already writes its §3 patience lines to, so the record of the call sits beside the record of
+/// the waiting.
+///
+/// Called from all three endings of a dial: answered, refused, and never answered. The last of these
+/// still belongs on the page — an exchange where the server said nothing is the one a user opens the
+/// page to find — so the call carries the failure's wording as its error and no reply at all.
+///
+/// Only a `text/event-stream` reply arrives in chunks, and every chat ask has already read them by the
+/// time this runs, so the section is filed whole rather than left open to grow.
+///
+/// `streamed` is decided by the response's own `content-type` (§9 §1: only `text/event-stream` is a
+/// stream). A stream read here has still been read to its end by this function's caller before anyone
+/// looks at the reply, so the section is closed straight away — the open-`<pre>` form §8 describes is
+/// for a caller that appends as chunks land, and none of the chat asks do that; they wait for the body.
+fn record_dial(
+    step: &str,
+    tree: &Tree,
+    model: &str,
+    body: &str,
+    reply: Result<&Sent, &str>,
+    started: Instant,
+    log: &dyn Fn(&str),
+) {
+    let took = started.elapsed().as_secs();
+    let (reply_body, content_type, failure) = match reply {
+        // A refused status is the failure this dial ended with, in the same words `Failure::Status`
+        // prints so the page and the §3 patience lines agree about what went wrong. A 2xx has none.
+        Ok(sent) => (
+            sent.body.as_str(),
+            sent.content_type.as_str(),
+            sent.ok()
+                .then(String::new)
+                .unwrap_or_else(|| format!("answered {}: {}", sent.status, sent.body.trim())),
+        ),
+        // A call that got no reply at all still belongs on the page — it is the one a user opens the page
+        // to find — so it goes with the failure's wording and no reply.
+        Err(why) => ("", "", why.to_string()),
+    };
+    let call = exchange_leg::call_of(
+        step,
+        model,
+        body,
+        reply_body,
+        content_type,
+        took,
+        (!failure.is_empty()).then_some(failure),
+    );
+    // The reply is complete here either way (§9 §1 decides only how it was read), so one call files it.
+    exchange_leg::record(tree, step, &call, log);
 }
 
 /// What one dialled chat call came to: the answer, or the reason there is none, plus how many times the wire was
@@ -221,6 +278,7 @@ pub fn dial(
     // next move for an answered-but-refused response (F6.1's resend-without-tools) can see it untouched.
     let mut one = || -> Result<Sent, Failure> {
         attempts += 1;
+        let started = Instant::now();
         // ⏹ between rungs: the dial never goes out, and the loop must not spend another wait on a run already over.
         // This is the same check `server_leg` applies before sending; the ladder would otherwise keep walking after
         // the stop with nothing left to cancel.
@@ -252,10 +310,17 @@ pub fn dial(
         match reply {
             Ok(sent) if sent.ok() => {
                 note_answer(&endpoint.url);
+                record_dial(step, tree, &base.model, body, Ok(&sent), started, log);
                 Ok(sent)
             }
-            Ok(sent) => Err(Failure::Status { status: sent.status, body: sent.body }),
-            Err(why) => Err(Failure::Gone(why)),
+            Ok(sent) => {
+                record_dial(step, tree, &base.model, body, Ok(&sent), started, log);
+                Err(Failure::Status { status: sent.status, body: sent.body })
+            }
+            Err(why) => {
+                record_dial(step, tree, &base.model, body, Err(why.as_str()), started, log);
+                Err(Failure::Gone(why))
+            }
         }
     };
     let first = one();

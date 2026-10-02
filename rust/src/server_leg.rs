@@ -84,18 +84,19 @@ fn service_of(server: Server) -> Service {
 }
 
 /// Milliseconds since the epoch, for the row's `started` column.
-fn epoch_ms() -> i64 {
+pub fn epoch_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|since| since.as_millis() as i64)
         .unwrap_or_default()
 }
 
-/// Local UTC offset in seconds, read once per call from the system.
+/// The machine's offset from UTC in seconds, shared with the exchange page's stamp so a page and a
+/// `requests.tsv` row cannot disagree about what time it was.
 ///
 /// Kept here rather than in `requests.rs` because that module stays pure data and takes the
 /// offset as an argument; this module is the one allowed to ask the machine.
-fn local_offset_secs() -> i32 {
+pub fn local_offset_secs() -> i32 {
     // `libc`-free: the timezone is what the process started with, and a whole-of-system read
     // would need a dependency this crate does not carry. Zero keeps the file on UTC, which is
     // unambiguous and sortable; a wrong local time is worse than an honest UTC stamp.

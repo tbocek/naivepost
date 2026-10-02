@@ -307,7 +307,10 @@ pub fn start_run(bar: &mut RunBar, queue: &mut Queue, log: &mut RunLog, step: St
     });
     queue.reset();
     // Closing the old exchange page happens here because this is the one call every run makes at its
-    // start: the next LLM call then opens a new one, named for whichever step makes it.
+    // start: the next LLM call then opens a new one, named for whichever step makes it. The recorder's
+    // own copy of the boundary is raised and closes the live page in the same breath — §7's page is a
+    // run's, and `exchange_leg` is what every chat call files itself with, so the pair cannot drift.
+    crate::exchange_leg::note_run_started();
     let closed_log_page = log.reset().is_some();
     Started {
         epoch,
@@ -375,6 +378,9 @@ pub fn end_run(bar: &mut RunBar, next: Option<Page>) -> EndRun {
     // F0.3 S4: the run has unwound, so its stop is spent — clearing the shared switch here is what
     // keeps a ⏹ aimed at the previous run from cancelling the next one's legs.
     crate::cancel_leg::clear();
+    // §7's page boundary: with the run gone, the next chat call opens a fresh page rather than adding a
+    // section to a finished run's. Kept in step with `bar.running`, which is what "a run is open" means.
+    crate::exchange_leg::note_run_ended();
     EndRun {
         audio_unload: Kind::UnloadAll,
         chain_moves_on: next.is_some(),

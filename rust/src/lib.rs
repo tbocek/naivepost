@@ -68,6 +68,7 @@ pub mod timeline;
 pub mod diar_scan;
 pub mod diarize;
 pub mod edges;
+pub mod exchange_leg;
 pub mod exchanges;
 pub mod fix_transcripts;
 pub mod hand_edit;
