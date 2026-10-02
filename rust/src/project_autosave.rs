@@ -90,6 +90,29 @@ pub fn session_dir() -> PathBuf {
     crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
 }
 
+/// A flow that just changed the session and wants it on disk NOW (F0.11's pruned list), written
+/// through the newest slot's [`project::Autosave`] marker rather than beside it. The marker is what
+/// knows the bytes on disk; writing with a fresh one every time left the timer's copy stale, so the
+/// next tick (or the close flush) wrote the project file a second time after the flow had already
+/// said it was done -- and a second flow sharing that folder then read a file someone else had
+/// rewritten. Returns whether the file was written.
+pub fn write_session_now(project: &Project, dir: &Path) -> bool {
+    let slot = newest_slot();
+    let mut slot = slot.borrow_mut();
+    if slot.dir.as_os_str().is_empty() {
+        slot.dir = dir.to_path_buf();
+    }
+    match slot.autosave.save_if_changed(project, dir) {
+        Ok(wrote) => wrote,
+        Err(err) => {
+            crate::ui::window::log_line(&format!(
+                "!!! could not write the pruned source list -- {err}"
+            ));
+            false
+        }
+    }
+}
+
 /// §2 S6 as the close hook wants it: flush the session that is live RIGHT NOW (so an Open that
 /// replaced it flushes what was opened, not what the launch started with) into [`session_dir`].
 pub fn flush_session() {
@@ -167,6 +190,12 @@ pub fn flush_on_close(project: &Project, dir: &Path) -> bool {
             false
         }
     }
+}
+
+/// The newest slot, the one `install` and every flow write go through — named `_for_test` because only
+/// a test reads it back; the program reaches it through `tick`'s own timeout.
+pub fn newest_slot_for_test() -> Rc<RefCell<Ticker>> {
+    newest_slot()
 }
 
 /// Point the newest slot at a session and the folder it belongs to, and forget the last write: a

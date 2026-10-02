@@ -34,6 +34,7 @@ use crate::ui::cut_folds::{
 };
 use crate::ui::cut_cameras::refresh_camera_rows;
 use crate::ui::save_apply;
+use crate::ui::rescan_apply;
 use crate::ui::cut_cameras::hand_preview_back;
 // F3.5 ▨ SVG: the page half of the drawing flow lives in `cut_svg`; these are the doors this shell calls.
 use crate::ui::cut_svg::{
@@ -2658,16 +2659,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     rescan_.set_widget_name("rescan-button");
     rescan_.set_tooltip_text(Some(RESCAN_TIP));
     header.pack_end(&rescan_);
-    wire_rescan(
-        &rescan_,
-        &status,
-        &session,
-        &shell,
-        &switcher,
-        &inputs_readout,
-        &outputs_folder,
-        &outputs_readout,
-    );
+    wire_rescan(&rescan_, &status, &session, &shell);
 
     // F0.13's Settings button, packed after Rescan so Rescan stays rightmost as §1 reads the bar.
     // The dialog itself is built on the press, in `settings.rs`; nothing here decides anything.
@@ -3094,7 +3086,7 @@ fn wire_switching(
 /// project" means. A folder that is not a project leaves `tree` None — §1 wants the page to show
 /// what it has rather than fail to open, so nothing here errors out. Both the tab switch (S3-S5) and
 /// the first paint call this, so the row cannot disagree with itself between them.
-fn session_reads() -> (Option<layout::Tree>, Cut, Narration) {
+pub(crate) fn session_reads() -> (Option<layout::Tree>, Cut, Narration) {
     let root = std::env::current_dir().unwrap_or_default();
     let dir = startup::session_dir(&root);
     let tree = if dir.join(crate::project::PROJECT_FILE).is_file() {
@@ -4158,64 +4150,30 @@ fn wire_rescan(
     status: &gtk::Label,
     session: &Rc<RefCell<Project>>,
     shell: &Rc<RefCell<Shell>>,
-    switcher: &adw::ViewSwitcher,
-    inputs_readout: &gtk::Label,
-    outputs_folder: &gtk::Button,
-    outputs_readout: &gtk::Label,
 ) {
     let status = status.clone();
-    // The window is handed an immutable `&Project` and holds no live project yet, so the scan works
-    // on the private copy shared with Add sources. F0.9's live project state replaces this; until
-    // then it is what keeps the pruned list for whatever flow reads the session next. Which folder is
-    // open is the same stand-in New and Save use, so all three flows agree.
+    // The window is handed an immutable `&Project` and holds no live project yet, so the scan works on
+    // the private copy shared with Add sources, and [`rescan_apply`] writes the pruned list back to the
+    // session file. Which folder is open is the same stand-in New and Save use, so all three agree.
     let root = std::env::current_dir().unwrap_or_default();
     let project = session.clone();
     let shell = shell.clone();
-    let switcher = switcher.clone();
-    let inputs_readout = inputs_readout.clone();
-    let outputs_folder = outputs_folder.clone();
-    let outputs_readout = outputs_readout.clone();
     button.connect_clicked(move |_| {
         let dir = startup::session_dir(&root);
         let tree = layout::Tree::new(&dir).ok();
         let found = rescan::rescan(&mut project.borrow_mut(), &root, &dir, tree.as_ref());
-        for line in &found.logs {
-            log_line(line);
-        }
-        // §1's third case: a page whose prerequisites vanished while it was open goes back to Prepare
-        // in silence. The scan just rewrote `project`, so the lock is asked of THAT list — asking the
-        // immutable copy `build_window` was handed would answer about sources that are already gone.
+        // Every step the window takes with that answer -- the drop lines, the write-back, the vanished
+        // page, all three refreshes and the status -- is `rescan_apply`'s, in the spec's order.
         let scanned = project.borrow().clone();
-        if shell::lock(shell.borrow().page, &scanned).is_some() {
-            let (tree, cut, mut narration) = session_reads();
-            // The scan rewrote the folder, so the window's held lines are re-seeded from it here:
-            // a refit over narration that no longer belongs to this project would write someone
-            // else's words back over the ones just scanned.
-            if let Some(held) = HELD_NARRATION.with(|held| held.borrow().last().cloned()) {
-                *held.borrow_mut() = narration.clone();
-            }
-            let page = shell.borrow().page;
-            shell.borrow_mut().switch(
-                page,
-                Move::Vanished,
-                &scanned,
-                tree.as_ref(),
-                &cut.segs,
-                &mut narration.entries,
-            );
-            paint_tabs(&switcher, &shell.borrow(), &scanned);
-            paint_readouts(
-                &shell.borrow(),
-                &scanned,
-                tree.as_ref(),
-                &cut,
-                &narration,
-                &inputs_readout,
-                &outputs_folder,
-                &outputs_readout,
-            );
-        }
-        status.set_text(found.status);
+        rescan_apply::apply(
+            &found,
+            &scanned,
+            &project,
+            &dir,
+            tree.as_ref(),
+            &status,
+            &shell,
+        );
     });
 }
 
@@ -4517,6 +4475,12 @@ thread_local! {
     /// actually showing, instead of a copy the caller happens to have.
     pub(crate) static WINDOW_SHELLS: std::cell::RefCell<Vec<Rc<RefCell<Shell>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The narration this window holds, newest slot -- the handle a flow re-seeds after it re-read the
+/// folder. Crate-visible because only the flows that own a re-read may replace the lines.
+pub(crate) fn held_narration() -> Option<Rc<std::cell::RefCell<Narration>>> {
+    HELD_NARRATION.with(|held| held.borrow().last().cloned())
 }
 
 thread_local! {

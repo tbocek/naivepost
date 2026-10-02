@@ -110,6 +110,14 @@ pub(crate) fn mutate<T>(f: impl FnOnce(&mut NarrateState) -> T) -> T {
     NARRATE_STATE.with(|held| f(&mut held.borrow_mut()))
 }
 
+/// Re-publish the line rows from a narration that was just re-read, keeping every other field of the
+/// page's state. The flows call this after they re-read `narrate/narration.json` (F0.11 S2): the page
+/// draws its rows from THIS state, so replacing the window's held narration alone would leave lines
+/// whose recording is gone sitting on screen.
+pub fn publish_lines(entries: Vec<Entry>) {
+    mutate(|s| s.entries = entries);
+}
+
 // --- the surface -------------------------------------------------------------------------------------
 
 thread_local! {

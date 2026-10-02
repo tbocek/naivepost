@@ -50,8 +50,10 @@ fn json_of(dir: &Path) -> Option<String> {
 fn sec_01_project_and_files_2_naivepostjson_s5_a_tick_writes_then_writes_only_when_bytes_differ() {
     let root = pin_root("differ");
     let dir = session_dir(&root);
-    let mut model = Project::default();
-    model.language = "en".to_string();
+    let model = Project {
+        language: "en".to_string(),
+        ..Default::default()
+    };
     let session: Rc<RefCell<Project>> = Rc::new(RefCell::new(model.clone()));
     let slot = autosave::slot_for_test(&session, &dir);
 
@@ -89,6 +91,51 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_tick_writes_then_writes_only_wh
         "the second write carries the edit"
     );
     assert_eq!(autosave::tick(&slot), Tick::Unchanged, "and then settles again");
+}
+
+/// S5 + F0.11 S1: a flow that wrote the session itself costs the next tick nothing.
+///
+/// `write_session_now` is the door a flow uses when it changed the session and wants it on disk now
+/// (the rescan's pruned list). It writes through the newest slot's marker, so the timer finds the
+/// bytes unchanged afterwards -- which is what keeps a second write from landing in the folder after
+/// the flow already said it was done. With no window installed yet, the same door still writes: a
+/// flow that has a folder has somewhere to put it.
+#[test]
+fn sec_01_project_and_files_2_naivepostjson_s5_a_flow_write_leaves_the_timer_nothing_to_do() {
+    let root = pin_root("flow-write");
+    let dir = session_dir(&root);
+    let model = Project {
+        language: "en".to_string(),
+        ..Default::default()
+    };
+    let session: Rc<RefCell<Project>> = Rc::new(RefCell::new(model.clone()));
+    // Installed, as a window installs it: the flow's door writes through the NEWEST slot, so a test of
+    // that door has to put its session in one. `install` forgets the last write, which is what makes
+    // the flow's own write the first thing that lands.
+    autosave::install(Rc::clone(&session), dir.clone());
+    let slot = autosave::newest_slot_for_test();
+
+    assert!(
+        autosave::write_session_now(&session.borrow(), &dir),
+        "the flow's write lands"
+    );
+    let written = json_of(&dir).expect("naivepost.json written by the flow");
+    assert!(
+        written.contains("\"language\": \"en\""),
+        "the flow wrote the session it was handed: {written}"
+    );
+
+    // The marker moved with the write, so the tick that follows owes nothing -- this is the whole point
+    // of writing through the slot instead of beside it.
+    assert_eq!(
+        autosave::tick(&slot),
+        Tick::Unchanged,
+        "the timer does not repeat a write a flow already made"
+    );
+
+    // And the rule still works after a flow write: change the session, the next tick owes it again.
+    session.borrow_mut().language = "nl".to_string();
+    assert_eq!(autosave::tick(&slot), Tick::Wrote, "a later edit is still written");
 }
 
 /// S5: a tick with nothing installed writes nothing — a window that has not taken on a project has
@@ -176,8 +223,10 @@ fn sec_01_project_and_files_2_naivepostjson_s6_the_close_flush_is_not_skippable(
     let root = pin_root("flush");
     let dir = session_dir(&root);
     std::fs::create_dir_all(&dir).expect("session folder");
-    let mut model = Project::default();
-    model.language = "pt".to_string();
+    let model = Project {
+        language: "pt".to_string(),
+        ..Default::default()
+    };
     project::save(&model, &dir).expect("a file that already matches the session");
 
     // A `Ticker` whose `last_written` IS the file's bytes would answer `Unchanged` and write nothing;
