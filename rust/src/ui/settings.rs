@@ -897,6 +897,26 @@ pub fn open_with(parent: &adw::ApplicationWindow, provider: Provider) -> adw::Wi
 pub fn dialog_open(_window: &adw::ApplicationWindow) -> bool {
     OPEN.with(|open| !open.borrow().is_empty())
 }
+
+/// Land every open dialog's owed write, from wherever the app is being brought down. Returns how many
+/// dialogs had a store to land.
+///
+/// The dialog is its OWN top level, so closing the main window never runs the hook `open_with` puts on
+/// it — without this door the last ≤600 ms of typing would be dropped when the process exits (§5 "on
+/// close", §6 precedence "dialog box → this file"). [`Dialog::close_store`] takes the store out, so a
+/// dialog closed later (or by its own hook first) lands nothing twice.
+pub fn flush_owed() -> usize {
+    let dialogs: Vec<Rc<Dialog>> = OPEN.with(|open| open.borrow().clone());
+    let mut landed = 0usize;
+    for dialog in dialogs {
+        if dialog.store.borrow().is_some() {
+            landed += 1;
+        }
+        dialog.close_store();
+    }
+    landed
+}
+
 /// The header bar's Settings button.
 pub fn settings_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_in(window.upcast_ref(), "settings-button")?

@@ -2717,6 +2717,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
             crate::ui::narrate_text::flush_owed(&closing);
             // §2 S6: and the project itself, which is what an interrupted session would lose.
             crate::project_autosave::flush_session();
+            // §6/§5: and any settings dialog still open — it is a separate top level, so its own close
+            // hook never runs when the app comes down through this window.
+            crate::ui::settings::flush_owed();
             glib::Propagation::Proceed
         });
     }
