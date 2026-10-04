@@ -129,6 +129,16 @@ fn check_readouts_and_reset(app: &adw::Application) {
         find(&window, "bench-mark").expect("mark").is_visible(),
         "and the ✎ was drawn with it"
     );
+    // §1's mark is the sentence, not the glyph: ✎ alone does not say where the text went.
+    assert_eq!(
+        find(&window, "bench-mark")
+            .expect("mark")
+            .tooltip_text()
+            .as_deref(),
+        Some(naivepost::bench::EDITED_TIP),
+        "the mark's tooltip is \"{}\"",
+        naivepost::bench::EDITED_TIP
+    );
 
     find(&window, "bench-reset")
         .expect("Reset is drawn")
@@ -256,6 +266,25 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
     // The User Context hides mark and Reset: there is no built-in wording for it to differ from.
     assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "no mark on row 0");
     assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "no Reset on row 0");
+
+    // **1** §4's row controls, on the Prepare page: the 🗣 split toggle is there and a press lands on
+    // the same field the logic test checks (`sources::set_sepvoice` writes `Source::sepvoice`).
+    let separate = find(&window, "separate-0")
+        .expect("the row carries its \u{1f5e3} split control")
+        .downcast::<gtk::ToggleButton>()
+        .expect("the split control is a toggle");
+    assert!(
+        naivepost::sources::separable(&model.sources[0]),
+        "lecture.mkv is not a split product, so the toggle answers"
+    );
+    assert!(separate.is_sensitive(), "and it is live on this row");
+    assert!(!session_of(&window).borrow().sources[0].sepvoice, "it starts off");
+    separate.emit_clicked();
+    settle();
+    assert!(
+        session_of(&window).borrow().sources[0].sepvoice,
+        "pressing it wrote Source::sepvoice on the session the window holds"
+    );
 
     // **8** Freq's stops and Language's warning, both under the sources list.
     let freq = find(&window, "freq-control")
@@ -409,6 +438,11 @@ fn sec_04_prepare_1_screen_s_the_box_holds_the_shipped_wording_and_reset_returns
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s_the_page_shows_the_bench_and_frame_controls() {
     window_round();
+}
+
+/// The window's own session — the state every row press writes through.
+fn session_of(window: &adw::ApplicationWindow) -> std::rc::Rc<std::cell::RefCell<naivepost::project::Project>> {
+    ui::session_handle(window)
 }
 
 /// The window's own settings folder, the one its bench writes into.

@@ -16,16 +16,21 @@ use joined_answer::{chat, raw};
 
 #[test]
 fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
+    // The listener is dropped BEFORE the pass runs, so every dial meets a clean connection REFUSED: with it
+    // held open, the first dial would CONNECT into its full accept queue and fail on the read instead, and
+    // which of the two shapes wins depends on how fast that read times out against §3's 2 s wait -- which
+    // patiences apply (§3's classification keys on transport death) should not be a race. A port released
+    // here could in principle be taken by another process between the drop and the asks; if that happened
+    // the failure is still a transport error at the same address, so the count below stays bounded either way.
     let dead = harness::FakeLlm::dead_listener();
     let dead_port = dead.local_addr().expect("the dead port has an address").port();
     point_at(&format!("http://127.0.0.1:{dead_port}"));
+    drop(dead);
     let fixture = fixture("down");
     let lines = press(&fixture.tree, &fixture.project);
-    // Held for exactly as long as the scenario needs it dead -- see `FakeLlm::dead_listener`. The count is
-    // ONE failed seam (2 rows) rather than one per seam because a transport death on a server that has never
-    // answered spends no ladder at all, and the pass stops asking once it has said the failure: §3's one
-    // retry, and `seam_retries` spends none of its retries on a wire that never answered.
-    drop(dead);
+    // The count is ONE failed seam (2 rows) rather than one per seam because a transport death on a server
+    // that has never answered spends no ladder at all, and the pass stops asking once it has said the
+    // failure: §3's one retry, and `seam_retries` spends none of its retries on a wire that never answered.
     assert!(
         lines.iter().any(|line| line.contains("llm") && line.contains("not answering")),
         "the failure names the server that is down: {lines:?}"
