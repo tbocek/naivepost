@@ -77,9 +77,25 @@ struct Scene {
     url: String,
     tools: PathBuf,
     seen: Arc<Mutex<Vec<Seen>>>,
-    /// Answer this scene's ASR requests with text and no word times. A scene carries its own arms because
-    /// `walk_scene_armed` clears the process-wide switches before the walk starts.
-    asr_without_times: std::cell::Cell<bool>,
+    /// What THIS scene's fake answers with, and how many pieces it has handed out. Per scene rather than
+    /// process-wide on purpose: the harness runs these tests as threads, so a switch any test could set was
+    /// a switch any other test's request could be answered with.
+    fakes: SceneFakes,
+}
+
+/// One scene's answer switches: what its fake does with an ASR or aligner request, armed through the
+/// scene's own `arm_*` methods and read off the port the request arrived on.
+#[derive(Default, Clone, Copy)]
+struct Arms {
+    /// Answer the first N ASR requests with the box having no room (`asr::retryable` accepts the words).
+    oom_first: usize,
+    /// Answer every ASR request with empty text -- silence on the tape, an answer and not a failure.
+    no_speech: bool,
+    /// Refuse every aligner window in the shape `align::parse_words` reports.
+    align_fails: bool,
+    /// Answer every ASR request with text and NO word times, which is what turns an aligner refusal into
+    /// §F1.3 S4's hard stop instead of a shrug (`transcribe::align_outcome` reads exactly this).
+    asr_without_times: bool,
 }
 
 impl Scene {
@@ -104,36 +120,44 @@ impl Scene {
             config_dir: root.join("cfg/naivepost"),
             data_dir: root.join("data/naivepost"),
         };
-        let (url, seen) = fake_audio();
+        let (url, port, seen) = fake_audio();
+        let fakes = SceneFakes::new();
+        // The fake's thread reads the SAME state this scene writes, through the port-keyed registry: that
+        // is what lets a test arm one scene without any other scene's request being answered with it.
+        register(port, fakes.clone());
         let tools = stubs(&format!("{}-{}-{}", std::process::id(), duration, silences.len()), duration, silences);
         let mut conf = Conf::default();
         conf.audio_server = url.clone();
         conf.ffmpeg = tools.join("ffmpeg").to_string_lossy().into_owned();
         conf.asr_model = asr_model.to_string();
         settings::save(&paths, &conf).expect("the conf is written");
-        Scene { root, url, tools, seen, asr_without_times: std::cell::Cell::new(false) }
+        Scene { root, url, tools, seen, fakes }
     }
 
-    /// Answer the first `count` ASR requests of the next walk with the box having no room. Arm it
-    /// through [`walk_scene_armed`], never from the test body: `reset_pieces` clears it.
+    /// Answer this scene's first `count` ASR requests with the box having no room.
     fn arm_oom(&self, count: usize) {
-        OOM_FIRST.store(count, Ordering::SeqCst);
+        self.fakes.arms.lock().expect("the arms lock").oom_first = count;
     }
 
-    /// Answer every ASR request with text and NO word times. Like [`Scene::arm_oom`] this is armed through
-    /// [`walk_scene_armed`], which reads it off the scene after `reset_pieces` has cleared the globals.
+    /// Answer this scene's ASR requests with text and NO word times.
     fn arm_asr_without_times(&self) {
-        self.asr_without_times.set(true);
+        self.fakes.arms.lock().expect("the arms lock").asr_without_times = true;
     }
 
-    /// Answer every ASR request with no text at all, which is what silence on the tape sounds like.
+    /// Answer this scene's ASR requests with no text at all, which is what silence on the tape sounds like.
     fn arm_no_speech(&self) {
-        NO_SPEECH.store(1, Ordering::SeqCst);
+        self.fakes.arms.lock().expect("the arms lock").no_speech = true;
     }
 
-    /// Make the aligner refuse the window it is sent, in the shape `align::parse_words` reports.
+    /// Make this scene's aligner refuse every window it is sent, in the shape `align::parse_words` reports.
     fn arm_align_fails(&self) {
-        ALIGN_FAILS.store(1, Ordering::SeqCst);
+        self.fakes.arms.lock().expect("the arms lock").align_fails = true;
+    }
+
+    /// Forget this scene's piece counts and diarizer script, so the Nth ask of the next walk is piece N-1
+    /// of THIS scene's recording rather than of whichever walk ran before it.
+    fn reset_pieces(&self) {
+        self.fakes.reset();
     }
 
     /// Decode the row the way §F1.3 S1 does, so the walk starts from a recording that already has its
@@ -292,16 +316,16 @@ fn walk_scene_failing_queued(scene: &Scene, answers: &[&'static str]) -> Vec<Str
     for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
         std::env::remove_var(name);
     }
-    reset_pieces();
-    VOICE_ON.store(1, Ordering::SeqCst);
+    scene.reset_pieces();
+    voice_on(true);
     for answer in answers {
-        queue_diar(answer);
+        scene.queue_diar(answer);
     }
     scene.enter();
     scene.project();
     let log = scene.walk_fail();
     leave();
-    VOICE_ON.store(0, Ordering::SeqCst);
+    voice_on(false);
     log
 }
 
@@ -318,16 +342,16 @@ fn walk_scene_queued(scene: &Scene, answers: &[&'static str]) -> Vec<String> {
     for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
         std::env::remove_var(name);
     }
-    reset_pieces();
-    VOICE_ON.store(1, Ordering::SeqCst);
+    scene.reset_pieces();
+    voice_on(true);
     for answer in answers {
-        queue_diar(answer);
+        scene.queue_diar(answer);
     }
     scene.enter();
     scene.project();
     let log = scene.walk();
     leave();
-    VOICE_ON.store(0, Ordering::SeqCst);
+    voice_on(false);
     log
 }
 
@@ -378,7 +402,7 @@ fn calls(tools: &Path) -> Vec<String> {
 /// `/v1/models` serves all three roles (an aligner the box does not declare is an aligner never
 /// asked), `/v1/ui/upload` names where it put the bytes, and `/v1/tasks/run` answers whichever
 /// model the envelope asked for. Anything else is a 404, which is how a wrong endpoint shows up.
-fn fake_audio() -> (String, Arc<Mutex<Vec<Seen>>>) {
+fn fake_audio() -> (String, u16, Arc<Mutex<Vec<Seen>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
     let port = listener.local_addr().expect("a local address").port();
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -388,7 +412,7 @@ fn fake_audio() -> (String, Arc<Mutex<Vec<Seen>>>) {
             let Ok(stream) = stream else { continue };
             let recorder = recorder.clone();
             std::thread::spawn(move || {
-                if let Some(row) = serve(stream) {
+                if let Some(row) = serve(stream, port) {
                     if let Ok(mut held) = recorder.lock() {
                         held.push(row);
                     }
@@ -396,7 +420,7 @@ fn fake_audio() -> (String, Arc<Mutex<Vec<Seen>>>) {
             });
         }
     });
-    (format!("http://127.0.0.1:{port}"), seen)
+    (format!("http://127.0.0.1:{port}"), port, seen)
 }
 
 /// Two voices, wide enough apart that §F1.3 S6 makes two segments, and long enough each to be an
@@ -441,7 +465,7 @@ fn words_aligned(chunk: usize) -> String {
     words_chunk(chunk)
 }
 
-fn serve(mut stream: TcpStream) -> Option<Seen> {
+fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
     let mut reader = std::io::BufReader::new(stream.try_clone().ok()?);
     let mut line = String::new();
     let _ = reader.read_line(&mut line);
@@ -467,7 +491,7 @@ fn serve(mut stream: TcpStream) -> Option<Seen> {
     }
     let text = String::from_utf8_lossy(&body).into_owned();
     let path = request_line.split_whitespace().nth(1).unwrap_or("/").to_string();
-    let (code, payload) = route(&path, &text);
+    let (code, payload) = route(port, &path, &text);
     let framed = format!(
         "HTTP/1.1 {code} Whatever\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
@@ -481,7 +505,7 @@ fn serve(mut stream: TcpStream) -> Option<Seen> {
 /// Which reply a request gets. The task kinds are told apart by the model id their envelope names —
 /// the envelope §5 fixes has no task field, so the id is the only thing on the wire that says which
 /// job was asked, and the fake serves exactly one id per job.
-fn route(path: &str, body: &str) -> (u16, String) {
+fn route(port: u16, path: &str, body: &str) -> (u16, String) {
     if path.contains("/v1/models") {
         return (
             200,
@@ -497,57 +521,49 @@ fn route(path: &str, body: &str) -> (u16, String) {
     if !path.contains("/v1/tasks/run") {
         return (404, "{\"error\":\"no such thing\"}".to_string());
     }
+    // Every answer below is chosen from THIS scene's arms and counted in THIS scene's pieces. The port a
+    // request arrived on is what identifies the scene -- each one runs its own listener -- so a test that
+    // armed a switch can only ever answer its own requests, which is what makes these tests order-free
+    // under the multi-threaded harness `just test` uses.
+    let fakes = scene_fakes(port).expect("every request arrives at a scene that registered itself");
+    let arms = *fakes.arms.lock().expect("the arms lock");
     if body.contains(services::DIAR_MODEL) {
-        // The diarizer's answers come from the queue a test fills, one per ask, in the order the ladder
-        // reaches its rungs (`diar_answer_for`).
-        let asks = DIAR_ASKS.fetch_add(1, Ordering::SeqCst);
-        return diar_answer_for(asks + 1);
+        // The diarizer's answers come from the queue this scene filled, one per ask, in the order the
+        // ladder reaches its rungs (`diar_answer_for`).
+        let asks = fakes.diar_asks.fetch_add(1, Ordering::SeqCst);
+        return diar_answer_for(&fakes, asks + 1);
     }
     if body.contains(SCENE_ALIGNER) {
-        // The aligner is asked about ONE window, in the same order as the ASR's pieces, and its
-        // reply places that piece's words at that piece's seconds.
-        let chunk = next_of(&WINDOWS);
-        if ALIGN_FAILS.load(Ordering::SeqCst) != 0 {
+        // The aligner is asked about ONE window, in the same order as the ASR's pieces, and its reply
+        // places that piece's words at that piece's seconds.
+        let chunk = fakes.windows.fetch_add(1, Ordering::SeqCst);
+        if arms.align_fails {
             // The server's own refusal, in the shape `parse_json`/`align::parse_words` report.
             return (500, "{\"error\":\"the aligner model is not loaded\"}".to_string());
         }
         return (200, words_aligned(chunk));
     }
-    if TEXT_ONLY.load(Ordering::SeqCst) != 0 {
-        // Text and no word times at all — S4's hard branch needs exactly this ASR answer.
-        return (200, "{\"text\":\"hello there\"}".to_string());
+    if arms.asr_without_times {
+        // Text and no word times at all -- S4's hard branch needs exactly this ASR answer, and nothing
+        // else's: an ASR that timed its own words turns the same aligner refusal into a warning.
+        return (200, text_only_chunk(fakes.chunks.fetch_add(1, Ordering::SeqCst)));
     }
-    if ASR_NO_TIMES.load(Ordering::SeqCst) != 0 {
-        // Every chunk answers with its text only, so an aligner refusal that follows is fatal rather than
-        // a shrug. Counted through `CHUNKS` like the ordinary answer below, so the piece numbering holds.
-        return (200, text_only_chunk(next_of(&CHUNKS)));
-    }
-    // The box saying it has no room, in a shape `asr::retryable` accepts, for the first N asks only: the
-    // retry at the halved ceiling must then succeed, or the halving is never seen working. The words are
-    // the server's own: `dial` keeps the body whole inside its own sentence and `retryable` looks for the
-    // phrase rather than a sentence this fake invented.
-    let ooms = OOM_FIRST.load(Ordering::SeqCst);
-    if ooms != 0 {
-        // Counted on the REQUESTS the fake answered, not on `CHUNKS`: a chunk that fails never reaches
-        // the piece counter, so counting asks is the only way the Nth failure and the retry land right.
-        let asked = ASR_ASKS.fetch_add(1, Ordering::SeqCst);
-        if asked < ooms {
+    // The box saying it has no room, in a shape `asr::retryable` accepts, for the first N asks of THIS
+    // scene only: the retry at the halved ceiling must then succeed, or the halving is never seen working.
+    // Counted on the REQUESTS answered, not on the pieces: a chunk that fails never reaches the piece
+    // counter, so counting asks is the only way the Nth failure and the retry land right.
+    if arms.oom_first != 0 {
+        let asked = fakes.asr_asks.fetch_add(1, Ordering::SeqCst);
+        if asked < arms.oom_first {
             return (500, "{\"error\":\"CUDA out of memory\"}".to_string());
         }
     }
-    if NO_SPEECH.load(Ordering::SeqCst) != 0 {
-        // No text and no word times: nothing was heard. `asr_answer` would refuse this shape, so the
-        // fake answers it the way a server really does — empty text, which is an answer, not a fault.
+    if arms.no_speech {
+        // No text and no word times: nothing was heard. `asr_answer` would refuse this shape, so the fake
+        // answers it the way a server really does -- empty text, which is an answer, not a fault.
         return (200, "{\"text\":\"\"}".to_string());
     }
-    (200, words_chunk(next_of(&CHUNKS)))
-}
-
-/// Which piece a request is about: the fake answers every upload with the same server path, so the
-/// piece is counted by arrival — the Nth ask is piece N-1, which is the order `asr::run` and
-/// `align::run` walk their pieces in.
-fn next_of(counter: &'static AtomicUsize) -> usize {
-    counter.fetch_add(1, Ordering::SeqCst)
+    (200, words_chunk(fakes.chunks.fetch_add(1, Ordering::SeqCst)))
 }
 
 /// Per-request answers to the diarizer, read one per ask in the order the ladder reaches its rungs.
@@ -555,10 +571,58 @@ fn next_of(counter: &'static AtomicUsize) -> usize {
 /// asked about, which the envelope does not name, so a test supplies the answers in rung order. Each
 /// entry carries the LABEL the test queued it under, so a test reads back its own words rather than
 /// having a payload compared — `DIAR_REPLIES` is those labels, in the order they were sent.
-static DIAR_QUEUE: Mutex<Vec<(&'static str, String)>> = Mutex::new(Vec::new());
-static DIAR_REPLIES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
-/// How many diarization requests the fake has answered, whatever rung each was on.
-static DIAR_ASKS: AtomicUsize = AtomicUsize::new(0);
+/// The diarizer's scripted answers and the labels they came back under, one pair of lists PER SCENE,
+/// keyed by the loopback port that scene's fake listens on -- which is how `route` finds the scene a
+/// request belongs to. A scene registers itself here in `Scene::new`.
+static SCENES: Mutex<Vec<(u16, SceneFakes)>> = Mutex::new(Vec::new());
+
+/// One scene's answer state: what its fake answers with, how many pieces it has handed out, and the
+/// diarizer's scripted answers. Shared `Arc` between the test and the fake's thread, registered under the
+/// scene's port so a request can be answered from the state of whoever sent it.
+#[derive(Clone)]
+struct SceneFakes {
+    arms: Arc<std::sync::Mutex<Arms>>,
+    chunks: Arc<AtomicUsize>,
+    windows: Arc<AtomicUsize>,
+    asr_asks: Arc<AtomicUsize>,
+    diar_asks: Arc<AtomicUsize>,
+    diar_queue: Arc<Mutex<Vec<(&'static str, String)>>>,
+    diar_replies: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl SceneFakes {
+    fn new() -> Self {
+        SceneFakes {
+            arms: Arc::new(std::sync::Mutex::new(Arms::default())),
+            chunks: Arc::new(AtomicUsize::new(0)),
+            windows: Arc::new(AtomicUsize::new(0)),
+            asr_asks: Arc::new(AtomicUsize::new(0)),
+            diar_asks: Arc::new(AtomicUsize::new(0)),
+            diar_queue: Arc::new(Mutex::new(Vec::new())),
+            diar_replies: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// The piece counters and the diarizer's script, back to empty for the next walk of this scene.
+    fn reset(&self) {
+        for counter in [&self.chunks, &self.windows, &self.asr_asks, &self.diar_asks] {
+            counter.store(0, Ordering::SeqCst);
+        }
+        self.diar_queue.lock().expect("the reply queue lock").clear();
+        self.diar_replies.lock().expect("the reply log lock").clear();
+    }
+}
+
+/// Publish a scene's fakes under its port for the duration of the process; scenes are few and short-lived,
+/// and a stale entry can only ever answer a request to a port nothing is listening on any more.
+fn register(port: u16, fakes: SceneFakes) {
+    SCENES.lock().expect("the scene lock").push((port, fakes));
+}
+
+fn scene_fakes(port: u16) -> Option<SceneFakes> {
+    SCENES.lock().expect("the scene lock").iter().find(|(each, _)| *each == port).map(|(_, fakes)| fakes.clone())
+}
+
 
 /// Script the diarizer's NEXT answer, labelled with the word the test used. Queue it through
 /// [`walk_scene_queued`] / [`walk_scene_failing_queued`], never before calling a walker: `reset_pieces`
@@ -570,28 +634,30 @@ static DIAR_ASKS: AtomicUsize = AtomicUsize::new(0);
 ///   first rung it asks about.
 /// * `"refusal"` — no `turns` key, which `audio_task::diar_answer` reports as the model's own failure
 ///   rather than an empty answer, and no rung survives that.
-fn queue_diar(answer: &'static str) {
-    let payload = match answer {
-        "many" => diar_voices(0.0, 25.0, 8),
-        // No turns key at all: `diar_answer` reports that as the diarizer's own refusal, which no
-        // rung survives, so the walk gives up and names the model.
-        "refusal" => "{\"detail\":\"no turns here\"}".to_string(),
-        // Two voices of 5.6 s each, which every rung plans (see the note above): the answer the walk
-        // is meant to accept and stop on.
-        _ => diar_two_voices(5.6),
-    };
-    DIAR_QUEUE.lock().expect("the reply queue lock").push((answer, payload));
-}
+impl Scene {
+    /// Script this scene's diarizer NEXT answer, labelled with the word the test used.
+    fn queue_diar(&self, answer: &'static str) {
+        self.fakes.diar_queue.lock().expect("the reply queue lock").push((answer, self.payload_for(answer)));
+    }
 
-/// How many diarization requests the fake has answered so far.
-#[allow(dead_code)] // the count is `diar_record().len()` today; kept as the request-side twin of it
-fn diar_asks() -> usize {
-    DIAR_ASKS.load(Ordering::SeqCst)
-}
+    /// What this scene's fake sent for each diarization request, in arrival order.
+    fn diar_record(&self) -> Vec<&'static str> {
+        self.fakes.diar_replies.lock().expect("the reply log lock").clone()
+    }
 
-/// What the fake sent for each diarization request, in arrival order.
-fn diar_record() -> Vec<&'static str> {
-    DIAR_REPLIES.lock().expect("the reply log lock").clone()
+    /// How many diarization requests this scene's fake answered.
+    #[allow(dead_code)] // the count is `diar_record().len()` today; kept as the request-side twin of it
+    fn diar_asks(&self) -> usize {
+        self.fakes.diar_asks.load(Ordering::SeqCst)
+    }
+
+    fn payload_for(&self, answer: &'static str) -> String {
+        match answer {
+            "many" => diar_voices(0.0, 25.0, 8),
+            "refusal" => "{\"detail\":\"no turns here\"}".to_string(),
+            _ => diar_two_voices(5.6),
+        }
+    }
 }
 
 /// Arm the ASR id a walk should use, then walk. `Scene::new` already wrote a conf with its own
@@ -630,12 +696,19 @@ fn walk_scene_armed(
     for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
         std::env::remove_var(name);
     }
-    reset_pieces();
-    VOICE_ON.store(1, Ordering::SeqCst);
-    OOM_FIRST.store(oom_first, Ordering::SeqCst);
-    NO_SPEECH.store(usize::from(no_speech), Ordering::SeqCst);
-    ALIGN_FAILS.store(usize::from(align_fails), Ordering::SeqCst);
-    ASR_NO_TIMES.store(usize::from(scene.asr_without_times.get()), Ordering::SeqCst);
+    scene.reset_pieces();
+    voice_on(true);
+    // Armed on the SCENE, not on a global: the fake reads its answer shape off the scene the request came
+    // from, so no other test's walk can be answered with this one's refusal.
+    if oom_first != 0 {
+        scene.arm_oom(oom_first);
+    }
+    if no_speech {
+        scene.arm_no_speech();
+    }
+    if align_fails {
+        scene.arm_align_fails();
+    }
     scene.enter();
     scene.set_asr_model(id);
     scene.project();
@@ -648,7 +721,7 @@ fn walk_scene_armed(
         scene.walk()
     };
     leave();
-    VOICE_ON.store(0, Ordering::SeqCst);
+    voice_on(false);
     log
 }
 
@@ -689,48 +762,15 @@ fn asr_cut_calls(tools: &Path) -> Vec<String> {
         .collect()
 }
 
-static CHUNKS: AtomicUsize = AtomicUsize::new(0);
-static WINDOWS: AtomicUsize = AtomicUsize::new(0);
-
-/// A reply with the ASR's text and NOTHING else: the shape that makes S4's failure a hard error rather
-/// than a warning, because there are no word times for the ASR's answer to stand on. Armed per test by
-/// [`Scene::arm_text_only`].
-static TEXT_ONLY: AtomicUsize = AtomicUsize::new(0);
-/// The same shape, armed per SCENE (see [`Scene::arm_asr_without_times`]) so a walk can carry it through
-/// `reset_pieces`, which clears the process-wide switches a test body cannot reach.
-static ASR_NO_TIMES: AtomicUsize = AtomicUsize::new(0);
-/// Make the aligner answer its window with an error instead of word times.
-static ALIGN_FAILS: AtomicUsize = AtomicUsize::new(0);
-/// How many ASR requests the fake has answered, which is NOT the same as `CHUNKS`: a chunk that fails
-/// never reaches the piece counter, and a retry asks about the whole recording again, so the count that
-/// decides "fail the first N" has to be the count of requests.
-static ASR_ASKS: AtomicUsize = AtomicUsize::new(0);
-/// Answer the first N ASR requests with the box running out of room, which is §F1.4 S1's one retryable
-/// failure. The fake cannot know a request is the first of a run, so a test arms the count and the
-/// counter decides, exactly as `ALIGN_FAILS` does for the aligner.
-static OOM_FIRST: AtomicUsize = AtomicUsize::new(0);
-/// Answer every ASR request with NO text at all — silence on the tape, which is a real answer and not
-/// a failure (`asr::no_speech_log`), so the pass has to finish and write its files anyway.
-static NO_SPEECH: AtomicUsize = AtomicUsize::new(0);
 /// A scene whose project row ticked SPEAKS ONLY, so `prepare_run`'s choice says SPEECH and the whole
 /// pass runs. `Scene::project()` leaves it false because the F1.3 scenes are about the cut, not the tick.
 static VOICE_ON: AtomicUsize = AtomicUsize::new(0);
 
-/// The piece counters are per-process while the scenes are per-test, so a test clears them before it
-/// walks: the Nth ask must be piece N-1 of THIS scene's recording, not of whichever test ran first.
-fn reset_pieces() {
-    CHUNKS.store(0, Ordering::SeqCst);
-    WINDOWS.store(0, Ordering::SeqCst);
-    DIAR_ASKS.store(0, Ordering::SeqCst);
-    DIAR_REPLIES.lock().expect("the reply log lock").clear();
-    DIAR_QUEUE.lock().expect("the reply queue lock").clear();
-    TEXT_ONLY.store(0, Ordering::SeqCst);
-    ALIGN_FAILS.store(0, Ordering::SeqCst);
-    OOM_FIRST.store(0, Ordering::SeqCst);
-    ASR_NO_TIMES.store(0, Ordering::SeqCst);
-    ASR_ASKS.store(0, Ordering::SeqCst);
-    NO_SPEECH.store(0, Ordering::SeqCst);
-    VOICE_ON.store(0, Ordering::SeqCst);
+/// The one switch that stays process-wide: `Scene::project` reads it when it writes the row, and the row
+/// belongs to the working folder the walker owns under the `ENV` guard, not to the fake.
+/// A walker clears it on the way out -- leaving it set would tick SPEAKS ONLY on whichever test walked next.
+fn voice_on(on: bool) {
+    VOICE_ON.store(usize::from(on), Ordering::SeqCst);
 }
 
 /// The diarizer's ordinary answer: two voices 4.9 s and 5.0 s, both comfortably anchor-length
@@ -749,16 +789,16 @@ fn diar_reply() -> String {
 /// `DIAR_REPLIES`: that is what lets a ladder walk be scripted rung by rung and read back afterwards.
 /// An empty queue answers with the scene's ordinary reply, which is how the eleven tests that never
 /// script the diarizer still get a plan that fits on the 90 s rung.
-fn diar_answer_for(_ask: usize) -> (u16, String) {
+fn diar_answer_for(fakes: &SceneFakes, _ask: usize) -> (u16, String) {
     let (label, payload) = {
-        let mut queue = DIAR_QUEUE.lock().expect("the reply queue lock");
+        let mut queue = fakes.diar_queue.lock().expect("the reply queue lock");
         if queue.is_empty() {
             ("turns", diar_reply())
         } else {
             queue.remove(0)
         }
     };
-    DIAR_REPLIES.lock().expect("the reply log lock").push(label);
+    fakes.diar_replies.lock().expect("the reply log lock").push(label);
     (200, payload)
 }
 
@@ -1064,7 +1104,7 @@ fn f1_3_s5_the_ladder_stops_at_the_first_rung_that_fits() {
     // Two 5.6 s voices anchor 11.2 s of any rung and leave far more than `NEW_AUDIO_MIN_SECONDS`, so
     // the 90 s rung serves and the walk asks nobody again: the ladder is a fallback, not a routine.
     assert_eq!(
-        diar_record(),
+        scene.diar_record(),
         vec!["two"],
         "the first rung planned, so the walk stopped there: {log:?}"
     );
@@ -1173,7 +1213,7 @@ fn f1_3_s5_a_diarization_that_never_fits_fails_the_walk_and_names_the_model() {
     );
     let tree = scene.tree();
 
-    let replies = diar_record();
+    let replies = scene.diar_record();
     assert!(
         replies.len() >= naivepost::diarize::ladder().len(),
         "every rung of the 90 / 45 / 25 ladder was asked: {replies:?}"
@@ -1199,11 +1239,12 @@ fn f1_3_s5_a_diarization_that_never_fits_fails_the_walk_and_names_the_model() {
 #[test]
 fn f1_3_s4_an_aligner_failure_without_word_times_stops_the_walk() {
     // Nothing on disk yet, so the ASR really is asked; its reply is text with no word times, and the
-    // aligner refuses the window it is sent. That is the flowchart's `hard error, named plainly`, and
-    // it is distinct from the case above where the ASR's own times stand and the run carries on.
+    // aligner's refusal is handed over DIRECTLY as the `Align::Failed` argument -- no fake server is
+    // armed, because a switch set here would answer whichever other test happens to be mid-walk. That is
+    // the flowchart's `hard error, named plainly`, distinct from the case above where the ASR's own times
+    // stand and the run carries on.
     let scene = Scene::new("20.0", &[], "");
     let tree = scene.tree();
-    ALIGN_FAILS.store(1, Ordering::SeqCst);
     let pass = naivepost::transcribe::run(
         &tree,
         LANE,
@@ -1420,10 +1461,8 @@ fn f1_4_s2_the_asr_scratch_survives_a_failed_pass_and_goes_with_a_good_one() {
     bad.arm_align_fails();
     let log = {
         let _guard = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        reset_pieces();
-        VOICE_ON.store(1, Ordering::SeqCst);
-        ALIGN_FAILS.store(1, Ordering::SeqCst);
-        ASR_NO_TIMES.store(1, Ordering::SeqCst);
+        bad.reset_pieces();
+        voice_on(true);
         bad.enter();
         bad.set_asr_model(QWEN_ASR);
         bad.project();
@@ -1431,7 +1470,7 @@ fn f1_4_s2_the_asr_scratch_survives_a_failed_pass_and_goes_with_a_good_one() {
         let (drive, mut log) = bad.walk_drive();
         run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
         leave();
-        VOICE_ON.store(0, Ordering::SeqCst);
+        voice_on(false);
         log
     };
     let failed = bad.tree();
@@ -1459,13 +1498,10 @@ fn f1_4_s2_the_asr_scratch_survives_a_failed_pass_and_goes_with_a_good_one() {
     );
 }
 
-/// S3's per-chunk PROGRESS line reaches the run bar through a leg the walk does not have yet: `asr::run`
-/// returns it in `Outcome.steps`, and `transcribe_asr` keeps only the joined words, so no `▶` walk prints
-/// it (the aligner and the frames pass hand theirs to the bar; the ASR's are dropped one level up). That
-/// is a run-path gap to fix in `src/`, and claiming the line from a walk that never prints it would be a
-/// test proving nothing. So the wire is held to every one of §F1.4 S3's other terms, and the progress
-/// wording is pinned where it is produced -- `asr::progress`'s own strings against the chunk list the walk
-/// wrote -- with the cut that must precede each ask and both of `asr::body`'s fields beside them.
+/// S3's wire, end to end: every piece is CUT before it is asked about, the ask names its audio and the
+/// language, and the bar's per-piece line ("recognising speech i/n", `asr::progress`) comes out of a real
+/// `▶` walk -- `transcribe_asr` hands `Outcome.steps` to the same sink it hands the halving and empty-
+/// transcript lines to, so the run says one line per piece in order.
 #[test]
 fn f1_4_s3_every_ask_is_preceded_by_its_cut_and_names_audio_and_language() {
     let scene = Scene::new("140.0", &[], QWEN_ASR);
@@ -1490,6 +1526,17 @@ fn f1_4_s3_every_ask_is_preceded_by_its_cut_and_names_audio_and_language() {
         cuts.len(),
         asked.len(),
         "one cut per request -- nothing was asked about audio that was never cut: {log:?}"
+    );
+    // And the bar's line for the FIRST and LAST piece is in what the walk logged, not merely available
+    // from `asr::progress`: this is the proof the run path forwards the flow's steps.
+    let said = log.join("\n");
+    assert!(
+        said.contains(&asr::progress(0, asked.len())),
+        "the first piece announced itself: {said}"
+    );
+    assert!(
+        said.contains(&asr::progress(asked.len() - 1, asked.len())),
+        "and so did the last: {said}"
     );
     for line in &cuts {
         // `-ss <from> -t <span>` comes from `cut_plan`; the stub logs `argv[0]` too, so every line starts

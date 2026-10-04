@@ -555,6 +555,11 @@ where
         for line in &outcome.logs {
             log(line);
         }
+        // §F1.4 S3's per-chunk progress ("recognising speech i/n") is recorded the same way and goes to
+        // the same sink: a run that cut four pieces has to say so four times, or the bar looks stuck.
+        for line in &outcome.steps {
+            log(line);
+        }
         Ok(WordsDoc { text: outcome.text, words: outcome.words })
     }
 }
