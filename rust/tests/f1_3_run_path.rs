@@ -31,6 +31,7 @@ use naivepost::run_stages;
 use naivepost::separate_media as media;
 use naivepost::services;
 use naivepost::settings::{self, Conf, Paths};
+use naivepost::transcribe;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::temp_dir_created as temp_dir;
@@ -76,6 +77,9 @@ struct Scene {
     url: String,
     tools: PathBuf,
     seen: Arc<Mutex<Vec<Seen>>>,
+    /// Answer this scene's ASR requests with text and no word times. A scene carries its own arms because
+    /// `walk_scene_armed` clears the process-wide switches before the walk starts.
+    asr_without_times: std::cell::Cell<bool>,
 }
 
 impl Scene {
@@ -107,16 +111,68 @@ impl Scene {
         conf.ffmpeg = tools.join("ffmpeg").to_string_lossy().into_owned();
         conf.asr_model = asr_model.to_string();
         settings::save(&paths, &conf).expect("the conf is written");
-        Scene { root, url, tools, seen }
+        Scene { root, url, tools, seen, asr_without_times: std::cell::Cell::new(false) }
     }
 
+    /// Answer the first `count` ASR requests of the next walk with the box having no room. Arm it
+    /// through [`walk_scene_armed`], never from the test body: `reset_pieces` clears it.
+    fn arm_oom(&self, count: usize) {
+        OOM_FIRST.store(count, Ordering::SeqCst);
+    }
+
+    /// Answer every ASR request with text and NO word times. Like [`Scene::arm_oom`] this is armed through
+    /// [`walk_scene_armed`], which reads it off the scene after `reset_pieces` has cleared the globals.
+    fn arm_asr_without_times(&self) {
+        self.asr_without_times.set(true);
+    }
+
+    /// Answer every ASR request with no text at all, which is what silence on the tape sounds like.
+    fn arm_no_speech(&self) {
+        NO_SPEECH.store(1, Ordering::SeqCst);
+    }
+
+    /// Make the aligner refuse the window it is sent, in the shape `align::parse_words` reports.
+    fn arm_align_fails(&self) {
+        ALIGN_FAILS.store(1, Ordering::SeqCst);
+    }
+
+    /// Decode the row the way §F1.3 S1 does, so the walk starts from a recording that already has its
+    /// `voice16k.wav`: that is the state a second Prepare press finds, and the only one in which the
+    /// `asr/` folder a walk leaves behind belongs to the ASR stage alone.
+    fn decode(&self) {
+        let tree = self.tree();
+        let paths = Paths {
+            config_dir: self.root.join("cfg/naivepost"),
+            data_dir: self.root.join("data/naivepost"),
+        };
+        let conf = settings::read(&paths).unwrap_or_default();
+        let source = self.root.join("session.naivepost/sources/lecture.wav");
+        naivepost::decode_audio::ensure(&tree, LANE, &source, &conf.ffmpeg, &mut |_| ())
+            .expect("the stub decode writes the pcm");
+    }
+
+    /// Set the id THIS scene's conf names as the ASR model, which is what decides the chunk ceiling
+    /// (`services::asr_model` → `asr::chunk_limit`). Called after `enter()`, so the walk reads a conf
+    /// that already says what the test wants.
+    fn set_asr_model(&self, id: &str) {
+    let paths = Paths {
+        config_dir: self.root.join("cfg/naivepost"),
+        data_dir: self.root.join("data/naivepost"),
+    };
+    let mut conf = settings::read(&paths).unwrap_or_default();
+    conf.asr_model = id.to_string();
+    settings::save(&paths, &conf).expect("the conf is rewritten");
+}
+
     /// The session's project file: one recording row, nothing ticked (the split belongs to F1.2).
+    /// SPEAKS ONLY goes by [`VOICE_ON`] because the F1.4 scenes need the pass to run at all — with the
+    /// tick off, `prepare_run` answers NONE and the walk has no speech task to reach.
     fn project(&self) {
         let source = Source {
             path: "sources/lecture.wav".to_string(),
             footage: false,
             narrator: 0,
-            sepvoice: false,
+            sepvoice: VOICE_ON.load(Ordering::SeqCst) != 0,
             tracks: vec![],
         };
         naivepost::project::save(
@@ -237,6 +293,7 @@ fn walk_scene_failing_queued(scene: &Scene, answers: &[&'static str]) -> Vec<Str
         std::env::remove_var(name);
     }
     reset_pieces();
+    VOICE_ON.store(1, Ordering::SeqCst);
     for answer in answers {
         queue_diar(answer);
     }
@@ -244,6 +301,7 @@ fn walk_scene_failing_queued(scene: &Scene, answers: &[&'static str]) -> Vec<Str
     scene.project();
     let log = scene.walk_fail();
     leave();
+    VOICE_ON.store(0, Ordering::SeqCst);
     log
 }
 
@@ -261,6 +319,7 @@ fn walk_scene_queued(scene: &Scene, answers: &[&'static str]) -> Vec<String> {
         std::env::remove_var(name);
     }
     reset_pieces();
+    VOICE_ON.store(1, Ordering::SeqCst);
     for answer in answers {
         queue_diar(answer);
     }
@@ -268,6 +327,7 @@ fn walk_scene_queued(scene: &Scene, answers: &[&'static str]) -> Vec<String> {
     scene.project();
     let log = scene.walk();
     leave();
+    VOICE_ON.store(0, Ordering::SeqCst);
     log
 }
 
@@ -369,6 +429,12 @@ fn words_chunk(chunk: usize) -> String {
     )
 }
 
+/// The same chunk's answer with its text and NO word times, which is the shape `align_outcome` reads as
+/// "nothing else can time these words". Armed per scene by [`Scene::arm_asr_without_times`].
+fn text_only_chunk(chunk: usize) -> String {
+    format!("{{\"text\":\"word{c} one{c}\"}}", c = chunk)
+}
+
 /// The aligner's answer for one window: the same words at the same seconds, which is what makes
 /// `align::restore` and the segment builder agree with the ASR about what was said.
 fn words_aligned(chunk: usize) -> String {
@@ -451,6 +517,29 @@ fn route(path: &str, body: &str) -> (u16, String) {
         // Text and no word times at all — S4's hard branch needs exactly this ASR answer.
         return (200, "{\"text\":\"hello there\"}".to_string());
     }
+    if ASR_NO_TIMES.load(Ordering::SeqCst) != 0 {
+        // Every chunk answers with its text only, so an aligner refusal that follows is fatal rather than
+        // a shrug. Counted through `CHUNKS` like the ordinary answer below, so the piece numbering holds.
+        return (200, text_only_chunk(next_of(&CHUNKS)));
+    }
+    // The box saying it has no room, in a shape `asr::retryable` accepts, for the first N asks only: the
+    // retry at the halved ceiling must then succeed, or the halving is never seen working. The words are
+    // the server's own: `dial` keeps the body whole inside its own sentence and `retryable` looks for the
+    // phrase rather than a sentence this fake invented.
+    let ooms = OOM_FIRST.load(Ordering::SeqCst);
+    if ooms != 0 {
+        // Counted on the REQUESTS the fake answered, not on `CHUNKS`: a chunk that fails never reaches
+        // the piece counter, so counting asks is the only way the Nth failure and the retry land right.
+        let asked = ASR_ASKS.fetch_add(1, Ordering::SeqCst);
+        if asked < ooms {
+            return (500, "{\"error\":\"CUDA out of memory\"}".to_string());
+        }
+    }
+    if NO_SPEECH.load(Ordering::SeqCst) != 0 {
+        // No text and no word times: nothing was heard. `asr_answer` would refuse this shape, so the
+        // fake answers it the way a server really does — empty text, which is an answer, not a fault.
+        return (200, "{\"text\":\"\"}".to_string());
+    }
     (200, words_chunk(next_of(&CHUNKS)))
 }
 
@@ -505,14 +594,127 @@ fn diar_record() -> Vec<&'static str> {
     DIAR_REPLIES.lock().expect("the reply log lock").clone()
 }
 
+/// Arm the ASR id a walk should use, then walk. `Scene::new` already wrote a conf with its own
+/// id; this rewrites it after `enter()` (the same paths, a conf the walk has not read yet) so each F1.4
+/// scene chooses its own ceiling. `fail` asks for the ending the walk is expected to reach: `true` for
+/// a pass that stops with an error, which is what `say_outcome` prints rather than a panic.
+/// `walk_scene_asr` for a scene that needs the whole speech pass: a row whose SPEAKS ONLY is ticked (with
+/// the tick off `prepare_run` answers NONE and there is no speech task to walk) and the ASR ceiling the
+/// test wants. The ceiling has to be in the CONF before the walk reads it, so it is written here, after
+/// `enter()` has pointed the process at this scene's settings folder.
+fn walk_scene_asr(scene: &Scene, id: &'static str, fail: bool) -> Vec<String> {
+    walk_scene_armed(scene, id, fail, 0, false, false, false)
+}
+
+
+/// `walk_scene_asr` with the switches a test needs armed AFTER `reset_pieces` has cleared them: the
+/// box refusing the aligner, the box having no room, the tape hearing nothing. A walker cannot read
+/// them from the test body for the same reason the diarizer's queue cannot — `reset_pieces` clears them
+/// first — so a scene carries its own arms and names them here.
+///
+/// `decode` makes the recording's `voice16k.wav` BEFORE the walk starts. Without it the stub's decode
+/// counts as a chunk cut (`-ss 0 -t 140`), and a scratch folder exists before the stage ever ran, so a
+/// scratch-lifetime test would be reading a file ffmpeg's decode left, not what `asr/` holds.
+fn walk_scene_armed(
+    scene: &Scene,
+    id: &'static str,
+    fail: bool,
+    oom_first: usize,
+    no_speech: bool,
+    align_fails: bool,
+    decode: bool,
+) -> Vec<String> {
+    // The env and the working folder are process-wide, so the whole scene is laid out, walked and left
+    // under one guard; `Scene::project` reads VOICE_ON when it writes the row, hence arming it first.
+    let _guard = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
+        std::env::remove_var(name);
+    }
+    reset_pieces();
+    VOICE_ON.store(1, Ordering::SeqCst);
+    OOM_FIRST.store(oom_first, Ordering::SeqCst);
+    NO_SPEECH.store(usize::from(no_speech), Ordering::SeqCst);
+    ALIGN_FAILS.store(usize::from(align_fails), Ordering::SeqCst);
+    ASR_NO_TIMES.store(usize::from(scene.asr_without_times.get()), Ordering::SeqCst);
+    scene.enter();
+    scene.set_asr_model(id);
+    scene.project();
+    if decode {
+        scene.decode();
+    }
+    let log = if fail {
+        scene.walk_fail()
+    } else {
+        scene.walk()
+    };
+    leave();
+    VOICE_ON.store(0, Ordering::SeqCst);
+    log
+}
+
+/// The ASR requests a scene's walk made, in arrival order: the `/v1/tasks/run` bodies that name neither
+/// the aligner nor the diarizer, which is how the fake's own routing tells the three jobs apart.
+fn asr_requests(scene: &Scene) -> Vec<String> {
+    scene
+        .tasks()
+        .into_iter()
+        .map(|seen| seen.body)
+        .filter(|body| !body.contains(SCENE_ALIGNER) && !body.contains(services::DIAR_MODEL))
+        .collect()
+}
+
+/// The ffmpeg calls that CUT a chunk, oldest first. What makes a line a cut is `cut_plan`'s
+/// `-ss <from> -t <span>` pair -- the seek and the length side by side, the seek taking a number. The
+/// stub logs `argv[0]` too, and the §F1.3 S1 decode seeks as well, so matching `-ss` alone picks up the
+/// whole decode of the recording as one "chunk" and every count comes out one too high.
+fn cut_calls(tools: &Path) -> Vec<String> {
+    calls(tools)
+        .into_iter()
+        .filter(|line| {
+            line.split(" -ss ")
+                .nth(1)
+                .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()) && line.contains("-t "))
+        })
+        .collect()
+}
+
+/// The cuts the ASR stage made, not the aligner's or the diarizer's. Each stage writes its own audio
+/// beside its own scratch note (`asr/cNN.wav`, `align/wNNNN.wav`, `diar/dNNNN.wav` — `Tree::asr_scratch`,
+/// `align_scratch`, `diar_scratch`), and the stub tool logs its whole argv, so the output path is what
+/// tells one stage's cut from another's.
+fn asr_cut_calls(tools: &Path) -> Vec<String> {
+    cut_calls(tools)
+        .into_iter()
+        .filter(|line| line.contains("/asr/c"))
+        .collect()
+}
+
 static CHUNKS: AtomicUsize = AtomicUsize::new(0);
 static WINDOWS: AtomicUsize = AtomicUsize::new(0);
 
 /// A reply with the ASR's text and NOTHING else: the shape that makes S4's failure a hard error rather
-/// than a warning, because there are no word times for the ASR's answer to stand on.
+/// than a warning, because there are no word times for the ASR's answer to stand on. Armed per test by
+/// [`Scene::arm_text_only`].
 static TEXT_ONLY: AtomicUsize = AtomicUsize::new(0);
+/// The same shape, armed per SCENE (see [`Scene::arm_asr_without_times`]) so a walk can carry it through
+/// `reset_pieces`, which clears the process-wide switches a test body cannot reach.
+static ASR_NO_TIMES: AtomicUsize = AtomicUsize::new(0);
 /// Make the aligner answer its window with an error instead of word times.
 static ALIGN_FAILS: AtomicUsize = AtomicUsize::new(0);
+/// How many ASR requests the fake has answered, which is NOT the same as `CHUNKS`: a chunk that fails
+/// never reaches the piece counter, and a retry asks about the whole recording again, so the count that
+/// decides "fail the first N" has to be the count of requests.
+static ASR_ASKS: AtomicUsize = AtomicUsize::new(0);
+/// Answer the first N ASR requests with the box running out of room, which is §F1.4 S1's one retryable
+/// failure. The fake cannot know a request is the first of a run, so a test arms the count and the
+/// counter decides, exactly as `ALIGN_FAILS` does for the aligner.
+static OOM_FIRST: AtomicUsize = AtomicUsize::new(0);
+/// Answer every ASR request with NO text at all — silence on the tape, which is a real answer and not
+/// a failure (`asr::no_speech_log`), so the pass has to finish and write its files anyway.
+static NO_SPEECH: AtomicUsize = AtomicUsize::new(0);
+/// A scene whose project row ticked SPEAKS ONLY, so `prepare_run`'s choice says SPEECH and the whole
+/// pass runs. `Scene::project()` leaves it false because the F1.3 scenes are about the cut, not the tick.
+static VOICE_ON: AtomicUsize = AtomicUsize::new(0);
 
 /// The piece counters are per-process while the scenes are per-test, so a test clears them before it
 /// walks: the Nth ask must be piece N-1 of THIS scene's recording, not of whichever test ran first.
@@ -524,6 +726,11 @@ fn reset_pieces() {
     DIAR_QUEUE.lock().expect("the reply queue lock").clear();
     TEXT_ONLY.store(0, Ordering::SeqCst);
     ALIGN_FAILS.store(0, Ordering::SeqCst);
+    OOM_FIRST.store(0, Ordering::SeqCst);
+    ASR_NO_TIMES.store(0, Ordering::SeqCst);
+    ASR_ASKS.store(0, Ordering::SeqCst);
+    NO_SPEECH.store(0, Ordering::SeqCst);
+    VOICE_ON.store(0, Ordering::SeqCst);
 }
 
 /// The diarizer's ordinary answer: two voices 4.9 s and 5.0 s, both comfortably anchor-length
@@ -708,6 +915,9 @@ fn f1_3_s3_chunks_cut_at_a_silence_not_on_the_clock() {
     // = 10 s and steps every 40 s (pieces = ceil(200/(60-2*10)) = 5), so only a midpoint within 10 s
     // of 40 / 80 / 120 / 160 can be taken at all. Midpoint 40.2 is; the cut leaves 40 for it.
     let scene = Scene::new("200.0", &[(39.8, 40.6)], QWEN_ASR);
+    // SPEAKS ONLY ticked: `run_stages` skips the speech pass for a row that separates its own voice (F1.2
+    // owns that recording), so an unticked row would cut nothing at all and this test would prove only that
+    // the walk was empty. Every walker here ticks it for that reason.
     walk_scene(&scene);
 
     let argv = calls(&scene.tools);
@@ -1048,5 +1258,383 @@ fn f1_3_s6_what_the_pass_wrote_is_what_prepare_counts() {
         srt.lines().filter(|line| line.trim() == "1").count(),
         1,
         "the srt numbers its blocks from 1, once each: {srt}"
+    );
+}
+
+// --- F1.4 seen through the run path -------------------
+//
+// The F1.3 tests above prove the per-source pass reaches the servers. These prove the ASR half of it
+// is the CHUNKING flow §F1.4 describes: the ceiling the model's family gives, a long take cut into
+// pieces and asked one piece at a time, the halving when the box has no room, the scratch that is this
+// stage's own mess, and the three files in the order that makes a resume honest. Rule-level versions
+// live in `tests/asr.rs` with a hand-passed closure; what these add is that the ▶ walk does it.
+
+/// S1: the ceiling is the model's, and it is what decides how many requests one recording becomes.
+/// The same 140 s take against a qwen3 id (60 s) is several requests; against the shipped non-qwen3
+/// id (300 s) it is one. `services::asr_model` is the door the ceiling comes through, and the fake
+/// records every envelope, so the count is read off the wire rather than inferred from a file.
+#[test]
+fn f1_4_s1_the_models_ceiling_decides_how_many_requests_a_take_becomes() {
+    let qwen = Scene::new("140.0", &[], "");
+    let log = walk_scene_asr(&qwen, QWEN_ASR, false);
+    let chunks = asr_requests(&qwen).len();
+    assert!(
+        chunks > 1,
+        "a 140 s take over a 60 s ceiling is several requests: {log:?}"
+    );
+    assert!(
+        chunks <= 7,
+        "and not a silly number of them (60 s at a time would be 3): {chunks}"
+    );
+
+    // The other half of the row: the SAME length under a 300 s ceiling is a single request, which is
+    // `asr::fits` deciding to upload the recording whole rather than cut it for nothing.
+    let whole = Scene::new("140.0", &[], "");
+    let log = walk_scene_asr(&whole, "", false);
+    assert_eq!(
+        asr_requests(&whole).len(),
+        1,
+        "140 s fits a 300 s ceiling, so the recording goes up in one request: {log:?}"
+    );
+}
+
+/// S1's retry, and what it exposes as MISSING. `asr::run` logs its halving into the `Outcome` it returns,
+/// and `audio_task::transcribe_asr` keeps only `outcome.text`/`outcome.words` — so a `▶` walk that hit an
+/// out-of-memory answer gets the retry (real, and the reason the pass still finishes) but never prints
+/// that the ceiling came down, and never gets `Outcome.logs` either, which is where §F1.4 S4's "no speech
+/// found" line lives. That is a run-path gap in `src/`, and asserting the sentence from a walk that
+/// cannot print it would be a test proving nothing; the wording is pinned here, where it is produced, and
+/// the two gaps are named so the next round closes them in the program.
+#[test]
+fn f1_4_s1_an_out_of_memory_answer_halves_the_limit_and_retries() {
+    // A 30 s ceiling: `asr::chunk_limit` gives the non-qwen3 id 300 s, and halving it once is 150 s,
+    // which a 200 s take still exceeds -- so the second round really does cut pieces, which is the thing
+    // a retry has to show. The box is armed to refuse its first two asks: one failure halves once, two
+    // halve twice, and the third round answers.
+    let scene = Scene::new("200.0", &[], QWEN_ASR);
+    // Two failures in a row so the ceiling comes down TWICE: the first refusal is worth seeing as a
+    // halving and the second proves the loop keeps going while the box still says no.
+    scene.arm_oom(2);
+    let log = walk_scene_armed(&scene, QWEN_ASR, false, 2, false, false, false);
+    let said = log.join("\n");
+    let cuts = cut_calls(&scene.tools);
+
+    // The first halving `asr` would log for this ceiling, in its own words -- not a paraphrase here. The
+    // pass does not print it (see this test's note), so it is checked where it is made.
+    let first = asr::halve(LANE, asr::chunk_limit(QWEN_ASR));
+    assert_eq!(
+        first.log.as_deref(),
+        Some("!!! [lecture] ASR: no room for that much audio -- trying 30 s at a time"),
+        "the sentence the run is meant to say out loud: {first:?}"
+    );
+    // The halving line reaches the run's log: `transcribe_asr` hands `Outcome.logs` to the walk's sink,
+    // so what `asr` says about a ceiling that came down is something the user actually sees.
+    assert!(
+        said.contains("no room for that much audio"),
+        "the halving line reaches the run's log: {said}"
+    );
+    // A 60 s ceiling over a 200 s take is at least 4 pieces, and both failed rounds cut before they were
+    // thrown away, so the stub's argv holds more cuts than the round that finally served.
+    assert!(
+        cuts.len() >= 6,
+        "every round cut before it asked, including the two that failed: {cuts:?}"
+    );
+    // And the retry finished the job: the resume marker is there, which is the only reason the halving
+    // was worth doing at all.
+    let tree = scene.tree();
+    assert!(tree.words_json(LANE).exists(), "the retry wrote the transcript: {said}");
+}
+
+/// S2: `asr/` is this stage's scratch and its lifetime is the stage's outcome — gone once the answer is
+/// on disk (nothing left to compare against the audio), kept when it is not, because `asr/c03.wav`
+/// beside its `.plan` note is how a failed chunk is checked without asking the server again.
+///
+/// Both halves walk a scene that ALREADY has its `voice16k.wav` (`decode: true`), which is the state a
+/// second Prepare press finds and the only one where the scratch folder belongs to the ASR stage alone:
+/// the §F1.3 S1 decode writes into the same `prepare/inputs/<lane>/` tree, so a walk that decoded here
+/// would leave the stage's own folder holding a file it never made.
+#[test]
+fn f1_4_s2_the_asr_scratch_survives_a_failed_pass_and_goes_with_a_good_one() {
+    // The success: three files, no scratch. The cuts prove the pass really chunked before it cleaned up.
+    let ok = Scene::new("140.0", &[], QWEN_ASR);
+    let log = walk_scene_armed(&ok, QWEN_ASR, false, 0, false, false, true);
+    let done = ok.tree();
+    assert!(
+        cut_calls(&ok.tools).len() > 1,
+        "the chunks were cut before the folder went: {log:?}"
+    );
+    // The scratch's OWN contents, not its name: the diarizer's windows are `d0000.wav` and live in the
+    // SAME `prepare/inputs/<lane>/` tree (its own `align/`/`diar/` folder beside `asr/`), so a check on
+    // the tree would read the next step's files as the ASR's leftovers. `asr::run` deletes only its own
+    // folder, and that is the rule being tested.
+    let leftovers: Vec<String> = std::fs::read_dir(done.asr_scratch(LANE))
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        leftovers.is_empty(),
+        "a pass that wrote its answer leaves no chunks lying around: {leftovers:?} / {log:?}"
+    );
+
+    // The failure the rule is about: an aligner that refuses every window while the ASR answered with text
+    // only, so nothing can time the words. Both of `align_step`'s branches are pinned here, because the
+    // SAME refusal beside an ASR that did send word times is the warning a run walks past — and only the
+    // fatal one leaves a scratch behind, which is what the walk below then proves on disk.
+    let heard = WordsDoc { text: "hello there".into(), words: Vec::new() };
+    assert!(
+        matches!(
+            transcribe::align_step(LANE, transcribe::Align::Failed("not loaded".into()), &heard, false),
+            transcribe::AlignStep::Stops(_)
+        ),
+        "text-only ASR plus a refusing aligner stops the pass: {heard:?}"
+    );
+    let timed = WordsDoc {
+        text: "hello there".into(),
+        words: vec![Word { word: "hello".into(), start_sample: 0, end_sample: 8000 }],
+    };
+    assert!(
+        matches!(
+            transcribe::align_step(LANE, transcribe::Align::Failed("not loaded".into()), &timed, false),
+            transcribe::AlignStep::Warns(_)
+        ),
+        "the same refusal is only a warning when the ASR timed its own words: {timed:?}"
+    );
+    // And the walk proves the file half for real: this scene's ASR answers text only (armed on the scene,
+    // because `walk_scene_armed` resets the process-wide switches), so when the aligner refuses the stage
+    // stops with no answer to write -- and `asr/` is still there with its chunks and their notes.
+    let bad = Scene::new("140.0", &[], QWEN_ASR);
+    bad.arm_asr_without_times();
+    bad.arm_align_fails();
+    // The other half of §F1.4 S2 -- an answered pass deletes its scratch, a stopped one keeps it -- needs
+    // the ASR to stop WITH word times in hand, which is what makes `align_step` return a stop rather than
+    // the warning above: `asr::run` has written all three files and returned Ok, so its folder is gone (the
+    // success scene proved that), and the aligner then refuses every window and dies with nothing to write.
+    // That combination cannot be armed through `walk_scene_armed`, whose switches are process-wide and get
+    // cleared by `reset_pieces`: this scene carries the arm, so the walk is driven here, same steps.
+    let bad = Scene::new("140.0", &[], QWEN_ASR);
+    bad.arm_asr_without_times();
+    bad.arm_align_fails();
+    let log = {
+        let _guard = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        reset_pieces();
+        VOICE_ON.store(1, Ordering::SeqCst);
+        ALIGN_FAILS.store(1, Ordering::SeqCst);
+        ASR_NO_TIMES.store(1, Ordering::SeqCst);
+        bad.enter();
+        bad.set_asr_model(QWEN_ASR);
+        bad.project();
+        bad.decode();
+        let (drive, mut log) = bad.walk_drive();
+        run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
+        leave();
+        VOICE_ON.store(0, Ordering::SeqCst);
+        log
+    };
+    let failed = bad.tree();
+    let said = log.join("\n");
+    assert!(
+        said.contains("speech failed"),
+        "the walk stopped on the speech stage: {log:?}"
+    );
+    assert!(
+        !failed.words_aligned_json(LANE).exists(),
+        "an aligner that refused every window left no aligned file: {log:?}"
+    );
+    // What it DOES leave is each window's note in `align/`: `align::make_scratch` writes it before the ask
+    // that failed, and the aligner's cleanup belongs to an answer that never came -- so a human can compare
+    // the refused window against its audio without asking the server again.
+    let align_notes: Vec<String> = std::fs::read_dir(failed.align_scratch(LANE))
+        .expect("align/: the stage that ran left its folder")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".plan"))
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        !align_notes.is_empty(),
+        "a stopped pass keeps the windows it failed between: {said}"
+    );
+}
+
+/// S3's per-chunk PROGRESS line reaches the run bar through a leg the walk does not have yet: `asr::run`
+/// returns it in `Outcome.steps`, and `transcribe_asr` keeps only the joined words, so no `▶` walk prints
+/// it (the aligner and the frames pass hand theirs to the bar; the ASR's are dropped one level up). That
+/// is a run-path gap to fix in `src/`, and claiming the line from a walk that never prints it would be a
+/// test proving nothing. So the wire is held to every one of §F1.4 S3's other terms, and the progress
+/// wording is pinned where it is produced -- `asr::progress`'s own strings against the chunk list the walk
+/// wrote -- with the cut that must precede each ask and both of `asr::body`'s fields beside them.
+#[test]
+fn f1_4_s3_every_ask_is_preceded_by_its_cut_and_names_audio_and_language() {
+    let scene = Scene::new("140.0", &[], QWEN_ASR);
+    let log = walk_scene_asr(&scene, QWEN_ASR, false);
+    let cuts = asr_cut_calls(&scene.tools);
+    let asked = asr_requests(&scene);
+    let chunks = requests::read_chunks(&scene.tree(), LANE).expect("asrchunks.json reads back");
+
+    // One line per piece, in the bar's wording, for exactly the pieces the walk cut.
+    let steps: Vec<String> = (0..asked.len()).map(|index| asr::progress(index, asked.len())).collect();
+    assert_eq!(
+        steps,
+        vec![
+            "recognising speech 1/4",
+            "recognising speech 2/4",
+            "recognising speech 3/4",
+            "recognising speech 4/4"
+        ],
+        "four pieces over a 140 s take at a 60 s ceiling: {chunks:?}"
+    );
+    assert_eq!(
+        cuts.len(),
+        asked.len(),
+        "one cut per request -- nothing was asked about audio that was never cut: {log:?}"
+    );
+    for line in &cuts {
+        // `-ss <from> -t <span>` comes from `cut_plan`; the stub logs `argv[0]` too, so every line starts
+        // with the tool's path. What makes it a CUT is that seek-and-length pair sitting side by side —
+        // the §F1.3 S1 decode seeks as well, but carries no `-t`, and the silence report carries neither.
+        let seek = line.find("-ss ").expect("a cut carries a seek");
+        let span = line.find("-t ").expect("a cut names its length");
+        assert!(
+            span > seek && line[seek + 4..].starts_with(|c: char| c.is_ascii_digit()),
+            "the cut's argv is `cut_plan`'s: -ss <from> then -t <span>: {line}"
+        );
+    }
+    let said = log.join("\n");
+    assert!(
+        said.contains(&naivepost::transcribe::asr_log(LANE, QWEN_ASR)),
+        "the pass said which model it was asking: {said}"
+    );
+    assert_eq!(
+        chunks.len(),
+        asked.len(),
+        "every ask became exactly one row of the chunk file: {chunks:?}"
+    );
+    // And each ask named its audio and its language: `asr::body`, both fields, on the wire.
+    for body in &asked {
+        let sent: serde_json::Value = serde_json::from_str(body).expect("the envelope is JSON");
+        let request = sent.get("request").expect("the envelope wraps a request");
+        assert!(
+            request.get("audio").and_then(|v| v.as_str()).is_some_and(|audio| !audio.is_empty()),
+            "a task may only name a path an upload gave back: {body}"
+        );
+        assert!(
+            request.get("language").is_some(),
+            "the language travels with the audio: {body}"
+        );
+    }
+}
+
+/// S4: the three files, and the chunk's seconds that make `asrchunks.json` worth having — the row whose
+/// words can be checked against its audio. The last piece's first word proves `asr::shift` did its job:
+/// chunk-relative times that never moved would all sit near zero no matter how long the recording is.
+#[test]
+fn f1_4_s4_the_three_files_and_word_times_on_the_recordings_clock() {
+    let scene = Scene::new("140.0", &[], QWEN_ASR);
+    let log = walk_scene_asr(&scene, QWEN_ASR, false);
+    let tree = scene.tree();
+
+    assert!(tree.transcript_txt(LANE).exists(), "transcript.txt: {log:?}");
+    assert!(tree.asrchunks_json(LANE).exists(), "asrchunks.json: {log:?}");
+    assert!(tree.words_json(LANE).exists(), "words.json last: {log:?}");
+
+    let chunks = requests::read_chunks(&tree, LANE).expect("asrchunks.json reads back");
+    assert!(chunks.len() > 1, "a 140 s take at a 60 s ceiling is several rows: {chunks:?}");
+    // Rows tile the recording: each starts where the last ended, and the last reaches the end.
+    for pair in chunks.windows(2) {
+        assert_eq!(
+            pair[0].e, pair[1].s,
+            "the rows are the recording cut into pieces, not overlapping guesses: {chunks:?}"
+        );
+    }
+    assert_eq!(chunks.last().expect("a row").e, 140.0, "the last row reaches the end");
+
+    let words = requests::read_words(&tree, LANE).expect("words.json reads back");
+    let words = words.unwrap_or_default();
+    assert!(!words.words.is_empty(), "the fake answers with word times: {words:?}");
+    let last_start = chunks.last().expect("a row").s;
+    let beyond = words
+        .words
+        .iter()
+        .filter(|word| word.start_sample >= (last_start * 16_000.0) as u64)
+        .count();
+    assert!(
+        beyond > 0,
+        "the last piece's words sit at the END of the recording, not at its own zero: {:?}",
+        words.words.last()
+    );
+}
+
+/// What a `▶` walk now says about the chunking flow. `asr::run` returns `Outcome.logs` (the halving
+/// line, the "no speech found" line) and `Outcome.steps` ("recognising speech i/n"); the dial hands the
+/// LOGS to the walk's sink, the way `separate_run::run_task` hands over its own, which is what makes the
+/// two scenes below observable rather than merely correct on disk. `steps` still stop one level up -- the
+/// run bar takes per-task progress, not per-chunk -- and §F1.4 S3's progress wording is pinned at the
+/// other end, on `asr::progress` against the chunk list the walk wrote.
+#[test]
+fn f1_4_s1_the_halving_is_said_by_a_walk() {
+    // S1's retry, through the walk: the box refuses its first two asks, the ceiling halves twice, and the
+    // third round gets the whole 200 s recording through. That much is real and is what the files show.
+    let scene = Scene::new("200.0", &[], QWEN_ASR);
+    scene.arm_oom(2);
+    let log = walk_scene_armed(&scene, QWEN_ASR, false, 2, false, false, false);
+    let tree = scene.tree();
+    let cuts = cut_calls(&scene.tools);
+    let said = log.join("\n");
+
+    assert!(
+        tree.words_json(LANE).exists(),
+        "the retry finished the job the first rounds could not: {said}"
+    );
+    // Every round cut before it asked, including the two that failed: a 60 s ceiling over 200 s is 4+ cuts,
+    // and the failed rounds' scratch is gone with them, so the stub's argv is their only trace.
+    assert!(
+        cuts.len() >= 8,
+        "the halved rounds really cut the recording: {cuts:?}"
+    );
+    // And the honest half: the sentence the run SHOULD have said is `asr`'s own, produced by the rule --
+    // and absent from the walk. Flip this assertion when `src/` passes the lines through.
+    let halved = asr::halve(LANE, asr::chunk_limit(QWEN_ASR)).log.expect("a halving has a line");
+    assert_eq!(
+        halved,
+        "!!! [lecture] ASR: no room for that much audio -- trying 30 s at a time"
+    );
+    assert!(
+        said.contains("no room for that much audio"),
+        "the halving line reaches the run's log: {said}"
+    );
+}
+
+/// S4's quiet ending, same split: nothing heard is an ANSWER, the files are written and the pass finishes
+/// -- but `no_speech_log`, which lives in `Outcome.logs`, is another line the walk drops.
+#[test]
+fn f1_4_s4_nothing_heard_is_an_answer_not_a_failure() {
+    let scene = Scene::new("140.0", &[], QWEN_ASR);
+    scene.arm_no_speech();
+    let log = walk_scene_armed(&scene, QWEN_ASR, false, 0, true, false, false);
+    let tree = scene.tree();
+    let said = log.join("\n");
+
+    // Real, and checkable on disk: an empty transcript is still a transcript, still resumable.
+    for path in [
+        tree.transcript_txt(LANE),
+        tree.asrchunks_json(LANE),
+        tree.words_json(LANE),
+    ] {
+        assert!(path.exists(), "an empty transcript still writes {}: {said}", path.display());
+    }
+    assert_eq!(
+        requests::read_words(&tree, LANE)
+            .expect("words.json reads back")
+            .unwrap_or_default()
+            .text,
+        "",
+        "and says so as empty text, not as an error: {said}"
+    );
+    assert!(
+        said.contains(&asr::no_speech_log(LANE)),
+        "the empty transcript is said out loud, in `asr`'s own words: {said}"
     );
 }

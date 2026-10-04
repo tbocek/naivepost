@@ -338,7 +338,9 @@ pub fn asr_ask<'a>(
 ) -> impl FnMut(&str) -> Result<crate::asr::Answer, String> + 'a {
     move |file: &str| {
         let (plan, _) = read_scratch(tree, source, file)?;
-        let out = scratch_out(tree, source, file);
+        // The chunk goes where its note is: `asr::make_scratch` writes `asr/cNN.wav.plan`, so cutting to
+        // any other folder splits a failed chunk from the note that explains it (§F1.4 S2).
+        let out = scratch_folder(tree, |tree| tree.asr_scratch(source)).join(file);
         if let Some(dir) = out.parent() {
             std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
         }
@@ -449,10 +451,16 @@ pub fn diar_window_ask<'a>(
         // is comparable against its audio without asking again — the same file `asr_ask` reads back.
         // The path in it is the chunk's own name: nothing has been uploaded yet at this point.
         let note = serde_json::json!({ "audio": chunk, "language": "" });
-        write_scratch(tree, source, &chunk, &plan, &note)?;
-        let out = scratch_out(tree, source, &chunk);
-        if let Some(dir) = out.parent() {
-            std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
+        // The diarizer's windows live in `diar/`, not beside the ASR's chunks: `asr::run` clears `asr/`
+        // when it succeeds, so a window left in there would outlive every stage's cleanup.
+        let dir = match tree {
+            Some(tree) => tree.diar_scratch(source),
+            None => scratch_dir(),
+        };
+        write_scratch_at(&dir, &chunk, &plan, &note)?;
+        let out = dir.join(&chunk);
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent).map_err(|why| format!("{}: {why}", parent.display()))?;
         }
         let input = tree
             .as_ref()
@@ -510,7 +518,14 @@ pub fn diar_ask<'a>(
 ///
 /// `silences` are §F1.4 S2's quiet stretches, measured once by the caller over `voice16k.wav`: a cut that
 /// lands inside one costs nothing, while one mid-sentence puts a word across two requests.
-pub fn transcribe_asr<'a>(
+///
+/// `log` is the dial's sink: the chunking flow has two things worth saying out loud (a halved ceiling, an
+/// empty transcript) and they arrive in the outcome rather than in the words. Eight arguments because the
+/// ask needs all of them to name one request — the tree, the endpoint's settings, the recording, its model
+/// and language, its length and its silences — so the count stays rather than growing a struct no caller
+/// fills any more honestly.
+#[allow(clippy::too_many_arguments)]
+pub fn transcribe_asr<'a, L>(
     tree: &'a Option<Tree>,
     paths: &'a crate::settings::Paths,
     source: &'a str,
@@ -518,7 +533,11 @@ pub fn transcribe_asr<'a>(
     language: &'a str,
     duration: f64,
     silences: &'a [crate::asr::Silence],
-) -> impl FnOnce() -> Result<WordsDoc, String> + 'a {
+    log: &'a mut L,
+) -> impl FnOnce() -> Result<WordsDoc, String> + 'a
+where
+    L: FnMut(&str),
+{
     move || {
         let outcome = crate::asr::run(
             tree.as_ref().expect("a session folder to write the chunks into"),
@@ -529,6 +548,13 @@ pub fn transcribe_asr<'a>(
             silences,
             asr_ask(tree, paths, source, model, language),
         )?;
+        // §F1.4 S1 and S4 say things the user has to see — "no room for that much audio", "no speech
+        // found" — and they live in the outcome, not in the words. Dropping them made a halved ceiling and
+        // an empty transcript both look like a silent success, so they go to the door's log sink the way
+        // `separate_run::run_task` hands over its own.
+        for line in &outcome.logs {
+            log(line);
+        }
         Ok(WordsDoc { text: outcome.text, words: outcome.words })
     }
 }
@@ -765,7 +791,19 @@ fn write_scratch(
         Some(tree) => tree.asr_scratch(source),
         None => scratch_dir(),
     };
-    std::fs::create_dir_all(&dir).map_err(|why| format!("{}: {why}", dir.display()))?;
+    write_scratch_at(&dir, file, plan, body)
+}
+
+/// The note itself, wherever the calling stage keeps its scratch. Each stage names its own folder
+/// (`asr/`, `align/`, `diar/`) because a stage's cleanup deletes exactly that folder — a window written
+/// into another stage's scratch is a file nobody ever removes.
+fn write_scratch_at(
+    dir: &Path,
+    file: &str,
+    plan: &[String],
+    body: &serde_json::Value,
+) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
     let text = format!("{}\n{}\n", plan.join(" "), body);
     std::fs::write(dir.join(format!("{file}.plan")), text)
         .map_err(|why| format!("{}: {why}", dir.join(file).display()))
@@ -794,11 +832,14 @@ fn read_scratch(tree: &Option<Tree>, source: &str, file: &str) -> Result<(Vec<St
     Ok((plan, lines.next().unwrap_or_default().to_string()))
 }
 
-/// Where one chunk's cut audio goes: beside its `.plan`, under the session when one is open.
-fn scratch_out(tree: &Option<Tree>, source: &str, file: &str) -> std::path::PathBuf {
+/// The same rule for a door built without a session handle: name the folder the stage keeps its scratch
+/// in, and the cut lands there anyway. `transcribe_source` holds the tree but hands its closures an
+/// `Option<Tree>` clone, so without this the ASR's chunks would fall outside every stage's folder and
+/// outside the session — invisible to the cleanup that is supposed to keep them.
+fn scratch_folder(tree: &Option<Tree>, fallback: impl FnOnce(&Tree) -> std::path::PathBuf) -> std::path::PathBuf {
     match tree {
-        Some(tree) => tree.asr_scratch(source).join(file),
-        None => scratch_dir().join(file),
+        Some(tree) => fallback(tree),
+        None => scratch_dir(),
     }
 }
 
@@ -845,6 +886,7 @@ pub fn transcribe_source(
     source: &str,
     duration: f64,
     language: &str,
+    log: &mut impl FnMut(&str),
 ) -> Result<crate::transcribe::Passage, String> {
     let conf = crate::settings::read(paths).unwrap_or_default();
     let asr_model = services::asr_model(&conf).to_string();
@@ -895,7 +937,7 @@ pub fn transcribe_source(
         duration,
         &asr_model,
         align,
-        transcribe_asr(&held, paths, source, &asr_model, language, duration, &silences),
+        transcribe_asr(&held, paths, source, &asr_model, language, duration, &silences, log),
         diar_ask(&held, paths, source, &diar_model, duration),
     )
 }

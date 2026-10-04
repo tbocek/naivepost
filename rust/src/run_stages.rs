@@ -512,7 +512,7 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     }
     let pcm = crate::decode_audio::ensure(&tree, &lane, &source_path, &conf.ffmpeg, log)?;
     let duration = probe_duration(&conf.ffmpeg, &pcm, log)?;
-    let passage = crate::audio_task::transcribe_source(&tree, &paths, &lane, duration, &language)?;
+    let passage = crate::audio_task::transcribe_source(&tree, &paths, &lane, duration, &language, log)?;
     for line in &passage.logs {
         log(line);
     }
