@@ -183,10 +183,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // true here and in the reference picture, so it is not a defect to fix -- but it does mean the two
         // shots have to be compared on the row's own contents, not on a bench state. Measured with no
         // request for another row, `04-prepare` and `03-window` differ by 552 bytes and nothing else.
-        // A screen that DOES want another row (the picker open on a prompt, `04-prompt-picker`) has to say
-        // so BEFORE the window is built: `bench_box` reads this once and paints from it, and a later call
-        // would arrive after the heading was already drawn.
-        if screen == "04-prompt-picker" {
+        // A screen that DOES want another row has to say so BEFORE the window is built: `bench_box` reads
+        // this once and paints from it, and a later call would arrive after the heading was already drawn.
+        // Both of these ask for row 2 (Describe): §1's own picture of the Prepare page is the page *with
+        // the Describe prompt open*, and the picker shot is that same row with its dropdown spread.
+        if matches!(screen.as_str(), "04-prepare" | "04-prompt-picker") {
             ui::set_bench_open_row(2);
         }
         let window = ui::build_window(app, &model, page);

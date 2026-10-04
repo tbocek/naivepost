@@ -576,7 +576,14 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s17_an_
     for index in [3, 6] {
         let row = &bench::ROWS[index];
         assert!(!bench::edited(&d.paths, row), "{} claims an edit it has not got", row.title);
-        assert_eq!(bench::text(&d.paths, &project, row), "", "{}: no wording yet", row.title);
+        // With no override the box shows what the build ships — which is `spec/prompts/<key>.md`'s
+        // fenced block, read through the same door the bench reads it with.
+        assert_eq!(
+            bench::text(&d.paths, &project, row),
+            naivepost::prompts::shipped_text(row.key).unwrap_or_default(),
+            "{}: no edit means the built-in wording shows",
+            row.title
+        );
     }
     std::fs::remove_dir_all(&d.root).ok();
 }

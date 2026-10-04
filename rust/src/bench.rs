@@ -134,18 +134,18 @@ pub fn text(paths: &Paths, project: &Project, row: &Row) -> String {
     settings::stored_prompt(paths, row.key)
         .ok()
         .flatten()
-        .unwrap_or_else(|| SHIPPED.to_string())
+        .unwrap_or_else(|| shipped(row))
 }
 
-/// This build's shipped wording. Each step's round brings its own text — F1.7 the
-/// describe prompt, F1.8 the fixer's, and so on — so until that round lands an empty
-/// box is the shipped text and anything typed in is this machine's edit. Reset before
-/// then returns to empty, which is what it means for a step with no wording yet.
-/// This build's shipped wording, published so a widget test can assert what Reset repaints the
-/// box with without retyping the constant.
-pub const SHIPPED_FOR_TESTS: &str = "";
-
-const SHIPPED: &str = SHIPPED_FOR_TESTS;
+/// The wording a row ships with: the fenced ``` block of `spec/prompts/<key>.md`, read through
+/// [`crate::prompts::shipped_text`], which finds the tree from the executable or the working
+/// directory. A file that is missing or unreadable answers an empty string rather than failing the
+/// screen: the bench is a view of the prompts and one absent file must not stop the page opening —
+/// the write path still reports its errors. The User Context has no key and so no file, which is why
+/// [`text`] and [`reset`] short-circuit around it.
+pub fn shipped(row: &Row) -> String {
+    crate::prompts::shipped_text(row.key).unwrap_or_default()
+}
 
 /// Store what was typed. §1 asks for every keystroke to be stored: there is no Save
 /// button here, and one would be the only way to lose an edit by closing the window.
@@ -158,7 +158,7 @@ pub fn store(paths: &Paths, project: &mut Project, row: &Row, text: &str) -> Res
         return Ok(());
     }
     settings::prompt_file_ok(row.key)?;
-    settings::write_prompt(paths, row.key, text, SHIPPED)?;
+    settings::write_prompt(paths, row.key, text, &shipped(row))?;
     Ok(())
 }
 
@@ -170,7 +170,7 @@ pub fn reset(paths: &Paths, row: &Row) -> Result<Option<String>, String> {
         return Ok(None);
     }
     settings::clear_prompt(paths, row.key)?;
-    Ok(Some(SHIPPED.to_string()))
+    Ok(Some(shipped(row)))
 }
 
 /// The picker's rows: index and title, in pipeline order. Titles rather than keys — the

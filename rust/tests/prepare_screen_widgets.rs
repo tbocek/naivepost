@@ -149,7 +149,7 @@ fn check_readouts_and_reset(app: &adw::Application) {
         "and so did Reset, which has nothing left to restore"
     );
     // The box shows what `bench::reset` handed back. Read the shipped wording through a fresh
-    // reset's return value rather than a literal, so retuning SHIPPED cannot leave this stale.
+    // reset's return value rather than a literal, so retuning the shipped wording cannot leave this stale.
     let restored = naivepost::bench::reset(&settings_paths(), row)
         .expect("a second reset still answers")
         .expect("a prompt row always has shipped wording to restore");
@@ -294,7 +294,28 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
     assert_eq!(rows.len(), 13);
     assert_eq!(rows[0].1, "User Context");
 
-    // Choosing the Cut prompt repaints the title as "Cut prompt" (§1's badge **2**).
+    // §1's own picture is this page with the DESCRIBE prompt open, so the shipped wording has to be
+    // what the box draws when nothing on this machine overrides it.
+    picker.set_selected(2);
+    settle();
+    assert_eq!(
+        title.text().as_str(),
+        naivepost::bench::title(&naivepost::bench::ROWS[2]),
+        "the heading reads \u{2039}Describe\u{203a} prompt: {}",
+        title.text()
+    );
+    let describe_shipped = naivepost::prompts::shipped_text("describe").expect("describe ships a file");
+    assert_eq!(
+        text_of(&buffer),
+        describe_shipped,
+        "the box holds the shipped describe wording"
+    );
+    assert_eq!(
+        describe_shipped.lines().next().unwrap_or_default(),
+        "You describe screen-recorded footage for a video editor.",
+        "and it is the spec's own wording, first line and all"
+    );
+    assert!(!describe_shipped.is_empty(), "a fresh machine never opens on an empty box");
     picker.set_selected(4);
     assert_eq!(
         title.text().as_str(),
@@ -323,14 +344,18 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
             .is_none(),
         "Reset leaves nothing behind"
     );
-    assert_eq!(text_of(&buffer), "", "the box shows what is stored after a reset");
+    assert_eq!(
+        text_of(&buffer),
+        naivepost::bench::shipped(&naivepost::bench::ROWS[4]),
+        "the box shows the shipped wording after a reset, not an empty box: {}",
+        text_of(&buffer)
+    );
     assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "the mark goes with the edit");
 
     // Back to row 0: typing there edits the project's note and writes no file at all. A keystroke
     // changes only the box; §1 asks for storage, and `bench::store` is what stores it — so this
     // asserts that the prompts folder stayed empty of anything for row 0 while the mark and Reset
-    // stayed off, which is exactly what a row with no file of its own looks like. What the box will
-    // be repainted with is the next frame's business, not §1's promise.
+    // stayed off, which is exactly what a row with no file of its own looks like.
     picker.set_selected(0);
     buffer.set_text("a lecture about special relativity");
     assert!(
@@ -345,6 +370,40 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
     );
     assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "no mark on row 0");
     assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "no Reset on row 0");
+}
+
+/// §1 badge **5** through the widget: a prompt row holds the wording the build ships, and Reset goes
+/// back to THAT rather than to an empty box. The machine starts with no override anywhere.
+#[test]
+fn sec_04_prepare_1_screen_s_the_box_holds_the_shipped_wording_and_reset_returns_to_it() {
+    let paths = settings_paths();
+    let project = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let describe = naivepost::prompts::shipped_text("describe").expect("describe ships a file");
+    assert_eq!(
+        describe.lines().next().unwrap_or_default(),
+        "You describe screen-recorded footage for a video editor.",
+        "the shipped wording is the spec's own sentence"
+    );
+    let row = &naivepost::bench::ROWS[2];
+    let _ = naivepost::settings::clear_prompt(&paths, row.key);
+    assert_eq!(
+        naivepost::bench::text(&paths, &project, row),
+        describe,
+        "with no edit on this machine the bench draws the shipped wording"
+    );
+    // Typing something else makes it this machine's edit; resetting gives the built-in words back.
+    naivepost::bench::store(&paths, &mut naivepost::project::Project::default(), row, "mine")
+        .expect("storing an edit works");
+    assert!(naivepost::bench::edited(&paths, row), "and the ✎ condition is met");
+    let restored = naivepost::bench::reset(&paths, row)
+        .expect("reset answers")
+        .expect("a prompt row has shipped wording to restore");
+    assert_eq!(restored, describe, "Reset restores the shipped wording, not an empty box");
+    assert_eq!(
+        naivepost::bench::text(&paths, &project, row),
+        describe,
+        "and the box reads that way again"
+    );
 }
 
 #[test]

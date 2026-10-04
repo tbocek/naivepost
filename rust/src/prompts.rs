@@ -84,6 +84,65 @@ pub fn job(key: &str) -> Option<Job> {
     }
 }
 
+/// The first ``` fenced block of a markdown file, its contents trimmed. `None` when there is none.
+pub fn fenced_block(markdown: &str) -> Option<String> {
+    let opened = markdown.find("```")?;
+    let rest = &markdown[opened + 3..];
+    // Skip the language tag line (```text) if the fence carries one.
+    let body = match rest.find('\n') {
+        Some(newline) => &rest[newline + 1..],
+        None => rest,
+    };
+    let closed = body.find("```")?;
+    Some(body[..closed].trim().to_string())
+}
+
+/// One prompt's shipped wording, read from the tree: the text of the fenced ``` block of
+/// `spec/prompts/<key>.md`, which is what the model is meant to receive — the markdown around it
+/// is for readers of the spec. A file with no fence is taken whole, trimmed; `None` when the key
+/// has no shipped file or it cannot be read.
+///
+/// [`shipped_file`] answers only the name (`prompts/system.md`), relative to the tree root; this is
+/// the reader. The root is found by walking up from the executable or the working directory rather
+/// than hardcoded, so the same binary reads its prompts from an install tree, a dev checkout, or a
+/// test run out of `rust/`. Every caller that asks a model something goes through here, and so does
+/// the Prepare bench, which shows exactly this wording in its box (§04-prepare#1-screen).
+pub fn shipped_text(key: &str) -> Option<String> {
+    let raw = read_shipped(shipped_file(key)?)?;
+    Some(fenced_block(&raw).unwrap_or_else(|| raw.trim().to_string()))
+}
+
+/// Find and read one shipped prompt by its root-relative name. Two starting points are tried
+/// (executable, then working directory) because a test runs from `rust/` while the installed
+/// binary runs from anywhere.
+fn read_shipped(rel: &str) -> Option<String> {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()))
+        .unwrap_or_default();
+    let cwd = std::env::current_dir().unwrap_or_default();
+    // `prompts/system.md` is the name `shipped_file` gives; the files sit under the tree root's
+    // `spec/` folder, so both `<root>/prompts/…` (an install that ships the prompts beside the
+    // binary) and `<root>/spec/prompts/…` (this checkout) are honoured.
+    for start in [exe_dir, cwd] {
+        let mut dir = start.as_path();
+        // Bounded walk: `rust/target/debug/naivepost` is three levels under the root, and a
+        // nested dev tree is deeper; six covers both without hunting the filesystem.
+        for _ in 0..6 {
+            for candidate in [dir.join(rel), dir.join("spec").join(rel)] {
+                if let Ok(text) = std::fs::read_to_string(&candidate) {
+                    return Some(text);
+                }
+            }
+            match dir.parent() {
+                Some(parent) => dir = parent,
+                None => break,
+            }
+        }
+    }
+    None
+}
+
 /// Where this build keeps one prompt's shipped wording, relative to the tree root:
 /// `prompts/<key>.md`. Known keys answer `Some`; anything else answers `None` rather than
 /// building a path to a file that cannot exist.

@@ -8,12 +8,11 @@
 //! opens no socket — the reply arrives through a caller-supplied closure exactly as in
 //! [`crate::describe`] and [`crate::fix_transcripts`].
 //!
-//! Why the wording is an argument rather than something looked up: this build bakes no shipped prompt
-//! text into the crate ([`crate::bench::SHIPPED_FOR_TESTS`] is empty and
-//! [`crate::prompts::shipped_file`] answers only a file NAME that nothing here reads), so a builder
-//! that went hunting for `prompts/` would invent a load path the app does not have. The door takes
-//! the two wordings from [`crate::settings::prompt_text`] with an empty fallback, which is what the
-//! settings box itself shows when this machine holds no edit.
+//! Why the wording is an argument rather than something looked up: the shipped text lives in
+//! `spec/prompts/<key>.md`, read through [`crate::prompts::shipped_text`], so a builder that went
+//! hunting for `prompts/` itself would invent a load path the app does not have. The door takes
+//! the two wordings from [`crate::settings::prompt_text`] with that shipped wording as the fallback,
+//! which is what the settings box itself shows when this machine holds no edit.
 
 use crate::cut::{Fx, Seg};
 use crate::layout::Tree;
