@@ -46,6 +46,9 @@ pub struct Ask<'a> {
 /// `Err` naming the server and showing the reply rather than a guess — an aligner already does this
 /// ([`crate::align::parse_words`]) and a silent empty answer is how a wrong guess gets filed as work.
 fn answer(body: &Value) -> Value {
+    if body.get("ok").and_then(Value::as_bool) == Some(false) {
+        return body.clone();
+    }
     body.get("result").cloned().unwrap_or_else(|| body.clone())
 }
 
@@ -498,6 +501,133 @@ pub fn separation_body(model: &str, audio: &ServerPath, chunk: &str) -> Value {
         "model": model,
         "request": { "audio": audio.as_str(), "chunk": chunk },
     })
+}
+
+/// The keys that name the speech half and everything else, however the model spelled them. A reply may
+/// also answer one of them with an ARRAY of files (`{"rest": ["/u/a.wav", "/u/b.wav"]}`), which is a
+/// rest made of more than one file rather than a mistake.
+const VOICE_KEYS: [&str; 2] = ["voice", "vocals"];
+const REST_KEYS: [&str; 4] = ["rest", "accompaniment", "nonvoice", "instrumental"];
+
+/// What one chunk's separation reply gave back: which stem holds the speech (or `None` when the chunk
+/// was silence, which is what makes S6's loudness rule meaningful), where each voice file lives on the
+/// server, and where every other file does — in order, because a multi-stem answer's rest is their sum
+/// and the order is the only thing that keeps them from being mixed twice.
+#[derive(Debug)]
+pub struct ChunkStems {
+    pub voice: Option<usize>,
+    pub voices: Vec<ServerPath>,
+    pub rests: Vec<ServerPath>,
+}
+
+/// Read one chunk's stems out of a tasks-run reply, however the model spelled them.
+///
+/// Three shapes are accepted, all of them real answers a local server gives:
+/// * `{"voice": ..., "rest": ...}` — the two-way answer [`stem_paths`] already reads;
+/// * `{"stems": [{"name": "vocals", "path": ...}, ...]}` — a RoFormer's named set;
+/// * a flat object whose values are paths (`{"drums": ..., "bass": ..., "other": ..., "vocals": ...}`)
+///   — HTDemucs, four stems, no names field.
+///
+/// A name counts as the voice when it contains `voice` or `vocal`; everything else is rest. Silence is
+/// `voice: null`/absent-with-no-voices, and a reply that carries NO paths at all is an error naming the
+/// reply, never an empty answer: a chunk that came back with nothing in it is not a chunk that heard
+/// nothing (the same rule [`asr_answer`] applies to its text).
+pub fn chunk_stems(body: &Value) -> Result<ChunkStems, String> {
+    let reply = answer(body);
+    let mut voices: Vec<ServerPath> = Vec::new();
+    let mut rests: Vec<ServerPath> = Vec::new();
+    let mut voice_index: Option<usize> = None;
+    // An explicit failure is reported before anything is parsed: `answer` keeps the whole body for
+    // exactly this case, so the sentence the server wrote is what reaches the log.
+    if reply.get("ok").and_then(Value::as_bool) == Some(false) {
+        let why = reply.get("error").and_then(Value::as_str).unwrap_or("no reason given");
+        return Err(format!("the audio.cpp server refused the separation: {why}"));
+    }
+    let mut named: Vec<(String, ServerPath)> = Vec::new();
+    if let Some(list) = reply.get("stems").and_then(Value::as_array) {
+        for entry in list {
+            let name = ["name", "stem", "track"]
+                .iter()
+                .filter_map(|key| entry.get(*key).and_then(Value::as_str))
+                .next()
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let path = ["path", "audio", "file", "url"]
+                .iter()
+                .filter_map(|key| entry.get(*key).and_then(Value::as_str))
+                .next()
+                .and_then(ServerPath::from_upload);
+            if let Some(path) = path {
+                named.push((name, path));
+            }
+        }
+    } else {
+        // Flat object: pairs in the reply's own order, keys kept for the voice test. The named loop
+        // below is what fills the lists from a `"stems"` array; a bare `"voice"`/`"rest"` pair goes
+        // through `push_paths`, which also accepts an ARRAY of files for one half.
+        if let Some(map) = reply.as_object() {
+            for (key, value) in map {
+                // Only a key that MEANS one of the halves is read as such; an HTDemucs object's `other`
+                // is an instrument name on the same footing as `drums` and `bass`, so it stays in the
+                // named loop below rather than being claimed here.
+                if VOICE_KEYS.contains(&key.as_str()) {
+                    push_paths(value, &mut voices);
+                    continue;
+                }
+                if REST_KEYS.contains(&key.as_str()) {
+                    push_paths(value, &mut rests);
+                    continue;
+                }
+                if let Some(path) = value.as_str().and_then(ServerPath::from_upload) {
+                    named.push((key.to_ascii_lowercase(), path));
+                }
+            }
+        }
+    }
+    for (name, path) in named {
+        let speech = name.contains("voice") || name.contains("vocal");
+        if speech {
+            if voice_index.is_none() {
+                voice_index = Some(voices.len());
+            }
+            voices.push(path);
+        } else {
+            rests.push(path);
+        }
+    }
+    if voice_index.is_none() {
+        voice_index = voices.first().map(|_| 0);
+    }
+    if voices.is_empty() && rests.is_empty() {
+        // A reply with no paths is either silence or a shape nobody recognised, and only one of those is
+        // normal: a reply that looks like a mistake is shown, not swallowed.
+        let looks_silent = reply.get("voice").is_some()
+            || reply.get("silence").and_then(Value::as_bool) == Some(true);
+        if !looks_silent {
+            return Err(format!(
+                "the audio.cpp server answered {body} -- no stem paths in it"
+            ));
+        }
+        return Ok(ChunkStems { voice: None, voices, rests });
+    }
+    Ok(ChunkStems { voice: voice_index, voices, rests })
+}
+
+/// One JSON value's server paths: a single string or an array of them, ignoring anything else.
+fn push_paths(value: &Value, into: &mut Vec<ServerPath>) {
+    match value {
+        Value::String(text) => {
+            if let Some(path) = ServerPath::from_upload(text) {
+                into.push(path);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                push_paths(item, into);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Put one chunk on the server and bring back the path its tasks may name. The bytes come from the

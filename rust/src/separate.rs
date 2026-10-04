@@ -170,7 +170,6 @@ pub fn lopsided(mix: &str, rest: &str) -> Option<String> {
 /// number is ffmpeg's, the reading of it is this module's, and nothing should re-parse it elsewhere.
 pub fn mean_db(level: &str) -> Option<f64> {
     let digits = level
-        .trim()
         .split_whitespace()
         .next()?
         .trim_end_matches('%')
@@ -194,6 +193,65 @@ pub struct Outcome {
     pub voice: String,
 }
 
+/// S6/S7's ending, once both halves are on disk: the loudness report, the "split into" line, and the
+/// row turned into two.
+///
+/// Split out of [`separate`] because the run path does its own media work (decode, silences, chunks,
+/// joins) before it gets here, and this is the part neither side should restate: three log lines in a
+/// fixed order and one row split. `logs` arrives from the caller with whatever it said getting here —
+/// the start line above all of it — and comes back as the run's whole log for this row.
+pub fn finish(
+    project: &mut Project,
+    tree: &Tree,
+    root: &Path,
+    index: usize,
+    logs: &[String],
+    mix: &str,
+    mut loudness: impl FnMut(&Path) -> String,
+) -> Outcome {
+    let base = project
+        .sources
+        .get(index)
+        .map(|source| base_name(&source.path).to_string())
+        .unwrap_or_default();
+    let stem = base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(&base).to_string();
+    let container = if is_video(Path::new(&base)) { "mkv" } else { "wav" };
+    let rest_path = tree.split_novoice(&stem, container);
+    let voice_path = tree.split_voice(&stem);
+    let mut logs = logs.to_vec();
+    let voice_level = loudness(&voice_path);
+    let rest_level = loudness(&rest_path);
+    logs.push(loudness_report(&base, mix, &voice_level, &rest_level));
+    logs.push(split_log(&base, &file_name(&rest_path), &file_name(&voice_path)));
+    let rest = layout::write_path(root, tree.dir(), &rest_path);
+    let voice = layout::write_path(root, tree.dir(), &voice_path);
+    split_rows(project, index, &rest, &voice);
+    Outcome { logs, rest, voice }
+}
+
+/// "Both halves already there?" as a question the run path can ask before it starts any work.
+///
+/// A row that IS a half of a split has no live scissors at all — `sources::separable` says so for the
+/// row's ✂ — and granting its wish again would produce `<base>.split-voice.split-voice.wav`, which is
+/// nobody's source. `Some` means the row needs nothing: the log line says so rather than going quiet,
+/// and NO row split happens here, because nothing changed.
+pub fn already_split(project: &Project, tree: &Tree, root: &Path, index: usize) -> Option<Outcome> {
+    let source = project.sources.get(index)?;
+    let base = base_name(&source.path).to_string();
+    let stem = base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(&base).to_string();
+    let container = if is_video(Path::new(&base)) { "mkv" } else { "wav" };
+    let rest_path = tree.split_novoice(&stem, container);
+    let voice_path = tree.split_voice(&stem);
+    if !both_there(&rest_path, &voice_path) {
+        return None;
+    }
+    Some(Outcome {
+        logs: vec![already_split_log(&base)],
+        rest: layout::write_path(root, tree.dir(), &rest_path),
+        voice: layout::write_path(root, tree.dir(), &voice_path),
+    })
+}
+
 /// S1-S7 for one row. `seconds` and `silences` come from decoding at [`SAMPLE_RATE`]/[`CHANNELS`]
 /// (S1) and looking for the gaps (S2); `loudness` is ffmpeg's `volumedetect` reading of a file,
 /// asked for after both halves are on disk.
@@ -201,6 +259,7 @@ pub struct Outcome {
 /// The two products are written here so "both halves already there?" has something to ask about on
 /// the next run, but F1.2's "project saved" belongs to the caller: this module must not touch disk
 /// twice, and a split that fails halfway should leave the session as it was rather than half-saved.
+#[allow(clippy::too_many_arguments)] // the split's inputs are exactly what §F1.2 S1-S6 names, and a struct here would only rename them
 pub fn separate(
     project: &mut Project,
     tree: &Tree,
@@ -231,21 +290,16 @@ pub fn separate(
     let rest_path = tree.split_novoice(&stem, container);
     let voice_path = tree.split_voice(&stem);
 
-    // Skip when both halves exist. A row that IS a half of a split has no live scissors at all —
-    // `sources::separable` says so for the row's ✂ — and granting its wish again would produce
-    // `<base>.split-voice.split-voice.wav`, which is nobody's source.
-    if both_there(&rest_path, &voice_path) {
-        return Ok(Outcome {
-            logs: vec![already_split_log(&base)],
-            rest: layout::write_path(root, &tree.dir(), &rest_path),
-            voice: layout::write_path(root, &tree.dir(), &voice_path),
-        });
+    // Skip when both halves exist; the rule is [`already_split`], which the run path asks first so it
+    // can skip the ffmpeg legs too.
+    if let Some(done) = already_split(project, tree, root, index) {
+        return Ok(done);
     }
 
     // S1: the recording is decoded once, to 44.1 kHz stereo, and every piece of `plan` is cut from
     // that decode rather than re-decoded from the source. The stored path is what resolves through
-    // the one path rule; the decode's own arguments are `decode_plan`.
-    let _ = (&stored, decode_plan());
+    // the one path rule; the decode's own arguments are `decode_plan`, which the run path
+    // ([`crate::separate_media::decode`]) is what actually runs.
     let plan = chunk_plan(seconds, silences);
     // Said before the first chunk goes up, so the wait has a number in front of it.
     let mut logs = vec![start_log(&base, seconds, plan.len(), model)];

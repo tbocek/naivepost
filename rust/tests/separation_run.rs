@@ -102,6 +102,10 @@ impl Scene {
         std::fs::create_dir_all(session.join(format!("prepare/inputs/{LANE}"))).expect("the input folder");
         std::fs::write(session.join(format!("prepare/inputs/{LANE}/voice16k.wav")), b"pcm-bytes")
             .expect("the decoded audio");
+        // The recording itself. §F1.2's ▶ decodes from the SOURCE now, so the file the project row names
+        // has to exist; the stubs below only ever count it and copy it, never decode it for real.
+        std::fs::create_dir_all(session.join("sources")).expect("the sources folder");
+        std::fs::write(session.join("sources/lecture.mkv"), b"mkv-bytes").expect("the recording");
 
         let paths = Paths {
             config_dir: root.join("cfg/naivepost"),
@@ -151,8 +155,17 @@ impl Scene {
 
 /// One folder holding both stub tools, unique per test so parallel tests never share a log.
 ///
-/// `ffprobe` answers a duration; `ffmpeg` answers a `volumedetect` mean on stderr (where ffmpeg
-/// prints it) and does nothing for the scene pass, which only needs its command to succeed.
+/// `ffprobe` answers a duration. `ffmpeg` behaves like the tool where the split depends on it: its last
+/// argument is an output path unless it is `-` (the `volumedetect`/`null` pass, which answers the mean
+/// on stderr where ffmpeg prints it), and for a real output it CREATES that file —
+/// * `-c:v copy` (the video mux): copies what the SECOND `-i` named, so a mux that mapped the wrong
+///   input produces the wrong bytes and the `REST-BYTES` assertion catches it;
+/// * `concat` (a join): concatenates, in order, every file named by a `file '...'` line of the list
+///   given to `-i`, which is what the real demuxer does with the one part these tests exercise;
+/// * anything else (decode, `-ss/-t` cut, `amix` mix): copies its first `-i`, or writes a payload when
+///   there is no input at all.
+///
+/// A stub that only succeeded would let the run report halves it never wrote.
 fn stubs(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("np-sep-tools-{tag}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("the stub folder");
@@ -160,7 +173,47 @@ fn stubs(tag: &str) -> PathBuf {
         ("ffprobe", "#!/bin/sh\necho \"12.5\"\n"),
         (
             "ffmpeg",
-            "#!/bin/sh\nfor last in \"$@\"; do :; done\ncase \"$last\" in\n  -) echo \"avg_volume: -18.0 dB\" >&2 ;;\nesac\n",
+            r#"#!/bin/sh
+last=''
+for arg in "$@"; do last="$arg"; done
+if [ "$last" = "-" ]; then
+  echo "avg_volume: -18.0 dB" >&2
+  exit 0
+fi
+first_input=""
+second_input=""
+seen=0
+for arg in "$@"; do
+  if [ "$arg" = "-i" ]; then
+    pending=1
+    continue
+  fi
+  if [ "${pending:-0}" = 1 ]; then
+    pending=0
+    seen=$((seen + 1))
+    if [ "$seen" = 1 ]; then first_input="$arg"; fi
+    if [ "$seen" = 2 ]; then second_input="$arg"; fi
+  fi
+done
+case "$*" in
+  *"-c:v copy"*) cp "$second_input" "$last" ;;
+  *concat*)
+    : > "$last"
+    # The list's lines read `file <quote>/path<quote>`: cut the two apostrophes with octal escapes,
+    # because an apostrophe literal would open a shell string inside this script.
+    grep ^file "$first_input" | tr -d "\047" | cut -d" " -f2- | while read -r part; do
+      cat "$part" >> "$last"
+    done
+    ;;
+  *)
+    if [ -f "$first_input" ]; then
+      cp "$first_input" "$last"
+    elif [ "$last" != "" ]; then
+      printf 'STUB-AUDIO' > "$last"
+    fi
+    ;;
+esac
+"#,
         ),
     ] {
         let path = dir.join(name);
