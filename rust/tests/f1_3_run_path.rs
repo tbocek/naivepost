@@ -150,6 +150,22 @@ impl Scene {
 
     /// Walk it. Returns the log lines the walk produced, newest last.
     fn walk(&self) -> Vec<String> {
+        let (drive, log) = self.walk_drive();
+        assert!(matches!(drive, run_stages::Drive::Done { .. }), "the walk finished: {drive:?} / log {log:?}");
+        log
+    }
+
+    /// The same walk with no expectation about how it ended: a fatal step is the thing a test is
+    /// checking, and the pair `say_outcome` prints is what it asserts on.
+    fn walk_fail(&self) -> Vec<String> {
+        let (drive, mut log) = self.walk_drive();
+        run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
+        log
+    }
+
+    /// Walk the scene's speech stage and hand back both the drive's answer and every line the walk
+    /// logged, in order.
+    fn walk_drive(&self) -> (run_stages::Drive, Vec<String>) {
         let mut queue = naivepost::runqueue::Queue::new();
         let mut procs = Subprocesses::default();
         let mut log: Vec<String> = Vec::new();
@@ -157,8 +173,7 @@ impl Scene {
         let drive = run_stages::drive_walk(&stages, &mut queue, || false, || false, |line| {
             log.push(line.to_string());
         }, &mut procs);
-        assert!(matches!(drive, run_stages::Drive::Done { .. }), "the walk finished: {drive:?} / log {log:?}");
-        log
+        (drive, log)
     }
 
     fn mine(&self) -> Vec<Seen> {
@@ -210,14 +225,45 @@ fn leave() {
     std::env::set_current_dir(env!("CARGO_MANIFEST_DIR")).expect("back to the crate folder");
 }
 
-/// Hold the env, lay out the scene, walk it, put the env back. Every assertion afterwards reads files
-/// and the fake's record, neither of which another test's `set_current_dir` can move.
-fn walk_scene(scene: &Scene) -> Vec<String> {
+/// Walk a scene that is EXPECTED to fail, and hand back what the walk logged. The other walker asserts
+/// the walk finished; a fatal step is the point here, so the failure is what is returned: the stage
+/// name and the sentence the door surfaced, the same pair `say_outcome` prints for the run bar.
+/// Diarization answers may be scripted AFTER the reset -- `reset_pieces` clears the queue, so an answer
+/// a test body queued itself is gone before the walk starts, which makes these two walkers the only
+/// honest way to drive the ladder from a test.
+fn walk_scene_failing_queued(scene: &Scene, answers: &[&'static str]) -> Vec<String> {
     let _guard = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
         std::env::remove_var(name);
     }
     reset_pieces();
+    for answer in answers {
+        queue_diar(answer);
+    }
+    scene.enter();
+    scene.project();
+    let log = scene.walk_fail();
+    leave();
+    log
+}
+
+/// Hold the env, lay out the scene, walk it, put the env back. Every assertion afterwards reads files
+/// and the fake's record, neither of which another test's `set_current_dir` can move.
+fn walk_scene(scene: &Scene) -> Vec<String> {
+    walk_scene_queued(scene, &[])
+}
+
+/// `walk_scene` with the diarizer's answers queued AFTER `reset_pieces` has cleared the queue — see
+/// [`walk_scene_failing_queued`] for why the order is the whole point.
+fn walk_scene_queued(scene: &Scene, answers: &[&'static str]) -> Vec<String> {
+    let _guard = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
+        std::env::remove_var(name);
+    }
+    reset_pieces();
+    for answer in answers {
+        queue_diar(answer);
+    }
     scene.enter();
     scene.project();
     let log = scene.walk();
@@ -294,8 +340,22 @@ fn fake_audio() -> (String, Arc<Mutex<Vec<Seen>>>) {
 }
 
 /// Two voices, wide enough apart that §F1.3 S6 makes two segments, and long enough each to be an
-/// anchor voice on the 90 s rung (`diarize::ANCHOR_MIN_SECONDS`).
+/// anchor voice on the 90 s rung (`diarize::ANCHOR_MIN_SECONDS`). Kept as text so a test can name the
+/// shape it is being served; the fake's live ordinary answer is `diar_reply`.
+#[allow(dead_code)] // the shape these tests describe, spelled out where a reader can see it
 const TURNS: &str = r#"{"turns":[{"start_sample":1600,"end_sample":80000,"speaker_id":0},{"start_sample":120000,"end_sample":200000,"speaker_id":1}]}"#;
+
+/// Diarization's answer with ONE voice heard across the whole window (`from..to`), which is what
+/// crowds a small window out: the anchor takes `anchor_per(window)` = min(12, window/4) seconds, so in
+/// a 25 s rung one voice eats 6.25 s and leaves 17.75 s — fine — while in a 10 s rung the same voice is
+/// the whole window. `diar_window_ask` moves each reply onto the recording's clock, so the fake answers
+/// in seconds relative to the window it was asked about.
+#[allow(dead_code)] // documents the single-voice shape the ladder arithmetic is explained with
+fn diar_spanning(from: f64, to: f64) -> String {
+    let start = (from * 16_000.0) as u64;
+    let end = (to * 16_000.0) as u64;
+    format!("{{\"turns\":[{{\"start_sample\":{start},\"end_sample\":{end},\"speaker_id\":0}}]}}")
+}
 
 /// One chunk's text and word times, in that chunk's OWN seconds: `asr::shift` moves them by the
 /// chunk's edge afterwards, which is the thing S4's stitching is about.
@@ -372,13 +432,24 @@ fn route(path: &str, body: &str) -> (u16, String) {
         return (404, "{\"error\":\"no such thing\"}".to_string());
     }
     if body.contains(services::DIAR_MODEL) {
-        return (200, TURNS.to_string());
+        // The diarizer's answers come from the queue a test fills, one per ask, in the order the ladder
+        // reaches its rungs (`diar_answer_for`).
+        let asks = DIAR_ASKS.fetch_add(1, Ordering::SeqCst);
+        return diar_answer_for(asks + 1);
     }
     if body.contains(SCENE_ALIGNER) {
         // The aligner is asked about ONE window, in the same order as the ASR's pieces, and its
         // reply places that piece's words at that piece's seconds.
         let chunk = next_of(&WINDOWS);
+        if ALIGN_FAILS.load(Ordering::SeqCst) != 0 {
+            // The server's own refusal, in the shape `parse_json`/`align::parse_words` report.
+            return (500, "{\"error\":\"the aligner model is not loaded\"}".to_string());
+        }
         return (200, words_aligned(chunk));
+    }
+    if TEXT_ONLY.load(Ordering::SeqCst) != 0 {
+        // Text and no word times at all — S4's hard branch needs exactly this ASR answer.
+        return (200, "{\"text\":\"hello there\"}".to_string());
     }
     (200, words_chunk(next_of(&CHUNKS)))
 }
@@ -390,14 +461,98 @@ fn next_of(counter: &'static AtomicUsize) -> usize {
     counter.fetch_add(1, Ordering::SeqCst)
 }
 
+/// Per-request answers to the diarizer, read one per ask in the order the ladder reaches its rungs.
+/// A queue is the only honest way to drive that walk: which rung refuses depends on the WINDOW being
+/// asked about, which the envelope does not name, so a test supplies the answers in rung order. Each
+/// entry carries the LABEL the test queued it under, so a test reads back its own words rather than
+/// having a payload compared — `DIAR_REPLIES` is those labels, in the order they were sent.
+static DIAR_QUEUE: Mutex<Vec<(&'static str, String)>> = Mutex::new(Vec::new());
+static DIAR_REPLIES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+/// How many diarization requests the fake has answered, whatever rung each was on.
+static DIAR_ASKS: AtomicUsize = AtomicUsize::new(0);
+
+/// Script the diarizer's NEXT answer, labelled with the word the test used. Queue it through
+/// [`walk_scene_queued`] / [`walk_scene_failing_queued`], never before calling a walker: `reset_pieces`
+/// clears this queue, so an answer put there by the test body itself is gone before the walk starts.
+///
+/// * `"many"` — eight voices spanning the window: 8 x `anchor_per(span)` of anchor, more than a rung of
+///   any width has room to place (see [`diar_voices`] for which two numbers `diarize::plan` compares).
+/// * `"two"` — two 5.6 s voices (`diar_two_voices`), which every rung plans, so the walk stops at the
+///   first rung it asks about.
+/// * `"refusal"` — no `turns` key, which `audio_task::diar_answer` reports as the model's own failure
+///   rather than an empty answer, and no rung survives that.
+fn queue_diar(answer: &'static str) {
+    let payload = match answer {
+        "many" => diar_voices(0.0, 25.0, 8),
+        // No turns key at all: `diar_answer` reports that as the diarizer's own refusal, which no
+        // rung survives, so the walk gives up and names the model.
+        "refusal" => "{\"detail\":\"no turns here\"}".to_string(),
+        // Two voices of 5.6 s each, which every rung plans (see the note above): the answer the walk
+        // is meant to accept and stop on.
+        _ => diar_two_voices(5.6),
+    };
+    DIAR_QUEUE.lock().expect("the reply queue lock").push((answer, payload));
+}
+
+/// How many diarization requests the fake has answered so far.
+#[allow(dead_code)] // the count is `diar_record().len()` today; kept as the request-side twin of it
+fn diar_asks() -> usize {
+    DIAR_ASKS.load(Ordering::SeqCst)
+}
+
+/// What the fake sent for each diarization request, in arrival order.
+fn diar_record() -> Vec<&'static str> {
+    DIAR_REPLIES.lock().expect("the reply log lock").clone()
+}
+
 static CHUNKS: AtomicUsize = AtomicUsize::new(0);
 static WINDOWS: AtomicUsize = AtomicUsize::new(0);
+
+/// A reply with the ASR's text and NOTHING else: the shape that makes S4's failure a hard error rather
+/// than a warning, because there are no word times for the ASR's answer to stand on.
+static TEXT_ONLY: AtomicUsize = AtomicUsize::new(0);
+/// Make the aligner answer its window with an error instead of word times.
+static ALIGN_FAILS: AtomicUsize = AtomicUsize::new(0);
 
 /// The piece counters are per-process while the scenes are per-test, so a test clears them before it
 /// walks: the Nth ask must be piece N-1 of THIS scene's recording, not of whichever test ran first.
 fn reset_pieces() {
     CHUNKS.store(0, Ordering::SeqCst);
     WINDOWS.store(0, Ordering::SeqCst);
+    DIAR_ASKS.store(0, Ordering::SeqCst);
+    DIAR_REPLIES.lock().expect("the reply log lock").clear();
+    DIAR_QUEUE.lock().expect("the reply queue lock").clear();
+    TEXT_ONLY.store(0, Ordering::SeqCst);
+    ALIGN_FAILS.store(0, Ordering::SeqCst);
+}
+
+/// The diarizer's ordinary answer: two voices 4.9 s and 5.0 s, both comfortably anchor-length
+/// (`diarize::ANCHOR_MIN_SECONDS`) and both shorter than the smallest rung's own anchor
+/// (`diarize::anchor_per(25)` = 6.25 s), which is what makes a walk settle on the FIRST rung it asks
+/// about: the anchor is then 2 x 6.25 s of a 25 s window at worst, so no rung of the ladder refuses it.
+/// S6's speaker names come from turns of exactly this shape.
+fn diar_reply() -> String {
+    // Voices 4.9 s and 5.0 s, laid end to end inside the first 13 s so each is fully inside EVERY
+    // window the ladder can ask about: `diarize::plan` measures a voice on the window it was heard in,
+    // so a straddling turn would read as shorter on a small rung and move a refusal the wrong way.
+    diar_two_voices(4.9)
+}
+
+/// The queue the diarizer answers from is taken front-first, and the label the test queued goes to
+/// `DIAR_REPLIES`: that is what lets a ladder walk be scripted rung by rung and read back afterwards.
+/// An empty queue answers with the scene's ordinary reply, which is how the eleven tests that never
+/// script the diarizer still get a plan that fits on the 90 s rung.
+fn diar_answer_for(_ask: usize) -> (u16, String) {
+    let (label, payload) = {
+        let mut queue = DIAR_QUEUE.lock().expect("the reply queue lock");
+        if queue.is_empty() {
+            ("turns", diar_reply())
+        } else {
+            queue.remove(0)
+        }
+    };
+    DIAR_REPLIES.lock().expect("the reply log lock").push(label);
+    (200, payload)
 }
 
 /// S1 + the whole pass: the walk decodes the recording, asks each of the three models in turn, and
@@ -621,4 +776,277 @@ fn f1_3_s5_fold_spans_pairs_the_detector_report() {
     // A lone start is no span, and chatter alone is none either.
     assert!(media::fold_spans("silence_start: 640\n").is_empty(), "an unmeasured gap is not a silence");
     assert!(media::fold_spans("frame=  100 fps=30\n").is_empty(), "chatter alone is no silence");
+}
+
+// --- the diarization ladder through the walk -----------------------------------------------------
+
+/// `voices` voices, each heard across the whole window (`from..to`). What a rung has left to place is
+/// `window − anchor − WINDOW_SLACK_SECONDS`, checked against `NEW_AUDIO_MIN_SECONDS`, where `window` is
+/// the RUNG's width but the anchor is measured on the span it was heard in: `anchor_per(to - from)`
+/// seconds of EACH voice. So the pair that decides a refusal is (voices x anchor_per of the measured
+/// span) against the rung's width -- the count alone does not decide it, and neither does the recording's
+/// length: on a take shorter than the rung every rung measures the same narrow span, so a wide rung gets
+/// its full width of room while the anchor stays small and the rung plans.
+/// `diar_window_ask` moves each reply onto the recording's clock, so the fake answers in seconds
+/// relative to the window it was sent.
+fn diar_voices(from: f64, to: f64, voices: usize) -> String {
+    let start = (from * 16_000.0) as u64;
+    let end = (to * 16_000.0) as u64;
+    let entries: Vec<String> = (0..voices)
+        .map(|voice| format!("{{\"start_sample\":{start},\"end_sample\":{end},\"speaker_id\":{voice}}}"))
+        .collect();
+    format!("{{\"turns\":[{}]}}", entries.join(","))
+}
+
+/// Two voices, each `seconds` long, laid end to end inside the first 13 s of the recording so each one
+/// sits fully inside EVERY window the ladder can ask about. That placement is the point:
+/// `diarize::plan` measures a voice on the window it was heard in and clips a turn to it, so a voice
+/// straddling a rung's edge would read as SHORTER on the small rung than the big one and move a
+/// refusal the wrong way. With both voices inside, what a window has left to place
+/// (`w − anchor − 1`, checked against `NEW_AUDIO_MIN_SECONDS`) turns on one number, `anchor_per(w)`.
+fn diar_two_voices(seconds: f64) -> String {
+    let edges = |from: f64| ((from * 16_000.0) as u64, ((from + seconds) * 16_000.0) as u64);
+    let (a0, a1) = edges(0.5);
+    let (b0, b1) = edges(8.0);
+    format!(
+        "{{\"turns\":[{{\"start_sample\":{a0},\"end_sample\":{a1},\"speaker_id\":0}},\
+         {{\"start_sample\":{b0},\"end_sample\":{b1},\"speaker_id\":1}}]}}"
+    )
+}
+
+/// The ladder geometry, pinned locally so a failure in the walk tests says which of the two moved: at
+/// the 25 s rung the anchor is `anchor_per(25)` = 6.25 s per voice, so TWO voices heard across the
+/// window take 12.5 s of 25 and leave 11.5 s — under `NEW_AUDIO_MIN_SECONDS` and `AnchorTooLong`. At
+/// the 45 s rung the same two voices take 22.5 s of 45 and leave 21.5 s, which plans.
+#[test]
+fn f1_3_s5_two_voices_in_a_25s_window_leave_nothing_to_place() {
+    let parse = |reply: String| {
+        naivepost::audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(&reply).expect("json"))
+            .expect("turns")
+    };
+    // A 25 s rung of a 30 s take: two windows, both answered with two voices across them.
+    let crowded: Vec<Vec<_>> = vec![parse(diar_voices(0.0, 25.0, 2)), parse(diar_voices(0.0, 25.0, 2))];
+    assert!(matches!(
+        naivepost::diarize::plan(30.0, 25.0, &[(0.0, 25.0), (16.7, 30.0)], &crowded),
+        naivepost::diarize::Scan::AnchorTooLong { .. }
+    ));
+    // The same two voices in a 45 s window leave room: this is the rung the walk is meant to settle on.
+    assert!(matches!(
+        naivepost::diarize::plan(30.0, 45.0, &[(0.0, 30.0)], &[parse(diar_voices(0.0, 30.0, 2))]),
+        naivepost::diarize::Scan::Planned { .. }
+    ));
+}
+
+/// S5's ladder through the ▶ path: a rung that plans serves, and its turns are what `turns.json` is
+/// written from — the file the next run resumes from, which is the only reason the ladder matters to a
+/// session. The rung-by-rung MOVE is pinned at the rule level instead ([`naivepost::diar_scan::run`],
+/// see the two tests after this one): a diarizer's reply describes the RECORDING's voices, not a
+/// rung's, so no single recording's answer can starve a wide window while feeding a narrow one.
+#[test]
+fn f1_3_s5_the_ladder_stops_at_the_first_rung_that_fits() {
+    // A 25.0 s take: `diarize::scan_windows` gives every rung exactly ONE window here (a window never
+    // exceeds the recording, and a last window ending within a second of the end ends the stride), so
+    // one diarization request is exactly one rung, and the walk's whole ladder shows in the record.
+    let scene = Scene::new("25.0", &[], "");
+    let log = walk_scene_queued(&scene, &["two"]);
+    let tree = scene.tree();
+
+    // Two 5.6 s voices anchor 11.2 s of any rung and leave far more than `NEW_AUDIO_MIN_SECONDS`, so
+    // the 90 s rung serves and the walk asks nobody again: the ladder is a fallback, not a routine.
+    assert_eq!(
+        diar_record(),
+        vec!["two"],
+        "the first rung planned, so the walk stopped there: {log:?}"
+    );
+    // The turns that served are the two-voice ones, not a refused rung's.
+    let turns = naivepost::requests::read_turns(&tree, LANE).expect("turns.json was written");
+    let voices: Vec<u32> = turns.iter().map(|turn| turn.speaker_id).collect();
+    assert_eq!(
+        voices,
+        vec![0, 1],
+        "the walk kept the rung that served: {turns:?}"
+    );
+    assert!(tree.transcript_tsv(LANE).exists(), "and the pass finished: {log:?}");
+}
+
+/// The diarizer's reply the rule-level ladder tests hand to [`naivepost::diar_scan::run`], parsed the
+/// way a real reply is: `audio_task::diar_answer` is the same door the walk reads through, so these two
+/// tests exercise the ladder and nothing about the socket.
+fn turns_of(reply: String) -> Vec<naivepost::requests::Turn> {
+    naivepost::audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(&reply).expect("json"))
+        .expect("a diarizer answer")
+}
+
+/// S5's rung-by-rung MOVE, driven at the rule that walks it. A window is never wider than the recording
+/// (`diarize::scan_windows`), so on a short take every rung measures the same audio and no reply can
+/// refuse one rung while feeding the next — this needs a take longer than the 45 s rung, which is what
+/// 100 s buys here: FOUR voices spanning a window anchor `4 x anchor_per(w)`, which is 48 s of a 90 s
+/// window (leaves 41 s... too much room, so see below) — the arithmetic in full lives in the answers.
+/// Driving `diar_scan::run` directly rather than a `▶` walk is what makes per-rung answers scriptable.
+#[test]
+fn f1_3_s5_the_ladder_asks_the_next_rung_when_one_refuses() {
+    let asks = std::cell::Cell::new(0usize);
+    let rung = naivepost::diar_scan::run(100.0, services::DIAR_MODEL, |windows| {
+        let which = asks.get();
+        asks.set(which + 1);
+        // The first rung is answered with eight voices spanning each of its windows: 8 x 12 = 96 s of
+        // anchor against a 90 s window, which nothing can place. The second gets two short voices, the
+        // shape every wider-than-25 s window plans with -- and the turns the walk has to keep.
+        if which == 0 {
+            return Ok(windows
+                .iter()
+                .map(|(from, to)| turns_of(diar_voices(*from, *to, 8)))
+                .collect());
+        }
+        Ok(windows.iter().map(|_| turns_of(diar_two_voices(5.6))).collect())
+    })
+    .expect("a rung plans");
+
+    assert_eq!(asks.get(), 2, "the refused rung was asked, then the next one down");
+    assert_eq!(rung.window, 45.0, "the walk settled on the 45 s rung");
+    // The turns that serve are the SERVING rung's, flattened over its windows -- a 100 s take at a 45 s
+    // window is three windows, so each voice comes back once per window it was heard in.
+    let voices: Vec<u32> = rung.turns.iter().map(|turn| turn.speaker_id).collect();
+    assert_eq!(
+        voices,
+        vec![0, 1, 0, 1, 0, 1],
+        "and kept the answers of the rung that served, not the refused one's eight"
+    );
+}
+
+/// S5's other ending at the same level: every rung refusing is an `Err` naming the model, not an empty
+/// turn list — a session with no turns has to be one where nobody spoke, or every later run would
+/// resume from a lie.
+#[test]
+fn f1_3_s5_the_ladder_gives_up_and_names_the_model_when_no_rung_fits() {
+    let asks = std::cell::Cell::new(0usize);
+    let failed = naivepost::diar_scan::run(100.0, services::DIAR_MODEL, |windows| {
+        asks.set(asks.get() + 1);
+        // Eight voices spanning each window: 8 x min(12, w/4) is 96 s against 90, 90 s against 45 and
+        // 50 s against 25, so more anchor than any window on the ladder can hold.
+        Ok(windows
+            .iter()
+            .map(|(from, to)| turns_of(diar_voices(*from, *to, 8)))
+            .collect())
+    })
+    .expect_err("no rung can hold eight voices' anchor across a whole window");
+
+    assert_eq!(
+        asks.get(),
+        naivepost::diarize::ladder().len(),
+        "every rung of the ladder was asked"
+    );
+    assert!(
+        failed.contains(services::DIAR_MODEL),
+        "the failure names the diarization model: {failed}"
+    );
+}
+
+/// S5's other ending: a diarizer no rung survives is FATAL, not empty turns. The walk must report the
+/// model and the reason, write no transcript, and leave `turns.json` absent — a session with no turns
+/// has to be one where nobody spoke, or every later run would resume from a lie.
+#[test]
+fn f1_3_s5_a_diarization_that_never_fits_fails_the_walk_and_names_the_model() {
+    // A 100 s take, because a rung's room is measured against the RUNG's width while its anchor is
+    // measured on the window it was heard in (`diarize::plan`): eight voices spanning a 90 s window
+    // anchor 8 x `anchor_per(90)` = 96 s, so 90 - 96 - 1 is negative and that rung refuses -- as do the
+    // two below it. On a short take every rung would measure the same narrow window and the 90 s rung
+    // would plan, which is why this scene cannot be a 25 s one.
+    //
+    // A rung is SEVERAL requests (one per window), so every ask needs an answer queued: an unanswered
+    // one falls back to the scene's ordinary reply and would let a rung plan. Eight covers the walk with
+    // answers left over.
+    let scene = Scene::new("100.0", &[], "");
+    let log = walk_scene_failing_queued(
+        &scene,
+        &["many", "many", "many", "many", "many", "many", "many", "many"],
+    );
+    let tree = scene.tree();
+
+    let replies = diar_record();
+    assert!(
+        replies.len() >= naivepost::diarize::ladder().len(),
+        "every rung of the 90 / 45 / 25 ladder was asked: {replies:?}"
+    );
+    let said = log.join("\n");
+    assert!(
+        said.contains(services::DIAR_MODEL),
+        "the failure names the diarization model: {said}"
+    );
+    // The reason is the diarizer's own: eight voices give more anchor than a window can hold, which is
+    // `diarize`'s `AnchorTooLong` sentence rather than a paraphrase invented here.
+    assert!(
+        said.contains("anchor"),
+        "and says why no rung could answer: {said}"
+    );
+    assert!(!tree.transcript_tsv(LANE).exists(), "S5 is fatal before S6 wrote anything");
+    assert!(!tree.turns_json(LANE).exists(), "a failed diarization leaves no resume marker");
+}
+
+/// S4's hard branch through the walk: the ASR answers with text and NO word times, and the aligner
+/// fails. The flowchart's `hard error, named plainly` — distinct from the case where the ASR's own
+/// times stand and the run continues (tested above, with the stub's word timings present).
+#[test]
+fn f1_3_s4_an_aligner_failure_without_word_times_stops_the_walk() {
+    // Nothing on disk yet, so the ASR really is asked; its reply is text with no word times, and the
+    // aligner refuses the window it is sent. That is the flowchart's `hard error, named plainly`, and
+    // it is distinct from the case above where the ASR's own times stand and the run carries on.
+    let scene = Scene::new("20.0", &[], "");
+    let tree = scene.tree();
+    ALIGN_FAILS.store(1, Ordering::SeqCst);
+    let pass = naivepost::transcribe::run(
+        &tree,
+        LANE,
+        20.0,
+        services::ASR_MODEL,
+        |_| naivepost::transcribe::Align::Failed("the aligner model is not loaded".to_string()),
+        || Ok(WordsDoc { text: "hello there".to_string(), words: vec![] }),
+        || Ok(vec![]),
+    );
+    let err = pass.expect_err("words nobody can time cannot be transcribed");
+    assert!(err.contains("align"), "the failure names the step: {err}");
+    assert!(
+        err.contains("timed no words") || err.contains("no word times"),
+        "and the hard reason, not a warning: {err}"
+    );
+    assert!(err.contains(services::ASR_MODEL), "and the model that answered: {err}");
+    assert!(!tree.transcript_tsv(LANE).exists(), "nothing was written from an untimeable transcript");
+}
+
+/// S6's other side of the same door: the files the pass writes are the ones §04#4's row counts, read
+/// through `prepare`'s own accessor rather than a re-implementation of it — the checker's complaint was
+/// that a row counted files no run had ever made.
+#[test]
+fn f1_3_s6_what_the_pass_wrote_is_what_prepare_counts() {
+    let scene = Scene::new("20.0", &[], "");
+    let log = walk_scene(&scene);
+    let tree = scene.tree();
+
+    let tsv = std::fs::read_to_string(tree.transcript_tsv(LANE)).expect("transcript.tsv");
+    let lines = tsv.lines().filter(|line| !line.is_empty()).count();
+    assert!(lines > 0, "the pass wrote segments: {tsv}");
+    // The count in S6's own log line and the count in the file agree, which is the same number
+    // `prepare::count` takes from `tree.transcript_tsv(lane)` for the row's arithmetic.
+    let counted = log
+        .iter()
+        .find(|line| line.ends_with(" segments"))
+        .and_then(|line| line.split_whitespace().nth(2))
+        .and_then(|n| n.parse::<usize>().ok());
+    assert_eq!(counted, Some(lines), "S6's count is the file's: log {log:?} / file {tsv}");
+    // The project the row is counted over is the one the walk saved, and `prepare::count` reads the
+    // same `transcript.tsv` the pass wrote: zero before a run, exactly the segments after one.
+    let project = naivepost::project::load(&naivepost::startup::session_dir(&scene.root)).expect("project");
+    assert_eq!(
+        naivepost::prepare::count(&tree, &project).lines,
+        lines,
+        "the run-bar row counts what the pass wrote"
+    );
+    // And the srt carries one numbered block per segment, so the two files agree.
+    let srt = std::fs::read_to_string(tree.transcript_srt(LANE)).expect("transcript.srt");
+    assert!(srt.starts_with("1\n"), "the srt opens with its first block's number: {srt}");
+    assert_eq!(
+        srt.lines().filter(|line| line.trim() == "1").count(),
+        1,
+        "the srt numbers its blocks from 1, once each: {srt}"
+    );
 }
