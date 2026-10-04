@@ -369,13 +369,32 @@ pub fn asr_ask<'a>(
 ///
 /// The model arrives from the aligner picker (§1: an aligner is chosen by task, not by the box), so
 /// unlike [`asr_ask`] this one takes the id per call and dials whichever the picker named.
+///
+/// Like [`asr_ask`] it CUTS before it uploads: `align::ask_span` writes the window's scratch note and
+/// hands over only the clip's name, so the plan that says which seconds this window is lives in that
+/// note. Uploading a file nobody cut would ask the aligner about audio that was never sent.
 pub fn align_ask<'a>(
     tree: &'a Option<Tree>,
     paths: &'a crate::settings::Paths,
+    source: &'a str,
     language: &'a str,
 ) -> impl FnMut(&str, &str, &str) -> Result<Value, String> + 'a {
     move |model: &str, clip: &str, text: &str| {
-        let audio = upload_chunk(tree, paths, clip)?;
+        let plan = align_plan(tree, source, clip)?;
+        let out = match tree {
+            Some(tree) => tree.align_scratch(source).join(clip),
+            None => scratch_dir().join(clip),
+        };
+        if let Some(dir) = out.parent() {
+            std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
+        }
+        let input = tree
+            .as_ref()
+            .map(|tree| tree.voice16k_wav(source))
+            .unwrap_or_else(|| std::path::PathBuf::from(source));
+        cut_from(paths, &input, &plan, &out)?;
+        let bytes = std::fs::read(&out).map_err(|why| format!("{}: {why}", out.display()))?;
+        let audio = upload_bytes(tree, paths, clip, &bytes)?;
         let envelope = task_body(Task::Align, model, &audio, language, Some(text));
         let body = dial(
             tree,
@@ -386,6 +405,29 @@ pub fn align_ask<'a>(
         )?;
         parse_json(&body)
     }
+}
+
+/// One align window's cut arguments, read back from the `.plan` [`crate::align`] wrote beside it —
+/// the same two-line file format as an ASR chunk's note, under `align/` instead of `asr/`. A missing
+/// note is an error naming its path: the note is what proves this clip is the window being asked about.
+fn align_plan(tree: &Option<Tree>, source: &str, clip: &str) -> Result<Vec<String>, String> {
+    let dir = match tree {
+        Some(tree) => tree.align_scratch(source),
+        None => scratch_dir(),
+    };
+    let path = dir.join(format!("{clip}.plan"));
+    let text = std::fs::read_to_string(&path).map_err(|why| format!("{}: {why}", path.display()))?;
+    let plan: Vec<String> = text
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+    if plan.is_empty() {
+        return Err(format!("{}: no cut arguments in the scratch note", path.display()));
+    }
+    Ok(plan)
 }
 
 /// The diarization turns [`crate::transcribe::run`] wants: nothing in but this source's turns out.
@@ -465,6 +507,9 @@ pub fn diar_ask<'a>(
 /// family, 300 s elsewhere, halved on an out-of-memory answer — §F1.3 S1) and hands each piece's file name
 /// to [`asr_ask`], which cuts, uploads and dials it. One request for a two-hour take would be a request for
 /// a two-hour decode on the server.
+///
+/// `silences` are §F1.4 S2's quiet stretches, measured once by the caller over `voice16k.wav`: a cut that
+/// lands inside one costs nothing, while one mid-sentence puts a word across two requests.
 pub fn transcribe_asr<'a>(
     tree: &'a Option<Tree>,
     paths: &'a crate::settings::Paths,
@@ -472,6 +517,7 @@ pub fn transcribe_asr<'a>(
     model: &'a str,
     language: &'a str,
     duration: f64,
+    silences: &'a [crate::asr::Silence],
 ) -> impl FnOnce() -> Result<WordsDoc, String> + 'a {
     move || {
         let outcome = crate::asr::run(
@@ -480,7 +526,7 @@ pub fn transcribe_asr<'a>(
             duration,
             model,
             language,
-            &[],
+            silences,
             asr_ask(tree, paths, source, model, language),
         )?;
         Ok(WordsDoc { text: outcome.text, words: outcome.words })
@@ -628,21 +674,6 @@ fn push_paths(value: &Value, into: &mut Vec<ServerPath>) {
         }
         _ => {}
     }
-}
-
-/// Put one chunk on the server and bring back the path its tasks may name. The bytes come from the
-/// scratch folder the flow already wrote the file into ([`crate::layout::Tree::asr_scratch`] and
-/// [`crate::layout::Tree::align_scratch`]), so the upload and the envelope describe the same bytes
-/// the scratch plan names.
-fn upload_chunk(
-    tree: &Option<Tree>,
-    paths: &crate::settings::Paths,
-    file: &str,
-) -> Result<ServerPath, String> {
-    let name = file.rsplit('/').next().unwrap_or(file);
-    let local = scratch_file(name);
-    let bytes = std::fs::read(&local).map_err(|why| format!("{}: {why}", local.display()))?;
-    upload_bytes(tree, paths, name, &bytes)
 }
 
 /// Upload one file's bytes and read back the server path, through the same door as everything else:
@@ -815,44 +846,56 @@ pub fn transcribe_source(
     duration: f64,
     language: &str,
 ) -> Result<crate::transcribe::Passage, String> {
-    let _ = tree.voice16k_wav(source);
     let conf = crate::settings::read(paths).unwrap_or_default();
     let asr_model = services::asr_model(&conf).to_string();
     let diar_model = services::diar_model(&conf).to_string();
     let aligners = crate::align::aligners(&conf.align_model, "", &catalog(&Some(tree.clone()), paths, "align")?)?;
-    // An aligner served is an alignment step attempted through the dial; whether it answered is this
-    // door's to say, so the pass runs first and its outcome decides `Done` or `Failed` — `Failed`
-    // keeps the server's own sentence, which is what S4 logs or stops on (§Failure-is-specific).
-    let align = match aligners.first() {
+    // §F1.4 S2/§F1.5 S2: the quiet stretches of THIS recording, measured once and handed to both
+    // chunking steps so one definition of "quiet" moves both the ASR's cuts and the aligner's windows.
+    // A detector that is not there or fails outright is not a failure: no silences only means every cut
+    // lands on the clock, which is what `asr::cut_points` says an empty list means.
+    let silences = crate::separate_media::spans(
+        &crate::separate_media::program(&conf.ffmpeg),
+        &tree.voice16k_wav(source),
+    )
+    .unwrap_or_default();
+    let held = Some(tree.clone());
+    // Borrowed, not moved: the aligner's closure and the ASR's both need them, and `transcribe::run`
+    // calls the ASR first, so whichever were moved would leave the other holding nothing.
+    let silences_ref: &[crate::asr::Silence] = &silences;
+    let held_ref = &held;
+    // S4 is only knowable after S3 wrote `words.json`: the aligner places THIS pass's words, so the
+    // decision arrives as a closure over the words the pass hands back rather than as a value decided
+    // before anything was transcribed. `align::run` writes `words.aligned.json` itself; this only says
+    // whether it answered, and `Failed` keeps the server's own sentence (§Failure-is-specific).
+    let align = |doc: &crate::requests::WordsDoc| match aligners.first() {
         None => crate::transcribe::Align::None,
         Some(_) => {
-            let held = Some(tree.clone());
-            let doc = crate::requests::read_words(tree, source)?.unwrap_or_default();
+            let chunks = crate::requests::read_chunks(tree, source).unwrap_or_default();
             match crate::align::run(
                 tree,
                 source,
                 duration,
                 language,
-                &[],
-                &[],
+                silences_ref,
+                &chunks,
                 &doc.words,
                 &doc.text,
                 &aligners,
-                align_ask(&held, paths, language),
+                align_ask(held_ref, paths, source, language),
             ) {
                 Ok(_) => crate::transcribe::Align::Done,
                 Err(why) => crate::transcribe::Align::Failed(why),
             }
         }
     };
-    let held = Some(tree.clone());
     crate::transcribe::run(
         tree,
         source,
         duration,
         &asr_model,
         align,
-        transcribe_asr(&held, paths, source, &asr_model, language, duration),
+        transcribe_asr(&held, paths, source, &asr_model, language, duration, &silences),
         diar_ask(&held, paths, source, &diar_model, duration),
     )
 }
@@ -865,19 +908,6 @@ pub fn source_lane(path: &str) -> String {
     base.split_once('.')
         .map(|(stem, _)| stem.to_string())
         .unwrap_or_else(|| base.to_string())
-}
-
-/// The file a flow's scratch holds, wherever the caller's cwd puts the session. Searched in the two
-/// scratch folders rather than guessed at: an ASR chunk and an align window never share a name
-/// (`c03.wav` against `w000001500.wav`), so the first hit is the right one.
-fn scratch_file(name: &str) -> std::path::PathBuf {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    ["asr", "align"]
-        .iter()
-        .map(|folder| cwd.join("scratch").join(folder).join(name))
-        .chain(std::iter::once(scratch_dir().join(name)))
-        .find(|path| path.exists())
-        .unwrap_or_else(|| cwd.join(name))
 }
 
 /// The server path a task is asked about, from the file name the flow module chose.

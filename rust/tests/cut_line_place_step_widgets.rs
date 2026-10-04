@@ -117,6 +117,9 @@ fn check_the_four_step_buttons_move_the_line(app: &adw::Application) {
 /// S3 through the key controller: the arrows move only while something is held, Space toggles, and
 /// the controller really is attached to the window rather than merely constructed.
 fn check_the_key_controller_is_attached_and_refuses_without_a_hold(app: &adw::Application) {
+    // The window reads its cut from cwd's session folder, and on an empty cut §F2.2 S2 makes Space
+    // refuse, so this check needs a real cut on disk rather than whatever `rust/` happens to hold.
+    pin_session_root("keys");
     let window = cut_window(app);
     // GTK exposes no public list of a widget's controllers (only `add_controller`), so the controller
     // is proven by what it does rather than by where it is filed: the checks below drive its handler's

@@ -5,6 +5,7 @@ pub mod asr;pub mod bench;
 pub mod bodies;
 pub mod checks;
 pub mod clock;
+pub mod decode_audio;
 pub mod decision_audit;
 pub mod decision_homes;
 pub mod degraded;

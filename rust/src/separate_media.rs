@@ -106,6 +106,48 @@ pub fn silences(program: &str, decoded: &Path) -> Result<Vec<f64>, String> {
     Ok(midpoints(&body))
 }
 
+/// S2 for the ASR and the aligner: the quiet stretches themselves, not their midpoints. The split's
+/// [`silences`] only needs one number per gap (a chunk edge slides to it), while [`crate::asr`]'s cuts
+/// and [`crate::align`]'s voiced-second shares need the whole span — a cut in the middle of a long
+/// silence is fine, but "how much of this window has sound" is arithmetic on both edges.
+///
+/// Same tool, same threshold, same report as [`silences`], so one definition of "quiet" still serves
+/// every stage. No spans is a normal answer.
+pub fn spans(program: &str, decoded: &Path) -> Result<Vec<crate::asr::Silence>, String> {
+    let filter = format!(
+        "silencedetect=n={}dB:d={}",
+        trim(asr_db()),
+        trim(crate::asr::QUIET_MIN)
+    );
+    let body = report(program, decoded, &filter).map_err(|err| {
+        format!("{}: silencedetect failed: {err}", decoded.display())
+    })?;
+    Ok(fold_spans(&body))
+}
+
+/// Pair every `silence_start:`/`silence_end:` in a detector report into a span, ignoring the rest of
+/// ffmpeg's output. Split out from [`spans`] so the folding is testable without a tool.
+pub fn fold_spans(report: &str) -> Vec<crate::asr::Silence> {
+    let mut found: Vec<crate::asr::Silence> = Vec::new();
+    let mut open: Option<f64> = None;
+    for line in report.lines() {
+        if let Some(at) = silence_start(line) {
+            // A second start with no end before it means the detector restarted; the earlier one is
+            // dropped rather than guessed at, because its length is unknown.
+            open = Some(at);
+        }
+        if let Some(end) = silence_end(line) {
+            if let Some(start) = open.take() {
+                found.push(crate::asr::Silence { start, end });
+            }
+        }
+    }
+    // A recording that ends quiet never prints `silence_end`, so its last gap has no measured length
+    // and is left out: inventing an end would move a cut past the last sound.
+    found.sort_by(|a, b| a.start.total_cmp(&b.start));
+    found
+}
+
 /// Fold every `silence_start:`/`silence_end:` pair in a detector report to its midpoint, ignoring the
 /// hundreds of other lines a long take produces. Split out from [`silences`] so the folding is testable
 /// without a tool: the numbers below are exactly what ffmpeg prints.

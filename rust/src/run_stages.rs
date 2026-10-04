@@ -499,15 +499,19 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let conf = crate::settings::read(&paths).unwrap_or_default();
     let language = task.args.get(1).cloned().unwrap_or_default();
     let _ = &conf;
-    let pcm = tree
-        .as_ref()
-        .map(|tree| tree.voice16k_wav(&lane))
-        .filter(|path| path.exists())
-        .ok_or_else(|| format!("{}: no decoded audio to transcribe", lane))?;
-    let duration = probe_duration(&crate::settings::read(&paths).unwrap_or_default().ffmpeg, &pcm, log)?;
+    // §F1.3 S1 first: the row's recording becomes `voice16k.wav` if it is not there yet, because every
+    // step of the pass (and the duration probed below) counts samples of THAT file.
     let Some(tree) = tree else {
         return Err("no project folder to write the transcript into".to_string());
     };
+    let source_path = crate::layout::resolve(tree.dir(), tree.dir(), &source);
+    // A row whose recording is not on disk stops here, before anything is asked of ffmpeg: §Failure-is-
+    // specific names the file that is missing rather than blaming the tool that never got to run.
+    if !source_path.exists() {
+        return Err(format!("{lane}: no decoded audio to transcribe -- {} is not there", source_path.display()));
+    }
+    let pcm = crate::decode_audio::ensure(&tree, &lane, &source_path, &conf.ffmpeg, log)?;
+    let duration = probe_duration(&conf.ffmpeg, &pcm, log)?;
     let passage = crate::audio_task::transcribe_source(&tree, &paths, &lane, duration, &language)?;
     for line in &passage.logs {
         log(line);

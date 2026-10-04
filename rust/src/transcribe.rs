@@ -375,18 +375,23 @@ pub enum AlignStep {
 /// aligner is served at all (what [`crate::services::pick_aligner`] decides from the model list). The
 /// real ▶ hands over ffmpeg, the ASR box and the diarizer; a test hands over closures, which is the
 /// whole reason these steps can be tested rather than exercised.
-pub fn run<F, D>(
+///
+/// `align` is a closure over the words rather than a finished value because S4 cannot be known before
+/// S3 ran: what the aligner is asked to place is THIS pass's word list and text, so a caller that had
+/// already decided would be deciding over a transcript that did not exist yet.
+pub fn run<F, D, A>(
     tree: &Tree,
     source: &str,
     duration: f64,
     model: &str,
-    align: Align,
+    align: A,
     asr: F,
     diarize: D,
 ) -> Result<Passage, String>
 where
     F: FnOnce() -> Result<WordsDoc, String>,
     D: FnOnce() -> Result<Vec<Turn>, String>,
+    A: FnOnce(&WordsDoc) -> Align,
 {
     let mut logs = vec![audio_log(source, duration)];
 
@@ -416,7 +421,10 @@ where
     }
     let words = words.unwrap_or_default();
 
-    // S4: alignment, when an aligner is served and its answer is not already on disk.
+    // S4: alignment, when an aligner is served and its answer is not already on disk. Decided here,
+    // after S3, with the words it will place. A short take asks NOTHING of any server (S2's own words),
+    // so the aligner is skipped too — there is no audio worth placing words over.
+    let align = if short { Align::None } else { align(&words) };
     match align_step(source, align, &words, tree.words_aligned_json(source).exists()) {
         AlignStep::Warns(warning) => logs.push(warning),
         AlignStep::Stops(err) => return Err(align_failure(model, &err)),

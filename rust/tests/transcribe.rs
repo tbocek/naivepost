@@ -103,7 +103,7 @@ fn f1_3_s2_a_short_take_is_written_up_as_silence_without_asking_anything() {
         SOURCE,
         1.2,
         "nemotron-asr",
-        Align::None,
+        |_| Align::None,
         || {
             asked.store(true, Ordering::SeqCst);
             Ok(WordsDoc::default())
@@ -156,7 +156,7 @@ fn f1_3_s3_asr_is_skipped_when_words_json_exists() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::None,
+        |_| Align::None,
         || {
             asked.store(true, Ordering::SeqCst);
             Ok(WordsDoc::default())
@@ -175,7 +175,7 @@ fn f1_3_s3_asr_is_skipped_when_words_json_exists() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::None,
+        |_| Align::None,
         || {
             Ok(WordsDoc {
                 text: "hello there".into(),
@@ -212,7 +212,7 @@ fn f1_3_s4_a_failed_alignment_stands_on_the_asr_times_when_it_has_them() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::Failed("connect refused".into()),
+        |_| Align::Failed("connect refused".into()),
         || Ok(WordsDoc::default()),
         || Ok(vec![]),
     )
@@ -258,7 +258,7 @@ fn f1_3_s4_a_failed_alignment_without_word_times_is_a_plain_error() {
         SOURCE,
         30.0,
         "whisper-large",
-        Align::Failed("model not loaded".into()),
+        |_| Align::Failed("model not loaded".into()),
         || Ok(WordsDoc::default()),
         || Ok(vec![]),
     )
@@ -294,7 +294,7 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::Failed("model not loaded".into()),
+        |_| Align::Failed("model not loaded".into()),
         || Ok(WordsDoc::default()),
         || Ok(vec![]),
     )
@@ -313,7 +313,7 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::None,
+        |_| Align::None,
         || Ok(WordsDoc { text: "hi".into(), words: words_at(&[("hi", 0.0, 0.3)]) }),
         || Ok(vec![]),
     )
@@ -339,7 +339,7 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::Failed("would have been asked".into()),
+        |_| Align::Failed("would have been asked".into()),
         || Ok(WordsDoc::default()),
         || Ok(vec![]),
     )
@@ -373,7 +373,7 @@ fn f1_3_s5_diarization_is_skipped_when_turns_json_exists() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::None,
+        |_| Align::None,
         || Ok(WordsDoc::default()),
         || {
             asked.store(true, Ordering::SeqCst);
@@ -401,7 +401,7 @@ fn f1_3_s5_diarization_is_skipped_when_turns_json_exists() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::None,
+        |_| Align::None,
         || Ok(WordsDoc::default()),
         || Ok(turns(&[(0.0, 2.0, 2)])),
     )
@@ -577,7 +577,7 @@ fn f1_3_s6_the_two_transcript_files_and_the_count() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        Align::None,
+        |_| Align::None,
         || Ok(WordsDoc::default()),
         || Ok(vec![]),
     )
