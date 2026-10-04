@@ -896,7 +896,23 @@ pub fn transcribe_source(
     let conf = crate::settings::read(paths).unwrap_or_default();
     let asr_model = services::asr_model(&conf).to_string();
     let diar_model = services::diar_model(&conf).to_string();
-    let aligners = crate::align::aligners(&conf.align_model, "", &catalog(&Some(tree.clone()), paths, "align")?)?;
+    // §F1.5 S1: a configured aligner the box does not declare is NOT replaced and NOT fatal. Cut points
+    // come off the waveform either way, so the id is left in the box, the reason is said, and the pass
+    // goes on with the ASR's own times. `align::not_served` already spells that sentence, so the `Err`
+    // is logged rather than raised; the url comes from the settings, not a `""`, or the line would say
+    // which server refuses without naming it.
+    let endpoint = services::endpoint_for(paths, Server::Audio, |name| std::env::var(name).ok());
+    let models = catalog(&Some(tree.clone()), paths, "align")?;
+    let aligners = match crate::align::aligners(&conf.align_model, &endpoint.url, &models) {
+        Ok(ids) => ids,
+        Err(refusal) => {
+            log(&refusal);
+            Vec::new()
+        }
+    };
+    // align's own sentences are collected in the align closure and appended to `Passage.logs` at the
+    // end, so they stay in the aligner's own order instead of being printed before it ran.
+    let align_lines: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
     // §F1.4 S2/§F1.5 S2: the quiet stretches of THIS recording, measured once and handed to both
     // chunking steps so one definition of "quiet" moves both the ASR's cuts and the aligner's windows.
     // A detector that is not there or fails outright is not a failure: no silences only means every cut
@@ -931,12 +947,17 @@ pub fn transcribe_source(
                 &aligners,
                 align_ask(held_ref, paths, source, language),
             ) {
-                Ok(_) => crate::transcribe::Align::Done,
+                Ok(outcome) => {
+                    let mut held_lines = align_lines.borrow_mut();
+                    held_lines.extend(outcome.logs.iter().cloned());
+                    held_lines.extend(outcome.steps.iter().cloned());
+                    crate::transcribe::Align::Done
+                }
                 Err(why) => crate::transcribe::Align::Failed(why),
             }
         }
     };
-    crate::transcribe::run(
+    let mut passage = crate::transcribe::run(
         tree,
         source,
         duration,
@@ -944,7 +965,13 @@ pub fn transcribe_source(
         align,
         transcribe_asr(&held, paths, source, &asr_model, language, duration, &silences, log),
         diar_ask(&held, paths, source, &diar_model, duration),
-    )
+    )?;
+    // `speech_stage` prints `passage.logs` in order after this returns, so appending here puts the
+    // aligner's own sentences (S1's picker line, S6's bare-seconds warning) in the run's log without
+    // the align closure ever touching the sink: it returns one `Align`, and `&mut log` belongs to the
+    // ASR closure it shares the call's borrow scope with.
+    passage.logs.extend(align_lines.borrow().iter().cloned());
+    Ok(passage)
 }
 
 /// Where a recording row's `source` word comes from: its file name minus the extension, the same

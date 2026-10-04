@@ -147,8 +147,9 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
             }
             stages
         }
-        // Cut's suggest step reads what Prepare wrote; its own subprocess work is the align clip cut.
-        run::Step::Suggest => align_stage(project).into_iter().collect(),
+        // Cut's suggest step reads what Prepare wrote: alignment happens in Prepare's speech pass
+        // through [`crate::audio_task`], so the step asks this module for nothing.
+        run::Step::Suggest => Vec::new(),
         // Narrate and Produce own their queues and their spawner already (F4.1 / F5.1), so they ask
         // this module for nothing rather than being driven twice over the same work.
         run::Step::Narrate | run::Step::Produce => Vec::new(),
@@ -203,35 +204,10 @@ fn speech_stage(project: &Project) -> Stage {
     Stage { track: runqueue::TRACK_STT, name: "speech", phase: 1, of: 2, kind: "chunk", tasks }
 }
 
-/// Align's clip cut, one per recording pair, from `align::clip_plan`.
-fn align_stage(project: &Project) -> Option<Stage> {
-    let tasks: Vec<Task> = project
-        .sources
-        .iter()
-        .filter(|source| !source.footage)
-        .map(|source| {
-            let mut argv = crate::align::clip_plan(0.0, CHUNK_SECONDS);
-            argv.push("-i".to_string());
-            argv.push(source.path.clone());
-            Task::run_it("aligning", FFMPEG, argv)
-        })
-        .collect();
-    if tasks.is_empty() {
-        return None;
-    }
-    Some(Stage {
-        track: runqueue::TRACK_STT,
-        name: "align",
-        phase: 1,
-        of: 1,
-        kind: "clip",
-        tasks,
-    })
-}
-
-/// How much of a recording one speech/align chunk covers. Chosen so a chunk stays inside the ASR
-/// window §02 gives the shipped models (≤ 300 s) without needing the halving ladder.
-const CHUNK_SECONDS: f64 = 300.0;
+// Align's clip cut lived here until F1.5: one `align::clip_plan` ffmpeg call per recording, whose
+// output nothing read — the aligner is asked over the network in Prepare's speech pass now, and Cut's
+// suggest step reads the `words.aligned.json` that pass wrote. Dead argv and its chunk length went with
+// it; `align::clip_plan` is still used, by `audio_task::align_plan` reading back the note.
 
 /// Which phase of Prepare's bar a stage belongs to (§S6), by the name [`plan`] gives it.
 ///
