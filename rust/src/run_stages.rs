@@ -19,6 +19,7 @@
 //! command as a shell would take it *before* running it. Nothing here invents a command line and
 //! nothing here answers for a tool that did not run: if ffmpeg is not on PATH the error names it.
 
+use crate::prepare_run;
 use crate::project::Project;
 use crate::run::{self, Subprocesses};
 use crate::runqueue::{self, Queue};
@@ -232,6 +233,36 @@ fn align_stage(project: &Project) -> Option<Stage> {
 /// window §02 gives the shipped models (≤ 300 s) without needing the halving ladder.
 const CHUNK_SECONDS: f64 = 300.0;
 
+/// Which phase of Prepare's bar a stage belongs to (§S6), by the name [`plan`] gives it.
+///
+/// Keyed off the stage's own name rather than its position because `plan` already drops stages with no
+/// work in them — a session with nothing to separate has no separation stage at all, and an index would
+/// then point at the wrong slice. The names matched are exactly the ones `plan(Step::Prepare, …)`
+/// builds: `frames`, `speech` (ingest, run in parallel per §S6), `separation`, `describe`, `fix`;
+/// anything else (`align`, or a stage added later) answers `None` and keeps the whole bar.
+pub fn phase_of_stage(name: &str) -> Option<prepare_run::Phase> {
+    match name {
+        "separation" => Some(prepare_run::Phase::Separate),
+        "frames" | "speech" => Some(prepare_run::Phase::Ingest),
+        "describe" | "fix" => Some(prepare_run::Phase::Understand),
+        _ => None,
+    }
+}
+
+/// §S6's numbers for one plan: `(base, share)` per stage, in `plan`'s order so the walk can zip them
+/// by position. Each stage gets its own phase's slice — separation 0–10 % when asked, ingest to 30 %,
+/// understand 30–100 % — and a stage outside those phases keeps the whole bar.
+pub fn phase_slices(stages: &[Stage], separation_asked: bool) -> Vec<(f64, f64)> {
+    stages
+        .iter()
+        .map(|stage| {
+            phase_of_stage(stage.name)
+                .map(|phase| prepare_run::share(phase, separation_asked))
+                .unwrap_or((0.0, 1.0))
+        })
+        .collect()
+}
+
 /// The page step's own walk, from the live window state.
 ///
 /// Reads the run's `paused`/`stop_flag` fresh at every checkpoint through the same `Rc`s the ⏹
@@ -244,14 +275,28 @@ pub fn drive_page(
     queue: &QueueHolder,
     bar: &BarHolder,
     procs: &ProcsHolder,
-) -> Drive {
-    let stages = plan(step, project);
+) -> Drive {    let stages = plan(step, project);
     if stages.is_empty() {
         return Drive::Done { ran: 0, skipped: 0 };
     }
     let paused = { let bar = bar.clone(); move || bar.borrow().running.as_ref().is_some_and(|r| r.paused) };
     let stopped = { let bar = bar.clone(); move || bar.borrow().stop_flag };
-    drive_walk(&stages, &mut queue.borrow_mut(), paused, stopped, crate::ui::window::log_line, &mut procs.borrow_mut())
+    // §S6: hand the walk the bar's slices, so a Prepare run moves 0–10 / 10–30 / 30–100 instead of
+    // reporting each stage as a whole bar. Empty for every other step, which is what they do today.
+    let slices = if step == run::Step::Prepare {
+        phase_slices(&stages, prepare_run::separation_asked(project))
+    } else {
+        Vec::new()
+    };
+    drive_walk_with_slices(
+        &stages,
+        &mut queue.borrow_mut(),
+        paused,
+        stopped,
+        crate::ui::window::log_line,
+        &mut procs.borrow_mut(),
+        &slices,
+    )
 }
 
 /// The three pieces of window state a page walk needs, as the shared handles the shell holds.
@@ -270,16 +315,66 @@ pub fn drive_walk<FN, FS>(
     queue: &mut Queue,
     paused: FN,
     stop_flag: FS,
-    mut log: impl FnMut(&str),
+    log: impl FnMut(&str),
     procs: &mut Subprocesses,
 ) -> Drive
 where
     FN: Fn() -> bool,
     FS: Fn() -> bool,
 {
+    drive_walk_with_slices(stages, queue, paused, stop_flag, log, procs, &[])
+}
+
+/// [`drive_walk_with_slices`] under its test name: the slices are the only thing this differs by, and
+/// a private helper cannot be reached from an integration test.
+pub fn drive_walk_with_slices_for_test<FN, FS>(
+    stages: &[Stage],
+    queue: &mut Queue,
+    paused: FN,
+    stop_flag: FS,
+    log: impl FnMut(&str),
+    procs: &mut Subprocesses,
+    slices: &[(f64, f64)],
+) -> Drive
+where
+    FN: Fn() -> bool,
+    FS: Fn() -> bool,
+{
+    drive_walk_with_slices(stages, queue, paused, stop_flag, log, procs, slices)
+}
+
+/// [`drive_walk`] with §S6's phase slices handed alongside the stages: one `(base, share)` per stage,
+/// applied through `Queue::phase` just before that stage's jobs are queued. An empty slice list — or a
+/// short one — leaves the bar unscaled, which is what every non-Prepare step wants.
+fn drive_walk_with_slices<FN, FS>(
+    stages: &[Stage],
+    queue: &mut Queue,
+    paused: FN,
+    stop_flag: FS,
+    mut log: impl FnMut(&str),
+    procs: &mut Subprocesses,
+    slices: &[(f64, f64)],
+) -> Drive
+where
+    FN: Fn() -> bool,
+    FS: Fn() -> bool,
+{
+    // The slices pair with the stages by position; `phase_slices` keeps `plan`'s order for that reason.
+    let walked: Vec<(&Stage, Option<(f64, f64)>)> = if slices.len() == stages.len() {
+        stages
+            .iter()
+            .zip(slices)
+            .map(|(stage, &slice)| (stage, Some(slice)))
+            .collect()
+    } else {
+        stages.iter().map(|stage| (stage, None)).collect()
+    };
     let mut ran = 0usize;
     let mut skipped = 0usize;
-    for stage in stages {
+    for (stage, slice) in walked {
+        if let Some((base, share)) = slice {
+            queue.phase(base, share);
+        }
         queue.job(stage.track, stage.name, stage.phase, stage.of);
         queue.push(stage.track, stage.tasks.len(), stage.kind);
         let total = stage.tasks.len();

@@ -42,6 +42,61 @@ fn footage(path: &str) -> Source {
     }
 }
 
+/// A fake audio.cpp on loopback: `/health` answers 200 and `/v1/models` names the ASR and diarization
+/// models Prepare needs. §S5 is a real door now — the ▶ press asks the server before any stage runs —
+/// so a test that presses ▶ has to have something to answer, exactly as `tests/prepare_run_flow.rs`
+/// arranges for its own wire case.
+fn fake_audio_server() -> String {
+    use std::io::{BufRead, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("an address").port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
+                        break;
+                    }
+                }
+                let payload = if line.contains("/v1/models") {
+                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
+                } else {
+                    "{}"
+                };
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.flush();
+            });
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+/// Point the settings this process reads at that server. One conf for the whole binary: every check
+/// here presses ▶, so they all need the same answer, and `XDG_CONFIG_HOME` belongs to the process.
+fn serve_audio_for_the_presses(url: &str) {
+    let config = std::env::temp_dir().join(format!("np-f17w-cfg-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&config);
+    let paths = naivepost::settings::Paths {
+        config_dir: config.join("naivepost"),
+        data_dir: config.join("data"),
+    };
+    let mut conf = naivepost::settings::Conf::default();
+    conf.audio_server = url.to_string();
+    naivepost::settings::save(&paths, &conf).expect("the conf points at the fake server");
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
+}
+
 /// Write F1.6's extraction output for one lane: frames named on the 250 ms grid, plus `scenes.tsv`.
 /// The names are the clock names `clock::frame_name` writes, so the stage reads them the way it reads
 /// a real folder rather than a made-up shape.
@@ -71,6 +126,9 @@ fn f1_7_wire_pressing_play_reaches_the_describe_stage() {
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.connect_activate(|app| {
+        // §S5 runs before any stage, so ▶ needs an audio.cpp to ask; without one the press is refused
+        // and no stage speaks at all.
+        serve_audio_for_the_presses(&fake_audio_server());
         check_plan_lands_through_the_button(app);
         RAN_PLAN.store(true, Ordering::SeqCst);
         check_every_frame_refusal_lands_through_the_button(app);

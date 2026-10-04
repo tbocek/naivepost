@@ -3261,6 +3261,14 @@ fn wire_play(
                         for line in &lines {
                             log_line(line);
                         }
+                        // S5: audio.cpp is asked before any stage runs. A server that is down or not
+                        // serving what Prepare needs refuses the press here -- no run opens, and the
+                        // sentence goes on the status line the way S1's refusals do.
+                        if let Some(why) = super::prepare_guard::why_not(&asked) {
+                            log_line(&format!("!!! {why}"));
+                            refusal = Some(why);
+                            started = false;
+                        }
                         // F1.7's Describe stage speaks here too: one forwarder per footage source,
                         // which PLANS what would be sent and prints it. Nothing is spawned and no
                         // vision server is contacted — the requests themselves arrive with the runner
@@ -3354,14 +3362,26 @@ fn wire_play(
                 run::step(shell.borrow().page), &asked, &queue, &bar, &procs,
             );
             crate::run_stages::say_outcome(&drive, log_line); // S4: a failed stage names itself in the log
+            // §S7 + §S8: Prepare's ending — log lines, status sentence, page/gates/Cut refreshed.
+            if run::step(shell.borrow().page) == run::Step::Prepare {
+                super::prepare_guard::say_ending(
+                    &drive, &main_window(), &asked, &bar, &queue,
+                );
+            }
         }
         paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page,
             preview_player(&main_window()).transport);
         status.set_text(&bar.borrow().status);
         // F0.5 S4: a single-step press closes what it opened (running off, the unload handed over,
         // the queue's line onto the status row). Narrate and Produce close theirs in their own flow.
+        // §S7: the ending is the run's LAST word, so it goes back after that close — the close writes
+        // the queue's line over the row, and `say_ending` already put the ending into `bar.status`.
         if matches!(pressed, run::Pressed::Started { .. }) && started {
             crate::ui::run_close::close_step_run(&bar, &queue, &exchange_log, &status, &progress, &log, &log_view, None);
+            if run::step(shell.borrow().page) == run::Step::Prepare && !bar.borrow().status.is_empty() {
+                let said = bar.borrow().status.clone();
+                status.set_text(&said);
+            }
         }
         paint_progress(
             &progress, &log, &log_view, &queue.borrow(),

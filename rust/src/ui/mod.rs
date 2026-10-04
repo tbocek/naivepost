@@ -61,6 +61,7 @@ mod narrate_lines;
 /// F4.7 (**Text**) — the row's text box: what a typed tag does to the line, and when it reaches disk.
 mod narrate_text;
 pub mod policy_form;
+pub mod prepare_guard;
 pub mod window;
 
 pub use settings::badge;

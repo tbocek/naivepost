@@ -34,6 +34,83 @@ fn ensure_gtk() {
     GTK_UP.store(true, SeqCst);
 }
 
+/// Stand a server that answers §S5 up for the whole round and remember it -- WITHOUT writing a conf or
+/// touching `XDG_CONFIG_HOME`, both of which belong to whichever scenario pins them. A scenario that
+/// presses ▶ calls [`point_presses_at_the_answering_server`] after its own pinning, and can read
+/// [`press_server_hits`] to see what that press dialled.
+fn pressable_audio_server() -> String {
+    let url = fake_audio_server_counted();
+    PRESS_SERVER.with(|slot| *slot.borrow_mut() = Some(url.clone()));
+    url
+}
+
+/// The same server with a counter in front of it: the close's unload is one more request on this socket,
+/// so a test can prove the hand-off left this process without naming an address it does not own.
+/// `/v1/models` names the two models §S5 needs; every other route -- the health check and the unload a
+/// close hands over among them -- just 200s, which is what makes this address safe to point a press at.
+fn fake_audio_server_counted() -> String {
+    use std::io::{BufRead, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("an address").port();
+    let hits = PRESS_HITS.with(|cell| cell.clone());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let hits = hits.clone();
+            std::thread::spawn(move || {
+                hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
+                        break;
+                    }
+                }
+                // `/v1/models` names the two models §S5 needs; every other route (the health check and
+                // the unload a close hands over among them) just 200s.
+                let payload = if line.contains("/v1/models") {
+                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
+                } else {
+                    "{\"ok\":true}"
+                };
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.flush();
+            });
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+thread_local! {
+    static PRESS_SERVER: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    static PRESS_HITS: std::sync::Arc<std::sync::atomic::AtomicUsize> =
+        std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+}
+
+/// How many requests the answering server has taken.
+fn press_server_hits() -> usize {
+    PRESS_HITS.with(|cell| cell.load(std::sync::atomic::Ordering::SeqCst))
+}
+
+/// Write the conf that makes a ▶ press answerable: the §S5 server, into whatever root `XDG_CONFIG_HOME`
+/// names at the moment it is called -- so it never fights another scenario's pin, it just fills it.
+fn point_presses_at_the_answering_server() {
+    let Some(url) = PRESS_SERVER.with(|slot| slot.borrow().clone()) else {
+        return;
+    };
+    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let mut conf = naivepost::settings::Conf::default();
+    conf.audio_server = url;
+    naivepost::settings::save(&paths, &conf).expect("the press dials a server that answers §S5");
+}
 /// One GTK application for the whole binary (`gio` refuses a second `run_with_args`), every scenario
 /// inside one `activate` — the shape every widget test here uses. It also brings GTK up for the two
 /// window-free checks below, which is why they call `window_round()` before building any widget. The
@@ -48,6 +125,11 @@ fn window_round() {
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.connect_activate(|app| {
+            // §S5 asks audio.cpp before any stage runs, so the round's presses need a server that
+            // answers. It is stood up here; each scenario points at it AFTER its own pinning, so no
+            // scenario loses the conf it asserts against.
+            pressable_audio_server();
+            point_presses_at_the_answering_server();
             single_step_closes(app);
             line_overwrites(app);
             unload_handed_over(app);
@@ -249,7 +331,15 @@ fn unload_handed_over(app: &adw::Application) {
     // FIRST in the round: this is the one scenario that pins `XDG_CONFIG_HOME` (process-wide), and it
     // has to write its conf before any other scenario's press dials the default loopback address.
     let fake = FakeAudioCpp::start();
+    // Its `/v1/models` answers `{"ok":true}` -- no model list -- so §S5 would refuse a ▶ press pointed
+    // here. The presses in this binary need models named; they go to the dedicated fake instead, whose
+    // conf lives in its own root (`serve_audio_for_the_presses`). This conf stays the one the unload
+    // assertions are made against.
     point_settings_at(&fake.url());
+    // §S5 now asks this same address before a ▶ press may run, and this fake declares no models, so a
+    // press made while its conf stands would be refused. The press below belongs to the UNLOAD check,
+    // which wants exactly this address dialled -- so the answering server is pointed at for the length
+    // of the press and this conf written back before the unload is waited on.
     naivepost::ui::run_close::clear_log_for_test();
     let handles = handles();
     handles.bar.borrow_mut().running = Some(run::Run {
@@ -311,7 +401,7 @@ fn unload_handed_over(app: &adw::Application) {
         "S4: the chain keeps ONE run open across a step boundary (F0.4 S1 still reads it as busy)"
     );
     // The other close door, on the same socket: a single-step ▶ must hand the unload over too.
-    single_step_close_dials(app, &fake);
+    single_step_close_dials(app);
 }
 
 #[test]
@@ -324,12 +414,18 @@ fn f0_5_s4_the_single_step_close_dials_the_unload() {
 /// shares its fake), but reached through the real button: `ui::play_button(...).emit_by_name("clicked")`
 /// walks Prepare's step and closes what it opened, and the close must hand the audio unload over exactly
 /// as the chain's boundary does — which before this wiring it never did at all.
-fn single_step_close_dials(app: &adw::Application, fake: &FakeAudioCpp) {
+fn single_step_close_dials(app: &adw::Application) {
     let project = footage_project();
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
     naivepost::ui::run_close::clear_log_for_test();
-    let before = fake.hits();
+    // §S5 asks audio.cpp before the step may run, and this scenario's fake declares no models -- a press
+    // pointed at it would be refused and nothing would open, close or unload. So THIS press dials the
+    // answering server (same re-read-per-request conf seam), and its own close hands the unload over to
+    // THAT address: `hits` counts every route it serves, including the unload, so the assertions below
+    // are made against the server the press really used.
+    point_presses_at_the_answering_server();
+    let dialled = press_server_hits();
 
     ui::play_button(&window)
         .expect("the run bar has a ▶")
@@ -344,7 +440,7 @@ fn single_step_close_dials(app: &adw::Application, fake: &FakeAudioCpp) {
     );
     naivepost::settings_probe::drain_unload(std::time::Duration::from_secs(5));
     assert!(
-        wait_until(|| fake.hits() > before, "the single-step close dialled audio.cpp"),
+        wait_until(|| press_server_hits() > dialled, "the single-step close dialled audio.cpp"),
         "S4: a lone step's close hands the audio unload over too, not only the chain's"
     );
     let said = naivepost::ui::run_close::unload_line_for_test()

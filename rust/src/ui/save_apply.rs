@@ -43,6 +43,13 @@ pub(crate) fn set_open_dir(dir: &Path) {
     OPEN_DIR.with(|slot| *slot.borrow_mut() = Some(dir.to_path_buf()));
 }
 
+/// Take on a folder for the snapshot renderer only. `--snapshot` draws a window without going through
+/// Open, so nothing has answered [`open_dir`] and an ending would count the working copy beside the
+/// launch instead of the folder it is meant to show.
+pub fn note_open_for_snapshot(dir: &Path) {
+    set_open_dir(dir);
+}
+
 /// Where Save goes when it has no folder of its own yet: the working copy beside the launch's
 /// directory. A fallback only -- every window `build_window` drew has already answered [`open_dir`].
 fn launch_session_dir() -> PathBuf {

@@ -501,3 +501,113 @@ fn f0_3_s5_a_stop_inside_describe_arms_the_next_prepare_run() {
         other => panic!("expected Started, got {other:?}"),
     }
 }
+
+// ---- S6 through the real button ----------------------------------------------
+
+/// §S6's slices are what a pressed ▶ puts the bar in. This goes through `play-button` rather than
+/// calling the driver: the queue the window owns is read back after the press, and its phase is the
+/// last slice the walk set — inside Prepare's numbers, not the whole bar a step with no phases gets.
+#[test]
+fn f1_1_s6_the_press_puts_the_bar_in_prepare_slices() {
+    use adw::prelude::*;
+    use naivepost::ui;
+
+    static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    // The preflight is the real door (§S5), so the fake audio.cpp has to be up before the press and
+    // stay up while it runs: healthy on /health, ASR + diarization on /v1/models.
+    let mut audio = naivepost::settings::Conf::default();
+    audio.audio_server = fake_audio_server();
+    let config = std::env::temp_dir().join(format!("np-f11-s6-cfg-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&config);
+    let paths = naivepost::settings::Paths {
+        config_dir: config.join("naivepost"),
+        data_dir: config.join("data"),
+    };
+    naivepost::settings::save(&paths, &audio).expect("the conf points at the fake server");
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
+    let root = std::env::temp_dir().join(format!("naivepost-f11-s6-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let session = naivepost::startup::session_dir(&root);
+    fs::create_dir_all(&session).expect("session folder");
+    // The ▶ handler resolves the project through the cwd at press time, so it has to be pinned first.
+    std::env::set_current_dir(&root).expect("cwd pinned");
+
+    let app = adw::Application::builder()
+        .application_id(ui::APP_ID)
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.connect_activate(|app| {
+        let model = Project {
+            sources: vec![source("project:sources/lecture.mkv", true)],
+            ..Project::default()
+        };
+        let window = ui::build_window(app, &model, "Prepare");
+        window.present();
+        ui::play_button(&window)
+            .expect("the run bar has a play-button")
+            .emit_clicked();
+        let queue = ui::run_queue(&window).expect("the window owns a run queue");
+        // What the press left on the bar: the walk called `Queue::phase` with one of §S6's slices for
+        // each stage it reached, and a phase's base is the proof — an unscaled step leaves 0.0 there.
+        // Read through the same fraction the progress bar paints from.
+        let shown = queue.borrow().fraction();
+        let (ingest_base, _) = prepare_run::share(Phase::Ingest, false);
+        let (understand_base, understand_share) = prepare_run::share(Phase::Understand, false);
+        assert!(
+            ingest_base > 0.0 && understand_base > 0.0,
+            "§S6's numbers are non-zero bases, which is what makes a scaled bar distinguishable"
+        );
+        assert!(
+            shown <= understand_base + understand_share,
+            "the bar sits inside Prepare's slices, not past understand's top: {shown}"
+        );
+        assert!(
+            matches!(
+                naivepost::ui::run_close::last_run_step_for_test(),
+                Some(naivepost::run::Step::Prepare)
+            ),
+            "the press opened a Prepare run, which is the run whose bar is sliced: {shown}"
+        );
+        RAN.store(true, std::sync::atomic::Ordering::SeqCst);
+        app.quit();
+    });
+    app.run_with_args::<String>(&[]);
+    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the press check never ran");
+}
+
+/// A loopback audio.cpp that answers `/health` and names the two models every Prepare run needs.
+fn fake_audio_server() -> String {
+    use std::io::{BufRead, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("an address").port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
+                        break;
+                    }
+                }
+                let payload = if line.contains("/v1/models") {
+                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
+                } else {
+                    "{}"
+                };
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.flush();
+            });
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}

@@ -5,15 +5,18 @@
 //! boundaries and the three ways a run can end. The UI only forwards the press and prints what these
 //! return, which is what lets every rule be tested without a display, a server or ffmpeg.
 //!
-//! Deliberate boundary: NOTHING in this module shells out or opens a socket. S5 answers from
-//! booleans handed in, and S6 only owns where each phase starts and stops on the bar — the work
-//! inside those bounds is F1.2 (separation), F1.3 + F1.6 (ingest) and F1.7–F1.10 (understand),
-//! whose rounds fill them. A runner here would be structure for its own sake until those land.
+//! Deliberate boundary: nothing in this module shells out or spawns a subprocess. S5's preflight DOES
+//! open a socket — it asks audio.cpp `/health` and `/v1/models` through the legs the rest of the app
+//! uses, because a press that starts a long run without checking the server wastes it. Everything
+//! else answers from data handed in, and S6 only owns where each phase starts and stops on the bar —
+//! the work inside those bounds is F1.2 (separation), F1.3 + F1.6 (ingest) and F1.7–F1.10 (understand),
+//! whose rounds fill them.
 
 use std::fs;
 use std::path::Path;
 
 use crate::layout::Tree;
+use crate::services;
 use crate::prepare;
 use crate::project::{Project, Source};
 use crate::sources;
@@ -229,6 +232,55 @@ pub fn preflight_error(
     None
 }
 
+/// The served-models rule for one id: present AND declared for the task this step needs.
+///
+/// `checks::model_verdict` is the settings dialog's door and it answers a sentence; Prepare wants the
+/// same two facts (present, right task) as a yes/no, so the check is written here against the same
+/// fields that door reads — `id` and `task` — rather than by parsing a verdict back out of prose. An
+/// empty `task` counts as served: several audio.cpp builds declare no task at all, and refusing them
+/// would be a refusal about a field the server never filled in.
+fn serves(models: &[services::AudioModel], wanted_id: &str, task: &str) -> bool {
+    models
+        .iter()
+        .any(|model| model.id == wanted_id && (model.task.is_empty() || model.task == task))
+}
+
+/// S5 over the REAL servers: ask audio.cpp whether it answers, then whether the models this step
+/// needs are served there, and hand both facts to [`preflight_error`] so the wording stays the one
+/// place it is written.
+///
+/// Two calls, both through doors the app already dials: `GET /health` (`settings_probe::get`, the
+/// settings dialog's own health leg) and `GET /v1/models` (`audio_task::catalog`). A server that does
+/// not answer is not an error here — it is `audio_ok == false`, which is what makes §S5's refusal a
+/// sentence on the status line instead of a failed run. The ids are the ones every audio call asks
+/// with (`services::asr_model`/`diar_model`/`sep_model`, each falling back to its shipped default), so
+/// a preflight that passes is a preflight about the models the stages will actually name.
+pub fn preflight(paths: &crate::settings::Paths, tree: &Option<Tree>, project: &Project) -> Option<String> {
+    let conf = crate::settings::read(paths).unwrap_or_default();
+    let endpoint = services::audio_endpoint(&conf, |name| std::env::var(name).ok());
+    let healthy = crate::settings_probe::get(
+        tree,
+        services::Server::Audio,
+        &endpoint,
+        services::Kind::Health,
+        "health",
+        None,
+    )
+    .is_ok();
+    if !healthy {
+        return preflight_error(false, false, false, false, false);
+    }
+    let models = crate::audio_task::catalog(tree, paths, "Prepare").unwrap_or_default();
+    let asked = separation_asked(project);
+    preflight_error(
+        true,
+        serves(&models, services::asr_model(&conf), "asr"),
+        serves(&models, services::diar_model(&conf), "diar"),
+        asked,
+        serves(&models, services::sep_model(&conf), "sep"),
+    )
+}
+
 /// S7: the success log. Three folders, because those are the three things a run of Prepare wrote,
 /// and naming them is how the person finds the output without opening the file manager blind.
 pub fn finished_log() -> Vec<String> {
@@ -243,6 +295,67 @@ pub fn finished_log() -> Vec<String> {
 /// S7: the status line beside it.
 pub fn finished_status(files: usize) -> String {
     format!("prepared \u{2014} {files} files")
+}
+
+/// S7: how a walked Prepare run ended. The walk ([`crate::run_stages::Drive`]) says which stage broke
+/// or where ⏹ landed; the folder says what a finished run actually left behind. Both questions are
+/// answered here so the wording exists once and a test can pin it without a window or a subprocess.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ending {
+    /// Every stage finished. `files` is what `prepare/` holds — the same number the Outputs row shows.
+    Prepared { files: usize },
+    /// ⏹ landed at a checkpoint. Not a failure: finished work stays on disk for the next ▶.
+    Stopped,
+    /// A stage failed, naming itself and the reason (§Failure-is-specific).
+    Failed { reason: String },
+}
+
+/// S7: turn what the walk came to into one of the three endings, counting the files a run wrote out
+/// of the session folder through [`crate::prepare::outputs_count`] — the door the Outputs readout
+/// counts from, so "prepared — N files" and the readout beside the folder button cannot disagree.
+pub fn ending_of(drive: &crate::run_stages::Drive, tree: &Tree) -> Ending {
+    match drive {
+        crate::run_stages::Drive::Done { .. } => Ending::Prepared {
+            files: crate::prepare::outputs_count(tree),
+        },
+        crate::run_stages::Drive::Stopped { .. } => Ending::Stopped,
+        crate::run_stages::Drive::Failed { error, .. } => Ending::Failed {
+            reason: error.clone(),
+        },
+    }
+}
+
+/// S7's log lines for one ending: the success case names the three folders the run wrote; a stop says
+/// the kept work is why it is not a failure; a failure names its reason so the log points somewhere.
+/// S7's log lines for one ending.
+///
+/// Success names the three folders the run wrote ([`finished_log`]); a failure leads with
+/// [`failed_status`]'s sentence, which names the reason; a stop adds nothing —
+/// [`crate::run_stages::say_outcome`] has already logged where the walk stopped, and §S7's
+/// "finished work is kept" sentence belongs to the status row, not to a second log line.
+pub fn ending_lines(ending: &Ending) -> Vec<String> {
+    match ending {
+        Ending::Prepared { .. } => finished_log(),
+        // The line `run_stages::say_outcome` already printed as the walk unwound, so a stop adds
+        // nothing new to the log: §S7's sentence belongs to the run's last word, the status row.
+        Ending::Stopped => vec![],
+        Ending::Failed { reason } => vec![failed_status(reason)],
+    }
+}
+
+/// S7's status sentence for one ending — the run's last word on the status row.
+///
+/// The success case is [`finished_status`]; a stop is [`STOPPED`] verbatim (§S7 writes that sentence
+/// with no marker, so it goes on the row exactly as the constant holds it — the `>>>` form is the
+/// log's, and [`crate::run_stages::say_outcome`] already put the walk's own stop line there); a
+/// failure goes through [`failed_status`], which answers [`FAILED_BLANK`] when the reason is empty so
+/// a red run is never a blank row.
+pub fn ending_status(ending: &Ending) -> String {
+    match ending {
+        Ending::Prepared { files } => finished_status(*files),
+        Ending::Stopped => STOPPED.to_string(),
+        Ending::Failed { reason } => failed_status(reason),
+    }
 }
 
 /// S2: save the project before anything runs, so a crash mid-run leaves a project that still knows

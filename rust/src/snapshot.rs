@@ -99,6 +99,10 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         // §7's link line as the shell actually draws it, in the OPEN log. Program-side screen: there is
         // no `spec/img/03-log-link.png`; §1 only says which single line of the log is a link.
         "03-log-link" => Some("Prepare"),
+        // §F1.1 S7/S8's face: the shell AFTER a Prepare run ended — bar at 1, "prepared — N files" on
+        // the status row, the three folders named in an open log, Outputs counting what was written.
+        // No `spec/img/` picture of it; §S7 spells the words, this shows them in place.
+        "04-prepared" => Some("Prepare"),
         // §2's own picture is the RUN BAR at rest: ▶ with "Run this step — or resume what is paused",
         // ⏸ absent, and the gears still. It renders on Prepare because that is the page whose step ▶
         // stands for when nothing is playing (§F0.2 S4 → F1.1).
@@ -622,6 +626,82 @@ architecture behind them.
                 ui::window::log_line(&format!(">>> {step}: 28.6 kB came back in 2m39s"));
                 ui::window::log_line(&crate::exchanges::link_line("llm/prepare-page.html"));
                 show_the_log(&window).expect("the shell's log opens for its own snapshot");
+                None
+            }
+            // §S7/S8 as the shell actually draws them, driven through the SAME door the ▶ handler calls
+            // (`ui::prepare_guard::say_ending`) with the walk's finished outcome — not a poke of the
+            // labels. The folder is a scratch `.naivepost` under the temp dir holding one file per
+            // prepare/ subfolder, so the count on the status row and the Outputs readout are the same
+            // number a real run would print (3), and the log expander has to be opened like a run's does.
+            "04-prepared" => {
+                let root = std::env::temp_dir().join(format!("naivepost-snap-04-prepared-{}", std::process::id()));
+                let _ = std::fs::remove_dir_all(&root);
+                let session = root.join("session.naivepost");
+                for rel in [
+                    "prepare/inputs/lecture/meta.env",
+                    "prepare/describe/lecture/events.tsv",
+                    "prepare/transcript/lecture.tsv",
+                ] {
+                    let path = session.join(rel);
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::write(&path, "x");
+                }
+                let bar = ui::run_bar(&window).expect("the window carries a run bar");
+                let queue = ui::run_queue(&window).expect("the window carries a run queue");
+                // The folder the ending counts and refreshes from is `save_apply::save_target()`'s, so
+                // the scratch project has to be taken on first — exactly what Open does to a real one.
+                ui::save_apply::note_open_for_snapshot(&session);
+                // A run has to be OPEN for its ending to be the ending of a run: `start_run` is what
+                // §S7's "fraction 1" and §S4's close both act on, so the shot opens the bookkeeping,
+                // lets the ending speak, then closes it exactly as a single-step press does.
+                let mut exchange = crate::exchanges::RunLog::new();
+                crate::runqueue::start_run(
+                    &mut bar.borrow_mut(),
+                    &mut queue.borrow_mut(),
+                    &mut exchange,
+                    crate::run::Step::Prepare,
+                    crate::run::snapshot_sources(&model),
+                );
+                crate::ui::run_close::note_started_run(&bar);
+                ui::prepare_guard::say_ending(
+                    &crate::run_stages::Drive::Done { ran: 4, skipped: 0 },
+                    &window,
+                    &model,
+                    &bar,
+                    &queue,
+                );
+                // The close a real press runs between the ending and the next paint: the unload handed
+                // over, the queue emptied. Then the log is opened, which is what paints the bar's face
+                // and the status row last -- the order a finished press leaves them in.
+                let view = log_view(&window).expect("the log expander holds its text view");
+                let status = ui::find_status(window.upcast_ref()).expect("the shell has a status line");
+                crate::ui::run_close::close_step_run(
+                    &bar,
+                    &queue,
+                    &std::rc::Rc::new(std::cell::RefCell::new(exchange)),
+                    &status,
+                    &ui::progress_bar(&window).expect("the shell carries a progress bar"),
+                    &ui::log_expander(&window).expect("the shell carries the log expander"),
+                    &view,
+                    None,
+                );
+                // §S7: the ending is the run's LAST word, which is why it goes back after that close —
+                // the close puts the queue's (now empty) line over the row. Same two lines the ▶ handler
+                // writes in this position.
+                if !bar.borrow().status.is_empty() {
+                    let said = bar.borrow().status.clone();
+                    status.set_text(&said);
+                }
+                show_the_log(&window).expect("the shell's log opens for its own snapshot");
+                // ...and the ending goes back on the row after it: `show_the_log` paints through
+                // `paint_progress`, whose status write would otherwise be the last word on screen.
+                if !bar.borrow().status.is_empty() {
+                    let said = bar.borrow().status.clone();
+                    status.set_text(&said);
+                }
+                let _ = std::fs::remove_dir_all(&root);
                 None
             }
             // F3.5's screen is the form itself, not the page behind it -- same reason `03-policy-form`
