@@ -321,13 +321,15 @@ fn check_a_failing_press_ends_with_its_reason(app: &adw::Application) {
         "a failed stage is not reported as a stop: {reason:?}"
     );
     // The stage that broke is `frames`, and the walk logs it by name one line earlier; §S7's own sentence
-    // carries the reason (the failing command and ffmpeg's answer), so the name is read from the pair.
+    // carries the reason (the failing command and the tool's answer), so the name is read from the pair.
     assert!(
         logs.iter().any(|line| line.starts_with("!!! frames failed")),
         "the failure names the stage that broke (§Failure-is-specific): {logs:?}"
     );
+    // Which tool answers first is the frames door's business, not this test's: §F1.6 opens with ffprobe on
+    // the footage, an older sweep opened with ffmpeg. Either way §S7's sentence quotes the tool's own answer.
     assert!(
-        reason.contains("ffmpeg"),
+        reason.contains("ffmpeg") || reason.contains("ffprobe"),
         "and §S7's sentence carries the reason the stage gave: {reason}"
     );
     assert!(

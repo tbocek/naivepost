@@ -74,6 +74,7 @@ pub mod exchanges;
 pub mod fix_transcripts;
 pub mod hand_edit;
 pub mod frames;
+pub mod frames_run;
 pub mod render_fx;
 pub mod fx_aspect;
 pub mod fx_lane;

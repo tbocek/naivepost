@@ -64,12 +64,21 @@ fn walked_steps_are_tallied(app: &adw::Application) {
         logged.iter().any(|line| line.contains("Cut skipped") && line.contains("hand edits")),
         "S4's hand-edits branch must fire from the session folder: {joined}"
     );
-    // Something ran: a stage line from the walk (a task label or a spawned command) is in the log.
+    // Something ran: the walk reached a real tool of its own. The frames row is a dial now (§F1.6), so
+    // its first leg is ffprobe on the video rather than one spawned ffmpeg — and this fixture's mkv is
+    // placeholder bytes, so the honest outcome is that the door said WHY it stopped. Both halves are
+    // required: a tool call proves work was attempted, the reason proves it was the walk reporting and
+    // not a short-circuit.
     assert!(
-        logged
-            .iter()
-            .any(|line| line.contains("scening frames") || line.contains("ffmpeg")),
-        "the walk spawns for real, so its own lines appear: {joined}"
+        logged.iter().any(|line| line.contains("ffprobe") || line.contains("ffmpeg") || line.contains("scening frames")),
+        "the walk calls tools for real, so its own lines appear: {joined}"
+    );
+    assert!(
+        logged.iter().any(|line| {
+            line.starts_with("!!! ")
+                && (line.contains("no video to frame") || line.contains("Invalid data") || line.contains("failed:"))
+        }),
+        "the frames row must say what stopped it: {joined}"
     );
     let last = logged.last().expect("an end line");
     assert!(

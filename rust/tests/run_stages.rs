@@ -267,10 +267,19 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
     assert_eq!(stages.len(), 4, "frames, speech, describe, fix: one stage each");
     assert_eq!(stages[0].track, TRACK_FRAMES, "frames ride their own half of the bar");
     assert_eq!(stages[1].track, TRACK_STT, "speech rides the other half");
-    assert_eq!(stages[0].tasks[0].program, run_stages::FFMPEG, "the frames pass is ffmpeg's");
-    // The scene-detect filter string comes straight out of frames.rs, unchanged.
-    let joined = stages[0].tasks[0].args.join(" ");
-    assert!(joined.contains("scdet"), "the planned command carries the scene detector: {joined}");
+    // The frames row is a DIAL of this module, not one spawned command: §F1.6 S2's scene sweep plus one
+    // ffmpeg per frame is far more than a single task can carry, and the sweep's scores have to be read
+    // rather than discarded. `frames_run::stage` says so with its program word, as the speech and
+    // describe rows do.
+    assert_eq!(
+        stages[0].tasks[0].program,
+        naivepost::frames_run::FRAMES_TASK,
+        "the frames pass is a dial of frames_run, not a spawned cut"
+    );
+    // And the door's own argv builder is what the sweep will run, unchanged (S2): four frames a second,
+    // the throwaway 640-wide scale, and the detector reporting every score.
+    let sweep = naivepost::frames::scene_pass_plan(naivepost::frames::SCENE_THRESHOLD).join(" ");
+    assert!(sweep.contains("fps=4") && sweep.contains("scdet"), "the planned sweep is the scene detector: {sweep}");
     assert_eq!(
         stages[1].tasks[0].program,
         run_stages::AUDIO_TASK,

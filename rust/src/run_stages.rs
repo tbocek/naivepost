@@ -120,7 +120,7 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
         // Prepare: frames first (the scene pass), then speech over each recording.
         run::Step::Prepare => {
             let mut stages = Vec::new();
-            let frames = frames_stage(project);
+            let frames = crate::frames_run::stage(project);
             if !frames.tasks.is_empty() {
                 stages.push(frames);
             }
@@ -168,21 +168,6 @@ pub const TEXT_TASK: &str = "naivepost:text";
 
 /// The marker [`drive_walk`] reads as “dial the servers for this row” rather than “spawn this”.
 pub const AUDIO_TASK: &str = "naivepost:audio";
-
-fn frames_stage(project: &Project) -> Stage {
-    let args = crate::frames::scene_pass_plan(0.0);
-    let tasks = project
-        .sources
-        .iter()
-        .filter(|source| source.footage)
-        .map(|source| {
-            let mut argv = vec!["-i".to_string(), source.path.clone()];
-            argv.extend(args.iter().cloned());
-            Task::run_it("scening frames", FFMPEG, argv)
-        })
-        .collect();
-    Stage { track: runqueue::TRACK_FRAMES, name: "frames", phase: 1, of: 2, kind: "frame", tasks }
-}
 
 /// Speech recognition: one row per recording, each a DIAL of audio.cpp through [`crate::audio_task`]
 /// rather than a spawned process — the chunking, the cut of each chunk and the upload are the door's
@@ -387,6 +372,18 @@ where
                 queue.prog(stage.track, position(progress.done, total), &task.label);
                 continue;
             }
+            // The frames rows are this module's own dial too (S2's sweep plus one ffmpeg per frame is far
+            // more than one spawn can carry), so the walk calls instead of forking; `frames_run::stage`
+            // marks them with the program word it reads.
+            if task.program == crate::frames_run::FRAMES_TASK {
+                if let Err(error) = crate::frames_run::run_task(task, &mut log) {
+                    return Drive::Failed { stage: stage.name, error };
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, position(progress.done, total), &task.label);
+                continue;
+            }
             // The vision rows are a chat request rather than an audio task: same checkpoint, same
             // `take`, different door. `drive_walk` does not decide which, the row says by its program.
             if task.program == VISION_TASK {
@@ -498,7 +495,10 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
 /// Seconds of an audio file, by ffprobe — the tool §1 names for reading, taken from the same folder as
 /// the configured ffmpeg ([`crate::services::ffprobe_for`]'s rule), and its command goes to the log
 /// before it runs like every other subprocess line.
-fn probe_duration(configured_ffmpeg: &str, path: &Path, log: &mut impl FnMut(&str)) -> Result<f64, String> {
+///
+/// Public because the frames door asks the same question of a video (§F1.6 S3 needs the take's length to
+/// know where its grid stops), and one ffprobe rule belongs in one place.
+pub fn probe_duration(configured_ffmpeg: &str, path: &Path, log: &mut impl FnMut(&str)) -> Result<f64, String> {
     let ffprobe = crate::services::ffprobe_for(configured_ffmpeg, "ffprobe");
     let shown = ["-show_entries", "format=duration", "-of", "default=nw=1:nk=1", &path.display().to_string()];
     let out = subprocess::run(&ffprobe, &shown, |line| log(line))?
