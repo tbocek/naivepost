@@ -37,6 +37,60 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
     (root, tree)
 }
 
+/// A fake audio.cpp on loopback (§S5 asks it before any stage runs) — the shape
+/// `tests/press_prepare_widgets.rs` uses: healthy on `/health`, ASR + diarization on `/v1/models`.
+/// Without it the press is refused by the preflight and none of the pass's own lines are reached.
+fn fake_audio_server() -> String {
+    use std::io::{BufRead, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("an address").port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
+                        break;
+                    }
+                }
+                let payload = if line.contains("/v1/models") {
+                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
+                } else {
+                    "{}"
+                };
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.flush();
+            });
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+/// Point the settings this process reads at that server. One conf for the whole binary: every check
+/// here presses ▶, so they all need the same answer, and `XDG_CONFIG_HOME` belongs to the process.
+fn serve_audio_for_the_presses(url: &str) {
+    let config = std::env::temp_dir().join(format!("np-f110w-cfg-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&config);
+    let paths = naivepost::settings::Paths {
+        config_dir: config.join("naivepost"),
+        data_dir: config.join("data"),
+    };
+    let mut conf = naivepost::settings::Conf::default();
+    conf.audio_server = url.to_string();
+    naivepost::settings::save(&paths, &conf).expect("the conf points at the fake server");
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
+}
+
 fn footage(path: &str) -> Source {
     Source {
         path: path.to_string(),
@@ -87,6 +141,8 @@ fn f1_10_wire_pressing_play_reaches_the_joins_pass() {
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.connect_activate(|app| {
+        // §S5's preflight runs before any stage, so every press below needs an audio.cpp that answers.
+        serve_audio_for_the_presses(&fake_audio_server());
         check_a_seam_reaches_the_pass_through_the_button(app);
         RAN_SEAM.store(true, Ordering::SeqCst);
         check_one_recording_reports_no_seam_and_still_writes_both_files(app);
