@@ -58,6 +58,8 @@ mod cut_cameras;
 /// §05-cut#1-screen badge **31** and the wheel's three gestures: the band's live zoom, its scroll
 /// position and the geared scrollbar. Split out of `window.rs`, which is past its size budget.
 pub mod cut_view;
+pub mod cut_form_frame;
+pub mod cut_picture;
 /// F3.5 ▨ SVG drawing by hand: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_speed_hand;

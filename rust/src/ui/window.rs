@@ -34,6 +34,8 @@ use crate::ui::cut_folds::{
 };
 use crate::ui::cut_cameras::refresh_camera_rows;
 use crate::ui::cut_tracks;
+use crate::ui::cut_form_frame;
+use crate::ui::cut_picture;
 use crate::ui::save_apply;
 use crate::ui::rescan_apply;
 use crate::ui::cut_cameras::hand_preview_back;
@@ -365,7 +367,7 @@ fn page_box(
         // placed or edited, this holds the eight readings: thumbnail size (with its −/+ ladder), aspect
         // ratio, playhead, selection, cut, cut at 1×, source, segments — each value label named off
         // `cut_screen::readout_widget(label)` so the label is spelled once and the name follows.
-        let form = cut_form_column();
+        let form = cut_form_frame::frame(&cut_form_column().upcast::<gtk::Widget>());
         box_.insert_child_after(&form, Some(&previous));
         previous = form.upcast();
 
@@ -564,6 +566,9 @@ fn page_box(
         plate.set_widget_name("preview-plate");
         plate.set_visible(false);
         preview.append(&plate);
+
+        // §A's GtkPicture: the frame of the session, behind the dim, the rect and the overlays.
+        rect.prepend(&cut_picture::build());
 
         box_.append(&preview);
     }
@@ -2848,6 +2853,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     repaint_scrollbar(&window);
     wire_wheel_gestures(&window);
     crate::ui::cut_view::attach_scrollbar(&window);
+    cut_form_frame::wire_close(&window);
+    cut_picture::wire_click(&window);
     // §07-narrate#1-screen: the Narrate page's controls, wired after `set_content` like every other
     // control in this window, so the widgets being wired are inside the realized tree.
     crate::ui::narrate_page::wire(&window);
@@ -4725,6 +4732,7 @@ fn close_any_effect_form(window: &adw::ApplicationWindow) {
     if label_form_open().is_some() {
         close_label_form(window);
     }
+    cut_form_frame::set_pinned(window, None);
 }
 
 /// F3.8 S1 (`a click: the form opens`): the ONE door from a band to the form of its kind. Every kind in §06
@@ -4807,6 +4815,7 @@ pub fn press_effect_bar(
     match answer {
         fx_band::Press::ClickForm => {
             open_effect_form(window, &fx);
+            cut_form_frame::set_pinned(window, Some(&format!("edit {}", fx_record::label_of(fx.effect_kind().unwrap_or(cut::EffectKind::Zoom)))));
         }
         fx_band::Press::Hold { t, from_end: _ } => {
             set_held_effect(Some(fx.clone()));
@@ -4981,6 +4990,7 @@ pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
     // One form on the page at a time: opening this record's form over another would leave both visible.
     close_any_effect_form(window);
     open_effect_form(window, &shown);
+    cut_form_frame::set_pinned(window, Some(&format!("edit {}", fx_record::label_of(shown.effect_kind().unwrap_or(cut::EffectKind::Zoom)))));
     let said = format!("editing {} \u{2014} {}", fx_record::label_of(shown.effect_kind().unwrap_or(cut::EffectKind::Zoom)), fx_band::KEPT_AS_YOU_TYPE);
     if let Some(status_line) = find_status(window.upcast_ref()) {
         status_line.set_text(&said);
@@ -5407,6 +5417,7 @@ pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
     if let Some(player) = live_player(window) {
         player.borrow_mut().transport.playing = false;
     }
+    cut_picture::note_line_moved(window, to);
     Step::SteppedTo { t: to }
 }
 
@@ -6916,6 +6927,7 @@ pub fn insert_chosen_with_length(
         }
     }
     show_insert_form(window, &plan, &raw, at, fields);
+    cut_form_frame::set_pinned(window, cut_form_frame::open_form_title(window).as_deref());
     format!(
         "{} \u{2014} {:.1} s, {} \u{2014} the form is open",
         cut_insert::base_name(&raw),

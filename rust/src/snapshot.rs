@@ -118,6 +118,32 @@ fn screen_page(screen: &str) -> Option<&'static str> {
     }
 }
 
+/// Write one extracted frame into the folder Prepare would have put it in, so a Cut-page shot has a real
+/// picture to show. PNG bytes under the `.jpg` name `cut_tracks::frame_paths` lists (Prepare's own stamping
+/// rule, `frames.rs` S4): gdk-pixbuf decodes by content, and no JPEG encoder is linked here.
+fn seed_snapshot_frame(dir: &std::path::Path, base: &str, second: f64) {
+    let Ok(tree) = layout::Tree::new(dir) else { return };
+    let dir = tree.frames_dir(base);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let path = dir.join(format!("{}.jpg", crate::clock::frame_name(second)));
+    // A frame already on disk (one Prepare really extracted) is the better picture; write only when absent.
+    if path.exists() {
+        return;
+    }
+    let Ok(surface) = cairo::ImageSurface::create(cairo::Format::ARgb32, 160, 90) else {
+        return;
+    };
+    {
+        let Ok(cr) = cairo::Context::new(&surface) else { return };
+        cr.set_source_rgb(0.08, 0.35, 0.6);
+        let _ = cr.paint();
+    }
+    let Ok(mut file) = std::fs::File::create(&path) else { return };
+    let _ = surface.write_to_png(&mut file);
+}
+
 /// Paint `widget` into a PNG. Called once the first frame is ready.
 ///
 /// A cairo surface, not `gsk::Renderer::render_texture`: that one needs a realized
@@ -258,6 +284,17 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // where 0:30-0:40 was folded away, `-` over the still-open tail.
             ui::press_fold_gap(&window, 1);
             ui::refresh_camera_rows(&window);
+            // Badge **1** shows a frame of the session, and Prepare's extracted frames are not part of the
+            // demo fixture (it ships `cut/` only), so the shot writes one real PNG into the folder the page
+            // lists frames from. Real bytes through gdk-pixbuf, named by `clock::frame_name` so the same
+            // rule the band uses to pick a frame picks this one.
+            seed_snapshot_frame(&dir, "session-tape", 0.0);
+            // The frame reaches the panel through the page's own door: `refresh` asks which recording the
+            // preview watches and where the line stands, so the shot first tells it WHICH session this is
+            // (the same slot `page_recordings` answers from) before repainting.
+            ui::cut_picture::set_preview_camera_base("session-tape");
+            ui::cut_picture::set_snapshot_dir(&dir);
+            crate::ui::cut_picture::refresh(&window);
             // Badge **31** is "hidden when everything fits", and at the opening 4 px a second this session
             // does fit — so no snapshot of the Cut page had ever shown the bar. Deepen the zoom through the
             // toolbar's own + door (the same one a click reaches) until the tape outgrows the view: the bar
