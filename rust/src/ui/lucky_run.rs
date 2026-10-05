@@ -167,11 +167,13 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
             Advance::End { line, status: short } => {
                 window::log_line(&line);
                 handles.status.set_text(&short);
+                // The end sentence goes into the log while the run still stands, so it is painted in the
+                // expander the user can see; the close that follows is what takes the log down (S4).
+                paint_chain_step(handles);
                 close_run(handles);
                 closed = true;
                 break;
-            }
-            Advance::Idle => break,
+            }            Advance::Idle => break,
         }
         // ⏹ pressed between two steps: S5 ends the run here rather than starting the next one.
         if bar_wants_stop(handles) {
@@ -187,7 +189,8 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
     // The chain is over either way: give the button back. The last step's bookkeeping is closed here
     // unless the end line already closed it (`close_run`), which is why `press` tracks the close.
     if !closed {
-        crate::ui::run_close::close_chain_step(handles, None);
+        paint_chain_step(handles);
+        crate::ui::run_close::close_chain_end(handles);
     }
     button.set_sensitive(true);
     button.remove_css_class(RUNNING_CLASS);
@@ -203,7 +206,14 @@ fn bar_wants_stop(handles: &Handles) -> bool {
 
 /// Close the run's bookkeeping when the chain ends early (an end line landed mid-walk).
 fn close_run(handles: &Handles) {
-    crate::ui::run_close::close_chain_step(handles, None);
+    crate::ui::run_close::close_chain_end(handles);
+}
+
+/// Paint the chain's widgets with the run still standing -- the log open and filled with everything the
+/// chain has logged, the needle and the row as the queue has them. `run_close` owns the door because the
+/// close that follows it is the other half of the same moment.
+pub(crate) fn paint_chain_step(handles: &Handles) {
+    crate::ui::run_close::paint_chain_step(handles);
 }
 /// Is this session's `final.txt` newer than its marks? Same two files and same comparison §F1.12 uses;
 /// unreadable mtimes answer "no" because there is then no edit that could be lost.

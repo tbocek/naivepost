@@ -19,6 +19,7 @@ pub mod run_close;
 /// §7's link line — the log's one clickable line, and the launcher that opens it. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod log_link;
+pub mod log_paint;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_page;
 /// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
@@ -149,6 +150,8 @@ pub use window::copy_into_project;
 pub use window::find_source_widget;
 pub use window::lucky_button;
 pub use window::log_expander;
+pub use crate::ui::log_paint::log_view;
+pub use crate::ui::log_paint::note_exchange_line;
 pub use window::new_button;
 pub use window::open_button;
 pub use window::open_folder;

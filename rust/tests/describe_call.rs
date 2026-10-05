@@ -14,7 +14,7 @@
 //! **s5** covers the row: the four frames and the thinking flag on the wire, the EVENT/STATE pair on
 //! disk, the cache that makes an unchanged chunk free, and the plan that keeps a call at four frames.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -22,6 +22,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use naivepost::clock::frame_name;
 use naivepost::describe::{self, FRAMES_PER_REQ};
 use naivepost::settings::{self, Conf, Paths};
+use naivepost::services;
+
+/// The env and the working folder belong to the process, and cargo runs these tests as threads. Every walk
+/// test takes them (see `Scene::enter`), one at a time, exactly as `tests/separation_run.rs` does.
+static ENV: Mutex<()> = Mutex::new(());
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -56,6 +61,9 @@ fn events_answer(frames: usize) -> String {
     format!("{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[{calls}]}}}}]}}")
 }
 
+
+/// The reply marker that means "answer each request with exactly the frames it carried"; see `serve`.
+const BY_SIZE: &str = "@by-size";
 
 /// What the fake answers with, and how many chat asks it has taken.
 struct Fake {
@@ -111,6 +119,13 @@ impl Fake {
         }
     }
 
+    /// Reply sizes: when set, each ask is answered with a `record_event` for exactly the frames THAT ask
+    /// carried (counted off the request's own picture parts), which is the only way a chunk-size test can
+    /// prove the batch the stage chose. Unset, the fake answers with whatever it was started with.
+    fn answer_batch_sizes(&self) {
+        *self.answer.lock().expect("the reply lock") = BY_SIZE.to_string();
+    }
+
     /// The chat requests this fake has recorded. Recording happens on the connection's own thread, so
     /// a reply can return before its entry is in the list; callers wait for the count they expect, the
     /// same way `tests/separation_run.rs` does.
@@ -155,7 +170,14 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
     if length > 0 {
         let _ = reader.read_exact(&mut body);
     }
-    let payload = answer.to_string();
+    // The reply is chosen from the request, because one fake answers several chunk sizes: `BY_SIZE` means
+    // "one record_event per picture THIS request carried", which is the only way a chunk-size test can
+    // prove the batch the stage chose without the answer giving away the frame count first.
+    let text = match answer {
+        BY_SIZE => events_answer(String::from_utf8_lossy(&body).matches("\"image_url\"").count()),
+        fixed => fixed.to_string(),
+    };
+    let payload = text.as_str();
     let framed = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
@@ -169,22 +191,42 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
     })
 }
 
+/// What the scene hands the stage as its conf, and what `leg_conf` returns: the fake's address, or the
+/// dead address the one "no server" scene plants for itself.
+const UNUSED: &str = "http://unused.invalid";
+
+/// The describe interval the scenes space their frames on: `Project::default()`'s own, so the project
+/// file a scene writes and the frames folder it plants cannot disagree about the spacing (see `Scene::new`).
+const SCENE_INTERVAL: f64 = 1.0;
+
 /// One footage source, its frames and scaled copies on disk, and its own settings folder pointing at
 /// its own fake LLM.
 ///
-/// The scene is passed to the doors explicitly (`tree`/`paths`), which is how the stage is tested
-/// without pretending a thread owns the process: cargo runs these tests as threads of one binary, so
-/// a scenario that chdir'd and set `XDG_CONFIG_HOME` would move every other thread's cwd and settings
-/// with it (the `tests/separation_run.rs` scenes pay that cost with a serialising lock). Everything
-/// the walk needs from the environment is read by `enter_plan` alone, which is the one check that goes
-/// through `run_stages::plan` and therefore needs the session to be the working folder.
+/// The scene is passed to the doors explicitly (`tree`/`paths`), but the WALK still needs the process's
+/// env -- the settings folder through `XDG_CONFIG_HOME` and the session as the working folder -- because
+/// that is how the app resolves both, so every walk enters the scene and takes the ENV lock (`walk`
+/// below). cargo runs these tests as threads of one process, so two walks in flight would otherwise
+/// move each other's cwd and settings folder mid-request, and `ask`'s re-read of the conf (§1's
+/// re-read-per-request seam) would dial a server that is not this scene's.
 struct Scene {
     root: PathBuf,
     paths: Paths,
+    /// The fake's address, written to this scene's OWN settings folder and to no other. Written by
+    /// `Scene::new` alone -- never by another thread's env -- so `leg_conf` below answers what THIS scene
+    /// points at however the process's `XDG_CONFIG_HOME` is moving underneath it.
+    server: String,
 }
 
 impl Scene {
     fn new(label: &str, frames: usize, llm_url: &str) -> Scene {
+        // Frames on the describe INTERVAL (P.project.frameInterval, 1.0 s here), not on the extraction
+        // grid: `describe::pick_frames` walks one frame every interval inside a scene, so a folder spaced
+        // any finer than that is asked for pictures that were never written, and `describe_scale::ensure`
+        // names the missing one and fails the stage before a request goes out -- which reads to a test as
+        // "the fake was asked 0 times". `is_every_frame` wants the same spacing or it refuses the source
+        // outright as an every-frame extraction. Both rules are about the interval, so this is the one
+        // spacing that lets the stage reach the wire.
+        let interval = SCENE_INTERVAL;
         let root = std::env::temp_dir().join(format!(
             "np-desc-{label}-{}",
             COUNTER.fetch_add(1, Ordering::SeqCst)
@@ -209,6 +251,13 @@ impl Scene {
             ..Default::default()
         };
         naivepost::project::save(&project, &session).expect("the session file");
+        // Same number the frames were spaced at, said to the project file `interval` is read back from, so
+        // the frames on disk and the interval the stage reads cannot drift apart.
+        assert!(
+            (project.interval - interval).abs() < 1e-9,
+            "the scene spaces its frames on its own interval: {}",
+            project.interval
+        );
         let lane = "lecture".to_string();
         // F1.6's output: the grid on the frames' own clock, plus F1.7's scaled copies beside them.
         let frames_dir = naivepost::layout::Tree::new(&session)
@@ -225,7 +274,7 @@ impl Scene {
             // picture that exists, so a name at the epoch reads as 0.0 s and the rest follow on the
             // grid. The `.llmframes/` copy has to carry the bare clock name because
             // `describe::scaled_name` looks it up by exactly that.
-            let at = index as f64 * project.interval;
+            let at = index as f64 * interval;
             let name = format!("{}.jpg", frame_name(at + epoch_seconds()));
             std::fs::write(frames_dir.join(&name), b"jpeg").expect("the frame");
             std::fs::write(
@@ -235,12 +284,14 @@ impl Scene {
             .expect("the scaled copy");
         }
         settings::save(&paths, &conf_at(llm_url)).expect("the conf");
-        Scene { root, paths }
+        Scene { root, paths, server: llm_url.to_string() }
     }
 
     /// Take the process into this scene for the walk's own resolution: the settings folder through
     /// `XDG_CONFIG_HOME` (the ROOT — `settings::paths_from` appends the `naivepost` folder itself) and
-    /// the session by cwd. Only the `plan`-through-the-walk check needs this.
+    /// the session by cwd. Every walk test takes it now, not just the `plan` one: `ask` re-reads the conf
+    /// from `settings::from_environment()` mid-request, so a second thread's `leave()` between the
+    /// stage's own read and the leg's sends the ask to `llm_default()` and the fake is never asked.
     fn enter(&self) {
         std::env::set_var("XDG_CONFIG_HOME", self.root.join("cfg"));
         std::env::set_var("XDG_DATA_HOME", self.root.join("data"));
@@ -260,11 +311,55 @@ impl Scene {
     /// Describe this scene's footage source the way the stage does, but with the scene's own tree and
     /// settings folder: [`naivepost::describe_call::stage_chunk`] is the door `run_task` opens after it
     /// resolves them from the environment, and it is the same door.
+    ///
+    /// The process's env stands as this scene's for the whole walk and no other thread's: every test body
+    /// that calls this holds the ENV lock across it, and `enter()` says why the walk needs the env at all.
+    /// The address the walk's leg will dial, read back from the settings file rather than handed over by
+    /// the test, so the conf on disk and the conf the leg dials are one fact and a fake that has not been
+    /// written yet reads as "no conf to dial" instead of a silent ask to the shipped default port. A scene
+    /// whose folder was rewritten after it was made answers the rewrite: that is what the leg will dial.
+    fn server(&self) -> Result<String, String> {
+        let on_disk = settings::read(&self.paths).map_err(|why| format!("{}: {why}", self.server))?;
+        Ok(services::server_url(&on_disk.server).unwrap_or_else(|| self.server.clone()))
+    }
+
+    /// The fake's address the stage will reach, for the `conf` argument it is handed: an unwritten settings
+    /// folder is this binary's own bug, so it panics here rather than letting a walk dial nothing.
+    fn dial_to(&self) -> String {
+        self.server().expect("this scene's fake is in its own settings folder")
+    }
+
+    /// The conf the LEG will actually dial to, read back through the same door `ask` uses (`ask` throws
+    /// away the `conf` argument it is handed and re-reads the settings folder at send time, §1's
+    /// re-read-per-request seam) and checked against this scene's own fake. The ENV lock is held across
+    /// every call of this, so the folder it finds is this scene's; the assert is what still catches a
+    /// mistake rather than letting a walk dial `services::llm_default()`, answer `Ok(0)` and leave a test
+    /// asserting a bare `[]`.
+    fn leg_conf(&self) -> Conf {
+        let mut conf = conf_at(&self.dial_to());
+        if let Some(paths) = settings::from_environment() {
+            if let Ok(read) = settings::read(&paths) {
+                conf = read;
+            }
+        }
+        assert_eq!(
+            services::server_url(&conf.server).as_deref().unwrap_or_default(),
+            self.dial_to(),
+            "the leg would dial a different server than this scene's fake -- the env is not this scene's"
+        );
+        conf
+    }
+
+
     fn describe(&self, conf: &Conf, log: &mut impl FnMut(&str)) -> Result<usize, String> {
         naivepost::describe_call::stage_chunk(&self.tree(), &self.paths, conf, "lecture", Some(0), log)
     }
 
     /// The frames this scene's footage row holds, as the stage will read them.
+    /// The frames this scene's footage row holds, as the stage will read them.
+    /// THIS scene's frames, counted the way the stage counts them: straight from the scene's own tree,
+    /// with no cwd or settings folder involved, so an answer to "how many does this row have?" cannot come
+    /// back as another thread's scene (0 of them reads exactly like a folder that was never entered).
     fn frame_count(&self) -> usize {
         naivepost::describe::frames_on_disk(&self.tree().frames_dir("lecture")).len()
     }
@@ -292,9 +387,10 @@ impl Scene {
     }
 
     /// The one path that goes through the walk's own planning: the stage the Prepare step builds from
-    /// this session's project, and its rows run the way `drive_walk` runs them. This is why the scene
-    /// is entered and left around it.
-    fn walk(&self) -> Result<(usize, Vec<String>), String> {
+    /// this session's project, and its rows run the way `drive_walk` runs them -- resolving the tree and
+    /// the settings folder from the environment, which is why the caller holds the ENV lock and stands in
+    /// this scene.
+    fn planned_walk(&self) -> Result<(usize, Vec<String>), String> {
         let project = naivepost::project::load(&self.session()).expect("the session");
         let stages = naivepost::run_stages::plan(naivepost::run::Step::Prepare, &project);
         let stage = stages
@@ -312,15 +408,17 @@ impl Scene {
 }
 
 /// The walk's row for the footage source is a plan row, not a spawn: `plan(Prepare)` must carry the
-/// describe stage after the ingest stages, and its rows must name the vision door.
+/// describe stage after the ingest stages, its rows must name the vision door, and that door must run
+/// end to end -- the stage's own `run_task` resolving its tree and settings folder from the environment
+/// and reaching this fake with one ask per footage source.
 #[test]
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_screen_plans_a_vision_row() {
     let fake = Fake::start(FOUR_EVENTS.to_string());
     let scene = Scene::new("plan", 4, &fake.url);
+    let _guard = env_lock();
     scene.enter();
     let project = naivepost::project::load(&scene.session()).expect("the session");
     let stages = naivepost::run_stages::plan(naivepost::run::Step::Prepare, &project);
-    Scene::leave();
     let names: Vec<&str> = stages.iter().map(|stage| stage.name).collect();
     assert!(
         names.contains(&"describe"),
@@ -336,6 +434,14 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
         naivepost::run_stages::VISION_TASK,
         "the row is a chat dial, named by its own program"
     );
+    // And the row runs: `run_task` takes no tree and no paths, it resolves both from this process's env
+    // and from the working folder -- the half of the walk that only the planned path exercises.
+    let (ran, log) = scene.planned_walk().expect("the planned row runs");
+    Scene::leave();
+    drop(_guard);
+    assert_eq!(ran, 1, "one row walked: {log:?}");
+    let asks = fake.waited(1);
+    assert_eq!(asks.len(), 1, "the planned row asked once: {log:?}");
 }
 
 /// The epoch `clock::frame_name` names its frames from, found the only way that cannot drift: name
@@ -369,9 +475,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     let fake = Fake::start(FOUR_EVENTS.to_string());
     let scene = Scene::new("wire", 4, &fake.url);
     let mut log = Vec::new();
-    let ran = scene
-        .describe(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
-        .expect("the stage describes the row");
+    let ran = walk(&scene, &mut |line| log.push(line.to_string())).expect("the stage describes the row");
     let asks = fake.waited(1);
     assert_eq!(ran, 1, "one footage row walked");
     assert_eq!(asks.len(), 1, "four frames fit one call: {asks:?}");
@@ -432,6 +536,47 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     );
 }
 
+/// A poison is another test's panic, not this one's problem: the env gets restored and the walk goes
+/// ahead, because "the scene's env is intact" is a fact this function re-establishes itself by entering,
+/// and reporting someone else's failure a second time here only buries the first one.
+fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    match ENV.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// One walk, in this binary's one-serialised world: take the ENV lock, put the process into the scene,
+/// describe, then put the process back. `describe_call`'s scenes resolve the settings folder and the
+/// session from the environment exactly as the app does, and cargo runs tests as threads of one process,
+/// so two walks in flight hand each other's `XDG_CONFIG_HOME` and cwd -- the stage's own `conf` argument
+/// survives that, `ask`'s later re-read does not, and the walk then dials `services::llm_default()` and
+/// records zero asks. `tests/separation_run.rs` pays the same cost the same way.
+fn walk(scene: &Scene, log: &mut impl FnMut(&str)) -> Result<usize, String> {
+    let _guard = env_lock();
+    scene.enter();
+    let outcome = scene.describe(&scene.leg_conf(), log);
+    Scene::leave();
+    outcome
+}
+
+/// Serialise on the env, enter the scene, run TWO walks back to back, and put the process back. The
+/// resume test needs both walks inside one holding: a second `walk()` would be a second lock, and a
+/// lock this binary's own thread cannot re-enter.
+fn walk_twice(
+    scene: &Scene,
+    first: &mut impl FnMut(&str),
+    second: &mut impl FnMut(&str),
+) -> (Result<usize, String>, Result<usize, String>) {
+    let _guard = env_lock();
+    scene.enter();
+    let conf = scene.leg_conf();
+    let one = scene.describe(&conf, first);
+    let two = scene.describe(&conf, second);
+    Scene::leave();
+    (one, two)
+}
+
 /// "One EVENT per frame + a running STATE" is what lands on disk: `events.tsv` gains a row per frame
 /// and `state.txt` the state the model set. A chunk with a frame left unanswered never reaches these
 /// two files at all, so a full file is itself the proof the answer was complete.
@@ -441,9 +586,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     let fake = Fake::start(FOUR_EVENTS.to_string());
     let scene = Scene::new("files", 4, &fake.url);
     let mut log = Vec::new();
-    scene
-        .describe(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
-        .expect("the stage describes the row");
+    walk(&scene, &mut |line| log.push(line.to_string())).expect("the stage describes the row");
     fake.waited(1);
     let events = scene.events();
     let rows: Vec<&str> = events.lines().filter(|line| !line.is_empty()).collect();
@@ -479,17 +622,19 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
 ) {
     let fake = Fake::start(FOUR_EVENTS.to_string());
     let scene = Scene::new("cache", 4, &fake.url);
-    let conf = conf_at(&fake.url);
     let mut first = Vec::new();
-    scene
-        .describe(&conf, &mut |line| first.push(line.to_string()))
-        .expect("the first walk describes the row");
+    let mut second = Vec::new();
+    // Both walks inside one holding: the second is the resume, and it must see the first's cache and
+    // events, which means the same scene, the same env, and no other thread's folder in between.
+    let (one, two) = walk_twice(
+        &scene,
+        &mut |line| first.push(line.to_string()),
+        &mut |line| second.push(line.to_string()),
+    );
+    one.expect("the first walk describes the row");
     let after_first = fake.waited(1).len();
     // The fake would answer again if it were asked; the second pass must not ask it at all.
-    let mut second = Vec::new();
-    scene
-        .describe(&conf, &mut |line| second.push(line.to_string()))
-        .expect("the second pass describes the row");
+    two.expect("the second pass describes the row");
     assert_eq!(after_first, 1, "the first pass made one ask");
     let asks = fake.asks.lock().expect("the record lock").bodies.len();
     assert_eq!(asks, 1, "the second pass made no ask at all: {asks}");
@@ -511,18 +656,20 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
 #[test]
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_screen_batches_four_frames_a_call() {
     // Nine frames at four a call is chunks of 4, 4 and 1, and the third has to be answered too: the
-    // fake replies with a `record_event` for every frame the scene holds, which is more than any one
-    // batch needs and `record_event` ignores extras — so the size question is left to the request.
-    let scene = Scene::new("batch", 9, "http://unused.invalid");
-    let fake = Fake::start(events_answer(scene.frame_count()));
-    let conf = conf_at(&fake.url);
-    settings::save(&scene.paths, &conf).expect("the conf points at the fake");
+    // fake answers each request with a `record_event` for exactly the pictures THAT request carried (see
+    // `BY_SIZE`), which is more than any one batch needs only if the stage chose smaller batches than the
+    // bound allows -- so the size question stays with the request, as it must.
+    let scene = Scene::new("batch", 9, UNUSED);
+    let fake = Fake::start(String::new());
+    settings::save(&scene.paths, &conf_at(&fake.url)).expect("the conf points at the fake");
+    assert_eq!(scene.frame_count(), 9, "the scene planted nine frames");
     let project = naivepost::project::load(&scene.session()).expect("the session");
     let frames: Vec<f64> = (0..9).map(|index| index as f64 * project.interval).collect();
     let chunks = describe::chunk_plan(&frames, FRAMES_PER_REQ);
-    scene
-        .describe(&conf_at(&fake.url), &mut |_line| {})
-        .expect("the stage describes the row");
+    // Each ask's answer covers only the frames that ask carried: the fake reads its own reply when the
+    // request arrives, so the size that reaches it is the size the stage chose.
+    fake.answer_batch_sizes();
+    walk(&scene, &mut |_line| {}).expect("the stage describes the row");
     let asks = fake.waited(3);
     assert_eq!(chunks.len(), 3, "nine frames at four a call: {chunks:?}");
     assert_eq!(asks.len(), 3, "one call per chunk: {asks:?}");
@@ -548,7 +695,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
         .to_string(),
     );
     let scene = Scene::new("missing", 4, &fake.url);
-    let walked = scene.describe(&conf_at(&fake.url), &mut |_line| {});
+    let walked = walk(&scene, &mut |_line| {});
     let asks = fake.waited(1).len();
     assert!(
         walked.is_err(),
@@ -609,11 +756,8 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers
         },
     )
     .expect("the other recording's words");
-    let conf = conf_at(&fake.url);
     let mut log = Vec::new();
-    scene
-        .describe(&conf, &mut |line| log.push(line.to_string()))
-        .expect("the chunk is described");
+    walk(&scene, &mut |line| log.push(line.to_string())).expect("the chunk is described");
     fake.waited(1);
     let answered = answer_of(&log, "speech_around");
     let body: serde_json::Value = serde_json::from_str(&answered).expect("the read answered in JSON");
@@ -669,11 +813,8 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_reads_describe_is
         "3.00\t11.00\tslide one is up\n4.00\t12.00\tslide two is up\n",
     )
     .expect("the event log");
-    let conf = conf_at(&fake.url);
     let mut log = Vec::new();
-    scene
-        .describe(&conf, &mut |line| log.push(line.to_string()))
-        .expect("the chunk is described");
+    walk(&scene, &mut |line| log.push(line.to_string())).expect("the chunk is described");
     let asks = fake.waited(1);
     assert_eq!(asks.len(), 1, "a read answered in the round that asked costs no extra ask: {asks:?}");
 

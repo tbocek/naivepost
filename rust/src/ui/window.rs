@@ -3898,11 +3898,17 @@ thread_local! {
 
 /// The newest window this process built. The run-bar handler is wired before the handle is in scope at
 /// the call site, so it reads the window back from [`POLICY_WATCH_WINDOW`] — the same newest-slot rule
-/// every other per-window piece here uses.
+/// every other per-window piece here uses. Panics for a caller that cannot legitimately run outside a
+/// window; a door a headless flow can reach takes [`built_window`] instead.
 pub fn main_window() -> adw::ApplicationWindow {
-    POLICY_WATCH_WINDOW
-        .with(|watch| watch.borrow().clone())
-        .expect("a policy request happens inside a built window")
+    built_window().expect("a policy request happens inside a built window")
+}
+
+/// [`main_window`] without the promise: `None` when this thread has never built a window. A door a
+/// headless flow can reach (a chat call made with no shell open) reads through this instead, because a
+/// log line is never a reason to fail the thing that wrote it.
+pub fn built_window() -> Option<adw::ApplicationWindow> {
+    POLICY_WATCH_WINDOW.with(|watch| watch.borrow().clone())
 }
 
 thread_local! {

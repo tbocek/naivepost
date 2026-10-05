@@ -616,16 +616,15 @@ architecture behind them.
             // beside the title and Reset it drives — and the row itself was requested above, before
             // `build_window`. Row 2 = "Describe", per `bench::ROWS`.
             "04-prompt-picker" => None,
-            // §7's log lines, then the once-per-run link, in the expander a run would have opened. The
-            // three lines go in through `ui::window::log_line`, the same sink every flow writes to, and
-            // the opening goes through `paint_progress`, the only door that both expands the expander and
-            // fills it — so what is painted is exactly what a live shell paints mid-run.
+            // §7's log lines, then the once-per-run link, in the expander a run would have opened. All
+            // three go in through `ui::note_exchange_line`, the door §7's recorder writes through:
+            // it pushes to the same sink every flow uses AND opens and fills the expander through
+            // `paint_progress`, so what is painted is exactly what a live shell paints mid-run.
             "03-log-link" => {
                 let step = crate::run::step(crate::shell::Page::Prepare).label();
-                ui::window::log_line(&format!(">>> {step}: 451.4 kB of text and 0 image(s) went to the LLM"));
-                ui::window::log_line(&format!(">>> {step}: 28.6 kB came back in 2m39s"));
-                ui::window::log_line(&crate::exchanges::link_line("llm/prepare-page.html"));
-                show_the_log(&window).expect("the shell's log opens for its own snapshot");
+                ui::note_exchange_line(&format!(">>> {step}: 451.4 kB of text and 0 image(s) went to the LLM"));
+                ui::note_exchange_line(&format!(">>> {step}: 28.6 kB came back in 2m39s"));
+                ui::note_exchange_line(&crate::exchanges::link_line("llm/prepare-page.html"));
                 None
             }
             // §S7/S8 as the shell actually draws them, driven through the SAME door the ▶ handler calls

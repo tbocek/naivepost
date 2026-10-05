@@ -206,6 +206,49 @@ pub(crate) fn hand_over_unload(kind: crate::services::Kind) {
     crate::settings_probe::fire_unload(kind);
 }
 
+/// Paint the chain's widgets with the run still standing -- S1's "log expanded" for a chain, which
+/// means the log is open ACROSS the hand-overs, not only in the moment before the first step runs.
+/// `paint_closed`'s mirror: every run's own lines reach the expander before anything folds it.
+pub(crate) fn paint_chain_step(handles: &super::lucky_run::Handles) {    let main = window::main_window();
+    if let (Some(play), Some(stop_)) = (window::play_button(&main), window::stop_button(&main)) {
+        window::paint_run_bar(
+            &play,
+            &stop_,
+            &handles.bar.borrow(),
+            window::state(&main).page,
+            window::preview_player(&main).transport,
+        );
+    }
+    window::paint_progress(
+        &handles.progress,
+        &handles.log,
+        &handles.log_view,
+        &handles.queue.borrow(),
+        shell_beats::StatusLine { status: &handles.status, owned: true },
+        handles.bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+    );
+}
+
+/// The chain's own ending: close the press's single run and repaint what a closed run leaves.
+pub(crate) fn close_chain_end(handles: &super::lucky_run::Handles) {
+    let said = handles.queue.borrow().text();
+    runqueue::end_run(&mut handles.bar.borrow_mut(), None);
+    hand_over_unload(crate::services::Kind::UnloadAll);
+    shell_beats::stop_pulse();
+    if !said.is_empty() {
+        handles.status.set_text(&said);
+    }
+    handles.queue.borrow_mut().reset();
+    paint_closed(
+        &handles.bar,
+        &handles.queue,
+        &handles.status,
+        &handles.progress,
+        &handles.log,
+        &handles.log_view,
+    );
+}
+
 /// Close the bookkeeping of one lucky step as the chain moves on (§S4's "a lucky run moves to its next
 /// step", which is the only place `end_run`'s `next` argument is ever `Some` in the program). Takes the
 /// queue's line before the reset for the same reason [`close_step_run`] does.
@@ -231,6 +274,7 @@ pub fn close_chain_step(handles: &super::lucky_run::Handles, next: Option<Page>)
         handles.status.set_text(&said);
     }
     handles.queue.borrow_mut().reset();
+    paint_chain_step(handles);
 }
 
 /// Repaint the bar's widgets from a run that has just closed: ▶ back to its step face, ⏹ greyed with
@@ -244,6 +288,11 @@ fn paint_closed(
     log: &gtk::Expander,
     log_view: &gtk::TextView,
 ) {
+    // A run's lines stay where the run put them: the log keeps whatever openness it had, because nothing
+    // in §F0.5 or in the prototype closes it when a run ends (S1 opens it, and the user folds it), and
+    // the body is repainted from the log sink so lines written after the last mid-run repaint -- the
+    // audio housekeeping line above all -- are shown rather than dropped by a repaint of an empty buffer.
+    let kept = log.is_expanded();
     let main = window::main_window();
     let (Some(play), Some(stop_)) = (window::play_button(&main), window::stop_button(&main)) else {
         return;
@@ -253,6 +302,14 @@ fn paint_closed(
     // way both handlers read it, so a started preview keeps ⏸ up after the run ends.
     let transport = window::preview_player(&main).transport;
     window::paint_run_bar(&play, &stop_, &bar.borrow(), window::state(&main).page, transport);
+    if kept {
+        let buffer = log_view.buffer();
+        buffer.set_text("");
+        super::log_link::paint_lines(&buffer, &window::window_logs());
+        // The newest line is what a person opens the log for; the same scroll `paint_progress` does.
+        let mut end = buffer.end_iter();
+        log_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 1.0);
+    }
     window::paint_progress(
         progress,
         log,
