@@ -165,6 +165,8 @@ pub mod separate;
 pub mod source_probe;
 pub mod separate_media;
 pub mod separate_run;
+/// F2.1's media leg: the `gst-play-1.0` subprocess ▶ starts and stops over the session's footage.
+pub mod play_back;
 pub mod services;
 pub mod settings;
 pub mod slot_gate;

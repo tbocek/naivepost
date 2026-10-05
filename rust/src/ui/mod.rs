@@ -66,6 +66,9 @@ pub mod cut_picture;
 /// §05-cut#2 §B — ⇲ Lane with nothing in hand: a footage file on a row of its own, probed. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod cut_lane;
+/// F2.1 ▶'s page half: the filmed runs and footage files a press hands the media leg, and the button's face.
+/// Split out of `window.rs`, which is past its size budget.
+pub mod cut_record_play;
 /// F3.5 ▨ SVG drawing by hand: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_speed_hand;
@@ -235,8 +238,10 @@ pub use cut_cameras::{
 pub use cut_folds::{
     fold_badges_box, fold_gaps, folded_gap_at, page_recordings,
     press_fold_all, press_fold_gap, press_lane_cross, press_row_cross, refresh_fold_badges,
-    review_fold_rows, set_session_recordings,
+    review_fold_rows, set_session_recordings, unfold_fold_for_playback,
 };
+/// F2.1's tick: the line following the player at 10 Hz, walk-on and folds opening under ▶.
+pub mod cut_record_tick;
 pub use window::delete_key_controller;
 pub use window::line_click_gesture;
 pub use window::held_effect;

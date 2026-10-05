@@ -211,6 +211,24 @@ pub fn press_fold_gap(window: &adw::ApplicationWindow, index: usize) -> Option<S
     Some(said)
 }
 
+/// F2.1 S3: ▶ ran into a folded seam, so it opens — the badge's fold rule through the playback path.
+///
+/// Not [`press_fold_gap`]: that one takes its gap from the badge layout, which is built only over gaps the
+/// CUT drops, and under ▶ every second plays, cuts and all, so the line can run into a fold the cut keeps.
+/// A fold opened by playback spends no Undo step (F2.11: a fold is saved and never undone), so this writes
+/// through `seed_review_cut` + `save_folds`, exactly as a badge press persists it, minus the history entry.
+pub fn unfold_fold_for_playback(window: &adw::ApplicationWindow, index: usize) -> Option<String> {
+    let mut cut_ = newest_review_cut();
+    let [start, _] = *cut_.folds.get(index)?;
+    cut_.folds.remove(index);
+    seed_review_cut(window, &cut_);
+    save_folds(&cut_);
+    refresh_fold_badges(window);
+    // §B's sentence for THIS event ("unfolded m:ss — ▶ ran into it"), which is preview's wording, not the
+    // badge's "unfolded X – Y (N s)": the person was watching, not folding.
+    Some(crate::preview::unfolded_status(start))
+}
+
 /// F2.11 S1 (`the gutter badge folds/unfolds all`): `fold-all-button`'s seam. `cut_fold::fold_all`
 /// answers which way it went by reading the cut's own list, so this passes the gaps and adds nothing.
 pub fn press_fold_all(window: &adw::ApplicationWindow) -> String {

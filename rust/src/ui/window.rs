@@ -2671,6 +2671,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // F2.2 S5/S6: the tick loop that skips removed stretches, arms the spare pipeline ahead of each
     // jump and prints the cut's own clock. No-ops until ▶✂ makes the preview the plain cut.
     cut_play_leg::start_cut_preview_tick(&window, Rc::new(CutPreviewSlot(window.clone())));
+    // F2.1 S3/S4: ▶'s own tick on the same cadence — no-ops until the recording preview is playing.
+    crate::ui::cut_record_tick::start(Rc::new(window.clone()));
     // F2.3: this window's cut slot is registered here for the same reason the player slot is — after
     // `set_content`, so the button being wired is the one inside the realized tree. Seeded from the
     // project's own `cut/cut.json` when it has one, because that file IS the cut (§3): the strip paints
@@ -5629,11 +5631,12 @@ pub fn press_play_recording(window: &adw::ApplicationWindow, runs: &[(f64, f64)]
 fn wire_play_recording(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
     button.connect_clicked(move |_| {
-        // The filmed stretches come from Prepare's output (`timeline::filmed_runs` over the
-        // session's recordings), which belongs to the Cut page's own round — no `Recording` model
-        // is reachable from here yet — so an empty list is what the window knows today, and the seam
-        // takes real spans from any caller that does have them.
-        let _ = press_play_recording(&window, &[]);
+        // The filmed stretches come from the page's own recordings now (`cut_record_play::runs_now`), so a
+        // session with footage plays instead of always hearing "nothing was filmed"; what to start or stop
+        // with is that module's, not this handler's.
+        let runs = crate::ui::cut_record_play::runs_now();
+        let pressed = press_play_recording(&window, &runs);
+        crate::ui::cut_record_play::after_press(&window, &pressed, &runs);
     });
 }
 
