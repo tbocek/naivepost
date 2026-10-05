@@ -615,6 +615,12 @@ architecture behind them.
             // the User Context. The subject stays the window — the picker only makes sense in place,
             // beside the title and Reset it drives — and the row itself was requested above, before
             // `build_window`. Row 2 = "Describe", per `bench::ROWS`.
+            //
+            // The open list itself cannot be captured here: a GtkDropDown pops its rows as its OWN
+            // top-level surface, and [`write_png`] paints one widget into one PNG, so pressing the
+            // picker for the shot would change nothing the picture can show (it was tried: the file came
+            // out the same picture as `04-prepare`). The page's picker is right as it is — §1's badge 3
+            // is a row picker — so what this shot proves is the row chosen, not the popup.
             "04-prompt-picker" => None,
             // §7's log lines, then the once-per-run link, in the expander a run would have opened. All
             // three go in through `ui::note_exchange_line`, the door §7's recorder writes through:

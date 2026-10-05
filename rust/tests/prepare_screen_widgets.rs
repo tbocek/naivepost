@@ -43,6 +43,7 @@ fn window_round() {
         static RAN: AtomicBool = AtomicBool::new(false);
         static RAN_READOUTS: AtomicBool = AtomicBool::new(false);
         static RAN_PICKER: AtomicBool = AtomicBool::new(false);
+        static RAN_SHIPPED: AtomicBool = AtomicBool::new(false);
         app.connect_activate(move |app| {
             check_the_bench_and_frame_controls(app);
             RAN.store(true, Ordering::SeqCst);
@@ -50,6 +51,8 @@ fn window_round() {
             RAN_READOUTS.store(true, Ordering::SeqCst);
             check_picker_tooltip_follows_the_row(app);
             RAN_PICKER.store(true, Ordering::SeqCst);
+            check_shipped_wording_and_reset(app);
+            RAN_SHIPPED.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -61,6 +64,10 @@ fn window_round() {
         assert!(
             RAN_PICKER.load(Ordering::SeqCst),
             "the picker-tooltip check never ran"
+        );
+        assert!(
+            RAN_SHIPPED.load(Ordering::SeqCst),
+            "the shipped-wording-and-Reset check never ran"
         );
     });
 }
@@ -512,6 +519,85 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
     assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "no Reset on row 0");
 }
 
+/// §1's badges **2**–**5** on a machine that holds NO edit: the box opens on the wording this build
+/// ships (not an empty box), and Reset — pressed through the widget — puts those same words back after
+/// an edit and takes the ✎ with it. `check_readouts_and_reset` drives the same button too, but only
+/// after typing: what nothing proved before is the OPENING state of a fresh machine, which is exactly
+/// what §1's picture shows (the Describe prompt filling the box).
+fn check_shipped_wording_and_reset(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    settle();
+    // A prompt row, chosen clean: row 6 is `captions`, which no sibling check of this round writes.
+    let row = &naivepost::bench::ROWS[6];
+    let paths = settings_paths();
+    let _ = naivepost::settings::clear_prompt(&paths, row.key);
+    let picker = find(&window, "bench-picker")
+        .expect("the bench has its row picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown");
+    picker.set_selected(6);
+    settle();
+    let buffer = find(&window, "bench-text")
+        .expect("the bench has its text box")
+        .downcast::<gtk::TextView>()
+        .expect("the box is a text view")
+        .buffer();
+    let shipped = naivepost::prompts::shipped_text(row.key).expect("every prompt row ships a file");
+    assert!(!shipped.trim().is_empty(), "{} ships wording, so a fresh machine opens on something", row.key);
+    assert_eq!(
+        text_of(&buffer),
+        shipped,
+        "with nothing stored on this machine the box draws the shipped wording"
+    );
+    assert_eq!(
+        text_of(&buffer),
+        naivepost::bench::text(&paths, &model, row),
+        "the box and the rule behind it cannot disagree about what a row shows"
+    );
+    // The idle pair: no mark, no live Reset, and Reset says "unchanged" rather than promising a restore.
+    assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "no ✎ without an edit");
+    assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "no live Reset either");
+    assert_eq!(
+        naivepost::bench::reset_tip(row, false),
+        naivepost::bench::UNCHANGED_TIP,
+        "and the rule says so too"
+    );
+    // Type something: every keystroke is stored, and the mark and Reset come up with it.
+    buffer.set_text("cut where the speaker pauses");
+    settle();
+    assert!(naivepost::bench::edited(&paths, row), "the keystroke reached this machine's prompts");
+    let saved = std::fs::read_to_string(paths.prompt_file(row.key)).expect("the edit is on disk");
+    assert_eq!(saved.trim(), "cut where the speaker pauses", "and holds what was typed");
+    assert!(find(&window, "bench-mark").expect("mark").is_visible(), "the ✎ came up with it");
+    let reset = find(&window, "bench-reset")
+        .expect("Reset is drawn")
+        .downcast::<gtk::Button>()
+        .expect("Reset is a button");
+    assert!(reset.is_visible() && reset.is_sensitive(), "and Reset went live beside it");
+    assert_eq!(
+        naivepost::bench::reset_tip(row, true),
+        naivepost::bench::RESET_TIP,
+        "while an edit is held the tooltip offers to put the built-in wording back"
+    );
+    // The press itself, fired the way the toolkit fires it.
+    reset.emit_clicked();
+    settle();
+    assert_eq!(text_of(&buffer), shipped, "Reset gave the shipped words back, not an empty box");
+    assert!(!naivepost::bench::edited(&paths, row), "and cleared the override");
+    assert!(
+        naivepost::settings::read_prompt(&paths, row.key)
+            .expect("the prompts folder is readable")
+            .is_none(),
+        "nothing of this row's is left on the machine"
+    );
+    assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "the ✎ went with it");
+    assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "and so did Reset");
+    window.close();
+    settle();
+}
+
 /// §1 badge **5** through the widget: a prompt row holds the wording the build ships, and Reset goes
 /// back to THAT rather than to an empty box. The machine starts with no override anywhere.
 #[test]
@@ -544,6 +630,11 @@ fn sec_04_prepare_1_screen_s_the_box_holds_the_shipped_wording_and_reset_returns
         describe,
         "and the box reads that way again"
     );
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s_a_fresh_machine_opens_on_the_shipped_wording_and_reset_goes_back_to_it() {
+    window_round();
 }
 
 #[test]
