@@ -16,16 +16,26 @@ use joined_answer::{chat, raw};
 
 #[test]
 fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
-    // The listener is dropped BEFORE the pass runs, so every dial meets a clean connection REFUSED: with it
-    // held open, the first dial would CONNECT into its full accept queue and fail on the read instead, and
-    // which of the two shapes wins depends on how fast that read times out against §3's 2 s wait -- which
-    // patiences apply (§3's classification keys on transport death) should not be a race. A port released
-    // here could in principle be taken by another process between the drop and the asks; if that happened
-    // the failure is still a transport error at the same address, so the count below stays bounded either way.
+    // The listener is HELD for the whole scenario and answers every connection by closing it without
+    // writing a byte. Two reasons, both learned the hard way:
+    //
+    // * A released ephemeral port goes back to the OS pool, where another test binary on this machine can
+    //   take it -- and if what sits there is an answering fake LLM, the first dial gets an ANSWER,
+    //   `llm_retry_leg::has_answered` turns true, and the later death then reads as "gone away MID-CALL", so
+    //   §3's ladder IS spent: three asks where two were promised. That is how this check flaked under a
+    //   full-suite run while passing on its own.
+    // * Accept-and-close keeps the transport failure honest: no bytes ever arrive, so nothing can be read as
+    //   an answer, and §3's classification still sees a wire that never spoke (no rung of the 5 s-to-4 min
+    //   ladder is spent on a box nobody started).
     let dead = harness::FakeLlm::dead_listener();
     let dead_port = dead.local_addr().expect("the dead port has an address").port();
+    std::thread::spawn(move || {
+        for incoming in dead.incoming() {
+            // Dropping the stream here closes it immediately: the dialler's read ends with nothing.
+            drop(incoming.ok());
+        }
+    });
     point_at(&format!("http://127.0.0.1:{dead_port}"));
-    drop(dead);
     let fixture = fixture("down");
     let lines = press(&fixture.tree, &fixture.project);
     // The count is ONE failed seam (2 rows) rather than one per seam because a transport death on a server

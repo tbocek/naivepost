@@ -24,11 +24,103 @@ use naivepost::ui;
 
 use naivepost::narrate_tts;
 
-/// The session folder this window's own press resolves its sample into, so the assertion is the leg's
-/// real answer read from the real path rather than a copy of its wording typed in twice.
+/// The session folder as the press sees it: `narrate_session_tree` resolves `startup::session_dir` against
+/// the process's cwd, which this test pins to its own temp root — so the readout is the same folder the
+/// press wrote into, not a path built from a remembered name.
 fn session_tree() -> naivepost::layout::Tree {
     let dir = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
     naivepost::layout::Tree::new(&dir).expect("the session folder ends in .naivepost")
+}
+
+/// A take that exists on disk is played by `narrate_sample::play`, which spawns the player program
+/// `narrate_preview_leg::voice_program` resolves — Settings' `VOICE_PLAYER`, then `NAIVEPOST_VOICE_PLAYER`,
+/// then `gst-play-1.0`. This container has no sound hardware and that name may resolve to nothing, so the
+/// press is pointed at `true`: a child that exits at once. The env var is read per spawn, so nothing leaks
+/// into a settings file and the program still takes its real path through `play`.
+fn point_the_player_nothing() {
+    std::env::set_var("NAIVEPOST_VOICE_PLAYER", "/usr/bin/true");
+}
+
+/// One audio.cpp on a free loopback port that can do every step of the flowchart: `/health` answers 200,
+/// `/v1/models` lists one cloneable model (`checks::tts_endpoint_verdict` wants `task: "clon"` or the
+/// `index_tts2` family), `/v1/ui/upload` answers a server path, and `/v1/audio/speech` answers a 200 big
+/// enough to be a wav (`narrate_tts::MIN_WAV_BYTES`). The address IS the seam (`speak_leg`'s own note):
+/// no program code knows the difference between this and the real server.
+///
+/// It is held for the whole run because the port must not be recycled: released, another test binary can
+/// take it and this press then dials an ANSWERER when the scenario meant a refusal, or vice versa — the
+/// shape this check flaked in.
+struct FakeAudio {
+    url: String,
+}
+
+impl FakeAudio {
+    fn start() -> Self {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a free loopback port");
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let want_upload = url.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                use std::io::{Read, Write as _};
+                let mut request = Vec::new();
+                let mut byte = [0u8; 1];
+                let mut content_length = 0usize;
+                let mut header_end = None;
+                while stream.read(&mut byte).unwrap_or(0) == 1 {
+                    request.push(byte[0]);
+                    if header_end.is_none() && request.ends_with(b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&request).to_lowercase();
+                        content_length = head
+                            .lines()
+                            .find_map(|line| line.strip_prefix("content-length:"))
+                            .and_then(|value| value.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        header_end = Some(request.len());
+                    }
+                    if let Some(end) = header_end {
+                        if request.len() >= end + content_length {
+                            break;
+                        }
+                    }
+                }
+                let text = String::from_utf8_lossy(&request).to_lowercase();
+                // Only the request line: a body carrying the word "health" must not read as a health ask.
+                let line = text.lines().next().unwrap_or("").to_string();
+                let body: Vec<u8> = if line.contains("audio/speech") {
+                    vec![0x52_u8; 4096]
+                } else if line.contains("upload") {
+                    b"/uploaded/voice_ref.wav".to_vec()
+                } else if line.contains("v1/models") {
+                    br#"{"data":[{"id":"index-tts2","task":"clon","family":"index_tts2"}]}"#.to_vec()
+                } else {
+                    Vec::new()
+                };
+                let note = if line.contains("audio/speech") && !text.contains(&want_upload) {
+                    "x-fake-note: address is not the fake's\r\n"
+                } else {
+                    ""
+                };
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\n{note}content-length: {}\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.write_all(&body);
+                let _ = stream.flush();
+            }
+        });
+        Self { url }
+    }
+
+    /// Settings wins over the environment for audio.cpp (`services::audio_endpoint`), and `speak_leg`
+    /// re-reads that file on EVERY call, so the next press dials here.
+    fn point(&self) {
+        let paths = naivepost::settings::from_environment().expect("the settings folder");
+        let mut conf = naivepost::settings::read(&paths).expect("the settings read back");
+        conf.audio_server = self.url.clone();
+        naivepost::settings::save(&paths, &conf).expect("the audio address written");
+    }
 }
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
@@ -429,6 +521,18 @@ fn narrate_round(app: &adw::Application) {
         narrate_details::empty_sample_refusal(),
         "an empty box has nothing to speak"
     );
+    if let Some(entry) = widget_in(&window, "sample-sentence")
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    {
+        entry.set_text(narrate_screen::DEFAULT_SAMPLE);
+    }
+    // A fake audio.cpp held for the whole run, so the press below that really dials answers as the flowchart
+    // says rather than meeting whatever happens to own the loopback port under a full-suite run: here the
+    // reference is missing, so S1 refuses BEFORE any dial (F4.4 S1) -- the fake's job is to make that
+    // ordering observable, since a live server answering /health would otherwise put two requests on the wire.
+    let audio = FakeAudio::start();
+    audio.point();
+    point_the_player_nothing();
     if let Some(entry) = widget_in(&window, "sample-sentence")
         .and_then(|w| w.downcast::<gtk::Entry>().ok())
     {
