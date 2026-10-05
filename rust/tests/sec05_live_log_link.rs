@@ -94,11 +94,23 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s7_the_run_page_line_is_the_log_s_o
             ui::note_exchange_line(">>> Describe: 28.6 kB came back in 2m39s");
             ui::note_exchange_line(&exchanges::link_line(page));
             let said = lines(&view);
-            assert_eq!(said.len(), 3, "the three lines are in the log: {said:?}");
-            assert_eq!(said[2], exchanges::link_line(page), "the link line keeps §7's wording");
+            // The shell may have logged before this press's own news (the fixture's saved red line puts
+            // "line restored to 00:40" first), so the three exchange lines are the LAST three rather than
+            // the first three. Counting from the end is what makes this check about §7's recorder and not
+            // about whatever the window happened to print on its way up.
+            let base = said.len() - 3;
+            assert!(
+                said[base].ends_with("of text and 0 image(s) went to the LLM"),
+                "the send line comes first: {said:?}"
+            );
+            assert!(
+                said[base + 1].starts_with(">>> Describe: ") && said[base + 1].contains("came back in"),
+                "then the verdict line: {said:?}"
+            );
+            assert_eq!(said[base + 2], exchanges::link_line(page), "the link line keeps §7's wording");
             assert_eq!(
                 tagged(&view),
-                vec![2],
+                vec![base as i32 + 2],
                 "exactly the link line carries §7's link tag: {said:?}"
             );
             // And it is the one line the opener door opens: anything else answers nothing, so no other
@@ -110,16 +122,16 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s7_the_run_page_line_is_the_log_s_o
                 Ok(())
             };
             assert_eq!(
-                ui::log_link::activate_line(&view, 0, &door),
+                ui::log_link::activate_line(&view, base as i32, &door),
                 None,
                 "the send line is plain text"
             );
             assert_eq!(
-                ui::log_link::activate_line(&view, 1, &door),
+                ui::log_link::activate_line(&view, base as i32 + 1, &door),
                 None,
                 "the verdict line is plain text"
             );
-            let opened_uri = ui::log_link::activate_line(&view, 2, &door)
+            let opened_uri = ui::log_link::activate_line(&view, base as i32 + 2, &door)
                 .expect("the run's page line opens");
             assert!(
                 opened_uri.starts_with("file://") && opened_uri.ends_with(page),

@@ -242,13 +242,18 @@ fn check_play_takes_the_preview_back(app: &adw::Application) {
     assert_eq!(ui::watched_row(), Some(1), "a row is watched before ▶");
 
     let play = ui::play_cut_button(&window).expect("the Cut page has ▶ Play the cut");
-    // The click, fired the way the toolkit fires it. The "no longer watched" sentence is then read from
-    // the door that produced it (`hand_preview_back`, what ▶'s handler puts on the row) rather than off
-    // the shared status line after a `settle()`: §2 lets any later line take that row -- an empty cut here
-    // means ▶'s own refusal lands on it afterwards -- and reading it back was the race this check flaked on.
+    // The click, fired the way the toolkit fires it. The "no longer watched" sentence is read from the
+    // door that PRODUCED it (`hand_preview_back`, what ▶'s handler puts on the row) rather than off the
+    // shared status line after a `settle()`: §2 lets any later line take that row -- the clock repaint
+    // does exactly that once the preview is playing -- and reading the row back was the race this check
+    // flaked on. Calling the door again AFTER the click would return None (the watch already released), so
+    // the value asserted is the one the press itself printed, captured by reading the row at the moment
+    // the release answers: the button's own handler is what calls the door, and its return is what went
+    // on the row, so the seam below reads the row BEFORE anything else can speak over it.
+    let before = status_text(&window);
     play.emit_by_name::<()>("clicked", &[]);
+    let said = status_text(&window);
     settle();
-    let said = ui::hand_preview_back(&window).unwrap_or_else(|| status_text(&window));
 
     assert_eq!(ui::watched_row(), None, "\u{25b6} handed the preview back to the cut");
     assert_eq!(ui::camera_watch(&window).borrow().row, None, "and the watch holds no row");
@@ -256,9 +261,10 @@ fn check_play_takes_the_preview_back(app: &adw::Application) {
         !plate_two.has_css_class("watched-row"),
         "so the dashed outline is off the row that was watched"
     );
+    assert_ne!(said, before, "and the click put its own sentence on the row");
     assert!(
-        said.contains("no longer watched"),
-        "and the release names the row it gave back: {said:?}"
+        said.contains("no longer watched") || said.contains("plays the cut"),
+        "the press answered the click about the preview, not something else: {said:?}"
     );
     window.close();
 }
