@@ -372,6 +372,49 @@ pub fn owns(words: &[Word], printed: &str) -> Option<usize> {
 ///
 /// `envelopes` is each recording's loudness lookup (S2), `transcripts` its raw transcript as the aligner
 /// was handed it (S3), and `fixed` the words of each fixed session line that covers these seconds (S4).
+/// The row [`crate::run_stages::drive_walk`] reads as “build the session's word list” rather than “spawn
+/// this”: §F1.13's work is a read of files Prepare already wrote, so it is a dial like fix's two session
+/// rows, and the row says which job by its program.
+pub const WORDS_TASK: &str = "naivepost:words";
+
+/// The walk's row for this step, or `None` when the policy asks for no marking pass at all.
+///
+/// Gating here rather than only inside [`press_word_list`] is what keeps an empty stage out of the plan:
+/// under `MarkingPass::None` nothing reads the list, so a row would cost the bar a task that does nothing.
+pub fn row(project: &crate::project::Project) -> Option<crate::run_stages::Task> {
+    // No sources means no words to list, and the fix stage is not planned for them either — a row of its
+    // own would be the only thing in an otherwise empty plan.
+    if project.sources.is_empty() {
+        return None;
+    }
+    if crate::policy::marking_pass_of(&project.policy) == crate::project::MarkingPass::None {
+        return None;
+    }
+    Some(crate::run_stages::Task {
+        label: "building the word list".to_string(),
+        program: WORDS_TASK.to_string(),
+        args: Vec::new(),
+        already_done: false,
+        session: None,
+    })
+}
+
+/// The row [`crate::run_stages::drive_walk`] hands here: build the list from the session on disk.
+///
+/// Only wiring — every rule stays in [`press_word_list`]. The session is the working folder's own, read
+/// off the environment exactly as `fix_call::run_task` and `fix_session::run_placement` read it, so a
+/// test that moves the process gets THIS session and not the launcher's.
+pub fn run_task(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
+    let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let tree = crate::layout::Tree::new(&session)
+        .map_err(|_| format!("{}: not a project folder to write a word list into", session.display()))?;
+    let project = crate::project::load(tree.dir()).unwrap_or_default();
+    for line in press_word_list(&tree, &project, crate::policy::marking_pass_of(&project.policy)) {
+        log(&line);
+    }
+    Ok(())
+}
+
 /// Who reads `session.tsv` is not this module's question — the caller passes the lines through
 /// [`crate::textfmt::read_session`], skipping EVENT rows and lines with no text, which say nothing about
 /// spelling. Lines are asked for per recording in time order and each gets its own cursor over the words,
@@ -471,10 +514,9 @@ pub fn load(tree: &crate::layout::Tree) -> Result<Option<Vec<Word>>, String> {
 /// alone rather than re-glued over.
 ///
 /// No model is contacted: every field here comes off files Prepare already wrote. What the wave cache
-/// contributes is S2's stray test, and today nothing in the repo calls [`crate::wave::write`], so a
-/// live session takes the uncached path — every envelope answer is `None`, no median exists per
-/// recording, and `retimed` correctly marks nothing rather than inventing loudness. When a producer
-/// lands, the same code starts finding strays with no change to it.
+/// contributes is S2's stray test, and [`crate::wave_build::ensure`] writes that cache from Prepare's
+/// speech pass (§F1.11), so a live session has envelopes to measure against; a lane whose cache is
+/// missing answers `None`, and `retimed` marks nothing there rather than inventing loudness.
 ///
 /// Failure is specific and local: one line naming what could not be read, and the run carries on
 /// elsewhere.
@@ -497,6 +539,13 @@ pub fn press_word_list(
             return vec![format!("!!! words: could not build the session word list -- {error}")]
         }
     };
+    // No tokens means the stages have not produced anything to glue (this row ran before the speech
+    // pass, or nothing was transcribed). Writing a list with no words would be worse than writing none:
+    // the file IS this step's resume marker, so an empty one makes every later ▶ answer "already built --
+    // 0 words" and the session never gets a real list. Say what is missing and leave the marker unwritten.
+    if sources.iter().all(|(_, tokens)| tokens.is_empty()) {
+        return vec![no_tokens_log()];
+    }
     // One stat per lane up front: the closure runs once per word and must not touch the disk each time.
     let lanes = lane_stats(tree, project);
     let built = build_session(
@@ -527,6 +576,12 @@ fn resume_line(tree: &crate::layout::Tree) -> Result<Option<String>, String> {
 /// The line said when the list was already there, so a re-press reads as a resume and not a redo.
 pub fn already_built_log(count: usize) -> String {
     format!(">>> words: session list already built -- {count} words, kept as it is")
+}
+
+/// The line said when there were no aligner or ASR tokens to glue: named as a refusal because a silent
+/// success here would claim a list the file does not hold.
+pub fn no_tokens_log() -> String {
+    "!!! words: nothing transcribed yet -- no list written".to_string()
 }
 
 /// The line said after a build: how many words the session has and how many S2 moved.

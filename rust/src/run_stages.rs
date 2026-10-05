@@ -395,6 +395,17 @@ where
                 queue.prog(stage.track, position(progress.done, total), &task.label);
                 continue;
             }
+            // §F1.13's word list is a dial of the same fix stage: it reads the files the rows above just
+            // wrote and contacts no model, so the row only costs the bar one task.
+            if task.program == crate::word_list::WORDS_TASK {
+                if let Err(error) = crate::word_list::run_task(task, &mut log) {
+                    return Drive::Failed { stage: stage.name, error };
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, position(progress.done, total), &task.label);
+                continue;
+            }
             // The fix rows are a chat request too, same checkpoint and same door shape: the row says
             // which job by its program, `drive_walk` does not decide.
             if task.program == TEXT_TASK {
@@ -410,8 +421,7 @@ where
             // row says which by its program, `drive_walk` does not decide.
             if task.program == crate::fix_session::PLACEMENT_TASK
                 || task.program == crate::fix_session::SESSION_TASK
-            {
-                let worked = if task.program == crate::fix_session::PLACEMENT_TASK {
+            {                let worked = if task.program == crate::fix_session::PLACEMENT_TASK {
                     crate::fix_session::run_placement(task, &mut log)
                 } else {
                     crate::fix_session::run_session(task, &mut log)

@@ -68,9 +68,15 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
         kind: "chunk",
         // §F1.8's session halves bracket the per-source rows: S1's `offsets.tsv` before any block goes
         // out, S5-S7's merged timeline after the last one.
+        //
+        // §F1.13's word list sits between the fix rows and the merge row: it re-dresses its words from the
+        // `transcript.fixed.tsv` the fix rows just wrote, and the merge row is what runs the marking pass,
+        // which shows the model THIS spelling (`joins::session_words_with_list` loads the saved list
+        // first), so building it after that row would be too late for the pass it belongs to.
         tasks: crate::fix_session::placement_rows(project)
             .into_iter()
             .chain(tasks)
+            .chain(crate::word_list::row(project))
             .chain(crate::fix_session::merge_rows(project))
             .collect(),
     }

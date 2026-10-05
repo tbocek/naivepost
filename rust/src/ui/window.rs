@@ -3295,18 +3295,10 @@ fn wire_play(
                             }
                         }
                         crate::stop_legs::leave_describe();
-                        // F1.13's session word list is built FIRST, before either marking pass reads
-                        // it: retakes and joins both dress their words off this one list, so a pass
-                        // that ran without it would be matching against spellings nothing wrote. The
-                        // gate lives inside the call — under MarkingPass::None it returns nothing at
-                        // all, and a list already on disk is resumed, not re-glued. No model is asked.
-                        for line in crate::word_list::press_word_list(
-                            &tree,
-                            &asked,
-                            crate::policy::marking_pass_of(&asked.policy),
-                        ) {
-                            log_line(&line);
-                        }
+                        // F1.13's session word list is NOT built here: it dresses its words from files the
+                        // stages write (the aligner's tokens, the raw transcript, `transcript.fixed.tsv`),
+                        // so it is a row of the fix stage — see `fix_call::stage`, which puts it after the
+                        // fix rows and before the merge row that runs the marking pass.
                         // F1.9's retake marking pass speaks here as well, through ONE entry point and
                         // only when the policy names this pass: under Joins or None the call returns
                         // nothing at all, so one press never speaks twice for two different passes.
