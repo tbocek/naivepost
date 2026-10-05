@@ -77,10 +77,10 @@ fn f1_9_s2_a_pause_of_1_5_seconds_is_drawn_and_1_4_is_not() {
         Line { n: 3, start: 4.4, end: 5.0 },
     ];
     let brief = retakes::brief(&lines, &[]);
-    assert!(brief.contains("2 [1.5s pause]"), "exactly 1.5 s draws the marker: {brief}");
+    assert!(brief.contains("2 (1.5s pause)"), "exactly 1.5 s draws the marker: {brief}");
     assert!(!brief.contains("4.4"), "the raw second is never printed");
     assert!(
-        !brief.contains("3 [1.4s pause]") && !brief.contains("1.4"),
+        !brief.contains("3 (1.4s pause)") && !brief.contains("1.4"),
         "1.4 s is under the threshold and draws nothing: {brief}"
     );
     assert!(brief.lines().any(|l| l == "1"), "every line is numbered");

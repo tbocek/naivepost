@@ -166,7 +166,7 @@ pub fn load_events(tree: &Tree, source: &str) -> Vec<FrameEvent> {
 
 /// Is this a tool refusal? [`crate::tools::error`] serialises `{"error": …}`, so that is the test —
 /// and a refusal is an answer the model can use, not the end of the flow.
-fn refused(answer: &str) -> bool {
+pub(crate) fn refused(answer: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(answer)
         .ok()
         .and_then(|value| value.get("error").and_then(serde_json::Value::as_str).map(str::to_string))

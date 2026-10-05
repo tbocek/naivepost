@@ -73,7 +73,7 @@ pub fn brief(lines: &[Line], source_changes: &[u32]) -> String {
         let pause = crate::tools::retakes::pause_before(lines, line.n);
         if pause >= RETAKE_PAUSE_SECONDS {
             out.push_str(&format!(
-                "{} [{}s pause]\n",
+                "{} ({}s pause)\n",
                 line.n,
                 trim_seconds(pause)
             ));
@@ -503,11 +503,12 @@ pub fn nothing_found_log() -> String {
 /// this pass contributes to the log; it is silent when the policy names a different pass, so F1.10's
 /// joins pass owns its own lines and one press never speaks for both.
 ///
-/// Marks are the model's answer and no model is contacted here — see [`stage_marking`] for what the
-/// rules do once marks exist. What this function CAN settle without a server is S1: whether the
-/// session even has four spoken lines to compare, which decides whether the empty `retakes.tsv` gets
-/// written. Writing it matters even in that case, because the file's presence is what tells Cut the
-/// pass ran rather than was skipped.
+/// With four or more spoken lines the WHOLE pass runs here — §S2's brief out over the wire, §S3's three
+/// pooled calls, §S4's check against the words, §S5's edges, §S6's ceiling and §S7's file — through
+/// [`crate::retakes_ask::run_pass`], whose lines are returned in order. What this function settles by
+/// itself is only what needs no answer: S1's too-few gate and the empty `retakes.tsv` it owes Cut, plus
+/// the two ways there can be no address to dial at all. The file's presence is what tells Cut the pass
+/// ran rather than was skipped, which is why even a failure writes it.
 pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<String> {
     if pass != MarkingPass::Retakes {
         return Vec::new();
@@ -516,18 +517,49 @@ pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<S
     let speech = speech_seconds(&lines);
     if too_few(&lines) {
         // S1: nothing to mark, but the file is still owed.
-        if let Err(error) = write_marks(tree, &[], &[], &[]) {
+        if let Err(error) = write_marks(tree, &[], &[], &[]).map(|_| ()) {
             return vec![format!("!!! retakes: could not write the marks file -- {error}")];
         }
         return vec![empty_marks_log()];
     }
-    // Enough lines to hold a retake, and the marks are the model's: say what the brief would be
-    // built from so the person sees the pass started, and leave the completion line for the round
-    // that carries answers back.
-    vec![brief_log(&lines)]
+    // Enough lines to hold a retake. The marks are the model's answer, so the pass that asks is only
+    // reached when there is an address to ask: with no settings folder at all nobody was contacted, and
+    // what this pass can settle alone is S1's answer plus the file it owes Cut.
+    let paths = match crate::settings::from_environment() {
+        Some(paths) => paths,
+        None => return vec![brief_log(&lines)],
+    };
+    let conf = match crate::settings::read(&paths) {
+        Ok(conf) => conf,
+        Err(reason) => {
+            // An unreadable settings file is reported, not guessed past, and the empty file is still
+            // owed so Cut can tell this pass ran (§Failure-is-specific).
+            let mut out = vec![format!("!!! retakes: the settings could not be read -- {reason}")];
+            if let Err(error) = write_marks(tree, &[], &[], &[]) {
+                out.push(format!("!!! retakes: could not write the marks file -- {error}"));
+            }
+            return out;
+        }
+    };
+    // The whole pass runs here, brief to file, and every line it speaks is returned so the caller's log
+    // carries them in order.
+    let mut out: Vec<String> = Vec::new();
+    let _ = speech;
+    if let Err(reason) =
+        crate::retakes_ask::run_pass(tree, project, &paths, &conf, &mut |line| out.push(line.to_string()))
+    {
+        // The flow's own arithmetic failed on disk rather than at the server: say which, and still
+        // owe the file that tells Cut the pass ran.
+        out.push(format!("!!! retakes: {reason}"));
+        if let Err(error) = write_marks(tree, &[], &[], &[]) {
+            out.push(format!("!!! retakes: could not write the marks file -- {error}"));
+        }
+    }
+    out
 }
 
 /// S2 as a log line: how many lines the brief numbers and how many pauses worth drawing it found.
+#[allow(dead_code, reason = "the live leg says this from `retakes_ask::briefing_log`, which also knows the seams")]
 fn brief_log(lines: &[Line]) -> String {
     let pauses = lines
         .iter()

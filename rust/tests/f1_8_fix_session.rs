@@ -155,6 +155,15 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
     Some(ChatAsk { path, body: String::from_utf8_lossy(&body).into_owned() })
 }
 
+/// The §3 patience ladder divided by 1000 (5 s → 5 ms). A walk that dials a server which never answers
+/// sits through the whole ladder on every ask, which is minutes of sleeping inside a test whose subject
+/// is the FILE the walk writes afterwards. `llm_retry_leg::nap_duration` reads this from the process env,
+/// and the env is exactly what this file's `ENV` guard already serialises — so every walk here takes it
+/// through `enter`, and no case can hang for four minutes on a wait nobody is testing.
+fn scale_the_waits() {
+    std::env::set_var("NAIVEPOST_RETRY_SCALE", "1000");
+}
+
 /// One scene: a session whose project holds the deck and the microphone, transcripts planted for both,
 /// events for the deck, and a settings folder naming its own fake LLM.
 struct Scene {
@@ -228,15 +237,9 @@ impl Scene {
         naivepost::project::save(&project, self.tree.dir()).expect("the session saves");
     }
 
-    /// Which marking pass the policy names (P.policy.markingPass).
-    fn set_marking_pass(&mut self, pass: MarkingPass) {
-        let mut project = self.project();
-        project.policy.marking_pass = naivepost::project::Field { value: pass, origin: Origin::User, because: None };
-        naivepost::project::save(&project, self.tree.dir()).expect("the session saves");
-    }
-
-    /// Plant marks as though a marking pass had placed them: `retakes.tsv` is where both passes leave
-    /// their stretches, and reading them back is what S6 folds into `session.txt`.
+    /// Plant marks by hand — `retakes.tsv` is where both marking passes leave their stretches, and this
+    /// is how a case puts one there without a model proposing it. A walk under a NAMED retake pass
+    /// overwrites the file with whatever that pass answers, so only a `none`-policy walk keeps them.
     fn plant_marks(&self, marks: &[Retake]) {
         textfmt::write_retakes(marks, &self.tree.retakes_tsv()).expect("retakes.tsv");
     }
@@ -247,6 +250,7 @@ impl Scene {
 
     /// Point the process at this scene exactly as the app resolves both.
     fn enter(&self) {
+        scale_the_waits();
         std::env::set_var("XDG_CONFIG_HOME", self.root.join("cfg"));
         std::env::set_var("XDG_DATA_HOME", self.root.join("data"));
         std::env::set_current_dir(&self.root).expect("the scene is the working folder");
@@ -261,18 +265,53 @@ impl Scene {
     /// The fix stage only, planned from the project file the way ▶ plans it: placement row, one row per
     /// source, merge row — the order §F1.8's flowchart draws.
     fn stages(&self) -> Vec<run_stages::Stage> {
-        run_stages::plan(run::Step::Prepare, &self.project())
+        self.stages_named(MarkingPass::None)
+    }
+
+    /// The fix stage under a named marking policy, planned the way ▶ plans it: placement row, one row per
+    /// source, merge row — the order §F1.8's flowchart draws.
+    fn stages_named(&self, pass: MarkingPass) -> Vec<run_stages::Stage> {
+        let mut project = self.project();
+        project.policy.marking_pass =
+            naivepost::project::Field { value: pass, origin: Origin::User, because: None };
+        naivepost::project::save(&project, self.tree.dir()).expect("the pass is set");
+        run_stages::plan(run::Step::Prepare, &project)
             .into_iter()
             .filter(|stage| stage.name == "fix")
             .collect()
     }
 
-    /// Walk it. Returns the drive's answer and every line the walk logged, oldest first.
+    /// Walk it, naming the marking pass the policy should carry (§P.policy.markingPass).
+    ///
+    /// NO ENV guard here or in [`Scene::walk`]: the env is one process-wide resource and the guard belongs
+    /// to the FREE helpers below, which take it exactly once per test. A method that locked it too would
+    /// re-lock a `std::sync::Mutex` the same thread already holds — which blocks forever, not an error.
+    fn walk_in(&self, pass: MarkingPass) -> (run_stages::Drive, Vec<String>) {
+        self.enter();
+        // The pass and its inputs must be SEEN by the run being walked: `plan` reads the project it is
+        // handed, and a stage list built before the pass was named would carry the old policy.
+        let stages = self.stages_named(pass);
+        let drive = self.drive(&stages);
+        self.leave();
+        drive
+    }
+
+    /// Walk it under no marking policy: these cases pin the fix rows and the merge, and the policy stays
+    /// `none`, which keeps the retake job's THREE pooled runs off a fake that only answers the fixer.
     fn walk(&self) -> (run_stages::Drive, Vec<String>) {
+        self.enter();
+        let stages = self.stages();
+        let drive = self.drive(&stages);
+        self.leave();
+        drive
+    }
+
+    /// One walk of the given stages, collecting every line it speaks. Shared by both walkers above.
+    fn drive(&self, stages: &[run_stages::Stage]) -> (run_stages::Drive, Vec<String>) {
         let mut queue = naivepost::runqueue::Queue::new();
         let mut procs = run::Subprocesses::default();
         let mut log: Vec<String> = Vec::new();
-        let drive = run_stages::drive_walk(&self.stages(), &mut queue, || false, || false, |line| {
+        let drive = run_stages::drive_walk(stages, &mut queue, || false, || false, |line| {
             log.push(line.to_string());
         }, &mut procs);
         run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
@@ -302,13 +341,18 @@ impl Scene {
     }
 }
 
-/// Walk a scene under the one guard the env needs, and hand back what the walk came to.
+/// Walk a scene under the one guard the env needs, and hand back what the walk came to. THE ONLY OWNER
+/// of the ENV guard for an unmarked walk: `Scene::walk` assumes the caller holds it.
 fn walk(scene: &Scene) -> (run_stages::Drive, Vec<String>) {
     let _guard = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    scene.enter();
-    let outcome = scene.walk();
-    scene.leave();
-    outcome
+    scene.walk()
+}
+
+/// The same guard for a walk that NAMES a marking pass (§P.policy.markingPass), which is the one that
+/// dials the retake job and so must hold the env for its whole walk.
+fn walk_marked(scene: &Scene, pass: MarkingPass) -> (run_stages::Drive, Vec<String>) {
+    let _guard = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    scene.walk_in(pass)
 }
 
 // ---- S1 ---------------------------------------------------------------------
@@ -353,17 +397,24 @@ fn f1_8_s2_a_block_is_25_lines_and_the_message_names_its_context() {
     let scene = Scene::new(30, &fake.url);
     let (_drive, log) = walk(&scene);
     // Thirty lines at twenty-five a block is two blocks per source. The second source's first block is
-    // the identical question -- same times, same words -- so §S3's cache answers it and only three asks
-    // go out; what this test pins is the BLOCKING and the message, which the four checkpoints show.
-    let asks = fake.waited(3);
-    assert_eq!(asks.len(), 3, "the unchanged repeat block costs no ask: {log:?}");
+    // the identical question -- same times, same words -- so §S3's cache answers it and only three FIX
+    // asks go out; what this test pins is the BLOCKING and the message, which the four checkpoints show.
+    // A Prepare press now dials other jobs too (§F1.9's pooled retake runs ask the same server), so the
+    // count is taken over the fix job's own asks only — recognisable by the wording only §3.3's message
+    // carries — rather than over everything that reached the socket.
+    let fix_asks: Vec<ChatAsk> = fake
+        .waited(6)
+        .into_iter()
+        .filter(|ask| ask.body.contains("Transcript lines to clean"))
+        .collect();
+    assert_eq!(fix_asks.len(), 3, "the unchanged repeat block costs no fix ask: {log:?}");
     let blocks: Vec<&String> = log.iter().filter(|line| line.starts_with(">>> fixing ")).collect();
     assert_eq!(blocks.len(), 4, "two blocks per source: {blocks:?}");
     assert!(
         blocks[0].contains("block 1/2") && blocks[1].contains("block 2/2"),
         "thirty lines are two blocks: {blocks:?}"
     );
-    let body = &asks[0].body;
+    let body = &fix_asks[0].body;
     assert!(
         body.contains("Transcript lines to clean (25 lines, return exactly 25)"),
         "the block counts itself out for the model: {}",
@@ -376,7 +427,7 @@ fn f1_8_s2_a_block_is_25_lines_and_the_message_names_its_context() {
         "P.machine.fixBlockLines"
     );
     // The tail block of the same source is the short one, and it says ITS count, not the first's.
-    let second = &asks[1].body;
+    let second = &fix_asks[1].body;
     assert!(
         second.contains("Transcript lines to clean (5 lines, return exactly 5)"),
         "the tail block counts its own five lines: {}",
@@ -505,9 +556,12 @@ fn f1_8_s5_session_tsv_merges_both_sources_and_the_log_counts_them() {
 #[test]
 fn f1_8_s6_marking_none_leaves_the_timeline_unmarked() {
     let fake = Fake::start(fix_answer(4));
-    let mut scene = Scene::new(4, &fake.url);
-    scene.set_marking_pass(MarkingPass::None);
-    let (_drive, log) = walk(&scene);
+    let scene = Scene::new(4, &fake.url);
+    // A mark sitting there unclaimed, written in by hand: `none` means the fold asks for nothing, so it
+    // stays unfolded. Planting it is honest here — the case is about the FOLD ignoring a file, and no
+    // pass is dialled to have to agree with it.
+    scene.plant_marks(&[Retake { s: 1.0, e: 2.5, again: 0.0, to: 2.5, text: String::new(), whole: String::new() }]);
+    let (_drive, log) = walk_marked(&scene, MarkingPass::None);
     fake.waited(2);
     assert!(scene.tree.session_tsv().exists(), "the timeline still stands: {log:?}");
     let text = scene.session_txt();
@@ -519,40 +573,31 @@ fn f1_8_s6_marking_none_leaves_the_timeline_unmarked() {
     assert!(!text.is_empty(), "and the text is still written: {text:?}");
 }
 
-/// S6's failure branch: the policy names retakes, marks exist, but the fold cannot be trusted — the
-/// sentence says the timeline stands UNMARKED and the merged file is still there, because losing the
-/// fixes to a marking refusal would be the worse error.
+/// S6's other branch: the pass runs and marks nothing, and the timeline still pays nothing for it. A
+/// three-line session is below §S1's floor on the PASS's side too — `retakes_ask::run_pass` counts the
+/// spoken lines itself and writes an empty `retakes.tsv` before anyone is dialled, so no ask goes out and
+/// the fold reads an empty mark list. What this pins is that the timeline is written FIRST and stands
+/// complete: losing the fixes to a marking pass that found nothing would be the worse error.
+///
+/// The "-- the timeline stands unmarked" sentence belongs to `fix_transcripts::marking_log` and is pinned
+/// verbatim in `tests/fix_transcripts.rs`, where the failing pass is a closure; a real pass cannot be made
+/// to fail here without taking the LLM's address away from the fix rows that share the stage.
 #[test]
-fn f1_8_s6_a_failing_marking_pass_says_the_timeline_stands_unmarked() {
-    let fake = Fake::start(fix_answer(4));
-    let mut scene = Scene::new(4, &fake.url);
-    scene.set_marking_pass(MarkingPass::Retakes);
-    // Marks whose removal ends BEFORE it starts: nonsense a reader must refuse rather than fold.
-    scene.plant_marks(&[Retake { s: 3.0, e: 2.0, again: 0.0, to: 0.0, text: String::new(), whole: String::new() }]);
-    let (_drive, log) = walk(&scene);
-    fake.waited(2);
-    // The marks survive into the fold: whatever the pass produced, the timeline was written first.
-    assert!(scene.tree.session_tsv().exists(), "the fixes are not lost to a marking problem");
-    let text = scene.session_txt();
+fn f1_8_s6_a_marking_pass_trouble_never_costs_the_timeline() {
+    let fake = Fake::start(fix_answer(3));
+    let scene = Scene::new(3, &fake.url);
+    let (_drive, log) = walk_marked(&scene, MarkingPass::Retakes);
+    // The fixes are not lost to a pass that marked nothing, and the pass said so out loud (§S1's own
+    // "nothing to mark" sentence).
+    assert!(scene.tree.session_tsv().exists(), "the fixes are not lost to a marking problem: {log:?}");
     assert!(
-        text.contains("abandoned attempt") || log.iter().any(|line| line.contains("retakes:")),
-        "either the stretch was folded or the pass spoke about itself: {log:?} / {text}"
+        log.iter().any(|line| line.contains("retakes:")),
+        "the pass reported itself before the fold: {log:?}"
     );
-    // And the exact §S6 sentence exists when the pass could not run at all: an unreadable marks file.
-    let mut broken = Scene::new(4, &fake.url);
-    broken.set_marking_pass(MarkingPass::Retakes);
-    std::fs::create_dir_all(broken.tree.retakes_tsv().parent().expect("the transcript folder"))
-        .expect("the folder");
-    std::fs::write(broken.tree.retakes_tsv(), "\n").expect("an empty marks file");
-    let (_broken_drive, broken_log) = walk(&broken);
-    assert!(
-        broken.tree.session_tsv().exists(),
-        "a marking problem never costs the timeline: {broken_log:?}"
-    );
-    assert!(
-        broken_log.iter().any(|line| line.contains("-- the timeline stands unmarked"))
-            || broken_log.iter().any(|line| line.contains("retakes:")),
-        "the refusal is said in §S6's words or the pass reported itself: {broken_log:?}"
+    assert_eq!(
+        scene.session_txt().lines().count(),
+        scene.session_rows().len(),
+        "unmarked means every row still gets its own line: {log:?}"
     );
 }
 
@@ -582,15 +627,33 @@ fn f1_8_s7_session_txt_is_the_text_the_cut_reads() {
         text.contains("EVENT: a slide appears"),
         "an event is labelled as one, not as a person: {text}"
     );
-    // With marks planted, the covered rows collapse to ONE line each — that is what the cut is told.
-    let marked = Scene::new(4, &fake.url);
-    marked.plant_marks(&[Retake { s: 0.5, e: 2.5, again: 3.0, to: 2.5, text: String::new(), whole: String::new() }]);
-    let (_marked_drive, _) = walk(&marked);
-    let folded = marked.session_txt();
+}
+
+/// S7's fold: a stretch a marking pass left in `retakes.tsv` contributes ONE line to the text the cut
+/// reads, however many rows fall inside it. Reading the stored marks back is all §S6 does with them, so
+/// this calls that read-and-fold pair (`fix_session::marks_to_fix` into `fix_transcripts::session_text`)
+/// over the rows a real walk wrote. Where a mark COMES FROM is §F1.9's own question and belongs to
+/// `tests/retakes_flow.rs`, not here.
+#[test]
+fn f1_8_s7_a_marked_stretch_folds_into_one_line() {
+    let fake = Fake::start(fix_answer(4));
+    let scene = Scene::new(4, &fake.url);
+    let (_drive, log) = walk(&scene);
+    fake.waited(2);
+    let rows = scene.session_rows();
+    let marks = naivepost::fix_session::marks_to_fix(&[Retake {
+        s: 0.5,
+        e: 2.5,
+        again: 3.0,
+        to: 2.5,
+        text: String::new(),
+        whole: String::new(),
+    }]);
+    let folded = fix_transcripts::session_text(&rows, "", &marks);
     assert!(folded.contains("abandoned attempt"), "the mark is folded into one line: {folded}");
     assert!(folded.contains("said again at"), "and says where it was said again: {folded}");
     assert!(
-        folded.lines().count() < marked.session_rows().len(),
-        "fewer lines than rows, because the marked ones contribute one between them: {folded}"
+        folded.lines().count() < rows.len(),
+        "fewer lines than rows, because the marked ones contribute one between them: {folded} / {log:?}"
     );
 }

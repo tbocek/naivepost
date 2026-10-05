@@ -239,8 +239,16 @@ fn run_marking_pass(
         log(line);
     }
     // The marks live in `retakes.tsv` for both passes (joins writes its splices there too, through
-    // `hand_edit::write_marks`), so one read answers either policy.
-    let stored = retakes::read_marks(&tree.retakes_tsv()).unwrap_or_default();
+    // `hand_edit::write_marks`), so one read answers either policy. A retake pass that REFUSED to mark
+    // (§F1.9 S6's ceiling) empties that file on purpose and says so with a `!!!` line; a pass whose ask
+    // never got an answer leaves whatever the PREVIOUS press wrote sitting there, and reading that back
+    // would mark this timeline with stretches nobody confirmed today.
+    let refused = lines.iter().any(|line| line.starts_with("!!!"));
+    let stored = if refused {
+        Vec::new()
+    } else {
+        retakes::read_marks(&tree.retakes_tsv()).unwrap_or_default()
+    };
     Ok(marks_to_fix(&stored))
 }
 
