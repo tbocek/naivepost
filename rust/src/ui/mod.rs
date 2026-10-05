@@ -242,6 +242,7 @@ pub use window::press_insert_apply;
 pub use window::note_place;
 pub use window::refresh_insert_button;
 pub use window::press_effect_item;
+pub use window::press_zoom;
 pub use window::press_zoom_item;
 pub use cut_speed_hand::{
     band_esc_controller, press_speed_apply, press_speed_cancel, press_speed_esc, press_speed_item,

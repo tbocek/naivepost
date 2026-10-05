@@ -6,6 +6,9 @@
 
 use naivepost::cut::{Cut, Seg};
 use naivepost::cut_screen;
+use naivepost::project::Project;
+use naivepost::shell::{self, Shell};
+use naivepost::shell::Page;
 
 /// A kept stretch of footage at some playback speed. `rate` 0 is what a hand-made scene carries:
 /// only produceSegs writes one (spec/inventory/cut.md §B).
@@ -145,6 +148,36 @@ fn sec_05_cut_1_screen_s9_the_picture_band_counts_the_seconds_between_two_pictur
 /// The value an unreadable aspect falls back to — the same as the shipped one's.
 fn slot_seconds_unparsed() -> f64 {
     cut_screen::slot_seconds(64, "", 240.0)
+}
+
+#[test]
+fn sec_05_cut_1_screen_s11_the_cut_readout_says_there_is_nothing_to_cut_without_footage() {
+    // `spec/inventory/cut.md` §A: the bottom bar reads "nothing to cut — no source on Inputs is marked
+    // as footage" when no source carries the footage mark. A listened-to-only recording is not a cut.
+    let shell = Shell { page: Page::Cut, ..Default::default() };
+    let narration = naivepost::narration::Narration::default();
+    let mut project = Project::default();
+    project.sources = vec![naivepost::project::Source {
+        path: "/tmp/only-a-recording.mkv".into(),
+        footage: false,
+        ..Default::default()
+    }];
+    assert_eq!(
+        shell.inputs(None, &project, &Cut::default(), &narration),
+        shell::NOTHING_TO_CUT,
+        "the row says what is missing instead of counting nothing"
+    );
+
+    // Mark it footage and the row goes back to counting clips.
+    project.sources[0].footage = true;
+    let said = shell.inputs(None, &project, &Cut::default(), &narration);
+    assert_ne!(said, shell::NOTHING_TO_CUT, "there IS footage now: {said:?}");
+    assert_eq!(said, "0 clip(s)", "an uncut session still counts its zero clips");
+    let two = Cut {
+        segs: vec![footage(0.0, 10.0, 1.0), footage(20.0, 30.0, 1.0)],
+        ..Default::default()
+    };
+    assert_eq!(shell.inputs(None, &project, &two, &narration), "2 clip(s)");
 }
 
 #[test]

@@ -84,6 +84,14 @@ impl Page {
 /// as the tab's `wait` text (gui/main.go:77) so a click and a hover say the same thing.
 pub const CUT_LOCK: &str = "Add footage on the Prepare step first \u{2014} the cut is laid out from the recordings";
 
+/// The bottom bar's Inputs row for a Cut page with nothing to cut — `spec/inventory/cut.md` §A spells it
+/// and §1 makes that inventory normative ("Tooltips and greyed rules: inventory/cut.md §A, normative").
+/// A different sentence from [`CUT_LOCK`] on purpose: the lock answers "why can't I open this tab?" while
+/// this one answers "what is this page looking at?", and the second question is asked with the tab already
+/// open (a source loses its footage mark while the page is showing).
+pub const NOTHING_TO_CUT: &str =
+    "nothing to cut \u{2014} no source on Inputs is marked as footage";
+
 /// Why a page cannot be entered, `None` meaning it can (S2's question).
 ///
 /// Prepare never is: it is where the sources get added, so an empty project still has to open it.
@@ -426,7 +434,12 @@ impl Shell {
             Some(tree) => prepare::inputs_readout(&prepare::count(tree, project)),
             None => prepare::NO_INPUTS.to_string(),
         },
-            Page::Cut => format!("{} clip(s)", cut.segs.len()),
+            // With no footage there is nothing the cut could be laid out from, so the row says that rather
+            // than counting an empty cut — "0 clip(s)" would read as a session someone had trimmed to nothing.
+            Page::Cut if project.sources.iter().any(|source| source.footage) => {
+                format!("{} clip(s)", cut.segs.len())
+            }
+            Page::Cut => NOTHING_TO_CUT.to_string(),
             Page::Narrate if project.no_narration => "no narration — captions only".to_string(),
             Page::Narrate => format!(
                 "{} line(s) over {} clip(s)",

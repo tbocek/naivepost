@@ -258,6 +258,13 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // where 0:30-0:40 was folded away, `-` over the still-open tail.
             ui::press_fold_gap(&window, 1);
             ui::refresh_camera_rows(&window);
+            // Badge **31** is "hidden when everything fits", and at the opening 4 px a second this session
+            // does fit — so no snapshot of the Cut page had ever shown the bar. Deepen the zoom through the
+            // toolbar's own + door (the same one a click reaches) until the tape outgrows the view: the bar
+            // then appears because the geometry says it must, not because anything was forced visible.
+            for _ in 0..6 {
+                ui::press_zoom(&window, true);
+            }
         }
         // §2's own picture (`spec/img/03-runbar.svg`) is the run bar WITH WORK GOING ON: "the gears turn
         // while a run computes", and ▶ has become ⏸ "Pause". No snapshot could show that face until now

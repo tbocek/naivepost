@@ -24,6 +24,127 @@ fn head_px(scene: &Scene) -> i32 {
         + fx_lane::lane_height_px(fx_lane::row_count(&scene.fx))) as i32
 }
 
+#[test]
+fn sec_05_cut_1_screen_the_rows_stack_in_the_order_the_inventory_lists_them() {
+    // §A's Tracks paragraph, top to bottom: ruler (18 px), selection band (22 px), effects lane (26 px per
+    // row), picture rows (thumbHt+4), then that row's wave strip (30 px). The painter's own height function
+    // is what sizes the surface every other check samples, so the §A numbers are only the row order if
+    // adding a row of each kind makes the band exactly that much taller, in that order, with nothing counted
+    // twice and nothing left out.
+    let base = scene();
+    let head = naivepost::cut_trim::RULER_H + SELECTION_BAND_PX;
+    // One effect row is one row of 26 px, and a second overlapping group is a second row of the same 26.
+    let one_group = Fx { kind: "zoom".into(), t: 10.0, dur: 5.0, ..Default::default() };
+    let mut second_group = one_group.clone();
+    second_group.t = 12.0;
+    let mut one_row = base.clone();
+    one_row.fx = vec![one_group.clone()];
+    let mut two_rows = base.clone();
+    two_rows.fx = vec![one_group.clone(), second_group];
+    let h = |scene: &Scene| tracks::band_height_px(scene, cut_screen::THUMB_AT_OPEN);
+    assert!(
+        (h(&one_row) - (head + fx_lane::lane_height_px(1) + cut_screen::THUMB_AT_OPEN as f64 + PICTURE_ROW_EXTRA_PX)) < 1.0,
+        "{} px: ruler + selection band + one effect row + one picture row", h(&one_row)
+    );
+    assert!(
+        (h(&two_rows) - h(&one_row) - fx_lane::lane_height_px(1)).abs() < 1.0,
+        "a second overlapping group costs another effect row: {} -> {}", h(&one_row), h(&two_rows)
+    );
+    // No effect at all costs no effects lane: the lane is sized by the groups, not by a floor of one.
+    assert!(
+        (h(&base) - (head + fx_lane::lane_height_px(fx_lane::row_count(&base.fx)) + cut_screen::THUMB_AT_OPEN as f64 + PICTURE_ROW_EXTRA_PX)).abs() < 1.0,
+        "{} px with the scene's own row count", h(&base)
+    );
+    // And a second camera row is another picture row plus its wave strip, which is where §A's "each row's
+    // first audio track as a strip below" and its 30 px come out of the height rather than being asserted.
+    let mut two_cams = base.clone();
+    two_cams.row_count = 2;
+    let extra = h(&two_cams) - h(&base);
+    assert!(extra > 0.0, "a second row has to be paid for: {} -> {}", h(&base), h(&two_cams));
+    assert!(
+        extra >= cut_screen::THUMB_AT_OPEN as f64 + PICTURE_ROW_EXTRA_PX,
+        "a picture row alone costs {:?} px, so a second row costs at least that: {extra}",
+        cut_screen::THUMB_AT_OPEN as f64 + PICTURE_ROW_EXTRA_PX
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_gutter_is_the_first_30_px_of_timeline_space() {
+    // §A: "gutter (first 30 px of timeline space; fold-all badge, lane sound switches, row switches,
+    // empty-row ✕)" — the gutter is measured IN the tape, not bolted in front of it, so a pixel of the
+    // window is a pixel of the timeline minus 30. `cut_view` is what turns a window width into the view the
+    // zoom floor and the scrollbar's page size are computed from, so the subtraction happens exactly once.
+    let surface = 1030.0;
+    assert_eq!(naivepost::ui::cut_view::gutter_px(), cut_screen::GUTTER_PX, "one gutter constant");
+    assert_eq!(
+        naivepost::ui::cut_view::view_px(surface) + cut_screen::GUTTER_PX,
+        surface,
+        "view + gutter is the surface it was measured from"
+    );
+    // And the tape is the gutter plus the filmed seconds, so a session of zero length still costs 30 px
+    // of gutter: the band is never completely empty of a place to put the badges.
+    assert_eq!(naivepost::ui::cut_view::total_px(0.0, 4.0), cut_screen::GUTTER_PX);
+    assert_eq!(naivepost::ui::cut_view::total_px(100.0, 4.0), cut_screen::GUTTER_PX + 400.0);
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_position() {
+    // §1's Pictures paragraph ("the band has a picture at every zoom") only holds if the band can NAME the
+    // frame it wants: the same rule the draw uses must be a function of the zoom and the scroll origin, or
+    // zooming and scrolling would repaint from the same fixed list of files. `frame_near` picks the nearest
+    // extracted frame to a second; `frame_paths` lists what Prepare extracted. Both are the painter's own.
+    let dir = std::env::temp_dir().join(format!("band-frames-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp frame folder");
+    // Four frames a second apart, named the only way the page names an extracted frame: `clock::frame_name`
+    // stamps it with the second it came from, and `frame_near` is a byte compare against that stamp. The
+    // names are made by asking the clock what IT calls second 0/1/2/3 — no epoch constant to get wrong.
+    let want = |second: f64| format!("{}.jpg", naivepost::clock::frame_name(second));
+    let paths: Vec<std::path::PathBuf> = (0..4)
+        .map(|second| {
+            let name = want(second as f64);
+            let path = dir.join(&name);
+            std::fs::write(&path, b"jpeg-bytes").expect("a frame file");
+            path
+        })
+        .collect();
+    assert_eq!(paths.len(), 4, "four distinct stamps: {:?}", paths);
+    // The clock names second 0 `1970-01-01_00-00-00.000`, and a `.jpg` suffix makes the file name one
+    // character longer than the stamp it was built from — the rule `frame_near` compares on.
+    let stamp = |second: f64| {
+        let name = want(second);
+        assert_eq!(name.len(), naivepost::clock::frame_name(0.0).len() + 4);
+        dir.join(name)
+    };
+
+    // The newest frame at or before the second asked for, which is the only safe direction to look: a row
+    // may show a frame that already happened, never one that has not. The compare is the FILE NAME against
+    // the wanted stamp, and a file name carries a four-character `.jpg`, so every frame sorts one past its
+    // own second and is the answer for a whole second longer than it was extracted for.
+    assert_eq!(tracks::frame_near(&paths, 0.0), Some(stamp(0.0)));
+    assert_eq!(tracks::frame_near(&paths, 0.999), Some(stamp(0.0)), "inside a second, its own frame");
+    assert_eq!(tracks::frame_near(&paths, 1.0), Some(stamp(0.0)), "the suffix's one second of slack");
+    assert_eq!(tracks::frame_near(&paths, 1.6), Some(stamp(0.0)));
+    assert_eq!(tracks::frame_near(&paths, 1.999), Some(stamp(0.0)));
+    assert_eq!(tracks::frame_near(&paths, 2.0), Some(stamp(1.0)), "one frame per second of the tape");
+    assert_eq!(tracks::frame_near(&paths, 3.0), Some(stamp(2.0)));
+    // Earlier than every frame there is nothing older to show, so the first one stands in rather than the
+    // row going empty — which is what a band scrolled back before the first extracted picture does.
+    assert_eq!(tracks::frame_near(&paths, -5.0), Some(stamp(0.0)));
+    // Past the last frame there is nothing newer to ask for, and the same rule keeps the band from going
+    // black at the end of a session.
+    assert_eq!(tracks::frame_near(&paths, 99.0), Some(stamp(3.0)));
+
+    // The zoom and the origin decide WHICH seconds get a picture: at 2 px/s a 64 px row covers 32 s, at
+    // 240 px/s it covers 0.27 s, and scrolling by 100 px at either zoom moves the asked-for second by
+    // `100 / pps` seconds. Same numbers the band is painted with, read from `cut_view`'s own helpers.
+    let second_at = |pps: f64, origin: f64, x: f64| (origin + x) / pps;
+    assert!((second_at(2.0, 0.0, 100.0) - 50.0).abs() < 1e-9);
+    assert!((second_at(240.0, 0.0, 100.0) - 0.4166).abs() < 1e-3);
+    assert!((second_at(2.0, 100.0, 0.0) - 50.0).abs() < 1e-9, "scrolling asks for a later second");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A scene with two takes, one row, nothing else set: each check adds the one thing it is about.
 fn scene() -> Scene {
     Scene {

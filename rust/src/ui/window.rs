@@ -9269,13 +9269,6 @@ thread_local! {
     static PREVIEW_PPS: std::cell::RefCell<f64> = const { std::cell::RefCell::new(0.0) };
 }
 
-fn preview_pps() -> f64 {
-    PREVIEW_PPS.with(|cell| {
-        let held = *cell.borrow();
-        if held > 0.0 { held } else { TRACK_STRIP_PPS }
-    })
-}
-
 fn set_preview_pps(pps: f64) {
     PREVIEW_PPS.with(|cell| *cell.borrow_mut() = pps);
 }

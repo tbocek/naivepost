@@ -72,7 +72,13 @@ pub fn extents(surface_width: f64) -> (f64, f64) {
 
 /// Repaint THIS window's scrollbar from its live zoom, scroll position and session length — the door
 /// `window.rs` calls after any zoom, scroll or cut change, so no caller has to carry numbers around.
+/// It records the bar's OWN allocation when GTK has given it one (the gear is a number about the bar's
+/// pixels, not about the band beside it) and falls back to the surface width only while the bar is still
+/// un-laid-out, which is every headless repaint and a test's freshly built window.
 pub fn refresh_scrollbar(bar: &gtk::Scrollbar, surface_width: f64) {
+    let measured = f64::from(bar.width());
+    let gear_from = if measured > 0.0 { measured } else { view_px(surface_width).max(0.0) };
+    BAR_WIDTH.with(|cell| cell.set(gear_from));
     let (total, view) = extents(surface_width);
     paint_scrollbar(bar, total, view);
 }
@@ -341,24 +347,12 @@ fn repaint_page(window: &adw::ApplicationWindow) {
     }
 }
 
-/// The horizontal scrollbar of §1's badge **31**, sized to the surface it is drawn in. `width` is that
-/// bar's own pixel length — GTK moves its thumb across exactly this much, which is what makes the gear
-/// in [`DRAG_PER_SCREENFUL_PX`] a number about the bar rather than about the timeline.
-///
-/// Built empty: the numbers belong to whoever knows the session's length, and calling
-/// [`paint_scrollbar`] right after keeps one door for both.
-pub fn build_scrollbar(width: f64) -> gtk::Scrollbar {
-    let bar = gtk::Scrollbar::new(gtk::Orientation::Horizontal, Option::<&gtk::Adjustment>::None);
-    bar.set_widget_name("track-scrollbar");
-    // The gear needs a known bar length; GTK gives a scrollbar no natural width of its own.
-    bar.set_size_request(width.max(0.0) as i32, -1);
-    BAR_WIDTH.with(|cell| cell.set(width.max(0.0)));
-    bar
-}
-
 thread_local! {
-    /// How wide the last-built bar was, so [`paint_scrollbar`] can be handed only the view and still
-    /// size its thumb in pixels rather than in a fraction nobody checked.
+    /// How wide the bar last refreshed was told to be, so [`paint_scrollbar`] can be handed only the view
+    /// and still size its thumb in pixels rather than in a fraction nobody checked. GTK gives a scrollbar
+    /// no natural width of its own, so before the page is laid out (a headless repaint, a test's fresh bar)
+    /// `bar.width()` is 0 and this is the only length there is. Written by [`refresh_scrollbar`], the one
+    /// door every repaint of badge **31** goes through.
     static BAR_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
 }
 
@@ -379,7 +373,8 @@ pub fn paint_scrollbar(bar: &gtk::Scrollbar, total: f64, view: f64) {
     bar.set_visible(!fits(total, view));
 }
 
-/// The bar's own length: what it was built with, or once GTK has laid it out, what it really is.
+/// The bar's own length: what it really is once GTK has laid it out, or the width it was last refreshed
+/// with (`refresh_scrollbar` records it) while its allocation is still 0.
 fn bar_width(bar: &gtk::Scrollbar) -> f64 {
     let measured = f64::from(bar.width());
     if measured > 0.0 {
