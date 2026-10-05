@@ -13,12 +13,15 @@ use harness::*;
 use serde_json::Value;
 #[path = "joined_answer.rs"]
 mod joined_answer;
-use joined_answer::{chat, raw};
+use joined_answer::{chat, finish};
 
 #[test]
 fn f1_10_s3_a_live_join_call_carries_the_join_message_to_the_llm() {
     let fixture = fixture("msg");
-    let llm = FakeLlm::start(vec![chat("the network is live today the network goes live now")]);
+    // Every ask this scenario serves ends the flow. The loop now runs WITH tools offered (the `None`
+    // that used to sit there is the bug this round fixes), and a tool round is not an answer, so a
+    // closing `finish` call keeps one seam from costing two sockets. Both are answered.
+    let llm = FakeLlm::start(vec![finish(), chat("the network is live today the network goes live now")]);
     point_at(&llm.url());
     let lines = press(&fixture.tree, &fixture.project);
     let seen = llm.next_seen();

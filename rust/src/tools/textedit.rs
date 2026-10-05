@@ -182,17 +182,22 @@ impl Join {
     /// The sentence left reading across the join, which is what the model is really being asked to
     /// approve.
     pub fn sentence(&self) -> String {
-        let mut out: Vec<&str> = self
-            .all(Side::Before)
+        // `saturating_sub` on both sides: a join that gave way on one side past what the other side
+        // holds has no words left at all, and a subtraction that wraps here used to panic inside a tool
+        // reply — the one failure mode a model's own bad call must not cause (§3.2 S6: a tool failing is
+        // information, never a crash).
+        let before_all = self.all(Side::Before);
+        let after_all = self.all(Side::After);
+        let mut out: Vec<&str> = before_all
             .iter()
             .map(String::as_str)
-            .take(self.all(Side::Before).len() - self.dropped_count(Side::Before))
+            .take(before_all.len().saturating_sub(self.dropped_count(Side::Before)))
             .collect();
         out.extend(
-            self.all(Side::After)
+            after_all
                 .iter()
                 .map(String::as_str)
-                .skip(self.dropped_count(Side::After)),
+                .skip(self.dropped_count(Side::After).min(after_all.len())),
         );
         out.join(" ")
     }

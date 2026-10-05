@@ -12,16 +12,17 @@ mod harness;
 use harness::*;
 #[path = "joined_answer.rs"]
 mod joined_answer;
-use joined_answer::{chat, raw};
+use joined_answer::{finish, raw};
 
 #[test]
 fn f1_10_s3_a_refused_reply_is_never_cached_so_the_retry_asks_for_real() {
     // Two stretches left out ("today" sits inside the removal with "the" kept on either side), so
     // this reply is refused. Served over the wire, twice, because a retry must not be answered out
-    // of the slot the first refusal was refused from.
+    // of the slot the first refusal was refused from. A `finish` closes each tool round (the loop runs
+    // with the tools offered now, §3.2); the refused answer reaches both asks, and nothing is cached.
     let refused = raw("the today the network goes live now");
     let fixture = fixture("nocache");
-    let llm = FakeLlm::start(vec![refused.clone(), refused]);
+    let llm = FakeLlm::start(vec![finish(), refused.clone(), finish(), refused]);
     point_at(&llm.url());
     let _ = press(&fixture.tree, &fixture.project);
     let arrived = 1 + llm.drained();

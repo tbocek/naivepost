@@ -12,7 +12,7 @@ mod harness;
 use harness::*;
 #[path = "joined_answer.rs"]
 mod joined_answer;
-use joined_answer::{chat, raw};
+use joined_answer::{finish, raw};
 use joined_answer::answer;
 
 #[test]
@@ -23,10 +23,12 @@ fn f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands() {
 
     let fixture = fixture("retry");
     // Ask #1 goes over the wire and is refused: "today" sits inside the removal with a kept word on
-    // either side, which is two stretches, not one at the join.
+    // either side, which is two stretches, not one at the join. The refusal is followed by the
+    // `finish` that ends a tool round (the loop runs with tools offered now, §3.2), and the fake
+    // answers every further ask with the refusal — so the retry really is a second ask.
     let refused = raw("the today the network goes live now");
     point_at(&{
-        let llm = FakeLlm::start(vec![refused]);
+        let llm = FakeLlm::start(vec![finish(), refused]);
         // Keep the fake alive for the whole scenario so the ask has somewhere to go.
         let url = llm.url();
         std::mem::forget(llm);

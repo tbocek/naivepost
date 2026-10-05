@@ -415,7 +415,59 @@ pub fn ask_slot(base: &str, attempt: u32) -> String {
     seam_retries::ask_slot(base, attempt)
 }
 
-// ---- S4: the doubled saying across a cut ---------------------------------
+// ---- S5: the doubled saying across a cut ---------------------------------
+
+/// The session's lanes as F1.11's edge placement wants them: one per recording this word list came
+/// off, in the order they sit on the session clock, each keyed as Prepare keys it (`lecture` for
+/// `project:sources/lecture.mkv`) and stamped with the real file's size/mtime so a wave cache made
+/// against a replaced recording reads as a miss.
+///
+/// `hand_edit::session_lanes` builds the same list from the project's source array; this one builds it
+/// from the word list itself because a join pass knows its recordings from the words it was handed,
+/// and a lane for a source with no words would answer with an envelope over silence. A recording that
+/// cannot be stat-ed contributes no lane — there is no recording to have an envelope of — which is the
+/// same `None` the word pad then covers.
+pub fn session_lanes(tree: &Tree, words: &[Word]) -> Vec<crate::edges::Lane> {
+    let bases = distinct_sources(words);
+    let offsets = crate::fix_transcripts::placement(
+        &bases.iter().map(|base| base.as_str()).collect::<Vec<&str>>(),
+    );
+    bases
+        .iter()
+        .zip(offsets)
+        .filter_map(|(base, off)| {
+            let (size, mtime) = stat_recording(tree, base)?;
+            Some(crate::edges::Lane { key: lane_key(base), off, size, mtime })
+        })
+        .collect()
+}
+
+/// The wave-cache key of a recording named in a word's `source` field: the base name without its
+/// extension, which is what every per-recording folder is keyed under.
+fn lane_key(base: &str) -> String {
+    match base.rfind('.') {
+        Some(dot) if dot > 0 => base[..dot].to_string(),
+        _ => base.to_string(),
+    }
+}
+
+/// A recording's own size and mtime, off the name the word list carries. `project:`-prefixed names
+/// resolve inside the project folder. These are the stamps `crate::wave::read` checks the cache header
+/// against, so they come from the recording and never from the cache file itself.
+fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
+    let path = match stored.strip_prefix("project:") {
+        Some(rel) => tree.dir().join(rel),
+        None => std::path::PathBuf::from(stored),
+    };
+    let meta = std::fs::metadata(&path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some((meta.len() as i64, mtime))
+}
 
 /// S4: at every join still standing, a saying repeated straight across the cut loses its EARLIER
 /// copy, up to [`JOIN_REACH_WORDS`] words either side.
@@ -443,6 +495,14 @@ pub fn dedupe_across(
 /// `edge_of` answers with the envelope of the recording a session second belongs to, `None` where
 /// there is none: a run with no waveform to ask leaves its marks on the word times, which is what
 /// `press_joins` does when nothing has been audio-extracted yet.
+/// S5: the marks from the dropped runs, with both edges placed by F1.11.
+///
+/// `words` are the session's aligned words (the list every other pass fences a cut with) and `edge_of`
+/// answers with the envelope of the recording a session second belongs to. With no envelope to ask the
+/// marks keep their word times, which is a normal state and not an error: a session that never
+/// extracted audio has no wave cache to read. This module owns no edge arithmetic —
+/// [`edges::place_edges`] fences each edge on the words and lets the sound choose inside the fence, and
+/// copying any of that here would be a second rule the two passes could disagree about.
 pub fn marks_for<'a>(
     times: &[(f64, f64)],
     kept: &[bool],

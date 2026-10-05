@@ -13,7 +13,7 @@ use naivepost::hand_edit;
 use naivepost::joins;
 use naivepost::layout::Tree;
 use naivepost::textfmt::{self, Retake};
-use naivepost::tools::textedit::{self, Side, Join};
+use naivepost::tools::textedit::{Side, Join};
 use naivepost::word_list::{self, Word};
 
 /// One word of a synthetic session list, one second long so word `i` spans `(i, i+1)`.
@@ -418,12 +418,74 @@ fn f1_10_s5_dropped_runs_become_marks_whose_edges_come_from_the_sound() {
     kept[2] = false;
     kept[3] = false;
     // No aligned words and no envelope: the marks sit on the word times, which is what a run with no
-    // audio to ask has. F1.11 owns any move; this only calls it.
+    // audio to ask has. F1.11 owns any move; this only calls it. With words but no envelope the next
+    // case shows the word pad alone fences the edge, and with both the envelope chooses inside it.
     let (marks, notes) = joins::marks_for(&times, &kept, &[], |_| None, &[]);
     assert_eq!(marks.len(), 1, "one dropped run is one mark");
     assert_eq!(marks[0].s, 2.0, "the run's own start");
     assert_eq!(marks[0].e, 4.0, "the run's own end");
     assert!(notes.is_empty(), "nothing moved with no sound to ask: {notes:?}");
+}
+
+#[test]
+fn f1_10_s5_a_dropped_run_reaches_the_sound_for_its_edges() {
+    // The same dropped run, now with the session's aligned words in hand: word 2 (index 1) ends at
+    // 2.0 s and the mark's raw edge sits at exactly there, so F1.11 fences it and says so. The point
+    // this pins is that the JOIN pass hands those words over at all — before, it passed `&[]` and the
+    // marks were never fenced, so §F1.11 never ran for a join.
+    // Word 2 (index 1) ENDS at 2.0 s and the mark's raw edge sits at exactly there: the fence has no
+    // width, so `place_edges` skips the note and the edge lands on the aligner's time. The join model
+    // is answered in words, not stamps, so a dropped run begins at its own first word and this is the
+    // normal shape (retakes, whose stamps come off the sound, are the case that moves — and when the
+    // stamp does run late, the pad moves it and the note says so; second half below).
+    let times: Vec<(f64, f64)> = (0..8).map(|i| (i as f64, i as f64 + 1.0)).collect();
+    let words: Vec<AlignedWord> = times
+        .iter()
+        .enumerate()
+        .map(|(i, (s, e))| AlignedWord { word: format!("w{i}"), s: *s, e: *e })
+        .collect();
+    let mut kept = vec![true; 8];
+    kept[2] = false;
+    kept[3] = false;
+    let (marks, notes) = joins::marks_for(&times, &kept, &words, |_| None, &times);
+    assert_eq!(marks.len(), 1);
+    assert!(
+        marks[0].s >= 2.0 - 1e-9 && marks[0].s <= 2.0 + 1e-9,
+        "the edge lands on the last word that survives, not past it: {}",
+        marks[0].s
+    );
+    assert!(notes.is_empty(), "a fence with no width has nothing to report: {notes:?}");
+    // And a stamp that runs late does move: the aligner says the dropped word began at 2.0 s but the
+    // word before it ends at 1.9 s, so the cut ends at the pad and the note names the seconds.
+    let mut late: Vec<AlignedWord> = words.clone();
+    late[1].e = 1.9;
+    let (moved, moved_notes) = joins::marks_for(&times, &kept, &late, |_| None, &times);
+    assert!(
+        moved[0].s > 1.9 && moved[0].s <= 2.0,
+        "the word pad lands after the last word that stays: {}",
+        moved[0].s
+    );
+    assert!(
+        moved_notes.iter().any(|n| n.contains("earlier")),
+        "the move is spoken: {moved_notes:?}"
+    );
+}
+
+#[test]
+fn f1_10_s5_a_lane_with_no_wave_cache_answers_no_envelope() {
+    // `session_lanes` keys a lane by the recording's base name and stamps it with the real file. A word
+    // list naming recordings that are not on disk therefore yields NO lane, and `edges::finder` over an
+    // empty set answers `None` everywhere — which is how "no audio extracted yet" reaches F1.11: the
+    // marks stand on their word times rather than on a guessed envelope.
+    let tree = temp_tree("lanes");
+    let words = two_takes();
+    assert!(
+        joins::session_lanes(&tree, &words).is_empty(),
+        "a recording that cannot be stat-ed has no envelope to offer"
+    );
+    let held = naivepost::edges::load(&tree, &joins::session_lanes(&tree, &words));
+    assert!(held.is_empty());
+    assert!(naivepost::edges::finder(&held)(1.0).is_none(), "so every second answers None");
 }
 
 #[test]
@@ -578,4 +640,146 @@ fn f1_10_the_pass_is_gated_on_the_policy_naming_joins() {
         "S1 settles with no server"
     );
     assert!(tree.final_txt().exists() && tree.retakes_tsv().exists());
+}
+
+// ---- S3 over the wire: the tool loop this job is offered (F1.10 §3.2) ------
+//
+// The rules above hand answers in as text, which is why the ask's SHAPE was never checked here. These
+// cases share the live scenarios' harness (`tests/join_live_harness.rs`) so what is asserted is the
+// bytes that reached a socket. That harness moves the process-wide env and `settings::save` replaces
+// the whole file, so it is its OWN binaries' property — the same reason those scenarios are one file
+// each. What is checked here is everything that does not need the env: the offer a job gets, and what
+// a tool reply comes to.
+
+/// The offer this job must send: its four tools by name. A job that is offered nothing can only answer
+/// in prose, which is the gap these cases exist to close (§3.2).
+#[test]
+fn f1_10_s3_the_ask_offers_the_textedit_tools() {
+    let offered = naivepost::tools::offered(naivepost::roles::Job::Joins);
+    let names: Vec<&str> = offered.iter().map(|tool| tool.name()).collect();
+    for tool in ["drop_words", "keep_join", "get_words", "finish"] {
+        assert!(names.contains(&tool), "{tool} is offered to this job: {names:?}");
+    }
+    // And that offer reaches the wire: `join_ask` builds its body from THIS list, through the same
+    // `llm_request::body` every chat ask rides, so a body whose `tools` array names them is the proof
+    // the field is sent rather than dropped. Checked on the body the builder produces.
+    let body = naivepost::join_ask::body_for_test(&["one two three".to_string(), "four five".to_string()]);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("the ask body is JSON");
+    let tools = value.get("tools").and_then(|v| v.as_array()).expect("a tools array went out");
+    let sent: Vec<&str> = tools
+        .iter()
+        .filter_map(|t| t.pointer("/function/name").and_then(|n| n.as_str()))
+        .collect();
+    for tool in ["drop_words", "keep_join", "get_words", "finish"] {
+        assert!(sent.contains(&tool), "{tool} rode out in the ask: {sent:?}");
+    }
+    assert_eq!(
+        value.get("enable_thinking").and_then(|v| v.as_bool()),
+        Some(true),
+        "offering tools did not turn thinking off (§F1.10 says thinking ON per seam)"
+    );
+}
+
+/// The anti-duplication pin: a `drop_words(side,count)` call and the `{"joined":"…"}` text that means
+/// the same thing must come to the same `Outcome`. If they ever disagree, one of the two paths has
+/// grown its own copy of a rule `Join` already owns.
+#[test]
+fn f1_10_s3_a_drop_words_answer_applies_the_same_counts() {
+    // The two takes the live scenarios use, spelled out here so this file keeps needing no env: five
+    // words each, take-a ending "the network is live today" and take-b saying it again.
+    const TAKE_A: [&str; 5] = ["the", "network", "is", "live", "today"];
+    const TAKE_B: [&str; 5] = ["the", "network", "goes", "live", "now"];
+    let before: Vec<String> = TAKE_A.iter().map(|w| w.to_string()).collect();
+    let after: Vec<String> = TAKE_B.iter().map(|w| w.to_string()).collect();
+    // The tool way: 3 words off BEFORE, which is take-a's tail "is live today". `call_for_test` is the
+    // same door the live loop runs every call through, so this is the real dispatch, not a copy.
+    let mut join = Join::new(TAKE_A.as_slice(), TAKE_B.as_slice());
+    let mut refusals: Vec<String> = Vec::new();
+    for name in ["drop_words", "finish"] {
+        let args = if name == "drop_words" {
+            serde_json::json!({ "side": "before", "count": 3 })
+        } else {
+            serde_json::json!({})
+        };
+        naivepost::join_ask::call_for_test(
+            &naivepost::exchanges::ToolCall { name: name.to_string(), args: args.to_string(), result: String::new() },
+            &mut join,
+            &mut refusals,
+        );
+    }
+    let via_tool = naivepost::join_ask::outcome_for_test(&join);
+    assert_eq!(via_tool, joins::Outcome::Applied { before: 3, after: 0 }, "the tool's own counts: {refusals:?}");
+    assert!(refusals.is_empty(), "three off a five-word side is legal: {refusals:?}");
+    // The prose way, over the same words: the answer that keeps take-a's first two words and all of
+    // take-b, which is the same repair said in the prototype's shape.
+    let kept = format!("{} {}", TAKE_A[..2].join(" "), TAKE_B.join(" "));
+    let mut prose = Join::new(TAKE_A.as_slice(), TAKE_B.as_slice());
+    let via_prose = joins::answer_join(
+        &mut prose,
+        &format!("{{\"joined\":\"{kept}\"}}"),
+        &before,
+        &after,
+    );
+    assert_eq!(
+        via_prose, via_tool,
+        "one rule, two shapes: the tool answer and the prose answer must agree"
+    );
+}
+
+/// A count the TOOL refuses (past what was shown) comes back as its own `{"error": …}` sentence and
+/// the join is refused with that same reason — not with a second sentence invented here, and not with
+/// the seam quietly repaired.
+#[test]
+fn f1_10_s3_a_tool_refusal_reaches_the_model_and_the_join_is_still_decided_by_the_rules() {
+    const TAKE_A: [&str; 5] = ["the", "network", "is", "live", "today"];
+    const TAKE_B: [&str; 5] = ["the", "network", "goes", "live", "now"];
+    // Five words shown on the BEFORE side; asking for nine is the tool's "only 5 were shown".
+    let mut join = Join::new(TAKE_A.as_slice(), TAKE_B.as_slice());
+    let mut refusals: Vec<String> = Vec::new();
+    naivepost::join_ask::call_for_test(
+        &naivepost::exchanges::ToolCall {
+            name: "drop_words".to_string(),
+            args: serde_json::json!({ "side": "before", "count": 9 }).to_string(),
+            result: String::new(),
+        },
+        &mut join,
+        &mut refusals,
+    );
+    assert_eq!(join.dropped_count(Side::Before), 0, "a refused drop takes nothing");
+    assert_eq!(refusals.len(), 1, "the refusal is kept for the model AND for the log");
+    let reason = refusals[0].clone();
+    assert!(reason.contains("\"error\""), "it is the tool's own error shape: {reason}");
+    assert!(reason.contains("only 5 were shown"), "the tool's sentence, unchanged: {reason}");
+    // And the JOIN's answer when that refusal is all the model ever offered: the tool's own reason,
+    // said as a refusal of the answer — "a refusal still keeps the stumble", so nothing goes and the
+    // reason on the log is the rule's sentence, not one invented here.
+    let outcome = naivepost::join_ask::tool_refusal_outcome(&refusals);
+    assert!(
+        matches!(&outcome, joins::Outcome::Refused(why) if why.contains("only 5 were shown")),
+        "the refusal reaches the join unchanged: {outcome:?}"
+    );
+    assert!(!outcome.usable(), "a refused answer is never cached");
+}
+
+/// The seam's own arithmetic belongs to `Join`, not to a copy of its rules: what one word off the
+/// BEFORE side is worth is the tool's answer, quoted unchanged (empty means "legal", any text is the
+/// reason the rule gave).
+#[test]
+fn f1_10_s3_a_seam_the_rules_answer_themselves() {
+    // "the" repeated straight across the cut: dropping one word from BEFORE is a legal repair, and the
+    // tool says so in its own answer rather than through a copy of its rule written here.
+    let mut join = Join::new(
+        &["the", "network", "is", "live", "today"],
+        &["the", "network", "goes", "live", "now"],
+    );
+    let repeat = join.drop_words(Side::Before, 1);
+    assert!(
+        repeat.contains("across_the_join"),
+        "a one-word drop at this seam is legal in the tool's own answer: {repeat}"
+    );
+    // A join with nothing at all to drop is the one the rules settle themselves: `keep_join` answers it
+    // without a model, and the answer says so.
+    let mut join = Join::new(&["a", "b"], &["c", "d"]);
+    assert!(join.keep_join().contains("kept"), "keep_join is a whole answer");
+    assert!(join.kept());
 }
