@@ -261,7 +261,7 @@ impl Scene {
     /// settings folder: [`naivepost::describe_call::stage_chunk`] is the door `run_task` opens after it
     /// resolves them from the environment, and it is the same door.
     fn describe(&self, conf: &Conf, log: &mut impl FnMut(&str)) -> Result<usize, String> {
-        naivepost::describe_call::stage_chunk(&self.tree(), &self.paths, conf, "lecture", log)
+        naivepost::describe_call::stage_chunk(&self.tree(), &self.paths, conf, "lecture", Some(0), log)
     }
 
     /// The frames this scene's footage row holds, as the stage will read them.

@@ -23,6 +23,8 @@ use crate::services::{self, Server};
 use crate::settings::{self, Paths};
 use crate::textfmt::FrameEvent;
 use crate::tool_reads;
+use crate::describe_scale;
+
 use crate::tools::describe::Batch;
 use crate::tools::Tool;
 
@@ -77,13 +79,33 @@ pub fn stage_chunk(
     paths: &Paths,
     conf: &settings::Conf,
     lane: &str,
+    source_index: Option<usize>,
     log: &mut impl FnMut(&str),
 ) -> Result<usize, String> {
     let frames_on_disk = describe::frames_on_disk(&tree.frames_dir(lane));
+    // S0: an every-frame extraction stops this source here, before a request is paid for frames whose
+    // spacing nothing chose. Local, not fatal: the run carries on with the sources that can be
+    // described (§Failure-is-specific), which is why this answers Ok(0) rather than Err.
+    if describe::is_every_frame(&frames_on_disk, describe::GRID) {
+        log(&describe::every_frame_refusal(lane));
+        return Ok(0);
+    }
     let changes = describe::read_changes(tree, lane);
     let duration = frames_on_disk.last().copied().unwrap_or(0.0) + describe::GRID;
     let project = crate::project::load(tree.dir()).ok();
     let freq = frame_interval(project.as_ref());
+    // Where this source's stored frames sit on the session clock: the index `stage` put on the row, so
+    // the offset comes from the same placement every other stage reads.
+    let index = source_index.unwrap_or(0);
+    // S1: each recording heard alongside the video, named with its offset, said before any work --
+    // the words are what the descriptions will be built from.
+    for (audio, offset) in describe_scale::alongside(project.as_ref(), index) {
+        log(&describe::hearing_log(lane, &audio, offset));
+    }
+    // S1: the copies that get sent are made here, by ffmpeg, once each. The frames on disk stay at the
+    // video's own size; only these 896-wide copies go on the wire.
+    let start = describe_scale::clock_start(project.as_ref(), index);
+    describe_scale::ensure(tree, conf, lane, start, &frames_on_disk, log).map_err(|why| format!("{lane}: {why}"))?;
     let picked = describe::sorted(&describe::pick_frames(&changes, duration, describe::GRID, freq));
     if picked.is_empty() {
         log(&format!(">>> [{lane}] no frames to describe -- the frames folder is empty"));
@@ -133,8 +155,9 @@ pub fn run_task(
         .map_err(|_| format!("{}: not a project folder to describe into", session.display()))?;
     let source = task.args.first().cloned().ok_or("the describe row names no source")?;
     let lane = crate::audio_task::source_lane(&source);
+    let index: usize = task.args.get(1).and_then(|text| text.parse().ok()).unwrap_or(0);
     let conf = settings::read(&paths).unwrap_or_default();
-    stage_chunk(&tree, &paths, &conf, &lane, log)?;
+    stage_chunk(&tree, &paths, &conf, &lane, Some(index), log)?;
     Ok(())
 }
 

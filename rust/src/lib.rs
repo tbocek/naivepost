@@ -108,6 +108,7 @@ pub mod prepare_decisions;
 pub mod prepare_run;
 pub mod describe;
 pub mod describe_call;
+pub mod describe_scale;
 pub mod fix_call;
 pub mod tool_reads;
 pub mod joins;
