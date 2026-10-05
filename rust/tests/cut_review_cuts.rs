@@ -245,3 +245,81 @@ fn f2_3_s8_the_other_two_buttons_switch_over_without_stopping() {
     );
     assert!(!player.reviewing && !player.cut_only && player.transport.playing);
 }
+
+// --- The review's own tick: what the page half feeds back into `cut_review::tick ---------------------
+//
+// These drive `naivepost::ui::cut_review_play::step`, the state-taking core the program's timer calls. A
+// tick advances the head by one preview interval (`P.preview.tick` = 100 ms), so every line below is given
+// as an explicit number and nothing waits on a clock.
+
+/// S3: once the seconds after a join have played, the review seeks to the NEXT join's run-up — and says
+/// which join it has moved to, in the module's own sentence.
+#[test]
+fn f2_3_s3_the_review_seeks_to_the_next_join_s_run_up() {
+    let cut_ = three_clips();
+    // Started inside join 0's window (50..110): playing on from 70 s.
+    let mut review = cut_review::start(&cut_, 70.0);
+    assert!(review.armed, "a line inside the window means play-on, so the review knows it has been there");
+
+    // Push the line past the window's end (110). One tick's hop is tiny, so nudge the start line up to the
+    // boundary rather than ticking a thousand times: what is under test is the reaction to a line that has
+    // left the window, not the size of the hop.
+    let outcome = naivepost::ui::cut_review_play::step(&cut_, &mut review, 109.95);
+    let Window { from, .. } = cut_review::window(&cut_.segs, 1);
+    match outcome {
+        naivepost::ui::cut_review_play::Outcome::SeekTo { to, status } => {
+            assert_eq!(to, from, "the seek lands on join 1's run-up, clamped to the clips");
+            assert_eq!(status, cut_review::reviewing_status(&cut_, 1), "and names join 2 of 2");
+            assert_eq!(review.join, 1, "the review itself moved on");
+        }
+        other => panic!("past a join's window the review must seek, got {other:?}"),
+    }
+}
+
+/// S4: after the last join has been heard the review is over — the caller pauses and prints `reviewed_all`.
+#[test]
+fn f2_3_s4_after_the_last_join_the_review_pauses_and_says_reviewed_all() {
+    let cut_ = three_clips();
+    let mut review = cut_review::start(&cut_, 70.0);
+    // Past the LAST window (join 1 spans 150..210): the second seam is done being heard.
+    let outcome = naivepost::ui::cut_review_play::step(&cut_, &mut review, 209.95);
+    match outcome {
+        naivepost::ui::cut_review_play::Outcome::Finished { status } => {
+            assert_eq!(status, cut_review::reviewed_all(&cut_), "\"reviewed all 2 cuts\", in its own words");
+        }
+        other => panic!("past the last join the review must finish, got {other:?}"),
+    }
+}
+
+/// S5: a line found BEFORE a window the review had already been inside is somebody's hand on the timeline,
+/// and the review is over. A line seen only before it was ever inside is the review's OWN seek — the player
+/// answers the old position for a tick or two after a flushing seek — and waiting is the right answer.
+#[test]
+fn f2_3_s5_a_hand_on_the_line_after_the_review_was_inside_the_window_ends_it() {
+    let cut_ = three_clips();
+
+    // Armed first: the line is inside join 0's window, so the review has demonstrably been there.
+    let mut review = cut_review::start(&cut_, 70.0);
+    assert!(matches!(
+        naivepost::ui::cut_review_play::step(&cut_, &mut review, 70.0),
+        naivepost::ui::cut_review_play::Outcome::Stay
+    ));
+    // Now the same line comes back EARLIER than the window: that is a hand, not a seek.
+    match naivepost::ui::cut_review_play::step(&cut_, &mut review, 20.0) {
+        naivepost::ui::cut_review_play::Outcome::LineMoved { status } => {
+            assert_eq!(status, cut_review::LINE_MOVED, "with the spec's own sentence");
+        }
+        other => panic!("a line moved back after being inside the window ends the review, got {other:?}"),
+    }
+
+    // The distinction pinned: never having been inside the window, a short line is the seek landing late.
+    let mut fresh = cut_review::start(&cut_, 20.0);
+    assert!(!fresh.armed, "a line short of the window starts unarmed \u{2014} the seek has not landed");
+    assert!(
+        matches!(
+            naivepost::ui::cut_review_play::step(&cut_, &mut fresh, 20.0),
+            naivepost::ui::cut_review_play::Outcome::Stay
+        ),
+        "so the review waits instead of declaring the person changed their mind"
+    );
+}

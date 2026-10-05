@@ -2673,6 +2673,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     cut_play_leg::start_cut_preview_tick(&window, Rc::new(CutPreviewSlot(window.clone())));
     // F2.1 S3/S4: ▶'s own tick on the same cadence — no-ops until the recording preview is playing.
     crate::ui::cut_record_tick::start(Rc::new(window.clone()));
+    // F2.3 S3/S4/S5: ▶✂✂'s tick, which feeds the line back into `cut_review::tick` so a review actually
+    // advances from join to join. No-ops until a review is running.
+    crate::ui::cut_review_play::start(Rc::new(window.clone()));
     // F2.3: this window's cut slot is registered here for the same reason the player slot is — after
     // `set_content`, so the button being wired is the one inside the realized tree. Seeded from the
     // project's own `cut/cut.json` when it has one, because that file IS the cut (§3): the strip paints
@@ -2710,6 +2713,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     if let Some(review_) = review_cuts_button(&window) {
         wire_review_cuts(&review_, &window);
     }
+    // F2.3 S1 (and F2.2 S1): the cut slot above is filled only AFTER the Cut page's first refresh ran, so
+    // both skipping buttons have their grey asked once more here — otherwise a project opened with one clip
+    // would show them live until the first drag, which is a button lying about the state. The pairing lives
+    // in the page half, so this file grows by nothing of its own beyond the call.
+    crate::ui::cut_cut_play::paint_both_skipping_buttons(&window);
     // F3.9's ✐ Captions is wired where it is BUILT -- in the run-bar row above, next to the other jobs -- and
     // deliberately NOT appended into `cut-toolbar`: §05 #1-screen asserts that bar holds exactly the six
     // groups `cut_screen::TOOLBAR_GROUPS` declares, in that order, and F3.9 adds no §1 item to any of them.
@@ -4640,6 +4648,8 @@ fn refresh_verb_buttons(window: &adw::ApplicationWindow) {
     }
     // F2.2 S1: ▶✂ greys with no clips, so every write that adds or removes one re-checks it here too.
     crate::ui::cut_cut_play::paint(window);
+    // F2.3 S1: and the same for ▶✂✂, which additionally wears ⏸ only while a review is the running preview.
+    crate::ui::cut_review_play::paint(window);
 }
 
 /// F2.7 S3: write the band into the readout and set the cross's sensitivity. The readout IS the band's
@@ -7426,8 +7436,9 @@ pub(crate) fn newest_review_cut() -> cut::Cut {
 }
 
 /// The seam F2.3's ▶✂✂ calls: [`cut_review::pressed`] decides whether the press starts the review from
-/// the red line, refuses for want of a join, or pauses-and-ends a running one; this forwards it and
-/// paints only what the answer says. Every sentence comes from `cut_review` itself.
+/// the red line, refuses for want of a join, or pauses-and-ends a running one; this forwards it and hands
+/// the answer to [`cut_review_play::answer_press`], which owns what each arm does to the page. Every
+/// sentence comes from `cut_review` itself.
 pub fn press_review_cuts(window: &adw::ApplicationWindow, cut_: &cut::Cut) -> cut_review::Pressed {
     let Some(status_line) = find_status(window.upcast_ref()) else {
         panic!("the window has no status line");
@@ -7436,18 +7447,7 @@ pub fn press_review_cuts(window: &adw::ApplicationWindow, cut_: &cut::Cut) -> cu
         panic!("the window has no preview player");
     };
     let pressed = cut_review::pressed(&mut player.borrow_mut(), cut_);
-    match &pressed {
-        // S4: the status names which join out of how many is being heard. The review IS the cut preview with
-        // one more hand on the line, so its press owes the same running player ▶✂'s press starts.
-        cut_review::Pressed::Started { status, .. } => {
-            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
-            status_line.set_text(status)
-        }
-        // S5: pausing ends the review, and says so with the module's own short line.
-        cut_review::Pressed::PausedAndEnded { status } => status_line.set_text(*status),
-        // S1: fewer than two clips, in `refused`'s own words.
-        cut_review::Pressed::Refused(reason) => status_line.set_text(reason),
-    }
+    crate::ui::cut_review_play::answer_press(window, &status_line, &pressed, cut_);
     pressed
 }
 

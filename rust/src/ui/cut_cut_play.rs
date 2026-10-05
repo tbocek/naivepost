@@ -29,6 +29,14 @@ pub fn paint(window: &adw::ApplicationWindow) {
     button.set_label(if ours_running { PAUSE_LABEL } else { PLAY_LABEL });
 }
 
+/// Paint BOTH skipping buttons — ▶✂ and ▶✂✂ — from this window's cut. They read the same cut slot, and the
+/// slot is only filled after the page's first refresh, so the pair is repainted together from one door; the
+/// review's own rules stay in [`crate::ui::cut_review_play`].
+pub fn paint_both_skipping_buttons(window: &adw::ApplicationWindow) {
+    paint(window);
+    crate::ui::cut_review_play::paint(window);
+}
+
 /// Preroll the spare at `at`.
 ///
 /// S5's page doors, as a group: each hands a number to [`crate::cut_play_back`], which owns the processes,
@@ -94,8 +102,14 @@ pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64) {
 /// out. A player that will not start is logged and answered `false`; the tick's arithmetic and every other
 /// preview rule are unaffected, which is the "carry on elsewhere" half of §0 (F2.1's cue door says the same).
 pub fn cue_running(window: &adw::ApplicationWindow, at: f64) -> bool {
-    let files = ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now());
-    match crate::cut_play_back::cue_clips(&files, at, &|line| log_line(line)) {
+    cue_files(&ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now()), at)
+}
+
+/// The same cue with the footage already named. Split out because a test can name two files it wrote itself,
+/// while `files_for` needs a real session folder under the process cwd — and this binary builds its window
+/// from the fixture elsewhere, so the run list resolves to nothing there.
+pub fn cue_files(files: &[String], at: f64) -> bool {
+    match crate::cut_play_back::cue_clips(files, at, &|line| log_line(line)) {
         Ok(_) => true,
         Err(why) => {
             log_line(&crate::preview::playback_failure("Cut", &why));

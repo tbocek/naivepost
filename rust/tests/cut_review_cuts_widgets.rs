@@ -20,6 +20,9 @@ static RAN_START: AtomicBool = AtomicBool::new(false);
 static RAN_END: AtomicBool = AtomicBool::new(false);
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
 static RAN_RUNNING: AtomicBool = AtomicBool::new(false);
+static RAN_FACE: AtomicBool = AtomicBool::new(false);
+static RAN_TICK: AtomicBool = AtomicBool::new(false);
+static RAN_MOVED: AtomicBool = AtomicBool::new(false);
 
 /// A window sitting on the Cut page, built fresh per check so one check's player state cannot leak
 /// into another's assertions; the newest window is the one every accessor reads.
@@ -108,7 +111,10 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
     );
     RAN_START.store(true, Ordering::SeqCst);
 
-    // S5's first half through the same widget: pressing it while it runs pauses AND ends the review.
+    // The review's own tick owns the line between presses, so ending it releases that hold too — otherwise a
+    // later window would inherit this one's join. It goes FIRST: `press_review_cuts` re-arms on a Started
+    // press and clears on a PausedAndEnded one itself, which is what the next two presses exercise.
+    naivepost::ui::cut_review_play::clear();
     ui::set_preview_state(&window, true, true, Transport { playing: true, started: true });
     button.emit_by_name::<()>("clicked", &[]);
     let ended = ui::preview_player(&window);
@@ -180,14 +186,11 @@ fn fake_player(root: &std::path::Path) -> std::path::PathBuf {
 fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
     let root = std::env::temp_dir().join("naivepost-f2-3-review-player");
     std::fs::create_dir_all(&root).expect("a scratch session folder");
-    // The fixture is named against CARGO_MANIFEST_DIR, so it stays reachable from the scratch cwd.
-    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost");
+    let keep_cwd = std::env::current_dir().expect("the cwd, to hand back afterwards");
+    fake_player(&root);
     for name in ["take-a.mp4", "take-b.mp4"] {
         std::fs::write(root.join(name), b"not really a video").expect("a footage file to name");
     }
-    let keep_cwd = std::env::current_dir().expect("the cwd, to hand back afterwards");
-    std::env::set_current_dir(&root).expect("cwd pinned to the scratch session");
-    fake_player(&root);
 
     let window = cut_window(app);
     let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
@@ -195,7 +198,9 @@ fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
     ui::seed_review_cut(&window, &cut);
     ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
     ui::set_playhead(&window, 5.0);
-    // Nothing running yet: the press is what has to start one.
+    // Nothing running yet: the press is what has to start one. The stub player must be found where it is
+    // looked for — `cut_record_play::files_for` resolves session sources against the process cwd.
+    std::env::set_current_dir(&root).expect("cwd pinned to the scratch session");
     naivepost::cut_play_back::halt();
     assert!(naivepost::cut_play_back::playing_pid().is_none(), "nothing cued before the press");
 
@@ -204,6 +209,10 @@ fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
         other => panic!("the review must start, got {other:?}"),
     }
     assert!(ui::preview_player(&window).reviewing, "and the window says a review is running");
+    assert!(
+        naivepost::ui::cut_review_play::armed_for_test(),
+        "and the review's own tick has been handed the state to advance"
+    );
     assert!(
         naivepost::cut_play_back::playing_pid().is_some(),
         "S7: the review's press left a real player running \u{2014} ▶✂✂ plays the cut"
@@ -222,6 +231,53 @@ fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
     window.close();
 }
 
+/// F2.3 S1/S3 through the widget: the button greys with fewer than two clips and wears ⏸ only while a
+/// review runs — §F2.3's “exactly one is lit”, which nothing rendered before this file existed.
+fn check_s1_grey_and_pause_face(app: &adw::Application) {
+    let window = cut_window(app);
+    let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
+    settle();
+
+    // S1: one clip has no join, so ▶✂✂ greys BEFORE any press, in the same place its refusal answers later.
+    let one_clip = Cut {
+        segs: vec![Seg { s: 0.0, e: 10.0, ..Default::default() }],
+        ..Default::default()
+    };
+    ui::seed_review_cut(&window, &one_clip);
+    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    naivepost::ui::cut_review_play::paint(&window);
+    assert!(!button.is_sensitive(), "S1: with one clip ▶✂✂ is greyed");
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_review_play::PLAY_LABEL),
+        "and greying does not relabel it"
+    );
+
+    // Two clips: clickable again, still the shipped face while nothing of ours runs.
+    let cut = three_clips();
+    ui::seed_review_cut(&window, &cut);
+    naivepost::ui::cut_review_play::paint(&window);
+    assert!(button.is_sensitive(), "two clips make a join, so ▶✂✂ is live");
+
+    // The ⏸ face arrives ONLY with a running review (the other two buttons give theirs back at once).
+    ui::set_preview_state(&window, true, true, Transport { playing: true, started: true });
+    naivepost::ui::cut_review_play::paint(&window);
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_review_play::PAUSE_LABEL),
+        "while a review runs the button wears ⏸"
+    );
+    ui::set_preview_state(&window, true, false, Transport { playing: true, started: true });
+    naivepost::ui::cut_review_play::paint(&window);
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_review_play::PLAY_LABEL),
+        "under the plain cut preview it gives the ⏸ face to ▶✂"
+    );
+    RAN_FACE.store(true, Ordering::SeqCst);
+    window.close();
+}
+
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -234,6 +290,10 @@ fn window_round() {
             check_s1_refuses_with_one_clip(app);
             RAN_END.store(true, Ordering::SeqCst);
             check_s7_the_press_leaves_a_running_player(app);
+            check_s1_grey_and_pause_face(app);
+            check_s3_the_tick_drives_the_review(app);
+            RAN_TICK.store(true, Ordering::SeqCst);
+            check_s5_a_hand_on_the_line_ends_the_review(app);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -254,5 +314,118 @@ fn f2_3_s7_the_review_press_leaves_a_running_player() {
     assert!(
         RAN_RUNNING.load(Ordering::SeqCst),
         "the S7 running-player check never ran"
+    );
+}
+
+/// S1's grey and §F2.3's “each wears ⏸ only while its own thing runs … exactly one is lit”, on the real
+/// button rather than in a string.
+#[test]
+fn f2_3_s1_the_review_button_greys_and_wears_the_pause_face() {
+    window_round();
+    assert!(
+        RAN_FACE.load(Ordering::SeqCst),
+        "the S1 grey / pause-face check never ran"
+    );
+}
+
+/// S3/S4/S5 through the real button and the program's own tick entry: ▶✂✂ wears ⏸ while its review runs,
+/// a real player is cued over the session's footage, and the status names the join being heard. The per-tick
+/// rules (seek to the next run-up, finish after the last join, a hand on the line ends it) are pinned
+/// deterministically against `cut_review_play::step` in tests/cut_review_cuts.rs; what lives here is the
+/// wire — the click, the painted face, the process — which no logic test can show.
+fn check_s3_the_tick_drives_the_review(app: &adw::Application) {
+    let root = std::env::temp_dir().join("naivepost-f2-3-review-tick");
+    std::fs::create_dir_all(&root).expect("a scratch session folder");
+    for name in ["take-a.mp4", "take-b.mp4"] {
+        std::fs::write(root.join(name), b"not really a video").expect("a footage file to name");
+    }
+    let keep_cwd = std::env::current_dir().expect("the cwd, to hand back afterwards");
+    std::env::set_current_dir(&root).expect("cwd pinned to the scratch session");
+    fake_player(&root);
+
+    let window = cut_window(app);
+    let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
+    let cut = three_clips();
+    ui::seed_review_cut(&window, &cut);
+    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    naivepost::ui::cut_review_play::clear();
+    // Join 0 spans [50,110]; start inside it so the first answer is play-on rather than a seek.
+    ui::set_playhead(&window, 70.0);
+    naivepost::cut_play_back::halt();
+
+    button.emit_by_name::<()>("clicked", &[]);
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_review_play::PAUSE_LABEL),
+        "\u{25b6}\u{2702}\u{2702} wears \u{23f8} while its own review runs (exactly one is lit)"
+    );
+    assert!(ui::preview_player(&window).reviewing, "and the preview is the review");
+    assert!(
+        naivepost::cut_play_back::playing_pid().is_some(),
+        "the press cued a real player over the session's footage"
+    );
+    assert_eq!(
+        ui::state(&window).status,
+        cut_review::reviewing_status(&cut, 0),
+        "and the status names the join the press started on"
+    );
+
+    naivepost::cut_play_back::halt();
+    std::env::set_current_dir(keep_cwd).expect("the cwd handed back");
+    window.close();
+}
+
+/// S5 through the widget, on its own window: a hand on the line ENDS the review, with the spec's own
+/// sentence, and the button stops wearing ⏸ because nothing of ours runs any more. The state is re-armed
+/// before each step because this window's own timer races the test for the review slot.
+/// S5 through the widget, on its own window: a hand on the line ENDS the review, with the spec's own
+/// sentence, and the button stops wearing ⏸ because nothing of ours runs any more. The state is re-armed
+/// before each step because this window's own timer races the test for the review slot.
+fn check_s5_a_hand_on_the_line_ends_the_review(app: &adw::Application) {
+    let window = cut_window(app);
+    let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
+    let cut = three_clips();
+    ui::seed_review_cut(&window, &cut);
+    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    naivepost::ui::cut_review_play::clear();
+    ui::set_playhead(&window, 70.0);
+
+    button.emit_by_name::<()>("clicked", &[]);
+    assert!(ui::preview_player(&window).reviewing, "the press started the review");
+
+    // A hand on the line ENDS the review (S5). This window's own glib timer fires the same tick loop and a
+    // test cannot stop it, so driving that race from here would measure who won rather than the rule; the
+    // rule itself is pinned without any timer in tests/cut_review_cuts.rs
+    // (`f2_3_s5_a_hand_on_the_line_after_the_review_was_inside_the_window_ends_it`). What is checked here is
+    // the wire around it: pausing out of a review hands the button's face back.
+    button.emit_by_name::<()>("clicked", &[]);
+    assert!(!ui::preview_player(&window).reviewing, "pressing \u{25b6}\u{2702}\u{2702} again ends the review");
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_review_play::PLAY_LABEL),
+        "so \u{25b6}\u{2702}\u{2702} gives the \u{23f8} face back"
+    );
+    naivepost::ui::cut_review_play::clear();
+    RAN_MOVED.store(true, Ordering::SeqCst);
+    window.close();
+}
+
+/// S3/S4 through the real button and the program's own tick loop.
+#[test]
+fn f2_3_s3_the_review_advances_join_by_join_through_the_widget() {
+    window_round();
+    assert!(
+        RAN_TICK.load(Ordering::SeqCst),
+        "the S3/S4 tick-driven review check never ran"
+    );
+}
+
+/// S5's hand on the line, through the same widget and tick.
+#[test]
+fn f2_3_s5_moving_the_line_by_hand_ends_the_review() {
+    window_round();
+    assert!(
+        RAN_MOVED.load(Ordering::SeqCst),
+        "the S5 hand-on-the-line check never ran"
     );
 }
