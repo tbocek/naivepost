@@ -65,22 +65,21 @@ fn f2_2_s5_the_spare_pipeline_arms_three_seconds_before_the_jump() {
 
     // Inside the lead window: the jump at 20 s gets armed while the line is at 17 s.
     assert_eq!(cut_play_leg::arm_spare(&cut, 17.0), Some(20.0), "armed at exactly the lead");
-    assert_eq!(cut_play_leg::spare_armed(), Some(20.0), "the slot holds what was just armed");
+    assert_eq!(cut_play_leg::peek_spare(), Some(20.0), "the slot holds what was just armed");
 
     // Too far off: nothing opens, so the spare stays free for the stretch actually being played.
     assert_eq!(cut_play_leg::arm_spare(&cut, 10.0), None, "10 s out is outside the lead");
-    assert_eq!(cut_play_leg::spare_armed(), None, "a non-arm clears the slot rather than leaving a stale one");
+    assert_eq!(cut_play_leg::peek_spare(), None, "a non-arm clears the slot rather than leaving a stale one");
 
     // Past the last jump there is nothing to arm either.
     assert_eq!(cut_play_leg::arm_spare(&cut, 25.0), None);
-    cut_play_leg::clear_spare();
-    assert_eq!(cut_play_leg::spare_armed(), None, "clearing releases the pipeline");
+    assert_eq!(cut_play_leg::peek_spare(), None, "clearing releases the pipeline");
 }
 
 #[test]
 fn f2_2_s5_the_frame_answers_still_flat_rate_and_volume() {
     let plain = Seg { s: 0.0, e: 10.0, ..Default::default() };
-    let flat = cut_play_leg::frame(&Cut::default(), &plain, 5.0);
+    let flat = cut_play_leg::frame(&Cut::default(), Some(&plain), 5.0);
     assert!(!flat.still, "no stop laid over the picture: live frames");
     assert_eq!(flat.rate, cut_play::FLAT_RATE, "no rate written plays flat");
     assert!(flat.volume, "volume effects apply");
@@ -97,14 +96,14 @@ fn f2_2_s5_the_frame_answers_still_flat_rate_and_volume() {
         }],
         ..Default::default()
     };
-    let in_stop = cut_play_leg::frame(&stopped, &plain, 4.5);
+    let in_stop = cut_play_leg::frame(&stopped, Some(&plain), 4.5);
     assert!(in_stop.still, "inside the stop's stretch: the still shows");
     assert!(in_stop.volume, "and volume still applies over a still");
-    let before_stop = cut_play_leg::frame(&stopped, &plain, 3.9);
+    let before_stop = cut_play_leg::frame(&stopped, Some(&plain), 3.9);
     assert!(!before_stop.still, "before the stop: the live picture");
 
     let sped = Seg { s: 0.0, e: 10.0, rate: 2.0, ..Default::default() };
-    let fast = cut_play_leg::frame(&Cut::default(), &sped, 5.0);
+    let fast = cut_play_leg::frame(&Cut::default(), Some(&sped), 5.0);
     assert_eq!(fast.rate, 2.0, "its own rate, held steady -- the flat rate, no staircase");
     assert!(fast.volume);
 }

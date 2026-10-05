@@ -4638,6 +4638,8 @@ fn refresh_verb_buttons(window: &adw::ApplicationWindow) {
             .unwrap_or_else(|| cut_verbs::BUTTONS[0].2.to_string());
         button.set_tooltip_text(Some(&tip));
     }
+    // F2.2 S1: ▶✂ greys with no clips, so every write that adds or removes one re-checks it here too.
+    crate::ui::cut_cut_play::paint(window);
 }
 
 /// F2.7 S3: write the band into the readout and set the cross's sensitivity. The readout IS the band's
@@ -5563,7 +5565,7 @@ pub fn preview_player(window: &adw::ApplicationWindow) -> Player {
 
 /// This window's live preview handle — the newest registered player, which is the one this window's
 /// button moves. Shared by every accessor below so they all read and write the same object.
-fn live_player(window: &adw::ApplicationWindow) -> Option<Rc<RefCell<Player>>> {
+pub(crate) fn live_player(window: &adw::ApplicationWindow) -> Option<Rc<RefCell<Player>>> {
     let _ = window;
     PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned())
 }
@@ -7319,12 +7321,24 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
     fn playhead(&self) -> Option<f64> { preview_player(&self.0).playhead }
     fn set_playhead(&self, at: f64) { set_playhead(&self.0, at) }
     fn cut(&self) -> Cut { review_cut_of(&self.0) }
+    fn volume(&self) -> f64 { preview_volume(&self.0) }
+    // S5's six doors forward to `cut_cut_play`, the F2.2 page half: `window.rs` is past its size budget.
+    fn arm_spare_at(&self, at: f64) -> bool { crate::ui::cut_cut_play::preroll_spare(&self.0, at) }
+    fn cross_into_spare(&self) -> bool { crate::ui::cut_cut_play::swap_spare(&self.0) }
+    fn drop_spare(&self) { crate::ui::cut_cut_play::release_spare(); }
+    fn hold_still(&self, hold: bool) -> bool { crate::ui::cut_cut_play::freeze(hold) }
+    fn play_rate(&self, rate: f64, at: f64) -> bool { crate::ui::cut_cut_play::hand_rate(&self.0, rate, at) }
+    fn apply_gain(&self, gain: f64) { crate::ui::cut_cut_play::hand_gain(&self.0, gain); }
     fn say_clock(&self, clock: f64, ended: bool) {
         if let Some(status) = find_status(self.0.upcast_ref()) {
             status.set_text(&cut_play_leg::clock_line(clock, ended));
         }
+        // §D: the ✂ clock carries its own explanation as a tooltip: cut time, total, session second.
+        let len = cut_play_leg::kept_length(&review_cut_of(&self.0));
+        crate::ui::cut_cut_play::set_clock_tooltip(&self.0, clock, len, preview_playhead(&self.0));
     }
 }
+
 
 /// The seam F2.2's ▶✂ calls: [`cut_play::pressed`] decides whether the press switches to the cut,
 /// ends a review or toggles play/pause; this forwards it and paints only what the answer says.
@@ -7363,7 +7377,9 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
             }
         }
         cut_play::Pressed::Refused(line) => status.set_text(line),
-        // S4: the toggle needs no sentence — the button's own face carries it.
+        // S4: the toggle needs no sentence — the button's own face carries it. A pause takes the cut's
+        // processes back with it (the player and the prerolled spare); a resume re-cues through the tick.
+        cut_play::Pressed::Toggled(cut_play::Toggle::Paused) => crate::ui::cut_cut_play::pause_media(),
         cut_play::Pressed::Toggled(_) => {}
     }
     pressed
@@ -7379,6 +7395,8 @@ fn wire_play_cut(button: &gtk::Button, window: &adw::ApplicationWindow) {
         // same cut the page drew, so pressing with an empty stand-in would refuse instead of handing
         // the preview back.
         let _ = press_play_cut(&window, &newest_review_cut());
+        // The button's face and its grey follow the state the press just changed (S1, §D's ⏸ rule).
+        crate::ui::cut_cut_play::paint(&window);
     });
 }
 

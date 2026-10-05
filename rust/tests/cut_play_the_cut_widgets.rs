@@ -16,6 +16,7 @@ use naivepost::{cut_play, ui};
 static RAN_SWITCH: AtomicBool = AtomicBool::new(false);
 static RAN_GREYED: AtomicBool = AtomicBool::new(false);
 static RAN_OTHER_WAYS: AtomicBool = AtomicBool::new(false);
+static RAN_FACE: AtomicBool = AtomicBool::new(false);
 
 fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
@@ -200,6 +201,55 @@ fn check_other_ways_refuse_an_empty_cut(app: &adw::Application) {
     window.close();
 }
 
+/// S4's face, through the real button: ▶✂ wears ⏸ only while OUR preview runs (§D's three-▶ rule), and
+/// goes back to "Play the cut" when it does not. The static snapshot can only ever show the idle face,
+/// so this is where the second one gets looked at.
+fn check_s4_face_follows_the_preview(app: &adw::Application) {
+    let window = cut_window(app);
+    let button = ui::play_cut_button(&window).expect("the Cut page carries play-cut-button");
+    settle();
+
+    // Idle: a recording preview (or nothing) means the shipped label, never the pause face.
+    ui::set_preview_state(&window, false, false, naivepost::run::Transport { playing: true, started: true });
+    crate::ui::cut_cut_play::paint(&window);
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_cut_play::PLAY_LABEL),
+        "while the recording runs ▶✂ still says Play the cut"
+    );
+    assert!(button.is_sensitive(), "the fixture's cut has clips, so ▶✂ is clickable");
+
+    // Ours and running: the ⏸ face, and only here — the button reads the player rather than remembering.
+    ui::set_preview_state(&window, true, false, naivepost::run::Transport { playing: true, started: true });
+    crate::ui::cut_cut_play::paint(&window);
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_cut_play::PAUSE_LABEL),
+        "while the CUT runs the same button wears ⏸"
+    );
+
+    // A review owns the ⏸ instead (§D: exactly one of the three ▶s wears it).
+    ui::set_preview_state(&window, true, true, naivepost::run::Transport { playing: true, started: true });
+    crate::ui::cut_cut_play::paint(&window);
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_cut_play::PLAY_LABEL),
+        "under a review ▶✂ gives the ⏸ face to ▶✂✂"
+    );
+
+    // S1: with no clips the button greys, and its label stays the shipped one (grey is not a relabel).
+    ui::seed_review_cut(&window, &Cut::default());
+    ui::set_preview_state(&window, false, false, naivepost::run::Transport { playing: false, started: false });
+    crate::ui::cut_cut_play::paint(&window);
+    assert!(!button.is_sensitive(), "an empty cut greys ▶✂ before any press");
+    assert_eq!(
+        button.label().as_deref(),
+        Some(naivepost::ui::cut_cut_play::PLAY_LABEL),
+        "and greying does not change what the button says"
+    );
+    window.close();
+}
+
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -214,6 +264,8 @@ fn window_round() {
             RAN_GREYED.store(true, Ordering::SeqCst);
             check_other_ways_refuse_an_empty_cut(app);
             RAN_OTHER_WAYS.store(true, Ordering::SeqCst);
+            check_s4_face_follows_the_preview(app);
+            RAN_FACE.store(true, Ordering::SeqCst);
             app.quit();
         });
         let _ = app.run_with_args::<String>(&[]);
@@ -234,5 +286,9 @@ fn f2_2_s2_play_cut_button_switches_through_the_widget() {
     assert!(
         RAN_OTHER_WAYS.load(Ordering::SeqCst),
         "the S2 other-ways-in refusal check never ran"
+    );
+    assert!(
+        RAN_FACE.load(Ordering::SeqCst),
+        "the S4 face check never ran"
     );
 }

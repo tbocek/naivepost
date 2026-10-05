@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use crate::{
     cut::{Cut, Seg},
-    cut_play,
+    cut_hear, cut_play,
 };
 
 /// One tick of the cut preview's line: where the head is, what the clock shows, whether to pause.
@@ -27,6 +27,11 @@ pub struct Tick {
     pub clock: f64,
     /// Past the last clip: the caller pauses ("past the last clip → pause").
     pub ended: bool,
+    /// The second armed for the next jump before this tick moved, so the caller can tell a jump the spare
+    /// was waiting for from one it was not. Read BEFORE the tick re-armed the slot.
+    pub armed_before: Option<f64>,
+    /// Whether this tick's move was a jump across a removed stretch.
+    pub jumped: bool,
 }
 
 /// S5: advance the preview one tick over the cut's material.
@@ -37,11 +42,16 @@ pub struct Tick {
 /// kept material (only reachable on `ended`), so the readout never goes blank mid-pause.
 pub fn tick(cut: &Cut, from: f64, elapsed_ms: u64) -> Tick {
     let elapsed = elapsed_ms as f64 / 1000.0;
-    match cut_play::advance(&cut.segs, from, elapsed) {
+    // Read BEFORE the arm below rewrites the slot: this is the second the spare was holding on the way in.
+    let armed_before = peek_spare();
+    let moved = cut_play::advance(&cut.segs, from, elapsed);
+    match moved {
         cut_play::At::Kept { t } | cut_play::At::JumpTo { t } => Tick {
             head: t,
             clock: cut_play::cut_time(&cut.segs, t).unwrap_or_else(|| kept_length(cut)),
             ended: false,
+            armed_before,
+            jumped: matches!(moved, cut_play::At::JumpTo { .. }),
         },
         cut_play::At::Ended => {
             // Hold the line on the last kept end rather than wherever the tick overshot to: pausing
@@ -53,6 +63,8 @@ pub fn tick(cut: &Cut, from: f64, elapsed_ms: u64) -> Tick {
                     .or_else(|| cut_play::cut_time(&cut.segs, from))
                     .unwrap_or(kept_length(cut)),
                 ended: true,
+                armed_before,
+                jumped: false,
             }
         }
     }
@@ -64,24 +76,126 @@ pub fn tick(cut: &Cut, from: f64, elapsed_ms: u64) -> Tick {
 /// arm or [`clear_spare`]. One slot per process: the spare is an idle pipeline waiting to be swapped
 /// in, and only one preview plays at a time, so a per-window stack would only let a stale window's
 /// arm survive.
+///
+/// The ARM ITSELF is reported through [`spare_arms_for_test`], the leg's own log of second → outcome, one entry per
+/// call. The process the arm starts belongs to the page (`CutPreviewPage::arm_spare_at`), because only a
+/// page can name the footage files; the leg records that the arm was asked and what the page answered, so
+/// the ORDER of arms across a test's pages is visible here rather than in a counter a test would have to
+/// carry itself.
 pub fn arm_spare(cut: &Cut, t: f64) -> Option<f64> {
     let opened = cut_play::preload_ahead(&cut.segs, t);
     SPARE.with(|slot| *slot.borrow_mut() = opened);
     opened
 }
 
-/// Which second the spare pipeline is holding, if any.
-pub fn spare_armed() -> Option<f64> {
+/// What an arm did, as recorded by [`arm_spare_page`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpareArm {
+    /// The second the spare was opened at; `None` when nothing was worth opening.
+    pub at: Option<f64>,
+    /// Whether the page started a pipeline there. `false` when nothing was opened, or the page refused.
+    pub prerolled: bool,
+    /// Whether this same tick crossed onto the spare, and whether the swap found a process waiting.
+    pub swapped: Option<bool>,
+}
+
+/// Ask for the next jump's spare AND record it: the arm the tick loop uses. See [`arm_spare`] for what the
+/// slot means and [`spare_arms_for_test`] for the log this appends to.
+pub fn arm_spare_page(cut: &Cut, t: f64, page: &dyn CutPreviewPage) -> Option<f64> {
+    let opened = arm_spare(cut, t);
+    // Re-arming the second already held would only rebuild a pipeline that is already sitting on it, so the
+    // page is asked only when the armed second CHANGED.
+    let worth = opened.is_some() && opened != previous_spare();
+    let prerolled = match (worth, opened) {
+        (true, Some(at)) => page.arm_spare_at(at),
+        _ => false,
+    };
+    LAST_ARMED.with(|slot| *slot.borrow_mut() = opened);
+    let swapped = SWAPPED.with(|cell| cell.take());
+    SPARE_ARMS.with(|log| log.borrow_mut().push(SpareArm { at: opened, prerolled, swapped }));
+    opened
+}
+
+/// Note that this tick crossed onto the spare, before the arm entry is written ([`spare_arms_for_test`]).
+pub fn note_spare_swapped(found: bool) {
+    SWAPPED.with(|cell| cell.set(Some(found)));
+}
+
+/// The arms [`arm_spare_page`] has recorded, oldest first — the evidence that a jump was prerolled BEFORE
+/// the line got there, which is the whole point of the spare. The program never reads this log (the arm and
+/// swap paths act on each entry as they are written); it is the outside look a test needs.
+pub fn spare_arms_for_test() -> Vec<SpareArm> {
+    SPARE_ARMS.with(|log| log.borrow().clone())
+}
+
+/// Forget the arm log AND the armed-second memory, so a caller measures only what its own ticks did. A test
+/// door with [`spare_arms_for_test`]; the program's own reset is [`clear_spare`].
+pub fn clear_spare_arms_for_test() {
+    SPARE_ARMS.with(|log| log.borrow_mut().clear());
+    LAST_ARMED.with(|slot| *slot.borrow_mut() = None);
+}
+
+fn previous_spare() -> Option<f64> {
+    LAST_ARMED.with(|slot| *slot.borrow())
+}
+
+/// Which second the spare slot holds, if any — a LOOK, with no side effect (the arm bookkeeping keeps its
+/// own copy in [`previous_spare`]).
+pub fn peek_spare() -> Option<f64> {
     SPARE.with(|slot| *slot.borrow())
 }
 
+/// Whether the head has reached the second the spare was prerolled for — the moment to swap it in. The
+/// armed second is handed in by the caller, read from the tick ([`Tick::armed_before`], the second held on
+/// the way IN, before this tick re-armed for the next jump): `P.eng.preloadToleranceSeconds` is float slack
+/// between two numbers computed from the same cut, not a search radius.
+pub fn reached_spare(armed: Option<f64>, t: f64) -> bool {
+    armed.is_some_and(|armed| (armed - t).abs() <= crate::preview::PRELOAD_TOLERANCE_SECONDS)
+}
+
 /// Release the spare (playback paused, the cut changed, the review took the pipeline instead).
-pub fn clear_spare() {
+///
+/// The page's real process goes with it — a spare left prerolled is a process holding a file and a
+/// pipeline for a jump that will now never happen.
+pub fn clear_spare(page: &dyn CutPreviewPage) {
     SPARE.with(|slot| *slot.borrow_mut() = None);
+    LAST_ARMED.with(|slot| *slot.borrow_mut() = None);
+    page.drop_spare();
+}
+
+/// S5's three "while playing" answers, routed. The page owns the processes and the volume door; the leg
+/// only reads [`frame`] and says which door to knock on, so the ordering lives here and nowhere else.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Routings {
+    /// A stop is under the line: the picture holds its still.
+    pub still: bool,
+    /// The flat rate to hand the player ([`crate::cut_play_back::set_rate`]).
+    pub rate: f64,
+    /// The gain for these seconds — the room's slider × the cut's own volume effects, the same rule F2.5's
+    /// page asks ([`cut_hear::mix_gain`] over [`cut_hear::gain_under`]). A GAIN, in `0..=MAX_GAIN`: the page
+    /// that owns the volume door decides how a gain reaches it, and must not write it back as a slider
+    /// percent (that would move the room's own loudness). See the door on [`CutPreviewPage::apply_gain`].
+    pub gain: f64,
+}
+
+/// S5: what to route for the seconds under the line, in the order one frame asks them.
+pub fn route(cut: &Cut, t: f64, volume: f64) -> Routings {
+    let under = cut_play::visible_seg_at(&cut.segs, t);
+    let frame = frame(cut, under, t);
+    Routings {
+        still: frame.still,
+        rate: frame.rate,
+        gain: cut_hear::mix_gain(volume, cut_hear::gain_under(&cut.fx, t)),
+    }
 }
 
 thread_local! {
     static SPARE: std::cell::RefCell<Option<f64>> = const { std::cell::RefCell::new(None) };
+    /// The second armed last tick, so a re-arm of the same second is recognisable as nothing to do.
+    static LAST_ARMED: std::cell::RefCell<Option<f64>> = const { std::cell::RefCell::new(None) };
+    static SPARE_ARMS: std::cell::RefCell<Vec<SpareArm>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// This tick's swap outcome, set by the loop and folded into the arm entry written just after it.
+    static SWAPPED: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
 /// What the preview should show for one frame while ▶✂ runs: a still or live picture, the flat rate,
@@ -93,12 +207,13 @@ pub struct Frame {
     pub volume: bool,
 }
 
-/// S5: the frame answer for the segment under `t`.
-pub fn frame(cut: &Cut, seg: &Seg, t: f64) -> Frame {
+/// S5: the frame answer for the segment under `t`. `None` from `visible_seg_at` (the line sits in a
+/// removed stretch) means nothing of the cut is playing, so no rate of its own and no still of its own.
+pub fn frame(cut: &Cut, seg: Option<&Seg>, t: f64) -> Frame {
     Frame {
         still: cut_play::shows_a_still(cut, t),
-        rate: cut_play::played_rate(seg),
-        volume: cut_play::volume_applies(seg),
+        rate: seg.map(cut_play::played_rate).unwrap_or(cut_play::FLAT_RATE),
+        volume: seg.map(cut_play::volume_applies).unwrap_or(true),
     }
 }
 
@@ -178,8 +293,32 @@ pub fn start_cut_preview_tick(window: &adw::ApplicationWindow, page: Rc<dyn CutP
             let cut_ = page.cut();
             let step = tick(&cut_, from, crate::preview::TICK_MS);
             page.set_playhead(step.head);
-            arm_spare(&cut_, step.head);
+            // S5, in the order the frame is asked its questions: the swap first (the join must not wait),
+            // then the spare for the NEXT jump, then the three answers for these seconds.
+            let onto_the_spare = step.jumped
+                || reached_spare(step.armed_before, step.head)
+                || reached_spare(peek_spare(), step.head);
+            if onto_the_spare {
+                let found = page.cross_into_spare();
+                note_spare_swapped(found);
+                if found {
+                    clear_spare(&*page);
+                }
+            }
+            arm_spare_page(&cut_, step.head, &*page);
+            let answers = route(&cut_, step.head, page.volume());
+            let released = page.hold_still(answers.still);
+            // Only ask for a rate when the process is not being held on a stop's frame: a frozen player
+            // would be replaced by the re-cue and the still would be lost.
+            if changed_rate(answers.rate) && !released {
+                page.play_rate(answers.rate, step.head);
+            }
+            page.apply_gain(answers.gain);
             page.say_clock(step.clock, step.ended);
+            // Past the last clip the preview pauses (S5), so the processes it was holding go back now.
+            if step.ended {
+                clear_spare(&*page);
+            }
             glib::ControlFlow::Continue
         },
     );
@@ -198,6 +337,37 @@ pub trait CutPreviewPage {
     fn cut(&self) -> Cut;
     /// Print the cut's own clock; `ended` adds the pause note ("past the last clip → pause").
     fn say_clock(&self, clock: f64, ended: bool);
+    /// The preview's ONE volume, as a gain — the number `route` multiplies the cut's own by (F2.5 S6).
+    fn volume(&self) -> f64;
+    /// S5: preroll the spare process at `at` — the page names the files (only it can reach the session's
+    /// source list), the leg owns the process. Answers whether a pipeline was opened.
+    fn arm_spare_at(&self, at: f64) -> bool;
+    /// S5: the head landed on the second the spare holds — swap it in rather than rebuilding anything.
+    fn cross_into_spare(&self) -> bool;
+    /// S5: release the spare process (pause, or the cut changed under it).
+    fn drop_spare(&self);
+    /// S5 "stops show their still": freeze or release the running player's frame.
+    fn hold_still(&self, hold: bool) -> bool;
+    /// S5 "speed effects at their flat rate": hand the rate to the player at the head.
+    fn play_rate(&self, rate: f64, at: f64) -> bool;
+    /// S5 "volume effects apply": hand this second's GAIN to the preview's sound. Not a percent, and the
+    /// page must not write it into the slider — the slider belongs to the room (F2.5 S6); the second's own
+    /// gain goes to the player's volume, the way `cut_hear::Mix::gain` is handed about everywhere else.
+    fn apply_gain(&self, gain: f64);
+}
+
+/// The cut's rate for these seconds, as last handed to the player — so a re-cue costs one per rate CHANGE,
+/// not one per tick. Thread-local because each window's tick is the only writer of its own preview.
+fn changed_rate(rate: f64) -> bool {
+    thread_local! {
+        static RATE: std::cell::Cell<f64> = const { std::cell::Cell::new(f64::NAN) };
+    }
+    RATE.with(|cell| {
+        let previous = cell.get();
+        cell.set(rate);
+        // NAN on the first tick, which means "hand it once".
+        (previous - rate).abs() > f64::EPSILON
+    })
 }
 
 /// The status-line sentence the tick writes: the CUT's time, explained as such (S5). Kept here so the
@@ -214,7 +384,7 @@ pub fn clock_line(clock: f64, ended: bool) -> String {
 /// The finished video's length as the sum of visible clips — the clock's ceiling. Matches
 /// [`crate::shell::cut_seconds`] by counting only segs with `e > s`, the same filter
 /// [`cut_play::visible`] applies.
-fn kept_length(cut: &Cut) -> f64 {
+pub(crate) fn kept_length(cut: &Cut) -> f64 {
     cut.segs
         .iter()
         .filter(|seg| seg.e > seg.s)

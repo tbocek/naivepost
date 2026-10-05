@@ -26,6 +26,9 @@ pub mod cut_hear;
 pub mod cut_line;
 pub mod cut_play;
 pub mod cut_play_leg;
+/// F2.2 S5's media leg: the cut preview's own player process and the prerolled spare waiting at the next
+/// jump's second (two `gst-play-1.0` processes, swapped by signal — see the module doc).
+pub mod cut_play_back;
 pub mod cut_review;
 pub mod cut_select;
 pub mod cut_trim;

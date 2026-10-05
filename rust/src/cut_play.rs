@@ -49,6 +49,14 @@ fn visible(seg: &Seg) -> bool {
     seg.e > seg.s
 }
 
+/// The clip the line is on, if it is on one: `None` in a removed stretch, where the cut has nothing
+/// playing and so no rate and no still of its own. Same `visible` filter the clock uses, so the frame
+/// answer and the clock answer describe the same material.
+pub fn visible_seg_at(segs: &[Seg], t: f64) -> Option<&Seg> {
+    segs.iter()
+        .find(|seg| visible(seg) && t >= seg.s && t < seg.e)
+}
+
 /// S2: the first kept second at or after `line`.
 ///
 /// A line parked inside a removed stretch must land on material rather than on nothing, because ▶✂ has

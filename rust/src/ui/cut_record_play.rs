@@ -71,6 +71,9 @@ pub fn after_press(window: &adw::ApplicationWindow, pressed: &Press, runs: &[(f6
     match pressed {
         Press::Playing { from } => {
             let files = files_for(window, runs);
+            // ▶ takes the preview from ▶✂: the cut's own player and spare go first, or two pipelines would
+            // make sound at once (F2.2 S2 hands the pipeline over, it does not share it).
+            crate::cut_play_back::halt();
             // A player that will not start is logged and the transport is left alone: the line still moves
             // and every other preview rule still holds, which is the "carry on elsewhere" half of §0.
             if let Err(why) = play_back::cue(&files, *from, &|line| log_line(line)) {

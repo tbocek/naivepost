@@ -69,6 +69,8 @@ pub mod cut_lane;
 /// F2.1 ▶'s page half: the filmed runs and footage files a press hands the media leg, and the button's face.
 /// Split out of `window.rs`, which is past its size budget.
 pub mod cut_record_play;
+/// F2.2 ▶✂'s page half: the button's grey (S1) and ⏸ face, and the ✂ clock's tooltip.
+pub mod cut_cut_play;
 /// F3.5 ▨ SVG drawing by hand: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_speed_hand;
