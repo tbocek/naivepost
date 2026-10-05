@@ -33,6 +33,7 @@ use crate::ui::cut_folds::{
     fold_badges_box, page_recordings, press_fold_all, push_session_recordings, refresh_fold_badges,
 };
 use crate::ui::cut_cameras::refresh_camera_rows;
+use crate::ui::cut_tracks;
 use crate::ui::save_apply;
 use crate::ui::rescan_apply;
 use crate::ui::cut_cameras::hand_preview_back;
@@ -475,6 +476,19 @@ fn page_box(
         )));
         box_.insert_child_after(&surface_group, Some(&previous));
         previous = surface_group.upcast();
+        // §05-cut#1-screen — the band that draws every §1 mark, with the red playhead on its own layer
+        // above it and the scrollbar under them. `cut_tracks::install` builds, stacks, attaches and packs
+        // all three; it reads this window's state at draw time through `cut_view::band_scene_for`, so no
+        // rule is copied here, and lists Prepare's frames for the thumbnails as the page asks for its
+        // scene. The draw callbacks outlive this call, hence the clone rather than `page_box`'s borrow.
+        let held = window.clone();
+        previous = cut_tracks::install(
+            &box_,
+            &previous,
+            move || crate::ui::cut_view::band_scene_for(&held),
+            session_reads().0,
+        )
+        .upcast();
         box_.insert_child_after(&strip, Some(&previous));
 
         // F2.10 Cameras and hearing — the named row list, right under the strip's ruler, where
@@ -2829,6 +2843,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // no click.
     wire_fold_all(&window);
     refresh_fold_badges(&window);
+    // §1 badge **31**: the bar takes its numbers now the page is in the tree and the session's length
+    // is known; §1's three wheel gestures need their widgets realized to receive anything.
+    repaint_scrollbar(&window);
+    wire_wheel_gestures(&window);
+    crate::ui::cut_view::attach_scrollbar(&window);
     // §07-narrate#1-screen: the Narrate page's controls, wired after `set_content` like every other
     // control in this window, so the widgets being wired are inside the realized tree.
     crate::ui::narrate_page::wire(&window);
@@ -5529,6 +5548,7 @@ pub fn set_playhead(window: &adw::ApplicationWindow, at: f64) {
     if let Some(player) = live_player(window) {
         player.borrow_mut().playhead = Some(at);
     }
+    crate::ui::cut_view::follow_playhead(window, at);
 }
 
 /// Stand the preview in one of its three modes (recording / ✂ cut / ▶✂✂ review), playing or not,
@@ -9199,21 +9219,44 @@ pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     refresh_history_buttons(window);
 }
 
-/// − / + (§1 item 22): one step of the zoom ladder. The floor is where the whole session fits, so
-/// zooming out stops there rather than at a number that would leave the timeline in a corner.
+/// − / + (§1 item 22): one step of the zoom ladder over THIS page's view, its floor where the whole
+/// session fits (`cut_view::floor_pps`) rather than the placeholder strip's constant, so a session of any
+/// length stops at “all of it on screen”.
 pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
-    let pps = preview_pps();
-    let next = if inward {
-        cut_screen::zoom_up(pps, TRACK_STRIP_PPS)
-    } else {
-        cut_screen::zoom_down(pps, TRACK_STRIP_PPS)
-    };
+    let width = crate::ui::cut_view::surface_width(window);
+    let (next, _) = crate::ui::cut_view::zoom_step(
+        inward,
+        &crate::timeline::filmed_runs(&page_recordings()),
+        crate::ui::cut_view::extents(width).0,
+        crate::ui::cut_view::view_px(width),
+    );
     set_preview_pps(next);
+    repaint_scrollbar(window);
     let said = format!("zoom {:.1} px a second", next);
     log_line(&said);
     said
 }
 
+/// Repaint badge **31** and the band beside it from the live view. Lives in `cut_view`, which owns the bar.
+fn repaint_scrollbar(window: &adw::ApplicationWindow) {
+    crate::ui::cut_view::refresh_page_scrollbar(window);
+}
+
+/// §1's three wheel gestures, attached to the widgets they belong to. The ground names live here because
+/// this is where those widgets are named; `cut_view::attach_wheel` does the attaching.
+fn wire_wheel_gestures(window: &adw::ApplicationWindow) {
+    crate::ui::cut_view::attach_wheel(
+        window,
+        &[
+            ("group-transport", cut_screen::WheelOver::Transport),
+            ("preview-panel", cut_screen::WheelOver::Preview),
+            ("track-strip", cut_screen::WheelOver::Tracks),
+        ],
+        |win, frames| {
+            let _ = step_frames_of(win, frames);
+        },
+    );
+}
 thread_local! {
     /// The page's pixels-per-second. Seeded at the placeholder strip's zoom so the toolbar's −/+ start
     /// from where the page actually draws; F2.10/F2.11 move the real tracks onto this same number.

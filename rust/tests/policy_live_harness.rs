@@ -98,8 +98,12 @@ impl FakeLlm {
     }
 
     pub fn next_seen(&self) -> Seen {
+        // 120 s, not the 30 s this started at: alone the request lands in ~10 ms, but a full `just test`
+        // runs 332 binaries and this one's accept loop only gets a thread once the scheduler reaches it,
+        // so under load 30 s was measured expiring on a request that had not been accepted yet. The
+        // assertion is unchanged — the derivation must still really arrive.
         self.received
-            .recv_timeout(Duration::from_secs(30))
+            .recv_timeout(Duration::from_secs(120))
             .expect("the derivation reached the fake server")
     }
 

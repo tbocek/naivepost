@@ -8,6 +8,9 @@ pub mod settings;
 /// F0.1 §S2/§S4 and §2 — the narration autosave timer, the bar's idle pulse and the run line that goes
 /// to the status row. Split out of `window.rs`, which is at its size budget.
 pub mod shell_beats;
+/// §05-cut#1-screen — the Cut page's two drawing areas: the track band that paints every §1 mark, and the
+/// playhead's own layer. Split out of `window.rs`, which is past its size budget.
+pub mod cut_tracks;
 /// F0.4 §S2/§S6 — the driver that feeds [`crate::lucky`]'s chain real outcomes, and the CSS rule that
 /// makes the gears turn. Split out of `window.rs`, which is past its size budget.
 pub mod lucky_run;
@@ -51,6 +54,9 @@ pub mod narrate_page;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_cameras;
+/// §05-cut#1-screen badge **31** and the wheel's three gestures: the band's live zoom, its scroll
+/// position and the geared scrollbar. Split out of `window.rs`, which is past its size budget.
+pub mod cut_view;
 /// F3.5 ▨ SVG drawing by hand: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_speed_hand;
