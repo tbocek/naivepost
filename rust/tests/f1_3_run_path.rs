@@ -374,10 +374,14 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
         .map(|(start, end)| format!("echo \"silence_start: {start}\" >&2\necho \"silence_end: {end}\" >&2\n"))
         .collect();
     let ffmpeg = dir.join("ffmpeg");
+    // The decode's output is made a REAL (silent) wav rather than a copy of the input: the stub has no
+    // audio to decode, and §F1.11's envelope reader parses `voice16k.wav` for real, so placeholder bytes
+    // would stop the row with "not a RIFF/WAVE file" instead of reaching the models.
+    std::fs::write(dir.join("silence.wav"), silent_wav_bytes(20.0)).expect("the stub's silence");
     std::fs::write(
         &ffmpeg,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{dir}/argv.log\"\ncase \"$*\" in\n  *silencedetect*)\n{report}  exit 0\n    ;;\nesac\nlast=''\nfor a in \"$@\"; do last=\"$a\"; done\nfirst=''\nseen=0\npending=0\nfor a in \"$@\"; do\n  if [ \"$a\" = \"-i\" ]; then pending=1; continue; fi\n  if [ \"$pending\" = 1 ]; then pending=0; seen=$((seen+1)); [ \"$seen\" = 1 ] && first=\"$a\"; fi\ndone\nif [ -f \"$first\" ]; then cp \"$first\" \"$last\"; else printf 'STUB-AUDIO' > \"$last\"; fi\n[ -f \"$last\" ]\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{dir}/argv.log\"\ncase \"$*\" in\n  *silencedetect*)\n{report}  exit 0\n    ;;\nesac\nlast=''\nfor a in \"$@\"; do last=\"$a\"; done\nfirst=''\nseen=0\npending=0\nfor a in \"$@\"; do\n  if [ \"$a\" = \"-i\" ]; then pending=1; continue; fi\n  if [ \"$pending\" = 1 ]; then pending=0; seen=$((seen+1)); [ \"$seen\" = 1 ] && first=\"$a\"; fi\ndone\nif [ -f \"{dir}/silence.wav\" ]; then cp \"{dir}/silence.wav\" \"$last\"; elif [ -f \"$first\" ]; then cp \"$first\" \"$last\"; else printf 'STUB-AUDIO' > \"$last\"; fi\n[ -f \"$last\" ]\n",
             dir = dir.display(),
             report = report
         ),
@@ -387,6 +391,26 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
         std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
     }
     dir
+}
+
+/// A minimal mono 16 kHz `pcm_s16le` wav of `seconds` of silence: a real RIFF header and zeroed data.
+fn silent_wav_bytes(seconds: f64) -> Vec<u8> {
+    let data = vec![0u8; (seconds * 16_000.0) as usize * 2];
+    let mut out: Vec<u8> = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&((36 + data.len()) as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // one channel
+    out.extend_from_slice(&16_000u32.to_le_bytes());
+    out.extend_from_slice(&32_000u32.to_le_bytes()); // bytes per second
+    out.extend_from_slice(&2u16.to_le_bytes()); // block align
+    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out.extend_from_slice(&data);
+    out
 }
 
 /// The stub's recorded calls, oldest first, one argv per line.
@@ -924,6 +948,53 @@ fn f1_3_s3_an_existing_words_json_skips_the_asr_request() {
         scene.task_order()
     );
     assert!(log.iter().any(|line| line == ">>> [lecture] ASR already done"), "it said why: {log:?}");
+}
+
+/// §F1.11's producer reached through the ▶ door: a Prepare press leaves `cache/waves/<lane>.wave` behind.
+///
+/// The scene's ffmpeg is a stub (it copies its input to the output), so the decoded `voice16k.wav` holds
+/// placeholder bytes rather than real audio — which is exactly the shape this test wants: the cache must
+/// be written from whatever the decode step produced, and what matters here is that the WALK asked for it,
+/// under the lane key the edge rules will later read it back with, at the rate §01 §6 names. A level
+/// assertion belongs to `f1_11_wave_build.rs`, where the wav comes from the real ffmpeg.
+#[test]
+fn f1_11_s1_a_prepare_press_leaves_a_wave_cache_behind() {
+    let scene = Scene::new("20.0", &[], "");
+    // The ASR is already done, so the walk reaches the envelope call without dialling any model: the
+    // envelope is measured on its own resume rule, not as a side effect of a transcription pass.
+    let tree = scene.tree();
+    requests::write_words(
+        &tree,
+        LANE,
+        &WordsDoc { text: "already here".into(), words: vec![Word { word: "here".into(), start_sample: 1600, end_sample: 3200 }] },
+    )
+    .expect("words.json");
+    // And the decode is already there too (the stub writes it by copying its input), which is the state a
+    // second press finds and the only one the envelope can be folded from.
+    scene.decode();
+
+    assert!(!tree.wave(LANE).exists(), "nothing measured before the press");
+    let log = walk_scene(&scene);
+
+    assert!(
+        log.iter().any(|line| line.starts_with(">>> envelope: measuring lecture")),
+        "the walk announced the measurement: {log:?}"
+    );
+    assert!(tree.wave(LANE).exists(), "the press left a wave cache");
+    let source = scene.root.join("session.naivepost/sources/lecture.wav");
+    let meta = std::fs::metadata(&source).expect("the recording");
+    let mtime = meta
+        .modified()
+        .expect("a time")
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after the epoch")
+        .as_secs() as i64;
+    let read = naivepost::wave::read(&tree, LANE, meta.len() as i64, mtime)
+        .expect("readable")
+        .expect("stamped against this very recording");
+    assert_eq!(read.hz, naivepost::wave_build::PEAK_HZ, "the rate §01 §6 names");
+    assert_eq!(read.chans.len(), 1, "folded from the mono decode");
+    assert!(!read.chans[0].is_empty(), "and it holds buckets");
 }
 
 /// S2: a take under `P.policy.minTakeSeconds` is written up as silence and NO server is asked. The

@@ -186,6 +186,7 @@ pub mod tools;
 pub mod voice_ref;
 pub mod word_list;
 pub mod wave;
+pub mod wave_build;
 pub mod ui;
 
 /// The four pages, in the order the user works through them (spec/00-principles.md §1).

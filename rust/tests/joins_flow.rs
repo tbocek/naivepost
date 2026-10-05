@@ -472,6 +472,115 @@ fn f1_10_s5_a_dropped_run_reaches_the_sound_for_its_edges() {
 }
 
 #[test]
+fn f1_11_s1_a_session_with_a_measured_envelope_moves_the_join_mark() {
+    // The other half of the case above: the recordings ARE on disk and their lane has a cache, so
+    // `session_lanes` hands back a lane, `edges::finder` answers an envelope, and F1.11's sound rules run
+    // for a JOIN mark -- which is what `join_ask::run_seams` now does on every press.
+    let tree = temp_tree("lanes-hit");
+    let words: Vec<Word> = two_takes()
+        .into_iter()
+        .map(|mut word| {
+            // The spelling a session file carries, because `session_lanes` stats exactly this string
+            // (`stat_recording` resolves `project:` inside the project folder).
+            word.source = format!("project:sources/{}.mkv", word.source);
+            word
+        })
+        .collect();
+    // The cache key is the base name without its extension (`lane_key`), which is how every per-recording
+    // folder is keyed -- NOT the stored path, which still carries `project:sources/`.
+    const LANE_A_SUFFIX: &str = "take-a";
+    // Two real files: `session_lanes` stats each one, so they must exist to be lanes at all.
+    let mut stamps: Vec<(String, i64, i64)> = Vec::new();
+    for base in ["take-a.mkv", "take-b.mkv"] {
+        // `stat_recording` resolves a `project:`-prefixed name inside the project folder, which is how a
+        // session file spells its recordings -- so that is the spelling the words carry below.
+        let path = tree.dir().join(format!("sources/{base}"));
+        std::fs::create_dir_all(path.parent().expect("a sources folder")).expect("the folder");
+        std::fs::write(&path, b"recording-bytes").expect("the recording");
+        let meta = std::fs::metadata(&path).expect("stamped");
+        let mtime = meta
+            .modified()
+            .expect("a time")
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("after the epoch")
+            .as_secs() as i64;
+        stamps.push((base.to_string(), meta.len() as i64, mtime));
+    }
+    // take-a's envelope: room 8 everywhere, its speech from 0.5-1.9 s at 120 bytes, and a tail at
+    // 1.90-1.96 of 90 bytes -- still the word (the tail threshold is peak less 44 bytes), and quiet after.
+    // The dropped run starts at 2.0 s but the aligner says the word before it ended at 1.9 s (a late
+    // stamp), so the fence runs 1.9-2.0 and the sound chooses inside it: the cut ends where take-a's own
+    // sound stops, not on the aligner's second.
+    let hz = 200.0;
+    let mut peaks = vec![8u8; (4.0 * hz) as usize];
+    for slot in &mut peaks[(0.5 * hz) as usize..(1.9 * hz) as usize] {
+        *slot = 120;
+    }
+    for slot in &mut peaks[(1.9 * hz) as usize..(1.96 * hz) as usize] {
+        *slot = 90;
+    }
+    // The cache key is what `lane_key` produced from the stored path: read back off the lane rather than
+    // guessed at here, so the test cannot drift from the program's own key.
+    let held_lanes = joins::session_lanes(&tree, &words);
+    let lane_a = held_lanes
+        .iter()
+        .find(|lane| lane.key.ends_with(LANE_A_SUFFIX))
+        .expect("take-a is a lane")
+        .key
+        .clone();
+    let (_, size_a, mtime_a) = &stamps[0];
+    naivepost::wave::write(&tree, &lane_a, &naivepost::wave::Wave { hz, chans: vec![peaks] }, *size_a, *mtime_a)
+        .expect("the cache is written");
+
+    let held = naivepost::edges::load(&tree, &held_lanes);
+    assert_eq!(
+        held_lanes.len(),
+        2,
+        "both recordings are on disk, so both are lanes (a missing stat silently drops a lane)"
+    );
+    assert!(
+        !held.is_empty(),
+        "and at least one of them has a cache to read: {held_lanes:?}"
+    );
+
+    let times: Vec<(f64, f64)> = words.iter().map(|word| (word.start, word.end)).collect();
+    let aligned: Vec<AlignedWord> = words
+        .iter()
+        .map(|word| AlignedWord { word: word.match_word.clone(), s: word.start, e: word.end })
+        .collect();
+    let mut kept = vec![true; words.len()];
+    kept[2] = false; // "three", 2.0-3.0: the join takes it off the end of take-a
+    let mut late = aligned.clone();
+    late[1].e = 1.9; // the aligner heard "two" ending before its nominal second
+
+    // The exact expression `join_ask::run_seams` uses.
+    let (marks, notes) = joins::marks_for(
+        &times,
+        &kept,
+        &late,
+        naivepost::edges::finder(&held),
+        &times,
+    );
+    assert_eq!(marks.len(), 1);
+    assert!(
+        marks[0].s > 1.9 && marks[0].s < 2.0,
+        "the edge came off the word time onto the envelope: {}",
+        marks[0].s
+    );
+    assert_eq!(marks[0].s, 1.96, "followed to where take-a's own sound drops");
+    assert!(
+        notes.iter().any(|n| n.contains("earlier")),
+        "the move is spoken with its seconds: {notes:?}"
+    );
+
+    // And without the cache the same mark sits on the pad instead -- the branch the no-lane case above
+    // pins, shown here over identical words so the difference is the envelope alone.
+    let (bare, bare_notes) = joins::marks_for(&times, &kept, &late, |_| None, &times);
+    assert!(!bare_notes.is_empty(), "the word-fence note still goes out: {bare_notes:?}");
+    assert_ne!(bare[0].s, marks[0].s, "with vs without an envelope are different answers");
+}
+
+#[test]
 fn f1_10_s5_a_lane_with_no_wave_cache_answers_no_envelope() {
     // `session_lanes` keys a lane by the recording's base name and stamps it with the real file. A word
     // list naming recordings that are not on disk therefore yields NO lane, and `edges::finder` over an

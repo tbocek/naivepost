@@ -502,6 +502,12 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
         return Err(format!("{lane}: no decoded audio to transcribe -- {} is not there", source_path.display()));
     }
     let pcm = crate::decode_audio::ensure(&tree, &lane, &source_path, &conf.ffmpeg, log)?;
+    // §F1.11: the words fence a cut's edge and the cached envelope chooses where inside the fence it
+    // falls. Measuring it here, under the lane key `joins::session_lanes` and `hand_edit::session_lanes`
+    // will later ask the cache with, is what makes the sound half of F1.11 run at all — without this call
+    // every live `place_edges` gets `None` and edges land on aligned word times alone. Its failure stops
+    // the row by name rather than being logged and skipped: an unmeasured lane means unmeasured edges.
+    crate::wave_build::ensure(&tree, &lane, &source_path, log)?;
     let duration = probe_duration(&conf.ffmpeg, &pcm, log)?;
     let passage = crate::audio_task::transcribe_source(&tree, &paths, &lane, duration, &language, log)?;
     for line in &passage.logs {

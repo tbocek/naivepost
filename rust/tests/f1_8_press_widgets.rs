@@ -278,8 +278,10 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
         textfmt::write_lines(&rows, &tree.transcript_tsv(lane)).expect("the transcript");
         // The speech row's own resume markers (§S0): with these four files present `transcribe::run`
         // skips every server — the decode (its existence is the marker), the ASR, the aligner and the
-        // diarizer — so the press costs only the vision and fix asks this test is about.
-        std::fs::write(tree.voice16k_wav(lane), b"pcm-bytes").expect("the decoded audio");
+        // diarizer — so the press costs only the vision and fix asks this test is about. The decode is a
+        // REAL (silent) wav: §F1.11 measures the envelope from it for real, and placeholder bytes would
+        // stop the row before the fixer was ever asked.
+        std::fs::write(tree.voice16k_wav(lane), silent_wav_bytes(LINES as f64)).expect("the decoded audio");
         std::fs::write(tree.words_json(lane), words_doc(false).expect("words.json")).expect("the ASR answer");
         std::fs::write(tree.words_aligned_json(lane), words_doc(true).expect("aligned"))
             .expect("the aligner's answer");
@@ -356,6 +358,27 @@ fn f1_8_s7_pressing_play_writes_session_txt_and_offsets() {
     app.run_with_args::<String>(&[]);
 
     assert!(RAN_FILES.load(Ordering::SeqCst), "the file check never ran");
+}
+
+/// A minimal mono 16 kHz `pcm_s16le` wav of `seconds` of silence: what a real decode leaves in
+/// `voice16k.wav`, and what §F1.11's envelope reader needs to find there.
+fn silent_wav_bytes(seconds: f64) -> Vec<u8> {
+    let data = vec![0u8; (seconds * 16_000.0) as usize * 2];
+    let mut out: Vec<u8> = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&((36 + data.len()) as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // one channel
+    out.extend_from_slice(&16_000u32.to_le_bytes());
+    out.extend_from_slice(&32_000u32.to_le_bytes()); // bytes per second
+    out.extend_from_slice(&2u16.to_le_bytes()); // block align
+    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out.extend_from_slice(&data);
+    out
 }
 
 /// The press's own work, read off disk through the same doors `tests/f1_8_fix_session.rs` reads
