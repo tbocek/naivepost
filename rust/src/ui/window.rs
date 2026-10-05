@@ -6521,18 +6521,6 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// Is a red line placed at all?
-pub(crate) fn line_placed() -> bool {
-    INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true)
-}
-
-/// This machine's configured ffmpeg, `""` with no settings home.
-pub(crate) fn configured_ffmpeg() -> String {
-    bench_paths()
-        .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
-        .unwrap_or_default()
-}
-
 // --- F2.12: insert a card, still, video or sound ---------------------------------------------------------
 
 /// The insert form's holder, wherever this window put it. `None` on a page that drew none (Prepare, Narrate,
@@ -7057,8 +7045,8 @@ fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
         button.set_sensitive(copy_live);
     }
     // Paste needs a hand (F2.9 S3); Lane also lives with footage to put on a row of its own (§B).
-    let lane_live = held || crate::ui::cut_lane::footage_source_path(window).is_some();
-    for (name, live) in [("paste-button", held), ("lane-button", lane_live)] {
+    for name in ["paste-button", "lane-button"] {
+        let live = held || (name == "lane-button" && crate::ui::cut_lane::footage_source_path(window).is_some());
         if let Some(button) = line_step_button(window, name) {
             button.set_sensitive(live);
         }

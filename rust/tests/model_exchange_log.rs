@@ -150,6 +150,76 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s10_the_meta_line_names_model_mode_
     assert!(meta.contains("2m39s"), "and the duration: {meta}");
 }
 
+/// §7's send line counts BOTH things that went out — "451.4 kB of text and 0 image(s)" — and every other
+/// check here sends text only, so the image half of that sentence and of "each message with inline images"
+/// was never pinned. `Part::Image` contributes 0 to the byte count (a picture is not text) and 1 to the
+/// image count, wherever in the messages it sits.
+#[test]
+fn sec_03_shell_7_the_model_exchange_log_llm_s11_the_send_line_counts_the_images_that_traveled_with_the_text() {
+    // One message, two pictures: the bytes are the words' alone, the count is both pictures.
+    let mut one = call("Describe", 462_234, "the slide lists four steps");
+    one.messages = vec![Message {
+        role: "user".into(),
+        parts: vec![
+            Part::Text("x".repeat(462_234)),
+            Part::Image("data:image/jpeg;base64,AAAA".into()),
+            Part::Image("data:image/jpeg;base64,BBBB".into()),
+        ],
+    }];
+    assert_eq!(one.sent(), (462_234, 2), "a picture adds no text bytes but one to the count");
+    assert_eq!(
+        exchanges::log_lines(&one)[0],
+        ">>> Describe: 451.4 kB of text and 2 image(s) went to the LLM",
+        "the send line says how many pictures traveled"
+    );
+
+    // Pictures split over TWO messages still count together, and the words add up across them too.
+    let mut split = call("Describe", 100, "described");
+    split.messages = vec![
+        Message {
+            role: "system".into(),
+            parts: vec![Part::Text("y".repeat(1_024))],
+        },
+        Message {
+            role: "user".into(),
+            parts: vec![
+                Part::Text("z".repeat(1_024)),
+                Part::Image("data:image/jpeg;base64,CCCC".into()),
+            ],
+        },
+        Message {
+            role: "user".into(),
+            parts: vec![
+                Part::Image("data:image/jpeg;base64,DDDD".into()),
+                Part::Image("data:image/jpeg;base64,EEEE".into()),
+            ],
+        },
+    ];
+    assert_eq!(split.sent(), (2_048, 3), "every message's words and pictures count, in any order");
+
+    // Text only keeps the SAME wording with a zero — there is no separate sentence for "no pictures".
+    let plain = call("Describe", 512, "said");
+    assert_eq!(plain.sent(), (512, 0));
+    assert_eq!(
+        exchanges::log_lines(&plain)[0],
+        ">>> Describe: 512 B of text and 0 image(s) went to the LLM"
+    );
+
+    // The page half of the same rule: one <img> per picture, in the section for THAT call.
+    let tree = tree("s11-images");
+    let mut page = Page::start(&tree, "0307-142201", "Describe");
+    page.record(&one);
+    assert_eq!(page.flush(), None);
+    let html = fs::read_to_string(page.path()).unwrap();
+    assert!(html.contains("<img src=\"data:image/jpeg;base64,AAAA\">"), "{html}");
+    assert!(html.contains("<img src=\"data:image/jpeg;base64,BBBB\">"), "{html}");
+    assert_eq!(
+        html.matches("<img ").count(),
+        2,
+        "exactly the two pictures this call sent, nothing invented"
+    );
+}
+
 #[test]
 fn sec_03_shell_7_the_model_exchange_log_llm_s3_cut_off_and_empty_reply_are_called_out_in_the_log() {
     let mut cut = call("Cut", 2_048, "half an answer");

@@ -38,9 +38,10 @@ pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
 }
 
 /// Is a line placed at all? `None` (never placed) and `Some(false)` both mean there is nothing to start a
-/// row at — the page has exactly one notion of this, set by `note_place` / `set_line_position`.
+/// row at — the page has exactly one notion of this, set by `note_place` / `set_line_position`, and every
+/// sibling module reads that same cell (`cut_svg`, `cut_speed_hand`, …).
 fn line_is_placed() -> bool {
-    window::line_placed()
+    window::INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true)
 }
 
 /// The red line's second when there is one — the row's start — or `None` when the page has no line yet.
@@ -61,7 +62,11 @@ pub(crate) fn footage_source_path(window: &adw::ApplicationWindow) -> Option<Str
 /// Ask ffprobe for this file's length, through the configured ffmpeg's own ffprobe (§1's "ffprobe from the
 /// same folder"). `Err` carries the sentence to print: named file, named tool, stated reason.
 fn probe_file_seconds(file: &str) -> Result<f64, String> {
-    let configured = window::configured_ffmpeg();
+    // §1's "ffprobe from the same folder": the configured ffmpeg decides where ffprobe lives; `""` means
+    // this machine has no settings home, which the probe reports as its own refusal reason.
+    let configured = crate::settings::from_environment()
+        .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
+        .unwrap_or_default();
     match crate::cut_lanes::probe_duration(&configured, file, &mut |line| window::log_line(line)) {
         Ok(seconds) if seconds > 0.0 => Ok(seconds),
         Ok(_) => Err(crate::cut_lanes::no_probe_status(file, "ffprobe answered 0 seconds")),
