@@ -299,6 +299,8 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // does fit — so no snapshot of the Cut page had ever shown the bar. Deepen the zoom through the
             // toolbar's own + door (the same one a click reaches) until the tape outgrows the view: the bar
             // then appears because the geometry says it must, not because anything was forced visible.
+            // Six steps from 4 px/s lands on 15 px/s (§A's factor 1.25), which is also what §2's floor now
+            // clamps to once − is walked back, so the shot shows the band at a zoom the ladder really stops at.
             for _ in 0..6 {
                 ui::press_zoom(&window, true);
             }

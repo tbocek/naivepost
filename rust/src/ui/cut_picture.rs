@@ -122,21 +122,28 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     // not the working copy a real session writes frames into. Empty in every other case, so a live window
     // still answers from its own recordings.
     let named = preview_recording_base();
-    let base = match named {
-        Some(base) => Some(base),
-        None => recordings
-            .get(row)
-            .or(recordings.first())
-            .map(|recording| recording.base.clone()),
+    let chosen: Option<&timeline::Recording> = match named {
+        // A snapshot names the session by base alone, so find that base among the recordings for its start.
+        Some(base) => recordings.iter().find(|recording| recording.base == base),
+        None => recordings.get(row).or(recordings.first()),
     };
-    let Some(base) = base else {
+    let Some(recording) = chosen else {
         return show_frame(window, None);
     };
+    let base = recording.base.clone();
     let Some(tree) = session_tree(window) else {
         return show_frame(window, None);
     };
     let paths = cut_tracks::frame_paths(&tree, &base);
-    let at = ui::line_position(window).t;
+    // The frames on disk carry the FILE's own stamps, so the line's session second has to be converted
+    // before it can pick one — otherwise a recording that does not start at 0:00, or one the hand slid,
+    // shows a frame from the wrong part of the file (§B's `at(t)`).
+    let at = timeline::local_at(
+        ui::line_position(window).t,
+        recording.start,
+        0.0,
+        timeline::shift_of(&ui::window::newest_review_cut(), &base),
+    );
     let found = cut_tracks::frame_near(&paths, at);
     show_frame(window, found.as_deref())
 }

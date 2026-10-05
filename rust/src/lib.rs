@@ -14,6 +14,9 @@ pub mod captions_ask;
 pub mod produce_translate_ask;
 pub mod cut_captions;
 pub mod cut_copy;
+/// §05-cut#2 — a cut lane built from a source's own metadata: the naming ladder and the ffprobe ask that
+/// gives a footage file a row of its own when nothing was copied.
+pub mod cut_lanes;
 pub mod cut_delete;
 pub mod cut_effect_decisions;
 pub mod hands_off;

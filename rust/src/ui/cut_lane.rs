@@ -1,0 +1,70 @@
+//! §05-cut#2 §B — ⇲ Lane with **nothing in hand**: put a footage FILE on a row of its own.
+//!
+//! §B spells a lane as "a window of a file on a row of its own; built from the source's metadata or
+//! probed". With a copy in hand the seconds come along with it (that half stays in [`crate::cut_copy`] and
+//! `window::press_lane`); with nothing copied there is no hand to read, so the page asks ffprobe how long
+//! the session's footage file is and files that as the row. A probe that cannot answer is refused by name
+//! rather than filed as an empty row (§00-principles: failure is specific and local).
+//!
+//! Split out of `window.rs`, which is past its size budget; every rule about WHICH second and WHICH file
+//! stays with the doors that hold them (`paste_line_opt`, `footage_file`, `newest_review_cut`).
+
+use crate::cut_copy;
+use crate::ui::window;
+
+/// ⇲ Lane with nothing copied: the row starts at the red line, windows the session's footage file, and runs
+/// for what ffprobe says that file is. Returns the sentence for the status line either way.
+pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
+    let Some(at) = paste_line_opt(window) else {
+        return cut_copy::NO_LANE_LINE_YET.to_string();
+    };
+    let Some(file) = footage_source_path(window) else {
+        return "no source is marked as footage \u{2014} Inputs says which files are tape".to_string();
+    };
+    let seconds = match probe_file_seconds(&file) {
+        Ok(seconds) => seconds,
+        Err(said) => {
+            window::log_line(&said);
+            return said;
+        }
+    };
+    let mut cut_ = window::newest_review_cut();
+    let taken: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
+    let lane = crate::cut_lanes::lane_from(&file, at, seconds, &taken);
+    let name = lane.name.clone();
+    cut_.lanes.push(lane);
+    window::record_edit(window, &cut_);
+    cut_copy::lane_status(seconds, 0.0, &name, at)
+}
+
+/// Is a line placed at all? `None` (never placed) and `Some(false)` both mean there is nothing to start a
+/// row at — the page has exactly one notion of this, set by `note_place` / `set_line_position`.
+fn line_is_placed() -> bool {
+    window::line_placed()
+}
+
+/// The red line's second when there is one — the row's start — or `None` when the page has no line yet.
+fn paste_line_opt(window: &adw::ApplicationWindow) -> Option<f64> {
+    line_is_placed().then(|| window::paste_line(window))
+}
+
+/// The session's first footage-marked file, by path: the file ⇲ Lane can put on a row of its own.
+pub(crate) fn footage_source_path(window: &adw::ApplicationWindow) -> Option<String> {
+    window::session_handle(window)
+        .borrow()
+        .sources
+        .iter()
+        .find(|source| source.footage)
+        .map(|source| source.path.clone())
+}
+
+/// Ask ffprobe for this file's length, through the configured ffmpeg's own ffprobe (§1's "ffprobe from the
+/// same folder"). `Err` carries the sentence to print: named file, named tool, stated reason.
+fn probe_file_seconds(file: &str) -> Result<f64, String> {
+    let configured = window::configured_ffmpeg();
+    match crate::cut_lanes::probe_duration(&configured, file, &mut |line| window::log_line(line)) {
+        Ok(seconds) if seconds > 0.0 => Ok(seconds),
+        Ok(_) => Err(crate::cut_lanes::no_probe_status(file, "ffprobe answered 0 seconds")),
+        Err(why) => Err(crate::cut_lanes::no_probe_status(file, &why)),
+    }
+}

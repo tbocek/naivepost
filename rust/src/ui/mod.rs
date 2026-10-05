@@ -58,8 +58,14 @@ mod cut_cameras;
 /// §05-cut#1-screen badge **31** and the wheel's three gestures: the band's live zoom, its scroll
 /// position and the geared scrollbar. Split out of `window.rs`, which is past its size budget.
 pub mod cut_view;
+/// §05-cut#2 — landing a suggestion: the walk-back's answer becomes the cut on screen AND the history's
+/// base in one write. Split out of `window.rs`, which is past its size budget.
+pub mod cut_suggest_land;
 pub mod cut_form_frame;
 pub mod cut_picture;
+/// §05-cut#2 §B — ⇲ Lane with nothing in hand: a footage file on a row of its own, probed. Split out of
+/// `window.rs`, which is past its size budget.
+pub mod cut_lane;
 /// F3.5 ▨ SVG drawing by hand: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_speed_hand;

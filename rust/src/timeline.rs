@@ -238,6 +238,27 @@ pub fn floor_pps(runs: &[(f64, f64)], view_px: f64) -> f64 {
     cut_screen::fit_pps(filmed, view_px)
 }
 
+/// The hand correction stored for one source: §B's `shift` map, 0.0 when that recording has never been
+/// slid. Read here rather than at each call site so "no entry" means the same thing everywhere.
+pub fn shift_of(cut: &Cut, base: &str) -> f64 {
+    cut.shift.get(base).copied().unwrap_or(0.0)
+}
+
+/// §B's `at(t)` — a second on the SESSION clock to a second INSIDE one source: `t − start + off`, with the
+/// hand correction added (`+ shift`, which is what a slid recording means: its material starts elsewhere).
+/// Used by anything asking "what part of this file is playing at session second t".
+pub fn local_at(session_t: f64, start: f64, off: f64, shift: f64) -> f64 {
+    session_t - start + off + shift
+}
+
+/// §B's `sessionAt(local)` — the other half: a second inside one source back onto the session clock,
+/// `start + local − off`, minus the same hand correction. The two are exact inverses, which is what lets a
+/// wave strip, a frame or a caption written in file seconds land where the band draws them however far the
+/// editor slid that recording.
+pub fn session_at(local: f64, start: f64, off: f64, shift: f64) -> f64 {
+    start + local - off - shift
+}
+
 /// Do these two stretches of the timeline share any second? Half-open on the right, so **touching is not
 /// overlapping** — the same reading [`Span::t_at`] gives a press on a seam (§7's `preview and render agree on
 /// half-open ranges`), and the reason a cut pass may join two takes end to end without either being wrong.

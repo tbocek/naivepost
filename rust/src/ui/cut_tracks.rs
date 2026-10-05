@@ -385,7 +385,7 @@ fn draw_dropped_gaps(cr: &cairo::Context, scene: &Scene, rows: Rows) {
 /// Green bar per kept scene (§1's badge 25), the placeholder's colour and borders so F2.8's grips stay
 /// where its tests press them.
 fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows) {
-    let boxes = cut_trim::clip_boxes(&scene.segs, scene.pps);
+    let boxes = clip_boxes_shifted(&scene.segs, &scene.shift, scene.pps);
     for b in &boxes {
         if b.insert {
             continue;
@@ -553,10 +553,43 @@ fn draw_selection(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     }
 }
 
+/// The kept scenes' boxes AT THE HAND CORRECTIONS: a recording that was slid by hand draws its clips
+/// slid too, which is the whole point of §B's `shift` — a coordinate nobody applies is not a correction.
+/// Each scene moves by its own camera's shift through [`timeline::session_at`] (§B's `sessionAt`, with the
+/// file offset at 0 because these are session seconds already), then goes through the same box arithmetic
+/// the press geometry uses, so paint and grab never disagree.
+pub fn clip_boxes_shifted(
+    segs: &[cut::Seg],
+    shift: &std::collections::BTreeMap<String, f64>,
+    pps: f64,
+) -> Vec<cut_trim::Box_> {
+    segs.iter()
+        .enumerate()
+        .map(|(index, seg)| {
+            // A scene belongs to the recording of its own camera row; no entry means nothing was slid.
+            let moved = timeline::session_at(seg.s, 0.0, 0.0, shift_of_camera(shift, seg.cam))
+                .max(0.0)
+                * pps;
+            cut_trim::Box_ {
+                x: moved,
+                w: ((seg.e - seg.s).max(0.0)) * pps,
+                index,
+                insert: seg.is_insert(),
+            }
+        })
+        .collect()
+}
+
+/// The shift of the recording a scene sits on: rows are named `cam<N>` exactly as
+/// [`timeline::kept_footage_recordings`] names them, so a camera number finds its source without a second map.
+fn shift_of_camera(shift: &std::collections::BTreeMap<String, f64>, cam: i32) -> f64 {
+    shift.get(&format!("cam{cam}")).copied().unwrap_or(0.0)
+}
+
 /// Every insert a violet band across every row, hatched when spliced, with a plated mark naming the file.
 fn draw_insert_bands(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     let height = (rows.row_h * scene.row_count.max(1) as f64).max(rows.row_h);
-    let boxes = cut_trim::clip_boxes(&scene.segs, scene.pps);
+    let boxes = clip_boxes_shifted(&scene.segs, &scene.shift, scene.pps);
     for b in boxes.iter().filter(|b| b.insert) {
         fill(cr, INSERT_VIOLET, b.x, rows.pictures, b.w.max(2.0), height, 0.6);
         if scene.segs[b.index].s == scene.segs[b.index].e {

@@ -104,8 +104,39 @@ pub fn floor_pps(view: f64) -> f64 {
     timeline::floor_pps(&timeline::filmed_runs(&cut_folds::page_recordings()), view)
 }
 
+/// The pixels-per-second the page's geometry is drawn at RIGHT NOW: the stored zoom (§2's "zoom 4 px/s at
+/// open"), kept inside §2's own bounds — no shallower than the filmed-length fit of THIS session in THIS
+/// view (`floor_pps`, so − stops where all of it is on screen) and no deeper than [`cut_screen::ZOOM_MAX`]
+/// (240 px/s). Every strip, press and ruler reads this instead of a constant, which is what makes the
+/// stored zoom drive the layout rather than sit beside it. `view` comes from the caller that already knows
+/// its own width; [`live_pps_in`] takes it, because a headless window has no allocation to ask.
+pub fn live_pps(view: f64) -> f64 {
+    pps().clamp(floor_pps(view), cut_screen::ZOOM_MAX)
+}
+
+/// How far the view starts, in pixels: 0 shows the session from its first filmed second.
 pub fn origin() -> f64 {
     ORIGIN.with(|cell| cell.get())
+}
+
+/// The strip's pixels-per-second right now: the stored zoom over this strip's own view (§2). One door, so
+/// the paint, the press geometry and every test read the SAME number the layout was drawn with.
+pub fn strip_pps() -> f64 {
+    live_pps(view_px(f64::from(crate::ui::window::STRIP_WIDTH)))
+}
+
+/// The boxes `track-strip` paints and grabs at the zoom it is drawn at — the same list its own press
+/// geometry uses, so a check reads what the widget used rather than recomputing it elsewhere.
+pub fn strip_clip_boxes_for_test() -> Vec<crate::cut_trim::Box_> {
+    crate::cut_trim::clip_boxes(&crate::ui::window::newest_review_cut().segs, strip_pps())
+}
+
+/// The kept scenes as the REAL band draws them, hand corrections applied (§B's `shift`) — what `cut_tracks`
+/// paints its green bars from, so a check reads exactly that geometry. Test-only reader, hence the name.
+pub fn band_clip_boxes_for_test(window: &adw::ApplicationWindow) -> Vec<crate::cut_trim::Box_> {
+    let _ = window;
+    let cut_ = crate::ui::window::newest_review_cut();
+    crate::ui::cut_tracks::clip_boxes_shifted(&cut_.segs, &cut_.shift, pps())
 }
 
 /// How far the timeline reaches: the gutter plus every filmed second at the current zoom. Dropped
@@ -382,6 +413,13 @@ fn bar_width(bar: &gtk::Scrollbar) -> f64 {
     } else {
         BAR_WIDTH.with(|cell| cell.get())
     }
+}
+
+/// The width the thumb gear of the LAST repaint used — `bar_width`'s answer read without a widget in hand,
+/// so a check can compare its own numbers against the same length the painter did (a headless bar reports
+/// 0 for its allocation, and another window's refresh may have been the last one to write it).
+pub fn gear_px_for_test() -> f64 {
+    BAR_WIDTH.with(|cell| cell.get())
 }
 
 /// The scrollbar's `value-changed` wire (§A: the bar scrolls the band). A `Scrollbar` is not a `Range` in

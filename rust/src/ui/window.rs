@@ -2855,6 +2855,14 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     crate::ui::cut_view::attach_scrollbar(&window);
     cut_form_frame::wire_close(&window);
     cut_picture::wire_click(&window);
+    // §2: land a suggestion — its cut AND the new base — through the page's own doors.
+    crate::ui::cut_suggest_land::install(newest_review_cut, |window, landed| {
+        publish_cut(landed);
+        // note_change before suggested: Revert then keeps the model's work and drops only hand edits after it.
+        cut_history(window).borrow_mut().note_change(landed);
+        cut_history(window).borrow_mut().suggested(landed);
+        refresh_history_buttons(window);
+    });
     // §07-narrate#1-screen: the Narrate page's controls, wired after `set_content` like every other
     // control in this window, so the widgets being wired are inside the realized tree.
     crate::ui::narrate_page::wire(&window);
@@ -6011,6 +6019,8 @@ pub fn delete_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::Eve
 /// hand travels means the same number of seconds on both strips.
 pub const TRACK_STRIP_PPS: f64 = cut_screen::ZOOM_AT_OPEN;
 
+pub use crate::ui::cut_view::{band_clip_boxes_for_test, strip_clip_boxes_for_test, strip_pps};
+
 /// This window's `track-strip` (F2.8), by its stable name.
 pub fn track_strip(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
     find_widget_by_name(window.upcast_ref(), "track-strip")?
@@ -6143,7 +6153,7 @@ pub const TRACK_REC_END: f64 = 3600.0;
 /// Read from the newest review cut so a press and a paint never disagree about where a clip is.
 fn trim_boxes_for_strip() -> Vec<cut_trim::Box_> {
     let cut_ = newest_review_cut();
-    cut_trim::clip_boxes(&cut_.segs, TRACK_STRIP_PPS)
+    cut_trim::clip_boxes(&cut_.segs, strip_pps())
 }
 
 /// F2.8 S1/S2: what a right-press at `press_x` takes. A border grabbed within [`cut_trim::EDGE_GRAB_PX`]
@@ -6211,7 +6221,7 @@ pub fn right_press_took(
     press_y: f64,
 ) -> (Option<String>, Option<String>, bool) {
     let boxes = trim_boxes_for_strip();
-    cut_trim::press_targets(press_y, press_x, &boxes, TRACK_STRIP_PPS, press_band().as_deref())
+    cut_trim::press_targets(press_y, press_x, &boxes, strip_pps(), press_band().as_deref())
 }
 
 /// F2.8 S2: the move door that knows WHERE the press landed. Same rule as [`press_move`], but its
@@ -6322,7 +6332,7 @@ fn press_move_core(
         &cut_.segs,
         0.0,
         TRACK_REC_END,
-        TRACK_STRIP_PPS,
+        strip_pps(),
         &cut_.folds,
         &cut_.shift,
         &sources,
@@ -6483,7 +6493,8 @@ fn source_base(path: &str) -> String {
 /// `Lane::name` keys `Cut::rows` and every scene's `quiet` list.
 pub fn press_lane(window: &adw::ApplicationWindow) -> String {
     let Some(hand) = copy_hand() else {
-        return "nothing is in hand \u{2014} \u{29c9} Copy takes the selection first".to_string();
+        // §B's other half: nothing in hand, so a footage FILE gets the row — see [`crate::ui::cut_lane`].
+        return crate::ui::cut_lane::lane_for_footage_file(window);
     };
     let at = paste_line(window);
     let mut cut_ = newest_review_cut();
@@ -6508,6 +6519,18 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
             cut_copy::lane_status(hand.length, hand.from, &name, at)
         }
     }
+}
+
+/// Is a red line placed at all?
+pub(crate) fn line_placed() -> bool {
+    INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true)
+}
+
+/// This machine's configured ffmpeg, `""` with no settings home.
+pub(crate) fn configured_ffmpeg() -> String {
+    bench_paths()
+        .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
+        .unwrap_or_default()
 }
 
 // --- F2.12: insert a card, still, video or sound ---------------------------------------------------------
@@ -7033,9 +7056,11 @@ fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
     if let Some(button) = line_step_button(window, "copy-button") {
         button.set_sensitive(copy_live);
     }
-    for name in ["paste-button", "lane-button"] {
+    // Paste needs a hand (F2.9 S3); Lane also lives with footage to put on a row of its own (§B).
+    let lane_live = held || crate::ui::cut_lane::footage_source_path(window).is_some();
+    for (name, live) in [("paste-button", held), ("lane-button", lane_live)] {
         if let Some(button) = line_step_button(window, name) {
-            button.set_sensitive(held);
+            button.set_sensitive(live);
         }
     }
 }
@@ -7071,7 +7096,7 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     let _ = cr.fill();
 
     // The ruler row: whole-second ticks with their labels, then the kept bar under them.
-    let ticks = cut_trim::ruler_ticks(TRACK_REC_END, TRACK_STRIP_PPS, RULER_EVERY_SECONDS);
+    let ticks = cut_trim::ruler_ticks(TRACK_REC_END, strip_pps(), RULER_EVERY_SECONDS);
     cr.set_source_rgb(0.45, 0.45, 0.45);
     for (x, _) in &ticks {
         if *x <= w {
@@ -7081,7 +7106,7 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     }
     draw_strip_labels(cr, &ticks, w);
 
-    let boxes = cut_trim::clip_boxes(&cut_.segs, TRACK_STRIP_PPS);
+    let boxes = cut_trim::clip_boxes(&cut_.segs, strip_pps());
     // F2.2 S6: the removed stretches inside filmed material are painted dim BEFORE the kept boxes go
     // on top, so a clip always wins over the dim and only the gaps show it. Dimmed whether or not ▶✂
     // is running: the kept bar already shows only kept material, so the gap IS the removed stretch.
@@ -7090,7 +7115,7 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
         &cut_play_leg::dimmed(&cut_, &crate::timeline::filmed_runs(page_recordings().as_slice())),
         cut_trim::RULER_H,
         cut_trim::BAR_H,
-        TRACK_STRIP_PPS,
+        strip_pps(),
     );
     if boxes.is_empty() {
         cr.select_font_face("Sans", cairo::FontSlant::Normal, gtk::cairo::FontWeight::Normal);
@@ -7165,7 +7190,7 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
     // the pointer is pointing at — so the hand grabs exactly the pixel the eye saw, and no rule about
     // where a border may go lives here: `press_trim_border` asks `cut_trim::clamp_edge` for that.
     trimmer.connect_drag_begin(move |_g, px, _py| {
-        let boxes = cut_trim::clip_boxes(&newest_review_cut().segs, TRACK_STRIP_PPS);
+        let boxes = cut_trim::clip_boxes(&newest_review_cut().segs, strip_pps());
         let taken = cut_trim::border_at(&boxes, px);
         TRIM_DRAGS.with(|cell| {
             *cell.borrow_mut() = taken.map(|(index, border)| TrimDrag {
@@ -7189,7 +7214,7 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
                 return;
             }
             drag.scrubbed_ms = Some(now);
-            press_trim_border(&win_upd, drag.index, drag.border, x / TRACK_STRIP_PPS);
+            press_trim_border(&win_upd, drag.index, drag.border, x / strip_pps());
             *cell.borrow_mut() = Some(drag);
         });
         // The border moved, so the strip has to be repainted or the hand drags something invisible.
@@ -7201,7 +7226,7 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
         // neighbour came within a frame), through the same seam as every tick above.
         let done = TRIM_DRAGS.with(|cell| cell.borrow_mut().take());
         if let Some(drag) = done {
-            press_trim_border(&win_end, drag.index, drag.border, x / TRACK_STRIP_PPS);
+            press_trim_border(&win_end, drag.index, drag.border, x / strip_pps());
         }
         TRIM_DRAGS.with(|cell| *cell.borrow_mut() = None);
         strip_end.queue_draw();
@@ -7241,14 +7266,14 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
         // "...the scene slides ... unless on a border" — the border question is answered first, by the
         // same `border_at` the left button uses, so the two sentences cannot contradict each other.
         if let Some((index, border)) = right_press_takes_border(press_x, x) {
-            press_trim_border(&win, index, border, (press_x + x) / TRACK_STRIP_PPS);
+            press_trim_border(&win, index, border, (press_x + x) / strip_pps());
             if let Some(strip) = track_strip(&win) {
                 strip.queue_draw();
             }
             return;
         }
         // Otherwise the right hand moves: seconds travelled since the press, at the strip's zoom.
-        press_move_at(&win, press_x, press_y, x, x / TRACK_STRIP_PPS);
+        press_move_at(&win, press_x, press_y, x, x / strip_pps());
     });
     strip.add_controller(mover.clone());
     MOVE_GESTURES.with(|cell| *cell.borrow_mut() = Some(mover));

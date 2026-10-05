@@ -92,6 +92,64 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s2_two_log_lines_per_call_with_size
     );
 }
 
+/// §7's meta line is exactly three things: the model, which mode it ran in, and how long it took. Each of
+/// the other checks reads a fragment out of the page; this one pins the line whole, in that order, and what
+/// replaces the duration when there isn't one (still waiting, or the call failed).
+#[test]
+fn sec_03_shell_7_the_model_exchange_log_llm_s10_the_meta_line_names_model_mode_and_duration() {
+    // (a) an answered call: model · mode · duration, nothing else.
+    let mut answered = call("Describe", 64, "the slide lists four steps");
+    answered.took_secs = 159;
+    assert_eq!(
+        exchanges::meta_line(&answered, true),
+        "qwen3-32b \u{b7} thinking \u{b7} 2m39s"
+    );
+
+    // (b) the mode is the one the call actually ran in — `execute` prints as execute.
+    let mut executed = call("Cut", 64, "[{\"s\":1}]");
+    executed.mode = Mode::Execute;
+    executed.took_secs = 45;
+    assert_eq!(exchanges::meta_line(&executed, true), "qwen3-32b \u{b7} execute \u{b7} 45s");
+    let thinker = call("Describe", 64, "described");
+    assert!(
+        exchanges::meta_line(&thinker, true).contains("thinking"),
+        "a thinking call says so on its own line: {}",
+        exchanges::meta_line(&thinker, true)
+    );
+
+    // (c) no answer yet: the pending marker stands in for the WHOLE duration field — a `0s` would read as
+    // a call that came back instantly rather than one still running.
+    let waiting = exchanges::meta_line(&call("Describe", 64, ""), false);
+    assert_eq!(
+        waiting,
+        format!("qwen3-32b \u{b7} thinking \u{b7} {}", exchanges::REPLY_PENDING),
+        "the pending marker replaces the duration entirely"
+    );
+
+    // (d) a failed call shows its reason where the duration would be: the reason IS the outcome.
+    let mut broken = call("Describe", 64, "");
+    broken.error = Some("no answer from localhost:8731".into());
+    let said = exchanges::meta_line(&broken, true);
+    assert!(said.starts_with("qwen3-32b \u{b7} thinking \u{b7} "), "{said}");
+    assert!(said.contains("no answer from localhost:8731"), "{said}");
+    assert!(!said.contains("0s \u{b7}"), "no fake duration beside a failure: {said}");
+
+    // (e) the same three things together in the page's own `<p class="meta">`, through the recorder rather
+    // than the formatter alone — that paragraph is what a person opens the page to read.
+    let tree = tree("s10-meta");
+    let mut page = Page::start(&tree, "0307-142201", "Describe");
+    page.record(&answered);
+    assert_eq!(page.flush(), None);
+    let html = fs::read_to_string(page.path()).unwrap();
+    let meta = html
+        .lines()
+        .find(|line| line.contains("<p class=\"meta\">"))
+        .expect("the section carries its meta paragraph");
+    assert!(meta.contains("qwen3-32b"), "the model: {meta}");
+    assert!(meta.contains("thinking"), "and the mode: {meta}");
+    assert!(meta.contains("2m39s"), "and the duration: {meta}");
+}
+
 #[test]
 fn sec_03_shell_7_the_model_exchange_log_llm_s3_cut_off_and_empty_reply_are_called_out_in_the_log() {
     let mut cut = call("Cut", 2_048, "half an answer");

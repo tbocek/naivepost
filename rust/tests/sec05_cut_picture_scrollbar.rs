@@ -154,7 +154,9 @@ fn check_the_bar_appears_when_the_session_stops_fitting(app: &adw::Application) 
     // §A's grab rule: "thumb geared at high zoom so one screenful is always 40 px of drag". The gear is a
     // number about the BAR, and `bar_width` falls back to the width the bar was last refreshed with while
     // GTK still reports 0 for an un-laid-out bar — which is exactly the state this headless window is in.
-    let bar_px = f64::from(bar.width()).max(1.0);
+    // So the length the PAINT used is the answer, read through the same door it reads (`gear_px_for_test`), not this
+    // widget's own allocation: one refresh, one width, both sides of every identity below.
+    let bar_px = ui::cut_view::gear_px_for_test();
     assert!(
         (ui::cut_view::thumb_px(total, bar_px) - cut_screen::SCROLLBAR_DRAG_PX).abs() <= 1.0,
         "a {bar_px} px bar gears its thumb to {} px, not {}",
@@ -162,10 +164,11 @@ fn check_the_bar_appears_when_the_session_stops_fitting(app: &adw::Application) 
         cut_screen::SCROLLBAR_DRAG_PX
     );
     // And the adjustment carries that gear as its page size: `paint_scrollbar` sets page = view × fraction,
-    // so the thumb's fraction of the range is the geared fraction, whatever the session's length is.
+    // so the thumb's fraction of the range is the geared fraction, whatever the session's length is. Every
+    // number here comes from the ONE refresh whose adjustment we are reading.
     let fraction = adj.page_size() / adj.upper();
     assert!(
-        (fraction - ui::cut_view::thumb_geared(total, bar_px) * (view / adj.upper())).abs() < 1e-6,
+        (fraction - ui::cut_view::thumb_geared(adj.upper(), bar_px) * (view / adj.upper())).abs() < 1e-6,
         "the bar's page size is the geared slice of the view: {fraction}"
     );
     RAN_SHOWN.store(true, std::sync::atomic::Ordering::SeqCst);

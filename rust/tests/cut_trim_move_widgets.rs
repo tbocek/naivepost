@@ -101,11 +101,11 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
         },
         40.0,
         false,
-        40.0 / ui::TRACK_STRIP_PPS,
+        40.0 / ui::window::strip_pps(),
         &[clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)],
         0.0,
         ui::TRACK_REC_END,
-        ui::TRACK_STRIP_PPS,
+        ui::window::strip_pps(),
         &[],
         &std::collections::BTreeMap::new(),
         &[],
@@ -235,7 +235,7 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
     );
 
     // The pixel the hand aims at: clip 2's END sits at 30 s * TRACK_STRIP_PPS, well inside the reach.
-    let boxes = trim::clip_boxes(&ui::review_cut_segs(&window), ui::TRACK_STRIP_PPS);
+    let boxes = trim::clip_boxes(&ui::review_cut_segs(&window), ui::window::strip_pps());
     let end_px = boxes[1].x + boxes[1].w;
     assert!(
         trim::border_at(&boxes, end_px - 2.0) == Some((1, trim::Border::End)),
@@ -246,7 +246,7 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
     // rule put it. A target past 40 would be clamped onto the neighbour's start and read as no movement
     // at all, which proves nothing about the hand.
     let target = 39.5;
-    let target_px = target * ui::TRACK_STRIP_PPS;
+    let target_px = target * ui::window::strip_pps();
     trimmer.emit_by_name::<()>("drag-begin", &[&end_px, &0.0f64]);
     settle();
     trimmer.emit_by_name::<()>("drag-update", &[&target_px, &0.0f64]);
@@ -279,8 +279,8 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
 
     // S1's plain trim, no join: drag the first clip's end to 5 s. The next clip starts at 10, so nothing
     // comes within a frame and the release says only where the clip now runs.
-    let plain = ui::review_cut_segs(&window)[0].e * ui::TRACK_STRIP_PPS;
-    let plain_to = 5.0 * ui::TRACK_STRIP_PPS;
+    let plain = ui::review_cut_segs(&window)[0].e * ui::window::strip_pps();
+    let plain_to = 5.0 * ui::window::strip_pps();
     trimmer.emit_by_name::<()>("drag-begin", &[&plain, &0.0f64]);
     settle();
     trimmer.emit_by_name::<()>("drag-update", &[&plain_to, &0.0f64]);
@@ -299,7 +299,7 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
     // S3: an unmoved press on that very border is a click — the strip repaints, the cut does not.
     let before_len = ui::review_cut_segs_count(&window);
     let before_end = ui::review_cut_segs(&window)[0].e;
-    let grab_px = ui::review_cut_segs(&window)[0].e * ui::TRACK_STRIP_PPS;
+    let grab_px = ui::review_cut_segs(&window)[0].e * ui::window::strip_pps();
     trimmer.emit_by_name::<()>("drag-begin", &[&grab_px, &0.0f64]);
     settle();
     trimmer.emit_by_name::<()>("drag-end", &[&grab_px, &0.0f64]);
@@ -497,7 +497,7 @@ fn check_the_right_button_on_a_border_trims_it(app: &adw::Application) {
     // Scene 2 runs 40.0 .. 70.0 s => its start edge sits at 40 * TRACK_STRIP_PPS px. Grabbing THAT one
     // rather than scene 1's keeps this check unambiguous: scene 1's start (40 px) and scene 2's start
     // (160 px) are far apart, and nothing else in the fixture has an edge near 160 px.
-    let start_edge_px = 40.0 * ui::TRACK_STRIP_PPS;
+    let start_edge_px = 40.0 * ui::window::strip_pps();
     let grab_x = start_edge_px + 3.0; // well inside the 6 px reach
     let bands = trim::PLACEHOLDER_STRIP_BANDS;
     let bar_y = bands.bar.0 + 1.0;
@@ -512,7 +512,7 @@ fn check_the_right_button_on_a_border_trims_it(app: &adw::Application) {
     // The update carries an OFFSET from the press, so the pointer sits at grab_x + offset. Dragging 12 s
     // along puts it at (grab_x + 48 px)/PPS = 56.0 s; scene 2 ends at 70 s and the recording at
     // TRACK_REC_END, so nothing clamps it and the grabbed border lands exactly where the pointer is.
-    let target_s = (grab_x + 48.0) / ui::TRACK_STRIP_PPS;
+    let target_s = (grab_x + 48.0) / ui::window::strip_pps();
     mover.emit_by_name::<()>("drag-update", &[&48.0f64, &bar_y]);
     settle();
 

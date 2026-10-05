@@ -17,8 +17,8 @@ use crate::layout;
 use crate::startup;
 use crate::ui::cut_cameras::refresh_camera_rows;
 use crate::ui::window::{
-    find_status, find_widget_by_name, newest_review_cut, record_edit,
-    seed_review_cut, TRACK_STRIP_PPS,
+    self as window, find_status, find_widget_by_name, newest_review_cut, record_edit,
+    seed_review_cut,
 };
 
 // --- F2.11: what the SESSION filmed ---------------------------------------------------------------------
@@ -120,11 +120,11 @@ pub fn refresh_fold_badges(window: &adw::ApplicationWindow) {
     // never contain a dropped stretch.
     let recordings = page_recordings();
     let runs = crate::timeline::filmed_runs(&recordings);
-    // The same zoom the placeholder strip runs at (`TRACK_STRIP_PPS`), so a badge's x means the same
-    // seconds on both strips.
+    // The same zoom the strip is drawn at (`strip_pps`), so a badge's x means the same
+    // seconds on both strips, and a zoom step moves the badges with the band instead of leaving them.
     let span = crate::timeline::Span::new(
         crate::timeline::cells(&runs, &cut_.folds),
-        TRACK_STRIP_PPS,
+        window::strip_pps(),
         cut_screen::GUTTER_PX,
     );
     let shown = cut_fold::badges(&cut_.folds, &runs, &cut_.segs, &span);
