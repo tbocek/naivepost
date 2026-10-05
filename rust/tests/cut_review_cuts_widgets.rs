@@ -19,6 +19,7 @@ use common::{fixture_dir};
 static RAN_START: AtomicBool = AtomicBool::new(false);
 static RAN_END: AtomicBool = AtomicBool::new(false);
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
+static RAN_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// A window sitting on the Cut page, built fresh per check so one check's player state cannot leak
 /// into another's assertions; the newest window is the one every accessor reads.
@@ -157,6 +158,70 @@ fn check_s1_refuses_with_one_clip(app: &adw::Application) {
     window.close();
 }
 
+/// The media seam: a stub player the leg can start, so the review's press has a process to cue. Asserted
+/// only through the slot the leg owns (`cut_play_back::playing_pid()`), never through whether this script
+/// dies — this container's `sh` does not act on a trapped `SIGTERM` at all.
+fn fake_player(root: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let script = root.join("review-player.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\ntrap 'kill -0 $$; exit 0' TERM INT\nwhile :; do sleep 0.05; done\n",
+    )
+    .expect("the player stub");
+    std::fs::set_permissions(&script, PermissionsExt::from_mode(0o755)).expect("it runs");
+    std::env::set_var("NAIVEPOST_PLAYER", &script);
+    script
+}
+
+/// S7 ("▶✂✂ plays the cut"): starting a review must leave a RUNNING player behind, not merely flip the
+/// transport flags. Before this the review set `cut_only` and `playing` and nothing cued a process, so the
+/// person heard nothing while the clock ran.
+fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
+    let root = std::env::temp_dir().join("naivepost-f2-3-review-player");
+    std::fs::create_dir_all(&root).expect("a scratch session folder");
+    // The fixture is named against CARGO_MANIFEST_DIR, so it stays reachable from the scratch cwd.
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost");
+    for name in ["take-a.mp4", "take-b.mp4"] {
+        std::fs::write(root.join(name), b"not really a video").expect("a footage file to name");
+    }
+    let keep_cwd = std::env::current_dir().expect("the cwd, to hand back afterwards");
+    std::env::set_current_dir(&root).expect("cwd pinned to the scratch session");
+    fake_player(&root);
+
+    let window = cut_window(app);
+    let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
+    let cut = three_clips();
+    ui::seed_review_cut(&window, &cut);
+    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    ui::set_playhead(&window, 5.0);
+    // Nothing running yet: the press is what has to start one.
+    naivepost::cut_play_back::halt();
+    assert!(naivepost::cut_play_back::playing_pid().is_none(), "nothing cued before the press");
+
+    match ui::press_review_cuts(&window, &cut) {
+        cut_review::Pressed::Started { .. } => {}
+        other => panic!("the review must start, got {other:?}"),
+    }
+    assert!(ui::preview_player(&window).reviewing, "and the window says a review is running");
+    assert!(
+        naivepost::cut_play_back::playing_pid().is_some(),
+        "S7: the review's press left a real player running \u{2014} ▶✂✂ plays the cut"
+    );
+
+    // The same button pressed again is the pause (F2.3 S5), and that arm deliberately cues nothing: it
+    // ENDS the review rather than owning the player, which hands it to ▶✂'s own pause door. So the slot
+    // still holds this press's process — what the review owes is a RUNNING player, not its teardown.
+    button.emit_by_name::<()>("clicked", &[]);
+    assert!(!ui::preview_player(&window).reviewing, "and the second press ends the review");
+    naivepost::cut_play_back::halt();
+    RAN_RUNNING.store(true, Ordering::SeqCst);
+    // Hand the original cwd back: this binary's other checks load the fixture by a manifest-relative
+    // path, and a moved cwd would make `project::load` fail inside their own `expect`, which aborts.
+    std::env::set_current_dir(keep_cwd).expect("the cwd handed back");
+    window.close();
+}
+
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -168,6 +233,7 @@ fn window_round() {
             check_s2_starts_through_the_widget(app);
             check_s1_refuses_with_one_clip(app);
             RAN_END.store(true, Ordering::SeqCst);
+            check_s7_the_press_leaves_a_running_player(app);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -180,4 +246,13 @@ fn f2_3_s2_review_button_starts_the_review_through_the_widget() {
     assert!(RAN_START.load(Ordering::SeqCst), "the S2 start-through-the-click check never ran");
     assert!(RAN_END.load(Ordering::SeqCst), "the S5 end / S1 refusal checks never ran");
     assert!(RAN_REFUSED.load(Ordering::SeqCst) || RAN_END.load(Ordering::SeqCst));
+}
+
+#[test]
+fn f2_3_s7_the_review_press_leaves_a_running_player() {
+    window_round();
+    assert!(
+        RAN_RUNNING.load(Ordering::SeqCst),
+        "the S7 running-player check never ran"
+    );
 }

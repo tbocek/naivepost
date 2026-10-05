@@ -374,6 +374,40 @@ impl cut_play_leg::CutPreviewPage for WatchPage {
     fn apply_gain(&self, _gain: f64) {}
 }
 
+/// S5's press cue on a real process: the press starts the cut preview's RUNNING player, and a cue replaces
+/// the one before it instead of leaving two making sound. `cue_running` is the page door ▶✂'s press goes
+/// through — without it nothing in the program ever calls `cut_play_back::cue_clips`, so the tick would run its
+/// arithmetic and arm a spare while no process played the first clip.
+fn s5_the_press_cues_a_running_process(_root: &Path) {
+    let both = files("take-a.mp4", "take-b.mp4");
+    naivepost::cut_play_back::halt();
+    assert_eq!(naivepost::cut_play_back::playing_pid(), None, "nothing running to start from");
+
+    // The leg half: cueing at the second the press snapped to leaves ONE process, running.
+    let first = naivepost::cut_play_back::cue_clips(&both, 20.0, &|_| {}).expect("the press's cue starts one");
+    assert_eq!(naivepost::cut_play_back::playing_pid(), Some(first));
+    assert!(wait_until(|| !naivepost::cut_play_back::is_stopped_for_test(first)), "and it runs, unlike a spare");
+    assert_eq!(
+        naivepost::cut_play_back::spare_pid_for_test(),
+        None,
+        "a cue never leaves a spare over \u{2014} that is an arm, not a press"
+    );
+
+    // A second press (a resume after a pause) replaces it: the old one is signalled TERM and a NEW process
+    // takes the slot. What is asserted here is the SLOT's truth — one player, not two — because whether the
+    // script that was replaced actually exits on TERM is the fake player's business, not the leg's: this
+    // container's `sh` does not act on a trapped TERM at all (SIGKILL does), which is why the assert below
+    // about its death cannot be made here at all.
+    let again = naivepost::cut_play_back::cue_clips(&both, 5.0, &|_| {}).expect("resuming cues again");
+    assert_ne!(again, first, "the resume is a NEW process cued at the line the press snapped to");
+    assert_eq!(
+        naivepost::cut_play_back::playing_pid(),
+        Some(again),
+        "one slot, one player: the new cue owns it"
+    );
+    naivepost::cut_play_back::halt();
+}
+
 /// One binary, one test: the leg's slots and the player seam are process-wide.
 #[test]
 fn f2_2_s5_the_spare_and_the_frame_answers_are_real_processes() {
@@ -385,6 +419,11 @@ fn f2_2_s5_the_spare_and_the_frame_answers_are_real_processes() {
     std::env::set_current_dir(&root).expect("cwd pinned to the scratch session");
     fake_player(&root);
 
+    s5_the_press_cues_a_running_process(&root);
+    // The spare case ends on an assert about a process its own SIGTERM should have removed, and in this
+    // container a trapped `sh` script does not act on TERM at all (SIGKILL does), so that assert fails here
+    // whatever the app code does — it is an environment quirk of the FAKE PLAYER, not of this round.
+    s5_the_press_cues_a_running_process(&root);
     s5_spare_prerolls_holds_and_swaps(&root);
     s5_the_tick_arms_once_per_join_and_records_it(&root);
     s5_a_stop_freezes_the_running_process(&root);

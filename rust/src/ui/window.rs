@@ -7365,22 +7365,29 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
     // The outer `status` is the status Label, so each arm binds its own name and paints from it. A row
     // release already printed above keeps the line; otherwise this press's own sentence goes there.
     match &pressed {
-        // S2/S3: both change what the clock means or what is playing, so both get their sentence.
+        // S2/S3: both change what the clock means or what is playing, so both get their sentence. Both also
+        // need a process making sound from the line the press just snapped to: ▶✂ owns that player, so the
+        // press starts it (`cut_play_back::cue_clips` has no other program door).
         cut_play::Pressed::SwitchedToCut { status: line, .. } => {
+            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
             if released.is_none() {
                 status.set_text(line)
             }
         }
         cut_play::Pressed::ReviewEnded { status: ended } => {
+            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
             if released.is_none() {
                 status.set_text(*ended)
             }
         }
         cut_play::Pressed::Refused(line) => status.set_text(line),
         // S4: the toggle needs no sentence — the button's own face carries it. A pause takes the cut's
-        // processes back with it (the player and the prerolled spare); a resume re-cues through the tick.
+        // processes back with it (the player and the prerolled spare); a resume re-cues at the second the
+        // press snapped to, which `Toggle::Playing` names rather than leaving this seam to guess.
         cut_play::Pressed::Toggled(cut_play::Toggle::Paused) => crate::ui::cut_cut_play::pause_media(),
-        cut_play::Pressed::Toggled(_) => {}
+        cut_play::Pressed::Toggled(cut_play::Toggle::Playing { from }) => {
+            crate::ui::cut_cut_play::cue_running(window, *from);
+        }
     }
     pressed
 }
@@ -7430,8 +7437,12 @@ pub fn press_review_cuts(window: &adw::ApplicationWindow, cut_: &cut::Cut) -> cu
     };
     let pressed = cut_review::pressed(&mut player.borrow_mut(), cut_);
     match &pressed {
-        // S4: the status names which join out of how many is being heard.
-        cut_review::Pressed::Started { status, .. } => status_line.set_text(status),
+        // S4: the status names which join out of how many is being heard. The review IS the cut preview with
+        // one more hand on the line, so its press owes the same running player ▶✂'s press starts.
+        cut_review::Pressed::Started { status, .. } => {
+            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
+            status_line.set_text(status)
+        }
         // S5: pausing ends the review, and says so with the module's own short line.
         cut_review::Pressed::PausedAndEnded { status } => status_line.set_text(*status),
         // S1: fewer than two clips, in `refused`'s own words.

@@ -84,6 +84,26 @@ pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64) {
     }
 }
 
+/// Start (or resume) the cut preview's RUNNING player at `at`, replacing whatever was playing.
+///
+/// The press is the only door that starts this process: [`crate::cut_play_back::preroll`] makes the SPARE and
+/// [`crate::cut_play_back::set_rate`] only ever replaces a player that already exists, so without this call ▶✂
+/// runs its clock arithmetic and arms a spare while nothing plays the first clip. It cues at the session second
+/// the press landed on — the snapped line `cut_play::pressed` just wrote — for the same reason `set_rate`
+/// re-cues at the head: a player left sitting on an earlier stretch would make sound from seconds the cut took
+/// out. A player that will not start is logged and answered `false`; the tick's arithmetic and every other
+/// preview rule are unaffected, which is the "carry on elsewhere" half of §0 (F2.1's cue door says the same).
+pub fn cue_running(window: &adw::ApplicationWindow, at: f64) -> bool {
+    let files = ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now());
+    match crate::cut_play_back::cue_clips(&files, at, &|line| log_line(line)) {
+        Ok(_) => true,
+        Err(why) => {
+            log_line(&crate::preview::playback_failure("Cut", &why));
+            false
+        }
+    }
+}
+
 /// §D's tooltip for the ✂ clock, verbatim in shape: which second of the FINISHED video the line is on,
 /// how long that video is, and the session second it corresponds to — because under ▶✂ the face stops
 /// reading the session and a person needs to be able to translate back.
