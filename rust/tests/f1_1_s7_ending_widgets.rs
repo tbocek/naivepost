@@ -266,8 +266,19 @@ fn check_a_press_ends_on_screen(app: &adw::Application) {
         .text()
         .to_string();
     let expected = naivepost::prepare::outputs_count(&tree).to_string();
+    // §6 makes Prepare's row "Prepare: N files, size", so the count is the LEADING number of what
+    // follows the label, not the whole row — read the same way `f1_1_endings` reads it.
+    let body = readout
+        .trim_start_matches("Outputs: ")
+        .trim_start_matches(naivepost::prepare::OUTPUTS_LABEL)
+        .to_string();
+    let seen: usize = body
+        .split_whitespace()
+        .next()
+        .and_then(|lead| lead.parse().ok())
+        .unwrap_or_default();
     assert!(
-        readout.ends_with(&expected) && readout.contains("Prepare"),
+        seen.to_string() == expected && readout.contains("Prepare"),
         "§S8: the Outputs row was refreshed from the folder the run worked in ({expected}, {planted} planted): {readout:?}"
     );
     // The unload §S8 hands over runs on its own thread (20 s ceiling, best-effort), so wait for the

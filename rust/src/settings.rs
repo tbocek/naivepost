@@ -700,7 +700,11 @@ pub fn prompt_file_ok(key: &str) -> Result<(), String> {
 }
 
 /// The prompt to send: this machine's edited text when there is one, else the shipped one.
+///
+/// Adoption runs first so the request that needs a key is also the read that rewrites its legacy
+/// wording — see [`adopt_legacy_prompt`].
 pub fn prompt_text(paths: &Paths, key: &str, shipped: &str) -> Result<String, String> {
+    adopt_legacy_prompt(paths, key)?;
     Ok(read_prompt(paths, key)?.unwrap_or_else(|| shipped.to_string()))
 }
 
@@ -713,6 +717,41 @@ pub const LEGACY_PROMPT_NAMES: [&str; 2] = ["General.txt", "Default.txt"];
 /// where this one keeps a file per job (§04-prepare#6).
 pub fn legacy_prompt_file(paths: &Paths, key: &str, name: &str) -> PathBuf {
     paths.prompts_dir().join(key).join(name)
+}
+
+/// Adopt one job's legacy wording: write `prompts/<key>/General.txt|Default.txt` as
+/// `prompts/<key>.txt`, once (§04-prepare.md §6).
+///
+/// The old build kept one FOLDER per job with one file per wording; this one keeps one file per job.
+/// Reading the old copy without rewriting it would leave the same edit invisible to every reader that
+/// only knows the new layout (`read_prompt`, and therefore every live request), so the rewrite is what
+/// makes an inherited edit real here rather than a fallback that quietly expires. Adoption is ONE way:
+/// a `prompts/<key>.txt` that already holds wording wins untouched, because overwriting it would throw
+/// away a newer edit for an older one. The old copy stays where it is — nothing in §6 asks for it to be
+/// deleted, and removing a person's file on a read is not this function's business.
+pub fn adopt_legacy_prompt(paths: &Paths, key: &str) -> Result<(), String> {
+    prompt_file_ok(key)?;
+    if let Ok(text) = fs::read_to_string(paths.prompt_file(key)) {
+        if !text.trim().is_empty() {
+            return Ok(());
+        }
+    }
+    for name in LEGACY_PROMPT_NAMES {
+        let path = legacy_prompt_file(paths, key, name);
+        match fs::read_to_string(&path) {
+            Ok(text) => {
+                let text = text.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                write_mode(&paths.prompts_dir(), 0o700)?;
+                return write_bytes(&paths.prompt_file(key), text.as_bytes(), 0o600);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(format!("{}: {err}", path.display())),
+        }
+    }
+    Ok(())
 }
 
 /// What this machine holds for one prompt, newest layout first: `prompts/<key>.txt`, then

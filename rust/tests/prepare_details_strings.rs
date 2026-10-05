@@ -620,3 +620,87 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s19_the
     // Files with no measured age: the count is a fact, an invented age is not.
     assert_eq!(prepare::outputs_readout(4, 1024, None).1, "");
 }
+
+// --- S20-S21: the legacy wording rewritten by the read that needs it --------------------------------
+
+/// The mode a machine's prompt file carries, read off the disk rather than trusted from the writer.
+fn mode_of(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).expect("the file the read wrote").permissions().mode() & 0o777
+}
+
+#[test]
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s20_a_legacy_wording_is_rewritten_by_the_read_that_needs_it(
+) {
+    // "legacy `prompts/<key>/General.txt|Default.txt` are read once and rewritten as
+    // `prompts/<key>.txt`" — the rewrite happens on the door every live request asks through
+    // (`prompt_text`), so the first job that needs this key is the one that moves the wording.
+    let d = PromptDirs::new("adopt-live");
+    std::fs::create_dir_all(d.legacy("cut", "General.txt").parent().unwrap()).unwrap();
+    std::fs::write(d.legacy("cut", "General.txt"), "what four videos tuned\n").unwrap();
+
+    assert_eq!(
+        settings::prompt_text(&d.paths, "cut", "shipped wording").unwrap(),
+        "what four videos tuned",
+        "the live door answers with the inherited wording, not the shipped one"
+    );
+    assert_eq!(
+        std::fs::read_to_string(d.prompt("cut")).unwrap(),
+        "what four videos tuned",
+        "and it rewrote the new layout while it read, trimmed of the file's newline"
+    );
+    assert_eq!(mode_of(&d.prompt("cut")), 0o600, "an adopted prompt is as private as an edit");
+    assert!(d.legacy("cut", "General.txt").is_file(), "the old copy is left where it was");
+
+    // A second read changes nothing: adoption is once, and the folder keeps exactly its two files.
+    assert_eq!(
+        settings::prompt_text(&d.paths, "cut", "shipped wording").unwrap(),
+        "what four videos tuned"
+    );
+    assert_eq!(std::fs::read_to_string(d.prompt("cut")).unwrap(), "what four videos tuned");
+    assert_eq!(
+        std::fs::read_dir(d.paths.prompts_dir())
+            .unwrap()
+            .flatten()
+            .count(),
+        2,
+        "one folder for the old layout and the new file — nothing else appeared"
+    );
+    std::fs::remove_dir_all(&d.root).ok();
+}
+
+#[test]
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s21_adoption_never_overwrites_a_real_edit_and_skips_a_blank_legacy_file(
+) {
+    // Adoption is one-way: a newer edit in the new layout outranks an older folder-era copy, and a
+    // blank legacy file is no wording at all (§6: "an empty prompt file is no prompt").
+    let d = PromptDirs::new("adopt-keeps");
+    std::fs::create_dir_all(d.paths.prompts_dir()).unwrap();
+    std::fs::write(d.prompt("fix"), "this machine's own wording").unwrap();
+    std::fs::create_dir_all(d.legacy("fix", "General.txt").parent().unwrap()).unwrap();
+    std::fs::write(d.legacy("fix", "General.txt"), "older folder-era wording\n").unwrap();
+
+    assert_eq!(
+        settings::prompt_text(&d.paths, "fix", "shipped wording").unwrap(),
+        "this machine's own wording",
+        "the real edit answers, not the inherited one"
+    );
+    assert_eq!(
+        std::fs::read_to_string(d.prompt("fix")).unwrap(),
+        "this machine's own wording",
+        "and adoption left it byte for byte alone"
+    );
+
+    // Whitespace only: no wording to adopt, so nothing is written and the shipped text runs.
+    std::fs::create_dir_all(d.legacy("policy", "Default.txt").parent().unwrap()).unwrap();
+    std::fs::write(d.legacy("policy", "Default.txt"), "   \n").unwrap();
+    assert_eq!(
+        settings::prompt_text(&d.paths, "policy", "shipped wording").unwrap(),
+        "shipped wording"
+    );
+    assert!(
+        !d.prompt("policy").exists(),
+        "a blank legacy file does not become an override"
+    );
+    std::fs::remove_dir_all(&d.root).ok();
+}
