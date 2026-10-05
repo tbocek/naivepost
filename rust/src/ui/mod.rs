@@ -1,6 +1,9 @@
 /// §02-services.md §4.1 — the Cut page's snap points when no aligner is named: read out of
 /// `cache/waves`. Split out of `window.rs`, at its size budget.
 pub mod wave_snap;
+/// §04-prepare#6 — the bench mark and Reset, painted from what this machine holds. Split out of
+/// `window.rs`, which is past its size budget.
+pub mod bench_paint;
 pub mod settings;
 /// F0.1 §S2/§S4 and §2 — the narration autosave timer, the bar's idle pulse and the run line that goes
 /// to the status row. Split out of `window.rs`, which is at its size budget.

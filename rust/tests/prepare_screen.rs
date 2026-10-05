@@ -109,8 +109,8 @@ fn sec_04_prepare_1_screen_s_inputs_readout_names_both_arms() {
     let shell = prepare_shell();
     assert_eq!(
         shell.inputs(None, &Project::default(), &Default::default(), &Default::default()),
-        "nothing read yet",
-        "with no folder open the row refuses to claim a zero"
+        prepare::NO_INPUTS,
+        "with no folder open the row says where to add sources — §6 replaced \"nothing read yet\", which named nothing"
     );
 }
 
@@ -205,8 +205,8 @@ fn sec_04_prepare_1_screen_s_inputs_tip_is_one_line_per_source_in_order() {
     );
     assert_eq!(
         shell.inputs_tip(None, &project),
-        None,
-        "with no folder there is nothing to break down"
+        Some(prepare::NO_INPUTS_TIP.to_string()),
+        "with no folder the tooltip says what was counted, which is nothing"
     );
 }
 
@@ -230,10 +230,17 @@ fn sec_04_prepare_1_screen_s_outputs_label_and_three_subfolder_tooltip() {
     seed_transcript(&tree, LECTURE, 26);
     let total = prepare::outputs_count(&tree);
     assert!(total >= 10, "the count covers the whole prepare/ tree: {total}");
+    // §6's half of the row, round-tripped through the same helpers the row uses rather than a literal
+    // the test invented: "N files, size" after §1's label.
+    let (bytes, newest) = prepare::outputs_size(&tree);
     assert_eq!(
         shell.outputs(Some(&tree)),
-        format!("{} {}", prepare::OUTPUTS_LABEL, total),
-        "the row prints the spec's label followed by the count"
+        format!(
+            "{}{}",
+            prepare::OUTPUTS_LABEL,
+            prepare::outputs_readout(total, bytes, newest).0
+        ),
+        "the row prints the spec's label followed by the count and its size"
     );
     assert!(
         shell.outputs(Some(&tree)).starts_with(prepare::OUTPUTS_LABEL),
@@ -379,4 +386,43 @@ fn sec_04_prepare_1_screen_s_counts_ignore_paths_that_are_not_there() {
 `project:` prefix because a lane name is derived from the same string (see `prepare::lane`), so \
 what this pins is that a missing file shows as zeros rather than vanishing: {tip:?}"
     );
+}
+
+/// §6's two readouts over NO project at all: the Inputs row says where to add sources and its tooltip
+/// says what was counted (nothing), and the Outputs row has neither a count nor an age to show. This is
+/// the state before Open, where a "0 files" or a "newest just now" would both be claims about a folder
+/// the app has never seen.
+#[test]
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_readouts_say_no_sources_and_no_age_without_a_project() {
+    let shell = prepare_shell();
+    let project = Project::default();
+    assert_eq!(
+        shell.inputs(None, &project, &Default::default(), &Default::default()),
+        prepare::NO_INPUTS,
+        "the row names the remedy, not a zero"
+    );
+    assert_eq!(
+        shell.inputs_tip(None, &project),
+        Some(prepare::NO_INPUTS_TIP.to_string()),
+        "and its tooltip says what the arithmetic covered"
+    );
+    // No tree means no Outputs row content at all, so there is nothing for the age half to date.
+    assert_eq!(shell.outputs(None), "", "no folder open, no sentence");
+    assert_eq!(shell.outputs_tip(None), None, "and no tooltip either");
+    // A folder that exists but wrote nothing: §1's own empty state, with no age to hang on it.
+    let (_keep, tree) = scratch("empty-readout");
+    assert_eq!(
+        shell.outputs(Some(&tree)),
+        prepare::NO_OUTPUTS,
+        "\"nothing yet\", not \"Prepare: 0 files, 0 B\""
+    );
+    assert_eq!(
+        shell.outputs_tip(Some(&tree)),
+        None,
+        "an empty folder has no newest file, so no \"newest <ago>\" is invented"
+    );
+    // And every other page keeps its plain count with no tooltip of this kind: the age is Prepare's,
+    // because only Prepare's walk looks at stamps.
+    let cut_shell = shell_on(Page::Cut);
+    assert_eq!(cut_shell.outputs_tip(Some(&tree)), None, "Cut has no age to show");
 }

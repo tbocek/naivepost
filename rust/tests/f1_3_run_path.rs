@@ -1166,26 +1166,35 @@ fn f1_3_s5_two_voices_in_a_25s_window_leave_nothing_to_place() {
 #[test]
 fn f1_3_s5_the_ladder_stops_at_the_first_rung_that_fits() {
     // A 25.0 s take: `diarize::scan_windows` gives every rung exactly ONE window here (a window never
-    // exceeds the recording, and a last window ending within a second of the end ends the stride), so
-    // one diarization request is exactly one rung, and the walk's whole ladder shows in the record.
+    // exceeds the recording, and a last window ending within a second of the end ends the stride), so pass 1
+    // is one request, and the walk's whole ladder shows in the record.
     let scene = Scene::new("25.0", &[], "");
-    let log = walk_scene_queued(&scene, &["two"]);
+    let log = walk_scene_queued(&scene, &["two", "two"]);
     let tree = scene.tree();
 
     // Two 5.6 s voices anchor 11.2 s of any rung and leave far more than `NEW_AUDIO_MIN_SECONDS`, so
     // the 90 s rung serves and the walk asks nobody again: the ladder is a fallback, not a routine.
+    // The SECOND ask is pass 2, not a second rung — §6's scan places its spans on the rung that planned,
+    // which is why a rung is pass 1's windows AND pass 2's. The log says so in both counts.
     assert_eq!(
         scene.diar_record(),
-        vec!["two"],
-        "the first rung planned, so the walk stopped there: {log:?}"
+        vec!["two", "two"],
+        "one rung: pass 1's window, then pass 2's placement on the same rung: {log:?}"
     );
-    // The turns that served are the two-voice ones, not a refused rung's.
+    assert!(
+        log.iter().any(|line| line.contains("finding voices 1/1"))
+            && log.iter().any(|line| line.contains("placing speakers 1/1")),
+        "both passes logged their own count: {log:?}"
+    );
+    // The turns that served are the two-voice ones, not a refused rung's. Pass 2's answer is the SAME room
+    // (the fake answers every ask with `two`), so its turns arrive renamed: slot 0 claims voice 0's anchor
+    // block and keeps that id, and the slot the anchor has nothing to say about earns a fresh one above it.
     let turns = naivepost::requests::read_turns(&tree, LANE).expect("turns.json was written");
     let voices: Vec<u32> = turns.iter().map(|turn| turn.speaker_id).collect();
     assert_eq!(
         voices,
-        vec![0, 1],
-        "the walk kept the rung that served: {turns:?}"
+        vec![0, 1, 2, 0],
+        "pass 1's two voices first, then pass 2's slots named against the anchor: {turns:?}"
     );
     assert!(tree.transcript_tsv(LANE).exists(), "and the pass finished: {log:?}");
 }
@@ -1207,20 +1216,29 @@ fn turns_of(reply: String) -> Vec<naivepost::requests::Turn> {
 #[test]
 fn f1_3_s5_the_ladder_asks_the_next_rung_when_one_refuses() {
     let asks = std::cell::Cell::new(0usize);
-    let rung = naivepost::diar_scan::run(100.0, services::DIAR_MODEL, |windows| {
-        let which = asks.get();
-        asks.set(which + 1);
-        // The first rung is answered with eight voices spanning each of its windows: 8 x 12 = 96 s of
-        // anchor against a 90 s window, which nothing can place. The second gets two short voices, the
-        // shape every wider-than-25 s window plans with -- and the turns the walk has to keep.
-        if which == 0 {
-            return Ok(windows
-                .iter()
-                .map(|(from, to)| turns_of(diar_voices(*from, *to, 8)))
-                .collect());
-        }
-        Ok(windows.iter().map(|_| turns_of(diar_two_voices(5.6))).collect())
-    })
+    let rung = naivepost::diar_scan::run(
+        100.0,
+        services::DIAR_MODEL,
+        LANE,
+        |windows| {
+            let which = asks.get();
+            asks.set(which + 1);
+            // The first rung is answered with eight voices spanning each of its windows: 8 x 12 = 96 s of
+            // anchor against a 90 s window, which nothing can place. The second gets two short voices, the
+            // shape every wider-than-25 s window plans with -- and the turns the walk has to keep.
+            if which == 0 {
+                return Ok(windows
+                    .iter()
+                    .map(|(from, to)| turns_of(diar_voices(*from, *to, 8)))
+                    .collect());
+            }
+            Ok(windows.iter().map(|_| turns_of(diar_two_voices(5.6))).collect())
+        },
+        // Pass 2 asks about the serving rung's own spans; which rung served is all this test pins, so its
+        // answers are empty here and pinned in `tests/diar_anchored_pass.rs`.
+        |_, _| Ok(vec![]),
+        |_| (),
+    )
     .expect("a rung plans");
 
     assert_eq!(asks.get(), 2, "the refused rung was asked, then the next one down");
@@ -1241,15 +1259,22 @@ fn f1_3_s5_the_ladder_asks_the_next_rung_when_one_refuses() {
 #[test]
 fn f1_3_s5_the_ladder_gives_up_and_names_the_model_when_no_rung_fits() {
     let asks = std::cell::Cell::new(0usize);
-    let failed = naivepost::diar_scan::run(100.0, services::DIAR_MODEL, |windows| {
-        asks.set(asks.get() + 1);
-        // Eight voices spanning each window: 8 x min(12, w/4) is 96 s against 90, 90 s against 45 and
-        // 50 s against 25, so more anchor than any window on the ladder can hold.
-        Ok(windows
-            .iter()
-            .map(|(from, to)| turns_of(diar_voices(*from, *to, 8)))
-            .collect())
-    })
+    let failed = naivepost::diar_scan::run(
+        100.0,
+        services::DIAR_MODEL,
+        LANE,
+        |windows| {
+            asks.set(asks.get() + 1);
+            // Eight voices spanning each window: 8 x min(12, w/4) is 96 s against 90, 90 s against 45 and
+            // 50 s against 25, so more anchor than any window on the ladder can hold.
+            Ok(windows
+                .iter()
+                .map(|(from, to)| turns_of(diar_voices(*from, *to, 8)))
+                .collect())
+        },
+        |_, _| Ok(vec![]),
+        |_| (),
+    )
     .expect_err("no rung can hold eight voices' anchor across a whole window");
 
     assert_eq!(

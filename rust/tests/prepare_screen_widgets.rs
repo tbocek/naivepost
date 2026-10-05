@@ -42,11 +42,14 @@ fn window_round() {
         let app = adw::Application::new(Some(ui::APP_ID), gio::ApplicationFlags::NON_UNIQUE);
         static RAN: AtomicBool = AtomicBool::new(false);
         static RAN_READOUTS: AtomicBool = AtomicBool::new(false);
+        static RAN_PICKER: AtomicBool = AtomicBool::new(false);
         app.connect_activate(move |app| {
             check_the_bench_and_frame_controls(app);
             RAN.store(true, Ordering::SeqCst);
             check_readouts_and_reset(app);
             RAN_READOUTS.store(true, Ordering::SeqCst);
+            check_picker_tooltip_follows_the_row(app);
+            RAN_PICKER.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -54,6 +57,10 @@ fn window_round() {
         assert!(
             RAN_READOUTS.load(Ordering::SeqCst),
             "the readout-and-Reset check never ran"
+        );
+        assert!(
+            RAN_PICKER.load(Ordering::SeqCst),
+            "the picker-tooltip check never ran"
         );
     });
 }
@@ -98,6 +105,25 @@ fn seed_session_files() {
 /// Let the emissions a `set_selected` / `emit_clicked` queued actually run, so the handler's
 /// repaint has happened by the time the assertions read the widgets.
 
+/// §6 badge 5 through the widget, on a window of its own: with nothing stored on this machine yet, the
+/// picker opens on row 0 (the User Context) and already carries that row's description — the tooltip is
+/// there before anyone touches the dropdown, not only after a selection changes.
+fn check_picker_tooltip_follows_the_row(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    settle();
+    let picker = find(&window, "bench-picker")
+        .expect("the bench has its row picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown");
+    assert_eq!(
+        picker.tooltip_text().as_deref(),
+        Some(naivepost::bench::tooltip(&naivepost::bench::ROWS[0]).as_str()),
+        "the picker says what the row it shows does"
+    );
+}
+
 /// §1 badges **4**, **6** and **7** through the widgets: Reset pressed on a stored edit, and the
 /// two bottom-bar readouts showing the same strings the plain modules compute.
 fn check_readouts_and_reset(app: &adw::Application) {
@@ -114,6 +140,14 @@ fn check_readouts_and_reset(app: &adw::Application) {
     picker.set_selected(6);
     settle();
     let row = &naivepost::bench::ROWS[6];
+    // §6 badge 5: the picker itself says what the row it names does — the job it gets and what it
+    // answers — so its tooltip is the SELECTED row's, read through `bench::tooltip` rather than a literal
+    // (the Describe row embeds the frames-per-request constant in its sentence).
+    assert_eq!(
+        picker.tooltip_text().as_deref(),
+        Some(naivepost::bench::tooltip(row).as_str()),
+        "the dropdown carries the selected row's own description"
+    );
     let buffer = find(&window, "bench-text")
         .expect("box")
         .downcast::<gtk::TextView>()
@@ -125,19 +159,35 @@ fn check_readouts_and_reset(app: &adw::Application) {
         naivepost::bench::edited(&settings_paths(), row),
         "the keystroke left an override on this machine"
     );
+    // §6: while something IS stored, Reset's tooltip is the live one — the button sits beside a box that
+    // may hold an hour of the editor's own tuning, so it has to say what the click gives back. The mark's
+    // visibility is repainted by the keystroke handler directly (it does not go through `paint_bench`),
+    // and this window's row picker was moved after its own paint, so the tooltip is asked of the rule the
+    // same way the handler asks — through `bench::edited`, which says the override really is held now.
+    assert!(
+        naivepost::bench::edited(&settings_paths(), row),
+        "and the rule agrees the override is on this machine"
+    );
+    assert_eq!(
+        naivepost::bench::reset_tip(row, true),
+        naivepost::bench::RESET_TIP,
+        "live Reset says \"{}\"",
+        naivepost::bench::RESET_TIP
+    );
     assert!(
         find(&window, "bench-mark").expect("mark").is_visible(),
         "and the ✎ was drawn with it"
     );
     // §1's mark is the sentence, not the glyph: ✎ alone does not say where the text went.
+    // §6's mark tooltip: the sentence about where the kept wording lives and what Reset does to it.
     assert_eq!(
         find(&window, "bench-mark")
             .expect("mark")
             .tooltip_text()
             .as_deref(),
-        Some(naivepost::bench::EDITED_TIP),
+        Some(naivepost::bench::KEPT_TIP),
         "the mark's tooltip is \"{}\"",
-        naivepost::bench::EDITED_TIP
+        naivepost::bench::KEPT_TIP
     );
 
     find(&window, "bench-reset")
@@ -157,6 +207,24 @@ fn check_readouts_and_reset(app: &adw::Application) {
     assert!(
         !find(&window, "bench-reset").expect("reset").is_visible(),
         "and so did Reset, which has nothing left to restore"
+    );
+    // §6's two Reset tooltips follow the button's liveness, and `paint_bench_marks` — which Reset's own
+    // handler runs — is what swaps them. With the override gone the button says so instead of promising a
+    // restore.
+    let reset = find(&window, "bench-reset")
+        .expect("Reset is drawn")
+        .downcast::<gtk::Button>()
+        .expect("Reset is a button");
+    assert_eq!(
+        reset.tooltip_text().as_deref(),
+        Some(naivepost::bench::UNCHANGED_TIP),
+        "after Reset the tooltip went idle with the button: {:?}",
+        reset.tooltip_text()
+    );
+    assert_eq!(
+        naivepost::bench::reset_tip(row, false),
+        naivepost::bench::UNCHANGED_TIP,
+        "the rule behind the widget: no edit, the idle sentence"
     );
     // The box shows what `bench::reset` handed back. Read the shipped wording through a fresh
     // reset's return value rather than a literal, so retuning the shipped wording cannot leave this stale.
@@ -188,7 +256,7 @@ fn check_readouts_and_reset(app: &adw::Application) {
         "and it names the file, not just numbers"
     );
 
-    // ---- badge 7: Outputs reads "Prepare: N" and its button names three subfolders ----
+    // ---- badge 7: Outputs reads "Prepare: N files, size" and its button names three subfolders ----
     let outputs = ui::outputs_readout(&window).expect("the bar has an Outputs readout");
     let shown = outputs.text().to_string();
     let body = shown.strip_prefix("Outputs: ").unwrap_or(shown.as_str());
@@ -196,14 +264,44 @@ fn check_readouts_and_reset(app: &adw::Application) {
         body.starts_with(naivepost::prepare::OUTPUTS_LABEL),
         "§1 spells the label \"Prepare:\" and it leads: {body:?}"
     );
+    // §6's shape after the label, so the count is read as the leading number of "N files, size".
     let count: usize = body
         .trim_start_matches(naivepost::prepare::OUTPUTS_LABEL)
         .trim()
-        .parse()
+        .split_whitespace()
+        .next()
+        .and_then(|lead| lead.parse().ok())
         .unwrap_or(0);
     assert!(
         count >= 10,
         "the count covers the whole prepare/ tree we seeded: {body:?}"
+    );
+    // The row draws exactly what the plain helpers compute for this folder — round-tripped through them,
+    // never a literal — and §6's second half ("newest <ago>") reaches the row as its tooltip.
+    let (bytes, newest) = naivepost::prepare::outputs_size(&tree);
+    let (line, tip) = naivepost::prepare::outputs_readout(
+        naivepost::prepare::outputs_count(&tree),
+        bytes,
+        newest,
+    );
+    assert_eq!(
+        body,
+        &format!("{}{}", naivepost::prepare::OUTPUTS_LABEL, line),
+        "the label is §1's prefix over §6's count-and-size sentence: {body:?}"
+    );
+    assert!(
+        !tip.is_empty(),
+        "a folder with files in it has a newest one, so there is an age to show"
+    );
+    assert_eq!(
+        outputs.tooltip_text().as_deref(),
+        Some(tip.as_str()),
+        "§6's \"newest <ago>\" is the row's tooltip"
+    );
+    assert!(
+        outputs.tooltip_text().unwrap_or_default().starts_with("newest "),
+        "and it reads as an age: {:?}",
+        outputs.tooltip_text()
     );
     let folder_button = ui::outputs_folder_button(&window).expect("the Outputs folder button");
     let tip = folder_button
@@ -332,6 +430,19 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
         naivepost::bench::title(&naivepost::bench::ROWS[2]),
         "the heading reads \u{2039}Describe\u{203a} prompt: {}",
         title.text()
+    );
+    // §6 badge 5: the picker itself says what the row it names does — the job it gets and what it
+    // answers — so its tooltip is the SELECTED row's, read through `bench::tooltip` rather than a literal
+    // (the Describe row embeds the frames-per-request constant in its sentence).
+    assert_eq!(
+        picker.tooltip_text().as_deref(),
+        Some(naivepost::bench::tooltip(&naivepost::bench::ROWS[2]).as_str()),
+        "choosing another row moved the tooltip with it"
+    );
+    assert_ne!(
+        picker.tooltip_text().as_deref(),
+        Some(naivepost::bench::tooltip(&naivepost::bench::ROWS[0]).as_str()),
+        "and it is not still the first row's sentence stuck on the face"
     );
     let describe_shipped = naivepost::prompts::shipped_text("describe").expect("describe ships a file");
     assert_eq!(

@@ -81,6 +81,10 @@ pub struct Answered {
     /// a down server answers the same way however often it is called, and `seam_retries` counts
     /// refusals of answers, not failures of the wire.
     pub failed: bool,
+    /// Whether this answer came back from `cache/llm/textedit` instead of the model. §6's summary line
+    /// ("N join(s) repaired, M from the cache") counts exactly this, so the pass cannot guess it from
+    /// whether a reply arrived — a cached one arrives looking identical.
+    pub from_cache: bool,
 }
 
 /// One seam's live ask: build the two messages, honour the cache, dial, read the reply.
@@ -112,6 +116,7 @@ pub fn ask(
                 settled: true,
                 reply: String::new(),
                 failed: true,
+                from_cache: false,
             };
         }
         None => Conf::default(),
@@ -135,7 +140,7 @@ pub fn ask_at(
     let model = conf.model.clone();
     let system = join_system(user_context);
     let user = joins::request(user_context, k, n, before, after);
-    let parts = cache_parts(&system, &user, &model, attempt);
+    let parts = seam_parts(&system, &user, &model, attempt);
     if let Some(cached) = llm_cache::read(tree, joins::STEP, &parts) {
         // A reply served from the cache costs no wire and writes no row: the request that earned it
         // is already in `requests.tsv`, and a second row for the same answer would double-count a
@@ -146,7 +151,7 @@ pub fn ask_at(
         // a replay would have to re-dial them. Storing the outcome is what lets the next press cost no
         // wire at all, and it is the same shape the prose path always stored — a reply this door reads.
         let outcome = judge(&cached, before, after);
-        return Answered { outcome, settled: true, reply: cached, failed: false };
+        return Answered { outcome, settled: true, reply: cached, failed: false, from_cache: true };
     }
     // No model configured: asking again answers the same way, so this settles. Checked before the
     // loop dials, because a body cannot even be built without one.
@@ -156,6 +161,7 @@ pub fn ask_at(
             settled: true,
             reply: String::new(),
             failed: true,
+            from_cache: false,
         };
     }
     let base = base_row(&model);
@@ -301,7 +307,7 @@ pub fn ask_at(
     // A transport failure is not a refusal of an answer: the join is not retried against a server that
     // is not there, and nothing is cached.
     if let Some(reason) = wire_error {
-        return Answered { outcome: Outcome::Refused(reason), settled: true, reply: String::new(), failed: true };
+        return Answered { outcome: Outcome::Refused(reason), settled: true, reply: String::new(), failed: true, from_cache: false };
     }
     if outcome.usable() {
         // Cached only when usable (§F1.10): a refusal must go out again rather than be replayed from
@@ -313,10 +319,10 @@ pub fn ask_at(
             None => final_body.clone(),
         };
         if let Some(body) = store_body {
-            llm_cache::store(tree, joins::STEP, &parts, &envelope(&body));
+            llm_cache::store(tree, joins::STEP, &parts, &reply_envelope(&body));
         }
     }
-    Answered { outcome, settled: true, reply: final_body.unwrap_or_default(), failed: false }
+    Answered { outcome, settled: true, reply: final_body.unwrap_or_default(), failed: false, from_cache: false }
 }
 
 /// The answer a set of accepted `drop_words` counts is worth, in the one shape this door reads back:
@@ -341,9 +347,10 @@ fn side_name(side: crate::tools::textedit::Side) -> &'static str {
     }
 }
 
-/// Wrap an answer in the chat envelope `llm_request::reply_from` reads, which is what the live reply
-/// bodies are and what a cached entry has always held.
-fn envelope(answer: &str) -> String {
+/// A reply's envelope in the shape every chat job reads: what `ask_at` itself stores when a prose
+/// answer wins, so a reply planted from outside lands in exactly the form the cache branch reads back.
+/// Public for that reason — the private `envelope` a live ask uses is the same bytes.
+pub fn reply_envelope(answer: &str) -> String {
     serde_json::json!({ "choices": [ { "message": { "content": answer } } ] }).to_string()
 }
 
@@ -527,9 +534,18 @@ fn answer_of(content_type: &str, reply: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The deciding parts for one join ask. The retry's slot rides in `state` — the texts, model and
-/// thinking flag are otherwise identical, and the slot is what keeps the two asks apart (§6).
-fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
+/// The deciding parts for one join ask, and so the cache key [`ask_at`] looks up. The retry's slot rides
+/// in `state` — the texts, model and thinking flag are otherwise identical, and the slot is what keeps the
+/// two asks apart (§6). Public because a caller that wants to plant or check an answer must reach the very
+/// door the pass hashes: the bytes on the wire, the system prompt's wording included, decide the key, so
+/// the caller passes the two finished messages rather than the seam's numbers (`joins::request` and
+/// `join_system` are private, and re-deriving them here would let a planted reply drift from the ask).
+pub fn seam_parts(
+    system: &str,
+    user: &str,
+    model: &str,
+    attempt: u32,
+) -> Vec<serde_json::Value> {
     let state = seam_retries::ask_slot(system, attempt);
     let request = llm_cache::Request {
         system,
@@ -607,6 +623,8 @@ pub fn run_seams(
     let n = seams.len();
     let retries = seam_retries::SEAM_RETRIES;
     let cancelled = cancel_leg::cancel_check_now();
+    let mut applied = 0usize;
+    let mut from_cache = 0usize;
     for (index, seam) in seams.iter().enumerate() {
         let k = index + 1;
         let before = window_before(words, &kept, *seam);
@@ -631,10 +649,17 @@ pub fn run_seams(
                 Outcome::Applied { before: off_before, after: off_after } => {
                     take_off_end(&mut kept, *seam, off_before);
                     take_off_start(&mut kept, *seam, off_after);
+                    applied += 1;
+                    if answered.from_cache {
+                        from_cache += 1;
+                    }
                     pass.logs.push(applied_log(k, n, off_before, off_after));
                     break;
                 }
                 Outcome::Kept => {
+                    if answered.from_cache {
+                        from_cache += 1;
+                    }
                     pass.logs.push(kept_log(k, n));
                     break;
                 }
@@ -698,6 +723,10 @@ pub fn run_seams(
     // "nothing removed there", and a line of two zeroes on top of that reads as a repair that
     // forgot what it did.
     if pass.removed > 0 {
+        // §6's own summary of the asks, said before the arithmetic line so a reader learns where the
+        // answers came from before being told what they cost. `applied` counts the seams repaired; a
+        // reply read back from `cache/llm/textedit` is counted in both halves, which is the point.
+        pass.logs.push(crate::tools::textedit::joins_repaired_log(applied, from_cache));
         pass.logs.push(joins::written_log(pass.removed, total, pass.stretches));
     }
     pass.kept = kept;

@@ -237,17 +237,24 @@ fn check_finished_run_on_screen(app: &adw::Application) {
         1.0,
         "§S7: a finished run leaves the bar at 1"
     );
-    // §S8: the readout the run was supposed to refresh shows the new count, not the launch's. The
-    // row's own wording is `Shell::outputs`' ("Prepare: N", §04 #1 badge 6), so what is pinned here is
-    // the NUMBER and that it moved with the run — the sentence shape belongs to the shell's test.
+    // §S8: the readout the run was supposed to refresh shows the new count, not the launch's. The row is
+    // `Shell::outputs`' (§04 #1 badge 7), which carries §6's "N files, size" after §1's label, so what is
+    // pinned here is the NUMBER and that it moved with the run — the sentence shape belongs to the shell's
+    // test.
     let readout = ui::outputs_readout(&window)
         .expect("the shell carries the Outputs readout")
         .text()
         .to_string();
-    assert!(
-        readout.ends_with("3") && readout.contains("Prepare"),
+    let body = readout
+        .trim_start_matches("Outputs: ")
+        .trim_start_matches(naivepost::prepare::OUTPUTS_LABEL)
+        .to_string();
+    assert_eq!(
+        body.split_whitespace().next().unwrap_or_default(),
+        "3",
         "§S8: the Outputs row sees what the run wrote, not the stale count: {readout:?}"
     );
+    assert!(readout.contains("Prepare"), "and it is still Prepare's row: {readout:?}");
     // The queue is emptied by the close a real press runs; the bar's own copy still holds the sentence.
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     assert_eq!(bar.borrow().status, "prepared \u{2014} 3 files");

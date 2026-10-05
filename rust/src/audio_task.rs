@@ -432,6 +432,72 @@ fn align_plan(tree: &Option<Tree>, source: &str, clip: &str) -> Result<Vec<Strin
     Ok(plan)
 }
 
+/// The diarization scan [`crate::transcribe::run`] wants: nothing in but this source's turns out.
+///
+/// The window is not chosen here — [`crate::diar_scan::run`] walks §2's 90 → 45 → 25 s ladder and asks once
+/// per window on the recording, which is why [`diar_window_ask`] takes the span it is being asked about
+/// rather than assuming the whole file. One request per window is also what makes an answer mean anything: a
+/// server sent two windows at once has no reason to call the same person `SPEAKER_01` twice. §6's scan needs
+/// a second door as well — the pass-2 window, cut with the anchor in front of it — and both are the same
+/// request over a different span of `voice16k.wav`.
+///
+/// The lines the walk says (§6's `finding voices i/n`, the anchor line, `placing speakers i/n`, and the
+/// no-voice line) come back in the `Passage` the caller prints, appended in [`transcribe_source`] the same
+/// way the aligner's sentences are: this closure is one of the arguments to that same call, so it cannot
+/// also hold the sink the call writes through. The files say what was decided; these lines say how far the
+/// scan had got when it decided it, which is what a resumed run is read against.
+pub fn diar_scan<'a>(
+    tree: &'a Option<Tree>,
+    paths: &'a crate::settings::Paths,
+    source: &'a str,
+    model: &'a str,
+    duration: f64,
+    said: &'a std::cell::RefCell<Vec<String>>,
+) -> impl FnOnce() -> Result<Vec<Turn>, String> + 'a {
+    move || {
+        let rung = crate::diar_scan::run(
+            duration,
+            model,
+            source,
+            |windows: &[(f64, f64)]| {
+                let one = diar_window_ask(tree, paths, source, model);
+                windows.iter().map(|span| one(span.0, span.1)).collect()
+            },
+            |(from, to), anchor_seconds| placement_ask(tree, paths, source, model, from, to, anchor_seconds),
+            |line| said.borrow_mut().push(line.to_string()),
+        )?;
+        Ok(rung.turns)
+    }
+}
+
+/// One pass-2 request: the anchor's own seconds followed by this span's, cut from the same decode and sent
+/// as one file, because that is the shape the answer is counted in. The cut starts anchor-length before the
+/// window for exactly that reason, and the answer comes back with the anchor inside it: the shift is undone
+/// here so [`crate::diar_scan`] only ever measures claims on the anchor file's clock.
+pub fn placement_ask(
+    tree: &Option<Tree>,
+    paths: &crate::settings::Paths,
+    source: &str,
+    model: &str,
+    from: f64,
+    to: f64,
+    anchor_seconds: f64,
+) -> Result<Vec<Turn>, String> {
+    let one = diar_window_ask(tree, paths, source, model);
+    let turns = one(from - anchor_seconds, to - anchor_seconds)?;
+    // The reply is in the sent file's seconds, whose zero is the anchor's start; taking the anchor's length
+    // off again leaves the window's own, which is what `Placement::within` expects.
+    let back = (anchor_seconds * SAMPLE_RATE as f64) as u64;
+    Ok(turns
+        .into_iter()
+        .map(|turn| Turn {
+            start_sample: turn.start_sample.saturating_sub(back),
+            end_sample: turn.end_sample.saturating_sub(back),
+            speaker_id: turn.speaker_id,
+        })
+        .collect())
+}
+
 /// The diarization turns [`crate::transcribe::run`] wants: nothing in but this source's turns out.
 ///
 /// The window is not chosen here — [`crate::diar_scan::run`] walks §2's 90 → 45 → 25 s ladder and asks once
@@ -490,23 +556,17 @@ pub fn diar_window_ask<'a>(
     }
 }
 
-/// The `diarize` [`crate::transcribe::run`] wants: nothing in but this source's turns out.
+/// The `diarize` [`crate::transcribe::run`] wants: this source's diarization out, collecting what
+/// [`diar_scan`] says into `said` for the caller's log.
 pub fn diar_ask<'a>(
     tree: &'a Option<Tree>,
     paths: &'a crate::settings::Paths,
     source: &'a str,
     model: &'a str,
     duration: f64,
+    said: &'a std::cell::RefCell<Vec<String>>,
 ) -> impl FnOnce() -> Result<Vec<Turn>, String> + 'a {
-    move || {
-        // §2's ladder, walked: the first window size whose plan fits serves, and a rung that is too small
-        // for its own anchor moves on instead of failing the step.
-        let rung = crate::diar_scan::run(duration, model, |windows| {
-            let one = diar_window_ask(tree, paths, source, model);
-            windows.iter().map(|(from, to)| one(*from, *to)).collect()
-        })?;
-        Ok(rung.turns)
-    }
+    diar_scan(tree, paths, source, model, duration, said)
 }
 
 /// The `asr` [`crate::transcribe::run`] wants: this source's `words.json` document out.
@@ -910,9 +970,10 @@ pub fn transcribe_source(
             Vec::new()
         }
     };
-    // align's own sentences are collected in the align closure and appended to `Passage.logs` at the
-    // end, so they stay in the aligner's own order instead of being printed before it ran.
+    // align's and the diarizer's own sentences are collected in their closures and appended to
+    // `Passage.logs` at the end, so they stay in their own order instead of being printed before they ran.
     let align_lines: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
+    let diar_lines: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
     // §F1.4 S2/§F1.5 S2: the quiet stretches of THIS recording, measured once and handed to both
     // chunking steps so one definition of "quiet" moves both the ASR's cuts and the aligner's windows.
     // A detector that is not there or fails outright is not a failure: no silences only means every cut
@@ -964,13 +1025,15 @@ pub fn transcribe_source(
         &asr_model,
         align,
         transcribe_asr(&held, paths, source, &asr_model, language, duration, &silences, log),
-        diar_ask(&held, paths, source, &diar_model, duration),
+        diar_ask(&held, paths, source, &diar_model, duration, &diar_lines),
     )?;
     // `speech_stage` prints `passage.logs` in order after this returns, so appending here puts the
-    // aligner's own sentences (S1's picker line, S6's bare-seconds warning) in the run's log without
-    // the align closure ever touching the sink: it returns one `Align`, and `&mut log` belongs to the
-    // ASR closure it shares the call's borrow scope with.
+    // aligner's own sentences (S1's picker line, S6's bare-seconds warning) and the diarizer's scan
+    // lines (§6's counts and the anchor line) in the run's log without either closure ever touching the
+    // sink: each returns one value, and `&mut log` belongs to the ASR closure it shares the call's borrow
+    // scope with.
     passage.logs.extend(align_lines.borrow().iter().cloned());
+    passage.logs.extend(diar_lines.borrow().iter().cloned());
     Ok(passage)
 }
 

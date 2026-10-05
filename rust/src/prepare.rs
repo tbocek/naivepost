@@ -16,6 +16,7 @@
 //! `P.machine.describeFrameWidth` only on their way to the model.
 
 use std::fs;
+use std::time::SystemTime;
 
 use crate::{
     exchanges,
@@ -215,8 +216,61 @@ pub fn inputs_tip(tree: &Tree, project: &Project) -> String {
 /// The Outputs count: what `prepare/` holds. §1 asks for one number beside the folder
 /// button, and counting the page's own folder is the one figure that cannot lie about a
 /// run that has not happened.
+///
+/// Kept as its own walk because §1's "Prepare:" + count row (and every test that reads it) counts
+/// files; [`outputs_size`] walks the same tree for bytes and stamps, and the two must agree.
 pub fn outputs_count(tree: &Tree) -> usize {
     count_files(&tree.prepare_dir())
+}
+
+/// The Outputs size pair §6 asks for: the bytes `prepare/` holds and how many minutes ago its newest
+/// file was written. Walks the same folder as [`outputs_count`] so the two figures cannot disagree — a
+/// readout that counted ten files and sized nine would be worse than no readout.
+///
+/// `None` for the age when nothing is there or its stamp could not be read: "newest just now" about a
+/// folder nobody timed is a fact the app does not have, and [`outputs_readout`] leaves the tooltip empty
+/// rather than inventing one.
+pub fn outputs_size(tree: &Tree) -> (u64, Option<u64>) {
+    let (bytes, newest) = walk_size(&tree.prepare_dir());
+    let minutes = newest.map(|stamp| {
+        // A stamp in the future (a clock that went backwards, a copied tree) is not an age: say
+        // "just now" rather than printing a negative duration.
+        let age = SystemTime::now()
+            .duration_since(stamp)
+            .unwrap_or_default()
+            .as_secs();
+        age / 60
+    });
+    (bytes, minutes)
+}
+
+/// `(bytes, newest mtime)` under `dir`, recursively — the twin of [`count_files`], same folder, same
+/// tolerance for a folder that is not there (nothing to add).
+fn walk_size(dir: &std::path::Path) -> (u64, Option<SystemTime>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return (0, None);
+    };
+    let mut bytes = 0u64;
+    let mut newest: Option<SystemTime> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let (sub_bytes, sub_newest) = walk_size(&path);
+            bytes += sub_bytes;
+            newest = match (newest, sub_newest) {
+                (Some(held), Some(found)) => Some(held.max(found)),
+                (held, found) => held.or(found),
+            };
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        bytes += meta.len();
+        newest = match newest {
+            Some(held) => Some(held.max(meta.modified().unwrap_or(held))),
+            None => meta.modified().ok(),
+        };
+    }
+    (bytes, newest)
 }
 
 /// The folder name Prepare files a source's work under: the file's name without its

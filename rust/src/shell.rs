@@ -424,7 +424,7 @@ impl Shell {
         // nothing counted yet, and "0 frames → 0 vision" would be a claim about files.
         Page::Prepare => match tree {
             Some(tree) => prepare::inputs_readout(&prepare::count(tree, project)),
-            None => "nothing read yet".to_string(),
+            None => prepare::NO_INPUTS.to_string(),
         },
             Page::Cut => format!("{} clip(s)", cut.segs.len()),
             Page::Narrate if project.no_narration => "no narration — captions only".to_string(),
@@ -455,9 +455,14 @@ impl Shell {
     /// The Inputs readout's TOOLTIP (§1 badge **6**: "per-file tooltip"). Prepare is the one page
     /// whose row counts several files at once, so its tooltip breaks the same arithmetic down per
     /// source through [`prepare::inputs_tip`]; every other page's row says all it has in the text.
+    /// With no folder open there are no files to break down, and §6 wants the tooltip to say exactly
+    /// that rather than leaving the row's sentence unexplained.
     pub fn inputs_tip(&self, tree: Option<&Tree>, project: &Project) -> Option<String> {
         match self.page {
-            Page::Prepare => tree.map(|tree| prepare::inputs_tip(tree, project)),
+            Page::Prepare => Some(match tree {
+                Some(tree) => prepare::inputs_tip(tree, project),
+                None => prepare::NO_INPUTS_TIP.to_string(),
+            }),
             _ => None,
         }
     }
@@ -473,27 +478,49 @@ impl Shell {
         }
     }
 
-    /// The Outputs readout: a count, and the folder button's tooltip is the page's own (§1). Here
-    /// only the count sentence, which is what the row draws.
+    /// The Outputs readout: what the page wrote, and the folder button's tooltip is the page's own
+    /// (§1). Here only the row's sentence, which is what the label draws.
     pub fn outputs(&self, tree: Option<&Tree>) -> String {
         let Some(tree) = tree else {
             return String::new();
         };
-        // §04-prepare.md §1 spells this one page's label out — "Prepare:" plus the count — so it
-        // carries its own prefix rather than reading as a bare number. `outputs_count` counts the
-        // page's whole folder (all three subfolders at once), which is the figure the spec asks for;
-        // `prepare::outputs_readout`'s "N files, <size>" form is Produce's shape (§8), not this.
+        // Prepare carries both §1's shape and §6's in ONE row: "Prepare:" (the label §1 spells out)
+        // then "N files, size" (§6's), with the age on hover. A bare count would answer §1 and ignore
+        // §6; dropping the label would do the reverse.
         if self.page == Page::Prepare {
-            let count = prepare::outputs_count(tree);
-            return if count == 0 {
-                prepare::NO_OUTPUTS.to_string()
+            let (text, _) = self.prepare_readout(tree);
+            // Zero keeps §1's bare "nothing yet": "Prepare: nothing yet" reads as a run that produced
+            // nothing on purpose, which is the second fact §6 refuses to confuse with the first.
+            return if text == prepare::NO_OUTPUTS {
+                text
             } else {
-                format!("{} {}", prepare::OUTPUTS_LABEL, count)
+                format!("{}{}", prepare::OUTPUTS_LABEL, text)
             };
         }
         // §1 asks for a count of what the page wrote; counting the page's own output folder is the
         // one number that cannot lie about a run that has not happened yet.
         format!("{} file(s)", count_files(&self.output_dir(tree)))
+    }
+
+    /// One walk of `prepare/` decides both halves of the row: the count+size sentence and its age.
+    /// Both readers go through here so the number in the text and the date on hover cannot come from two
+    /// sweeps of the folder that disagree about what is in it.
+    fn prepare_readout(&self, tree: &Tree) -> (String, String) {
+        let (bytes, newest) = prepare::outputs_size(tree);
+        prepare::outputs_readout(prepare::outputs_count(tree), bytes, newest)
+    }
+
+    /// The Outputs readout's TOOLTIP (§6: "N files, size" with "newest <ago>"). Prepare is the page
+    /// that has an age to show — its count comes off a walk that also saw every stamp — so this is where
+    /// `prepare::outputs_readout`'s second half reaches the row; other pages say all they have in text.
+    /// An empty folder has no age, so it gets no tooltip rather than "newest just now" about nothing.
+    pub fn outputs_tip(&self, tree: Option<&Tree>) -> Option<String> {
+        if self.page != Page::Prepare {
+            return None;
+        }
+        let tree = tree?;
+        let (_, tip) = self.prepare_readout(tree);
+        (!tip.is_empty()).then_some(tip)
     }
 
     /// What ⓘ says: the current tab's label and help text (spec/03-shell.md §1). The long paragraph

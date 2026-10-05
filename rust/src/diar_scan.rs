@@ -6,16 +6,16 @@
 //! [`crate::diarize`]'s, and this module only picks rungs, asks about them, and says which one served.
 //! That split is what lets a test drive the whole walk with a fake that never dials a socket, the way
 //! [`crate::narrate_tts::speak_line`] takes its two network legs as closures.
+//!
+//! The rung that plans is not the end of the scan: pass 2 asks about every span `plan` left to place,
+//! with the anchor in front of what it hears, and the slots of that answer are named against the anchor
+//! here rather than by the caller — so a rung is pass 1's windows *and* pass 2's, and a log that only
+//! counted the first would read as half a scan.
 
-use crate::diarize::{self, Scan};
+use crate::diarize::{self, Anchor, Scan};
 use crate::requests::Turn;
+use crate::transcribe::SAMPLE_RATE;
 
-/// What one rung of the ladder needs from the caller, and what it gives back.
-///
-/// `windows` is pass 1's span list for this rung, already cut by [`diarize::scan_windows`]; the ask answers
-/// each with the turns heard inside it, in order. It is `FnMut` because a rung is several requests, and
-/// `FnOnce` would stop after the first.
-pub type Ask<'a> = dyn FnMut(&[(f64, f64)]) -> Result<Vec<Vec<Turn>>, String> + 'a;
 /// One rung's outcome, as the walk reports it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rung {
@@ -23,7 +23,8 @@ pub struct Rung {
     pub window: f64,
     /// Pass 1's windows at this size — the caller's cut list, returned so a log line can count them.
     pub scan: Vec<(f64, f64)>,
-    /// The turns the rung answered, flattened across its windows.
+    /// The turns the rung answered, flattened across its windows. Pass 2's answers arrive here too, each
+    /// slot renamed to the voice the anchor says it is, which is the whole point of the second pass.
     pub turns: Vec<Turn>,
 }
 
@@ -37,9 +38,15 @@ pub struct Rung {
 /// Every rung refusing means the diarization model is being asked for more reference than any window on the
 /// ladder can hold, and the `Err` names the model and both numbers of the last refusal (§Failure-is-specific:
 /// name the model and the reason where it failed).
-pub fn run<F>(duration: f64, model: &str, mut ask: F) -> Result<Rung, String>
+///
+/// `log` receives §6's lines as they become true — pass 1's `finding voices i/n`, the anchor line, pass 2's
+/// `placing speakers i/n`, and `no voice long enough to anchor` when that is the answer. A rung that is
+/// refused costs no line of its own: it is a rung the run never used.
+pub fn run<F, G, L>(duration: f64, model: &str, base: &str, mut scan: F, mut place: G, mut log: L) -> Result<Rung, String>
 where
     F: FnMut(&[(f64, f64)]) -> Result<Vec<Vec<Turn>>, String>,
+    G: FnMut((f64, f64), f64) -> Result<Vec<Turn>, String>,
+    L: FnMut(&str),
 {
     let mut last: Option<(f64, f64)> = None;
     for window in diarize::ladder() {
@@ -52,24 +59,107 @@ where
                 "{model}: {duration:.1} s of audio is too short for a diarization window"
             ));
         }
-        let heard = ask(&windows)?;
+        // Pass 1 asks about the rung's whole window list and says `finding voices i/n` once per window,
+        // so a run that stops mid-scan can be read as far into the recording as it got.
+        for (index, _) in windows.iter().enumerate() {
+            log(&diarize::scan_log(base, index, windows.len()));
+        }
+        let heard = scan(&windows)?;
         match diarize::plan(duration, *window, &windows, &heard) {
-            Scan::Planned { .. } | Scan::NoVoice => {
-                // The rung that planned is the rung whose answers serve, so its turns are returned as they
-                // were heard — asking again would be a second set of requests for one result.
-                return Ok(Rung {
-                    window: *window,
-                    scan: windows,
-                    turns: heard.into_iter().flatten().collect(),
-                });
+            Scan::Planned { anchor, place: spans, .. } => {
+                log(&diarize::anchor_log(base, &anchor, *window, diarize::anchor_per(*window)));
+                // The serving rung's own answers: pass 1's flattened, then pass 2's with every slot
+                // renamed against the anchor. Asking pass 1 again would be a second set of requests for
+                // one result.
+                let mut turns: Vec<Turn> = heard.into_iter().flatten().collect();
+                turns.extend(placed(&spans, &anchor, base, &mut place, &mut log)?);
+                return Ok(Rung { window: *window, scan: windows, turns });
+            }
+            Scan::NoVoice => {
+                log(&diarize::no_voice_log(base));
+                // An empty answer is an answer: §6 wants the line, and `turns.json` written from what was
+                // heard, which is `[]` — the file is the resume marker a later run reads as "nobody spoke".
+                return Ok(Rung { window: *window, scan: windows, turns: heard.into_iter().flatten().collect() });
             }
             // Too much anchor for this window: try the next rung down before believing it.
-            Scan::AnchorTooLong { anchor, window } => last = Some((anchor, window)),
+            Scan::AnchorTooLong { anchor, window: rung } => last = Some((anchor, rung)),
         }
     }
     let (anchor, window) = last.expect("the ladder has rungs");
-    Err(format!(
-        "{model}: {}",
-        diarize::anchor_too_long(anchor, window)
-    ))
+    Err(format!("{model}: {}", diarize::anchor_too_long(anchor, window)))
+}
+
+/// Pass 2, one request per span `plan` left to place, each answered with its slots named after the anchor's
+/// voices. Every span is asked — a second placed twice would come back with two ids to reconcile for nothing,
+/// and a second never placed would silently belong to nobody.
+///
+/// The turn edges come back in *answer* seconds: `within` says how far into the audio after the anchor a
+/// sample falls, and an anchor whose first cut starts away from the recording's zero would otherwise have
+/// its whole file counted twice over. The id is the answer's own slot number, so a slot the anchor reaches
+/// keeps that voice's slot and one it never heard earns `slot_base + slot`.
+fn placed<F, L>(spans: &[(f64, f64)], anchor: &Anchor, base: &str, mut ask: F, mut log: L) -> Result<Vec<Turn>, String>
+where
+    F: FnMut((f64, f64), f64) -> Result<Vec<Turn>, String>,
+    L: FnMut(&str),
+{
+    // Pass 1 heard the anchor's window, so its slot numbers are the anchor's own; a stranger in a later
+    // answer must not collide with them, which is why fresh ids start above the highest one.
+    let slot_base = anchor
+        .slots
+        .iter()
+        .map(|slot| slot.slot + 1)
+        .max()
+        .unwrap_or_default();
+    let mut turns = Vec::new();
+    for (index, span) in spans.iter().enumerate() {
+        log(&diarize::placement_log(base, index, spans.len()));
+        let heard = ask(*span, anchor.seconds())?;
+        // One claim per slot, in anchor seconds: every turn that slot owns, its whole reach measured from
+        // the start of the anchor file. `match_slots` then decides one-to-one, strongest claim first.
+        let claims = slot_claims(&heard, anchor);
+        let named: Vec<(u32, u32)> = diarize::match_slots(&claims, anchor)
+            .into_iter()
+            .map(|(slot, block)| (slot, block.map_or(slot_base + slot, |block| anchor.slots[block].slot)))
+            .collect();
+        for turn in heard {
+            let slot = named
+                .iter()
+                .find(|(slot, _)| *slot == turn.speaker_id)
+                .map_or(slot_base + turn.speaker_id, |(_, voice)| *voice);
+            // An answer counts from the front of the audio it was sent, which is the anchor: its own zero
+            // is the anchor's start on the recording's clock, and the anchor's width is what its samples
+            // have already been counted in.
+            let shift = anchor.from + anchor.seconds();
+            turns.push(Turn {
+                start_sample: turn.start_sample + (shift * SAMPLE_RATE as f64) as u64,
+                end_sample: turn.end_sample + (shift * SAMPLE_RATE as f64) as u64,
+                speaker_id: slot,
+            });
+        }
+    }
+    Ok(turns)
+}
+
+/// What pass 2's answer is measured against: the anchor file's own seconds. The caller cut
+/// `window − anchor − slack` of new audio and put the anchor in front of it, so a turn's samples are read
+/// from the front of that file, and a claim may not reach past the reference it was matched on — which is
+/// exactly the bound `match_slots` compares at `MIN_ANCHOR_OVERLAP`.
+///
+/// A slot heard in several stretches is one voice, so its claim spans all of them: `match_slots` measures
+/// the whole overlap and takes the strongest claim first.
+fn slot_claims(heard: &[Turn], anchor: &Anchor) -> Vec<(u32, f64, f64)> {
+    let width = anchor.seconds();
+    let mut claims: Vec<(u32, f64, f64)> = Vec::new();
+    for turn in heard {
+        let from = (turn.start_sample as f64 / SAMPLE_RATE as f64).min(width);
+        let to = (turn.end_sample as f64 / SAMPLE_RATE as f64).min(width).max(from);
+        match claims.iter_mut().find(|(slot, _, _)| *slot == turn.speaker_id) {
+            Some((_, low, high)) => {
+                *low = low.min(from);
+                *high = high.max(to);
+            }
+            None => claims.push((turn.speaker_id, from, to)),
+        }
+    }
+    claims
 }

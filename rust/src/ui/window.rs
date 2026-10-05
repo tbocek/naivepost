@@ -1857,7 +1857,9 @@ fn bench_box(
 
     let mark = gtk::Label::new(Some(bench::EDITED_MARK));
     mark.set_widget_name("bench-mark");
-    mark.set_tooltip_text(Some(bench::EDITED_TIP));
+    // §6: the mark's tooltip says where the kept wording lives and what Reset would do to it; the
+    // visibility rule is `bench_paint::paint_marks`'s.
+    mark.set_tooltip_text(Some(bench::KEPT_TIP));
     mark.add_css_class("dim-label");
     heading.append(&mark);
 
@@ -1883,7 +1885,9 @@ fn bench_box(
     // **4** Reset, live only while this machine holds an edit.
     let reset = gtk::Button::with_label("Reset");
     reset.set_widget_name("bench-reset");
-    reset.set_tooltip_text(Some("Restore the shipped wording"));
+    // §6's other tooltip: idle wording until something is edited; `bench_paint::paint_marks` swaps in
+    // the live one.
+    reset.set_tooltip_text(Some(bench::UNCHANGED_TIP));
     heading.append(&picker);
     heading.append(&reset);
 
@@ -1902,7 +1906,17 @@ fn bench_box(
     // The box's contents are set when the row changes, never from its own `changed` handler: typing
     // stores text and storing must not retype the buffer out from under the cursor.
     let guard = Rc::new(RefCell::new(false));
-    paint_bench(&row, &title, &mark, &reset, &editor, &guard, session, &paths);
+    paint_bench(
+        &row,
+        &title,
+        &mark,
+        &picker,
+        &reset,
+        &editor,
+        &guard,
+        session,
+        &paths,
+    );
 
     let session_for_picker = session.clone();
     let paths_for_picker = paths.clone();
@@ -1910,6 +1924,7 @@ fn bench_box(
     let guard_for_picker = guard.clone();
     let title_for_picker = title.clone();
     let mark_for_picker = mark.clone();
+    let picker_for_picker = picker.clone();
     let reset_for_picker = reset.clone();
     let editor_for_picker = editor.clone();
     picker.connect_selected_notify(move |picker| {
@@ -1922,6 +1937,7 @@ fn bench_box(
             &row_for_picker,
             &title_for_picker,
             &mark_for_picker,
+            &picker_for_picker,
             &reset_for_picker,
             &editor_for_picker,
             &guard_for_picker,
@@ -1936,6 +1952,7 @@ fn bench_box(
     let paths_for_reset = paths.clone();
     let title_for_reset = title.clone();
     let mark_for_reset = mark.clone();
+    let picker_for_reset = picker.clone();
     let editor_for_reset = editor.clone();
     let reset_for_reset = reset.clone();
     let row_for_reset = row.clone();
@@ -1949,6 +1966,7 @@ fn bench_box(
                 &row_for_reset,
                 &title_for_reset,
                 &mark_for_reset,
+                &picker_for_reset,
                 &reset_for_reset,
                 &editor_for_reset,
                 &guard_for_reset,
@@ -2027,6 +2045,7 @@ fn paint_bench(
     row: &Rc<RefCell<bench::Bench>>,
     title: &gtk::Label,
     mark: &gtk::Label,
+    picker: &gtk::DropDown,
     reset: &gtk::Button,
     editor: &gtk::TextView,
     guard: &Rc<RefCell<bool>>,
@@ -2035,7 +2054,9 @@ fn paint_bench(
 ) {
     let held = row.borrow();
     title.set_text(&bench::title(held.row()));
-    paint_bench_marks(mark, reset, paths.as_ref(), held.row());
+    // §6 badge 5: the picker says what the row it names does, and follows the selection.
+    picker.set_tooltip_text(Some(&bench::tooltip(held.row())));
+    crate::ui::bench_paint::paint_marks(mark, reset, paths.as_ref(), held.row());
 
     // The text is set here and only here, with the store handler parked: writing into a buffer
     // fires `changed`, and a `changed` that stores would repaint the buffer again.
@@ -2048,18 +2069,6 @@ fn paint_bench(
 }
 
 /// The mark and Reset, both live only while this machine holds the row's wording (§1).
-fn paint_bench_marks(
-    mark: &gtk::Label,
-    reset: &gtk::Button,
-    paths: Option<&crate::settings::Paths>,
-    row: &bench::Row,
-) {
-    let edited = paths.is_some_and(|paths| bench::edited(paths, row));
-    mark.set_visible(bench::shows_mark(row, edited));
-    reset.set_visible(bench::shows_reset(row, edited));
-    reset.set_sensitive(bench::shows_reset(row, edited));
-}
-
 /// The tab row, drawn from [`Shell`].
 ///
 /// A locked page's tab is greyed and carries the lock reason as its tooltip; an unlocked one carries
@@ -3002,6 +3011,11 @@ fn paint_readouts(
         None => inputs_label.set_tooltip_text(None::<&str>),
     }
     outputs_label.set_text(&format!("{OUTPUTS_PREFIX}{}", shell.outputs(tree)));
+    // §6's second half: "newest <ago>" on hover, cleared for any page that has no age to date.
+    match shell.outputs_tip(tree) {
+        Some(tip) => outputs_label.set_tooltip_text(Some(&tip)),
+        None => outputs_label.set_tooltip_text(None::<&str>),
+    }
     outputs_folder.set_sensitive(tree.is_some());
     // §1: "Outputs: folder button and count" — the button points at the page's own output folder,
     // which is the directory `Shell::outputs` just counted.

@@ -141,6 +141,13 @@ fn fake_by_order<'a>(
     }
 }
 
+/// A fake pass-2 ask that answers every span with no turns: these tests are about which rung served, and
+/// pass 2 is the serving rung's own work — the line counts and the anchored turns are pinned in
+/// `tests/diar_anchored_pass.rs`.
+fn no_placements() -> impl FnMut((f64, f64), f64) -> Result<Vec<Turn>, String> {
+    |_, _| Ok(vec![])
+}
+
 /// (d) the walk uses the shipped ladder, biggest first, read straight off `diarize::ladder()`.
 #[test]
 fn sec_02_services_2_model_roles_s3_ladder_is_the_shipped_three_rungs_biggest_first() {
@@ -151,8 +158,15 @@ fn sec_02_services_2_model_roles_s3_ladder_is_the_shipped_three_rungs_biggest_fi
 #[test]
 fn sec_02_services_2_model_roles_s3_ladder_a_fitting_room_is_asked_about_once_at_the_top_rung() {
     let recorder = Recorder::new();
-    let rung = diar_scan::run(600.0, "sortformer-diar", fake(quiet_room(), vec![], &recorder))
-        .expect("the top rung fits a two-voice room");
+    let rung = diar_scan::run(
+        600.0,
+        "sortformer-diar",
+        "talk",
+        fake(quiet_room(), vec![], &recorder),
+        no_placements(),
+        |_| (),
+    )
+    .expect("the top rung fits a two-voice room");
 
     assert_eq!(recorder.trail(), vec![90], "one ask, at the biggest window");
     assert_eq!(rung.window, 90.0);
@@ -175,7 +189,10 @@ fn sec_02_services_2_model_roles_s3_ladder_moves_on_past_a_rung_whose_anchor_eat
     let rung = diar_scan::run(
         600.0,
         "sortformer-diar",
+        "talk",
         fake_by_order(quiet_room(), 1, &recorder),
+        no_placements(),
+        |_| (),
     )
     .expect("the rung that fits serves after a refusal");
 
@@ -194,8 +211,15 @@ fn sec_02_services_2_model_roles_s3_ladder_refused_everywhere_names_the_model_an
     // Six voices fit nowhere on the ladder: every rung answers with the crowded room, and the plan refuses
     // at 45 and 25 — which is enough to prove the walk tries the rest before failing, since it starts at
     // the rung that would serve them thinly.
-    let why = diar_scan::run(600.0, "sortformer-diar", fake(crowded_room(), vec![], &recorder))
-        .expect_err("no rung can hold six voices' anchor");
+    let why = diar_scan::run(
+        600.0,
+        "sortformer-diar",
+        "talk",
+        fake(crowded_room(), vec![], &recorder),
+        no_placements(),
+        |_| (),
+    )
+    .expect_err("no rung can hold six voices' anchor");
 
     assert_eq!(recorder.trail(), vec![90, 45, 25], "every rung was tried before failing");
     assert!(
@@ -219,7 +243,10 @@ fn sec_02_services_2_model_roles_s3_ladder_returns_the_serving_rungs_answers() {
     let rung: Rung = diar_scan::run(
         600.0,
         "sortformer-diar",
+        "talk",
         fake_by_order(served.clone(), 1, &recorder),
+        no_placements(),
+        |_| (),
     )
     .expect("the next rung holds the anchor the top one could not");
 
