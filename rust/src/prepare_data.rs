@@ -4,7 +4,7 @@
 //! [`crate::layout`] already spells every path in §1's block, so this module adds only what a path cannot
 //! say: which recording a run chose, and what the whole set of files is as data a test can walk.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::add_sources::is_video;
 use crate::layout::{self, Tree};
@@ -91,6 +91,26 @@ pub fn meta(project: &Project, root: &Path, tree_dir: &Path) -> Vec<(String, Str
 /// replaces the file rather than adding to it — the latest read is the only one that means anything.
 pub fn write_meta(tree: &Tree, project: &Project, root: &Path) -> Result<(), String> {
     requests::write_meta(tree, &meta(project, root, tree.dir()))
+}
+
+/// The application root `meta.env`'s paths are written against: the folder the session sits in, which
+/// is how every other ▶ leg resolves a path (§F1.1's own `startup::session_dir(cwd)`). A caller that
+/// already knows its root passes it to [`write_meta`] directly.
+pub fn default_root() -> PathBuf {
+    crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+}
+
+/// §3 (▶ Prepare): stamp `inputs/meta.env` at the start of a run, before any stage reads a source.
+///
+/// §1 treats this file as the marker that the sources were read, so a run that never wrote it left no
+/// trace of having read anything. The spec gives no failure rule for a marker, and Failure-is-specific
+/// says name it where it failed and carry on elsewhere: a `meta.env` that will not write therefore does
+/// NOT refuse the press — the sentence comes back here for the log and the run goes through. `Ok(None)`
+/// is the success case: nothing to say, because S4's own lines already report the inputs.
+pub fn stamp_meta(tree: &Tree, project: &Project) -> Option<String> {
+    write_meta(tree, project, &default_root())
+        .err()
+        .map(|error| format!(">>> could not write meta.env -- {error}"))
 }
 
 /// S1: everything §1's block says Prepare writes, as `(what it is, where under prepare/)`.

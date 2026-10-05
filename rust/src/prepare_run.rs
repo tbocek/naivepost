@@ -406,6 +406,11 @@ pub fn begin(project: &Project, tree: &Tree) -> Start {
         Cleared::default()
     };
     let mut lines = clear_lines(&cleared);
+    // §3: the run stamps `inputs/meta.env` — §1's marker that the sources were read — before any stage
+    // touches them. A marker that will not write is said and does not stop the run (see `stamp_meta`).
+    if let Some(refusal) = crate::prepare_data::stamp_meta(tree, project) {
+        lines.push(refusal);
+    }
     lines.extend(start_log(project, &prepare::count(tree, project)));
     Start::Started { lines, cleared }
 }
