@@ -43,7 +43,7 @@ pub const STEP: &str = fix_transcripts::FIX_STEP;
 /// transcript yet simply answers nothing (its `load_transcript` fails the row naming what is missing,
 /// which is the honest report: ingest owes that file).
 pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
-    let tasks = project
+    let tasks: Vec<crate::run_stages::Task> = project
         .sources
         .iter()
         .map(|source| crate::run_stages::Task {
@@ -66,7 +66,13 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
         phase: 2,
         of: 2,
         kind: "chunk",
-        tasks,
+        // §F1.8's session halves bracket the per-source rows: S1's `offsets.tsv` before any block goes
+        // out, S5-S7's merged timeline after the last one.
+        tasks: crate::fix_session::placement_rows(project)
+            .into_iter()
+            .chain(tasks)
+            .chain(crate::fix_session::merge_rows(project))
+            .collect(),
     }
 }
 

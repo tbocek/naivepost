@@ -406,6 +406,24 @@ where
                 queue.prog(stage.track, position(progress.done, total), &task.label);
                 continue;
             }
+            // Fix's two session rows (S1's placement, S5-S7's merge) are dials of the same stage: the
+            // row says which by its program, `drive_walk` does not decide.
+            if task.program == crate::fix_session::PLACEMENT_TASK
+                || task.program == crate::fix_session::SESSION_TASK
+            {
+                let worked = if task.program == crate::fix_session::PLACEMENT_TASK {
+                    crate::fix_session::run_placement(task, &mut log)
+                } else {
+                    crate::fix_session::run_session(task, &mut log)
+                };
+                if let Err(error) = worked {
+                    return Drive::Failed { stage: stage.name, error };
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, position(progress.done, total), &task.label);
+                continue;
+            }
             if let Err(why) = spawn_task(task, procs, &mut log) {
                 return Drive::Failed { stage: stage.name, error: why };
             }

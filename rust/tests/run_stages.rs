@@ -285,11 +285,24 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
         run_stages::AUDIO_TASK,
         "speech is a dial of audio.cpp, not a spawned cut"
     );
-    // The fix stage rides after describe and its rows are the same kind of work: a chat request.
+    // The fix stage rides after describe. Its rows are the same kind of work -- a chat request -- except
+    // for §F1.8's two session rows that bracket them: S1's placement first (offsets before any block
+    // goes out) and S5-S7's merge last, both dials of `fix_session` rather than spawns.
+    let fix_programs: Vec<&str> = stages[3].tasks.iter().map(|task| task.program.as_str()).collect();
     assert_eq!(
-        stages[3].tasks[0].program,
-        run_stages::TEXT_TASK,
-        "the fix rows are a chat dial, named by their own program"
+        fix_programs.first().copied(),
+        Some(naivepost::fix_session::PLACEMENT_TASK),
+        "the fix stage opens with S1's placement row: {fix_programs:?}"
+    );
+    assert_eq!(
+        fix_programs.get(1).copied(),
+        Some(run_stages::TEXT_TASK),
+        "the fix rows are a chat dial, named by their own program: {fix_programs:?}"
+    );
+    assert_eq!(
+        fix_programs.last().copied(),
+        Some(naivepost::fix_session::SESSION_TASK),
+        "the fix stage closes with S5-S7's merge row: {fix_programs:?}"
     );
     // The row carries what the door needs and nothing it has to compute: the recording and the language.
     // Where each chunk is cut is the door's own plan (§F1.3), pinned in `tests/audio_task_dial.rs`'s
