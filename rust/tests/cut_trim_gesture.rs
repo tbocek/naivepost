@@ -224,6 +224,7 @@ fn f2_8_s2_a_row_slide_shifts_every_listed_source_and_nobody_else() {
             shift,
             row,
             open,
+            ..
         } => {
             assert_eq!(what, "the camera row");
             assert_eq!(status, "the camera row moved +1.25 s");

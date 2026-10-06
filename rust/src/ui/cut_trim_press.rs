@@ -502,19 +502,21 @@ fn fold_spans(cut_: &Cut, open: &[usize]) -> Vec<[f64; 2]> {
 ///   after it write state without pushing, which is what `pushes_undo` means on this path.
 /// * the folds the rule asked to open are opened now and refolded on release ([`end_move`]).
 pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gesture) -> bool {
-    let cut_trim::Gesture::Slid { shift, row, open, .. } = gesture else {
+    let cut_trim::Gesture::Slid { shift, row, open, dragged, .. } = gesture else {
         return false;
     };
     let mut cut_ = crate::ui::window::newest_review_cut();
     cut_.shift = shift.clone();
     if let Some(row) = row {
-        // §3 keeps a hand row correction in `rows`, per source; `nrows` stays what it always was, a floor
-        // under the row count. The pinned recording is whatever the gesture moved, which the caller's cut
-        // already knows: the shift map's own keys are the sources in play.
-        for source in shift.keys() {
-            cut_.rows.insert(source.clone(), *row as i32);
+        // F2.10 (the Prototype paragraph): a drag pins ONLY the recording it took — [`cut_cam::pin_for_drag`]
+        // — so `rows_for` re-runs and gives the overlap the drag made a row of its own. The prototype pinned
+        // every recording sharing the row, which left both on one row with the earlier one's overlapped
+        // seconds unseen and unpickable. A drag that moved scenes or a whole row pins nothing: no single file
+        // was taken, and pinning the row's neighbours would be the bug this replaces.
+        if let Some(base) = dragged {
+            cut_.rows = crate::cut_cam::pin_for_drag(base, *row, &cut_.rows);
+            cut_.nrows = (*row as i32 + 1).max(cut_.nrows);
         }
-        cut_.nrows = (*row as i32) + 1;
     }
     // (c) the folds — S2's "folds near the grab open for the drag, refold after", and refolding is what
     // makes them belong to THIS gesture rather than to the user. The cut's own fold list is the measure:

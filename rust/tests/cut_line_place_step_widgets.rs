@@ -880,6 +880,14 @@ fn window_round() {
 
 #[test]
 fn f2_4_s1_placing_and_stepping_the_line_reaches_the_window_through_real_widgets() {
+    // Pin cwd to our own temp root before anything builds, as the other widget binaries do: the page resolves
+    // its session through `startup::session_dir(current_dir())`, and the FIRST check here never calls
+    // `pin_session_root`, so with cwd left at `rust/` that window opens a stray `rust/session.naivepost/`
+    // whose implied spans are empty -- which is what left F2.4 S4's restored line uncovered.
+    let root = std::env::temp_dir().join(format!("np-linewires-{}", std::process::id()));
+    std::fs::create_dir_all(&root).expect("temp root created");
+    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
+
     window_round();
     assert!(RAN_STEPS.load(Ordering::SeqCst), "the step-button check never ran");
     assert!(RAN_KEYS.load(Ordering::SeqCst), "the key-controller check never ran");

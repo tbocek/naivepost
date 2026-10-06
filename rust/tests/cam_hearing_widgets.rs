@@ -2,8 +2,10 @@
 // `cut_cam`'s / `cut_hear`'s rule rather than a copy of it. The logic tests (tests/cut_cam_hearing.rs)
 // prove the rules; this proves a press arrives at the named widget and lands in the same state.
 //
-// What is fired by name: `watch-row-<n>` (S3, watch a row), `lens-badge-<n>` (S1, pick which row a
-// scene's picture comes from), `speaker-badge-<lane>` and `gutter-switch-<lane>` (S2, hear or not),
+// What is fired by name: `watch-row-<n>` (S3, watch a row — and S3's proof that the WATCH reaches the
+// preview, read off `cut_picture::preview_asked_for_test` rather than a pixel), `scene-lens-<n>` (S1, pick which row a
+// scene's picture comes from — the 🔍 belongs to the SCENE, not to a row header),
+// `speaker-badge-<lane>` and `gutter-switch-<lane>` (S2, hear or not),
 // and `play-cut-button`, which is what takes the preview back off a watched row.
 //
 // One application, one `connect_activate`, exactly one `#[test]`: these checks mutate process-shared
@@ -30,6 +32,8 @@ static RAN_WATCH: AtomicBool = AtomicBool::new(false);
 static RAN_LENS: AtomicBool = AtomicBool::new(false);
 static RAN_SPEAKER: AtomicBool = AtomicBool::new(false);
 static RAN_GUTTER: AtomicBool = AtomicBool::new(false);
+static RAN_HELD: AtomicBool = AtomicBool::new(false);
+static RAN_PREVIEW: AtomicBool = AtomicBool::new(false);
 static RAN_HANDED_BACK: AtomicBool = AtomicBool::new(false);
 
 /// Kept footage on camera `row`.
@@ -159,16 +163,20 @@ fn check_a_row_click_watches_it_and_says_what_the_cut_shows(app: &adw::Applicati
     window.close();
 }
 
-/// S1: the lens badge on the second row retakes the scene's picture from that row, leaving its seconds
-/// where they were, and the status reads the seam's own sentence.
+/// S1: the 🔍 on the SCENE retakes that scene's picture from the next camera that filmed it, leaving its
+/// seconds where they were, and the status reads the seam's own sentence. The button sits in the row list
+/// beside the scene's ✕ (`scene-lens-0`), not on a row header — the question is about one scene.
 fn check_the_lens_badge_moves_the_picture_to_that_row(app: &adw::Application) {
     let window = cut_window(app);
+    // A hold from an earlier check would win over the line (S1's "the scene under the line, OR THE HELD
+    // ONE"), so this check starts from no hold — otherwise it edits whatever a previous click picked up.
+    ui::set_held_clip(None);
     let before = ui::review_cut_segs(&window);
     assert_eq!(before[0].cam, 0, "the scene under the line starts out shown from row 1");
 
-    let lens = ui::toggle_button(&window, "lens-badge-2").expect("`lens-badge-2` exists");
-    assert!(lens.is_sensitive(), "with footage under the line the lens question has an answer");
-    lens.emit_by_name::<()>("toggled", &[]);
+    let lens = ui::line_step_button(&window, "scene-lens-0").expect("`scene-lens-0` exists");
+    assert!(lens.is_sensitive(), "two cameras filmed those seconds, so there is somewhere to switch to");
+    lens.emit_by_name::<()>("clicked", &[]);
     settle();
 
     let after = ui::review_cut_segs(&window);
@@ -186,6 +194,9 @@ fn check_the_lens_badge_moves_the_picture_to_that_row(app: &adw::Application) {
 /// it, both read back off the window's own cut.
 fn check_the_speaker_badge_silences_this_scene(app: &adw::Application) {
     let window = cut_window(app);
+    // The badges answer about the CHOSEN scene (S1's held one), so this check holds nothing: with no hold
+    // the line at 25 s stands inside scene 0, which is the scene whose hearing is being asked about.
+    ui::set_held_clip(None);
     let badge = ui::toggle_button(&window, "speaker-badge-cam1").expect("`speaker-badge-cam1` exists");
     assert!(badge.is_sensitive(), "a footage scene can be silenced");
     assert!(!badge.is_active(), "at first the scene hears the lane, so the badge is not struck through");
@@ -206,6 +217,42 @@ fn check_the_speaker_badge_silences_this_scene(app: &adw::Application) {
     let segs = ui::review_cut_segs(&window);
     assert!(segs[0].hears("cam1"), "pressing again took the lane back: {:?}", segs[0].quiet);
     assert!(status_text(&window).contains("heard in"), "and says heard now");
+    window.close();
+}
+
+/// S2: a HELD scene is the scene the badges speak of — not wherever the red line happens to stand. The
+/// spec's sentence names a time ("silent in the scene at 0:42"), so a badge that could only read the
+/// line's own scene would describe a scene nobody picked; holding a later clip and pressing must silence
+/// THAT clip and print its own seconds.
+fn check_a_held_scene_is_the_one_the_badge_silences(app: &adw::Application) {
+    let window = cut_window(app);
+    // Hold the SECOND camera's scene (20-37). The red line stays where `cut_window` put it, at 25 s, so
+    // the two candidates for "this scene" differ only while the hold is ignored.
+    ui::set_held_clip(Some(film(20.0, 37.0, 1)));
+    ui::refresh_camera_rows(&window);
+    settle();
+    let badge = ui::toggle_button(&window, "speaker-badge-cam1").expect("`speaker-badge-cam1` exists");
+    assert!(badge.is_sensitive(), "a held footage scene is a scene that can be silenced");
+
+    badge.set_active(true);
+    settle();
+    let segs = ui::review_cut_segs(&window);
+    assert!(
+        !segs[1].hears("cam1"),
+        "the press silenced the HELD scene (index 1), not the line's: {:?}",
+        segs.iter().map(|seg| seg.quiet.clone()).collect::<Vec<_>>()
+    );
+    assert!(
+        segs[0].hears("cam1"),
+        "and left the scene under the line alone: {:?}",
+        segs[0].quiet
+    );
+    let printed = status_text(&window);
+    assert!(printed.contains("silent in"), "and said so: {printed}");
+    assert!(
+        printed.contains("0:20"),
+        "naming the HELD scene's own seconds, which is what makes the time true: {printed}"
+    );
     window.close();
 }
 
@@ -269,6 +316,51 @@ fn check_play_takes_the_preview_back(app: &adw::Application) {
     window.close();
 }
 
+/// S3: watching a row moves the PREVIEW, not only the outline and the sentence. The panel's frame is asked
+/// for by `cut_picture::refresh`, which picks the watched row's recording and converts the line's session
+/// second into a second of THAT FILE (`§B`'s `at(t)`), so the ask is what proves the picture followed the
+/// click. Read through `preview_asked_for_test`, because a frame on disk would need Prepare's extraction — the ask
+/// is the observable half that exists in a headless container.
+fn check_a_row_watch_moves_the_preview_frame(app: &adw::Application) {
+    let window = cut_window(app);
+    ui::set_held_clip(None);
+    ui::set_watched_row(None);
+    naivepost::ui::cut_picture::refresh(&window);
+    settle();
+    let unwatched = naivepost::ui::cut_picture::preview_asked_for_test().expect("a page with rows asks for a frame");
+    // Row 1 is the tape whose span starts at 0 s, so its file second equals the line's session second.
+    assert!(
+        (unwatched.1 - 25.0).abs() < 0.001,
+        "with no watch the panel reads the first row at the line's own second: {unwatched:?}"
+    );
+
+    let plate_two = ui::line_step_button(&window, "watch-row-2").expect("`watch-row-2` exists");
+    plate_two.emit_by_name::<()>("clicked", &[]);
+    settle();
+    let watched = naivepost::ui::cut_picture::preview_asked_for_test().expect("the watch still asks for a frame");
+    assert_ne!(watched.0, unwatched.0, "the panel asks a DIFFERENT camera now: {watched:?}");
+    // The second camera runs from 20 s of the session clock, so the same 25 s line is 5 s into ITS file;
+    // asking the first row's file again would show a frame from the wrong part of the tape.
+    // The second row's tape carries the hand correction (**2**'s "−19.00 s", `cut.shift["cam1"] = -19.0`),
+    // so its FILE second is the line's session second MINUS that shift: 25 s on the clock is −14 s into
+    // cam1's own file, which is exactly why a watch cannot ask every recording for the same number.
+    assert!(
+        (watched.1 - (-14.0)).abs() < 0.001,
+        "and it converts the line's second through the watched recording's own start and shift: {watched:?}"
+    );
+
+    let play = ui::play_cut_button(&window).expect("the Cut page has ▶ Play the cut");
+    play.emit_by_name::<()>("clicked", &[]);
+    settle();
+    let back = naivepost::ui::cut_picture::preview_asked_for_test().expect("and after the hand-back, still a frame");
+    assert_eq!(back.0, unwatched.0, "▶ put the first row's picture back: {back:?}");
+    assert!(
+        (back.1 - unwatched.1).abs() < 0.001,
+        "at the same second it was read at before the watch: {back:?}"
+    );
+    window.close();
+}
+
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -283,10 +375,14 @@ fn window_round() {
             RAN_WATCH.store(true, Ordering::SeqCst);
             check_the_speaker_badge_silences_this_scene(app);
             RAN_LENS.store(true, Ordering::SeqCst);
+            check_a_held_scene_is_the_one_the_badge_silences(app);
+            RAN_HELD.store(true, Ordering::SeqCst);
             check_the_gutter_switch_speaks_for_the_whole_cut(app);
             RAN_SPEAKER.store(true, Ordering::SeqCst);
             check_play_takes_the_preview_back(app);
             RAN_GUTTER.store(true, Ordering::SeqCst);
+            check_a_row_watch_moves_the_preview_frame(app);
+            RAN_PREVIEW.store(true, Ordering::SeqCst);
             RAN_HANDED_BACK.store(true, Ordering::SeqCst);
             app.quit();
         });
@@ -305,9 +401,14 @@ fn f2_10_wire_the_camera_row_widgets_reach_the_rules_through_real_clicks() {
 
     window_round();
     assert!(RAN_ROWS.load(Ordering::SeqCst), "the row-click check never ran");
-    assert!(RAN_WATCH.load(Ordering::SeqCst), "the lens-badge check never ran");
+    assert!(RAN_WATCH.load(Ordering::SeqCst), "the lens check never ran");
     assert!(RAN_LENS.load(Ordering::SeqCst), "the speaker-badge check never ran");
     assert!(RAN_SPEAKER.load(Ordering::SeqCst), "the gutter-switch check never ran");
+    assert!(RAN_HELD.load(Ordering::SeqCst), "the held-scene badge check never ran");
+    assert!(
+        RAN_PREVIEW.load(Ordering::SeqCst),
+        "the preview-follows-the-watch check never ran"
+    );
     assert!(RAN_GUTTER.load(Ordering::SeqCst), "the play-hands-back check never ran");
     assert!(RAN_HANDED_BACK.load(Ordering::SeqCst), "the hand-back assertion block never ran");
 }

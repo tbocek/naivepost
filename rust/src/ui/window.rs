@@ -2709,13 +2709,17 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // behind. Done through `reopen_history_on` rather than a second push because the history may already
     // have been touched (a refresh ran during the build) -- replacing beats stacking another baseline.
     reopen_history_on(&window, &opened_cut);
-    // F2.11: this window's SESSION recordings, pushed beside the cut. The fold half of the page reads
-    // these rather than `kept_footage_recordings(&opened_cut)`: a dropped stretch only exists inside a
-    // run that is LONGER than the union of the kept clips inside it, and runs built from the kept
-    // segments are exactly that union — so derived that way there is never a head, a tail or a hole,
-    // and no − badge could ever be drawn. Seeded with what the cut itself implies today; replaced by
-    // [`set_session_recordings`] once the takes' own spans reach the page.
-    push_session_recordings(crate::timeline::kept_footage_recordings(&opened_cut));
+    // F2.11/F2.10: this window's SESSION recordings, pushed beside the cut. The fold half reads these
+    // rather than `kept_footage_recordings(&opened_cut)`: a dropped stretch only exists inside a run LONGER
+    // than the union of the kept clips inside it. F2.10 asks that list of the OPEN PROJECT (stamped names,
+    // hand shifts, probed lengths — [`crate::ui::cut_session`]), so a second camera that filmed the same
+    // seconds gets its own row; what the cut implies is the fallback when nothing can be resolved.
+    push_session_recordings(crate::ui::cut_session::session_or_kept(&opened_cut));
+    // F2.4 S4 asks that a remembered line survives while some filmed span still covers it. The spans come from
+    // the SESSION list this window was just given (`session_or_kept`: the open project's takes where ffprobe
+    // answered, else what the opened cut implies) — a take keeps rolling past the last kept clip, and a line
+    // out there is still on footage. Where nothing could be resolved that list IS the opened cut's own spans,
+    // so the line and its tape cannot disagree about which folder they belong to.
     let runs = crate::timeline::filmed_runs(page_recordings().as_slice());
     if let Some(review_) = review_cuts_button(&window) {
         wire_review_cuts(&review_, &window);
@@ -6326,8 +6330,13 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
     };
     let at = paste_line(window);
     let mut cut_ = newest_review_cut();
-    // The session's FILMED runs — what `lane_start`'s "nothing is rolling at m:ss" asks.
-    let filmed: Vec<(f64, f64)> = crate::timeline::filmed_runs(&crate::ui::cut_folds::page_recordings());
+    // The session's FILMED runs — what `lane_start`'s "nothing is rolling at m:ss" asks. Where no session was
+    // resolved the page's list already IS the kept clips' spans (`session_or_kept`), so this union only ever
+    // adds a real project's tape: a take that keeps running past the last kept clip leaves a line out there
+    // still rolling, which is the answer §B wants.
+    let mut spans = crate::ui::cut_folds::page_recordings();
+    spans.extend(crate::timeline::kept_footage_recordings(&cut_));
+    let filmed: Vec<(f64, f64)> = crate::timeline::filmed_runs(&spans);
     match cut_copy::lane_start(Some(at), &hand, &filmed) {
         cut_copy::LaneStart::Refusal(say) => say,
         cut_copy::LaneStart::Start(at) => {
@@ -7275,6 +7284,14 @@ pub fn seed_review_cut(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
             *slot.borrow_mut() = cut_.clone();
         }
     });
+    // F2.10/F2.11: the row list, the fold badges and ⇲ Lane's "is anything rolling at m:ss" all read this
+    // page's session spans, so a cut seeded after the window opened moves them — until someone declares the
+    // real takes, what the page holds is only what the cut it OPENED implied, and the newer fact is this one.
+    // A session DECLARED through `set_session_recordings` is never rewritten: its heads, tails and holes are
+    // what fold badges and row-emptiness are asked against, and no kept clip can imply them.
+    if !crate::ui::cut_folds::session_declared() {
+        crate::ui::cut_folds::set_session_recordings(&crate::ui::cut_session::session_or_kept(cut_));
+    }
 }
 
 /// The newest cut this window holds, or an empty one when nothing has been seeded.

@@ -14,7 +14,8 @@
 //! No UI lives here — no widget is built or held by this module — but every rule in it IS wired, and the
 //! Cut page's row list is the only thing between a click and these functions:
 //! `watch-row-<n>` → `ui::press_watch_row` → [`click_row`],
-//! `lens-badge-<n>` → `ui::press_lens_row` → [`show_scene_from`],
+//! `scene-lens-<scene index>` → `ui::press_lens_scene` → [`show_scene_from`] (the 🔍 belongs to the SCENE —
+//! a row-header badge could only ever speak about whatever scene the line happened to sit in),
 //! `speaker-badge-<lane>` → `ui::press_speaker_badge` → [`crate::cut_hear::toggle_heard`],
 //! `gutter-switch-<lane>` → `ui::press_gutter_switch` → [`crate::cut_hear::toggle_lane_all`].
 //! The rows themselves are drawn into the box named `camera-rows` by `ui::refresh_camera_rows`, which
@@ -28,6 +29,65 @@ use std::collections::BTreeMap;
 use crate::cut::{Cut, Seg};
 use crate::cut_hear;
 use crate::timeline::Recording;
+
+// --- S1/S2: WHICH scene a badge acts on -----------------------------------------------------------------
+
+/// F2.10 (`the scene under the line, or the held one`): which kept scene a lens or speaker badge means.
+///
+/// The HELD scene wins: holding a clip is the deliberate act (§A's press order puts a hold ahead of most
+/// things, and ⌦ already removes what is held before what lies under the line), so badges follow the thing
+/// in hand rather than wherever the red line happens to sit. With nothing held it is the scene the LINE is
+/// inside — and `None` when there is no such scene, which is what makes a badge say "no scene" instead of
+/// silently editing scene 0 (the bug this replaces: the line-only lookup answered `Some(0)` for an
+/// unplaced line, so a badge spoke about a scene nobody chose).
+pub fn held_or_line_scene(cut_: &Cut, line: Option<f64>, held: Option<&Seg>) -> Option<usize> {
+    if let Some(held) = held {
+        // Found by identity, not by trusting the index the hand came from: a renumbering (an Add, a Remove)
+        // between the pick and the badge press would otherwise edit whatever moved into that slot.
+        return cut_
+            .segs
+            .iter()
+            .position(|seg| seg.ins.is_empty() && seg.s == held.s && seg.e == held.e);
+    }
+    let at = line?;
+    cut_.segs
+        .iter()
+        .position(|seg| seg.ins.is_empty() && seg.s <= at && at < seg.e)
+}
+
+/// F2.10 S1: which rows a scene COULD take its picture from — every row whose recording was ROLLING at any
+/// point inside the scene's span (a shared second is enough). Not "covered the whole scene": the overlap
+/// this flow is drawn from is not exact (`spec/img/05-rows.png` keeps ONE 0–37 scene while camera 2 runs
+/// 20–37), and the lens question there is exactly "show those seconds from camera 2 instead" — requiring
+/// full coverage would refuse the spec's own figure, and a camera that stopped halfway through a scene is
+/// still the camera the person would cut to.
+///
+/// Ordered (lowest row first) so a badge press can CYCLE through them: the spec gives one 🔍 per scene and no
+/// menu, and cycling is what lets a single button reach every camera that filmed the scene.
+pub fn filming_rows(seg: &Seg, recordings: &[Recording], rows: &[usize]) -> Vec<i32> {
+    let mut filming: Vec<i32> = recordings
+        .iter()
+        .zip(rows)
+        .filter(|(rec, _)| rec.start < seg.e && seg.s < rec.end)
+        .map(|(_, placed)| *placed as i32)
+        .collect();
+    filming.sort_unstable();
+    filming.dedup();
+    filming
+}
+
+/// The row a 🔍 press lands on: the FIRST filming row that is not the scene's current one, wrapping to the
+/// lowest when the scene already sits on the highest. `None` when there is nothing else to switch to — one
+/// camera filmed the whole span, so the badge has nowhere to go.
+pub fn next_filming_row(current: i32, filming: &[i32]) -> Option<i32> {
+    let rotating: Vec<i32> = filming
+        .iter()
+        .filter(|row| **row != current)
+        .copied()
+        .collect();
+    // Wrap rather than stop: a scene on the top camera must still be able to get back to the bottom one.
+    rotating.iter().find(|row| **row > current).or_else(|| rotating.first()).copied()
+}
 
 // --- S1: which row a scene's picture comes from -------------------------------------------------------------
 

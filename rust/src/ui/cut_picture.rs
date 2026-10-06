@@ -87,6 +87,9 @@ pub fn show_frame(window: &adw::ApplicationWindow, path: Option<&std::path::Path
 }
 
 thread_local! {
+    /// The last frame request `refresh` made: which recording the panel asked, at which FILE second. See
+    /// [`preview_asked_for_test`] — the program never reads this back.
+    static PREVIEW_ASKED: std::cell::RefCell<Option<(String, f64)>> = const { std::cell::RefCell::new(None) };
     /// The recording a snapshot named for the preview's frame search. See [`preview_recording_base`].
     static PREVIEW_BASE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
     /// The folder a snapshot named for that search. See [`snapshot_tree`].
@@ -106,12 +109,30 @@ pub fn set_preview_camera_base(base: &str) {
     PREVIEW_BASE.with(|slot| *slot.borrow_mut() = Some(base.to_string()));
 }
 
+/// What the preview last asked frames for — `(recording base, the second of THAT FILE)` — or `None` on a
+/// page that has never refreshed with a recording to ask about. TEST DOOR ONLY: nothing in the program reads
+/// it back, only F2.10 S3's widget test does. A watch is otherwise invisible from outside — the row list
+/// repaints its outline and the status prints a sentence — and whether a real frame landed on the panel would
+/// need Prepare's extraction, so in a headless container this ask is the observable half that exists.
+pub fn preview_asked_for_test() -> Option<(String, f64)> {
+    PREVIEW_ASKED.with(|slot| slot.borrow().clone())
+}
+
 /// Which frame belongs on the panel right now: the recording of the row the preview is watching (falling
 /// back to the first recording of the session), at the second the red line stands on. Both halves are asked
 /// of the doors that hold them, so moving the line or clicking another row changes the picture without this
 /// module remembering anything.
 pub fn refresh(window: &adw::ApplicationWindow) -> bool {
-    let recordings = ui::page_recordings();
+    // The same spans the ROW LIST colours (`row_spans`), so a watched row number means one thing on the page.
+    // Asked of that list first and falling back to the session's own tape: a cut with no footage scene yet
+    // colours nothing, and a declared take must still be the picture then (F2.10 S3 says nothing about
+    // dropping it). One span per row, in row order, or the outline and the frame disagree about row 2.
+    let colouring = crate::ui::cut_cameras::row_spans(&ui::window::newest_review_cut());
+    let recordings = if colouring.is_empty() {
+        ui::page_recordings()
+    } else {
+        colouring
+    };
     if recordings.is_empty() {
         return show_frame(window, None);
     }
@@ -137,13 +158,16 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     let paths = cut_tracks::frame_paths(&tree, &base);
     // The frames on disk carry the FILE's own stamps, so the line's session second has to be converted
     // before it can pick one — otherwise a recording that does not start at 0:00, or one the hand slid,
-    // shows a frame from the wrong part of the file (§B's `at(t)`).
+    // shows a frame from the wrong part of the file (§B's `at(t)`). The SAME number is what
+    // `preview_asked_for_test` reports: which recording the panel asked, at which second of THAT file — the
+    // ask a watch provokes and the frame looked up cannot drift apart, because they are computed in one place.
     let at = timeline::local_at(
         ui::line_position(window).t,
         recording.start,
         0.0,
         timeline::shift_of(&ui::window::newest_review_cut(), &base),
     );
+    PREVIEW_ASKED.with(|slot| *slot.borrow_mut() = Some((base.clone(), at)));
     let found = cut_tracks::frame_near(&paths, at);
     show_frame(window, found.as_deref())
 }

@@ -39,6 +39,10 @@ pub fn page_recordings() -> Vec<crate::timeline::Recording> {
 
 /// Replace this window's session recordings with the ones the page should lay out. Newest slot only, so
 /// an older window keeps its own view like every other per-window slot here.
+///
+/// This is also what DECLARES a session: a list written here was named by someone who knows the takes (an
+/// open project's rescan, a flow laying out a hole it wants folded), so its heads, tails and holes are the
+/// point of it and a later `seed_review_cut` must not trade them for what a cut implies.
 pub fn set_session_recordings(recordings: &[crate::timeline::Recording]) {
     let held = SESSION_RECORDINGS.with(|slots| slots.borrow().last().cloned());
     match held {
@@ -47,18 +51,37 @@ pub fn set_session_recordings(recordings: &[crate::timeline::Recording]) {
             slots.borrow_mut().push(Rc::new(RefCell::new(recordings.to_vec())))
         }),
     }
+    SESSION_DECLARED.with(|flags| match flags.borrow().last() {
+        Some(flag) => flag.set(true),
+        None => flags.borrow_mut().push(std::cell::Cell::new(true)),
+    });
 }
 
 pub(crate) fn push_session_recordings(recordings: Vec<crate::timeline::Recording>) {
     SESSION_RECORDINGS.with(|slots| {
         slots.borrow_mut().push(Rc::new(RefCell::new(recordings)));
     });
+    // A window's first list is DERIVED from the cut it opened — a fallback, not a declaration.
+    SESSION_DECLARED.with(|flags| flags.borrow_mut().push(std::cell::Cell::new(false)));
+}
+
+/// Has anyone DECLARED this window's session, or is the page still running on the spans its opened cut
+/// implied? Only the second answer may be replaced when a new cut is seeded.
+pub(crate) fn session_declared() -> bool {
+    // Newest slot only: an older window's declaration is that window's business, like the list beside it.
+    SESSION_DECLARED
+        .with(|flags| flags.borrow().last().map(|flag| flag.get()))
+        .unwrap_or(false)
 }
 
 thread_local! {
     /// F2.11: one recording list per window, newest last like [`REVIEW_CUTS`]. Cloned OUT of the borrow
     /// before any write (see `remember_fold_gaps`) so a refresh re-entering here cannot double-borrow.
     static SESSION_RECORDINGS: std::cell::RefCell<Vec<Rc<RefCell<Vec<crate::timeline::Recording>>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// One flag per [`SESSION_RECORDINGS`] slot: was that list DECLARED (someone named the real takes) or is
+    /// it the derived fallback a window build leaves behind? Pushed in lockstep with the list above.
+    static SESSION_DECLARED: std::cell::RefCell<Vec<std::cell::Cell<bool>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -264,9 +287,11 @@ pub(crate) fn save_folds(cut_: &Cut) {
 /// row"; this only forwards and prints.
 pub fn press_row_cross(window: &adw::ApplicationWindow, row: usize) -> Option<String> {
     let cut_ = newest_review_cut();
-    // The same session tape the badges are laid out from, so "is this row empty?" is asked against what
-    // was filmed rather than against what survived the cut.
-    let recordings = page_recordings();
+    // The SAME spans the row list colours with, so "is this row empty?" is asked of one answer rather than
+    // two — `refresh_camera_rows` drops a lane's span once its ✕ took the lane, and asking here against the
+    // raw session list would still count that phantom row as occupied and refuse a cross the page just drew
+    // live. One lane too short or too long flips which row counts as the emptied bottom one.
+    let recordings = crate::ui::cut_cameras::row_spans(&cut_);
     let placed = crate::timeline::rows_for(&recordings, &cut_);
     let mut cut_ = cut_;
     let said = cut_fold::kill_row(&mut cut_, row, &recordings, &placed)?;

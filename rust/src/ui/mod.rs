@@ -77,6 +77,9 @@ pub mod cut_line_press;
 /// §05-cut#2 §B — ⇲ Lane with nothing in hand: a footage file on a row of its own, probed. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod cut_lane;
+/// F2.10: the session's recordings — stamped names, hand shifts and probed lengths — which is what gives a
+/// second camera a row of its own. Split out of `window.rs`, past its size budget.
+pub mod cut_session;
 /// F2.1 ▶'s page half: the filmed runs and footage files a press hands the media leg, and the button's face.
 /// Split out of `window.rs`, which is past its size budget.
 pub mod cut_record_play;
@@ -247,7 +250,7 @@ pub use window::apply_pick;
 pub use window::watched_row;
 pub use window::set_watched_row;
 pub use cut_cameras::{
-    camera_rows_box, camera_watch, hand_preview_back, press_gutter_switch, press_lens_row,
+    camera_rows_box, camera_watch, hand_preview_back, press_gutter_switch, press_lens_scene,
     press_speaker_badge, press_watch_row, refresh_camera_rows, toggle_button,
 };
 // F2.10: the row list itself, rebuilt from the live cut by every refresh above.

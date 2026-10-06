@@ -20,7 +20,7 @@ use crate::ui::cut_verb_press::press_badge;
 #[allow(unused_imports)] // kept for the seams' own callers; the crosses now fire through `press_badge`
 use crate::ui::cut_folds::{press_lane_cross, press_row_cross, CROSS_GLYPH};
 use crate::ui::window::{
-    find_status, find_widget_by_name, line_position, newest_review_cut, record_edit,
+    find_status, find_widget_by_name, held_clip, line_position, newest_review_cut, record_edit,
     set_watched_row, watched_row,
 };
 
@@ -65,16 +65,15 @@ fn line_second(window: &adw::ApplicationWindow) -> f64 {
     line_position(window).t
 }
 
-/// The scene index the line stands in, as F2.10 reads it: a KEPT scene (footage, not an insert), since
-/// both the lens badge and the speaker badge are asked about footage. `None` when the line sits over a
-/// card or over nothing.
-fn kept_scene_at_line(window: &adw::ApplicationWindow) -> Option<usize> {
-    let cut_ = newest_review_cut();
-    let at = line_second(window);
-    cut_
-        .segs
-        .iter()
-        .position(|seg| seg.ins.is_empty() && seg.s <= at && at < seg.e)
+/// The scene a lens or speaker badge means: the HELD clip if one is in hand, else the kept scene the line
+/// stands in (both footage — an insert has no picture to re-source and no hearing of its own). `None` when
+/// neither exists, which is what makes a badge refuse instead of editing scene 0.
+fn badge_scene(window: &adw::ApplicationWindow) -> Option<usize> {
+    cut_cam::held_or_line_scene(
+        &newest_review_cut(),
+        Some(line_second(window)),
+        held_clip().as_ref(),
+    )
 }
 
 /// F2.10 S3 (`if the line is in a kept scene shown from another row, status says ONCE …`): the seam a
@@ -98,6 +97,9 @@ pub fn press_watch_row(window: &adw::ApplicationWindow, row: i32) -> Option<Stri
     }
     // The dashed outline moves with the watch, so the rows are rebuilt rather than merely queued.
     refresh_camera_rows(window);
+    // F2.10 S3: watching a row IS what the preview shows, so the frame follows the watch. Which recording
+    // and which second that means is [`cut_picture`]’s decision, not this module’s.
+    crate::ui::cut_picture::refresh(window);
     said
 }
 
@@ -134,13 +136,68 @@ fn lane_heard_in_line_scene(cut_: &Cut, lane: &str, scene: Option<usize>) -> boo
 /// Called from `refresh_selection_readout` (which every draw, nudge and clear already calls) and after
 /// each of this item's presses. Rebuilding rather than patching keeps the watched row's dashed outline
 /// STATE: it is added when the watch says so, never painted on luck.
+/// Which recordings the row list lays out: what this session filmed, when the page has been told (the
+/// session slot `set_session_recordings` / [`crate::ui::cut_session`] fill); the kept clips' spans are the
+/// answer for a page nobody seeded — and they must be laid out through `timeline::rows_for`, which is what
+/// puts an overlap on its own row. Deriving them here rather than reading a slot keeps the row list, the
+/// lens cycle and the hearing badges all asking the SAME colouring.
+fn session_recordings(cut_: &Cut) -> Vec<crate::timeline::Recording> {
+    let spans = crate::ui::cut_folds::page_recordings();
+    if spans.is_empty() {
+        return crate::timeline::kept_footage_recordings(cut_);
+    }
+    spans
+}
+
+/// The spans this window's row list colours: the page's session spans where a session was named, else what
+/// the kept clips imply — MINUS any span that names neither a camera a kept scene shows nor a lane still in
+/// the cut. A lane's ✕ takes its row back (§F2.11), and a phantom row would otherwise keep the row above it
+/// from counting as the emptied bottom one. Both the drawing and `press_row_cross` ask here, so the ✕'s
+/// sensitivity and its answer cannot disagree.
+pub fn row_spans(cut_: &Cut) -> Vec<crate::timeline::Recording> {
+    let held = {
+        let seeded = crate::ui::cut_folds::page_recordings();
+        if seeded.is_empty() {
+            crate::timeline::kept_footage_recordings(cut_)
+        } else {
+            seeded
+        }
+    };
+    // A row held open by the floor (`cut.nrows`, §F2.11 S2) is a row the page draws and numbers, so the
+    // spans it holds must survive this filter or the emptied bottom row's ✕ is asked about a phantom instead
+    // of the row it was drawn over. The floor only ADDS rows, never removes them.
+    let rows_now: Vec<String> = crate::timeline::kept_footage_recordings(cut_)
+        .iter()
+        .map(|span| span.base.clone())
+        .chain(cut_.lanes.iter().map(|lane| lane.name.clone()))
+        .chain((0..cut_.nrows.max(0)).map(|row| format!("held-row-{row}")))
+        .collect();
+    let held: Vec<crate::timeline::Recording> = held
+        .into_iter()
+        .filter(|span| rows_now.contains(&span.base))
+        .collect();
+    // Nothing in the session list names a camera this cut shows — a declared take whose file the cut never
+    // reads. The rows are then what the session says they are: dropping every span would leave the page no
+    // rows at all rather than the rows it was told about.
+    if held.is_empty() {
+        return crate::ui::cut_folds::page_recordings();
+    }
+    held
+}
+
 pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
     let Some(rows_box) = camera_rows_box(window) else {
         return;
     };
     let cut_ = newest_review_cut();
-    let recordings = crate::timeline::kept_footage_recordings(&cut_);
+    // The spans to colour — see [`row_spans`]: the session's list, with a lane's row dropped once its ✕ took
+    // the lane, which is what puts an overlap on its own row here too.
+    let recordings = row_spans(&cut_);
     let placed = crate::timeline::rows_for(&recordings, &cut_);
+    // The same pair the scene 🔍 below asks about, hoisted so the row list and the badge cannot disagree
+    // about which camera filmed what.
+    let placed_recordings = recordings.clone();
+    let placed_rows = placed.clone();
     let total = crate::timeline::row_count(&recordings, &cut_);
     // The rows this window has already drawn, keyed by their widget name. A row is built ONCE and then
     // only re-styled: `find_widget_by_name` matches on GTK's *widget name*, which every control here
@@ -149,7 +206,10 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
     // row count and never shrinking it also keeps §B's emptied bottom row on screen until its ✕ lands
     // with F2.11, rather than dropping a row the user can still click.
     let lanes: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
-    let scene = kept_scene_at_line(window);
+    // F2.10 S2: the badges answer about a CHOSEN scene — the one being held, when something is held — and
+    // only fall back to wherever the red line happens to stand. A badge that could read only the line's own
+    // scene made "<base> is silent in the scene at m:ss" speak of a scene nobody picked.
+    let scene = badge_scene(window);
     let at = line_second(window);
     let watched = watched_row();
 
@@ -245,45 +305,9 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
         });
         holder.append(&plate_button);
 
-        // S1's lens badge: lit when the scene under the line is shown FROM this row. Sensitive only
-        // where the question has an answer — a card at the line owns no camera, so asking it which
-        // lens it uses would write a number nothing reads.
-        let lens = gtk::ToggleButton::new();
-
-        lens.set_widget_name(&format!("lens-badge-{}", index + 1));
-        lens.set_label(LENS_GLYPH);
-        lens.set_sensitive(scene.is_some());
-        lens.set_active(scene.map(|i| cut_.segs[i].cam).unwrap_or(-1) == row);
-        lens.set_tooltip_text(Some(&format!(
-            "{LENS_GLYPH} {}",
-            match scene {
-                Some(i) => format!(
-                    "the scene at {} is shown from {} now",
-                    cut_hear::scene_clock(cut_.segs[i].s),
-                    if base.is_empty() {
-                        plate.as_str()
-                    } else {
-                        base.as_str()
-                    }
-                ),
-                None => "no footage scene at the line \u{2014} nothing to show from a row".to_string(),
-            }
-        )));
-        let win = window.clone();
-        lens.connect_toggled(move |badge| {
-            // A `set_active` from the refresh is not a press: without this guard the refresh would
-            // re-enter the very press that asked for it and never settle.
-            if refreshing() {
-                return;
-            }
-            // The button's own face is set here; the RULE runs in `press_lens_row`. A press that the
-            // rule refuses (an insert reached despite the greying) puts the face back rather than
-            // leaving a lit badge over an unchanged cut.
-            if press_lens_row(&win, row).is_none() {
-                badge.set_active(false);
-            }
-        });
-        holder.append(&lens);
+        // S1's lens control now lives on the SCENE (see the `scene-lens-<index>` buttons below), so the row
+        // header carries no lens badge: a button on the row prints "the scene at m:ss is shown from <cam>
+        // now" for a scene the row button never named, which is what this move fixes.
 
         // S2: one speaker badge per lane, plus that lane's gutter switch beside it.
         for lane in lanes.iter() {
@@ -452,6 +476,53 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
             // indistinguishable from a bug, a greyed one reads as today's refusal.
             let live = crate::ui::cut_verb_press::scene_cross_live(seg.e - seg.s);
             cross.set_sensitive(live);
+
+            // F2.10 S1: the 🔍 sits with ITS SCENE, beside that scene's ✕, because the question it answers is
+            // about one scene ("the scene at m:ss is shown from <cam> now") and a row-header badge could only
+            // answer it for whatever scene the line happened to sit in. Named `scene-lens-<index>` after its
+            // place in `cut.segs`, so a test fires the scene it is looking at; created once and re-styled in
+            // place like the cross, and greyed (never hidden) when there is nowhere to switch to.
+            let lens_name = format!("scene-lens-{index}");
+            let found_lens = find_widget_by_name(rows_box.upcast_ref(), &lens_name)
+                .and_then(|found| found.downcast::<gtk::Button>().ok());
+            if !mine {
+                if let Some(stale) = found_lens {
+                    if let Some(parent) = stale.parent().and_then(|node| node.downcast::<gtk::Box>().ok()) {
+                        parent.remove(&stale);
+                    }
+                }
+                continue;
+            }
+            let lens = match found_lens {
+                Some(existing) => existing,
+                None => {
+                    let fresh = gtk::Button::new();
+                    fresh.set_widget_name(&lens_name);
+                    fresh.set_label(LENS_GLYPH);
+                    let win = window.clone();
+                    fresh.connect_clicked(move |_| {
+                        press_lens_scene(&win, index);
+                    });
+                    holder.append(&fresh);
+                    fresh
+                }
+            };
+            // The tooltip says what a press would DO, which for a cycle is the NEXT camera rather than the
+            // current one — reading today's answer off the button would tell the person nothing new.
+            let filming = cut_cam::filming_rows(seg, &placed_recordings, &placed_rows);
+            let tip = match cut_cam::next_filming_row(seg.cam, &filming) {
+                Some(row) => format!(
+                    "{LENS_GLYPH} show the scene at {} from {} instead",
+                    cut_hear::scene_clock(seg.s),
+                    cut_cam::row_name(row, &placed_recordings, &placed_rows)
+                ),
+                None => format!(
+                    "no other camera filmed the scene at {}",
+                    cut_hear::scene_clock(seg.s)
+                ),
+            };
+            lens.set_tooltip_text(Some(&tip));
+            lens.set_sensitive(cut_cam::next_filming_row(seg.cam, &filming).is_some());
         }
     }
     CAMERA_REFRESH.with(|cell| cell.set(false));
@@ -470,21 +541,35 @@ fn refreshing() -> bool {
     CAMERA_REFRESH.with(|cell| cell.get())
 }
 
-/// F2.10 S1 (`🔍 lens badge: which row its picture comes from`): the seam the badge forwards to. The
-/// scene keeps its own seconds and only changes which row its picture is read off, so the edit is the
-/// `cam` field and nothing else — [`cut_cam::show_scene_from`] refuses an insert for exactly that
-/// reason, and a refusal leaves this window's cut untouched rather than half-applied.
-pub fn press_lens_row(window: &adw::ApplicationWindow, row: i32) -> Option<String> {
-    let scene = kept_scene_at_line(window)?;
+/// F2.10 S1 (`🔍 lens badge: which row its picture comes from`): the seam a SCENE's 🔍 forwards to.
+///
+/// A press CYCLES to the next row that filmed the scene's whole span (see [`cut_cam::filming_rows`] for why
+/// partial coverage is not an option, and [`cut_cam::next_filming_row`] for the cycle). DECISION the spec
+/// leaves open — it names one badge per scene and no menu: cycling is what lets a single button reach every
+/// camera that filmed those seconds; a menu is not what a round badge invites.
+pub fn press_lens_scene(window: &adw::ApplicationWindow, scene: usize) -> Option<String> {
     let mut cut_ = newest_review_cut();
-    let recordings = crate::timeline::kept_footage_recordings(&cut_);
+    let seg = cut_.segs.get(scene).filter(|seg| seg.ins.is_empty())?;
+    let recordings = session_recordings(&cut_);
     let rows = crate::timeline::rows_for(&recordings, &cut_);
+    let filming = cut_cam::filming_rows(seg, &recordings, &rows);
+    let Some(row) = cut_cam::next_filming_row(seg.cam, &filming) else {
+        // The refusal says WHERE the person is and why there is nowhere to go, rather than doing nothing.
+        let said = format!(
+            "the scene at {} is the only footage there \u{2014} nothing else filmed those seconds",
+            cut_hear::scene_clock(seg.s)
+        );
+        if let Some(status) = find_status(window.upcast_ref()) {
+            status.set_text(&said);
+        }
+        return None;
+    };
     let said = cut_cam::show_scene_from(&mut cut_, scene, row, &recordings, &rows)?;
+    crate::ui::window::save_insert_cut(&cut_);
     record_edit(window, &cut_);
     if let Some(status) = find_status(window.upcast_ref()) {
         status.set_text(&said);
     }
-    // The lit badge follows the cut, so the rows are rebuilt from the new state rather than queued.
     refresh_camera_rows(window);
     Some(said)
 }
@@ -493,7 +578,7 @@ pub fn press_lens_row(window: &adw::ApplicationWindow, row: i32) -> Option<Strin
 /// to. With no kept scene under the line there is no scene to be silent in, so nothing is printed and
 /// nothing changes.
 pub fn press_speaker_badge(window: &adw::ApplicationWindow, lane: &str) -> Option<String> {
-    let scene = kept_scene_at_line(window)?;
+    let scene = badge_scene(window)?;
     let mut cut_ = newest_review_cut();
     let said = cut_hear::toggle_heard(&mut cut_, scene, lane)?;
     record_edit(window, &cut_);
@@ -534,13 +619,17 @@ pub fn hand_preview_back(window: &adw::ApplicationWindow) -> Option<String> {
     // The row's own name comes from this window's recordings, so the sentence names a camera rather
     // than a number; `row_name` falls back to "row N" when nothing is laid out yet.
     let cut_ = newest_review_cut();
-    let recordings = crate::timeline::kept_footage_recordings(&cut_);
+    // F2.10: the SESSION's recordings, from the open project's own footage rows — a second camera that
+    // filmed the same seconds only gets its own row if it is in this list at all.
+    let recordings = session_recordings(&cut_);
     let rows = crate::timeline::rows_for(&recordings, &cut_);
     let named = watched_row()
         .map(|row| cut_cam::row_name(row as i32, &recordings, &rows))
         .unwrap_or_else(|| "the watched row".to_string());
     set_watched_row(None);
     refresh_camera_rows(window);
+    // And the panel goes back to the cut's own picture for the same reason a watch moved it.
+    crate::ui::cut_picture::refresh(window);
     Some(format!("\u{25b6} plays the cut \u{2014} {named} no longer watched"))
 }
 

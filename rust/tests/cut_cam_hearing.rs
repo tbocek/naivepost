@@ -150,6 +150,108 @@ fn f2_10_s1_a_drag_pins_only_what_it_dragged() {
     cut.rows = literal;
     let rows = rows_for(&pair(), &cut);
     assert_eq!(rows, vec![1, 1], "both stay on the row the file named them, overlap and all");
+
+    // (c) The gesture itself says WHICH recording it took, because that is the only thing the page may pin.
+    // A drag that moved a scene or a whole row names no file and therefore pins nothing — pinning the row's
+    // neighbours is exactly the prototype behaviour this replaces.
+    let took_one = trim_gesture_recording_drag();
+    assert_eq!(
+        took_one.as_deref(),
+        Some(CAM_TWO),
+        "a band drag reports the recording it slid"
+    );
+}
+
+/// Ask the real gesture rule what a right-drag on camera 2's band took. `None` if it did not answer a slide.
+fn trim_gesture_recording_drag() -> Option<String> {
+    use naivepost::cut_trim as trim;
+    let press = trim::Press {
+        recorders_band: Some(CAM_TWO),
+        wave_strip: None,
+        selection: None,
+        selected: vec![],
+        inside_selection: false,
+        on_border: false,
+        scene: None,
+        row: 0,
+    };
+    match trim::right_gesture(
+        &press,
+        40.0,
+        true,
+        5.0,
+        &[],
+        0.0,
+        300.0,
+        8.0,
+        &[],
+        &BTreeMap::new(),
+        &[CAM_ONE.to_string(), CAM_TWO.to_string()],
+        false,
+    ) {
+        trim::Gesture::Slid { dragged, .. } => dragged,
+        trim::Gesture::Click => None,
+    }
+}
+
+/// F2.10 (Cameras and hearing) S1/S2 — `the scene under the line, or the held one`: WHICH scene a badge
+/// means. The held clip wins; with nothing held it is the kept scene the line stands in; and an unplaced
+/// line with nothing in hand names no scene at all — which is what stops a badge from silently editing
+/// scene 0 of a cut nobody aimed at.
+#[test]
+fn f2_10_s1_s2_a_badge_means_the_held_scene_or_the_one_under_the_line() {
+    let cut = Cut {
+        segs: vec![film(0.0, 10.0, 0), film(20.0, 30.0, 0)],
+        ..Default::default()
+    };
+
+    // Nothing held: the line decides, and only a line INSIDE a kept footage scene decides anything.
+    assert_eq!(cam::held_or_line_scene(&cut, Some(5.0), None), Some(0), "the line's own scene");
+    assert_eq!(cam::held_or_line_scene(&cut, Some(15.0), None), None, "a line over a hole names nothing");
+    assert_eq!(cam::held_or_line_scene(&cut, None, None), None, "no line, no scene");
+
+    // Held wins over the line — the thing in hand is the thing the person is working on.
+    let held = film(20.0, 30.0, 0);
+    assert_eq!(
+        cam::held_or_line_scene(&cut, Some(5.0), Some(&held)),
+        Some(1),
+        "the held clip, not wherever the line happens to sit"
+    );
+    // A card owns no footage, so it can never be the answer however the line sits.
+    let cards = Cut {
+        segs: vec![card(5.0)],
+        ..Default::default()
+    };
+    assert_eq!(cam::held_or_line_scene(&cards, Some(5.0), None), None, "an insert has no picture to re-source");
+    // A hold that no longer matches any kept scene (renumbered away) names nothing rather than a neighbour.
+    let gone = film(99.0, 99.5, 0);
+    assert_eq!(cam::held_or_line_scene(&cut, Some(5.0), Some(&gone)), None, "a spent hold edits nothing");
+}
+
+/// F2.10 (Cameras and hearing) S1 — the rows a scene's 🔍 can cycle through, and where a press lands.
+/// A row counts as filming the scene when its tape was rolling at any point inside the scene's span: the
+/// spec's own figure keeps ONE 0–37 scene while camera 2 runs 20–37, and "show those seconds from camera 2
+/// instead" is the question being asked there — requiring full coverage would refuse that example.
+#[test]
+fn f2_10_s1_the_scene_lens_cycles_over_the_rows_that_filmed_it() {
+    let recordings = pair();
+    let rows = vec![0usize, 1];
+    // The spec's scene: 0–37 on camera 1, with camera 2 rolling from 20.
+    let scene = film(0.0, 37.0, 0);
+    let filming = cam::filming_rows(&scene, &recordings, &rows);
+    assert_eq!(filming, vec![0, 1], "both tapes were running inside those seconds");
+    assert_eq!(cam::next_filming_row(0, &filming), Some(1), "from camera 1 the press goes to camera 2");
+    assert_eq!(cam::next_filming_row(1, &filming), Some(0), "and it wraps back, so every camera is reachable");
+
+    // One camera only: nowhere to switch to, which is what greys the badge rather than hiding it. The tape
+    // has to overlap the scene for its row to count — `pair()`'s two tapes both stop at 37.
+    let alone = film(25.0, 30.0, 0);
+    assert_eq!(cam::filming_rows(&alone, &[recordings[0].clone()], &[0]), vec![0]);
+    assert_eq!(cam::next_filming_row(0, &[0]), None, "a lone camera has no next row");
+
+    // A tape that stopped before the scene began is not an option at all.
+    let later = film(50.0, 60.0, 0);
+    assert!(cam::filming_rows(&later, &recordings, &rows).is_empty(), "nothing filmed those seconds");
 }
 
 // --- S2: what a scene hears -------------------------------------------------------------------------------
@@ -417,7 +519,7 @@ fn f2_10_s3_a_card_at_the_line_never_says_the_cut_shows_another_camera() {
 // recording list is handed over, one of them fails here rather than silently drawing the wrong badge.
 
 /// F2.10 (Cameras and hearing) S1 — `"the scene at m:ss is shown from <cam> now"`, through the seam.
-/// `ui::press_lens_row` reads its recordings with `timeline::kept_footage_recordings` and its rows with
+/// `ui::press_lens_scene` reads its recordings with `timeline::kept_footage_recordings` and its rows with
 /// `timeline::rows_for` (NOT the hand-written `pair()` the rule tests use), because the page knows only
 /// the cut. This pins that those two lists produce the same sentence and move ONLY the row: the scene's
 /// own seconds are untouched, since picking a lens changes where the picture comes from, never when.
@@ -427,13 +529,13 @@ fn f2_10_s1_the_seam_changes_only_the_row_a_picture_is_read_off() {
         segs: vec![film(0.0, 37.0, 0), film(20.0, 37.0, 1)],
         ..Default::default()
     };
-    // Exactly what `press_lens_row` builds before calling the rule.
+    // Exactly what `press_lens_scene` builds before calling the rule.
     let recordings = naivepost::timeline::kept_footage_recordings(&cut);
     let rows = rows_for(&recordings, &cut);
     assert_eq!(recordings.len(), 2, "two kept footage segments are two recordings");
     assert_eq!(rows, vec![0, 1], "the overlap from 20 is what puts the second camera on its own row");
 
-    // The scene under the line is index 0 (0 <= 25 < 37), the same pick `kept_scene_at_line` makes.
+    // The scene under the line is index 0 (0 <= 25 < 37), the same pick `cut_cam::held_or_line_scene` makes.
     let said = cam::show_scene_from(&mut cut, 0, 1, &recordings, &rows)
         .expect("a kept scene has a picture to be shown from a row");
     // The sentence names the row by what lies ON it (`row_name`'s answer over THIS list), and its clock
@@ -468,7 +570,7 @@ fn f2_10_s2_the_gutter_switch_is_read_from_what_the_page_shows() {
     assert!(!hear::all_silent(&cut, &[lane]), "and no scene still lists it");
 }
 
-/// F2.10 (Cameras and hearing) S3 — the refusal `ui::press_lens_row` propagates when the line lies on a
+/// F2.10 (Cameras and hearing) S3 — the refusal `ui::press_lens_scene` propagates when the line lies on a
 /// card: `show_scene_from` answers `None` and leaves the cut byte-identical, so a press over an insert
 /// writes no camera onto a thing that owns none. Paired with the fresh-watch case behind
 /// `ui::hand_preview_back`: with nothing watched, ▶ has nothing to hand back and says so by returning
@@ -480,7 +582,7 @@ fn f2_10_s3_a_card_at_the_line_leaves_the_lens_refused() {
     let recordings = naivepost::timeline::kept_footage_recordings(&cut);
     let rows = rows_for(&recordings, &cut);
 
-    // Index 1 is the card: `ins` non-empty, so `kept_scene_at_line` would never name it and the rule
+    // Index 1 is the card: `ins` non-empty, so `held_or_line_scene` would never name it and the rule
     // refuses outright if asked.
     assert_eq!(
         cam::show_scene_from(&mut cut, 1, 1, &recordings, &rows),

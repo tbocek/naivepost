@@ -499,6 +499,11 @@ pub enum Gesture {
         shift: BTreeMap<String, f64>,
         row: Option<usize>,
         open: Vec<usize>,
+        /// F2.10 (the Prototype paragraph): WHICH recording this drag took, when it took one — a recording
+        /// off the band or the wave strip. The page pins THAT one only (`cut_cam::pin_for_drag`), so an
+        /// overlap made by a drag gets a row of its own instead of burying the other recording on the row.
+        /// `None` when the drag moved scenes or a whole row, which pin nothing.
+        dragged: Option<String>,
     },
 }
 
@@ -614,6 +619,11 @@ pub fn right_gesture(
         shift,
         row: new_row,
         open,
+        // Only a press that took ONE recording can pin one; a scene or a whole row drags no single file.
+        dragged: match &slide {
+            Slide::Recording(base) => Some(base.clone()),
+            _ => None,
+        },
     }
 }
 

@@ -43,6 +43,10 @@ pub(crate) fn finish(applied: &Applied, project: &Project, status: &gtk::Label) 
     // (`shell::lock`), so a page whose prerequisites vanished greys before anything reads its rows.
     crate::ui::window::paint_tabs_for(&window, project);
     crate::ui::window::paint_readouts_for(&window, project, &opened);
+    // F2.10: the Cut page's rows come from what this PROJECT films — its footage files' name stamps, the
+    // hand corrections in `cut.shift` and each file's probed length — so the session slot is re-asked here,
+    // after the open took the folder on and before any page reads its rows.
+    crate::ui::cut_session::refresh_page_spans(&crate::ui::window::newest_review_cut());
     // Then the two pages that own their own repaint, each reading the state it renders.
     crate::ui::narrate_page::refresh(&window);
     crate::ui::produce_page::refresh(&window);

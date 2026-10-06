@@ -222,6 +222,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         if matches!(screen.as_str(), "04-prepare" | "04-prompt-picker") {
             ui::set_bench_open_row(2);
         }
+        // F2.10: a snapshot renders a PROJECT, so the folder it was asked for is taken on exactly as Open
+        // takes one on — otherwise nothing can resolve a stored source path and the session's recordings
+        // (stamped names + probed lengths) could never be laid out from the app's own rules. Taken on BEFORE
+        // the window exists, because `build_window` seeds this window's session spans as it builds.
+        ui::save_apply::note_open_for_snapshot(&dir);
         let window = ui::build_window(app, &model, page);
         // The strip paints from this window's cut slot, so a snapshot must show the cut that lives in
         // the project it was asked to render — not whatever the working-copy folder happens to hold.

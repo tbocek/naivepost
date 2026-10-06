@@ -230,7 +230,12 @@ impl Cut {
     /// `nrows` is a floor, not a count: the recordings decide how many rows there are
     /// unless the cut insists on more.
     pub fn row_count(&self, recording_rows: usize) -> usize {
-        recording_rows.max(self.nrows.max(0) as usize)
+        // A lane is a row of its own while it exists (§F2.9 `⇲ Lane`), so the rows the page draws are the
+        // footage rows plus the lanes — counting footage alone lets `nrows` hold a row open that a lane is
+        // already standing on, and the ✕ of the row below then spends a floor that was holding nothing.
+        recording_rows
+            .max(self.lanes.len())
+            .max(self.nrows.max(0) as usize)
     }
 
     /// The legacy whole-cut `sound` spread scene by scene (§3), returning the note to
