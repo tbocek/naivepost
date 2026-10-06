@@ -5302,22 +5302,6 @@ pub fn flush_line_on_close(window: &adw::ApplicationWindow) -> bool {
     })
 }
 
-/// F2.4 S1 through the seam: a press on the tracks places the line, clears the selection and watches
-/// a row exactly as [`cut_line::click_outcome`] says — the page reports pixels and modifiers, this
-/// applies the rule and stores the result.
-pub fn place_line_from_click(
-    window: &adw::ApplicationWindow,
-    on_picture: bool,
-    on_scene_picture: bool,
-    playing: bool,
-    sources: bool,
-    gutter: bool,
-    at: f64,
-    now_ms: u64,
-) -> cut_line::ClickOutcome {
-    place_line_press(window, cut_line::strip_hit(at, on_picture, on_scene_picture, playing, sources, gutter), now_ms)
-}
-
 /// F2.4 S1 through the seam, with the row the pointer landed on: a press places the line, clears the
 /// selection and watches THAT row exactly as [`cut_line::click_outcome_in_row`] says.
 pub fn place_line_press(
@@ -5348,13 +5332,6 @@ pub fn place_line_press(
 }
 
 
-
-/// F2.4 S1b: what a first left press picks up at the 12 px reach (`// layout.lineReachPx`,
-/// `cut_line::EDGE_REACH_PX`) — edge, then border, then the whole clip.
-pub fn pick_with_reach(window: &adw::ApplicationWindow, edge_px: f64, inside: bool) -> cut_line::PressPick {
-    let _ = window;
-    cut_line::first_press_pick(edge_px, inside)
-}
 
 /// F2.4 S2: ‹f / f› steps one frame (Shift five). With a hold, the HOLD moves; with nothing held the
 /// recording under the line seeks and pauses.
@@ -5712,8 +5689,8 @@ fn wire_line_click_surface(window: &adw::ApplicationWindow) {
     // Left button only: the right button belongs to trim/move (F2.8) and must not move the line.
     gesture.set_button(1);
     let win = window.clone();
-    gesture.connect_released(move |_g, _n_press, x, _y| {
-        crate::ui::cut_line_press::press_strip(&win, x, now_ms());
+    gesture.connect_released(move |_g, _n_press, x, y| {
+        crate::ui::cut_line_press::press_strip(&win, x, y, now_ms());
     });
     area.add_controller(gesture.clone());
     LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
@@ -6012,7 +5989,7 @@ pub fn apply_pick(pick: cut_line::PressPick, seg: Option<cut::Seg>) {
 }
 
 /// F2.4 S1: which picture row this window watches. Set by a picture-band click through
-/// [`place_line_from_click`]; read by whatever opens a row on the watched one.
+/// [`place_line_press`]; read by whatever opens a row on the watched one.
 pub fn watched_row() -> Option<usize> {
     WATCHED_ROW.with(|cell| *cell.borrow())
 }

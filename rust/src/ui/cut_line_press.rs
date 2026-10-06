@@ -20,23 +20,21 @@ use crate::cut_select::{self, Surface};
 use crate::ui::{self, cut_picture, cut_tracks, cut_view};
 use crate::play_back;
 
-/// One press on the PLACEHOLDER strip (`select-surface`), which is not the painted band: its whole box IS
-/// one picture row at `SELECT_SURFACE_PPS`, with no gutter, no ruler and no scroll inside it (F2.6 drew it
-/// that way and F2.8's geometry lives in `cut_trim::PLACEHOLDER_STRIP_BANDS`). So the seconds come from its
-/// own pps and the y answers "the picture row"; everything else -- scene under the click, whether anything
-/// plays, whether sources are loaded -- is read from live state by [`press`], never passed as a constant.
+/// One press on the PLACEHOLDER strip (`select-surface`), which is not the painted band: its box holds one
+/// picture row at `SELECT_SURFACE_PPS` and has no gutter of its own (F2.6 drew it that way and F2.8's
+/// geometry lives in `cut_trim::PLACEHOLDER_STRIP_BANDS`). The seconds come from its own pps and the y comes
+/// from the press itself, read through the same `surface_at` the painter's bands use, so a click on the
+/// strip's ruler is a ruler click and not a picture-row click; everything else -- scene under the click,
+/// whether anything plays, whether sources are loaded -- is read from live state by [`press`], never passed
+/// as a constant.
 pub fn press_strip(
     window: &adw::ApplicationWindow,
     x_px: f64,
+    y_px: f64,
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
     let at = x_px / crate::ui::window::SELECT_SURFACE_PPS;
-    let surface = cut_select::surface_at(
-        // Any y inside the placeholder's single picture row; the strip draws nothing above or below it.
-        crate::cut_select::PLACEHOLDER_BANDS.first_picture,
-        &crate::cut_select::PLACEHOLDER_BANDS,
-        1,
-    );
+    let surface = cut_select::surface_at(y_px, &crate::cut_select::PLACEHOLDER_BANDS, 1);
     let on_picture = matches!(surface, Surface::PictureRow(_));
     let row = match surface {
         Surface::PictureRow(row) => row,
@@ -80,9 +78,10 @@ pub fn press(
     let outcome = press_in(window, at, on_picture, row, gutter, now_ms);
 
     // S1b: the wider 12 px reach, measured off the boxes the band DRAWS — shifted clips at the live zoom,
-    // translated by the scroll — and only on a picture row, since S1b says "clear of the green and the
-    // effects lane". A gutter press takes nothing either: it never reached the tape.
-    if on_picture && !gutter {
+    // translated by the scroll — and only where S1b says it applies: on the picture band, clear of the green
+    // (a press already on a scene's own picture is S1's click) and clear of the effects lane and the gutter,
+    // which never reached the tape. `press_tries_reach` states that condition.
+    if cut_line::press_tries_reach(on_picture, gutter, outcome.takes_scene) {
         pick_on_band(&cut_, pps, origin, x_px);
     }
 

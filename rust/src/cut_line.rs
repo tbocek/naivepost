@@ -70,26 +70,6 @@ pub fn refused_click(at: f64) -> ClickOutcome {
     }
 }
 
-/// A `Hit` for the placeholder strip, whose whole box is one picture row with no gutter of its own.
-pub fn strip_hit(
-    at: f64,
-    on_picture: bool,
-    on_scene_picture: bool,
-    playing: bool,
-    sources: bool,
-    gutter: bool,
-) -> Hit {
-    Hit {
-        at,
-        row: PICTURE_ROW,
-        on_picture,
-        on_scene_picture,
-        playing,
-        sources,
-        gutter,
-    }
-}
-
 /// F2.4 S1: does this press watch the row it landed on? `on_picture` is true only for
 /// the picture band (an audio band or the effects row answers no); `playing` covers
 /// any ▶ running, preview or recording; `sources` is false before the first source
@@ -178,6 +158,14 @@ pub fn click_outcome_in_row(
 /// §1 S1 through `spec/inventory/cut.md` §A and `spec/05-cut.md` §11.7/§11.16.
 pub fn click_takes_scene(on_picture: bool, on_scene_picture: bool) -> bool {
     on_picture && on_scene_picture
+}
+
+/// F2.4 S1b: is this press one the wider 12 px reach may answer? Only a picture-band press that is
+/// clear of the green (the click did NOT land on a kept scene's own picture) and clear of the gutter:
+/// the reach exists to take a clip whose green sits on ANOTHER row, so a press already on the green is
+/// S1's click, not a reach grab, and the effects lane is not a picture row at all.
+pub fn press_tries_reach(on_picture: bool, gutter: bool, on_scene_picture: bool) -> bool {
+    on_picture && !gutter && !on_scene_picture
 }
 
 /// F2.4 S1b: which of the three things under the pointer a left button's first press

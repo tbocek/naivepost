@@ -531,6 +531,84 @@ fn f2_4_s4_a_restored_line_cues_and_scrolls() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// F2.4 S1b: the wider reach is tried only where the spec says it applies -- on the picture band, clear
+/// of the green and of the effects lane. A press already on a scene's own picture is S1's click, so the
+/// reach must not run for it, or every ordinary click would fight the green for the hand.
+#[test]
+fn f2_4_s1b_the_reach_is_only_tried_clear_of_the_green() {
+    assert!(
+        line::press_tries_reach(true, false, false),
+        "a bare picture-row press is what the reach exists for"
+    );
+    assert!(
+        !line::press_tries_reach(true, false, true),
+        "a press on the green is S1's click, not a reach grab"
+    );
+    assert!(
+        !line::press_tries_reach(false, false, false),
+        "a wave strip, a lane or the ruler is not the picture band"
+    );
+    assert!(
+        !line::press_tries_reach(true, true, false),
+        "the gutter never reached the tape"
+    );
+}
+
+/// F2.4 S1: a press ABOVE the picture row is not a picture press, so nothing is watched. The placeholder
+/// strip answers this through the same `surface_at` the painted band uses, which is why its handler can pass
+/// the press's real y instead of assuming every click landed on a row.
+#[test]
+fn f2_4_s1_a_press_above_the_picture_row_is_not_a_picture_press() {
+    use naivepost::cut_select::{self, Surface};
+
+    let bands = cut_select::PLACEHOLDER_BANDS;
+    let in_ruler = (bands.ruler.0 + bands.ruler.1) / 2.0;
+    assert_eq!(
+        cut_select::surface_at(in_ruler, &bands, 1),
+        Surface::Ruler,
+        "the strip's ruler band answers the ruler, not a picture row"
+    );
+    assert_eq!(
+        cut_select::surface_at(bands.first_picture + 1.0, &bands, 1),
+        Surface::PictureRow(0),
+        "and one pixel into the row IS the row"
+    );
+    assert!(
+        !line::watches_row(false, false, true, false),
+        "so a ruler press watches nothing: the rule's own answer for a non-picture press"
+    );
+}
+
+/// F2.4 S4: "cued to that frame and scrolled into view" is only a real claim when the tape does NOT fit.
+/// At the open zoom a short session fits and `revealPlayhead` deliberately leaves the view alone; at a zoom
+/// where the line lies past the right edge, revealing it must move the origin. The widget half lives in
+/// tests/cut_line_place_step_widgets.rs.
+#[test]
+fn f2_4_s4_a_line_far_along_a_zoomed_tape_scrolls_into_view() {
+    use naivepost::ui::cut_view;
+
+    let pps = 24.0;
+    let view = 450.0;
+    let filmed = 70.0;
+    let total = cut_view::total_px(filmed, pps);
+    assert!(
+        !cut_view::fits(total, view),
+        "at {pps} px/s a {filmed} s tape is {total} px wide against a {view} px view, so it does not fit"
+    );
+    cut_view::set_origin(0.0, total, view);
+    assert_eq!(cut_view::origin(), 0.0, "starts at the head of the tape");
+
+    let line_px = 65.0 * pps;
+    assert!(line_px > view, "the line starts off the right edge of the view");
+    let after = cut_view::reveal_playhead(line_px, total, view);
+    assert!(after > 0.0, "revealing it scrolled the view off zero: origin {after}");
+    assert!(
+        after <= line_px && line_px <= after + view,
+        "and the line is inside the view: origin {after}, line {line_px}, view {view}"
+    );
+    cut_view::set_origin(0.0, total, view);
+}
+
 /// The 12 px reach is `// layout.lineReachPx`, `cut_line::EDGE_REACH_PX`.
 #[test]
 fn f2_4_s1b_apply_pick_puts_the_edge_in_the_edge_slot_and_the_clip_in_the_clip_slot() {

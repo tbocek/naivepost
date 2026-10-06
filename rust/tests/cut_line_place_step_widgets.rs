@@ -24,6 +24,8 @@ static RAN_FLUSH: AtomicBool = AtomicBool::new(false);
 static RAN_BAND_PRESS: AtomicBool = AtomicBool::new(false);
 static RAN_RESTORE_SCROLL: AtomicBool = AtomicBool::new(false);
 static RAN_PROBED_RATE: AtomicBool = AtomicBool::new(false);
+static RAN_REACH: AtomicBool = AtomicBool::new(false);
+static RAN_ZOOM_SCROLL: AtomicBool = AtomicBool::new(false);
 
 const FPS: f64 = 25.0;
 
@@ -162,13 +164,29 @@ fn check_the_key_controller_is_attached_and_refuses_without_a_hold(app: &adw::Ap
     window.close();
 }
 
-/// S1 / S1b through the seams: a track press places the line and clears the selection exactly as
+/// S1 / S1b through the door the program itself uses (`ui::place_line_press`, which every real press
+/// reaches through `cut_line_press`): a track press places the line and clears the selection exactly as
 /// `cut_line::click_outcome` says, a gutter press moves nothing, and the 12 px reach picks edge over
 /// border over clip.
 fn check_a_track_press_places_the_line(app: &adw::Application) {
     let window = cut_window(app);
 
-    let outcome = ui::place_line_from_click(&window, true, true, false, true, false, 12.0, 20_000);
+    // A `Hit` is what the widget layer hands the rule: where the pointer landed, in which band, whether
+    // anything plays and whether sources are loaded. Built here exactly as `cut_line_press::press_in`
+    // builds it, so the seam under test is the program's own.
+    let hit = |at: f64, on_picture: bool, on_scene: bool, playing: bool, sources: bool, gutter: bool| {
+        cut_line::Hit {
+            at,
+            row: cut_line::PICTURE_ROW,
+            on_picture,
+            on_scene_picture: on_scene,
+            playing,
+            sources,
+            gutter,
+        }
+    };
+
+    let outcome = ui::place_line_press(&window, hit(12.0, true, true, false, true, false), 20_000);
     assert!(outcome.line_moved, "a press on a track moves the line");
     assert_eq!(outcome.line_at, 12.0);
     assert_eq!(ui::line_position(&window).t, 12.0, "and the window's line is there");
@@ -178,7 +196,7 @@ fn check_a_track_press_places_the_line(app: &adw::Application) {
 
     // A gutter click moves no line and watches nothing -- and the seam agrees with the rule itself, so
     // the two cannot drift apart.
-    let gutter = ui::place_line_from_click(&window, true, false, false, true, true, 99.0, 20_100);
+    let gutter = ui::place_line_press(&window, hit(99.0, true, false, false, true, true), 20_100);
     assert!(!gutter.line_moved, "a gutter press leaves the line alone");
     assert_eq!(ui::line_position(&window).t, 12.0, "still where the last real press put it");
     assert_eq!(
@@ -188,18 +206,18 @@ fn check_a_track_press_places_the_line(app: &adw::Application) {
     );
 
     // Playing suppresses watching, sources-not-loaded suppresses it, both straight from the rule.
-    let while_playing = ui::place_line_from_click(&window, true, true, true, true, false, 30.0, 20_200);
+    let while_playing = ui::place_line_press(&window, hit(30.0, true, true, true, true, false), 20_200);
     assert_eq!(while_playing.watches, None, "nothing is watched while something plays");
-    let no_sources = ui::place_line_from_click(&window, true, true, false, false, false, 31.0, 20_300);
+    let no_sources = ui::place_line_press(&window, hit(31.0, true, true, false, false, false), 20_300);
     assert_eq!(no_sources.watches, None, "and none before a source has loaded");
 
     // S1b: the wider 12 px reach grabs the edge first, then a border, then the whole clip.
     // layout.lineReachPx is how params.rs catalogues cut_line::EDGE_REACH_PX.
     assert_eq!(cut_line::EDGE_REACH_PX, 12.0);
-    assert_eq!(ui::pick_with_reach(&window, 3.0, true), cut_line::PressPick::Edge, "within the reach, the edge");
-    assert_eq!(ui::pick_with_reach(&window, 12.0, true), cut_line::PressPick::Edge, "exactly at the reach still counts");
-    assert_eq!(ui::pick_with_reach(&window, 40.0, true), cut_line::PressPick::Border, "inside but clear of the edge, a border");
-    assert_eq!(ui::pick_with_reach(&window, 40.0, false), cut_line::PressPick::Clip, "outside the box, the whole clip");
+    assert_eq!(cut_line::first_press_pick(3.0, true), cut_line::PressPick::Edge, "within the reach, the edge");
+    assert_eq!(cut_line::first_press_pick(12.0, true), cut_line::PressPick::Edge, "exactly at the reach still counts");
+    assert_eq!(cut_line::first_press_pick(40.0, true), cut_line::PressPick::Border, "inside but clear of the edge, a border");
+    assert_eq!(cut_line::first_press_pick(40.0, false), cut_line::PressPick::Clip, "outside the box, the whole clip");
     window.close();
 }
 
@@ -207,7 +225,7 @@ fn check_a_track_press_places_the_line(app: &adw::Application) {
 /// band that was up, stores the watched row, and takes the scene under the line into hand; and once
 /// something IS held, an arrow key press through the window's own key controller takes S2's NUDGE
 /// branch instead of moving the line. Both were impossible before this round -- nothing emitted a click
-/// into `place_line_from_click`, and `wire_line_keys` passed a hardcoded `None` as the hold.
+/// into `place_line_press`, and `wire_line_keys` passed a hardcoded `None` as the hold.
 fn check_a_real_click_clears_watches_and_a_hold_nudges_instead_of_stepping(app: &adw::Application) {
     use naivepost::cut::{Cut, Seg};
 
@@ -428,9 +446,6 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     // The geometry the band paints with: the same doors `cut_line_press` reads.
     let boxes = cut_view::band_clip_boxes_for_test(&window);
     assert!(!boxes.is_empty(), "the band has a painted box to press on");
-    // The geometry the band paints with: the same doors `cut_line_press` reads.
-    let boxes = cut_view::band_clip_boxes_for_test(&window);
-    assert!(!boxes.is_empty(), "the band has a painted box to press on");
     // The row the painted box sits on: rows are coloured from the recordings the page holds, so the test asks
     // for the same answer the band paints with instead of assuming row 0.
     let rows = naivepost::timeline::row_count(
@@ -439,8 +454,6 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     );
     // The scene under the pointer is the one `cut_delete::scene_under` finds at that second, and the row it
     // is drawn on is that recording's colouring -- ask both of the same doors the press handler reads.
-    // The fixture's own spans are what the band paints, so the press goes at a second they really cover
-    // (its kept footage runs 0-9.5 / 10-30 / 40-70) rather than at whatever x happens to be mid-box.
     // The fixture's own spans are what the band paints, so the press goes at a second they really cover
     // (its kept footage runs 0-9.5 / 10-30 / 40-70) rather than at whatever x happens to be mid-box.
     let pressed_at = 12.0;
@@ -527,6 +540,28 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     );
     assert_eq!(ui::watched_row(), None, "but a lane is not a picture row, so nothing is watched");
 
+    // (d) On the PLACEHOLDER strip's ruler band: the strip's handler now reads the press's real y instead of
+    // assuming every click landed on its one picture row, so a ruler click moves the line but watches
+    // nothing -- the same answer the painted band gives for ground that is not a picture row.
+    let strip = ui::line_click_gesture(&window).expect("the placeholder strip carries its own gesture");
+    let ruler_y = (naivepost::cut_select::PLACEHOLDER_BANDS.ruler.0
+        + naivepost::cut_select::PLACEHOLDER_BANDS.ruler.1)
+        / 2.0;
+    let strip_x = 5.0 * ui::SELECT_SURFACE_PPS;
+    ui::set_watched_row(Some(7));
+    strip.emit_by_name::<()>("released", &[&1i32, &strip_x, &ruler_y]);
+    settle();
+    assert_eq!(
+        ui::line_position(&window).t,
+        5.0,
+        "a ruler click still places the line at its own second"
+    );
+    assert_eq!(
+        ui::watched_row(),
+        None,
+        "but it is not a picture-row click, so the watch was cleared rather than set"
+    );
+
     ui::set_watched_row(None);
     window.close();
 }
@@ -539,17 +574,20 @@ fn check_the_restored_line_is_cued_and_scrolled_into_view(app: &adw::Application
     let proj = pin_session_root("restore-scroll");
     // The fixture's kept spans are 0-9.5 / 10-30 / 40-70, so 65 s is covered by the last one and sits at the
     // far right of the tape -- outside any view that starts at zero.
-    cut_line::write_line(&proj, cut_line::LinePos { t: 65.0 }).expect("saved at 65 s");
+    // Second 50 sits well past the right edge of a 450 px view at this zoom (2000 px in) and well clear of
+    // the tape's end, so revealing it can only scroll the view -- unlike a line near the very end, which
+    // clamps against the tape's last pixel and is honest about being as far right as the view can go.
+    cut_line::write_line(&proj, cut_line::LinePos { t: 50.0 }).expect("saved at 50 s");
     let window = cut_window(app);
     settle();
     assert_eq!(
         ui::line_position(&window).t,
-        65.0,
+        50.0,
         "the saved line came back from cut/line.json"
     );
     let pps = cut_view::pps();
     let view = cut_view::view_px(cut_view::surface_width(&window));
-    let line_px = 65.0 * pps;
+    let line_px = 50.0 * pps;
     let origin = cut_view::origin();
     if cut_view::fits(cut_view::total_px(70.0, pps), view) {
         // Everything already fits: §B's revealPlayhead deliberately leaves the view alone, so the honest
@@ -651,6 +689,159 @@ fn check_a_step_moves_one_frame_of_the_probed_rate(app: &adw::Application) {
     window.close();
 }
 
+/// S1b through the WIRES: a press on the painted band that is clear of the green takes the clip's EDGE by
+/// the wider 12 px reach, while a press INSIDE the same painted box takes the whole clip. This is the case
+/// S1b exists for -- "how to take a clip or card whose green sits on another row" -- and it can only be
+/// proved against the boxes the band actually paints, at the zoom and scroll it paints them at.
+fn check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app: &adw::Application) {
+    use naivepost::ui::{cut_tracks, cut_view};
+
+    pin_session_root("reach");
+    // The fixture's own cut (0-9.5 / 10-30 / 40-70), unseeded: its first painted box starts at second 0,
+    // so a pixel just left of that edge sits on no green at all.
+    let window = cut_window(app);
+    settle();
+    ui::set_held_edge(None);
+    ui::set_held_clip(None);
+
+    let gesture = naivepost::ui::window::band_line_gesture_for_test(&window)
+        .expect("the painted band carries the line-click gesture");
+    let origin = cut_view::origin();
+    let boxes = cut_view::band_clip_boxes_for_test(&window);
+    assert!(!boxes.is_empty(), "the band has painted boxes to press beside");
+    // The target is the GAP between two kept scenes: pressing just LEFT of a later box's edge puts the
+    // pointer on a dropped stretch -- bare ground, no green -- while still landing in the picture band.
+    // That is exactly S1b's case ("how to take a clip or card whose green sits on ANOTHER row"): the hand
+    // reaches across bare ground for the edge. The fixture's spans are 0-9.5 / 10-30 / 40-70, so the
+    // 9.5-10 gap serves. A box starting at second 0 will not do: its left edge lies under the gutter,
+    // and a gutter press takes nothing (S1), as the band check above pins.
+    let target = boxes
+        .iter()
+        .find(|held| {
+            let left_on_screen = held.x - origin;
+            held.w > 0.0 && left_on_screen > cut_view::gutter_px() + cut_line::EDGE_REACH_PX
+        })
+        .expect("a painted box whose left edge is clear of the gutter, i.e. beside a dropped stretch");
+    let box_left = target.x - origin;
+    let seg = naivepost::ui::review_cut_of(&window)
+        .segs
+        .get(target.index)
+        .cloned()
+        .expect("the painted box names a kept segment");
+
+    let bands = cut_tracks::bands_for(naivepost::fx_lane::row_count(
+        &naivepost::ui::review_cut_of(&window).fx,
+    ));
+    let row_y = bands.first_picture + bands.row_height / 2.0;
+
+    // (a) Two px LEFT of the painted edge: outside the green, inside `EDGE_REACH_PX` (12), so the reach
+    // hands over the EDGE -- not the clip, and not nothing. The target's own filter already required that
+    // much clearance from the gutter, so there is nothing further to assert about the distance here.
+    gesture.emit_by_name::<()>("released", &[&1i32, &(box_left - 2.0), &row_y]);
+    settle();
+    let edge = ui::held_edge().expect("a press clear of the green took the edge by the reach");
+    assert_eq!(
+        (edge.s, edge.e),
+        (seg.s, seg.e),
+        "and it is the edge of the box the pointer was beside"
+    );
+
+    // (b) Inside that SAME box: the click lands on the green, so S1 owns it and the reach must not run --
+    // the whole clip comes into hand and the edge slot goes back to empty.
+    ui::set_held_edge(None);
+    ui::set_held_clip(None);
+    let mid_x = box_left + target.w / 2.0;
+    gesture.emit_by_name::<()>("released", &[&1i32, &mid_x, &row_y]);
+    settle();
+    assert!(
+        ui::held_clip().is_some(),
+        "a press on the green takes the clip (S1), which is what S1's scene-under-the-click does"
+    );
+    assert_eq!(
+        ui::held_edge(),
+        None,
+        "and the reach did NOT also grab an edge -- `press_tries_reach` refuses a press on the green"
+    );
+    window.close();
+}
+
+/// S4's "scrolled into view" through the widget AT A ZOOM WHERE THE TAPE DOES NOT FIT. At the open zoom a
+/// short session fits and §B's revealPlayhead deliberately leaves the view alone, so the ordinary restore
+/// check can never see the origin move; zooming in first makes the claim testable, and the scrollbar that
+/// §A says appears when things do not fit is visible with it.
+fn check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app: &adw::Application) {
+    use adw::prelude::*;
+    use naivepost::ui::cut_view;
+
+    let proj = pin_session_root("restore-zoom");
+    // Second 50 sits far past the right edge of a 450 px view at this zoom (2000 px in) and clear of the
+    // tape's last pixel, so revealing it can only scroll the view off zero.
+    cut_line::write_line(&proj, cut_line::LinePos { t: 50.0 }).expect("saved at 50 s");
+    // Zoom BEFORE the page builds: `pps` is the page's own zoom door (the wheel writes it), and the restore
+    // path reads it when it decides where the view has to go. The tape is declared just as long as the
+    // fixture's kept footage so the arithmetic below matches what the page measures -- the view clamps to
+    // the tape's real end, and a line near that end can only be revealed by scrolling off zero.
+    cut_view::set_pps(24.0);
+    let window = cut_window(app);
+    ui::set_session_recordings(&[naivepost::timeline::Recording {
+        base: "cam0".into(),
+        start: 0.0,
+        end: 70.0,
+    }]);
+    settle();
+
+    let pps = cut_view::pps();
+    let total = cut_view::total_px(70.0, pps);
+    let view = cut_view::view_px(cut_view::surface_width(&window));
+    assert!(
+        !cut_view::fits(total, view),
+        "at {pps} px/s a 70 s tape is {total} px against a {view} px view, so it cannot fit"
+    );
+    assert_eq!(
+        ui::line_position(&window).t,
+        50.0,
+        "the saved line came back from cut/line.json"
+    );
+    let origin = cut_view::origin();
+    let line_px = 50.0 * pps;
+    assert!(
+        origin > 0.0,
+        "and the view scrolled off the head of the tape to hold it: origin {origin}"
+    );
+    assert!(
+        line_px >= origin && line_px <= origin + view,
+        "the restored line is inside the view: origin {origin}, line {line_px}, view {view}"
+    );
+    let bar = find_named(&window, "track-scrollbar")
+        .expect("the page carries its scrollbar")
+        .downcast::<gtk::Scrollbar>()
+        .expect("it is a scrollbar");
+    assert!(bar.is_visible(), "§A: the scrollbar shows when not everything fits");
+
+    let _ = std::fs::remove_file(cut_line::line_file(&proj));
+    cut_view::set_pps(naivepost::cut_screen::ZOOM_AT_OPEN);
+    window.close();
+}
+
+/// First widget in this window's tree carrying this name. `find_widget_by_name` is crate-private, so a
+/// test walks the same way `tests/sec05_cut_picture_scrollbar.rs` does.
+fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
+    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+        if widget.widget_name() == name {
+            return Some(widget.clone());
+        }
+        for child in widget.observe_children().iter::<glib::Object>() {
+            let Ok(child) = child else { continue };
+            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
+            if let Some(found) = walk(child, name) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    walk(window.upcast_ref(), name)
+}
+
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -677,6 +868,10 @@ fn window_round() {
             RAN_RESTORE_SCROLL.store(true, Ordering::SeqCst);
             check_a_step_moves_one_frame_of_the_probed_rate(app);
             RAN_PROBED_RATE.store(true, Ordering::SeqCst);
+            check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app);
+            RAN_REACH.store(true, Ordering::SeqCst);
+            check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app);
+            RAN_ZOOM_SCROLL.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -703,5 +898,13 @@ fn f2_4_s1_placing_and_stepping_the_line_reaches_the_window_through_real_widgets
     assert!(
         RAN_PROBED_RATE.load(Ordering::SeqCst),
         "the probed-frame-rate step check never ran"
+    );
+    assert!(
+        RAN_REACH.load(Ordering::SeqCst),
+        "the clear-of-the-green reach check never ran"
+    );
+    assert!(
+        RAN_ZOOM_SCROLL.load(Ordering::SeqCst),
+        "the zoomed-tape restore-scroll check never ran"
     );
 }
