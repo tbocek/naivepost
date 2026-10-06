@@ -103,6 +103,15 @@ impl RecordingPreviewPage for TablePage {
 /// worth, which is what makes this callable from a test without a timer.
 pub fn step(page: &dyn RecordingPreviewPage, runs: &[(f64, f64)], elapsed_secs: f64) -> Option<String> {
     let from = page.playhead()?;
+    // F2.12 S7 (`a spliced card holds the footage while it plays on the wall clock`): a card with no session
+    // seconds of its own cannot be carried by the line, so the tick asks `cut_card_preview` how far THIS second
+    // may move and gets 0 back while one is up — the line stays put and the page says why. Asked BEFORE the
+    // advance so a held second cannot walk on past the card in the same tick.
+    if let Some(held) = crate::ui::card_tick(&page.cut(), from, elapsed_secs, 1.0) {
+        if held.advance == 0.0 {
+            return held.status;
+        }
+    }
     // S3: "every second plays, cuts and all" — the advance never skips, whatever the cut removed.
     let mut at = preview::play_advance(from, elapsed_secs, false);
     // S3: at a recording's end the line walks on to the next one; a camera still rolling there keeps the

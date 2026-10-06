@@ -64,6 +64,9 @@ fn find(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
 /// (or none at all) clears the picture rather than leaving a stale frame up, so the plate reads as empty
 /// tape instead of a broken image. The load is gdk-pixbuf's real decoder over a real file — the same
 /// library GTK itself uses for a `Picture`, and already in the lock through the `gtk` crate.
+///
+/// The request is remembered beside the frame ([`preview_asked_for_test`]) so a check can prove WHICH frame
+/// the panel was given: a headless window cannot read a paintable back off a `Picture`.
 pub fn show_frame(window: &adw::ApplicationWindow, path: Option<&std::path::Path>) -> bool {
     let Some(picture) = picture(window) else {
         return false;
@@ -77,16 +80,25 @@ pub fn show_frame(window: &adw::ApplicationWindow, path: Option<&std::path::Path
     match shown {
         Some(texture) => {
             picture.set_paintable(Some(&texture));
+            FRAME_SHOWN.with(|slot| *slot.borrow_mut() = path.map(|p| p.to_path_buf()));
             true
         }
         None => {
             picture.set_paintable(None::<&gtk::gdk::Paintable>);
+            FRAME_SHOWN.with(|slot| *slot.borrow_mut() = None);
             false
         }
     }
 }
 
+// The frame the panel was last given, or `None` when it was cleared. `preview_asked_for_test` reports what
+// the panel ASKED for its own footage; this reports what actually went up, which is the half a card pass has
+// to answer for because a card's frame is not one of the session's files.
+
 thread_local! {
+    /// The frame last put on the panel by [`show_frame`]. See [`frame_shown_for_test`].
+    static FRAME_SHOWN: std::cell::RefCell<Option<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(None) };
     /// The last frame request `refresh` made: which recording the panel asked, at which FILE second. See
     /// [`preview_asked_for_test`] — the program never reads this back.
     static PREVIEW_ASKED: std::cell::RefCell<Option<(String, f64)>> = const { std::cell::RefCell::new(None) };
@@ -95,6 +107,13 @@ thread_local! {
     /// The folder a snapshot named for that search. See [`snapshot_tree`].
     static SNAPSHOT_DIR: std::cell::RefCell<Option<std::path::PathBuf>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// The frame the panel is showing, as the file it came from. A `gtk::Picture` gives nothing back — a
+/// paintable cannot be compared to a path — so this is the door a check reads, and `show_frame` is its only
+/// writer. Named for the same convention as [`preview_asked_for_test`]: the program never reads it back.
+pub fn frame_shown_for_test() -> Option<std::path::PathBuf> {
+    FRAME_SHOWN.with(|slot| slot.borrow().clone())
 }
 
 /// The recording whose frames the preview may show, when someone has named one (the snapshot bench renders a
@@ -123,6 +142,19 @@ pub fn preview_asked_for_test() -> Option<(String, f64)> {
 /// of the doors that hold them, so moving the line or clicking another row changes the picture without this
 /// module remembering anything.
 pub fn refresh(window: &adw::ApplicationWindow) -> bool {
+    // F2.12 S7 first: a card is not the session's own picture, so a line standing on one shows the card's
+    // rendered frame and nothing else. Answers `None` for footage, which is every second there is a frame to
+    // search for below.
+    if let Some((frame, held)) =
+        crate::ui::cut_card_preview::card_frame(window, &ui::window::newest_review_cut(), ui::line_position(window).t)
+    {
+        // The held sentence belongs to the frame it explains: say it while the card is on the panel, because
+        // everywhere else on this page the picture moves when the clock does.
+        if let (Some(line), Some(status)) = (held, ui::find_status(window.upcast_ref())) {
+            status.set_text(&line);
+        }
+        return show_frame(window, Some(&frame));
+    }
     // The same spans the ROW LIST colours (`row_spans`), so a watched row number means one thing on the page.
     // Asked of that list first and falling back to the session's own tape: a cut with no footage scene yet
     // colours nothing, and a declared take must still be the picture then (F2.10 S3 says nothing about

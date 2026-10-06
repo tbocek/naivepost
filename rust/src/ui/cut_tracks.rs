@@ -32,6 +32,12 @@ const KEPT_BORDER: (f64, f64, f64) = (0.11, 0.42, 0.16);
 const SELECT_BLUE: (f64, f64, f64) = (0.25, 0.5, 0.9);
 /// An insert's violet, and the amber of a recording's striped edge.
 const INSERT_VIOLET: (f64, f64, f64) = (0.55, 0.35, 0.75);
+/// A cut lane's own row: a plate grey the footage rows do not use, so a lane reads as another row rather than
+/// as more footage, and its border is the same ink the fold badges mark a seam with.
+pub const LANE_GROUND: (f64, f64, f64) = (0.72, 0.74, 0.8);
+const LANE_BORDER: (f64, f64, f64) = (0.35, 0.35, 0.4);
+/// The seconds an OVER card took from the footage: the dropped-gap grey, because that is what they are now.
+const OVER_EATEN: (f64, f64, f64) = (0.88, 0.88, 0.88);
 const RECORDING_EDGE: (f64, f64, f64) = (0.85, 0.6, 0.12);
 /// A take the join pass removed whole: "flagged for a look, not an error" (F1.10), so a yellow wash and a
 /// frame rather than red.
@@ -253,6 +259,7 @@ pub fn scrollbar() -> gtk::Scrollbar {
 /// `scene`, called at draw time; `thumbs` is likewise asked at draw time, so a project opened after this
 /// call still gets its frames. This lives here because `window.rs` is past its size budget.
 pub fn install(
+    window: &adw::ApplicationWindow,
     host: &gtk::Box,
     after: &gtk::Widget,
     scene: impl Fn() -> Scene + Clone + 'static,
@@ -281,6 +288,9 @@ pub fn install(
         BAND_WIDTH_PX,
     );
     attach(&band.surface, &band.playhead, with_thumbs, THUMB_DEFAULT_PX);
+    // F2.12 S6: the hold lives on the band, so it goes on wherever a band is installed — not on the caller,
+    // which is `window.rs`, already past its size budget.
+    wire_card_hold(window);
     host.insert_child_after(&band.layers, Some(after));
     let bar = scrollbar();
     let stacked: gtk::Widget = band.layers.upcast();
@@ -326,6 +336,8 @@ pub fn build(height: i32, width: i32) -> Band {
     surface.set_widget_name("track-band");
     surface.set_size_request(width, height);
     surface.set_halign(gtk::Align::Start);
+    // The band a test fires the hold at: `build` is what makes the one the page shows.
+    BAND_SURFACE.with(|cell| *cell.borrow_mut() = Some(surface.clone()));
     let playhead = gtk::DrawingArea::new();
     playhead.set_widget_name("track-playhead");
     playhead.set_size_request(width, height);
@@ -353,6 +365,28 @@ pub fn build(height: i32, width: i32) -> Band {
     }
 }
 
+/// The painted band this module built most recently, so [`wire_card_hold`] can attach to the surface the page
+/// shows and a test can fire that same gesture. Named for the second reader, following
+/// `window::band_line_gesture_for_test`: the program attaches and never asks for it back.
+pub fn band_surface_for_test(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
+    let _ = window;
+    BAND_SURFACE.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    static BAND_SURFACE: std::cell::RefCell<Option<gtk::DrawingArea>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// F2.12 S6: attach the card-hold press (right-click / double click) to the band just built. The rule and
+/// the gesture live in [`crate::ui::cut_card_hold`]; this is the seam that puts it on screen, reading the
+/// surface out of the same thread-local [`build`] records rather than a test-named door.
+pub fn wire_card_hold(window: &adw::ApplicationWindow) {
+    if let Some(surface) = BAND_SURFACE.with(|cell| cell.borrow().clone()) {
+        crate::ui::cut_card_hold::wire(window, &surface);
+    }
+}
+
 /// The band's height from the scene, in px.
 pub fn band_height_px(scene: &Scene, thumb_px: u32) -> f64 {
     rows(scene, thumb_px).height(scene)
@@ -362,7 +396,50 @@ impl Rows {
     /// Ruler + selection band + effects lane + one picture row per recorded row — the same four sums the
     /// painter lays out, so a row added by an edit grows the surface instead of being cut off.
     fn height(&self, scene: &Scene) -> f64 {
-        self.pictures + scene.row_count.max(1) as f64 * self.row_h
+        // Camera rows, then one row per cut lane: a lane is a ROW of the band (§F2.12 S5 "a row of its own"),
+        // so it costs the band height exactly as a camera does. `lane_rows` is the same count, public for tests.
+        self.pictures + (scene.row_count.max(1) + lane_rows(scene)) as f64 * self.row_h
+    }
+
+    /// Where a cut lane's own row begins: below every camera row, in lane order. `camera_rows` is how many
+    /// rows the cameras take, so a lane never lands on top of a picture row however many there are.
+    pub fn lane_top(&self, scene: &Scene, lane: usize) -> f64 {
+        self.pictures + self.camera_rows(scene) as f64 * self.row_h + lane as f64 * self.row_h
+    }
+
+    /// Rows the cameras take — the same `max(1)` the height uses, in one place so the two cannot drift.
+    pub fn camera_rows(&self, scene: &Scene) -> usize {
+        scene.row_count.max(1)
+    }
+}
+
+/// Rows the band gives the cut lanes — one each, below the cameras. Public so a test reads the SAME number the
+/// painter laid out rather than counting `scene.lanes` itself and drifting from it. A spliced or overwriting
+/// card takes no row of its own (they sit among the footage), so this is also how many rows an insert costs.
+pub fn lane_rows(scene: &Scene) -> usize {
+    scene.lanes.len()
+}
+
+/// Each cut lane as its own row below the cameras (§F2.12 S5: LANE "adds a row", and until now nothing drew
+/// one, leaving the status line as the only proof a lane existed). The row gets a plate-coloured ground, the
+/// file's name, and a violet span where the lane actually runs, so `at`/`dur` are visible rather than implied.
+/// The PRESS surfaces (`bands_for`) deliberately stop at the camera rows: F2.9/F2.10 own what a click on a row
+/// means, and a lane row nobody can press is still a row someone can see.
+fn draw_lane_rows(cr: &cairo::Context, scene: &Scene, rows: Rows) {
+    for (index, lane) in scene.lanes.iter().enumerate() {
+        let top = rows.lane_top(scene, index);
+        fill(cr, LANE_GROUND, 0.0, top, BAND_WIDTH_PX as f64, rows.row_h, 1.0);
+        ink(cr, LANE_BORDER);
+        cr.rectangle(0.0, top, BAND_WIDTH_PX as f64, 1.0);
+        let _ = cr.fill();
+        let (x0, width) = band_span_px(scene, lane.at, lane.at + lane.dur);
+        if width > 0.0 {
+            fill(cr, INSERT_VIOLET, x0, top + 2.0, width, rows.row_h - 4.0, 0.75);
+        }
+        cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
+        cr.set_font_size(9.0);
+        ink(cr, (0.15, 0.15, 0.2));
+        text_at(cr, 2.0, top + 10.0, &lane.name);
     }
 }
 
@@ -390,6 +467,7 @@ pub fn paint_at(cr: &cairo::Context, scene: &Scene, width: f64, height: f64, thu
     draw_insert_bands(cr, scene, rows);
     draw_in_out_marks(cr, scene, rows);
     draw_laid_pieces(cr, scene, rows);
+    draw_lane_rows(cr, scene, rows);
     draw_name_plates(cr, scene, rows);
 }
 
@@ -769,12 +847,25 @@ fn draw_insert_bands(cr: &cairo::Context, scene: &Scene, rows: Rows) {
         .into_iter()
         .map(|b| cut_trim::Box_ {
             x: drawn[b.index].0,
-            w: drawn[b.index].1,
+            w: if scene.segs[b.index].is_overwrite_insert() {
+                // An over card runs for the footage it replaced, so it carries no `dur` and `band_boxes`
+                // measured a zero-wide bar for it. Its own span is what was eaten — that is the box to paint.
+                ((scene.segs[b.index].e - scene.segs[b.index].s) * scene.pps).max(2.0)
+            } else {
+                drawn[b.index].1
+            },
             index: b.index,
-            insert: b.insert,
+            insert: b.insert || !scene.segs[b.index].ins.is_empty(),
         })
         .collect();
     for b in boxes.iter().filter(|b| b.insert) {
+        // An OVERWRITE card replaced these seconds outright, so the footage under it is GONE (§F2.12 S5
+        // "replaces exactly those seconds", the same as － Remove). Paint that first — the dropped-gap grey,
+        // full row height — or the violet band would sit on footage that is no longer in the cut and the two
+        // modes would be indistinguishable on the surface the page actually shows.
+        if scene.segs[b.index].is_overwrite_insert() {
+            fill(cr, OVER_EATEN, b.x, rows.pictures, b.w.max(2.0), height, 1.0);
+        }
         fill(cr, INSERT_VIOLET, b.x, rows.pictures, b.w.max(2.0), height, 0.6);
         if scene.segs[b.index].s == scene.segs[b.index].e {
             // Spliced: four slants say so without needing a colour §1 did not list.

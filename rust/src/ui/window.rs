@@ -485,6 +485,7 @@ fn page_box(
         // scene. The draw callbacks outlive this call, hence the clone rather than `page_box`'s borrow.
         let held = window.clone();
         previous = cut_tracks::install(
+            window,
             &box_,
             &previous,
             move || crate::ui::cut_view::band_scene_for(&held),
@@ -5175,7 +5176,19 @@ pub fn apply_mix(
     fx: &[cut::Fx],
     t: f64,
 ) -> cut_hear::Mix {
-    let mix = cut_hear::mix_at(segs, lanes, fx, t, preview_volume(window));
+    let mut mix = cut_hear::mix_at(segs, lanes, fx, t, preview_volume(window));
+    // F2.12 S7 (`card sound is its own pipeline`): while a SPLICED card plays the footage is held on the wall
+    // clock, so its pipeline may not carry on under a frozen picture — `card_hold_advance` says the line does
+    // not move, and the same rule mutes the footage here. The card's OWN sound is what plays instead, which is
+    // why this mutes the footage and never the card.
+    if crate::ui::cut_card_preview::card_hearing(
+        &cut::Cut { segs: segs.to_vec(), ..Default::default() },
+        t,
+    )
+    .is_some_and(|hearing| hearing.footage_held)
+    {
+        mix.footage_muted = true;
+    }
     if let Some(player) = live_player(window) {
         player.borrow_mut().footage_muted = mix.footage_muted;
     }
@@ -6773,6 +6786,11 @@ pub fn insert_chosen_with_length(
     let raw = file.to_string_lossy().to_string();
     let band = selection(window);
     let animated = svg_is_animated(file);
+    // S3: the file's own length comes from the real probe (ffprobe), which is also what S7's render is asked
+    // against. `None` — a still, an unreadable file, a machine with no ffprobe — falls back to
+    // `P.policy.insertDefaultSeconds`, which is the whole point of the fallback rather than a failure.
+    let probed = crate::ui::cut_card_preview::probe_card_seconds(window, &raw);
+    let file_seconds = file_seconds.or(probed);
     let plan = cut_insert::form_plan(&raw, band.as_ref(), file_seconds, animated, false, false, false);
     // The card's holes are read off the document; a non-SVG gets no fields and the door ignores the argument.
     let mut fields: Vec<cut_insert::Field> = Vec::new();
@@ -6802,9 +6820,7 @@ pub fn insert_chosen_with_length(
 /// Whether an SVG animates, read off the document: a `@keyframes` block or an `<animate>` tag. An SVG with
 /// neither is drawn as a still, so it has no length of its own (see [`cut_insert::default_length`]).
 fn svg_is_animated(file: &std::path::Path) -> bool {
-    std::fs::read_to_string(file)
-        .map(|doc| doc.contains("@keyframes") || doc.contains("<animate"))
-        .unwrap_or(false)
+    crate::ui::cut_card_preview::svg_is_animated(file)
 }
 
 /// The mode said back as one word, for the status line.

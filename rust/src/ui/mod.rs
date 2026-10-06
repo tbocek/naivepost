@@ -66,6 +66,11 @@ pub mod cut_view;
 pub mod cut_suggest_land;
 pub mod cut_form_frame;
 pub mod cut_picture;
+/// F2.12 S7 — the card preview pass: ffmpeg renders a card's frames at 8 fps (one for a still), the nearest
+/// rendered one goes on the panel, and a spliced card holds the footage while it plays. Split out of
+/// `window.rs`, which is past its size budget.
+pub mod cut_card_hold;
+pub mod cut_card_preview;
 /// F2.6 S1/S2 on the PAINTED band: the gesture that draws, resizes and moves a selection, read off the
 /// geometry the painter uses. Split out of `window.rs`, which is past its size budget.
 pub mod cut_select_press;
@@ -255,6 +260,8 @@ pub use cut_cameras::{
 };
 // F2.10: the row list itself, rebuilt from the live cut by every refresh above.
 // F2.11: the fold badges and the two ✕, drawn as named widgets and forwarded by these seams.
+/// F2.12 S7: the card preview pass, called from `cut_picture::refresh` (the panel's one frame door).
+pub use cut_card_preview::{card_hearing, card_tick, set_card_snapshot_dir};
 pub use cut_folds::{
     fold_badges_box, fold_gaps, fold_overlay, folded_gap_at, page_recordings,
     press_fold_all, press_fold_gap, press_lane_cross, press_row_cross, refresh_fold_badges,

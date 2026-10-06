@@ -180,6 +180,7 @@ pub mod settings;
 pub mod slot_gate;
 pub mod shell;
 pub mod snapshot;
+pub mod snapshot_insert;
 pub mod snapshot_settings;
 pub mod sources;
 pub mod startup;

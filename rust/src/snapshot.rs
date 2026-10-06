@@ -111,7 +111,10 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         "05-cut" | "05-add" | "05-fold" | "05-rows" | "05-split" | "05-trim" | "05-remove"
         // §F2.9's own screen: the page AFTER ⧉ Copy, ⧉ Paste (both branches and its refusal) and ⇲ Lane.
         // `spec/img` has no copy image, so this is a program-side screen like `03-log-link` / `04-prepared`.
-        | "05-lanes" | "05-copy" => Some("Cut"),
+        | "05-lanes" | "05-copy"
+        // §F2.12's own screen likewise: three real inserts (BETWEEN, OVER, LANE) and S1's refusal. No
+        // `spec/img/05-insert.png` exists, so `spec/inventory/cut.md` §G is the widget reference for it.
+        | "05-insert" => Some("Cut"),
         "06-preview" | "06-zoom" | "06-speed" | "06-text" | "06-volume" | "06-label"
         | "06-lane" | "06-svg" | "06-effect-menu" => Some("Cut"),
         "07-narrate" | "07-take" => Some("Narrate"),
@@ -487,6 +490,16 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // the held state: the white outline, the line walked to the band's start, and the
             // "Zoom picked up" sentence the lane prints.
             ui::press_effect_bar(&window, 0, 100.0, 200.0, 20.0, false);
+        }
+        // §F2.12's own screen: three inserts staged through the chooser seam, the radios and Apply, then S1's
+        // refusal last. All of it lives in `snapshot_insert` -- `run` is past the size another block fits in.
+        if screen == "05-insert" {
+            let said = crate::snapshot_insert::stage(&window, &dir);
+            let words: Vec<String> = said.iter().map(|line| line.replace('|', "/")).collect();
+            println!("snapshot: 05-insert | {}", words.join(" | "));
+            println!("snapshot: 05-insert band | {}", crate::snapshot_insert::describe(&window));
+            ui::cut_view::repaint_page(&window);
+            ui::refresh_camera_rows(&window);
         }
         // §F2.9's screen is the Cut page AFTER the whole flow ran: ⧉ Copy took a stretch in hand, ⇲ Lane gave
         // it a row of its own, ⧉ Paste spliced the footage copy back as a `copy:` card, and a sound copy was

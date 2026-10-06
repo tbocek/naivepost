@@ -647,7 +647,8 @@ pub fn nearest_rendered(times: &[f64], t: f64) -> Option<f64> {
 pub const TEXTURE_CAP: usize = 48;
 
 /// F2.12 S7 (`rendered via ffmpeg at ≤960 px`, §I's `insPreviewW`): the width a preview is decoded at. The
-/// preview is a film strip in a column, never the exported picture, so nothing wider than that is ever drawn.
+/// preview is a film strip in a column, never the exported picture, so nothing wider than that is ever drawn
+/// and nothing narrower is widened.
 pub fn preview_width(width: u32) -> u32 {
     width.min(PREVIEW_WIDTH)
 }
@@ -658,8 +659,18 @@ pub const PREVIEW_WIDTH: u32 = 960;
 /// F2.12 S7: how ffmpeg is asked for a card's frames — an argument vector, no subprocess, so the shape of the
 /// call is testable and the running of it stays with [`crate::subprocess`]. `-an` because a preview strip has
 /// no business decoding sound it will not play: a card's own audio is its own pipeline (see [`held_status`]).
-pub fn ffmpeg_frames(ffmpeg: &str, path: &str, fps: f64, width: u32, out: &str) -> Vec<String> {
-    vec![
+/// How ffmpeg is asked for a card's frames — an argument vector, no subprocess, so the shape of the
+/// call is testable and the running of it stays with [`crate::subprocess`] (see
+/// [`crate::ui::cut_card_preview::render_card`], which runs it). `-an` because a preview strip has no business
+/// decoding sound it will not play: a card's own audio is its own pipeline (see [`held_status`]).
+///
+/// The scale is written as `if(gte(iw\,960)\,960\,iw):-2`: ffmpeg's `scale` needs a literal `-2` to keep the
+/// aspect, and inside a filter graph a bare comma both separates filters and separates arguments, so the ones
+/// belonging to `if()` are escaped. A frame at or under the cap passes through at its own width, so a preview
+/// is never widened.
+pub fn ffmpeg_frames_argv(ffmpeg: &str, path: &str, fps: Option<f64>, width: u32, out: &str) -> Vec<String> {
+    let cap = preview_width(width);
+    let mut args = vec![
         ffmpeg.to_string(),
         "-hide_banner".into(),
         "-loglevel".into(),
@@ -667,10 +678,32 @@ pub fn ffmpeg_frames(ffmpeg: &str, path: &str, fps: f64, width: u32, out: &str) 
         "-i".into(),
         path.to_string(),
         "-an".into(),
-        "-vf".into(),
-        format!("fps={fps:.6},scale='min({},-2)'", preview_width(width)),
-        out.to_string(),
-    ]
+    ];
+    args.push("-vf".into());
+    let scale = format!("scale=if(gte(iw\\,{cap})\\,{cap}\\,iw):-2");
+    args.push(match fps {
+        Some(rate) => format!("fps={rate:.6},{scale}"),
+        None => scale,
+    });
+    if fps.is_none() {
+        // A still has no clock: one frame, not a strip of identical ones.
+        args.push("-frames:v".into());
+        args.push("1".into());
+    }
+    // The output name has to end in something ffmpeg recognises or it cannot choose an muxer, so the sequence
+    // is written as an explicit image2/png pair rather than left to the extension.
+    args.push("-f".into());
+    args.push("image2".into());
+    args.push("-c:v".into());
+    args.push("png".into());
+    args.push(out.to_string());
+    args
+}
+
+/// The same argv, fps stated as a rate (the moving case). Kept as its own door because §I's `insPreviewFPS`
+/// tests read it by name.
+pub fn ffmpeg_frames(ffmpeg: &str, path: &str, fps: f64, width: u32, out: &str) -> Vec<String> {
+    ffmpeg_frames_argv(ffmpeg, path, Some(fps), width, out)
 }
 
 /// F2.12 S7 (`a spliced card holds the footage while it plays on the wall clock`): what the page says while the

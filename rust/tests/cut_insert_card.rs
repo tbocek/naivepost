@@ -519,7 +519,18 @@ fn f2_12_s7_the_render_asks_for_frames_and_no_sound() {
     assert!(args.contains(&"-an".to_string()), "no audio in a film strip");
     let vf = args.iter().find(|a| a.starts_with("fps=")).expect("the frame rate and width are the -vf filter");
     assert!(vf.starts_with("fps=8.000000"), "{vf}");
-    assert!(vf.contains("min(960,-2)"), "capped at 960 px: {vf}");
+    // The cap is `preview_width`'s answer, asked of the width handed in: 1920 comes down to 960 and nothing
+    // narrower is widened (S7 "rendered via ffmpeg at \u{2264}960 px", §I's `insPreviewW`). It is spelled as ffmpeg's
+    // own `if(gte(iw,CAP),CAP,iw)` rather than `min(...)`: both mean the same thing, and this is the spelling the
+    // live render test reads back off a real ffmpeg run (`tests/f2_12_s7_card_preview.rs`), so one string is
+    // checked two ways instead of two strings drifting.
+    assert!(vf.contains(r#"scale=if(gte(iw\,960)\,960\,iw):-2"#), "capped at 960 px: {vf}");
+    let narrow = ins::ffmpeg_frames("ffmpeg", "assets/small.png", 8.0, 640, "/tmp/strip/%03d.png");
+    let narrow_vf = narrow.iter().find(|a| a.starts_with("fps=")).expect("the same shape for a narrow card");
+    assert!(
+        narrow_vf.contains(r#"if(gte(iw\,640)\,640\,iw)"#),
+        "a 640 px card is decoded at its own width, not widened: {narrow_vf}"
+    );
     assert_eq!(args.last().unwrap(), "/tmp/strip/%03d.png");
 }
 
