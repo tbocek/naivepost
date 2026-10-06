@@ -380,6 +380,157 @@ fn f2_4_s3_held_now_answers_edge_then_clip_then_effect() {
 
 /// F2.4 S1b: what the first left press picked becomes which slot the hold lands in. Edge goes to the
 /// edge slot (so a frame step moves only that border); a border or whole-clip pick takes the clip.
+/// F2.4 S1: the row that starts being watched is THE ROW CLICKED, not always the first one.
+#[test]
+fn f2_4_s1_the_watched_row_is_the_row_clicked() {
+    // Three camera rows: each answers with its own number when all four S1 conditions hold.
+    for row in 0..3usize {
+        let out = line::click_outcome_in_row(12.0 + row as f64, true, false, false, true, false, row);
+        assert_eq!(out.watches, Some(row), "row {row} is the row that gets watched");
+        assert!(out.line_moved, "and the line moves wherever that row's press landed");
+    }
+
+    // Ground that is not a picture row (a wave strip, a lane, the ruler, the effects lane) watches nothing,
+    // whatever row number comes with it -- `on_picture` is what decides, per `watches_row`.
+    assert_eq!(line::watches_index(false, false, true, false, 1), None, "not a picture band");
+    assert_eq!(line::watches_index(true, true, true, false, 1), None, "not while something plays");
+    assert_eq!(line::watches_index(true, false, false, false, 1), None, "not with no sources");
+    assert_eq!(line::watches_index(true, false, true, true, 1), None, "never from the gutter");
+
+    // A gutter press on a real row: no line moved, nothing watched, selection untouched.
+    let gutter = line::click_outcome_in_row(99.0, true, true, false, true, true, 2);
+    assert!(!gutter.line_moved, "the gutter moves no line");
+    assert_eq!(gutter.watches, None, "and watches nothing");
+    assert!(!gutter.clears_selection, "and touches no selection");
+}
+
+/// F2.4 S1b: the 12 px reach is measured off the box the band DRAWS -- hand corrections applied and scrolled
+/// -- so a slid recording's edge is grabbed where it shows, not where `cut.json` says it was.
+#[test]
+fn f2_4_s1b_the_reach_is_measured_off_the_painted_box() {
+    use naivepost::cut::Seg;
+    use naivepost::cut_trim;
+    use std::collections::BTreeMap;
+
+    let pps = 8.0;
+    let origin = 40.0; // the view has been scrolled 40 px into the tape
+    let segs = vec![Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() }];
+    let shift: BTreeMap<String, f64> = [("cam0".to_string(), 5.0)].into_iter().collect();
+
+    // The painted geometry: shifted by the hand correction, then translated by the scroll.
+    let boxes = naivepost::ui::cut_tracks::clip_boxes_shifted(&segs, &shift, pps);
+    assert_eq!(boxes.len(), 1, "one kept scene draws one box");
+    let left = boxes[0].x - origin;
+    // `clip_boxes_shifted` maps a scene's own seconds through `timeline::session_at`, which SUBTRACTS the
+    // hand correction, so a +5 s slide draws the box five seconds of tape to the LEFT (40 px at this zoom,
+    // not 80) -- and that is the point: the un-shifted position is nowhere near the drawn one, which is what
+    // the old placeholder geometry got wrong.
+    assert!(
+        (boxes[0].x - (5.0 * pps)).abs() < 1e-9,
+        "the box sits at the shifted second times the zoom: {}",
+        boxes[0].x
+    );
+    assert!(
+        (left - (5.0 * pps - origin)).abs() < 1e-9,
+        "on screen it starts at {left}, after the {origin} px scroll"
+    );
+
+    // Exactly at the drawn edge, and at EDGE_REACH_PX off it: the edge is picked up.
+    assert_eq!(line::first_press_pick(0.0, true), PressPick::Edge, "on the drawn edge");
+    assert_eq!(
+        line::first_press_pick(line::EDGE_REACH_PX, true),
+        PressPick::Edge,
+        "within the 12 px reach of the DRAWN edge"
+    );
+    // A point 40 px inside that same drawn box: a border, not an edge -- and the point that WOULD have been
+    // within reach of the un-shifted, un-scrolled box now answers differently, which is the whole rule.
+    let inside_x = left + 40.0;
+    let edge_px = (inside_x - left).min((inside_x - (left + boxes[0].w)).abs());
+    assert!(edge_px > line::EDGE_REACH_PX, "40 px in is past the reach ({edge_px} px)");
+    assert_eq!(line::first_press_pick(edge_px, true), PressPick::Border, "inside but clear: a border");
+    // And the reach follows the shift and the scroll: a press at where the box would sit with NEITHER is
+    // outside the drawn box entirely, so it cannot pick up an edge nobody can see.
+    let stale = 10.0 * pps; // no shift, no scroll: the placeholder geometry's answer
+    let stale_edge = (stale - left).min((stale - (left + boxes[0].w)).abs());
+    assert!(
+        stale_edge > line::EDGE_REACH_PX,
+        "the placeholder geometry's edge is nowhere near the drawn one ({stale_edge} px)"
+    );
+    assert_eq!(line::first_press_pick(stale_edge, false), PressPick::Clip, "outside the drawn box entirely");
+    let _ = cut_trim::EDGE_GRAB_PX; // the ordinary reach, which is NOT the one S1b uses
+}
+
+/// F2.4 S2: the step's width is the RECORDING's frame rate, read off the file by the real ffprobe shape --
+/// parsed here, probed through a stub leg, so no test dials a binary.
+#[test]
+fn f2_4_s2_the_step_uses_the_probed_rate() {
+    use naivepost::cut_fps;
+
+    assert!((cut_fps::parse_rate("30000/1001").unwrap() - (30000.0 / 1001.0)).abs() < 1e-6, "NTSC rate");
+    assert_eq!(cut_fps::parse_rate("25"), Some(25.0), "an integer rate");
+    assert_eq!(cut_fps::parse_rate("25.000000\n"), Some(25.0), "ffprobe's padded form");
+    assert_eq!(cut_fps::parse_rate("0/0"), None, "no video stream");
+    assert_eq!(cut_fps::parse_rate(""), None, "nothing at all");
+    assert_eq!(cut_fps::parse_rate("n/a"), None, "garbage");
+
+    // The probe goes through the caller's leg, exactly as `source_probe::audio_streams` does.
+    let good: &naivepost::source_probe::Tool =
+        &|_tool: &str, _args: &[&str]| Ok("29970/1001\n".to_string());
+    let asked = cut_fps::probe("ffprobe", std::path::Path::new("lecture.mkv"), good);
+    assert!(asked.is_some_and(|r| (r - (29970.0 / 1001.0)).abs() < 1e-6), "the stub's answer: {asked:?}");
+
+    let junk: &naivepost::source_probe::Tool =
+        &|_tool: &str, _args: &[&str]| Ok("bogus".to_string());
+    assert_eq!(cut_fps::probe("ffprobe", std::path::Path::new("x.mkv"), junk), None, "unparsable");
+
+    let failed: &naivepost::source_probe::Tool =
+        &|_tool: &str, _args: &[&str]| Err("ffprobe is not installed".to_string());
+    assert_eq!(cut_fps::probe("ffprobe", std::path::Path::new("x.mkv"), failed), None, "no tool");
+
+    // The fallback the page steps at when there is nothing to ask, and the arithmetic it feeds.
+    assert_eq!(line::FALLBACK_FPS, 25.0, "// the prototype session's rate");
+    let stepped = line::step_line(10.0, 1, 30000.0 / 1001.0);
+    assert!(
+        (stepped - (10.0 + 1001.0 / 30000.0)).abs() < 1e-12,
+        "one frame of 29.97 footage is 1001/30000 s, not 1/25: {stepped}"
+    );
+}
+
+/// F2.4 S4 (the pure half): a remembered line that some recording still covers comes back, and the view
+/// scrolls so the line lands INSIDE it. The widget half is in tests/cut_line_place_step_widgets.rs.
+#[test]
+fn f2_4_s4_a_restored_line_cues_and_scrolls() {
+    use naivepost::ui::cut_view;
+
+    let dir = std::env::temp_dir().join(format!("cut-line-s4-scroll-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("cut")).expect("cut dir");
+    let runs = vec![(0.0f64, 300.0)];
+
+    line::write_line(&dir, LinePos { t: 250.0 }).expect("saved at 250 s");
+    let restored = line::restore(&dir, &runs).expect("a recording covers 250 s");
+    assert_eq!(restored.t, 250.0, "the position came back");
+
+    // The view starts at zero and cannot show 250 s: revealing the playhead must move the origin.
+    let pps = 4.0;
+    let view = 400.0;
+    let total = cut_view::total_px(300.0, pps);
+    cut_view::set_origin(0.0, total, view);
+    assert_eq!(cut_view::origin(), 0.0, "starts at the head of the tape");
+    let after = cut_view::reveal_playhead(restored.t * pps, total, view);
+    assert!(after > 0.0, "the view scrolled off zero: origin {after}");
+    assert!(
+        after <= restored.t * pps && restored.t * pps <= after + view,
+        "the restored line is inside the view: origin {after}, line at {}, view {view}",
+        restored.t * pps
+    );
+
+    // A line no recording covers stays refused, so nothing is cued or scrolled for it.
+    line::write_line(&dir, LinePos { t: 400.0 }).expect("saved past the end");
+    assert_eq!(line::restore(&dir, &runs), None, "nothing filmed at 400 s");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The 12 px reach is `// layout.lineReachPx`, `cut_line::EDGE_REACH_PX`.
 #[test]
 fn f2_4_s1b_apply_pick_puts_the_edge_in_the_edge_slot_and_the_clip_in_the_clip_slot() {

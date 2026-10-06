@@ -319,17 +319,41 @@ pub const THUMB_DEFAULT_PX: u32 = cut_screen::THUMB_AT_OPEN;
 /// The band's layout: the row tops every painter shares. Kept in one place because the effects lane's height
 /// feeds the picture rows' start, and a second arithmetic would be a second answer.
 #[derive(Debug, Clone, Copy)]
-struct Rows {
-    selection: f64,
-    effects: f64,
-    pictures: f64,
-    row_h: f64,
+pub struct Rows {
+    pub selection: f64,
+    pub effects: f64,
+    pub pictures: f64,
+    pub row_h: f64,
+}
+
+/// The same `rows` arithmetic the painter lays out, as the surfaces a press can land on (§A's order:
+/// ruler, selection band, effects lane, then one picture row with its wave strip per camera row). Built
+/// from the fx row count and the row count rather than a whole `Scene`, so a press handler can ask it
+/// without building what it is only going to measure — and cannot disagree with what is drawn.
+pub fn bands_for(fx_rows: usize) -> crate::cut_select::SurfaceBands {
+    let held = rows_of(fx_rows, THUMB_DEFAULT_PX);
+    // The painter gives every row the WHOLE `row_h` pair (`draw_picture_rows` fills from `rows.pictures`
+    // for `row_h`), so there is no separate wave strip on this band yet: one row is one pitch of picture.
+    // A wave-height of 0 says exactly that to `surface_at`, and a y below the last row's bottom is then
+    // what it really is -- a separate recording's lane.
+    crate::cut_select::SurfaceBands {
+        ruler: (0.0, cut_trim::RULER_H),
+        selection: (cut_trim::RULER_H, held.effects),
+        fx: (held.effects, held.pictures),
+        first_picture: held.pictures,
+        row_height: held.row_h,
+        wave_height: 0.0,
+    }
 }
 
 fn rows(scene: &Scene, thumb_px: u32) -> Rows {
+    rows_of(fx_lane::row_count(&scene.fx), thumb_px)
+}
+
+fn rows_of(fx_rows: usize, thumb_px: u32) -> Rows {
     let selection = cut_trim::RULER_H;
     let effects = selection + SELECTION_BAND_PX;
-    let pictures = effects + fx_lane::lane_height_px(fx_lane::row_count(&scene.fx));
+    let pictures = effects + fx_lane::lane_height_px(fx_rows);
     Rows {
         selection,
         effects,

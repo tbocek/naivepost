@@ -21,6 +21,9 @@ static RAN_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_EFFECTS: AtomicBool = AtomicBool::new(false);
 static RAN_RESTORE: AtomicBool = AtomicBool::new(false);
 static RAN_FLUSH: AtomicBool = AtomicBool::new(false);
+static RAN_BAND_PRESS: AtomicBool = AtomicBool::new(false);
+static RAN_RESTORE_SCROLL: AtomicBool = AtomicBool::new(false);
+static RAN_PROBED_RATE: AtomicBool = AtomicBool::new(false);
 
 const FPS: f64 = 25.0;
 
@@ -346,9 +349,10 @@ fn check_the_line_is_restored_on_open(app: &adw::Application) {
 }
 
 /// §05-cut#1-screen F2.4 S4 — closing beats the rate limit THROUGH THE REAL FILE. The step button runs
-/// `move_line_and_save`, which only NOTES the throttle and writes no bytes, so right after a press the
-/// file is still absent; `flush_line_on_close` is what puts the position on disk even though the last
-/// save was less than `cut_line::LINE_WRITE_MS` ago (`// layout.lineSaveMs`).
+/// `move_line_and_save`, which writes through the writer's one-second rule (`LineWriter::note_move`), so a
+/// first press DOES land on disk and every press inside the same second does not; `flush_line_on_close` is
+/// what puts the position on disk even though the last save was less than `cut_line::LINE_WRITE_MS` ago
+/// (`// layout.lineSaveMs`).
 fn check_closing_flushes_the_line_through_the_real_file(app: &adw::Application) {
     let proj = pin_session_root("flush");
     assert!(
@@ -366,9 +370,22 @@ fn check_closing_flushes_the_line_through_the_real_file(app: &adw::Application) 
     settle();
     let moved = ui::line_position(&window).t;
     assert_ne!(moved, 0.0, "the press moved the line off zero");
-    assert!(
-        cut_line::read_line(&proj).is_none(),
-        "the throttled path put nothing on disk -- the file is still absent after the press"
+    // The move itself wrote: a root reaches the page, so `note_move` puts the position on disk (bytes, not
+    // just a throttle stamp). Read it back from the file rather than comparing to the slot -- a second press
+    // inside the same second must add NO new bytes, which is what caps moves at one write a second.
+    let written = cut_line::read_line(&proj).map(|pos| pos.t);
+    assert_eq!(
+        written,
+        Some(moved),
+        "the throttled path wrote the FIRST move, at most once a second"
+    );
+    let again = ui::line_step_button(&window, "line-step-forward").expect("f› again");
+    again.emit_clicked();
+    settle();
+    assert_eq!(
+        cut_line::read_line(&proj).map(|pos| pos.t),
+        written,
+        "and the next press inside the same second put no new bytes out -- the cap holds"
     );
 
     // Close-time flush: same instant, well inside the one-second cap, and the bytes go out anyway.
@@ -378,11 +395,260 @@ fn check_closing_flushes_the_line_through_the_real_file(app: &adw::Application) 
     );
     assert_eq!(
         cut_line::read_line(&proj).map(|pos| pos.t),
-        Some(moved),
-        "the file holds the position the button put the line at, read back from disk"
+        Some(ui::line_position(&window).t),
+        "the file holds the position the buttons left the line at, read back from disk"
     );
 
     let _ = std::fs::remove_file(cut_line::line_file(&proj));
+}
+
+/// S1 / S1b through the WIRES on the PAINTED band: the press is read off where the pointer landed -- the
+/// row from y, the gutter from x -- rather than from constants. Three presses, three different answers.
+fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application) {
+    use naivepost::cut::{Cut, Seg};
+    use naivepost::ui::{cut_tracks, cut_view};
+
+    pin_session_root("band-press");
+    let window = cut_window(app);
+    settle();
+
+    // A cut whose single kept scene covers 10..30 s, so a press inside it lands on that scene's picture.
+    let seeded = Cut {
+        segs: vec![Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() }],
+        ..Default::default()
+    };
+    ui::seed_review_cut(&window, &seeded);
+    ui::set_watched_row(None);
+    settle();
+
+    let gesture = naivepost::ui::window::band_line_gesture_for_test(&window)
+        .expect("the painted band carries the line-click gesture");
+    let pps = cut_view::pps();
+    let origin = cut_view::origin();
+    // The geometry the band paints with: the same doors `cut_line_press` reads.
+    let boxes = cut_view::band_clip_boxes_for_test(&window);
+    assert!(!boxes.is_empty(), "the band has a painted box to press on");
+    // The geometry the band paints with: the same doors `cut_line_press` reads.
+    let boxes = cut_view::band_clip_boxes_for_test(&window);
+    assert!(!boxes.is_empty(), "the band has a painted box to press on");
+    // The row the painted box sits on: rows are coloured from the recordings the page holds, so the test asks
+    // for the same answer the band paints with instead of assuming row 0.
+    let rows = naivepost::timeline::row_count(
+        &ui::page_recordings(),
+        &naivepost::ui::review_cut_of(&window),
+    );
+    // The scene under the pointer is the one `cut_delete::scene_under` finds at that second, and the row it
+    // is drawn on is that recording's colouring -- ask both of the same doors the press handler reads.
+    // The fixture's own spans are what the band paints, so the press goes at a second they really cover
+    // (its kept footage runs 0-9.5 / 10-30 / 40-70) rather than at whatever x happens to be mid-box.
+    // The fixture's own spans are what the band paints, so the press goes at a second they really cover
+    // (its kept footage runs 0-9.5 / 10-30 / 40-70) rather than at whatever x happens to be mid-box.
+    let pressed_at = 12.0;
+    let inside_x = origin + cut_view::gutter_px() + pressed_at * pps;
+    let held_seg = naivepost::cut_delete::scene_under(
+        &naivepost::ui::review_cut_of(&window).segs,
+        pressed_at,
+    )
+    .cloned();
+    let painted_row = naivepost::timeline::rows_for(
+        &ui::page_recordings(),
+        &naivepost::ui::review_cut_of(&window),
+    )
+    .into_iter()
+    .zip(ui::page_recordings().iter())
+    .find(|(_, rec)| rec.base == format!("cam{}", held_seg.as_ref().map(|s| s.cam).unwrap_or(0)))
+    .map(|(row, _)| row)
+    .unwrap_or(0);
+    assert!(painted_row < rows.max(1), "the painted box's row {painted_row} is a drawn row");
+    // Row 0's own picture half, off the arithmetic the painter lays out.
+    let bands = cut_tracks::bands_for(naivepost::fx_lane::row_count(
+        &naivepost::ui::review_cut_of(&window).fx,
+    ));
+    // ...but the band's OWN height decides which y is a picture row: `surface_at` sends anything past the
+    // drawn surface back to the selection band, so the press must land inside what this window laid out.
+    let band_px = naivepost::ui::cut_tracks::band_height_px(
+        &cut_view::band_scene_for(&window),
+        naivepost::ui::cut_tracks::THUMB_DEFAULT_PX,
+    );
+    assert!(
+        band_px > bands.first_picture,
+        "the band is tall enough to have a picture row at all: {band_px} px vs first row {}",
+        bands.first_picture
+    );
+    // The fixture's footage is one camera (every kept segment is cam0), so the coloured picture row the
+    // press must land on is row 0 -- its middle is `first_picture + row_height / 2`, inside the band's own
+    // laid-out height, which is what `surface_at` bounds the rows by.
+    assert_eq!(rows, 1, "this session films one camera, so one picture row is drawn");
+    let row_y = bands.first_picture + bands.row_height / 2.0;
+    assert!(
+        row_y < band_px,
+        "row 0's middle ({row_y}) is inside the {band_px} px band this window laid out"
+    );
+
+    // (a) On the picture row, inside the painted clip: the line goes to THAT second and row 0 is watched.
+    gesture.emit_by_name::<()>("released", &[&1i32, &inside_x, &row_y]);
+    settle();
+    let expected = ((inside_x - cut_view::gutter_px() - origin) / pps).max(0.0);
+    assert!(
+        (ui::line_position(&window).t - expected).abs() < 1e-6,
+        "the band press put the line at the pixel it was given: {} vs {expected}",
+        ui::line_position(&window).t
+    );
+    assert_eq!(
+        ui::watched_row(),
+        Some(painted_row),
+        "and watched the row the pointer was on"
+    );
+
+    // (b) In the gutter (§B's left strip of the band): NOTHING moves and nothing is watched. This branch
+    // was unreachable before -- the old handler passed `gutter: false` as a constant.
+    let before = ui::line_position(&window).t;
+    ui::set_watched_row(None);
+    let in_gutter = cut_view::gutter_px() / 2.0;
+    gesture.emit_by_name::<()>("released", &[&1i32, &in_gutter, &row_y]);
+    settle();
+    assert_eq!(
+        ui::line_position(&window).t,
+        before,
+        "a gutter press moves no line"
+    );
+    assert_eq!(ui::watched_row(), None, "and watches nothing");
+
+    // (c) On the effects lane (§A puts it between the selection band and the picture rows): S1 watches only
+    // a picture row, so the line moves -- a track press is a track press -- but nothing is watched.
+    let lane_y = (bands.fx.0 + bands.fx.1) / 2.0;
+    let on_time_x = origin + cut_view::gutter_px() + 20.0 * pps;
+    gesture.emit_by_name::<()>("released", &[&1i32, &on_time_x, &lane_y]);
+    settle();
+    assert!(
+        (ui::line_position(&window).t - 20.0).abs() < 0.5,
+        "the lane press moved the line to its own second: {}",
+        ui::line_position(&window).t
+    );
+    assert_eq!(ui::watched_row(), None, "but a lane is not a picture row, so nothing is watched");
+
+    ui::set_watched_row(None);
+    window.close();
+}
+
+/// S4 through the widget: a remembered line far along the tape comes back AND the view scrolls so it is in
+// view -- `follow_playhead` runs on the restore path, not only on a tick.
+fn check_the_restored_line_is_cued_and_scrolled_into_view(app: &adw::Application) {
+    use naivepost::ui::cut_view;
+
+    let proj = pin_session_root("restore-scroll");
+    // The fixture's kept spans are 0-9.5 / 10-30 / 40-70, so 65 s is covered by the last one and sits at the
+    // far right of the tape -- outside any view that starts at zero.
+    cut_line::write_line(&proj, cut_line::LinePos { t: 65.0 }).expect("saved at 65 s");
+    let window = cut_window(app);
+    settle();
+    assert_eq!(
+        ui::line_position(&window).t,
+        65.0,
+        "the saved line came back from cut/line.json"
+    );
+    let pps = cut_view::pps();
+    let view = cut_view::view_px(cut_view::surface_width(&window));
+    let line_px = 65.0 * pps;
+    let origin = cut_view::origin();
+    if cut_view::fits(cut_view::total_px(70.0, pps), view) {
+        // Everything already fits: §B's revealPlayhead deliberately leaves the view alone, so the honest
+        // assertion is that the line is inside it, which is what "scrolled into view" means here.
+        assert!(
+            line_px >= origin && line_px <= origin + view,
+            "with the whole tape on screen the line is inside the view without scrolling"
+        );
+    } else {
+        assert!(
+            origin > 0.0 && line_px >= origin && line_px <= origin + view,
+            "the view scrolled to hold the restored line: origin {origin}, line at {line_px}, view {view}"
+        );
+    }
+    let _ = std::fs::remove_file(cut_line::line_file(&proj));
+    window.close();
+}
+
+/// S2 through the program's own tool-resolution path: Settings names a folder, ffprobe is found beside it,
+/// and the step moves by ONE FRAME OF THAT FILE (30000/1001 = 33.37 ms), not by the fallback 1/25 s.
+fn check_a_step_moves_one_frame_of_the_probed_rate(app: &adw::Application) {
+    use std::os::unix::fs::PermissionsExt;
+
+    pin_session_root("probed-rate");
+    // Point Settings at a fake ffmpeg so `services::ffprobe_for` resolves ffprobe beside it, exactly as it
+    // does for a person who typed a path into the box.
+    // A per-check directory, not one shared with the flush check: this check moves HOME and cwd, so every
+    // path it hands the app is absolute.
+    let tools = std::env::temp_dir().join(format!("cut-line-probe-tools-{}", std::process::id()));
+    let home = std::env::temp_dir().join(format!("cut-line-probe-home-{}", std::process::id()));
+    let conf_dir = home.join(".config").join("naivepost");
+    std::fs::create_dir_all(&tools).expect("tools dir");
+    std::fs::create_dir_all(&conf_dir).expect("settings dir");
+    // Named `ffprobe`, not `fake-ffprobe`: §1's rule is that ffprobe lives BESIDE the configured ffmpeg, so
+    // `services::ffprobe_for` turns `<dir>/fake-ffmpeg` into `<dir>/ffprobe`. A stub under any other name is
+    // simply not found, and the step silently falls back to 25 fps -- which looks like a model bug but is a
+    // missing file.
+    let probe_script = tools.join("ffprobe");
+    std::fs::write(&probe_script, "#!/bin/sh\necho 30000/1001\n").expect("probe stub");
+    std::fs::set_permissions(&probe_script, PermissionsExt::from_mode(0o755)).expect("it runs");
+    let ffmpeg = tools.join("fake-ffmpeg");
+    std::fs::write(&ffmpeg, "#!/bin/sh\nexit 0\n").expect("ffmpeg stub");
+    std::fs::set_permissions(&ffmpeg, PermissionsExt::from_mode(0o755)).expect("it runs");
+    std::fs::write(
+        conf_dir.join("llm.conf"),
+        format!("FFMPEG=\"{}\"\n", ffmpeg.display()),
+    )
+    .expect("settings written");
+    std::env::set_var("HOME", &home);
+    std::env::set_var("XDG_CONFIG_HOME", home.join(".config"));
+
+    // A footage file must exist for the rate to be asked of it: a real path on disk, which is what
+    // `cut_fps::session_fps` resolves and probes (the stub answers whatever it is asked).
+    let film = tools.join("lecture.mkv");
+    std::fs::write(&film, b"not really a video, and the stub answers whatever it is asked").unwrap();
+
+    let window = cut_window(app);
+    settle();
+    // The session's footage row must point at that file: write it through the handle every page reads.
+    let session = ui::session_handle(&window);
+    {
+        let mut held = session.borrow_mut();
+        if held.sources.is_empty() {
+            held.sources.push(naivepost::project::Source {
+                path: film.to_string_lossy().into_owned(),
+                footage: true,
+                ..Default::default()
+            });
+        } else {
+            let first = &mut held.sources[0];
+            first.path = film.to_string_lossy().into_owned();
+            first.footage = true;
+        }
+    }
+
+    let probed = naivepost::cut_fps::session_fps(&window);
+    assert!(
+        (probed - (30000.0 / 1001.0)).abs() < 1e-6,
+        "the step's rate came from ffprobe beside the configured ffmpeg, got {probed}"
+    );
+
+    ui::set_line_position(&window, cut_line::LinePos { t: 10.0 });
+    let start = ui::line_position(&window).t;
+    ui::line_step_button(&window, "line-step-forward")
+        .expect("f\u{203a} button")
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
+    let after = ui::line_position(&window).t;
+    let one_frame = 1.0 / (30000.0 / 1001.0);
+    assert!(
+        (after - (start + one_frame)).abs() < 1e-9,
+        "one frame of 30000/1001 footage is {one_frame} s, not 1/25 = {}",
+        1.0 / 25.0
+    );
+    assert!(
+        !ui::preview_player(&window).transport.playing,
+        "S2's \"then pause\": the transport is not playing after a step"
+    );
+    window.close();
 }
 
 fn window_round() {
@@ -405,6 +671,12 @@ fn window_round() {
             RAN_RESTORE.store(true, Ordering::SeqCst);
             check_closing_flushes_the_line_through_the_real_file(app);
             RAN_FLUSH.store(true, Ordering::SeqCst);
+            check_a_real_band_press_uses_where_the_pointer_landed(app);
+            RAN_BAND_PRESS.store(true, Ordering::SeqCst);
+            check_the_restored_line_is_cued_and_scrolled_into_view(app);
+            RAN_RESTORE_SCROLL.store(true, Ordering::SeqCst);
+            check_a_step_moves_one_frame_of_the_probed_rate(app);
+            RAN_PROBED_RATE.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -420,4 +692,16 @@ fn f2_4_s1_placing_and_stepping_the_line_reaches_the_window_through_real_widgets
     assert!(RAN_EFFECTS.load(Ordering::SeqCst), "the click-effects and nudge check never ran");
     assert!(RAN_RESTORE.load(Ordering::SeqCst), "the restore-on-open check never ran");
     assert!(RAN_FLUSH.load(Ordering::SeqCst), "the flush-on-close check never ran");
+    assert!(
+        RAN_BAND_PRESS.load(Ordering::SeqCst),
+        "the painted-band press check never ran"
+    );
+    assert!(
+        RAN_RESTORE_SCROLL.load(Ordering::SeqCst),
+        "the restore-cue-and-scroll check never ran"
+    );
+    assert!(
+        RAN_PROBED_RATE.load(Ordering::SeqCst),
+        "the probed-frame-rate step check never ran"
+    );
 }

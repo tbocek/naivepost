@@ -59,6 +59,37 @@ pub struct ClickOutcome {
     pub watches: Option<usize>,
 }
 
+/// F2.4 S1: a click the cut refuses (F2.2 S2) — nothing moves, clears or is watched.
+pub fn refused_click(at: f64) -> ClickOutcome {
+    ClickOutcome {
+        line_at: at,
+        line_moved: false,
+        takes_scene: false,
+        clears_selection: false,
+        watches: None,
+    }
+}
+
+/// A `Hit` for the placeholder strip, whose whole box is one picture row with no gutter of its own.
+pub fn strip_hit(
+    at: f64,
+    on_picture: bool,
+    on_scene_picture: bool,
+    playing: bool,
+    sources: bool,
+    gutter: bool,
+) -> Hit {
+    Hit {
+        at,
+        row: PICTURE_ROW,
+        on_picture,
+        on_scene_picture,
+        playing,
+        sources,
+        gutter,
+    }
+}
+
 /// F2.4 S1: does this press watch the row it landed on? `on_picture` is true only for
 /// the picture band (an audio band or the effects row answers no); `playing` covers
 /// any ▶ running, preview or recording; `sources` is false before the first source
@@ -66,6 +97,40 @@ pub struct ClickOutcome {
 /// is true — its whole job is the row's height.
 pub fn watches_row(on_picture: bool, playing: bool, sources: bool, gutter: bool) -> bool {
     on_picture && !playing && sources && !gutter
+}
+
+/// F2.4 S1: WHICH row starts being watched. §1 says "that row is watched", so the answer is the row the
+/// pointer landed on, not always the first one — a session with three cameras has three rows that can be
+/// watched, and the page's picture must follow the row the hand chose.
+pub fn watches_index(
+    on_picture: bool,
+    playing: bool,
+    sources: bool,
+    gutter: bool,
+    row: usize,
+) -> Option<usize> {
+    watches_row(on_picture, playing, sources, gutter).then_some(row)
+}
+
+/// F2.4 S1: everything the widget layer knows about one press, in one value. The rule needs to know where
+/// the pointer LANDED (which band, which row, whether it was the gutter), so these travel together instead
+/// of as six positional booleans that a caller can silently fill with constants.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Hit {
+    /// The session second the pointer was over, converted at the zoom the band is drawn at.
+    pub at: f64,
+    /// Which picture row the y fell in; meaningless unless [`Hit::on_picture`].
+    pub row: usize,
+    /// The y landed on a picture row (a wave strip, a lane, the ruler or the effects lane answers no).
+    pub on_picture: bool,
+    /// A kept scene's own picture covers `at` — what decides whether the hand closes.
+    pub on_scene_picture: bool,
+    /// Something is playing: the transport's own flag OR a live media leg.
+    pub playing: bool,
+    /// The session has footage loaded, so there is a row to watch.
+    pub sources: bool,
+    /// The x landed in the band's left gutter rather than on the timeline.
+    pub gutter: bool,
 }
 
 /// F2.4 S1: where the red line goes and what it takes.
@@ -76,6 +141,19 @@ pub fn watches_row(on_picture: bool, playing: bool, sources: bool, gutter: bool)
 /// pointer was on a scene's own picture rather than on the row behind it. A press in
 /// the gutter does neither: it moves no line and touches no selection.
 pub fn click_outcome(at: f64, on_picture: bool, on_scene_picture: bool, playing: bool, sources: bool, gutter: bool) -> ClickOutcome {
+    click_outcome_in_row(at, on_picture, on_scene_picture, playing, sources, gutter, PICTURE_ROW)
+}
+
+/// F2.4 S1 on a named row: the same rule, with the clicked row recorded in `watches`.
+pub fn click_outcome_in_row(
+    at: f64,
+    on_picture: bool,
+    on_scene_picture: bool,
+    playing: bool,
+    sources: bool,
+    gutter: bool,
+    row: usize,
+) -> ClickOutcome {
     if gutter {
         return ClickOutcome {
             line_at: at,
@@ -90,7 +168,7 @@ pub fn click_outcome(at: f64, on_picture: bool, on_scene_picture: bool, playing:
         line_moved: true,
         takes_scene: click_takes_scene(on_picture, on_scene_picture),
         clears_selection: true,
-        watches: watches_row(on_picture, playing, sources, false).then_some(PICTURE_ROW),
+        watches: watches_index(on_picture, playing, sources, false, row),
     }
 }
 
@@ -142,13 +220,19 @@ pub fn step_hold(held: Option<Held>) -> Option<&'static str> {
 
 /// F2.4 S2: how many frames one press steps. `f` and ← / → are one frame of the
 /// recording under the line; `Shift` (or ‹‹ / ››) is five.
-pub fn step_frames(shift: bool) -> i64 {
-    if shift {
+pub fn step_frames(shift: bool) -> i64 {    if shift {
         5
     } else {
         1
     }
 }
+
+/// F2.4 S2: the rate to step at when the file cannot be asked (no footage row, no tool, an answer that
+/// parses to nothing). The spec gives no `P.*` row for it; 25 fps is what the prototype's session runs at,
+/// and a wrong rate moves the line by a wrong but still sub-second amount rather than breaking anything.
+/// The real number comes from [`crate::cut_fps::session_fps`], which asks ffprobe about this session's own
+/// footage file — a frame step is a frame OF THE RECORDING, so its width is a fact about that file.
+pub const FALLBACK_FPS: f64 = 25.0;
 
 /// F2.4 S2: with nothing held a frame step pauses the preview and moves the line by
 /// `frames` frames of the recording under it, at `fps` frames a second — the project's

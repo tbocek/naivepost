@@ -63,6 +63,8 @@ pub mod cut_view;
 pub mod cut_suggest_land;
 pub mod cut_form_frame;
 pub mod cut_picture;
+/// F2.4 S1/S1b — one press on the painted band, read where it actually landed (row, gutter, zoom, scroll).
+pub mod cut_line_press;
 /// §05-cut#2 §B — ⇲ Lane with nothing in hand: a footage file on a row of its own, probed. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod cut_lane;

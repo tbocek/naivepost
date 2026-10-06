@@ -2746,6 +2746,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
             cut_line::LineWriter::default(),
         ))))
     });
+    // S4's other half: a restored line is CUED to that frame and scrolled into view, not merely logged.
+    if let Some(pos) = restored {
+        crate::ui::cut_picture::note_line_moved(&window, pos.t);
+        crate::ui::cut_view::follow_playhead(&window, pos.t);
+    }
     // F2.4: the four line-step buttons get their handlers now that they sit in the realized tree.
     for (name, _label, frames) in LINE_STEP_BUTTONS {
         if let Some(step) = line_step_button(&window, name) {
@@ -2863,6 +2868,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     repaint_scrollbar(&window);
     wire_wheel_gestures(&window);
     crate::ui::cut_view::attach_scrollbar(&window);
+    // F2.4 S1/S1b: the painted band takes the line press too.
+    crate::ui::window::wire_band_line_press(&window);
     cut_form_frame::wire_close(&window);
     cut_picture::wire_click(&window);
     // §2: land a suggestion — its cut AND the new base — through the page's own doors.
@@ -5254,17 +5261,24 @@ pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos
 /// No project root reaches the page yet (the cut-model round owns it), so there is nowhere to write;
 /// the throttle is still advanced so the rate rule holds the moment a root exists.
 pub fn move_line_and_save(window: &adw::ApplicationWindow, pos: cut_line::LinePos, now_ms: u64) -> bool {
-    let _ = window;
+    // A root DOES reach the page (`line_root`), so a move writes through the writer, which keeps its own
+    // one-second rule. With no root the rate rule still holds via the throttle stamp alone.
+    let root = line_root(window);
     LINE_STATES.with(|slots| {
         let Some(slot) = slots.borrow().last().cloned() else {
             return false;
         };
         slot.borrow_mut().0 = pos;
-        let wrote = cut_line::may_write_line(slot.borrow().1.last_write_ms(), now_ms, false);
-        if wrote {
-            slot.borrow_mut().1.note_throttled(now_ms);
-        }
-        wrote
+        let Some(root) = root else {
+            // No project open: keep the one-second rule on the stamp alone, for when a root exists.
+            let owed = cut_line::may_write_line(slot.borrow().1.last_write_ms(), now_ms, false);
+            if owed {
+                slot.borrow_mut().1.note_throttled(now_ms);
+            }
+            return owed;
+        };
+        slot.borrow_mut().1.note_move(pos, &root, now_ms);
+        true
     })
 }
 
@@ -5301,38 +5315,39 @@ pub fn place_line_from_click(
     at: f64,
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
+    place_line_press(window, cut_line::strip_hit(at, on_picture, on_scene_picture, playing, sources, gutter), now_ms)
+}
+
+/// F2.4 S1 through the seam, with the row the pointer landed on: a press places the line, clears the
+/// selection and watches THAT row exactly as [`cut_line::click_outcome_in_row`] says.
+pub fn place_line_press(
+    window: &adw::ApplicationWindow,
+    hit: cut_line::Hit,
+    now_ms: u64,
+) -> cut_line::ClickOutcome {
     // F2.2 S2: a click on the picture is another way in that cannot switch the preview, so an empty
-    // cut refuses it here rather than placing a line over nothing. The rule lives in `cut_play`.
-    // F2.2 S2: a click on the picture is another way in that cannot switch the preview, so an empty
-    // cut refuses it here rather than placing a line over nothing. The rule lives in `cut_play`.
-    if on_picture && cut_play_leg::other_way_in(&review_cut_of(window)).is_some() {
-        return cut_line::ClickOutcome {
-            line_at: at,
-            line_moved: false,
-            takes_scene: false,
-            clears_selection: false,
-            watches: None,
-        };
-    }
-    let outcome = cut_line::click_outcome(at, on_picture, on_scene_picture, playing, sources, gutter);
+    // cut refuses it here rather than placing a line over nothing (nothing moves, clears or watches).
+    let refused = hit.on_picture && cut_play_leg::other_way_in(&review_cut_of(window)).is_some();
+    let outcome = if refused {
+        cut_line::refused_click(hit.at)
+    } else {
+        cut_line::click_outcome_in_row(hit.at, hit.on_picture, hit.on_scene_picture, hit.playing, hit.sources, hit.gutter, hit.row)
+    };
     if outcome.line_moved {
         move_line_and_save(window, cut_line::LinePos { t: outcome.line_at }, now_ms);
     }
-    // S1's other two effects land here too, because this is the one place the rule is applied. The
-    // selection model exists (F2.6), so a track press really does clear it; and the watched row is
-    // stored so the page knows which picture row a later ▶ should open on.
     if outcome.clears_selection {
         clear_selection(window);
     }
     set_watched_row(outcome.watches);
-    // "the scene under the click taken in hand": only when `takes_scene` says the pointer was on that
-    // scene's own picture, and then it is the scene under the NEW line, from this window's cut.
     if outcome.takes_scene {
         let under = cut_delete::scene_under(&newest_review_cut().segs, outcome.line_at).cloned();
         set_held_clip(under);
     }
     outcome
 }
+
+
 
 /// F2.4 S1b: what a first left press picks up at the 12 px reach (`// layout.lineReachPx`,
 /// `cut_line::EDGE_REACH_PX`) — edge, then border, then the whole clip.
@@ -5360,9 +5375,10 @@ pub fn step_the_line(
     let to = cut_line::step_line(from, frames, fps);
     move_line_and_save(window, cut_line::LinePos { t: to }, now_ms);
     // S2's "then pause": stepping is looking at a frame, not watching a run.
-    if let Some(player) = live_player(window) {
-        player.borrow_mut().transport.playing = false;
-    }
+    pause_for_step(window);
+    // And the frame follows: the preview shows the new second and the view keeps it on screen.
+    cut_picture::note_line_moved(window, to);
+    crate::ui::cut_view::follow_playhead(window, to);
     Step::SteppedTo { t: to }
 }
 
@@ -5430,24 +5446,32 @@ fn wire_line_step(button: &gtk::Button, window: &adw::ApplicationWindow, frames:
     });
 }
 
-/// Move the line by a signed number of frames and pause (F2.4 S2). The seam the buttons use; the
-/// keyboard path goes through `step_the_line`, which first asks whether a hold should be nudged.
+/// Move the line by a signed number of frames and pause (F2.4 S2). The seam the buttons use; the rate
+/// comes from [`crate::cut_fps`] (the real ffprobe over the footage file), not a constant.
 pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
     let from = line_position(window).t;
-    let to = cut_line::step_line(from, frames, DEFAULT_FPS);
+    let to = cut_line::step_line(from, frames, crate::cut_fps::session_fps(window));
     move_line_and_save(window, cut_line::LinePos { t: to }, now_ms());
-    if let Some(player) = live_player(window) {
-        player.borrow_mut().transport.playing = false;
-    }
+    pause_for_step(window);
+    // The frame the user sees after a step is Prepare's JPEG nearest the new second -- the same frame a
+    // click cues -- and the view recentres if the step took the line off screen.
     cut_picture::note_line_moved(window, to);
+    crate::ui::cut_view::follow_playhead(window, to);
     Step::SteppedTo { t: to }
 }
 
-/// The frame rate the line steps at when no project has said otherwise. The spec gives no `P.*` row for
-/// it; 25 fps is what the prototype's session runs at, and a wrong rate moves the line by a wrong but
-/// still sub-second amount rather than breaking anything.
-const DEFAULT_FPS: f64 = 25.0;
-
+/// S2's "then pause", all three ways something can play: the transport flag, ▶'s process, ▶✂'s pair.
+fn pause_for_step(window: &adw::ApplicationWindow) {
+    if let Some(player) = live_player(window) {
+        player.borrow_mut().transport.playing = false;
+    }
+    if crate::play_back::playing_pid().is_some() {
+        crate::play_back::halt();
+    }
+    if crate::cut_play_back::playing_pid().is_some() {
+        crate::cut_play_back::halt();
+    }
+}
 /// A monotone-ish millisecond clock for the write throttle. Coarse is fine: the rule it feeds only asks
 /// whether a second has passed.
 fn now_ms() -> u64 {
@@ -5472,16 +5496,18 @@ fn wire_line_keys(window: &adw::ApplicationWindow) {
         // `effect_rules::nudge`, which never consults snap marks, so a nudged band stays precisely one frame
         // off the segment end it was beside. A clip or edge in hand keeps its existing path untouched.
         if held_effect().is_some() && matches!(key, gtk::gdk::Key::Left | gtk::gdk::Key::Right) {
-            let frames = cut_line::step_frames(shift) as f64 / DEFAULT_FPS;
+            let frames = cut_line::step_frames(shift) as f64 / crate::cut_fps::session_fps(&win);
             let delta = if key == gtk::gdk::Key::Left { -frames } else { frames };
             let _ = nudge_held_effect(&win, delta);
             return glib::Propagation::Stop;
         }
+        // One read of the session's rate per press: every branch below steps at the same number.
+        let fps = crate::cut_fps::session_fps(&win);
         let response = match key {
-            gtk::gdk::Key::Left => arrow_steps(&win, shift, held, DEFAULT_FPS, now_ms()),
-            gtk::gdk::Key::Right => arrow_steps(&win, shift, held, DEFAULT_FPS, now_ms()),
-            gtk::gdk::Key::comma => step_the_line(&win, shift, held, DEFAULT_FPS, now_ms()),
-            gtk::gdk::Key::period => step_the_line(&win, shift, held, DEFAULT_FPS, now_ms()),
+            gtk::gdk::Key::Left => arrow_steps(&win, shift, held, fps, now_ms()),
+            gtk::gdk::Key::Right => arrow_steps(&win, shift, held, fps, now_ms()),
+            gtk::gdk::Key::comma => step_the_line(&win, shift, held, fps, now_ms()),
+            gtk::gdk::Key::period => step_the_line(&win, shift, held, fps, now_ms()),
             gtk::gdk::Key::space => {
                 // Space is not a line step, so it answers the propagation directly rather than with a
                 // `Step`; handled means the focused widget never sees it.
@@ -5680,13 +5706,6 @@ thread_local! {
 }
 
 /// Attach a left-button click to this window's `select-surface` so a real press places the line.
-///
-/// The surface is the picture band's stand-in today (F2.8/F2.10 draw the real rows), so every click on
-/// it counts as a picture-band click: `on_picture` is true and the gutter never answers through here.
-/// Whether the pointer was on a scene's own PICTURE — the thing that decides if the hand closes — is
-/// read from this window's cut at the clicked second and handed to the rule, which decides; nothing is
-/// decided in this handler. Seconds come from `SELECT_SURFACE_PPS`, the same number the drag uses, so
-/// the two gestures cannot disagree about where a pixel is in time.
 fn wire_line_click_surface(window: &adw::ApplicationWindow) {
     let Some(area) = select_surface(window) else { return };
     let gesture = gtk::GestureClick::new();
@@ -5694,41 +5713,43 @@ fn wire_line_click_surface(window: &adw::ApplicationWindow) {
     gesture.set_button(1);
     let win = window.clone();
     gesture.connect_released(move |_g, _n_press, x, _y| {
-        let at = x / SELECT_SURFACE_PPS;
-        let cut_ = newest_review_cut();
-        // "the scene under the click" means its picture, so ask whether a kept scene covers this second.
-        let on_scene_picture = cut_delete::scene_under(&cut_.segs, at).is_some();
-        place_line_from_click(
-            &win,
-            true,
-            on_scene_picture,
-            false,
-            true,
-            false,
-            at,
-            now_ms(),
-        );
-        // S1b: the same press also picks up by the wider 12 px reach. The distance to the nearer clip
-        // border is measured off the drawn geometry (`cut_trim::clip_boxes` at the same pps), so the
-        // reach is the one the page shows rather than a number invented here.
-        let boxes = cut_trim::clip_boxes(&cut_.segs, SELECT_SURFACE_PPS);
-        let x_px = x;
-        let nearest = boxes.iter().enumerate().map(|(i, b)| {
-            let d = (x_px - b.x).min((x_px - (b.x + b.w)).abs());
-            (d, i)
-        }).min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        if let Some((edge_px, i)) = nearest {
-            let inside = {
-                let b = &boxes[i];
-                x_px >= b.x && x_px <= b.x + b.w
-            };
-            let pick = cut_line::first_press_pick(edge_px, inside);
-            let seg = cut_.segs.get(i).cloned();
-            apply_pick(pick, seg);
-        }
+        crate::ui::cut_line_press::press_strip(&win, x, now_ms());
     });
     area.add_controller(gesture.clone());
     LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
+}
+
+/// Attach the same press to the PAINTED band, where the geometry the rule reads is.
+pub fn wire_band_line_press(window: &adw::ApplicationWindow) {
+    let Some(content) = window.content() else { return };
+    for name in ["track-band", "track-playhead"] {
+        if let Some(band) = find_widget_by_name(&content, name) {
+            crate::ui::cut_line_press::attach(window, &band);
+        }
+    }
+}
+
+thread_local! {
+    /// The gesture attached to the painted band, kept so a widget test can fire it the toolkit's way.
+    static BAND_LINE_CLICKS: std::cell::RefCell<Option<gtk::GestureClick>> =
+        const { std::cell::RefCell::new(None) };
+}
+/// Store the band's line gesture (called by [`crate::ui::cut_line_press::attach`]).
+pub(crate) fn store_band_line_gesture(gesture: gtk::GestureClick) {
+    BAND_LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
+}
+
+/// The millisecond clock the line throttle reads, for the page half that places a line.
+pub fn line_now_ms() -> u64 {
+    now_ms()
+}
+
+/// This window's line-placing gesture on the painted band. Test-only reader: the page attaches the gesture
+/// itself (`cut_line_press::attach`) and never asks for it back, so a name saying so keeps the program path
+/// honest about what calls this.
+pub fn band_line_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk::GestureClick> {
+    let _ = window;
+    BAND_LINE_CLICKS.with(|cell| cell.borrow().clone())
 }
 
 /// Attach the drag gesture to this window's `select-surface` and remember it. The handler forwards the

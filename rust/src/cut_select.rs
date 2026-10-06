@@ -212,9 +212,15 @@ pub fn surface_at(y: f64, bands: &SurfaceBands, row_count: usize) -> Surface {
     if y >= bands.selection.0 && y < bands.selection.1 {
         return Surface::SelectionBand;
     }
-    // The effects lane is checked above, so a y past it answers the band rather than "a lane below the
-    // last row" -- there is no lane under the fx lane.
-    if y >= bands.fx.1 {
+    // A y below EVERYTHING the surface draws is ground with nothing on it, so it answers the selection band
+    // rather than inventing a track. The bound is `max(rows' bottom, fx's bottom)`, never `fx.1` alone: on
+    // the painted band the effects lane sits ABOVE the picture rows (§A's order), so there `fx.1` is where
+    // the rows BEGIN and testing against it threw every real row press away as "past everything" -- which is
+    // why a picture-row click watched nothing. On the placeholder strip fx IS the bottom band, so its bottom
+    // is what bounds the surface there.
+    let rows_bottom =
+        bands.first_picture + row_count.max(1) as f64 * (bands.row_height + bands.wave_height);
+    if y >= rows_bottom.max(bands.fx.1) {
         return Surface::SelectionBand;
     }
     if y >= bands.first_picture {

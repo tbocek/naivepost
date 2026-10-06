@@ -166,6 +166,8 @@ pub mod seam_retries;
 pub mod separate;
 /// §4's track menu: how many audio streams a file really holds, asked of the real ffprobe.
 pub mod source_probe;
+/// F2.4 S2: the frame rate of the recording under the line, asked of that file with the real ffprobe.
+pub mod cut_fps;
 pub mod separate_media;
 pub mod separate_run;
 /// F2.1's media leg: the `gst-play-1.0` subprocess ▶ starts and stops over the session's footage.
