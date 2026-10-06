@@ -61,6 +61,10 @@ pub mod cut_trim_press;
 /// §05-cut#1-screen badge **31** and the wheel's three gestures: the band's live zoom, its scroll
 /// position and the geared scrollbar. Split out of `window.rs`, which is past its size budget.
 pub mod cut_view;
+/// §05-cut#2 S2b — the model mode's cut call: the attempts, the five tools answered by
+/// `tools::cutpass::Plan`, and the walk-back of whatever passed. Split out of `window.rs`, which is
+/// past its size budget; it lands nothing (that is `cut_suggest_land`'s write).
+pub mod cut_suggest_model_run;
 /// §05-cut#2 — landing a suggestion: the walk-back's answer becomes the cut on screen AND the history's
 /// base in one write. Split out of `window.rs`, which is past its size budget.
 pub mod cut_suggest_land;

@@ -3201,6 +3201,8 @@ fn wire_play(
         let narrate_asked = run::step(shell.borrow().page) == run::Step::Narrate;
         // F5.1's ▶ on the Produce page, refused the same way before the bar opens (§F5.1 S1).
         let produce_asked = run::step(shell.borrow().page) == run::Step::Produce;
+        // F2.14's ▶ on the Cut page is Suggest, refused the same way before the bar opens (§F2.14 S1).
+        let suggest_asked = run::step(shell.borrow().page) == run::Step::Suggest;
         let live = PLAY_SESSION.with(|slots| {
             slots
                 .borrow()
@@ -3223,6 +3225,20 @@ fn wire_play(
                 paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 return;
             }
+        }
+        // F2.14: ▶ on the Cut page is Suggest — refused or answered here, before the bar opens.
+        if suggest_asked {
+            let answer = crate::ui::cut_suggest_land::suggest_press(
+                &main_window(),
+                &session_policy(&main_window()),
+                bar.borrow().running.is_some(),
+            );
+            if answer.refused {
+                log_line(&format!(">>> suggest: {}", answer.said));
+            }
+            if !answer.said.is_empty() { status.set_text(&answer.said); }
+            paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+            if answer.stops { return; }
         }
 
         if produce_asked {
@@ -6673,6 +6689,8 @@ pub(crate) fn save_insert_cut(cut_: &Cut) {
     }
 }
 
+/// A landed cut is written by the flow that landed it — `cut_suggest_words_run` for the words cut,
+/// its model twin for a model cut — because only that flow knows which session folder it read.
 /// Write `cut_` to this window's own cut.json — the door every editing press uses, exposed so a check can
 /// start from a file on disk rather than only from an in-memory cut.
 pub fn save_seed_for_test(window: &adw::ApplicationWindow, cut_: &Cut) {

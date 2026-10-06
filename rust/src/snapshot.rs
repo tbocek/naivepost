@@ -114,7 +114,10 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         | "05-lanes" | "05-copy"
         // §F2.12's own screen likewise: three real inserts (BETWEEN, OVER, LANE) and S1's refusal. No
         // `spec/img/05-insert.png` exists, so `spec/inventory/cut.md` §G is the widget reference for it.
-        | "05-insert" => Some("Cut"),
+        | "05-insert"
+        // §F2.14's own screen: ▶ in the MODEL mode — §S1's refusal beside a landed suggestion whose every
+        // edge came from the app's snap points. No `spec/img/05-suggest.png` exists either.
+        | "05-suggest" => Some("Cut"),
         "06-preview" | "06-zoom" | "06-speed" | "06-text" | "06-volume" | "06-label"
         | "06-lane" | "06-svg" | "06-effect-menu" => Some("Cut"),
         "07-narrate" | "07-take" => Some("Narrate"),
@@ -249,19 +252,21 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // from 20 with the shift correction its name plate shows, one lane so there is a speaker badge and
         // a gutter switch, the line inside the overlap, and row 2 watched so the dashed outline is in shot.
         if screen == "05-rows" {
-            let mut two_cameras = cut::Cut::default();
-            two_cameras.segs = vec![
-                cut::Seg { s: 0.0, e: 37.0, cam: 0, ..Default::default() },
-                cut::Seg { s: 20.0, e: 37.0, cam: 1, ..Default::default() },
-            ];
-            two_cameras.lanes = vec![cut::Lane {
-                name: "cam1".into(),
-                src: "cam1".into(),
-                at: 20.0,
-                off: 0.0,
-                dur: 17.0,
-            }];
-            two_cameras.shift.insert("cam1".to_string(), -19.0);
+            let two_cameras = cut::Cut {
+                segs: vec![
+                    cut::Seg { s: 0.0, e: 37.0, cam: 0, ..Default::default() },
+                    cut::Seg { s: 20.0, e: 37.0, cam: 1, ..Default::default() },
+                ],
+                lanes: vec![cut::Lane {
+                    name: "cam1".into(),
+                    src: "cam1".into(),
+                    at: 20.0,
+                    off: 0.0,
+                    dur: 17.0,
+                }],
+                shift: [("cam1".to_string(), -19.0)].into_iter().collect(),
+                ..Default::default()
+            };
             ui::seed_review_cut(&window, &two_cameras);
             ui::set_line_position(&window, cut_line::LinePos { t: 25.0 });
             ui::press_watch_row(&window, 1);
@@ -275,29 +280,31 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // `ui::page_recordings`), two clips are kept, the 30-40 hole is FOLDED so the bars meet at a
         // seam with a `+` on it, and the 60-120 tail is left open wearing a `-`.
         if screen == "05-cut" || screen == "05-fold" {
-            let mut folded = cut::Cut::default();
-            folded.segs = vec![
+            let folded_segs = vec![
                 cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
                 cut::Seg { s: 40.0, e: 60.0, cam: 0, ..Default::default() },
             ];
-            ui::set_session_recordings(&[crate::timeline::Recording {
-                base: "session-tape".to_string(),
-                start: 0.0,
-                end: 120.0,
-            }]);
-            ui::seed_review_cut(&window, &folded);
             // F2.8 S2: the strip's two new rows only exist when there is something to plate for each — the
             // recorders' band needs a lane and the wave strip needs the session tape (see
             // `cut_trim_press::painted_bands`). With no lane the whole layout collapses back to one painted
             // row, so a Cut-page shot could never show the rows this round added; one separate recording puts
             // both rows on screen, which is what `spec/img/05-trim.png`'s strip has.
-            folded.lanes = vec![cut::Lane {
-                name: "mic-lav".to_string(),
-                src: "project:sources/mic-lav.wav".to_string(),
-                at: 12.0,
-                off: 0.0,
-                dur: 46.0,
-            }];
+            let folded = cut::Cut {
+                segs: folded_segs,
+                lanes: vec![cut::Lane {
+                    name: "mic-lav".to_string(),
+                    src: "project:sources/mic-lav.wav".to_string(),
+                    at: 12.0,
+                    off: 0.0,
+                    dur: 46.0,
+                }],
+                ..Default::default()
+            };
+            ui::set_session_recordings(&[crate::timeline::Recording {
+                base: "session-tape".to_string(),
+                start: 0.0,
+                end: 120.0,
+            }]);
             ui::seed_review_cut(&window, &folded);
             // The badge table only exists once the badges have been DRAWN (`refresh_fold_badges` is what
             // records which gap each numbered button stands for), so a fold requested before that first
@@ -455,35 +462,40 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // doors the widgets fire (`tests/band_hold_widgets.rs` presses exactly these) rather than by poking
         // state: a lane painted from a shortcut would not be the lane the app draws.
         if screen == "06-lane" {
-            let mut lane = cut::Cut::default();
-            lane.segs = vec![
-                cut::Seg { s: 0.0, e: 30.0, cam: 0, ..Default::default() },
-                cut::Seg { s: 30.0, e: 60.0, cam: 0, ..Default::default() },
-            ];
             // Wide bars, at the same 4 px/s the spec's own lane is drawn with: 50 s is 200 px, far past both
             // `fx_band::GRIP_MIN_PX` (30) and `KILL_MIN_PX` (32), so the grips and the middle ✕ are drawn at a
             // size the shot can actually be read at (a 10 s / 40 px bar renders, but as a 2 glyph sliver).
-            lane.fx.push(cut::Fx {
-                kind: "zoom".to_string(),
-                t: 5.0,
-                dur: 50.0,
+            let lane_fx = vec![
+                cut::Fx {
+                    kind: "zoom".to_string(),
+                    t: 5.0,
+                    dur: 50.0,
+                    ..Default::default()
+                },
+                // A narrow one for contrast: 6 s is 24 px, under both thresholds, so it offers no grips and no ✕.
+                cut::Fx {
+                    kind: "speed".to_string(),
+                    t: 70.0,
+                    dur: 60.0,
+                    rate: 0.5,
+                    ..Default::default()
+                },
+                cut::Fx {
+                    kind: "label".to_string(),
+                    t: 140.0,
+                    dur: 6.0,
+                    text: "intro".to_string(),
+                    ..Default::default()
+                },
+            ];
+            let lane = cut::Cut {
+                segs: vec![
+                    cut::Seg { s: 0.0, e: 30.0, cam: 0, ..Default::default() },
+                    cut::Seg { s: 30.0, e: 60.0, cam: 0, ..Default::default() },
+                ],
+                fx: lane_fx,
                 ..Default::default()
-            });
-            lane.fx.push(cut::Fx {
-                kind: "speed".to_string(),
-                t: 70.0,
-                dur: 60.0,
-                rate: 0.5,
-                ..Default::default()
-            });
-            // A narrow one for contrast: 6 s is 24 px, under both thresholds, so it offers no grips and no ✕.
-            lane.fx.push(cut::Fx {
-                kind: "label".to_string(),
-                t: 140.0,
-                dur: 6.0,
-                text: "intro".to_string(),
-                ..Default::default()
-            });
+            };
             ui::seed_review_cut(&window, &lane);
             ui::set_line_position(&window, cut_line::LinePos { t: 140.0 });
             // Pick the first band UP through the press seam (a middle grab, 20 px of travel), so the shot shows
@@ -595,6 +607,35 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // row show up here instead of as an unexplained picture.
             println!("snapshot: 05-copy | {copied} | {said} | {recopied} | {pasted}");
             println!("snapshot: 05-copy sound | {sound_copied} | {laid} | {held_again} | {refused}");
+            ui::refresh_camera_rows(&window);
+        }
+        // §F2.14's own picture: §S1's busy refusal (the first question ▶ answers, and the only one a
+        // screenshot can show without staging a whole prepared session), then a landed suggestion whose
+        // edges are the app's snap points, not the numbers a model typed. Both come from the doors ▶
+        // fires — `refuse_suggest_run` and `press_landed` — never by poking state. The other three refusals
+        // live in `tests/f2_14_guard_order.rs`; a screenshot is no place to age one file against another.
+        if screen == "05-suggest" {
+            let staged = crate::snapshot_suggest::stage();
+            ui::set_session_policy_field(&window, "cutMode", "model", "this shot", project::Origin::User);
+            // S1's refusal, honestly aimed: busy now, which needs no file older than another.
+            let refused = ui::cut_suggest_land::refuse_suggest_run(&window, true)
+                .unwrap_or_else(|| crate::suggest::BUSY.to_string());
+            // Then the walk-back's landing: literal seconds in, app-chosen edges out, no socket dialled.
+            let landed = crate::snapshot_suggest::press_landed(&window);
+            let segs = ui::review_cut_segs_count(&window);
+            let seconds = crate::cut_screen::cut_seconds(&cut::Cut {
+                segs: ui::review_cut_segs(&window),
+                ..Default::default()
+            });
+            println!("snapshot: 05-suggest | {refused} | {landed} | {segs} segs | {} s", seconds.round());
+            // The folder is the shot's own scratch, and its `cut.json` is what `land_spans` wrote: read it
+            // back so a screenshot proves the landing reached a file, not only the widget.
+            let written = staged
+                .as_ref()
+                .map(|tree| tree.cut_json().is_file())
+                .unwrap_or(false);
+            println!("snapshot: 05-suggest cut.json written: {written}");
+            ui::cut_view::repaint_page(&window);
             ui::refresh_camera_rows(&window);
         }
         // §07-narrate's own picture (`spec/img/07-narrate.png`) is FOUR written lines with the app's own
