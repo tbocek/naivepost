@@ -93,8 +93,13 @@ impl Geometry {
         }
         // Named ground runs from the ruler at the top of the band through the last row's bottom; the
         // selection band and the effects lane above the rows name ground too, and a y below the rows on a
-        // session that has lanes is a lane, which is named ground as well.
-        y_px <= self.bands.first_picture + self.row_count as f64 * self.bands.row_height
+        // session that has lanes is a lane, which is named ground as well. The bound is the whole PITCH
+        // (picture + wave strip), not the picture half alone: with a split row a wave-strip press would
+        // otherwise read as unnamed ground and a click there would clear the selection instead of leaving
+        // F2.4's line click to place the line.
+        y_px
+            <= self.bands.first_picture
+                + self.row_count as f64 * (self.bands.row_height + self.bands.wave_height)
     }
 
     /// S2: which part of the band already drawn this press lands on. `Outside` when there is no band.

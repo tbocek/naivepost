@@ -109,7 +109,9 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         "03-runbar" | "03-runbar-busy" => Some("Prepare"),
         "04-prepare" | "04-prompt-picker" => Some("Prepare"),
         "05-cut" | "05-add" | "05-fold" | "05-rows" | "05-split" | "05-trim" | "05-remove"
-        | "05-lanes" => Some("Cut"),
+        // §F2.9's own screen: the page AFTER ⧉ Copy, ⧉ Paste (both branches and its refusal) and ⇲ Lane.
+        // `spec/img` has no copy image, so this is a program-side screen like `03-log-link` / `04-prepared`.
+        | "05-lanes" | "05-copy" => Some("Cut"),
         "06-preview" | "06-zoom" | "06-speed" | "06-text" | "06-volume" | "06-label"
         | "06-lane" | "06-svg" | "06-effect-menu" => Some("Cut"),
         "07-narrate" | "07-take" => Some("Narrate"),
@@ -480,6 +482,102 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // the held state: the white outline, the line walked to the band's start, and the
             // "Zoom picked up" sentence the lane prints.
             ui::press_effect_bar(&window, 0, 100.0, 200.0, 20.0, false);
+        }
+        // §F2.9's screen is the Cut page AFTER the whole flow ran: ⧉ Copy took a stretch in hand, ⇲ Lane gave
+        // it a row of its own, ⧉ Paste spliced the footage copy back as a `copy:` card, and a sound copy was
+        // laid over the kept footage in one piece per stretch — plus S2's refusal, with the line in a hole.
+        // Driven through the same doors the buttons fire (`tests/cut_copy_paste_lane_widgets.rs` presses these
+        // exact ones), never by poking state: what is on screen is what the verbs wrote.
+        if screen == "05-copy" {
+            // The session filmed 10-130 as one take that does NOT start at 0:00 — the case the paste has to get
+            // right: a copied span asks the tape for the material under it, not for its head.
+            ui::set_session_recordings(&[crate::timeline::Recording {
+                base: "session-tape".to_string(),
+                start: 10.0,
+                end: 130.0,
+            }]);
+            let kept = cut::Cut {
+                segs: vec![
+                    cut::Seg { s: 10.0, e: 40.0, cam: 0, ..Default::default() },
+                    cut::Seg { s: 50.0, e: 80.0, cam: 0, ..Default::default() },
+                ],
+                ..Default::default()
+            };
+            // The separate recording a sound copy is taken FROM, named the way a lane or a wave plate names
+            // one (its base). A sound paste refuses a recording the session's file list does not hold, so the
+            // shot adds it to the session too — straight into the window's own project state, which is what
+            // Inputs writes. (`session_handle` is the page's public handle on it.)
+            ui::session_handle(&window).borrow_mut().sources.push(crate::project::Source {
+                path: "mic-lav.wav".to_string(),
+                footage: true,
+                ..Default::default()
+            });
+            ui::seed_review_cut(&window, &kept);
+            // Deepen the zoom first: at the opening 4 px/s a 12 s copy is 48 px and its card reads as a
+            // smudge, while 15 px/s (where §A's ladder stops) gives every box here real width.
+            for _ in 0..6 {
+                ui::press_zoom(&window, true);
+            }
+            // S3's row from a hand (a lane survives the paste, so it goes first), after a footage copy:
+            // a row of its own, windowing the file from the FILE second it was taken at — the conversion this
+            // round fixed, and the one thing of this flow that is plainly visible on the strip (a spliced card
+            // has zero width at every zoom: the cut is *opened* there, F2.9).
+            ui::draw_selection(
+                &window,
+                crate::cut_select::Surface::PictureRow(0),
+                None,
+                20.0,
+                32.0,
+            );
+            let copied = ui::press_copy(&window);
+            ui::set_line_position(&window, cut_line::LinePos { t: 70.0 });
+            let said = ui::press_lane(&window);
+            // S2's footage branch: the same seconds in hand again, ⧉ Paste with the line 5 s into the second
+            // clip — the `copy:` card, and a cut that got longer ("the cut is a, was b").
+            ui::draw_selection(
+                &window,
+                crate::cut_select::Surface::PictureRow(0),
+                None,
+                20.0,
+                32.0,
+            );
+            let recopied = ui::press_copy(&window);
+            ui::set_line_position(&window, cut_line::LinePos { t: 55.0 });
+            let pasted = ui::press_paste(&window);
+            // S2's sound branch: a 12 s stretch of the microphone copied at 0:36 and pasted at 0:24, so it
+            // lies over TWO kept stretches (the 0:40-0:50 hole splits it) and the sentence says "stretches".
+            ui::draw_selection(
+                &window,
+                crate::cut_select::Surface::WaveStrip,
+                Some("mic-lav.wav"),
+                36.0,
+                48.0,
+            );
+            let sound_copied = ui::press_copy(&window);
+            ui::set_line_position(&window, cut_line::LinePos { t: 24.0 });
+            let laid = ui::press_paste(&window);
+            // S2's refusal, honestly aimed: a hand that starts INSIDE the hole (copied at 0:42) and the line at
+            // 0:41 — inside the 0:40-0:50 gap, where the cut keeps no footage at all (the pieces laid two steps
+            // back stop at the hole's edge), so the paste refuses ("a sound needs a picture under it") and the
+            // copy STAYS in hand. That is the last word on the status row, which is what a bad aim really shows.
+            ui::draw_selection(
+                &window,
+                crate::cut_select::Surface::WaveStrip,
+                Some("mic-lav.wav"),
+                42.0,
+                46.0,
+            );
+            let held_again = ui::press_copy(&window);
+            ui::set_line_position(&window, cut_line::LinePos { t: 41.0 });
+            let refused = ui::press_paste(&window);
+            // The strip repaints on the view's own door; a snapshot that never queued one would paint the
+            // pre-press picture.
+            ui::cut_view::repaint_page(&window);
+            // The sentences the flow earned are this screen's text: printing them makes a wrong or empty status
+            // row show up here instead of as an unexplained picture.
+            println!("snapshot: 05-copy | {copied} | {said} | {recopied} | {pasted}");
+            println!("snapshot: 05-copy sound | {sound_copied} | {laid} | {held_again} | {refused}");
+            ui::refresh_camera_rows(&window);
         }
         // §07-narrate's own picture (`spec/img/07-narrate.png`) is FOUR written lines with the app's own
         // times, estimates and one red fit warning. The fixture cannot show them: `fixtures/demo.naivepost`

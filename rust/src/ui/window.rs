@@ -6271,12 +6271,8 @@ pub fn press_copy(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// The line the copy lands on. The player's own playhead when one is running, otherwise the stored line:
-/// both are the same number while nothing plays, and the player is what the eye is watching.
 pub(crate) fn paste_line(window: &adw::ApplicationWindow) -> f64 {
-    live_player(window)
-        .map(|player| player.borrow().playhead.unwrap_or_else(|| line_position(window).t))
-        .unwrap_or_else(|| line_position(window).t)
+    crate::ui::cut_lane::paste_line(window)
 }
 
 /// F2.9 S2: ⧉ Paste at the red line. [`cut_copy::paste`] decides footage-vs-sound, splices or lays, and
@@ -6293,16 +6289,22 @@ pub fn press_paste(window: &adw::ApplicationWindow) -> String {
     let path = match hand.as_ref().and_then(|h| h.recording_public()) {
         Some(recording) => sources
             .iter()
-            .find(|source| source_base(source) == recording)
+            .find(|source| crate::ui::cut_lane::source_base(source) == recording)
             .cloned()
             .unwrap_or_else(|| recording.to_string()),
         None => String::new(),
     };
-    // Session→file seconds for the copied span. No offset helper exists yet — the aligner round brings the
-    // two clocks together — so the span's own start, clamped at zero, is what the lane/file is asked for.
-    let file_seconds = hand.as_ref().map(|h| h.from.max(0.0)).unwrap_or(0.0);
+    // Session→file seconds for the copied span — see [`cut_copy::file_seconds`].
+    let file_seconds = hand
+        .as_ref()
+        .map(|h| cut_copy::file_seconds(&newest_review_cut(), &crate::ui::cut_folds::page_recordings(), h))
+        .unwrap_or(0.0);
     let mut cut_ = newest_review_cut();
     let outcome = cut_copy::paste(&mut cut_, &mut hand, Some(at), &path, file_seconds, &sources);
+    // Only a paste that landed writes: a refusal left the cut untouched.
+    if outcome.is_ok() {
+        save_insert_cut(&cut_);
+    }
     record_edit(window, &cut_);
     COPY_HAND.with(|cell| *cell.borrow_mut() = hand);
     match outcome {
@@ -6311,14 +6313,6 @@ pub fn press_paste(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// The base name of a project path — what a `Scope::Sound { recording }` names.
-fn source_base(path: &str) -> String {
-    std::path::Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(path)
-        .to_string()
-}
 
 /// F2.9 S3: ⇲ Lane. [`cut_copy::lane_start`] says whether the line may open a row there and
 /// [`cut_copy::lane`] builds it; this names it and files it. NOTHING is cut to the new row — no `Seg` is
@@ -6332,9 +6326,8 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
     };
     let at = paste_line(window);
     let mut cut_ = newest_review_cut();
-    // The session's filmed runs, from the recordings the page draws its rows from. Until F2.11 owns them,
-    // the kept footage spans stand in: they are what was filmed and kept, which is the honest answer.
-    let filmed: Vec<(f64, f64)> = cut_copy::footage_stretches(&cut_, 0.0, f64::MAX);
+    // The session's FILMED runs — what `lane_start`'s "nothing is rolling at m:ss" asks.
+    let filmed: Vec<(f64, f64)> = crate::timeline::filmed_runs(&crate::ui::cut_folds::page_recordings());
     match cut_copy::lane_start(Some(at), &hand, &filmed) {
         cut_copy::LaneStart::Refusal(say) => say,
         cut_copy::LaneStart::Start(at) => {
@@ -6344,11 +6337,15 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
                 .source_public()
                 .map(|src| src.to_string())
                 .unwrap_or_else(|| session_sources(window).first().cloned().unwrap_or_default());
-            let file_seconds = hand.from.max(0.0);
+            // The FILE second the row windows from — the same conversion the paste asks for.
+            let file_seconds =
+                cut_copy::file_seconds(&cut_, &crate::ui::cut_folds::page_recordings(), &hand);
             let Some(lane) = cut_copy::lane(&hand, &source, file_seconds, at, name.clone()) else {
                 return cut_copy::too_short().to_string();
             };
             cut_.lanes.push(lane);
+            // A lane is a fact about the project, so it goes in the file (with its `off`).
+            save_insert_cut(&cut_);
             record_edit(window, &cut_);
             cut_copy::lane_status(hand.length, hand.from, &name, at)
         }
@@ -6953,6 +6950,7 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
         let _ = cr.move_to(6.0, cut_trim::RULER_H + cut_trim::BAR_H * 0.6);
         let _ = cr.show_text(cut_trim::STRIP_EMPTY_HINT);
         crate::ui::cut_trim_press::paint_bands(cr, w, &cut_, &page_recordings(), strip_pps());
+        crate::ui::cut_trim_press::paint_laid_pieces(cr, w, &cut_, strip_pps());
         return;
     }
 
@@ -6977,6 +6975,7 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     // F2.8 S2: the two rows under the kept bar — the recorders' band and the wave strip — drawn from the
     // SAME bands a press resolves against, so a plate the eye saw is the plate the hand picked.
     crate::ui::cut_trim_press::paint_bands(cr, w, &cut_, &page_recordings(), strip_pps());
+    crate::ui::cut_trim_press::paint_laid_pieces(cr, w, &cut_, strip_pps());
 }
 
 /// Draw the ruler's labels onto the strip's cairo context. Cairo text is best-effort in the headless

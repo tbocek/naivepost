@@ -49,6 +49,32 @@ fn paste_line_opt(window: &adw::ApplicationWindow) -> Option<f64> {
     line_is_placed().then(|| window::paste_line(window))
 }
 
+/// The line the copy lands on — where the eye is looking, which is what "paste at the red line" asks for.
+///
+/// A transport that is actually PLAYING answers with its own playhead: while the preview runs, the picture on
+/// screen is at that second and the click that placed the stored line is already behind it. A player that
+/// exists but is NOT playing does not answer at all — its `playhead` is whatever a past seek or pause left
+/// there, and a paste aimed by that stale number would land somewhere the person is not looking (the earlier
+/// version assumed "both are the same number while nothing plays", which a parked preview refutes: pausing
+/// leaves the playhead where the pause happened and the line elsewhere). So a parked player falls through to
+/// the stored line, which every press on the band and the strip writes through `place_line_press` →
+/// `move_line_and_save`.
+pub fn paste_line(window: &adw::ApplicationWindow) -> f64 {
+    window::live_player(window)
+        .filter(|player| player.borrow().transport.playing)
+        .and_then(|player| player.borrow().playhead)
+        .unwrap_or_else(|| window::line_position(window).t)
+}
+
+/// The base name of a project path — what a `Scope::Sound { recording }` names.
+pub(crate) fn source_base(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+        .to_string()
+}
+
 /// The session's first footage-marked file, by path: the file ⇲ Lane can put on a row of its own.
 pub(crate) fn footage_source_path(window: &adw::ApplicationWindow) -> Option<String> {
     window::session_handle(window)

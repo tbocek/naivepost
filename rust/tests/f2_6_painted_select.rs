@@ -9,13 +9,13 @@
 //!
 //! # Why a lane PRESS is not widget-driven here
 //!
-//! The painted band draws ruler, selection band, effects lane and picture rows — no wave strips
-//! (`cut_tracks::bands_for` sets `wave_height: 0.0`) and no lane rows — and `cut_select::surface_at`
-//! answers `Surface::SelectionBand` for any y past the last row's bottom, by its own documented rule. So
-//! no y on today's band resolves to `Surface::Lane` or `Surface::WaveStrip` however the pointer moves:
-//! those two surfaces are reached here through `sound_scope` directly
+//! The painted band now draws each row's own wave strip (`cut_tracks::bands_for` splits the row pitch into
+//! picture + [`ROW_WAVE_PX`](naivepost::ui::cut_tracks::ROW_WAVE_PX)), so a y in that third resolves to
+//! `Surface::WaveStrip` by press. Lane rows are still not drawn, and `cut_select::surface_at` answers
+//! `Surface::SelectionBand` for any y past the last row's bottom, by its own documented rule — so `Lane`
+//! is reached here through `sound_scope` directly
 //! (`s1_a_lane_press_names_the_recording_stacked_there` names both lanes by row) and, for S4, through
-//! `ui::draw_selection`. They become press-reachable when the band draws lane rows.
+//! `ui::draw_selection`. It becomes press-reachable when the band draws lane rows.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -39,7 +39,9 @@ static RAN_S4_VERBS: AtomicBool = AtomicBool::new(false);
 
 /// A band whose rows start at y = 100 with a 40 px pitch and no wave strip of their own, laid out at
 /// 8 px/s with a 60 px gutter and 20 px scrolled away — numbers chosen so every assertion below can be
-/// done in the comment beside it without a calculator.
+/// done in the comment beside it without a calculator. This is the PLACEHOLDER layout (`wave_height: 0.0`),
+/// deliberately: the live band splits its row pitch into picture + wave strip (`cut_tracks::bands_for`),
+/// and this fixed box keeps the arithmetic below readable while the lane/wave scope rules are exercised.
 fn geometry(rows: usize) -> Geometry {
     Geometry {
         pps: 8.0,

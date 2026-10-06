@@ -17,7 +17,8 @@
 
 use crate::cut::{Cut, Lane, Seg};
 use crate::cut_select::{Scope, Selection, MIN_SCENE_SECONDS};
-use crate::tools;
+use crate::{timeline, tools};
+use crate::timeline::Recording;
 
 /// F2.9: the three buttons' labels and tooltips, spelled once here so the page's widgets and the tests
 /// that read them cannot drift apart — the same arrangement `cut_verbs::BUTTONS` sets for ＋ / | / －.
@@ -296,6 +297,42 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
     pieces.len()
 }
 
+/// F2.9 S2/S3: which second INSIDE the source the hand's opening second is — §B's `at(t)` for the
+/// recording the copy came from, through [`crate::timeline::local_at`], the same conversion every other
+/// reader of file seconds uses (`cut_picture` picks its frame with it, `edges` bounds a splice with it).
+///
+/// The old page code passed the SESSION second straight through as a file second, so on any recording that
+/// does not start at 0:00 (which is every recording after the first in a real session) a pasted span asked
+/// the tape for material from later than the person pointed at, and a lane row windowed the wrong part of
+/// its file.
+///
+/// * a **sound** hand names its own recording (`Scope::Sound { recording }`), so that is the one converted;
+///   an unknown name answers 0 rather than inventing an offset — the paste refuses a file that left the
+///   session before it ever asks this,
+/// * a **footage** hand has no single source (the pictures are several cameras' worth), so the run holding
+///   its opening second is converted, and with no filmed runs at all there is nothing to convert against,
+///   which answers 0 — the honest reading of "no tape under these seconds",
+/// * `cut.shift` rides along, because a slid recording's material starts elsewhere (§B's hand correction),
+/// * the answer is clamped at 0: a selection that began before the recording did has nothing earlier on
+///   that lane to play, and a negative file second would ask the decoder for frames that do not exist.
+pub fn file_seconds(cut: &Cut, filmed: &[Recording], hand: &Hand) -> f64 {
+    let recording = match hand.recording() {
+        Some(base) => filmed.iter().find(|rec| rec.base == base).cloned(),
+        None => filmed
+            .iter()
+            .find(|rec| rec.start <= hand.from && hand.from < rec.end)
+            .cloned(),
+    };
+    let Some(recording) = recording else { return 0.0 };
+    timeline::local_at(
+        hand.from,
+        recording.start,
+        0.0,
+        timeline::shift_of(cut, &recording.base),
+    )
+    .max(0.0)
+}
+
 /// F2.9 S2 (`Pasting consumes the copy; Esc drops it`): the whole paste in one call, so "consumed only when
 /// it happened" is a rule with one home rather than three callers agreeing about it.
 ///
@@ -306,9 +343,8 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
 /// second time". `Ok(status)` consumes it.
 ///
 /// `path` is the copied recording's project-relative path (what each laid piece names as its asset) and
-/// `file_seconds` the file second the span starts at: converting session→file seconds is the caller's job, and
-/// it clamps to the lane's own beginning (`max(from, recording start)`), because a selection that began before
-/// the recording did has nothing earlier on that lane to play. A footage paste ignores both.
+/// `file_seconds` the file second the span starts at — [`file_seconds`] converts it from the session clock,
+/// including wherever that recording sits on it and any hand correction on it. A footage paste ignores both.
 pub fn paste(
     cut: &mut Cut,
     hand: &mut Option<Hand>,

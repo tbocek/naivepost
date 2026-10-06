@@ -47,6 +47,11 @@ pub const PLAYHEAD_RGB: (f64, f64, f64) = (0.9, 0.15, 0.15);
 /// is what F2.8's press bands resolve against, and moving it would move a press.
 pub const SELECTION_BAND_PX: f64 = 22.0;
 pub const PICTURE_ROW_EXTRA_PX: f64 = 4.0;
+/// The wave strip's share of a camera row (§27 Tracks: "each row's first audio track as a strip below
+/// it"). No §10 row gives this height, so the painter chooses it, exactly as `cut_trim_press::{LANE_H,
+/// WAVE_H}` does for the placeholder strip's own rows: the lower third of the row's pitch, which leaves the
+/// upper two thirds to the thumbnail and keeps every press y that meant "row N" meaning row N.
+pub const ROW_WAVE_PX: f64 = (THUMB_DEFAULT_PX as f64 + PICTURE_ROW_EXTRA_PX) / 3.0;
 /// A flag's triangle: 3 px of line (§1) with a pennant this wide and tall.
 const MARK_LINE_PX: f64 = 3.0;
 const FLAG_PX: f64 = 10.0;
@@ -304,13 +309,33 @@ pub fn paint_at(cr: &cairo::Context, scene: &Scene, width: f64, height: f64, thu
     draw_kept_bars(cr, scene, rows);
     draw_effects_lane(cr, scene, rows);
     draw_picture_rows(cr, scene, rows);
+    draw_row_wave_strips(cr, scene, rows);
     draw_recording_edges(cr, scene, rows);
     draw_join_washes(cr, scene, rows);
     draw_watched_row(cr, scene, rows);
     draw_selection(cr, scene, rows);
     draw_insert_bands(cr, scene, rows);
     draw_in_out_marks(cr, scene, rows);
+    draw_laid_pieces(cr, scene, rows);
     draw_name_plates(cr, scene, rows);
+}
+
+/// F2.9 S2: the pieces a sound paste laid over the kept footage, on the PAINTED band as well as on the
+/// window's placeholder strip. Same painter ([`crate::ui::cut_trim_press::paint_laid_pieces_in`]), this
+/// caller's row geometry, drawn last but for the name plates so the plate sits on the footage it was laid
+/// over. Without this the lay is invisible on the surface the Cut page actually shows.
+fn draw_laid_pieces(cr: &cairo::Context, scene: &Scene, rows: Rows) {
+    crate::ui::cut_trim_press::paint_laid_pieces_in(
+        cr,
+        BAND_WIDTH_PX as f64,
+        &cut::Cut {
+            segs: scene.segs.clone(),
+            ..Default::default()
+        },
+        scene.pps,
+        rows.pictures,
+        rows.row_h,
+    );
 }
 
 /// The placeholder's open-at thumbnail height, used wherever a caller has not said otherwise.
@@ -326,23 +351,33 @@ pub struct Rows {
     pub row_h: f64,
 }
 
+impl Rows {
+    /// Where one row's wave strip begins: the lower [`ROW_WAVE_PX`] of its picture row. Every painter and
+    /// every press reader asks THIS rather than doing its own arithmetic, or the ink and the reach disagree.
+    pub fn wave_top(&self, row: usize) -> f64 {
+        self.pictures + row as f64 * self.row_h + (self.row_h - ROW_WAVE_PX)
+    }
+}
+
 /// The same `rows` arithmetic the painter lays out, as the surfaces a press can land on (§A's order:
 /// ruler, selection band, effects lane, then one picture row with its wave strip per camera row). Built
 /// from the fx row count and the row count rather than a whole `Scene`, so a press handler can ask it
 /// without building what it is only going to measure — and cannot disagree with what is drawn.
 pub fn bands_for(fx_rows: usize) -> crate::cut_select::SurfaceBands {
     let held = rows_of(fx_rows, THUMB_DEFAULT_PX);
-    // The painter gives every row the WHOLE `row_h` pair (`draw_picture_rows` fills from `rows.pictures`
-    // for `row_h`), so there is no separate wave strip on this band yet: one row is one pitch of picture.
-    // A wave-height of 0 says exactly that to `surface_at`, and a y below the last row's bottom is then
-    // what it really is -- a separate recording's lane.
+    // One camera row is a picture band PLUS its own wave strip, exactly as §27 Tracks lays it out and as
+    // `SurfaceBands` was designed: the row's PITCH (`held.row_h`) is unchanged, split into the picture half
+    // above and the wave strip below ([`ROW_WAVE_PX`]), so `surface_at` bounds the rows by the same bottom
+    // it always did and every press y that meant a row still means that row. A wave-height of 0 here would
+    // make `Surface::WaveStrip` unreachable on the painted band, and a sound scope could then only be aimed
+    // at the placeholder strip — which is what left F2.9's footage/sound fork unaimable by hand.
     crate::cut_select::SurfaceBands {
         ruler: (0.0, cut_trim::RULER_H),
         selection: (cut_trim::RULER_H, held.effects),
         fx: (held.effects, held.pictures),
         first_picture: held.pictures,
-        row_height: held.row_h,
-        wave_height: 0.0,
+        row_height: (held.row_h - ROW_WAVE_PX).max(0.0),
+        wave_height: ROW_WAVE_PX.min(held.row_h),
     }
 }
 
@@ -475,6 +510,26 @@ fn draw_picture_rows(cr: &cairo::Context, scene: &Scene, rows: Rows) {
         rows.row_h,
         1.0,
     );
+}
+
+/// §27 Tracks: "each row's first audio track as a strip below it". One plate per recorded row, in the
+/// lower third of that row ([`Rows::wave_top`]), inked from `cache/waves/<base>.wave` through the same
+/// painter the placeholder strip uses (`cut_trim_press::paint_row_wave`) so the two surfaces cannot show
+/// different answers for one recording. This is also what makes the wave strip a PRESS target: the band
+/// reserves the space in [`bands_for`] and this inks it, so a y down there reads `Surface::WaveStrip` over
+/// ink rather than over an empty grey row.
+fn draw_row_wave_strips(cr: &cairo::Context, scene: &Scene, rows: Rows) {
+    let w = BAND_WIDTH_PX as f64;
+    for (index, recording) in scene.recordings.iter().enumerate() {
+        crate::ui::cut_trim_press::paint_row_wave(
+            cr,
+            w,
+            recording,
+            scene.pps,
+            rows.wave_top(index),
+            rows.pictures + (index + 1) as f64 * rows.row_h,
+        );
+    }
 }
 
 /// A thumbnail's x: frames are named by their second, so the file name is the position. An unparsable

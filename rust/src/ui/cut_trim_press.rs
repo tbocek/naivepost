@@ -334,46 +334,113 @@ pub fn paint_bands(cr: &cairo::Context, w: f64, cut_: &Cut, filmed: &[Recording]
         }
     }
     let (wave_top, wave_bottom) = bands.wave;
-    if wave_bottom <= wave_top {
+    for rec in filmed {
+        paint_row_wave(cr, w, rec, pps, wave_top, wave_bottom);
+    }
+}
+
+/// One row's wave strip, painted at whatever geometry the caller has: the placeholder strip calls this from
+/// [`paint_bands`] with its own span, and the PAINTED band's picture rows call it with the lower third of
+/// each camera row (`cut_tracks::ROW_WAVE_PX`). Split out of [`paint_bands`] so both surfaces ink the same
+/// plate from the same cache instead of drawing two different answers to "what does this row sound like".
+///
+/// The peaks are decoration: a cache that cannot be read draws a flat baseline, so the row still reads as a
+/// row and a press there means what its band says.
+pub fn paint_row_wave(
+    cr: &cairo::Context,
+    w: f64,
+    rec: &Recording,
+    pps: f64,
+    top: f64,
+    bottom: f64,
+) {
+    if bottom <= top {
         return;
     }
-    for rec in filmed {
-        let x = rec.start * pps;
-        let wide = ((rec.end - rec.start) * pps).max(2.0);
+    let x = rec.start * pps;
+    let wide = ((rec.end - rec.start) * pps).max(2.0).min((w - x).max(0.0));
+    if x > w || wide <= 0.0 {
+        return;
+    }
+    cr.set_source_rgba(0.2, 0.4, 0.8, 0.30);
+    cr.rectangle(x, top, wide, bottom - top);
+    let _ = cr.fill();
+    // Ask the real cache (`cache/waves/<base>.wave`) and draw a peak column every `1/WAVE_HZ` s that fits
+    // in this strip; no cache, flat baseline.
+    let peaks = cached_peaks(&rec.base);
+    cr.set_source_rgb(0.15, 0.32, 0.66);
+    let mid = top + (bottom - top) / 2.0;
+    match &peaks {
+        Some(block) => {
+            let step = 1.0 / WAVE_HZ * pps;
+            let first = (rec.start * WAVE_HZ) as usize;
+            let mut column = 0usize;
+            let mut px = x;
+            while px < x + wide {
+                let peak = block
+                    .get(first + column)
+                    .map(|peak| (*peak as f64 / 255.0) * (bottom - top) / 2.0)
+                    .unwrap_or(0.0);
+                cr.rectangle(px, mid - peak, step.max(1.0), peak * 2.0);
+                let _ = cr.fill();
+                column += 1;
+                px += step;
+            }
+        }
+        None => {
+            cr.rectangle(x, mid, wide, 1.0);
+            let _ = cr.fill();
+        }
+    }
+}
+
+/// F2.9 S2: the pieces a sound paste LAID over the kept footage, painted on top of everything else in the
+/// bar. A segment whose `lane` is non-empty is exactly what [`crate::cut_copy::lay_pieces`] writes — `ins`
+/// names the file, `lane` the recording it stands in for, `ss` the file second it opens on — and it is
+/// neither kept footage nor an insert, so the kept green and the insert violet would both be a lie about it.
+///
+/// Colour is the painter's own decision: §A's inventory gives the band a kept green and an insert violet and
+/// says nothing about a laid-over sound, so this takes the same blue as every wave plate in this strip
+/// ([`paint_row_wave`]) — one colour for "this is audio", whatever row carries it — drawn as a thin plate at
+/// the bar's bottom so the picture under it stays visible: the spec's point is that the video did NOT change.
+/// The lane name goes on when the box is wide enough to hold it; a narrow piece reads as a plate alone rather
+/// than as a plate with a word cut off it.
+pub fn paint_laid_pieces(cr: &cairo::Context, w: f64, cut_: &Cut, pps: f64) {
+    paint_laid_pieces_in(cr, w, cut_, pps, cut_trim::RULER_H, 8.0);
+}
+
+/// [`paint_laid_pieces`] with the strip's own geometry handed in: `top` is where the caller's kept bar
+/// begins and `plate_from_top` how tall that bar is, so the plate sits at the bottom of whichever bar carries
+/// it — the window's placeholder strip (RULER_H / BAR_H) and the PAINTED band (its picture-row top and
+/// height) then show the same pieces, and a paste that only inked one surface would read as a failed paste on
+/// the other.
+pub fn paint_laid_pieces_in(
+    cr: &cairo::Context,
+    w: f64,
+    cut_: &Cut,
+    pps: f64,
+    top: f64,
+    plate_from_top: f64,
+) {
+    for seg in cut_.segs.iter().filter(|seg| !seg.lane.is_empty()) {
+        let x = seg.s.max(0.0) * pps;
         if x > w {
             continue;
         }
-        cr.set_source_rgba(0.2, 0.4, 0.8, 0.30);
-        cr.rectangle(x, wave_top, wide.min(w - x), wave_bottom - wave_top);
-        let _ = cr.fill();
-        // The peaks are decoration; a strip with no cached wave still shows its baseline, so the row reads
-        // as a row and a press there means what it says. Ask the real cache (`cache/waves/<base>.wave`) and
-        // draw a peak column every `1/WAVE_HZ` s that fits in this strip; no cache, flat baseline.
-        let peaks = cached_peaks(&rec.base);
-        cr.set_source_rgb(0.15, 0.32, 0.66);
-        let mid = wave_top + (wave_bottom - wave_top) / 2.0;
-        match &peaks {
-            Some(block) => {
-                let step = 1.0 / WAVE_HZ * pps;
-                let first = (rec.start * WAVE_HZ) as usize;
-                let mut column = 0usize;
-                let mut px = x;
-                while px < x + wide.min(w - x) {
-                    let peak = block
-                        .get(first + column)
-                        .map(|peak| (*peak as f64 / 255.0) * (wave_bottom - wave_top) / 2.0)
-                        .unwrap_or(0.0);
-                    cr.rectangle(px, mid - peak, step.max(1.0), peak * 2.0);
-                    let _ = cr.fill();
-                    column += 1;
-                    px += step;
-                }
-            }
-            None => {
-                cr.rectangle(x, mid, wide.min(w - x), 1.0);
-                let _ = cr.fill();
-            }
+        let wide = ((seg.e - seg.s).max(0.0) * pps).min((w - x).max(0.0));
+        if wide <= 0.0 {
+            continue;
         }
+        cr.set_source_rgba(0.15, 0.32, 0.66, 0.85);
+        cr.rectangle(x, top + plate_from_top - 7.0, wide, 6.0);
+        let _ = cr.fill();
+        if wide < 34.0 {
+            continue;
+        }
+        cr.set_source_rgb(0.98, 0.98, 1.0);
+        cr.set_font_size(8.0);
+        cr.move_to(x + 2.0, top + plate_from_top - 9.0);
+        let _ = cr.show_text(&seg.lane);
     }
 }
 
