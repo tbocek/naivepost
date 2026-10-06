@@ -94,7 +94,7 @@ const UNFOLD_GLYPH: &str = "+";
 /// The ✕ that takes an emptied row or a cut lane off the page (§A's gutter).
 pub(crate) const CROSS_GLYPH: &str = "\u{2715}";
 
-/// This window's holder for the per-gap fold badges, by its stable name.
+/// This window's holder for the whole-cut fold badge (`fold-all-button`), by its stable name.
 pub fn fold_badges_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
     // Scoped to THIS window's own content rather than searched from the window down. `find_widget_by_name`
     // walks whatever tree it is handed and returns the FIRST name match, and a closed window's widgets are
@@ -103,7 +103,7 @@ pub fn fold_badges_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
     // (`gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`). Walking from
     // `window.content()` cannot reach a sibling window's tree at all.
     let content = window.content()?;
-    find_widget_by_name(&content, "fold-badges")?
+    find_widget_by_name(&content, "fold-all-holder")?
         .downcast()
         .ok()
 }
@@ -126,16 +126,49 @@ pub fn fold_gaps(window: &adw::ApplicationWindow) -> Vec<(f64, f64)> {
     FOLD_TABLES.with(|slots| slots.borrow().last().map(|t| t.borrow().clone()).unwrap_or_default())
 }
 
+/// The band's own badge holder, scoped to THIS window exactly as [`fold_badges_box`] is (a closed window's
+/// tree lives on, and a name search from the window can land in it). It is the empty `fold-badges` box laid
+/// OVER the painted band inside `track-layers`, so a per-gap badge sits at its x AMONG the bars §B puts it
+/// beside; the gutter's whole-cut `fold-all-button` stays in the other holder (`fold_badges_box`).
+pub fn fold_overlay(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
+    let content = window.content()?;
+    find_widget_by_name(&content, "fold-badges")?
+        .downcast()
+        .ok()
+}
+
+/// The ONE span the fold badges are placed on: the filmed runs cut at this cut's folds, at the zoom the band
+/// paints at (`cut_view::pps`, the number `scene_from` hands the painter), after the gutter. Badge x and
+/// painted x cannot drift because both ask this same span.
+pub fn band_fold_span(cut_: &Cut) -> crate::timeline::Span {
+    crate::timeline::Span::new(
+        crate::timeline::cells(
+            &crate::timeline::filmed_runs(&page_recordings()),
+            &cut_.folds,
+        ),
+        // The zoom the BADGE HOLDER is drawn at: `cut_view::pps()` is the real band's, which lives in a
+        // scrolled viewport whose width nothing can measure before it is mapped (a snapshot asks for 4096 px
+        // and gets a wider fit back), while the badge row shares the strip's fixed 480 px geometry.
+        // `strip_pps()` is that strip's own door — the same one F2.8's press geometry uses — so a badge's x
+        // means the same second as the bar it sits over, at whatever zoom each surface settled on.
+        window::strip_pps(),
+        cut_screen::GUTTER_PX,
+    )
+}
+
 /// Redraw the fold badges from this window's own cut: one `fold-button-<i>` per gap `cut_fold::badges`
 /// says may wear one, labelled `−` while the gap is open and `+` once folded. Nothing is decided here —
 /// the list, the minimum width (`cut_fold::FOLD_MIN_PX`) and the placement inside the neighbouring bar
 /// (`cut_fold::BADGE_INSIDE_PX`) all come from `cut_fold::badges`, and each press runs
 /// `cut_fold::toggle_fold` and prints what comes back.
 ///
-/// Like `refresh_camera_rows`, the holder is emptied and rebuilt rather than patched: the number of
-/// gaps changes with every cut edit, so a reused child would keep a stale label under a stable name.
+/// Like `refresh_camera_rows`, the badges are rebuilt rather than patched: the number of gaps changes with
+/// every cut edit, so a reused child would keep a stale label under a stable name.
 pub fn refresh_fold_badges(window: &adw::ApplicationWindow) {
-    let Some(holder) = fold_badges_box(window) else {
+    // Two holders matter: the gutter box, which keeps ONLY the whole-cut `fold-all-button` (§B puts that one
+    // in the gutter), and the band's overlay, which carries the per-gap badges over their own bars.
+    let holder = fold_badges_box(window);
+    let Some(band) = fold_overlay(window) else {
         return;
     };
     let cut_ = newest_review_cut();
@@ -143,29 +176,36 @@ pub fn refresh_fold_badges(window: &adw::ApplicationWindow) {
     // never contain a dropped stretch.
     let recordings = page_recordings();
     let runs = crate::timeline::filmed_runs(&recordings);
-    // The same zoom the strip is drawn at (`strip_pps`), so a badge's x means the same
-    // seconds on both strips, and a zoom step moves the badges with the band instead of leaving them.
-    let span = crate::timeline::Span::new(
-        crate::timeline::cells(&runs, &cut_.folds),
-        window::strip_pps(),
-        cut_screen::GUTTER_PX,
-    );
+    let span = band_fold_span(&cut_);
     let shown = cut_fold::badges(&cut_.folds, &runs, &cut_.segs, &span);
     // Remember WHICH gap each numbered button stands for, so the press needs no second arithmetic.
     remember_fold_gaps(shown.iter().map(|badge| badge.gap).collect());
 
-    // Drop ONLY the per-gap badges: `fold-all-button` lives in this same holder and is built once by
-    // `wire_fold_all`. They are taken out of THE HOLDER ITSELF rather than by searching the tree for
-    // their names, because a name search can return a badge parented to a different box.
-    let stale: Vec<gtk::Widget> = holder
-        .observe_children()
-        .iter::<glib::Object>()
-        .flatten()
-        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
-        .filter(|child| child.widget_name().starts_with("fold-button-"))
-        .collect();
+    // Take away every badge this pass did not re-use: a gap that moved off, shrank under `FOLD_MIN_PX` or
+    // was removed with its clip must not keep a live button at its old x. Searched in BOTH holders, so a
+    // leftover in the gutter box from before this move cannot shadow the real one by name.
+    let mut stale: Vec<gtk::Widget> = Vec::new();
+    if let Some(gutter) = holder.as_ref() {
+        stale.extend(
+            gutter
+                .observe_children()
+                .iter::<glib::Object>()
+                .flatten()
+                .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+                .filter(|child| child.widget_name().starts_with("fold-button-")),
+        );
+    }
+    stale.extend(
+        band.observe_children()
+            .iter::<glib::Object>()
+            .flatten()
+            .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+            .filter(|child| child.widget_name().starts_with("fold-button-")),
+    );
     for old in stale {
-        holder.remove(&old);
+        if let Some(parent) = old.parent().and_then(|node| node.downcast::<gtk::Box>().ok()) {
+            parent.remove(&old);
+        }
     }
     for (index, badge) in shown.iter().enumerate() {
         let button = gtk::Button::new();
@@ -179,11 +219,16 @@ pub fn refresh_fold_badges(window: &adw::ApplicationWindow) {
             if badge.folded { "unfold" } else { "fold" },
             cut_fold::fold_status(badge.gap).replace("folded ", "").as_str()
         )));
+        // Over the bar, at the x the rule answered: a child of a top-left-pinned row, pushed right by its
+        // own margin, so the badge's left edge IS `badge.x` in band pixels.
+        button.set_halign(gtk::Align::Start);
+        button.set_valign(gtk::Align::Start);
+        button.set_margin_start(badge.x.round() as i32);
         let win = window.clone();
         button.connect_clicked(move |_| {
             press_fold_gap(&win, index);
         });
-        holder.append(&button);
+        band.append(&button);
     }
 }
 

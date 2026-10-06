@@ -187,6 +187,7 @@ impl Span {
     /// Where a second is drawn (§B: "xOf walks spans"). Inside a folded stretch the answer is that
     /// stretch's seam — its start x — because every second of a fold shares the one pixel where the
     /// fold begins, and a playhead inside a fold should sit at the fold rather than vanish.
+    /// Half-open on the right (§B): a second AT a cell's end belongs to the NEXT cell.
     pub fn x_of(&self, t: f64) -> f64 {
         let mut x = self.gutter_px;
         for cell in &self.cells {
@@ -201,6 +202,8 @@ impl Span {
             }
             x += self.width(cell);
         }
+        // Past the end: the span's width is the answer §B gives ("past the end → totalW"), and the band
+        // clamps any mark it asks about to its own tape before drawing it, so the rule stays in one place.
         self.total_px()
     }
 

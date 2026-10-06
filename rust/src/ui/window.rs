@@ -573,23 +573,23 @@ fn page_box(
         box_.append(&preview);
     }
 
-    // F2.11 S1 — the fold badges' own row, directly under the camera rows. THE CUT PAGE ONLY:
-    // `page_box` runs once per tab (PAGES is four long), and a box named `fold-badges` on each of them
+    // F2.11 S1 — the whole-cut fold badge's holder, beside the camera rows. THE CUT PAGE ONLY:
+    // `page_box` runs once per tab (PAGES is four long), and a box named `fold-all-holder` on each of them
     // makes that name ambiguous — every lookup from `fold_badges_box` then lands on whichever page the
     // walk reaches first, which is how one page's refresh appends into another page's tree and trips
     // `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`. Measured: 4 such boxes
     // per window before this guard, 1 after.
     //
-    // DECISION: the spec's §A puts the \u{2212}/+ badges *inside* the 22 px selection band, which
-    // today is one cairo-painted `track-strip`; real buttons inside a DrawingArea are unreachable to
-    // `find_widget_by_name` and unclickable, and reflowing the strip would move every press band F2.8's
-    // widget test fires into. So the badges are named widgets in this holder while the strip keeps its
-    // placeholder geometry. The placement RULE stays single-sourced in `cut_fold`: `FOLD_MIN_PX` (no
-    // badge over a gap with no room) and `BADGE_INSIDE_PX` (just inside the neighbouring bar, never
-    // mid-gap) are applied there by `cut_fold::badges`, whose x each button is packed at.
+    // DECISION (§A names no widget seat for the WHOLE-CUT badge): §B puts the fold-all badge in the 30 px
+    // gutter, which today is painted rather than widgetled, so this button takes the nearest real seat the
+    // page has — beside the rows, where a person looks for the tape's controls. The PER-GAP −/+ badges are
+    // NOT here: they are children of the band's own overlay (`fold-badges`, built in `cut_tracks::build`)
+    // so each sits over the bar whose gap it folds. Placement stays single-sourced in `cut_fold`:
+    // `FOLD_MIN_PX` (no badge over a gap with no room) and `BADGE_INSIDE_PX` (just inside the neighbouring
+    // bar, never mid-gap), both applied by `cut_fold::badges`, whose x each button is placed at.
     if page == Page::Cut.label() {
         let folds_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        folds_box.set_widget_name("fold-badges");
+        folds_box.set_widget_name("fold-all-holder");
         folds_box.set_tooltip_text(Some(
             "\u{2212} folds a stretch the cut drops away \u{00b7} + on the seam opens it again",
         ));
@@ -6105,6 +6105,11 @@ pub const TRACK_REC_END: f64 = 3600.0;
 /// Read from the newest review cut so a press and a paint never disagree about where a clip is.
 fn trim_boxes_for_strip() -> Vec<cut_trim::Box_> {
     let cut_ = newest_review_cut();
+    // Deliberately UNFOLDED: `clip_boxes` multiplies the scene's own seconds by the zoom and never reads
+    // `cut.folds`, and that is the rule, not an oversight (§B: "a fold is a view, never used to measure a
+    // drag"). A gesture measured through a seam would move a border to a second the person never touched,
+    // because the pixels they grabbed are on the far side of a stretch that is only hidden. The band PAINTS
+    // folded (`cut_tracks::band_x`); the hand measures unfolded.
     cut_trim::clip_boxes(&cut_.segs, strip_pps())
 }
 

@@ -94,8 +94,11 @@ fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
         // a fold survives an Undo.
         return ui::line_step_button(window, name).expect("the toolbar drew its undo-button");
     }
-    let holder = if name.starts_with("fold-") {
-        ui::fold_badges_box(window).expect("the Cut page drew its fold-badges holder")
+    let holder = if name == "fold-all-button" {
+        // The whole-cut badge stayed in the gutter-side holder; only the PER-GAP badges moved onto the band.
+        ui::fold_badges_box(window).expect("the Cut page drew its fold-all holder")
+    } else if name.starts_with("fold-") {
+        ui::fold_overlay(window).expect("the band drew its own `fold-badges` overlay")
     } else {
         ui::camera_rows_box(window).expect("the Cut page drew its camera-rows box")
     };

@@ -106,14 +106,77 @@ pub struct Scene {
     pub line: f64,
 }
 
+/// Where one second of the tape is DRAWN, in the band's own pixels: `x_of(t) - x_of(0)`.
+///
+/// This is the painter's single seconds→x door. It deliberately starts at the tape's own first pixel rather
+/// than at the span's gutter and ignores scroll, exactly as every `draw_*` helper below already did when the
+/// answer was plain `t * pps` — §A measures the gutter INSIDE the timeline (`cut_view::view_px` subtracts it
+/// from a window width), so the painter's surface starts where the tape does and the caller owns the 30 px.
+/// What it adds over that multiplication is the FOLD: a folded cell carries no width (§B), so a dropped
+/// stretch that has been folded away draws nothing and its neighbours close up around the seam.
+pub fn band_x(scene: &Scene, t: f64) -> f64 {
+    let span = band_span(scene);
+    // Past the last filmed second the seconds still run linearly: a selection or an in/out mark may reach
+    // beyond the tape, and §B's `x_of` answers every one of them with `total_px`, which would pile all those
+    // late marks on a single column. Extrapolate instead so a mark past the end stays where its own second is.
+    let last = span
+        .cells
+        .iter()
+        .filter(|cell| !cell.folded)
+        .map(|cell| cell.end)
+        .fold(0.0_f64, f64::max);
+    span.x_of(t.min(last)) + (t - last).max(0.0) * scene.pps - span.x_of(0.0)
+}
+
+/// The band's laid-out span: the filmed runs cut at this scene's folds, at its zoom, after the gutter
+/// (§B: "cells = runs cut at folded gaps", "spans carry pixel origins (gutter first; a folded cell has zero
+/// width)"). Built from the scene each time it is asked, so a fold toggle repaints through it without any
+/// second copy of the geometry to keep in step.
+pub fn band_span(scene: &Scene) -> timeline::Span {
+    timeline::Span::new(
+        timeline::cells(&scene.runs(), &scene.folds),
+        scene.pps,
+        cut_screen::GUTTER_PX,
+    )
+}
+
+/// The kept clips' DRAWN `(x, width)` pairs, index by index into `scene.segs`, through [`band_x`] — so the
+/// number a test reads is the number the paint used, and a fold shows up as a bar that moved left rather
+/// than only as a sentence in the status line. Not a second geometry: `draw_kept_bars` paints these boxes.
+pub fn band_boxes(scene: &Scene) -> Vec<(f64, f64)> {
+    scene
+        .segs
+        .iter()
+        .map(|seg| {
+            let shift = shift_of_camera(&scene.shift, seg.cam);
+            band_span_px(scene, session_second(seg.s, shift), session_second(seg.e, shift))
+        })
+        .collect()
+}
+
+/// A clip's own second on the SESSION clock after its camera's hand correction — the same `session_at` the
+/// boxes below use, with the file offset at 0 because a scene's `s`/`e` are already session seconds.
+fn session_second(local: f64, shift: f64) -> f64 {
+    // `session_at(session, session, …)` would double the second: this is the correction applied to a time
+    // that is already on the session clock, i.e. `t - shift`.
+    (local - shift).max(0.0)
+}
+
+/// Where a mark that spans `from..to` begins and how wide it draws, honouring a fold between the two.
+pub fn band_span_px(scene: &Scene, from: f64, to: f64) -> (f64, f64) {
+    let x0 = band_x(scene, from);
+    let x1 = band_x(scene, to.max(from));
+    (x0, (x1 - x0).max(0.0))
+}
+
 impl Scene {
     /// The painted seconds: everything filmed, so a dropped stretch still takes its place in the band.
-    fn runs(&self) -> Vec<(f64, f64)> {
+    pub(crate) fn runs(&self) -> Vec<(f64, f64)> {
         timeline::filmed_runs(&self.recordings)
     }
 
     /// The band's tape length in seconds, which bounds the ruler.
-    fn tape_end(&self) -> f64 {
+    pub(crate) fn tape_end(&self) -> f64 {
         self.runs().last().map(|(_, end)| *end).unwrap_or(0.0)
     }
 }
@@ -271,8 +334,18 @@ pub fn build(height: i32, width: i32) -> Band {
     playhead.set_can_target(false);
     let layers = gtk::Overlay::new();
     layers.set_widget_name("track-layers");
+    // A NAMED holder for the per-gap fold badges (`fold-button-<i>`), which §B puts inside the selection
+    // band, over the bars their x was computed from — so they are overlay children of this same stack and
+    // share its pixels with the paint. The box is empty until `ui::cut_folds::refresh_fold_badges` fills it.
+    let badges = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    badges.set_widget_name("fold-badges");
+    // The badge row must never eat a press meant for the band beneath it: only the buttons inside target.
+    badges.set_can_target(false);
+    badges.set_halign(gtk::Align::Start);
+    badges.set_valign(gtk::Align::Start);
     layers.set_child(Some(&surface));
     layers.add_overlay(&playhead);
+    layers.add_overlay(&badges);
     Band {
         surface,
         playhead,
@@ -423,18 +496,24 @@ fn labels(cr: &cairo::Context, ticks: &[(f64, String)]) {
 /// selection band, where the gap's badge is drawn after the gap itself).
 fn draw_dropped_gaps(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     for (from, to) in cut_fold::dropped_gaps(&scene.runs(), &scene.segs) {
+        // A folded gap has no pixels of its own (§B), so nothing is painted for it and no mid-gap ink either
+        // — the seam is what its + badge sits on. Asked BEFORE any fill so a fold draws nothing at all.
+        let (x0, width) = band_span_px(scene, from, to);
+        if width <= 0.0 {
+            continue;
+        }
         fill(
             cr,
             (0.88, 0.88, 0.88),
-            from * scene.pps,
+            x0,
             rows.selection,
-            (to - from) * scene.pps,
+            width,
             SELECTION_BAND_PX,
             1.0,
         );
         // The badge: `cut_fold::badges` decides WHICH gap wears one and where its x lands on a laid-out
         // span; here the mid-gap mark is that same middle, drawn as ink so a test can see it.
-        let x = (from + to) / 2.0 * scene.pps;
+        let x = band_x(scene, (from + to) / 2.0);
         ink(cr, (0.35, 0.35, 0.4));
         cr.rectangle(x - 1.0, rows.selection + 4.0, 3.0, SELECTION_BAND_PX - 8.0);
         let _ = cr.fill();
@@ -442,9 +521,19 @@ fn draw_dropped_gaps(cr: &cairo::Context, scene: &Scene, rows: Rows) {
 }
 
 /// Green bar per kept scene (§1's badge 25), the placeholder's colour and borders so F2.8's grips stay
-/// where its tests press them.
+/// where its tests press them. The boxes come from [`band_boxes`], i.e. through the folded span, so a fold
+/// elsewhere in the run slides every later bar left instead of leaving the row untouched.
 fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows) {
-    let boxes = clip_boxes_shifted(&scene.segs, &scene.shift, scene.pps);
+    let drawn = band_boxes(scene);
+    let boxes: Vec<cut_trim::Box_> = clip_boxes_shifted(&scene.segs, &scene.shift, scene.pps)
+        .into_iter()
+        .map(|b| cut_trim::Box_ {
+            x: drawn[b.index].0,
+            w: drawn[b.index].1,
+            index: b.index,
+            insert: b.insert,
+        })
+        .collect();
     for b in &boxes {
         if b.insert {
             continue;
@@ -463,12 +552,13 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     for bar in fx_lane::lane_layout(&scene.fx) {
         let (from, to) = scene.fx[bar.index].spans();
         let y = rows.effects + bar.row as f64 * cut_screen::EFFECT_ROW_PX;
+        let (x0, width) = band_span_px(scene, from, to);
         fill(
             cr,
             bar.colour,
-            from * scene.pps,
+            x0,
             y,
-            (to - from).max(0.0) * scene.pps,
+            width.max(0.0),
             cut_screen::EFFECT_ROW_PX,
             0.6,
         );
@@ -481,12 +571,13 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows) {
 /// a shot can be compared against. Row 0's frames are the ones shown, which is the row the preview watches.
 fn draw_picture_rows(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     for run in scene.runs() {
+        let (x0, width) = band_span_px(scene, run.0, run.1);
         fill(
             cr,
             (0.8, 0.8, 0.82),
-            run.0 * scene.pps,
+            x0,
             rows.pictures,
-            (run.1 - run.0) * scene.pps,
+            width,
             rows.row_h * scene.row_count.max(1) as f64,
             1.0,
         );
@@ -504,7 +595,7 @@ fn draw_picture_rows(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     fill(
         cr,
         (0.65, 0.68, 0.72),
-        path_x(&near, scene.pps),
+        path_x(scene, &near),
         rows.pictures,
         2.0,
         rows.row_h,
@@ -532,9 +623,9 @@ fn draw_row_wave_strips(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     }
 }
 
-/// A thumbnail's x: frames are named by their second, so the file name is the position. An unparsable
-/// name draws at the row's start rather than nowhere.
-fn path_x(path: &std::path::Path, pps: f64) -> f64 {
+/// A thumbnail's x, on the folded span: frames are named by their second, so the file name is the position.
+/// An unparsable name draws at the row's start rather than nowhere.
+fn path_x(scene: &Scene, path: &std::path::Path) -> f64 {
     path.file_name()
         .and_then(|n| n.to_str())
         .and_then(|n| n.get(11..19))
@@ -544,7 +635,7 @@ fn path_x(path: &std::path::Path, pps: f64) -> f64 {
             let s: f64 = hhmmss.get(6..9)?.parse().ok()?;
             Some(h * 3600.0 + m * 60.0 + s)
         })
-        .map(|seconds| seconds * pps)
+        .map(|seconds| band_x(scene, seconds))
         .unwrap_or(0.0)
 }
 
@@ -552,7 +643,8 @@ fn path_x(path: &std::path::Path, pps: f64) -> f64 {
 fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     let height = rows.row_h * scene.row_count.max(1) as f64;
     for run in scene.runs() {
-        for x in [run.0 * scene.pps, (run.1 * scene.pps - 3.0).max(0.0)] {
+        // Both edges through the folded span: a fold inside a run moves its far edge with everything else.
+        for x in [band_x(scene, run.0), (band_x(scene, run.1) - 3.0).max(0.0)] {
             for stripe in 0..3i32 {
                 fill(cr, RECORDING_EDGE, x + stripe as f64, rows.pictures, 1.0, height, 1.0);
             }
@@ -569,12 +661,13 @@ fn draw_join_washes(cr: &cairo::Context, scene: &Scene, rows: Rows) {
         ..Default::default()
     };
     for (from, to) in crate::cut_play_leg::dimmed(&cut_, &scene.runs()) {
+        let (x0, width) = band_span_px(scene, from, to);
         fill(
             cr,
             JOIN_WASH,
-            from * scene.pps,
+            x0,
             rows.pictures,
-            ((to - from) * scene.pps).max(1.0),
+            width.max(1.0),
             height,
             0.5,
         );
@@ -585,12 +678,13 @@ fn draw_join_washes(cr: &cairo::Context, scene: &Scene, rows: Rows) {
             continue;
         }
         let (from, to) = effect.spans();
+        let (x0, width) = band_span_px(scene, from, to);
         fill(
             cr,
             rose,
-            from * scene.pps,
+            x0,
             rows.pictures,
-            (to - from).max(0.0) * scene.pps,
+            width,
             height,
             0.35,
         );
@@ -616,17 +710,18 @@ fn draw_watched_row(cr: &cairo::Context, scene: &Scene, rows: Rows) {
 /// The selection: blue with its ends (§1's badge 27). The ✕ is a button in the page, not ink here.
 fn draw_selection(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     let Some((from, to)) = scene.selection else { return };
+    let (x0, width) = band_span_px(scene, from, to);
     fill(
         cr,
         SELECT_BLUE,
-        from * scene.pps,
+        x0,
         rows.selection,
-        (to - from).max(1.0) * scene.pps,
+        width.max(1.0),
         SELECTION_BAND_PX,
         0.45,
     );
     ink(cr, SELECT_BLUE);
-    for x in [from * scene.pps, to * scene.pps] {
+    for x in [x0, band_x(scene, to)] {
         cr.rectangle(x - 1.0, rows.selection, 2.5, SELECTION_BAND_PX);
         let _ = cr.fill();
     }
@@ -668,7 +763,17 @@ fn shift_of_camera(shift: &std::collections::BTreeMap<String, f64>, cam: i32) ->
 /// Every insert a violet band across every row, hatched when spliced, with a plated mark naming the file.
 fn draw_insert_bands(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     let height = (rows.row_h * scene.row_count.max(1) as f64).max(rows.row_h);
-    let boxes = clip_boxes_shifted(&scene.segs, &scene.shift, scene.pps);
+    // Inserts ride the same folded geometry as the footage bars, so a card after a fold moves with them.
+    let drawn = band_boxes(scene);
+    let boxes: Vec<cut_trim::Box_> = clip_boxes_shifted(&scene.segs, &scene.shift, scene.pps)
+        .into_iter()
+        .map(|b| cut_trim::Box_ {
+            x: drawn[b.index].0,
+            w: drawn[b.index].1,
+            index: b.index,
+            insert: b.insert,
+        })
+        .collect();
     for b in boxes.iter().filter(|b| b.insert) {
         fill(cr, INSERT_VIOLET, b.x, rows.pictures, b.w.max(2.0), height, 0.6);
         if scene.segs[b.index].s == scene.segs[b.index].e {
@@ -697,7 +802,9 @@ fn draw_insert_bands(cr: &cairo::Context, scene: &Scene, rows: Rows) {
 fn draw_in_out_marks(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     let Some((from, to)) = scene.selection else { return };
     let height = rows.pictures + rows.row_h;
-    for (x, colour) in [(from * scene.pps, MARK_IN), (to * scene.pps, MARK_OUT)] {
+    // No clamp to the tape: `band_x` runs linearly past the last filmed second, so a selection that reaches
+    // beyond the recording still shows both of its marks at their own seconds.
+    for (x, colour) in [(band_x(scene, from), MARK_IN), (band_x(scene, to), MARK_OUT)] {
         fill(cr, colour, x, 0.0, MARK_LINE_PX, height, 1.0);
         cr.set_source_rgb(colour.0, colour.1, colour.2);
         cr.move_to(x, 0.0);

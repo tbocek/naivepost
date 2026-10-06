@@ -256,7 +256,7 @@ pub use cut_cameras::{
 // F2.10: the row list itself, rebuilt from the live cut by every refresh above.
 // F2.11: the fold badges and the two ✕, drawn as named widgets and forwarded by these seams.
 pub use cut_folds::{
-    fold_badges_box, fold_gaps, folded_gap_at, page_recordings,
+    fold_badges_box, fold_gaps, fold_overlay, folded_gap_at, page_recordings,
     press_fold_all, press_fold_gap, press_lane_cross, press_row_cross, refresh_fold_badges,
     review_fold_rows, set_session_recordings, unfold_fold_for_playback,
 };
