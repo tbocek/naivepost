@@ -2118,6 +2118,48 @@ pub(crate) fn paint_tabs_for(window: &adw::ApplicationWindow, project: &Project)
     paint_tabs(&switcher, &shell.borrow(), project);
 }
 
+/// Repaint the idle-form readings that answer from the CUT — `Cut:`, `Cut at 1×:`, `Source:` and
+/// `Segments:` — from the cut this window holds NOW.
+///
+/// The rows are built once by `cut_form_column` from `idle_readouts` for an EMPTY cut and nothing has
+/// rewritten them since, so after any verb that changes the timeline — a suggest landing, a fold, a
+/// paste — the page still read `Segments: 0` / `Cut: 00:00` beside landed scenes. Each value comes from
+/// the same row list [`idle_readouts`] emits, so no second copy of a reading exists to drift. Everything
+/// else on that form keeps its own owner: Playhead belongs to the preview clock, Selection to
+/// [`refresh_selection_readout`], Aspect ratio to `refresh_aspect_readout`, and Thumbnails is set by the
+/// 🖼−/🖼+ ladder, which writes the number it drives.
+pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
+    let cut_ = newest_review_cut();
+    // The footage total: what the `Source:` row answers with — the session's merged filmed runs, the same
+    // spans the strip above paints, so the number matches the picture.
+    let source: f64 = crate::timeline::filmed_runs(&page_recordings())
+        .iter()
+        .map(|(start, end)| end - start)
+        .sum();
+    let rows = cut_screen::idle_readouts(
+        crate::cut_screen::THUMB_AT_OPEN,
+        &cut_.aspect,
+        crate::ui::preview_player(window).playhead.unwrap_or(0.0),
+        cut_select::marks(selection(window).as_ref()),
+        &cut_,
+        source,
+    );
+    for row in rows.iter() {
+        // Only the four readings that answer from the timeline. The other four each have their own owner
+        // already: Thumbnails is written by the 🖼−/🖼+ ladder, Aspect ratio by `refresh_aspect_readout`,
+        // Selection by [`refresh_selection_readout`], and Playhead by the preview's own clock tick.
+        if !matches!(row.label, "Cut" | "Cut at 1\u{00d7}" | "Segments" | "Source") {
+            continue;
+        }
+        let name = cut_screen::readout_widget(row.label);
+        if let Some(label) = find_widget_by_name(window.upcast_ref(), &name) {
+            if let Ok(label) = label.downcast::<gtk::Label>() {
+                label.set_text(&row.value);
+            }
+        }
+    }
+}
+
 /// Redraw the visible tab's `Inputs:`/`Outputs:` row from the folder just switched TO, whose tree, cut
 /// and narration are read here — [`session_reads`] still points at the working copy beside the root.
 pub(crate) fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Project, dir: &Path) {
@@ -3201,7 +3243,8 @@ fn wire_play(
         let narrate_asked = run::step(shell.borrow().page) == run::Step::Narrate;
         // F5.1's ▶ on the Produce page, refused the same way before the bar opens (§F5.1 S1).
         let produce_asked = run::step(shell.borrow().page) == run::Step::Produce;
-        // F2.14's ▶ on the Cut page is Suggest, refused the same way before the bar opens (§F2.14 S1).
+        // F2.14's ▶ on the Cut page is Suggest, refused or answered before the bar opens; the whole seam
+        // (including why a started preview is not this press) is `cut_suggest_press::on_play`.
         let suggest_asked = run::step(shell.borrow().page) == run::Step::Suggest;
         let live = PLAY_SESSION.with(|slots| {
             slots
@@ -3226,19 +3269,16 @@ fn wire_play(
                 return;
             }
         }
-        // F2.14: ▶ on the Cut page is Suggest — refused or answered here, before the bar opens.
-        if suggest_asked {
-            let answer = crate::ui::cut_suggest_land::suggest_press(
+        if suggest_asked
+            && crate::ui::cut_suggest_press::on_play(
                 &main_window(),
-                &session_policy(&main_window()),
                 bar.borrow().running.is_some(),
-            );
-            if answer.refused {
-                log_line(&format!(">>> suggest: {}", answer.said));
-            }
-            if !answer.said.is_empty() { status.set_text(&answer.said); }
-            paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
-            if answer.stops { return; }
+                transport.started,
+                |sentence| status.set_text(sentence),
+                || paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport),
+            )
+        {
+            return;
         }
 
         if produce_asked {
@@ -7961,7 +8001,8 @@ fn bar_is_running() -> bool {
 }
 
 /// Write one sentence on this window's status line without logging it (the run already logged it).
-fn set_status_line(window: &adw::ApplicationWindow, said: &str) {
+/// Put this window's status row to `said` — the one door every page uses.
+pub fn set_status_line(window: &adw::ApplicationWindow, said: &str) {
     if let Some(status_line) = find_status(window.upcast_ref()) {
         status_line.set_text(said);
     }
@@ -9082,6 +9123,9 @@ pub fn press_undo(window: &adw::ApplicationWindow) -> String {
             // The lane and the preview refresh with it: a bar left on screen for an effect Undo took away
             // is a lie about what this cut holds.
             refresh_effects_lane(window);
+            // ...and so do the timeline readings: Undo changes the segment count, so a `Segments:` row that
+            // still shows the undone answer would be the same kind of lie.
+            refresh_cut_readouts(window);
             // S1: the sentence is `cut::undone`'s, not composed here.
             let said = cut::undone(cut_.segs.len());
             log_line(&said);
@@ -9105,6 +9149,7 @@ pub fn press_redo(window: &adw::ApplicationWindow) -> String {
             snapshot.restore(&mut cut_);
             publish_cut(&cut_);
             refresh_effects_lane(window);
+            refresh_cut_readouts(window);
             // S1: one walk sentence for both directions (spec F2.13 gives the pair a single line).
             let said = cut::undone(cut_.segs.len());
             log_line(&said);
@@ -9135,6 +9180,7 @@ pub fn press_revert(window: &adw::ApplicationWindow) -> String {
     snapshot.restore(&mut cut_);
     publish_cut(&cut_);
     refresh_effects_lane(window);
+    refresh_cut_readouts(window);
     let said = cut::reverted(snapshot.segs.len(), had.segs.len());
     log_line(&said);
     said
@@ -9185,6 +9231,10 @@ pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     publish_cut(cut_);
     cut_history(window).borrow_mut().note_change(cut_);
     refresh_history_buttons(window);
+    // Every edit changes the timeline, and four of the form column's readings answer from it. That column is
+    // built ONCE by `cut_form_column` for an empty cut, so without this the page kept saying `Segments: 0`
+    // beside landed scenes until something else happened to repaint it.
+    refresh_cut_readouts(window);
 }
 
 /// − / + (§1 item 22): one step of the zoom ladder over THIS page's view, its floor where the whole

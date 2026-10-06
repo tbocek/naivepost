@@ -68,6 +68,9 @@ pub mod cut_suggest_model_run;
 /// §05-cut#2 — landing a suggestion: the walk-back's answer becomes the cut on screen AND the history's
 /// base in one write. Split out of `window.rs`, which is past its size budget.
 pub mod cut_suggest_land;
+/// §05-cut#2 S1/S2 — what the Cut page's ▶ says and shows when it is Suggest, including why a started
+/// preview is not this press's to take. Split out of `window.rs`, which is past its size budget.
+pub mod cut_suggest_press;
 pub mod cut_form_frame;
 pub mod cut_picture;
 /// F2.12 S7 — the card preview pass: ffmpeg renders a card's frames at 8 fps (one for a still), the nearest

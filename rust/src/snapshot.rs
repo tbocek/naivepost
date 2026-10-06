@@ -609,17 +609,25 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             println!("snapshot: 05-copy sound | {sound_copied} | {laid} | {held_again} | {refused}");
             ui::refresh_camera_rows(&window);
         }
-        // §F2.14's own picture: §S1's busy refusal (the first question ▶ answers, and the only one a
-        // screenshot can show without staging a whole prepared session), then a landed suggestion whose
-        // edges are the app's snap points, not the numbers a model typed. Both come from the doors ▶
-        // fires — `refuse_suggest_run` and `press_landed` — never by poking state. The other three refusals
-        // live in `tests/f2_14_guard_order.rs`; a screenshot is no place to age one file against another.
+        // §F2.14's own picture: what the Cut page is left with after a Suggest press — §S1's first
+        // refusal sentence on the status row beside the landed suggestion whose every edge came from the
+        // app's snap points. Both come from the doors ▶ fires (`refuse_suggest_run`, `press_landed`),
+        // never by poking state; the other three refusals live in `tests/f2_14_guard_order.rs`.
         if screen == "05-suggest" {
             let staged = crate::snapshot_suggest::stage();
+            // The tape the landed scenes sit on. Without a declared session the strip has no seconds to lay
+            // out and the shot would show four scenes in a window with no timeline under them.
+            ui::set_session_recordings(&[crate::timeline::Recording {
+                base: "session-tape".to_string(),
+                start: 0.0,
+                end: 62.0,
+            }]);
             ui::set_session_policy_field(&window, "cutMode", "model", "this shot", project::Origin::User);
-            // S1's refusal, honestly aimed: busy now, which needs no file older than another.
+            // S1's refusal, honestly aimed: busy now. It goes on the status row through the door the press
+            // uses, so the picture shows the sentence a person would read.
             let refused = ui::cut_suggest_land::refuse_suggest_run(&window, true)
                 .unwrap_or_else(|| crate::suggest::BUSY.to_string());
+            ui::window::set_status_line(&window, &refused);
             // Then the walk-back's landing: literal seconds in, app-chosen edges out, no socket dialled.
             let landed = crate::snapshot_suggest::press_landed(&window);
             let segs = ui::review_cut_segs_count(&window);
@@ -635,8 +643,17 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 .map(|tree| tree.cut_json().is_file())
                 .unwrap_or(false);
             println!("snapshot: 05-suggest cut.json written: {written}");
-            ui::cut_view::repaint_page(&window);
+            // The same three refreshes a mutating verb does after it publishes (see
+            // `cut_verb_press`'s tail): the fold badges, the camera rows and the effects lane. Without them
+            // the shot shows the page as it was before the landing — which is why this screen once drew
+            // `Segments: 0` beside four landed scenes.
+            ui::refresh_fold_badges(&window);
             ui::refresh_camera_rows(&window);
+            ui::refresh_effects_lane(&window);
+            // And the four readings that answer from the timeline: without this the shot below still said
+            // `Segments: 0` / `Cut: 00:00` beside four landed scenes, because the form column is built once
+            // for an empty cut and only a verb repaints it.
+            crate::ui::window::refresh_cut_readouts(&window);
         }
         // §07-narrate's own picture (`spec/img/07-narrate.png`) is FOUR written lines with the app's own
         // times, estimates and one red fit warning. The fixture cannot show them: `fixtures/demo.naivepost`

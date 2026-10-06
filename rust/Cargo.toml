@@ -2,6 +2,13 @@
 name = "naivepost"
 version = "0.1.0"
 edition = "2021"
+# Cargo's test discovery is OFF: `tests/` holds SHARED MODULES as well as targets, and a file pulled
+# in by a path-attribute `mod` has no `common` of its own, so discovery must not build it as its own
+# test binary. The shared ones are the socket harnesses (`captions_wire_harness`,
+# `narrate_live_harness`, `speak_tts_wire_harness`, `join_live_harness`, `policy_live_harness`) and
+# `_f2_14_press_fixture`. Every other file under `tests/` is listed as a `[[test]]` at the foot of
+# this file, so a NEW test file needs a line there too.
+autotests = false
 
 [lib]
 name = "naivepost"
@@ -11,6 +18,1457 @@ path = "src/lib.rs"
 name = "naivepost"
 path = "src/main.rs"
 
+autotests = false
+
+# --- test targets (see `autotests = false` in [package]) ---------------------------------------
+
+[[test]]
+name = "add_sources"
+path = "tests/add_sources.rs"
+
+[[test]]
+name = "add_sources_widgets"
+path = "tests/add_sources_widgets.rs"
+
+[[test]]
+name = "align"
+path = "tests/align.rs"
+
+[[test]]
+name = "align_bare_share"
+path = "tests/align_bare_share.rs"
+
+[[test]]
+name = "align_bare_warn"
+path = "tests/align_bare_warn.rs"
+
+[[test]]
+name = "align_clip_max"
+path = "tests/align_clip_max.rs"
+
+[[test]]
+name = "align_cut_seek"
+path = "tests/align_cut_seek.rs"
+
+[[test]]
+name = "align_sound_pad"
+path = "tests/align_sound_pad.rs"
+
+[[test]]
+name = "anchor_overlap_claim"
+path = "tests/anchor_overlap_claim.rs"
+
+[[test]]
+name = "aspect_choice_widgets"
+path = "tests/aspect_choice_widgets.rs"
+
+[[test]]
+name = "aspect_stay_length"
+path = "tests/aspect_stay_length.rs"
+
+[[test]]
+name = "asr"
+path = "tests/asr.rs"
+
+[[test]]
+name = "audio_task_dial"
+path = "tests/audio_task_dial.rs"
+
+[[test]]
+name = "audit_gaps"
+path = "tests/audit_gaps.rs"
+
+[[test]]
+name = "band_hold_widgets"
+path = "tests/band_hold_widgets.rs"
+
+[[test]]
+name = "blur_sigma"
+path = "tests/blur_sigma.rs"
+
+[[test]]
+name = "cam_hearing_widgets"
+path = "tests/cam_hearing_widgets.rs"
+
+[[test]]
+name = "caption_text_widgets"
+path = "tests/caption_text_widgets.rs"
+
+[[test]]
+name = "captions_pass_widgets"
+path = "tests/captions_pass_widgets.rs"
+
+[[test]]
+name = "clamp_effects_widget"
+path = "tests/clamp_effects_widget.rs"
+
+[[test]]
+name = "context_budgets"
+path = "tests/context_budgets.rs"
+
+[[test]]
+name = "cut_aspect_ratio"
+path = "tests/cut_aspect_ratio.rs"
+
+[[test]]
+name = "cut_band_hold"
+path = "tests/cut_band_hold.rs"
+
+[[test]]
+name = "cut_cam_hearing"
+path = "tests/cut_cam_hearing.rs"
+
+[[test]]
+name = "cut_captions_proposed"
+path = "tests/cut_captions_proposed.rs"
+
+[[test]]
+name = "cut_cards_svg"
+path = "tests/cut_cards_svg.rs"
+
+[[test]]
+name = "cut_clamped_to_cut"
+path = "tests/cut_clamped_to_cut.rs"
+
+[[test]]
+name = "cut_copy_paste_lane"
+path = "tests/cut_copy_paste_lane.rs"
+
+[[test]]
+name = "cut_copy_paste_lane_widgets"
+path = "tests/cut_copy_paste_lane_widgets.rs"
+
+[[test]]
+name = "cut_delete_refusals"
+path = "tests/cut_delete_refusals.rs"
+
+[[test]]
+name = "cut_effect_decisions"
+path = "tests/cut_effect_decisions.rs"
+
+[[test]]
+name = "cut_effects_proposed"
+path = "tests/cut_effects_proposed.rs"
+
+[[test]]
+name = "cut_fold_rows"
+path = "tests/cut_fold_rows.rs"
+
+[[test]]
+name = "cut_form_frame_widgets"
+path = "tests/cut_form_frame_widgets.rs"
+
+[[test]]
+name = "cut_hear_mix"
+path = "tests/cut_hear_mix.rs"
+
+[[test]]
+name = "cut_hear_mix_widgets"
+path = "tests/cut_hear_mix_widgets.rs"
+
+[[test]]
+name = "cut_history_model"
+path = "tests/cut_history_model.rs"
+
+[[test]]
+name = "cut_insert_card"
+path = "tests/cut_insert_card.rs"
+
+[[test]]
+name = "cut_json"
+path = "tests/cut_json.rs"
+
+[[test]]
+name = "cut_label_hand"
+path = "tests/cut_label_hand.rs"
+
+[[test]]
+name = "cut_line_place_step"
+path = "tests/cut_line_place_step.rs"
+
+[[test]]
+name = "cut_line_place_step_widgets"
+path = "tests/cut_line_place_step_widgets.rs"
+
+[[test]]
+name = "cut_parameters_used"
+path = "tests/cut_parameters_used.rs"
+
+[[test]]
+name = "cut_play_leg"
+path = "tests/cut_play_leg.rs"
+
+[[test]]
+name = "cut_play_recording"
+path = "tests/cut_play_recording.rs"
+
+[[test]]
+name = "cut_play_recording_widgets"
+path = "tests/cut_play_recording_widgets.rs"
+
+[[test]]
+name = "cut_play_the_cut"
+path = "tests/cut_play_the_cut.rs"
+
+[[test]]
+name = "cut_play_the_cut_widgets"
+path = "tests/cut_play_the_cut_widgets.rs"
+
+[[test]]
+name = "cut_policy_form_widgets"
+path = "tests/cut_policy_form_widgets.rs"
+
+[[test]]
+name = "cut_proposed_speeds"
+path = "tests/cut_proposed_speeds.rs"
+
+[[test]]
+name = "cut_review_cuts"
+path = "tests/cut_review_cuts.rs"
+
+[[test]]
+name = "cut_review_cuts_widgets"
+path = "tests/cut_review_cuts_widgets.rs"
+
+[[test]]
+name = "cut_rules"
+path = "tests/cut_rules.rs"
+
+[[test]]
+name = "cut_screen_readouts"
+path = "tests/cut_screen_readouts.rs"
+
+[[test]]
+name = "cut_screen_toolbar_widgets"
+path = "tests/cut_screen_toolbar_widgets.rs"
+
+[[test]]
+name = "cut_screen_view"
+path = "tests/cut_screen_view.rs"
+
+[[test]]
+name = "cut_select_band"
+path = "tests/cut_select_band.rs"
+
+[[test]]
+name = "cut_select_widgets"
+path = "tests/cut_select_widgets.rs"
+
+[[test]]
+name = "cut_six_effects_record"
+path = "tests/cut_six_effects_record.rs"
+
+[[test]]
+name = "cut_six_lane_preview"
+path = "tests/cut_six_lane_preview.rs"
+
+[[test]]
+name = "cut_sound_migration"
+path = "tests/cut_sound_migration.rs"
+
+[[test]]
+name = "cut_speed_stop"
+path = "tests/cut_speed_stop.rs"
+
+[[test]]
+name = "cut_suggest_details"
+path = "tests/cut_suggest_details.rs"
+
+[[test]]
+name = "cut_svg_drawing"
+path = "tests/cut_svg_drawing.rs"
+
+[[test]]
+name = "cut_text_caption"
+path = "tests/cut_text_caption.rs"
+
+[[test]]
+name = "cut_timeline_model"
+path = "tests/cut_timeline_model.rs"
+
+[[test]]
+name = "cut_trim_gesture"
+path = "tests/cut_trim_gesture.rs"
+
+[[test]]
+name = "cut_trim_move"
+path = "tests/cut_trim_move.rs"
+
+[[test]]
+name = "cut_trim_move_widgets"
+path = "tests/cut_trim_move_widgets.rs"
+
+[[test]]
+name = "cut_trim_strip_layout"
+path = "tests/cut_trim_strip_layout.rs"
+
+[[test]]
+name = "cut_verb_widgets"
+path = "tests/cut_verb_widgets.rs"
+
+[[test]]
+name = "cut_verbs"
+path = "tests/cut_verbs.rs"
+
+[[test]]
+name = "cut_view_scroll"
+path = "tests/cut_view_scroll.rs"
+
+[[test]]
+name = "cut_view_wheel"
+path = "tests/cut_view_wheel.rs"
+
+[[test]]
+name = "cut_volume_hand"
+path = "tests/cut_volume_hand.rs"
+
+[[test]]
+name = "cut_zoom_by_hand"
+path = "tests/cut_zoom_by_hand.rs"
+
+[[test]]
+name = "decision_audit"
+path = "tests/decision_audit.rs"
+
+[[test]]
+name = "decision_homes"
+path = "tests/decision_homes.rs"
+
+[[test]]
+name = "decoration_density"
+path = "tests/decoration_density.rs"
+
+[[test]]
+name = "decorations_pass_widgets"
+path = "tests/decorations_pass_widgets.rs"
+
+[[test]]
+name = "degraded_modes"
+path = "tests/degraded_modes.rs"
+
+[[test]]
+name = "describe_call"
+path = "tests/describe_call.rs"
+
+[[test]]
+name = "describe_flow"
+path = "tests/describe_flow.rs"
+
+[[test]]
+name = "describe_stage_widgets"
+path = "tests/describe_stage_widgets.rs"
+
+[[test]]
+name = "details_confirmed"
+path = "tests/details_confirmed.rs"
+
+[[test]]
+name = "details_confirmed_probes"
+path = "tests/details_confirmed_probes.rs"
+
+[[test]]
+name = "diar_anchored_pass"
+path = "tests/diar_anchored_pass.rs"
+
+[[test]]
+name = "diar_scan_ladder"
+path = "tests/diar_scan_ladder.rs"
+
+[[test]]
+name = "edge_placement"
+path = "tests/edge_placement.rs"
+
+[[test]]
+name = "edge_reach_limit"
+path = "tests/edge_reach_limit.rs"
+
+[[test]]
+name = "edge_tail_max"
+path = "tests/edge_tail_max.rs"
+
+[[test]]
+name = "edge_tail_threshold"
+path = "tests/edge_tail_threshold.rs"
+
+[[test]]
+name = "effect_band_drag_floor"
+path = "tests/effect_band_drag_floor.rs"
+
+[[test]]
+name = "effect_cameras_and_lanes"
+path = "tests/effect_cameras_and_lanes.rs"
+
+[[test]]
+name = "effect_details"
+path = "tests/effect_details.rs"
+
+[[test]]
+name = "effect_menu_record_widgets"
+path = "tests/effect_menu_record_widgets.rs"
+
+[[test]]
+name = "effect_parameters"
+path = "tests/effect_parameters.rs"
+
+[[test]]
+name = "effect_record_creation"
+path = "tests/effect_record_creation.rs"
+
+[[test]]
+name = "effect_rules"
+path = "tests/effect_rules.rs"
+
+[[test]]
+name = "effect_selection_floor"
+path = "tests/effect_selection_floor.rs"
+
+[[test]]
+name = "envelope_floor_window"
+path = "tests/envelope_floor_window.rs"
+
+[[test]]
+name = "events_tsv_shape"
+path = "tests/events_tsv_shape.rs"
+
+[[test]]
+name = "exchange_log_page"
+path = "tests/exchange_log_page.rs"
+
+[[test]]
+name = "exchange_page_live_in_log"
+path = "tests/exchange_page_live_in_log.rs"
+
+[[test]]
+name = "f0_10_save_live_widgets"
+path = "tests/f0_10_save_live_widgets.rs"
+
+[[test]]
+name = "f0_11_rescan_refresh_widgets"
+path = "tests/f0_11_rescan_refresh_widgets.rs"
+
+[[test]]
+name = "f0_13_slots_widgets"
+path = "tests/f0_13_slots_widgets.rs"
+
+[[test]]
+name = "f0_1_shell_beats"
+path = "tests/f0_1_shell_beats.rs"
+
+[[test]]
+name = "f0_4_lucky_press_widgets"
+path = "tests/f0_4_lucky_press_widgets.rs"
+
+[[test]]
+name = "f0_4_lucky_steps"
+path = "tests/f0_4_lucky_steps.rs"
+
+[[test]]
+name = "f0_5_bookkeeping_live"
+path = "tests/f0_5_bookkeeping_live.rs"
+
+[[test]]
+name = "f0_6_open_at_start_launch"
+path = "tests/f0_6_open_at_start_launch.rs"
+
+[[test]]
+name = "f0_7_s2_a_down_llm_is_reported_and_names_the_model"
+path = "tests/f0_7_s2_a_down_llm_is_reported_and_names_the_model.rs"
+
+[[test]]
+name = "f0_7_s2_a_live_policy_call_carries_the_prompt_and_both_tools"
+path = "tests/f0_7_s2_a_live_policy_call_carries_the_prompt_and_both_tools.rs"
+
+[[test]]
+name = "f0_7_s2_a_live_set_policy_answer_lands_as_model_with_its_because"
+path = "tests/f0_7_s2_a_live_set_policy_answer_lands_as_model_with_its_because.rs"
+
+[[test]]
+name = "f0_7_s3_a_live_refusal_is_handed_back_and_the_second_round_lands"
+path = "tests/f0_7_s3_a_live_refusal_is_handed_back_and_the_second_round_lands.rs"
+
+[[test]]
+name = "f1_10_s3_a_down_llm_is_reported_and_every_word_stands"
+path = "tests/f1_10_s3_a_down_llm_is_reported_and_every_word_stands.rs"
+
+[[test]]
+name = "f1_10_s3_a_live_answer_is_matched_back_and_both_files_are_written"
+path = "tests/f1_10_s3_a_live_answer_is_matched_back_and_both_files_are_written.rs"
+
+[[test]]
+name = "f1_10_s3_a_live_join_call_carries_the_join_message_to_the_llm"
+path = "tests/f1_10_s3_a_live_join_call_carries_the_join_message_to_the_llm.rs"
+
+[[test]]
+name = "f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands"
+path = "tests/f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands.rs"
+
+[[test]]
+name = "f1_10_s3_a_refused_reply_is_never_cached_so_the_retry_asks_for_real"
+path = "tests/f1_10_s3_a_refused_reply_is_never_cached_so_the_retry_asks_for_real.rs"
+
+[[test]]
+name = "f1_10_s3_settings_are_re_read_per_request"
+path = "tests/f1_10_s3_settings_are_re_read_per_request.rs"
+
+[[test]]
+name = "f1_11_wave_build"
+path = "tests/f1_11_wave_build.rs"
+
+[[test]]
+name = "f1_13_word_list_run"
+path = "tests/f1_13_word_list_run.rs"
+
+[[test]]
+name = "f1_1_endings"
+path = "tests/f1_1_endings.rs"
+
+[[test]]
+name = "f1_1_phases"
+path = "tests/f1_1_phases.rs"
+
+[[test]]
+name = "f1_1_preflight"
+path = "tests/f1_1_preflight.rs"
+
+[[test]]
+name = "f1_1_s5_gate_widgets"
+path = "tests/f1_1_s5_gate_widgets.rs"
+
+[[test]]
+name = "f1_1_s7_ending_widgets"
+path = "tests/f1_1_s7_ending_widgets.rs"
+
+[[test]]
+name = "f1_2_separate_media"
+path = "tests/f1_2_separate_media.rs"
+
+[[test]]
+name = "f1_3_decode"
+path = "tests/f1_3_decode.rs"
+
+[[test]]
+name = "f1_3_run_path"
+path = "tests/f1_3_run_path.rs"
+
+[[test]]
+name = "f1_5_align_path"
+path = "tests/f1_5_align_path.rs"
+
+[[test]]
+name = "f1_6_frames_run"
+path = "tests/f1_6_frames_run.rs"
+
+[[test]]
+name = "f1_7_describe_press_widgets"
+path = "tests/f1_7_describe_press_widgets.rs"
+
+[[test]]
+name = "f1_7_describe_run"
+path = "tests/f1_7_describe_run.rs"
+
+[[test]]
+name = "f1_8_fix_session"
+path = "tests/f1_8_fix_session.rs"
+
+[[test]]
+name = "f1_8_press_widgets"
+path = "tests/f1_8_press_widgets.rs"
+
+[[test]]
+name = "f2_12_s5_modes_paint_differently"
+path = "tests/f2_12_s5_modes_paint_differently.rs"
+
+[[test]]
+name = "f2_12_s6_hold_card_widgets"
+path = "tests/f2_12_s6_hold_card_widgets.rs"
+
+[[test]]
+name = "f2_12_s7_card_preview"
+path = "tests/f2_12_s7_card_preview.rs"
+
+[[test]]
+name = "f2_12_s7_card_preview_widgets"
+path = "tests/f2_12_s7_card_preview_widgets.rs"
+
+[[test]]
+name = "f2_14_guard_order"
+path = "tests/f2_14_guard_order.rs"
+
+[[test]]
+name = "f2_14_model_mode"
+path = "tests/f2_14_model_mode.rs"
+
+[[test]]
+name = "f2_14_model_mode_widgets"
+path = "tests/f2_14_model_mode_widgets.rs"
+
+[[test]]
+name = "f2_14_press_dead"
+path = "tests/f2_14_press_dead.rs"
+
+[[test]]
+name = "f2_14_press_model"
+path = "tests/f2_14_press_model.rs"
+
+[[test]]
+name = "f2_14_press_words"
+path = "tests/f2_14_press_words.rs"
+
+[[test]]
+name = "f2_14_word_gate"
+path = "tests/f2_14_word_gate.rs"
+
+[[test]]
+name = "f2_14_words_mode"
+path = "tests/f2_14_words_mode.rs"
+
+[[test]]
+name = "f2_1_recording_play"
+path = "tests/f2_1_recording_play.rs"
+
+[[test]]
+name = "f2_1_recording_play_widgets"
+path = "tests/f2_1_recording_play_widgets.rs"
+
+[[test]]
+name = "f2_2_spare_pipeline"
+path = "tests/f2_2_spare_pipeline.rs"
+
+[[test]]
+name = "f2_5_lane_pipelines"
+path = "tests/f2_5_lane_pipelines.rs"
+
+[[test]]
+name = "f2_6_painted_select"
+path = "tests/f2_6_painted_select.rs"
+
+[[test]]
+name = "f2_7_verb_badges"
+path = "tests/f2_7_verb_badges.rs"
+
+[[test]]
+name = "f2_7_verbs_live"
+path = "tests/f2_7_verbs_live.rs"
+
+[[test]]
+name = "f2_8_trim_move_live"
+path = "tests/f2_8_trim_move_live.rs"
+
+[[test]]
+name = "f2_9_copy_scope_live"
+path = "tests/f2_9_copy_scope_live.rs"
+
+[[test]]
+name = "f2_9_paste_line_live"
+path = "tests/f2_9_paste_line_live.rs"
+
+[[test]]
+name = "f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire"
+path = "tests/f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire.rs"
+
+[[test]]
+name = "f3_9_s3_a_live_captions_answer_is_cached"
+path = "tests/f3_9_s3_a_live_captions_answer_is_cached.rs"
+
+[[test]]
+name = "f3_9_s3_a_live_captions_ask_carries_the_clips_message_to_the_llm"
+path = "tests/f3_9_s3_a_live_captions_ask_carries_the_clips_message_to_the_llm.rs"
+
+[[test]]
+name = "f3_9_s4_a_live_captions_reply_is_never_cached"
+path = "tests/f3_9_s4_a_live_captions_reply_is_never_cached.rs"
+
+[[test]]
+name = "f3_9_s4_a_live_out_of_batch_clip_is_asked_once_more_and_the_retry_lands"
+path = "tests/f3_9_s4_a_live_out_of_batch_clip_is_asked_once_more_and_the_retry_lands.rs"
+
+[[test]]
+name = "f4_2_s3_a_live_narration_call_goes_over_http"
+path = "tests/f4_2_s3_a_live_narration_call_goes_over_http.rs"
+
+[[test]]
+name = "f4_4_s1_no_reference_refuses_before_the_server_is_asked"
+path = "tests/f4_4_s1_no_reference_refuses_before_the_server_is_asked.rs"
+
+[[test]]
+name = "f4_4_s2_a_dead_audio_server_is_named"
+path = "tests/f4_4_s2_a_dead_audio_server_is_named.rs"
+
+[[test]]
+name = "f4_4_s2_a_model_that_cannot_clone_is_named"
+path = "tests/f4_4_s2_a_model_that_cannot_clone_is_named.rs"
+
+[[test]]
+name = "f4_4_s3_the_reference_uploads_itself_for_every_line"
+path = "tests/f4_4_s3_the_reference_uploads_itself_for_every_line.rs"
+
+[[test]]
+name = "f4_4_s4_the_speech_post_speaks_the_projects_language"
+path = "tests/f4_4_s4_the_speech_post_speaks_the_projects_language.rs"
+
+[[test]]
+name = "f4_4_s5_a_short_or_non_200_reply_lands_no_file"
+path = "tests/f4_4_s5_a_short_or_non_200_reply_lands_no_file.rs"
+
+[[test]]
+name = "f4_4_s6_an_unknown_name_goes_to_the_judge"
+path = "tests/f4_4_s6_an_unknown_name_goes_to_the_judge.rs"
+
+[[test]]
+name = "f4_4_s7_every_call_its_own_timed_row"
+path = "tests/f4_4_s7_every_call_its_own_timed_row.rs"
+
+[[test]]
+name = "f4_5_wire_picture_play_and_stop"
+path = "tests/f4_5_wire_picture_play_and_stop.rs"
+
+[[test]]
+name = "fix_call"
+path = "tests/fix_call.rs"
+
+[[test]]
+name = "fix_transcripts"
+path = "tests/fix_transcripts.rs"
+
+[[test]]
+name = "fix_tries"
+path = "tests/fix_tries.rs"
+
+[[test]]
+name = "fold_rows_widgets"
+path = "tests/fold_rows_widgets.rs"
+
+[[test]]
+name = "four_servers"
+path = "tests/four_servers.rs"
+
+[[test]]
+name = "four_servers_probe_widgets"
+path = "tests/four_servers_probe_widgets.rs"
+
+[[test]]
+name = "four_servers_wire"
+path = "tests/four_servers_wire.rs"
+
+[[test]]
+name = "frames"
+path = "tests/frames.rs"
+
+[[test]]
+name = "hand_edit_text"
+path = "tests/hand_edit_text.rs"
+
+[[test]]
+name = "hand_edit_widgets"
+path = "tests/hand_edit_widgets.rs"
+
+[[test]]
+name = "hands_off"
+path = "tests/hands_off.rs"
+
+[[test]]
+name = "history_flow_rules"
+path = "tests/history_flow_rules.rs"
+
+[[test]]
+name = "history_undo_revert_clear_widgets"
+path = "tests/history_undo_revert_clear_widgets.rs"
+
+[[test]]
+name = "insert_form_widgets"
+path = "tests/insert_form_widgets.rs"
+
+[[test]]
+name = "join_dedupe_reach"
+path = "tests/join_dedupe_reach.rs"
+
+[[test]]
+name = "joined_answer"
+path = "tests/joined_answer.rs"
+
+[[test]]
+name = "joins_flow"
+path = "tests/joins_flow.rs"
+
+[[test]]
+name = "joins_summary_line"
+path = "tests/joins_summary_line.rs"
+
+[[test]]
+name = "joins_widgets"
+path = "tests/joins_widgets.rs"
+
+[[test]]
+name = "keep_swearing"
+path = "tests/keep_swearing.rs"
+
+[[test]]
+name = "label_form_widgets"
+path = "tests/label_form_widgets.rs"
+
+[[test]]
+name = "lane_preview_surfaces"
+path = "tests/lane_preview_surfaces.rs"
+
+[[test]]
+name = "lane_preview_widgets"
+path = "tests/lane_preview_widgets.rs"
+
+[[test]]
+name = "late_stamp_window"
+path = "tests/late_stamp_window.rs"
+
+[[test]]
+name = "layout"
+path = "tests/layout.rs"
+
+[[test]]
+name = "llm_cache"
+path = "tests/llm_cache.rs"
+
+[[test]]
+name = "llm_liveness_f6_3"
+path = "tests/llm_liveness_f6_3.rs"
+
+[[test]]
+name = "llm_liveness_f6_3_live"
+path = "tests/llm_liveness_f6_3_live.rs"
+
+[[test]]
+name = "llm_request_contract"
+path = "tests/llm_request_contract.rs"
+
+[[test]]
+name = "llm_retries_f6_2"
+path = "tests/llm_retries_f6_2.rs"
+
+[[test]]
+name = "llm_retry_f6_2_wire"
+path = "tests/llm_retry_f6_2_wire.rs"
+
+[[test]]
+name = "lucky_button_widgets"
+path = "tests/lucky_button_widgets.rs"
+
+[[test]]
+name = "lucky_chain"
+path = "tests/lucky_chain.rs"
+
+[[test]]
+name = "machine_files"
+path = "tests/machine_files.rs"
+
+[[test]]
+name = "machine_files_write"
+path = "tests/machine_files_write.rs"
+
+[[test]]
+name = "mark_retakes_widgets"
+path = "tests/mark_retakes_widgets.rs"
+
+[[test]]
+name = "max_proposed_effects"
+path = "tests/max_proposed_effects.rs"
+
+[[test]]
+name = "model_calls"
+path = "tests/model_calls.rs"
+
+[[test]]
+name = "model_exchange_log"
+path = "tests/model_exchange_log.rs"
+
+[[test]]
+name = "model_exchange_log_live"
+path = "tests/model_exchange_log_live.rs"
+
+[[test]]
+name = "model_list"
+path = "tests/model_list.rs"
+
+[[test]]
+name = "model_roles"
+path = "tests/model_roles.rs"
+
+[[test]]
+name = "narrate_call"
+path = "tests/narrate_call.rs"
+
+[[test]]
+name = "narrate_call_flow"
+path = "tests/narrate_call_flow.rs"
+
+[[test]]
+name = "narrate_data_files"
+path = "tests/narrate_data_files.rs"
+
+[[test]]
+name = "narrate_details"
+path = "tests/narrate_details.rs"
+
+[[test]]
+name = "narrate_edit_rules"
+path = "tests/narrate_edit_rules.rs"
+
+[[test]]
+name = "narrate_edit_wire_widgets"
+path = "tests/narrate_edit_wire_widgets.rs"
+
+[[test]]
+name = "narrate_fit_row"
+path = "tests/narrate_fit_row.rs"
+
+[[test]]
+name = "narrate_off_page"
+path = "tests/narrate_off_page.rs"
+
+[[test]]
+name = "narrate_off_tick_widgets"
+path = "tests/narrate_off_tick_widgets.rs"
+
+[[test]]
+name = "narrate_page_rules"
+path = "tests/narrate_page_rules.rs"
+
+[[test]]
+name = "narrate_parameters"
+path = "tests/narrate_parameters.rs"
+
+[[test]]
+name = "narrate_preview_cut"
+path = "tests/narrate_preview_cut.rs"
+
+[[test]]
+name = "narrate_rewrite"
+path = "tests/narrate_rewrite.rs"
+
+[[test]]
+name = "narrate_run_widgets"
+path = "tests/narrate_run_widgets.rs"
+
+[[test]]
+name = "narrate_screen_widgets"
+path = "tests/narrate_screen_widgets.rs"
+
+[[test]]
+name = "narrate_speak_tts"
+path = "tests/narrate_speak_tts.rs"
+
+[[test]]
+name = "narrate_surface_widgets"
+path = "tests/narrate_surface_widgets.rs"
+
+[[test]]
+name = "narrate_write_and_speak"
+path = "tests/narrate_write_and_speak.rs"
+
+[[test]]
+name = "narration_json"
+path = "tests/narration_json.rs"
+
+[[test]]
+name = "narration_key_vector"
+path = "tests/narration_key_vector.rs"
+
+[[test]]
+name = "narrator_slots"
+path = "tests/narrator_slots.rs"
+
+[[test]]
+name = "new_project"
+path = "tests/new_project.rs"
+
+[[test]]
+name = "new_project_widgets"
+path = "tests/new_project_widgets.rs"
+
+[[test]]
+name = "open_at_start"
+path = "tests/open_at_start.rs"
+
+[[test]]
+name = "open_project"
+path = "tests/open_project.rs"
+
+[[test]]
+name = "open_project_widgets"
+path = "tests/open_project_widgets.rs"
+
+[[test]]
+name = "open_verification"
+path = "tests/open_verification.rs"
+
+[[test]]
+name = "policy_derive"
+path = "tests/policy_derive.rs"
+
+[[test]]
+name = "preload_lead"
+path = "tests/preload_lead.rs"
+
+[[test]]
+name = "prepare_data_written"
+path = "tests/prepare_data_written.rs"
+
+[[test]]
+name = "prepare_decisions"
+path = "tests/prepare_decisions.rs"
+
+[[test]]
+name = "prepare_details_strings"
+path = "tests/prepare_details_strings.rs"
+
+[[test]]
+name = "prepare_parameters"
+path = "tests/prepare_parameters.rs"
+
+[[test]]
+name = "prepare_run_flow"
+path = "tests/prepare_run_flow.rs"
+
+[[test]]
+name = "prepare_screen"
+path = "tests/prepare_screen.rs"
+
+[[test]]
+name = "prepare_screen_widgets"
+path = "tests/prepare_screen_widgets.rs"
+
+[[test]]
+name = "press_play"
+path = "tests/press_play.rs"
+
+[[test]]
+name = "press_play_widgets"
+path = "tests/press_play_widgets.rs"
+
+[[test]]
+name = "press_prepare_widgets"
+path = "tests/press_prepare_widgets.rs"
+
+[[test]]
+name = "press_stop"
+path = "tests/press_stop.rs"
+
+[[test]]
+name = "press_stop_widgets"
+path = "tests/press_stop_widgets.rs"
+
+[[test]]
+name = "produce_data_files"
+path = "tests/produce_data_files.rs"
+
+[[test]]
+name = "produce_details_confirmed"
+path = "tests/produce_details_confirmed.rs"
+
+[[test]]
+name = "produce_embed"
+path = "tests/produce_embed.rs"
+
+[[test]]
+name = "produce_page_runs"
+path = "tests/produce_page_runs.rs"
+
+[[test]]
+name = "produce_parameters"
+path = "tests/produce_parameters.rs"
+
+[[test]]
+name = "produce_presses_widgets"
+path = "tests/produce_presses_widgets.rs"
+
+[[test]]
+name = "produce_render_exec"
+path = "tests/produce_render_exec.rs"
+
+[[test]]
+name = "produce_render_flow"
+path = "tests/produce_render_flow.rs"
+
+[[test]]
+name = "produce_rules"
+path = "tests/produce_rules.rs"
+
+[[test]]
+name = "produce_run_flow"
+path = "tests/produce_run_flow.rs"
+
+[[test]]
+name = "produce_run_widgets"
+path = "tests/produce_run_widgets.rs"
+
+[[test]]
+name = "produce_screen"
+path = "tests/produce_screen.rs"
+
+[[test]]
+name = "produce_screen_widgets"
+path = "tests/produce_screen_widgets.rs"
+
+[[test]]
+name = "produce_stamp"
+path = "tests/produce_stamp.rs"
+
+[[test]]
+name = "produce_stamp_widgets"
+path = "tests/produce_stamp_widgets.rs"
+
+[[test]]
+name = "produce_subtitles"
+path = "tests/produce_subtitles.rs"
+
+[[test]]
+name = "produce_subtitles_flow"
+path = "tests/produce_subtitles_flow.rs"
+
+[[test]]
+name = "produce_tag_page"
+path = "tests/produce_tag_page.rs"
+
+[[test]]
+name = "produce_translate_flow"
+path = "tests/produce_translate_flow.rs"
+
+[[test]]
+name = "produce_translate_wire"
+path = "tests/produce_translate_wire.rs"
+
+[[test]]
+name = "produce_upload_draw_wire"
+path = "tests/produce_upload_draw_wire.rs"
+
+[[test]]
+name = "produce_upload_flow"
+path = "tests/produce_upload_flow.rs"
+
+[[test]]
+name = "produce_upload_wire"
+path = "tests/produce_upload_wire.rs"
+
+[[test]]
+name = "project_autosave"
+path = "tests/project_autosave.rs"
+
+[[test]]
+name = "project_json"
+path = "tests/project_json.rs"
+
+[[test]]
+name = "project_legacy"
+path = "tests/project_legacy.rs"
+
+[[test]]
+name = "project_settings_tab"
+path = "tests/project_settings_tab.rs"
+
+[[test]]
+name = "prompt_assembly"
+path = "tests/prompt_assembly.rs"
+
+[[test]]
+name = "prompts_catalogue"
+path = "tests/prompts_catalogue.rs"
+
+[[test]]
+name = "publish_json"
+path = "tests/publish_json.rs"
+
+[[test]]
+name = "ref_loudness"
+path = "tests/ref_loudness.rs"
+
+[[test]]
+name = "ref_sample_rate"
+path = "tests/ref_sample_rate.rs"
+
+[[test]]
+name = "render_effect_filters"
+path = "tests/render_effect_filters.rs"
+
+[[test]]
+name = "repeat_match_share"
+path = "tests/repeat_match_share.rs"
+
+[[test]]
+name = "repeat_match_skip"
+path = "tests/repeat_match_skip.rs"
+
+[[test]]
+name = "request_timing"
+path = "tests/request_timing.rs"
+
+[[test]]
+name = "rescan"
+path = "tests/rescan.rs"
+
+[[test]]
+name = "rescan_widgets"
+path = "tests/rescan_widgets.rs"
+
+[[test]]
+name = "retakes_flow"
+path = "tests/retakes_flow.rs"
+
+[[test]]
+name = "run_bookkeeping"
+path = "tests/run_bookkeeping.rs"
+
+[[test]]
+name = "run_bookkeeping_widgets"
+path = "tests/run_bookkeeping_widgets.rs"
+
+[[test]]
+name = "run_stages"
+path = "tests/run_stages.rs"
+
+[[test]]
+name = "sample_play_wire_widgets"
+path = "tests/sample_play_wire_widgets.rs"
+
+[[test]]
+name = "save_as"
+path = "tests/save_as.rs"
+
+[[test]]
+name = "save_as_widgets"
+path = "tests/save_as_widgets.rs"
+
+[[test]]
+name = "sd_cancel_on_stop"
+path = "tests/sd_cancel_on_stop.rs"
+
+[[test]]
+name = "seam_retries"
+path = "tests/seam_retries.rs"
+
+[[test]]
+name = "sec05_cut_2_model_base"
+path = "tests/sec05_cut_2_model_base.rs"
+
+[[test]]
+name = "sec05_cut_2_session_clock"
+path = "tests/sec05_cut_2_session_clock.rs"
+
+[[test]]
+name = "sec05_cut_2_zoom_fit"
+path = "tests/sec05_cut_2_zoom_fit.rs"
+
+[[test]]
+name = "sec05_cut_picture_scrollbar"
+path = "tests/sec05_cut_picture_scrollbar.rs"
+
+[[test]]
+name = "sec05_cut_preview_picture"
+path = "tests/sec05_cut_preview_picture.rs"
+
+[[test]]
+name = "sec05_live_log_link"
+path = "tests/sec05_live_log_link.rs"
+
+[[test]]
+name = "sec_04_prepare_6"
+path = "tests/sec_04_prepare_6.rs"
+
+[[test]]
+name = "sec_05_cut_1_band_paints"
+path = "tests/sec_05_cut_1_band_paints.rs"
+
+[[test]]
+name = "sec_05_cut_2_lanes"
+path = "tests/sec_05_cut_2_lanes.rs"
+
+[[test]]
+name = "sec_05_cut_2_zoom_ceiling"
+path = "tests/sec_05_cut_2_zoom_ceiling.rs"
+
+[[test]]
+name = "sec_12_decisions_narrate_and_produce"
+path = "tests/sec_12_decisions_narrate_and_produce.rs"
+
+[[test]]
+name = "sep_lopsided"
+path = "tests/sep_lopsided.rs"
+
+[[test]]
+name = "separate"
+path = "tests/separate.rs"
+
+[[test]]
+name = "separation_run"
+path = "tests/separation_run.rs"
+
+[[test]]
+name = "session_clock"
+path = "tests/session_clock.rs"
+
+[[test]]
+name = "session_word_list"
+path = "tests/session_word_list.rs"
+
+[[test]]
+name = "settings_file"
+path = "tests/settings_file.rs"
+
+[[test]]
+name = "settings_file_gate"
+path = "tests/settings_file_gate.rs"
+
+[[test]]
+name = "settings_tests"
+path = "tests/settings_tests.rs"
+
+[[test]]
+name = "settings_widgets"
+path = "tests/settings_widgets.rs"
+
+[[test]]
+name = "shell_details_verification"
+path = "tests/shell_details_verification.rs"
+
+[[test]]
+name = "slot_gate_leg"
+path = "tests/slot_gate_leg.rs"
+
+[[test]]
+name = "smoke"
+path = "tests/smoke.rs"
+
+[[test]]
+name = "sound_over_min_piece"
+path = "tests/sound_over_min_piece.rs"
+
+[[test]]
+name = "sources_list"
+path = "tests/sources_list.rs"
+
+[[test]]
+name = "speak_tts_wire_widgets"
+path = "tests/speak_tts_wire_widgets.rs"
+
+[[test]]
+name = "speed_form_widgets"
+path = "tests/speed_form_widgets.rs"
+
+[[test]]
+name = "speeds_pass_widgets"
+path = "tests/speeds_pass_widgets.rs"
+
+[[test]]
+name = "subprocess_log"
+path = "tests/subprocess_log.rs"
+
+[[test]]
+name = "suggest_fallback"
+path = "tests/suggest_fallback.rs"
+
+[[test]]
+name = "suggest_flow"
+path = "tests/suggest_flow.rs"
+
+[[test]]
+name = "svg_drawing_widgets"
+path = "tests/svg_drawing_widgets.rs"
+
+[[test]]
+name = "switch_tab"
+path = "tests/switch_tab.rs"
+
+[[test]]
+name = "switch_tab_widgets"
+path = "tests/switch_tab_widgets.rs"
+
+[[test]]
+name = "tab_states"
+path = "tests/tab_states.rs"
+
+[[test]]
+name = "text_formats"
+path = "tests/text_formats.rs"
+
+[[test]]
+name = "text_formats_sidecars"
+path = "tests/text_formats_sidecars.rs"
+
+[[test]]
+name = "tool_catalogue"
+path = "tests/tool_catalogue.rs"
+
+[[test]]
+name = "tool_catalogue_describe_fix"
+path = "tests/tool_catalogue_describe_fix.rs"
+
+[[test]]
+name = "tool_catalogue_retakes_joins"
+path = "tests/tool_catalogue_retakes_joins.rs"
+
+[[test]]
+name = "tool_catalogue_shared"
+path = "tests/tool_catalogue_shared.rs"
+
+[[test]]
+name = "tool_protocol_f6_1"
+path = "tests/tool_protocol_f6_1.rs"
+
+[[test]]
+name = "tool_protocol_f6_1_wire"
+path = "tests/tool_protocol_f6_1_wire.rs"
+
+[[test]]
+name = "transcribe"
+path = "tests/transcribe.rs"
+
+[[test]]
+name = "trough_search_reach"
+path = "tests/trough_search_reach.rs"
+
+[[test]]
+name = "turn_gap_glue"
+path = "tests/turn_gap_glue.rs"
+
+[[test]]
+name = "voice_ref_build_door_widgets"
+path = "tests/voice_ref_build_door_widgets.rs"
+
+[[test]]
+name = "voice_ref_rules"
+path = "tests/voice_ref_rules.rs"
+
+[[test]]
+name = "voice_ref_wire_widgets"
+path = "tests/voice_ref_wire_widgets.rs"
+
+[[test]]
+name = "volume_form_widgets"
+path = "tests/volume_form_widgets.rs"
+
+[[test]]
+name = "wave_cache"
+path = "tests/wave_cache.rs"
+
+[[test]]
+name = "wave_cut_points"
+path = "tests/wave_cut_points.rs"
+
+[[test]]
+name = "web_tools_f6_1"
+path = "tests/web_tools_f6_1.rs"
+
+[[test]]
+name = "web_tools_f6_1_browser"
+path = "tests/web_tools_f6_1_browser.rs"
+
+[[test]]
+name = "wire"
+path = "tests/wire.rs"
+
+[[test]]
+name = "word_pad_room"
+path = "tests/word_pad_room.rs"
+
+[[test]]
+name = "zoom_drag_widgets"
+path = "tests/zoom_drag_widgets.rs"
 [dependencies]
 gtk4 = { version = "0.11", features = ["v4_14"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_5"] }

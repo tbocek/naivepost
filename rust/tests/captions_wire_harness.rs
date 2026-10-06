@@ -87,6 +87,19 @@ impl FakeLlm {
             .recv_timeout(Duration::from_secs(15))
             .expect("the captions ask reached the fake server")
     }
+
+    /// Every request that has arrived, waiting briefly for the first so a caller can read the whole
+    /// conversation after a synchronous flow finished. `next_seen` is the one-request form; this is what
+    /// a multi-round ask needs, because counting requests is how a test proves a second round happened.
+    pub fn drain(&self) -> Vec<Seen> {
+        let mut seen = vec![self.next_seen()];
+        loop {
+            match self.received.recv_timeout(Duration::from_millis(250)) {
+                Ok(more) => seen.push(more),
+                Err(_) => return seen,
+            }
+        }
+    }
 }
 
 fn serve(mut stream: TcpStream, body: &str) -> Option<Seen> {
