@@ -55,6 +55,9 @@ pub mod narrate_page;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_cameras;
+/// F2.8 S1/S2/S3: the strip's real bands, the name a press in each resolves to, and what a gesture costs
+/// (persist, one Undo, folds, the live re-seek). Split out of `window.rs`, past its size budget.
+pub mod cut_trim_press;
 /// §05-cut#1-screen badge **31** and the wheel's three gestures: the band's live zoom, its scroll
 /// position and the geared scrollbar. Split out of `window.rs`, which is past its size budget.
 pub mod cut_view;

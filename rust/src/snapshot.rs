@@ -276,6 +276,19 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 end: 120.0,
             }]);
             ui::seed_review_cut(&window, &folded);
+            // F2.8 S2: the strip's two new rows only exist when there is something to plate for each — the
+            // recorders' band needs a lane and the wave strip needs the session tape (see
+            // `cut_trim_press::painted_bands`). With no lane the whole layout collapses back to one painted
+            // row, so a Cut-page shot could never show the rows this round added; one separate recording puts
+            // both rows on screen, which is what `spec/img/05-trim.png`'s strip has.
+            folded.lanes = vec![cut::Lane {
+                name: "mic-lav".to_string(),
+                src: "project:sources/mic-lav.wav".to_string(),
+                at: 12.0,
+                off: 0.0,
+                dur: 46.0,
+            }];
+            ui::seed_review_cut(&window, &folded);
             // The badge table only exists once the badges have been DRAWN (`refresh_fold_badges` is what
             // records which gap each numbered button stands for), so a fold requested before that first
             // draw has no index to fold — press the fold BEFORE refreshing, then refresh once.

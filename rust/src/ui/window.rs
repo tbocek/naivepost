@@ -5997,10 +5997,8 @@ thread_local! {
     /// update, so a pointer wandering off the band mid-drag cannot change what was picked up.
     static MOVE_PRESSED: std::cell::RefCell<Vec<Rc<std::cell::RefCell<(f64, f64)>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
-    /// The folds opened for the drag in flight, newest window first. Refolded when the gesture ends;
-    /// until the fold surface exists this only records what the rule asked to open.
-    static OPEN_FOLDS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Vec<usize>>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
+    // F2.8 S2: the folds opened for the drag in flight live in `cut_trim_press` now — that module opens
+    // them for the drag and refolds them on release, so nothing is held here.
 }
 
 /// What the right button was pressed on, where the page knows it: a recording on the recorders' band, or
@@ -6072,8 +6070,15 @@ pub fn press_trim_border(
             .unwrap_or_default()
     };
     record_edit(window, &cut_);
-    if !status.is_empty() {
-        if let Some(status_line) = find_status(window.upcast_ref()) {
+    // A trim is an edit, so cut.json gets it: a trim lost on reopen is a trim that never happened.
+    save_insert_cut(&cut_);
+    // S1: the picture follows the edge, at the second the cut now holds (not the pixel the pointer reached,
+    // which a clamp may have stopped short of).
+    crate::ui::cut_trim_press::scrub_picture(
+        window,
+        crate::ui::cut_trim_press::edge_second(index, border),
+    );
+    if !status.is_empty() {        if let Some(status_line) = find_status(window.upcast_ref()) {
             status_line.set_text(&status);
         }
     }
@@ -6140,11 +6145,9 @@ pub fn press_move(
     row_change: bool,
     d_seconds: f64,
 ) -> cut_trim::Gesture {
-    press_move_with_override(
+    crate::ui::cut_trim_press::press_move_with_override(
         window,
-        press_band(),
-        None,
-        false,
+        (press_band(), None, false, None, press_position().0 / strip_pps()),
         travel_px,
         row_change,
         d_seconds,
@@ -6164,7 +6167,15 @@ pub fn right_press_took(
     press_y: f64,
 ) -> (Option<String>, Option<String>, bool) {
     let boxes = trim_boxes_for_strip();
-    cut_trim::press_targets(press_y, press_x, &boxes, strip_pps(), press_band().as_deref())
+    let seam = press_band();
+    crate::ui::cut_trim_press::press_targets_at(
+        &newest_review_cut(),
+        press_x,
+        press_y,
+        &boxes,
+        strip_pps(),
+        seam.as_deref(),
+    )
 }
 
 /// F2.8 S2: the move door that knows WHERE the press landed. Same rule as [`press_move`], but its
@@ -6180,166 +6191,31 @@ pub fn press_move_at(
     d_seconds: f64,
 ) -> cut_trim::Gesture {
     let (recorders_band, wave_strip, on_border) = right_press_took(press_x, press_y);
-    press_move_with_override(window, recorders_band, wave_strip, on_border, travel_px, false, d_seconds)
-}
-
-/// F2.8 S2/S3: the whole move rule with its three inputs supplied. Both doors land here: the widget's
-/// position-driven [`press_move_at`] and the older seam-only [`press_move`], which passes whatever seams
-/// were primed. A press that never travelled stays a click and never moves the line
-/// ([`cut_trim::right_press_moves_line`]).
-fn press_move_with_override(
-    window: &adw::ApplicationWindow,
-    recorders_band: Option<String>,
-    wave_strip: Option<String>,
-    on_border: bool,
-    travel_px: f64,
-    row_change: bool,
-    d_seconds: f64,
-) -> cut_trim::Gesture {
-    // The scene seam only answers when this press took neither a band nor a selection away from a border:
-    // the flowchart asks those questions BEFORE it asks about a scene.
-    let scene = if recorders_band.is_some() || wave_strip.is_some() || on_border {
-        None
-    } else {
-        let inside_selection = selection(window)
-            .map(|b| b.length() >= crate::cut_select::MIN_SECONDS)
-            .unwrap_or(false);
-        if inside_selection {
-            None
-        } else {
-            press_scene()
-        }
-    };
-    press_move_core(
+    let gesture = crate::ui::cut_trim_press::press_move_with_override(
         window,
-        recorders_band,
-        wave_strip,
-        on_border,
-        scene,
+        (recorders_band, wave_strip, on_border, None, press_x / strip_pps()),
         travel_px,
-        row_change,
-        d_seconds,
-    )
-}
-
-/// F2.8 S2: the move rule with every input supplied, including which scene (if any) the press fell on.
-fn press_move_core(
-    window: &adw::ApplicationWindow,
-    recorders_band: Option<String>,
-    wave_strip: Option<String>,
-    on_border: bool,
-    scene: Option<usize>,
-    travel_px: f64,
-    row_change: bool,
-    d_seconds: f64,
-) -> cut_trim::Gesture {
-    let cut_ = newest_review_cut();
-    let band = selection(window);
-    let band_name = recorders_band.clone();
-    let selected: Vec<usize> = match (&band, &cut_) {
-        (Some(band), cut_) => cut_
-            .segs
-            .iter()
-            .enumerate()
-            .filter(|(_, seg)| seg.ins.is_empty() && seg.e > band.start && seg.s < band.end)
-            .map(|(index, _)| index)
-            .collect(),
-        (None, _) => Vec::new(),
-    };
-    let sources: Vec<String> = cut_
-        .shift
-        .keys()
-        .cloned()
-        .chain(band_name.clone())
-        .collect::<std::collections::BTreeSet<String>>()
-        .into_iter()
-        .collect();
-    let press = cut_trim::Press {
-        recorders_band: recorders_band.as_deref(),
-        wave_strip: wave_strip.as_deref(),
-        selection: band.as_ref().map(|b| (b.start, b.end)),
-        selected,
-        inside_selection: band
-            .as_ref()
-            .map(|b| crate::cut_select::MIN_SECONDS <= b.length())
-            .unwrap_or(false),
-        on_border,
-        scene,
-        row: press_row(window),
-    };
-    let gesture = cut_trim::right_gesture(
-        &press,
-        travel_px,
-        row_change,
-        d_seconds,
-        &cut_.segs,
-        0.0,
-        TRACK_REC_END,
-        strip_pps(),
-        &cut_.folds,
-        &cut_.shift,
-        &sources,
         false,
+        d_seconds,
     );
-    apply_gesture(window, &gesture);
+    // S3 lives HERE, at the press: a right press of this widget that never travelled is a click, and a
+    // click's only answer is the status line saying `this one`.
+    if gesture == cut_trim::Gesture::Click && travel_px.abs() < cut_trim::ROW_TRAVEL_PX {
+        crate::ui::cut_trim_press::press_unmoved(window);
+    }
     gesture
-}
-
-/// Write a gesture's answer into this window's cut. A click writes nothing at all — S3's unmoved press
-/// leaves the project exactly as it was, including its status line.
-fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gesture) {
-    let cut_trim::Gesture::Slid {
-        status,
-        shift,
-        row,
-        open,
-        ..
-    } = gesture
-    else {
-        return;
-    };
-    let mut cut_ = newest_review_cut();
-    cut_.shift = shift.clone();
-    if let Some(row) = row {
-        // Rows are counted from 1 in the sentence and stored per source; the placeholder records the
-        // hand's target so the next draw reads it back.
-        cut_.nrows = (*row as i32) + 1;
-    }
-    record_edit(window, &cut_);
-    OPEN_FOLDS.with(|slots| {
-        // The slot is created on first use rather than at window build: nothing else on this page needs
-        // it, and `seed_review_cut` shows a seam can write the newest slot without one. Pushed when
-        // empty so the newest window's folds are always the last entry, like SELECTED and REVIEW_CUTS.
-        let mut slots = slots.borrow_mut();
-        if slots.is_empty() {
-            slots.push(Rc::new(std::cell::RefCell::new(Vec::new())));
-        }
-        if let Some(slot) = slots.last() {
-            *slot.borrow_mut() = open.clone();
-        }
-    });
-    if let Some(status_line) = find_status(window.upcast_ref()) {
-        status_line.set_text(status);
-    }
 }
 
 /// The row a right-press would land on. Until the rows are drawn the strip sits on row 0; the seam keeps
 /// the page from inventing a row number of its own.
-fn press_row(_window: &adw::ApplicationWindow) -> usize {
+pub(crate) fn press_row(_window: &adw::ApplicationWindow) -> usize {
     0
 }
 
 /// The folds this window's drag in flight asked to open, newest write last. Read by the fold surface when
 /// it exists; exposed now so a test can assert the rule's answer reached the page.
-pub fn open_folds(window: &adw::ApplicationWindow) -> Vec<usize> {
-    let _ = window;
-    OPEN_FOLDS.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|slot| slot.borrow().clone())
-            .unwrap_or_default()
-    })
+pub fn open_folds(_window: &adw::ApplicationWindow) -> Vec<usize> {
+    crate::ui::cut_trim_press::open_folds()
 }
 
 // --- F2.9: copy, paste and lane --------------------------------------------------------------------------
@@ -7020,7 +6896,7 @@ fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
 
 /// F2.8 S1: the strip's height — the ruler row plus the kept-bar row, one number the size request and
 /// the painter both read so they cannot drift apart.
-pub const STRIP_HEIGHT: i32 = (cut_trim::RULER_H + cut_trim::BAR_H) as i32;
+pub const STRIP_HEIGHT: i32 = crate::ui::cut_trim_press::STRIP_H as i32;
 
 /// F2.8 S1: a ruler mark every 30 s at the open zoom is a mark every 120 px, which is what
 /// `spec/img/05-trim.png` prints (`0:00`, `0:30`, `1:00`). Zoomed far in the spacing would crowd, but
@@ -7076,6 +6952,7 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
         cr.set_source_rgb(0.45, 0.45, 0.45);
         let _ = cr.move_to(6.0, cut_trim::RULER_H + cut_trim::BAR_H * 0.6);
         let _ = cr.show_text(cut_trim::STRIP_EMPTY_HINT);
+        crate::ui::cut_trim_press::paint_bands(cr, w, &cut_, &page_recordings(), strip_pps());
         return;
     }
 
@@ -7097,6 +6974,9 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
         cr.rectangle(x - 0.5, top, 1.5, cut_trim::BAR_H);
         let _ = cr.fill();
     }
+    // F2.8 S2: the two rows under the kept bar — the recorders' band and the wave strip — drawn from the
+    // SAME bands a press resolves against, so a plate the eye saw is the plate the hand picked.
+    crate::ui::cut_trim_press::paint_bands(cr, w, &cut_, &page_recordings(), strip_pps());
 }
 
 /// Draw the ruler's labels onto the strip's cairo context. Cairo text is best-effort in the headless
@@ -7168,6 +7048,9 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
             }
             drag.scrubbed_ms = Some(now);
             press_trim_border(&win_upd, drag.index, drag.border, x / strip_pps());
+            // S1: the picture follows the border the hand is dragging, at the second the cut now holds.
+            let landed = crate::ui::cut_trim_press::edge_second(drag.index, drag.border);
+            crate::ui::cut_trim_press::scrub_picture(&win_upd, landed);
             *cell.borrow_mut() = Some(drag);
         });
         // The border moved, so the strip has to be repainted or the hand drags something invisible.
@@ -7180,6 +7063,14 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
         let done = TRIM_DRAGS.with(|cell| cell.borrow_mut().take());
         if let Some(drag) = done {
             press_trim_border(&win_end, drag.index, drag.border, x / strip_pps());
+            // The LAST edge always reaches the picture, even when the throttle swallowed the updates that
+            // came before it — "the picture lands on the edge".
+            let landed = crate::ui::cut_trim_press::edge_second(drag.index, drag.border);
+            crate::ui::cut_trim_press::scrub_picture(&win_end, landed);
+        } else {
+            // A release with no drag in hand is S3's unmoved right press over the pictures: no edge moved,
+            // so the picture goes to the second it belongs on — the released pixel, as the band press uses it.
+            crate::ui::cut_trim_press::scrub_picture(&win_end, x / strip_pps());
         }
         TRIM_DRAGS.with(|cell| *cell.borrow_mut() = None);
         strip_end.queue_draw();
@@ -7207,6 +7098,8 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
         // whole-pair one: a test can prime x and still let the real y through.
         let (px, py) = *pressed_begin.borrow();
         *pressed_begin.borrow_mut() = (if px == 0.0 { x } else { px }, if py == 0.0 { y } else { py });
+        // F2.8 S2: a new hold starts with no Undo step spent, so the first real move is the one that pushes.
+        crate::ui::cut_trim_press::begin_move();
     });
     let win = window.clone();
     mover.connect_drag_update(move |_g, x, _y| {
@@ -7227,6 +7120,13 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
         }
         // Otherwise the right hand moves: seconds travelled since the press, at the strip's zoom.
         press_move_at(&win, press_x, press_y, x, x / strip_pps());
+    });
+    // F2.8 S2 ("folds near the grab open for the drag, refold after"): the release puts back exactly the
+    // folds this drag opened and forgets the hold, so one gesture is one Undo step and the fold list the
+    // page was saved with comes back.
+    let win_released = window.clone();
+    mover.connect_drag_end(move |_g, _x, _y| {
+        crate::ui::cut_trim_press::end_move(&win_released);
     });
     strip.add_controller(mover.clone());
     MOVE_GESTURES.with(|cell| *cell.borrow_mut() = Some(mover));
