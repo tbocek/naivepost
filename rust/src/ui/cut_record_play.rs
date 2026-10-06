@@ -82,6 +82,9 @@ pub fn after_press(window: &adw::ApplicationWindow, pressed: &Press, runs: &[(f6
         }
         Press::Paused => {
             play_back::halt();
+            // A paused preview holds no sound at all: the lane pipelines are the recording's other voices,
+            // and the tick cannot stop them itself — it returns as soon as the transport is off.
+            crate::lane_hear::halt_all();
         }
         Press::SwitchedToRecording { .. } | Press::NoFootage => {}
     }

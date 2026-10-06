@@ -32,6 +32,16 @@ pub trait RecordingPreviewPage {
     fn unfold_at(&self, at: f64) -> Option<String>;
     /// Put a line on the status row.
     fn say(&self, line: &str);
+    /// F2.5: ask what this second hears, drive the real lane pipelines to match, and hand back the answer.
+    /// The default does nothing with no lanes to speak of, so a table that only tests the line's movement
+    /// never reaches for a pipeline; the window page and `TablePage`'s mix field both answer.
+    fn mix_now(&self, _at: f64) -> Option<crate::cut_hear::Mix> {
+        None
+    }
+    /// The project root to resolve a lane's file from, or `None` where there is no project (a table).
+    fn root(&self) -> Option<std::path::PathBuf> {
+        None
+    }
 }
 
 /// A page made of plain data — what a test drives `step` with, and anything else that has the state but not
@@ -43,11 +53,22 @@ pub struct TablePage {
     pub head: RefCell<Option<f64>>,
     pub cut: RefCell<Cut>,
     pub said: RefCell<Vec<String>>,
+    /// F2.5: the mix `mix_now` hands back, so a test can watch what the tick asked the hearing rules for.
+    /// `None` (the default) means the tick asks nothing, which is what a line-movement-only table wants.
+    pub mix: RefCell<Option<crate::cut_hear::Mix>>,
+    /// The root `root()` answers with — the folder a lane's `project:` path resolves against.
+    pub root: Option<std::path::PathBuf>,
 }
 
 impl RecordingPreviewPage for TablePage {
     fn is_recording_playing(&self) -> bool {
         self.playing
+    }
+    fn mix_now(&self, _at: f64) -> Option<crate::cut_hear::Mix> {
+        self.mix.borrow().clone()
+    }
+    fn root(&self) -> Option<std::path::PathBuf> {
+        self.root.clone()
     }
     fn playhead(&self) -> Option<f64> {
         *self.head.borrow()
@@ -88,6 +109,14 @@ pub fn step(page: &dyn RecordingPreviewPage, runs: &[(f64, f64)], elapsed_secs: 
     // line where it is and the player re-cues onto that file instead.
     at = preview::walk_on(runs, at).unwrap_or(at);
     page.set_playhead(at);
+    // F2.5 S1-S6: the mix follows the line as it moves, once per tick. `cut_hear` answers, `lane_hear`
+    // drives the processes to match, and a page with no lanes to speak of (a line-movement table) says so
+    // by answering `None`. Ordered after the advance so the answer is for the second the line reached.
+    if let Some(mix) = page.mix_now(at) {
+        if let Some(root) = page.root() {
+            crate::lane_hear::tick(&mix, &page.cut().lanes, &root, at, &|line| log_line(line));
+        }
+    }
     // S3: a folded seam the line ran into opens. `walk_fold` itself refuses while paused or under ✂.
     let player = preview::Player {
         transport: crate::run::Transport { playing: true, started: true },
@@ -184,5 +213,14 @@ impl RecordingPreviewPage for WindowPage {
         if let Some(status) = find_status(self.0.upcast_ref()) {
             status.set_text(line);
         }
+    }
+    fn mix_now(&self, at: f64) -> Option<crate::cut_hear::Mix> {
+        let cut = self.cut();
+        // The mix is asked over THIS window's cut and its own preview volume, through the seam
+        // `tests/cut_hear_mix_widgets.rs` already drives; nothing here re-decides a part of the answer.
+        Some(ui::apply_mix(&self.0, &cut.segs, &cut.lanes, &cut.fx, at))
+    }
+    fn root(&self) -> Option<std::path::PathBuf> {
+        ui::line_root(&self.0)
     }
 }

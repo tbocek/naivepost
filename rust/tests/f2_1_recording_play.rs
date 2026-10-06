@@ -31,6 +31,9 @@ fn f2_1_s3_the_line_walks_straight_through_a_stretch_the_cut_removed() {
             ..Default::default()
         }),
         said: RefCell::new(Vec::new()),
+        // No mix asked for: these tables move the line, they do not drive a pipeline.
+        mix: RefCell::new(None),
+        root: None,
     };
     cut_record_tick::step(&page, &tape(), TICK);
     assert_eq!(
@@ -55,6 +58,8 @@ fn f2_1_s3_at_a_recordings_end_the_line_walks_on_to_the_next_one() {
         head: RefCell::new(Some(9.95)),
         cut: RefCell::new(Cut::default()),
         said: RefCell::new(Vec::new()),
+        mix: RefCell::new(None),
+        root: None,
     };
     cut_record_tick::step(&page, &runs, TICK);
     assert_eq!(page.playhead(), Some(20.0), "walked on to the next recording's start");
@@ -66,6 +71,8 @@ fn f2_1_s3_at_a_recordings_end_the_line_walks_on_to_the_next_one() {
         head: RefCell::new(Some(9.95)),
         cut: RefCell::new(Cut::default()),
         said: RefCell::new(Vec::new()),
+        mix: RefCell::new(None),
+        root: None,
     };
     cut_record_tick::step(&rolling, &overlapping, TICK);
     assert!(
@@ -88,6 +95,8 @@ fn f2_1_s3_a_fold_the_line_reaches_opens_and_says_unfolded() {
         head: RefCell::new(Some(39.95)),
         cut: RefCell::new(Cut { folds: vec![[40.0, 50.0]], ..Default::default() }),
         said: RefCell::new(Vec::new()),
+        mix: RefCell::new(None),
+        root: None,
     };
     let said = cut_record_tick::step(&page, &tape(), TICK).expect("the fold the line ran into answers");
     assert_eq!(said, preview::unfolded_status(40.0), "§B's sentence, verbatim");
@@ -106,6 +115,8 @@ fn f2_1_s4_the_tick_moves_the_line_ten_times_a_second() {
         head: RefCell::new(Some(0.0)),
         cut: RefCell::new(Cut::default()),
         said: RefCell::new(Vec::new()),
+        mix: RefCell::new(None),
+        root: None,
     };
     cut_record_tick::step(&page, &tape(), TICK);
     assert!(

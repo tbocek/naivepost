@@ -23,6 +23,9 @@ pub mod hands_off;
 pub mod audit_gaps;
 pub mod cut_effects_pass;
 pub mod cut_hear;
+/// F2.5 S3/S4 — the lane pipelines: one real player process per separate recording, obeying `cut_hear`'s
+/// per-tick answer (started at its own second, never started when silenced, stopped at a scene boundary).
+pub mod lane_hear;
 pub mod cut_line;
 pub mod cut_play;
 pub mod cut_play_leg;
