@@ -63,6 +63,9 @@ pub mod cut_view;
 pub mod cut_suggest_land;
 pub mod cut_form_frame;
 pub mod cut_picture;
+/// F2.6 S1/S2 on the PAINTED band: the gesture that draws, resizes and moves a selection, read off the
+/// geometry the painter uses. Split out of `window.rs`, which is past its size budget.
+pub mod cut_select_press;
 /// F2.4 S1/S1b — one press on the painted band, read where it actually landed (row, gutter, zoom, scroll).
 pub mod cut_line_press;
 /// §05-cut#2 §B — ⇲ Lane with nothing in hand: a footage file on a row of its own, probed. Split out of
@@ -211,6 +214,7 @@ pub use window::nudge_selection;
 pub use window::selection_verbs;
 pub use window::selection_surface;
 pub use window::selection_gesture;
+pub use cut_select_press::band_selection_gesture_for_test;
 pub use window::clear_selection_button;
 pub use window::selection_readout;
 // F2.8: the strip's recording bound, so a test compares against the same wall the seam used.

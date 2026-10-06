@@ -364,7 +364,7 @@ fn apply_wheel_result(
 }
 
 /// Redraw what the view changed: the band measures itself at the new zoom, the bar follows it.
-fn repaint_page(window: &adw::ApplicationWindow) {
+pub fn repaint_page(window: &adw::ApplicationWindow) {
     let Some(content) = window.content() else { return };
     for name in ["track-band", "track-strip"] {
         if let Some(band) = find_widget_by_name(&content, name) {

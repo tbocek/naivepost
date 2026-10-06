@@ -411,7 +411,7 @@ pub fn snap_edge(candidates: &[(f64, Candidate)], stamp: f64, outward_is_earlier
         // A tie keeps the nearer point, which is the smaller move: snapping further than needed for the
         // same weight would look arbitrary on the band.
         let nearer = match best {
-            Some((best_point, best_score)) if best_score > score => continue,
+            Some((_best_point, best_score)) if best_score > score => continue,
             Some((best_point, best_score)) if best_score == score && (best_point - stamp).abs() <= (point - stamp).abs() => {
                 continue;
             }

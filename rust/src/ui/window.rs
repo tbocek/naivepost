@@ -85,7 +85,7 @@ use crate::save_as;
 use crate::policy;
 use crate::ui::policy_form;
 use crate::ui::settings;
-use crate::sources::{self, Control};
+use crate::sources::{self};
 use crate::ui::source_rows;
 use crate::startup;
 use crate::narration::{self, Narration};
@@ -2870,6 +2870,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     crate::ui::cut_view::attach_scrollbar(&window);
     // F2.4 S1/S1b: the painted band takes the line press too.
     crate::ui::window::wire_band_line_press(&window);
+    // F2.6 S1/S2: and the selection drag, on the same band, reading the same painted geometry.
+    crate::ui::cut_select_press::attach(&window);
     cut_form_frame::wire_close(&window);
     cut_picture::wire_click(&window);
     // §2: land a suggestion — its cut AND the new base — through the page's own doors.
@@ -4202,11 +4204,11 @@ fn ask_add_sources(
         let _ = chooser.set_current_folder(Some(&gio::File::for_path(&dir)));
     }
 
-    let status = status.clone();
-    let session = session.clone();
-    let copy_into = copy_into.clone();
+    let _status = status.clone();
+    let _session = session.clone();
+    let _copy_into = copy_into.clone();
     // The same stand-in New, Save and Rescan use, so all four flows agree on which project is open.
-    let root = std::env::current_dir().unwrap_or_default();
+    let _root = std::env::current_dir().unwrap_or_default();
     let window = window.clone();
     chooser.connect_response(move |chooser, response| {
         if response != gtk::ResponseType::Accept {
@@ -4608,7 +4610,7 @@ pub fn selection_verbs(window: &adw::ApplicationWindow) -> cut_select::Verbs {
 /// What this window can offer the snap-mark builder. The cut model round owns where a real `Cut` comes
 /// from; until then the page's own review-cut slot stands in, so `nudge_selection` snaps against real
 /// borders whenever one has been seeded and against nothing otherwise.
-fn selection_snap_inputs(window: &adw::ApplicationWindow) -> (cut::Cut, Vec<cut::Lane>) {
+fn selection_snap_inputs(_window: &adw::ApplicationWindow) -> (cut::Cut, Vec<cut::Lane>) {
     let cut_ = REVIEW_CUTS.with(|slots| {
         slots
             .borrow()
@@ -4699,13 +4701,18 @@ pub(crate) fn refresh_selection_readout(window: &adw::ApplicationWindow) {
     // F2.10: and the camera rows, whose badges, plates and gutter switches read the same live cut on
     // every draw, nudge and clear — a badge showing a state the next press contradicts is a lie.
     refresh_camera_rows(window);
+    // F2.6 S3: the in/out marks are PAINTED marks on the band, so every change to the band queues a repaint
+    // of it — the painter reads this window's band through `cut_view::band_scene_for` and draws its blue
+    // span and its in/out flags from that, so the marks follow a draw, a nudge or a clear with no second
+    // copy of the numbers anywhere.
+    crate::ui::cut_view::repaint_page(window);
     // §06-effects#2-the-lane-and-the-preview: the lane and the preview read the same live cut on every
     // draw, nudge and clear, so a bar or an overlay never lags the record it stands for.
     refresh_effects_lane(window);
 }
 
 /// The playhead the snap marks are built around (F2.6 S2 lists the line among the snap targets).
-fn preview_playhead(window: &adw::ApplicationWindow) -> f64 {
+pub fn preview_playhead(window: &adw::ApplicationWindow) -> f64 {
     live_player(window)
         .map(|player| player.borrow().playhead.unwrap_or(0.0))
         .unwrap_or(0.0)
@@ -4833,7 +4840,7 @@ pub fn press_effect_bar(
     travel_px: f64,
     over_kill: bool,
 ) -> fx_band::Press {
-    let mut cut_ = review_cut_of(window);
+    let cut_ = review_cut_of(window);
     let Some(fx) = cut_.fx.get(index).cloned() else {
         return fx_band::Press::Dropped;
     };
@@ -5087,17 +5094,6 @@ pub fn press_fx_lane(window: &adw::ApplicationWindow) -> cut_select::FxLanePress
 /// with one camera row -- the same single row the page shows -- so every band is reachable by y.
 fn placeholder_surface_bands() -> (cut_select::SurfaceBands, usize) {
     (cut_select::PLACEHOLDER_BANDS, 1)
-}
-
-/// The recording name a wave-strip or lane selection is scoped to. `draw` takes `Option<&str>` and refuses
-/// (returns `None`) for a sound scope with no name, so the page must name one: until F2.11 owns the lane
-/// names this answers the placeholder camera the single drawn row stands for, matching
-/// `timeline::kept_footage_recordings`' `cam<N>` naming rather than inventing a second scheme.
-fn recording_for_surface(surface: cut_select::Surface) -> Option<&'static str> {
-    match surface {
-        cut_select::Surface::WaveStrip | cut_select::Surface::Lane => Some("cam0"),
-        _ => None,
-    }
 }
 
 /// This window's ✕ Clear selection button (F2.6 S2), looked up by its stable name.
@@ -5729,19 +5725,28 @@ pub fn band_line_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk
     BAND_LINE_CLICKS.with(|cell| cell.borrow().clone())
 }
 
-/// Attach the drag gesture to this window's `select-surface` and remember it. The handler forwards the
-/// drag's end x (converted to seconds at the page's pixels-per-second) to [`draw_selection`] and
-/// decides nothing about scope — that is `cut_select::draw`'s call from the surface up.
+/// Attach the drag gesture to this window's `select-surface` and remember it. S1's scope is chosen once at
+/// the press and the band is drawn FROM THE SECOND THE HAND LANDED ON to the second under it (never from 0:
+/// a drag that always started at the head of the tape could not select a stretch in the middle of a
+/// session, which is the only thing a selection is for). Scope resolution stays `cut_select::draw`'s.
 fn wire_select_surface(window: &adw::ApplicationWindow) {
     let Some(area) = select_surface(window) else { return };
     let gesture = gtk::GestureDrag::new();
     let win = window.clone();
     // F2.6 S1: the press decides the scope, once. Which band the y fell in (ruler / picture row / wave
     // strip / lane / selection band / effects lane) is answered by `cut_select::surface_at` -- a pure
-    // function over the drawn bands -- and remembered, so the drag below never re-decides it.
-    gesture.connect_drag_begin(move |_g, _sx, sy| {
+    // function over the drawn bands -- and remembered, so the drag below never re-decides it. The begin x
+    // goes with it: that second is the band's start.
+    gesture.connect_drag_begin(move |_g, sx, sy| {
         let (bands, rows) = placeholder_surface_bands();
-        set_pressed_surface(cut_select::surface_at(sy, &bands, rows));
+        let surface = cut_select::surface_at(sy, &bands, rows);
+        set_pressed_surface(surface);
+        crate::ui::cut_select_press::set_drag_begin(sx / SELECT_SURFACE_PPS);
+        // The effects lane refuses a selection and puts a held effect down instead — at the press, once,
+        // so dragging across it cannot put the same effect down on every update.
+        if surface == cut_select::Surface::FxLane {
+            press_fx_lane(&win);
+        }
     });
     let fx_win = window.clone();
     gesture.connect_drag_update(move |_g, x, y| {
@@ -5752,16 +5757,16 @@ fn wire_select_surface(window: &adw::ApplicationWindow) {
         // The effects lane takes nothing back: it puts a held effect down and draws no band, so the
         // selection that was there stays exactly as it was.
         if surface == cut_select::Surface::FxLane {
-            press_fx_lane(&fx_win);
             return;
         }
         // Pixels to seconds at the page's current zoom; until the tracks exist the placeholder runs at
         // the open-at zoom so a drag still lands on real session seconds.
+        let from = crate::ui::cut_select_press::drag_begin().unwrap_or(0.0);
         draw_selection(
-            &win,
+            &fx_win,
             surface,
-            recording_for_surface(surface),
-            0.0,
+            crate::ui::cut_select_press::recording_for_surface(&fx_win, surface, y).as_deref(),
+            from,
             x / SELECT_SURFACE_PPS,
         );
     });
@@ -6934,7 +6939,7 @@ pub fn insert_chosen_with_length(
     let raw = file.to_string_lossy().to_string();
     let band = selection(window);
     let animated = svg_is_animated(file);
-    let mut plan = cut_insert::form_plan(&raw, band.as_ref(), file_seconds, animated, false, false, false);
+    let plan = cut_insert::form_plan(&raw, band.as_ref(), file_seconds, animated, false, false, false);
     // The card's holes are read off the document; a non-SVG gets no fields and the door ignores the argument.
     let mut fields: Vec<cut_insert::Field> = Vec::new();
     if plan.kind == cut_insert::Kind::Svg {
@@ -9131,7 +9136,7 @@ pub fn note_edit(window: &adw::ApplicationWindow) {
 }
 
 /// This window's history, opened on the cut it currently shows if none was opened yet.
-fn cut_history(window: &adw::ApplicationWindow) -> Rc<std::cell::RefCell<cut::History>> {
+fn cut_history(_window: &adw::ApplicationWindow) -> Rc<std::cell::RefCell<cut::History>> {
     let held = CUT_HISTORIES.with(|slot| slot.borrow().last().cloned());
     if let Some(held) = held {
         return held;
@@ -9468,7 +9473,7 @@ fn wire_zoom_drag(window: &adw::ApplicationWindow) {
     };
     let gesture = gtk::GestureDrag::new();
     gesture.set_button(1);
-    let win = window.clone();
+    let _win = window.clone();
     // `drag-begin` carries the ABSOLUTE press position; `drag-end` carries the OFFSET from it (the F2.8
     // lesson), so the release corner is start + offset and both corners are known only across the two signals.
     let start = std::rc::Rc::new(std::cell::Cell::new((0.0f64, 0.0f64)));

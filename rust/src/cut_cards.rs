@@ -693,7 +693,7 @@ fn interpolate(from: &str, to: &str, at: f64, additive: bool) -> Option<String> 
     }
 }
 
-fn number(v: f64, additive: bool) -> String {
+fn number(v: f64, _additive: bool) -> String {
     // `additive="sum"` means "on top of the attribute's own value", and the base belongs to the element being drawn,
     // not to this animation — so the caller adds it. The flag is deliberately not applied to the number here; doing
     // so would add the base twice on the second frame. Kept as an argument so both branches format identically and a

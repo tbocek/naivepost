@@ -723,7 +723,7 @@ pub fn form_plan(
     selection: Option<&Selection>,
     file_seconds: Option<f64>,
     animated_svg: bool,
-    silent: bool,
+    _silent: bool,
     file_has_sound: bool,
     footage_under_has_sound: bool,
 ) -> FormPlan {

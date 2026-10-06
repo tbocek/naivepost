@@ -645,7 +645,7 @@ pub fn write_pair(
 
 /// Which recording begins at the `step`-th join. Walks the source list to the `step`-th change and
 /// returns the source on the far side of it; empty when there is no such change.
-fn joined_recording(sources: &[String], kept: &[bool], step: usize) -> String {
+fn joined_recording(sources: &[String], _kept: &[bool], step: usize) -> String {
     let mut changes = 0usize;
     for index in 1..sources.len() {
         if sources[index] != sources[index - 1] {

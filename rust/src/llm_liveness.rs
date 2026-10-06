@@ -665,7 +665,7 @@ pub fn shares_a_server(a: &str, b: &str) -> bool {
             return None;
         }
         let with_port = match host_and_maybe_port.rsplit_once(':') {
-            Some((host, port)) if !port.is_empty() => host_and_maybe_port.to_string(),
+            Some((_host, port)) if !port.is_empty() => host_and_maybe_port.to_string(),
             _ => format!("{}:{}", host_and_maybe_port, if scheme == "https" { 443 } else { 80 }),
         };
         Some(format!("{scheme}://{with_port}"))
