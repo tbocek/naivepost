@@ -1422,7 +1422,14 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                 let win_kill = window.clone();
                 let index = bar.index;
                 kill.connect_clicked(move |_| {
-                    let said = remove_effect_at(&win_kill, index);
+                    // F2.7 ✕ badges: the effect's cross is the `effect` badge, so it fires through the one
+                    // badge door; the door forwards to `remove_effect_at`, whose sentence the fold rounds
+                    // already pin, and prints it.
+                    let said = crate::ui::cut_verb_press::press_badge(
+                        &win_kill,
+                        crate::cut_verbs::Badge::Effect,
+                        index,
+                    );
                     if let Some(status_line) = find_status(win_kill.upcast_ref()) {
                         status_line.set_text(&said);
                     }
@@ -5776,10 +5783,13 @@ fn wire_select_surface(window: &adw::ApplicationWindow) {
 
 /// Wire the ✕ to [`clear_selection`] and nothing else: the rule for what clearing means (and that it
 /// clears only the selection, never the cut) lives in `cut_select::clear`.
+/// Wire the ✕ to [`cut_verb_press::press_badge`] with the `selection` badge and nothing else: the rule for
+/// what clearing means (and that it clears only the selection, never the cut) lives in `cut_select::clear`,
+/// and the dispatch of a ✕ lives in the one badge door every ✕ on this page fires through.
 fn wire_clear_selection(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
     button.connect_clicked(move |_| {
-        clear_selection(&window);
+        crate::ui::cut_verb_press::press_badge(&window, crate::cut_verbs::Badge::Selection, 0);
     });
 }
 
@@ -5796,61 +5806,18 @@ fn wire_verb_button(
     });
 }
 
-/// F2.7 ⌦: a held effect, then a held clip, then the selection, then the scene under the line — in that
-/// order, decided by [`cut_verbs::delete_verb`]. The two "held" values come from the seams below: the
-/// real drag rounds (F2.8/F2.9/F0.6) will set them when a person actually picks something up, and until
-/// then a test can set them here so the ORDER is checkable now rather than asserted later.
-pub fn press_delete_key(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
-    let segs = newest_review_cut().segs;
-    let band = selection(window);
-    let scene = held_scene_under_line(window);
-    let outcome = cut_verbs::delete_verb(
-        held_effect().as_ref(),
-        held_clip().as_ref(),
-        band.as_ref(),
-        scene.as_ref(),
-        &segs,
-    );
-    report_verb(window, &outcome);
-    outcome
-}
-
-/// F2.7 ＋ Add: keep the band as scenes.
-pub fn press_add(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
-    let (cut_, _) = selection_snap_inputs(window);
-    let band = selection(window);
-    // F2.7's own snap list. Word edges arrive with the aligner round; with no aligner §4.1 puts the
-    // points on the waveform instead, which `wave_snap_points` reads. Either way an empty list means the
-    // ends stay where they were drawn rather than inventing points.
-    let outcome = cut_verbs::add(band.as_ref(), &cut_.segs, &crate::ui::wave_snap::snap_points(band.as_ref()));
-    report_verb(window, &outcome);
-    outcome
-}
-
-/// F2.7 | Split: a border at each end of the band, or one at the red line when there is none.
-pub fn press_split(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
-    let (cut_, _) = selection_snap_inputs(window);
-    let band = selection(window);
-    let outcome = cut_verbs::split(band.as_ref(), preview_playhead(window), &cut_.segs);    report_verb(window, &outcome);
-    outcome
-}
-
-/// F2.7 － Remove: drop exactly the band.
-pub fn press_remove(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
-    let (cut_, _) = selection_snap_inputs(window);
-    let band = selection(window);
-    let outcome = cut_verbs::remove(band.as_ref(), &cut_.segs);
-    report_verb(window, &outcome);
-    outcome
-}
+/// The doors moved to [`crate::ui::cut_verb_press`] (this file is past its size budget); naming them here
+/// is what the button wires below use, so no copy of a verb door lives in two files.
+use crate::ui::cut_verb_press::{press_add, press_delete_key, press_remove, press_split};
 
 /// F3.12 S1–S5: hold this window's effects to the cut as it will actually play, and say what went.
 ///
 /// The rule lives in [`crate::cut_clamp`]; this seam only reads the page, runs the pass over the newest
 /// review cut (the scenes AFTER snapping, dead-air removal, mark removal and coalescing — which is the whole
 /// reason the pass exists), and writes back what survives. It is reached from the Cut page through
-/// [`report_verb`], so every verb that rewrites the segment list clamps the effect list against it in the
-/// same step; `suggest::apply` runs the same function on the model's own answer.
+/// [`crate::ui::cut_verb_press::report_verb`], so every verb that rewrites the segment list clamps the
+/// effect list against it in the same step; `suggest::apply` runs the same function on the model's own
+/// answer.
 ///
 /// A no-op writes NOTHING at all — not even a status-free history entry: `record_edit` feeds
 /// `History::note_change`, but a clamp that changed nothing must not consume an Undo step or repaint the lane.
@@ -5887,54 +5854,15 @@ pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
     said
 }
 
-/// Print the verb's sentence and honour what the answer says about the band. A refusal changes nothing at
-/// all — no status-free silence, and no edit either, which is the point of refusing.
-fn report_verb(window: &adw::ApplicationWindow, outcome: &cut_verbs::Outcome) {
-    if let Some(status_line) = find_status(window.upcast_ref()) {
-        status_line.set_text(outcome.status());
-    }
-    match outcome {
-        cut_verbs::Outcome::Applied {
-            segs,
-            keeps_selection,
-            into_hand,
-            ..
-        } => {
-            // Only a verb that produced segments rewrites the cut; ⌦ on a held card reports through the
-            // status and leaves the list to the round that owns removal of inserts.
-            if !segs.is_empty() {
-                REVIEW_CUTS.with(|slots| {
-                    if let Some(slot) = slots.borrow().last() {
-                        slot.borrow_mut().segs = segs.clone();
-                    }
-                });
-                // F2.13: the verb's segments are an edit, so they go on the history here rather than
-                // waiting for a caller to remember. Read back out of the slot just written so the
-                // snapshot carries the whole cut (lanes, shifts, rows) and not only the new list.
-                record_edit(window, &newest_review_cut());
-                // F3.12: the segments moved, so every effect chosen against the old seconds is now
-                // pointed at whatever those seconds became. Clamp them to the cut as applied right here,
-                // after the verb wrote its segments and its own status line — the clamp's line follows
-                // rather than replaces it, because the user needs to know both what the verb did and what
-                // the cut then refused to keep.
-                clamp_effects_to_cut(window);
-            }
-            if !keeps_selection {
-                clear_selection(window);
-            }
-            if *into_hand {
-                VERB_HAND.with(|cell| *cell.borrow_mut() = selection(window));
-            }
+/// Write this window's cut's segment list, keeping everything else about the cut (lanes, shifts, rows,
+/// folds) exactly as it was — the write side of [`newest_review_cut`], used by the verb doors.
+pub(crate) fn set_review_segs(window: &adw::ApplicationWindow, segs: &[cut::Seg]) {
+    let _ = window;
+    REVIEW_CUTS.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            slot.borrow_mut().segs = segs.to_vec();
         }
-        cut_verbs::Outcome::Refused(_) => {}
-    }
-}
-
-/// The scene under the red line, or `None` where the cut keeps nothing — [`cut_delete::scene_under`]'s
-/// answer, so ⌦ asks the same question every other ⌦-adjacent rule asks.
-fn held_scene_under_line(window: &adw::ApplicationWindow) -> Option<cut::Seg> {
-    let cut_ = newest_review_cut();
-    cut_delete::scene_under(&cut_.segs, preview_playhead(window)).cloned()
+    });
 }
 
 /// What ⌦ would take first: the effect in hand. Set by the effects-lane rounds when a person picks one
@@ -6020,9 +5948,6 @@ thread_local! {
     /// F2.4 S1: which picture row this window is watching. Only a picture-band click sets it, and only
     /// while nothing plays with sources loaded — `cut_line::watches_row` owns that; this just remembers.
     static WATCHED_ROW: std::cell::RefCell<Option<usize>> =
-        const { std::cell::RefCell::new(None) };
-    /// The right half a band-less Split put in the hand (F2.7 S2). The paste round reads it.
-    static VERB_HAND: std::cell::RefCell<Option<cut_select::Selection>> =
         const { std::cell::RefCell::new(None) };
 }
 /// This window's ⌦ controller, so a test can see it is attached. `None` on a page that drew none.
@@ -6444,6 +6369,21 @@ pub fn copy_esc_controller(window: &adw::ApplicationWindow) -> Option<gtk::Event
 /// second long, what it is a stretch of; this only reads the band, keeps the answer if it took one, and
 /// hands back the sentence to print. A refusal leaves no hand, so ⧉ Paste stays greyed.
 pub fn press_copy(window: &adw::ApplicationWindow) -> String {
+    // Split-then-take-the-second-half in one gesture (F2.7 S2): a | Split at the red line put that half in
+    // the verb hand precisely because selecting it again would be a second gesture for something the split
+    // already defined. With a band up, ⧉ Copy answers the band as always — the split's half is only asked
+    // for when there is nothing to copy, so no existing Copy behaviour changes.
+    if selection(window).is_none() {
+        if let Some(half) = crate::ui::cut_verb_press::verb_hand() {
+            let taken = cut_copy::copy(Some(&half));
+            if let cut_copy::Take::Taken(hand) = &taken {
+                COPY_HAND.with(|cell| *cell.borrow_mut() = Some(hand.clone()));
+                // The hand is spent: taking it twice would be two pastes of one split.
+                crate::ui::cut_verb_press::take_into_hand(None);
+                return cut_copy::copied_status(hand);
+            }
+        }
+    }
     let taken = cut_copy::copy(selection(window).as_ref());
     match &taken {
         cut_copy::Take::Taken(hand) => {
@@ -6831,6 +6771,13 @@ pub(crate) fn save_insert_cut(cut_: &Cut) {
     if let Ok(tree) = layout::Tree::new(&dir) {
         let _ = cut::save(cut_, &tree);
     }
+}
+
+/// Write `cut_` to this window's own cut.json — the door every editing press uses, exposed so a check can
+/// start from a file on disk rather than only from an in-memory cut.
+pub fn save_seed_for_test(window: &adw::ApplicationWindow, cut_: &Cut) {
+    let _ = window;
+    save_insert_cut(cut_);
 }
 
 /// F2.12 S1 + S2: ⧉ Insert. The placement question is answered FIRST, before any dialog opens, because a

@@ -66,6 +66,9 @@ pub mod cut_picture;
 /// F2.6 S1/S2 on the PAINTED band: the gesture that draws, resizes and moves a selection, read off the
 /// geometry the painter uses. Split out of `window.rs`, which is past its size budget.
 pub mod cut_select_press;
+/// F2.7: the page's half of Add / Split / Remove / ⌦ — the four doors, what each writes, the snap-list
+/// gather and the ✕ dispatch. Split out of `window.rs`, which is past its size budget.
+pub mod cut_verb_press;
 /// F2.4 S1/S1b — one press on the painted band, read where it actually landed (row, gutter, zoom, scroll).
 pub mod cut_line_press;
 /// §05-cut#2 §B — ⇲ Lane with nothing in hand: a footage file on a row of its own, probed. Split out of
@@ -200,6 +203,9 @@ pub use window::press_play_recording;
 pub use window::play_cut_button;
 pub use window::review_cuts_button;
 pub use window::seed_review_cut;
+/// F2.7: the write-to-cut.json door, so a check can start from a file on disk (every editing press already
+/// uses it; this only makes it reachable from outside `ui`).
+pub use window::save_seed_for_test;
 pub use window::play_recording_button;
 pub use window::set_preview_volume;
 pub use window::preview_volume;
@@ -327,10 +333,7 @@ pub use window::press_zoom_esc;
 pub use window::set_zoom_armed;
 pub use window::refresh_effects_lane;
 pub use window::effects_lane_box;
-pub use window::press_add;
-pub use window::press_delete_key;
-pub use window::press_remove;
-pub use window::press_split;
+pub use cut_verb_press::{press_add, press_delete_key, press_remove, press_split};
 pub use window::note_edit;
 pub use window::press_clear_cut;
 pub use window::press_redo;

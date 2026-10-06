@@ -15,6 +15,9 @@ use crate::cut::Cut;
 use crate::cut_cam;
 use crate::cut_fold;
 use crate::cut_hear;
+use crate::cut_verbs::{self, Badge};
+use crate::ui::cut_verb_press::press_badge;
+#[allow(unused_imports)] // kept for the seams' own callers; the crosses now fire through `press_badge`
 use crate::ui::cut_folds::{press_lane_cross, press_row_cross, CROSS_GLYPH};
 use crate::ui::window::{
     find_status, find_widget_by_name, line_position, newest_review_cut, record_edit,
@@ -340,17 +343,21 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
         // the plate/badges above it. Re-appending it each pass would leave the earlier child holding the
         // old sensitivity under the same widget name, which is the F2.10 lesson this function already
         // records for `watch-row-1`.
-        let cross = match find_widget_by_name(rows_box.upcast_ref(), &format!("row-cross-{}", index + 1))
-            .and_then(|found| found.downcast::<gtk::Button>().ok())
-        {
+        let found = find_widget_by_name(rows_box.upcast_ref(), &format!("row-cross-{}", index + 1))
+            .and_then(|found| found.downcast::<gtk::Button>().ok());
+        let cross = match found {
             Some(existing) => existing,
             None => {
                 let fresh = gtk::Button::new();
                 fresh.set_widget_name(&format!("row-cross-{}", index + 1));
                 fresh.set_label(CROSS_GLYPH);
+                // F2.7 ✕ badges: the row's cross IS the `empty row` badge, so it fires through the one
+                // badge door (`cut_verb_press::press_badge`), which forwards to `press_row_cross` — the
+                // sentence and the state stay F2.11's, and `cut_verbs::Badge` gains a real caller.
+                fresh.set_tooltip_text(Some(cut_verbs::badge_action(Badge::EmptyRow)));
                 let win = window.clone();
                 fresh.connect_clicked(move |_| {
-                    press_row_cross(&win, index);
+                    press_badge(&win, Badge::EmptyRow, index);
                 });
                 holder.append(&fresh);
                 fresh
@@ -377,13 +384,18 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                     let fresh = gtk::Button::new();
                     fresh.set_widget_name(&format!("lane-cross-{lane}"));
                     fresh.set_label(CROSS_GLYPH);
-                    fresh.set_tooltip_text(Some(&format!(
-                        "remove the {lane} lane \u{2014} its pin, its shift, its pictures and its sound"
-                    )));
+                    // F2.7 ✕ badges: a cut lane's cross is the `cut lane` badge. Its ORDER in `cut.lanes` is
+                    // the target `press_badge` asks for, so it is taken here, where the lane is known, rather
+                    // than guessed from the name later.
+                    let lane_index = cut_
+                        .lanes
+                        .iter()
+                        .position(|kept| kept.name == *lane)
+                        .unwrap_or(usize::MAX);
+                    fresh.set_tooltip_text(Some(cut_verbs::badge_action(Badge::CutLane)));
                     let win = window.clone();
-                    let name = lane.clone();
                     fresh.connect_clicked(move |_| {
-                        press_lane_cross(&win, &name);
+                        press_badge(&win, Badge::CutLane, lane_index);
                     });
                     holder.append(&fresh);
                     fresh
@@ -396,6 +408,51 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
         // NOT re-appended: `holder` is already inside `rows_box` — it was put there when first built.
         // Appending it again is the `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL'
         // failed` that shows up on every refresh after the first.
+
+        // F2.7 ✕ badges, the green bar's turn: the band is cairo-painted, so a scene's ✕ cannot live on the
+        // bar itself — it sits in that scene's row, in the row list, named `scene-cross-<scene index>` after
+        // its place in `cut.segs` so a test fires the scene it is looking at. DECISION (spec silent on the
+        // exact seat): the row of the camera that shows the scene is the one seat that is always drawn, always
+        // labelled and already inside the row this scene belongs to.
+        for (index, seg) in cut_.segs.iter().enumerate() {
+            // Footage on THIS row only: an inserted card shows no camera's pictures, so it has no scene ✕,
+            // and a scene living on another row gets its ✕ over there, not here.
+            let mine = seg.ins.is_empty() && seg.cam == row;
+            let name = format!("scene-cross-{index}");
+            let found = find_widget_by_name(rows_box.upcast_ref(), &name)
+                .and_then(|found| found.downcast::<gtk::Button>().ok());
+            if !mine {
+                // Put it away when the scene moved off this row or left the cut, so a greyed ✕ never sits on
+                // a row that no longer shows that scene.
+                if let Some(stale) = found {
+                    if let Some(parent) = stale.parent().and_then(|node| node.downcast::<gtk::Box>().ok()) {
+                        parent.remove(&stale);
+                    }
+                }
+                continue;
+            }
+            let cross = match found {
+                Some(existing) => existing,
+                None => {
+                    let fresh = gtk::Button::new();
+                    fresh.set_widget_name(&name);
+                    fresh.set_label(CROSS_GLYPH);
+                    fresh.set_tooltip_text(Some(cut_verbs::badge_action(Badge::GreenBar)));
+                    let win = window.clone();
+                    fresh.connect_clicked(move |_| {
+                        press_badge(&win, Badge::GreenBar, index);
+                    });
+                    holder.append(&fresh);
+                    fresh
+                }
+            };
+            // Sensitivity IS the rule: a bar too narrow to carry a ✕ clear of its grips offers none, asked of
+            // the same threshold the effect ✕ uses so the two can never disagree about width. A narrow scene
+            // keeps its button and goes INSENSITIVE rather than being un-drawn: an absent control is
+            // indistinguishable from a bug, a greyed one reads as today's refusal.
+            let live = crate::ui::cut_verb_press::scene_cross_live(seg.e - seg.s);
+            cross.set_sensitive(live);
+        }
     }
     CAMERA_REFRESH.with(|cell| cell.set(false));
 }
