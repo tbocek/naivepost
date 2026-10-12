@@ -534,6 +534,15 @@ pub fn press(window: &adw::ApplicationWindow, busy: bool) -> Landed {
     finish(&tree, parts, &mut ask)
 }
 
+/// `P.policy.targetLengthSeconds` — the length this cut aims at, seconds; §10's default is 0 = none.
+///
+/// Read on the press path rather than hardcoded at the call: the day F0.7 derives a number from the User
+/// Context it writes the policy field and every `suggest::target_block`/length-gate answer on this page moves
+/// with it, with nothing rewired. F0.7's derivation is another item's round.
+pub fn target_length_seconds(policy: &crate::project::Policy) -> f64 {
+    policy.target_length_seconds.value.max(0.0)
+}
+
 /// The last half of the press: one model call over what the page holds, then every `>>>` line to the
 /// log so the flowchart's story is in the file the log window shows.
 fn finish<F>(tree: &Tree, parts: Press, ask: &mut F) -> Landed
@@ -544,10 +553,10 @@ where
         tree,
         &parts.project,
         &parts.cut,
-        // `P.policy.targetLengthSeconds` has no Policy field yet (F0.7's derivation is another item),
-        // so the press asks for a cut with no target: `suggest::target_block` answers "NO TARGET
-        // LENGTH: keep what is worth keeping." and the whole-cut check drops its length complaint.
-        cutpass::NO_TARGET,
+        // The target comes from the session's own policy through [`target_length_seconds`], not from a literal
+        // here: `suggest::target_block` then answers "NO TARGET LENGTH: keep what is worth keeping." and the
+        // whole-cut check drops its length complaint, which is what a policy with no derived length means.
+        target_length_seconds(&parts.project.policy),
         parts.paths.as_ref(),
         ask,
     );

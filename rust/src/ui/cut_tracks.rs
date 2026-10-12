@@ -20,34 +20,14 @@ use crate::{
     clock, cut, cut_fold, cut_screen, cut_trim, fx_lane, layout, timeline, tools,
 };
 
-/// Band ground: the same near-white the placeholder strip already paints, so the ruler's grey ink and the
-/// kept green read identically on either surface.
-pub const GROUND: (f64, f64, f64) = (0.95, 0.95, 0.95);
-/// The ruler's ink — ticks and their labels.
-const RULER_INK: (f64, f64, f64) = (0.45, 0.45, 0.45);
-/// The kept scene's green: the placeholder's, kept so a shot does not change colour mid-migration.
-const KEPT_GREEN: (f64, f64, f64) = (0.2, 0.8, 0.3);
-const KEPT_BORDER: (f64, f64, f64) = (0.11, 0.42, 0.16);
-/// The selection's blue (§1's "the selection, with its ✕").
-const SELECT_BLUE: (f64, f64, f64) = (0.25, 0.5, 0.9);
-/// An insert's violet, and the amber of a recording's striped edge.
-const INSERT_VIOLET: (f64, f64, f64) = (0.55, 0.35, 0.75);
-/// A cut lane's own row: a plate grey the footage rows do not use, so a lane reads as another row rather than
-/// as more footage, and its border is the same ink the fold badges mark a seam with.
-pub const LANE_GROUND: (f64, f64, f64) = (0.72, 0.74, 0.8);
-const LANE_BORDER: (f64, f64, f64) = (0.35, 0.35, 0.4);
-/// The seconds an OVER card took from the footage: the dropped-gap grey, because that is what they are now.
-const OVER_EATEN: (f64, f64, f64) = (0.88, 0.88, 0.88);
-const RECORDING_EDGE: (f64, f64, f64) = (0.85, 0.6, 0.12);
-/// A take the join pass removed whole: "flagged for a look, not an error" (F1.10), so a yellow wash and a
-/// frame rather than red.
-const JOIN_WASH: (f64, f64, f64) = (0.98, 0.9, 0.35);
-/// In green, out red (§1's own words for the flags).
-const MARK_IN: (f64, f64, f64) = (0.15, 0.7, 0.25);
-const MARK_OUT: (f64, f64, f64) = (0.85, 0.2, 0.2);
-/// §1's playhead: "2 px line on its own layer", RGB(0.9, 0.15, 0.15) per inventory/cut.md §A.
+/// The band's tints come from [`cut_colours`], catalogued by `params::cut()` under `cut.colour.*`: §6 lists
+/// "colours" among the values a tuning pass may move, so no drawing helper holds one of its own any more.
+use crate::ui::cut_colours::{
+    EDGE_AMBER, GROUND, INSERT_VIOLET, JOIN_WASH, KEPT_BORDER, KEPT_TINT, LANE_BORDER, LANE_GROUND,
+    MARK_IN_GREEN, MARK_OUT_RED, OVER_EATEN, PLAYHEAD_RGB, RULER_INK, SELECTION_BLUE, WATCH_OUTLINE,
+};
+/// §1's playhead width: "2 px line on its own layer". Its colour is [`PLAYHEAD_RGB`].
 pub const PLAYHEAD_PX: f64 = 2.0;
-pub const PLAYHEAD_RGB: (f64, f64, f64) = (0.9, 0.15, 0.15);
 /// §A: the ruler is 18 px, the selection band 22 px, an effects row 26 (`cut_screen::EFFECT_ROW_PX`), a
 /// picture row `thumbHt + 4`. The ruler's 16 vs 18 is the placeholder's number kept: `cut_trim::RULER_H`
 /// is what F2.8's press bands resolve against, and moving it would move a press.
@@ -61,8 +41,6 @@ pub const ROW_WAVE_PX: f64 = (THUMB_DEFAULT_PX as f64 + PICTURE_ROW_EXTRA_PX) / 
 /// A flag's triangle: 3 px of line (§1) with a pennant this wide and tall.
 const MARK_LINE_PX: f64 = 3.0;
 const FLAG_PX: f64 = 10.0;
-/// The dashed white outline around the row a click set the preview to watch.
-const WATCH_OUTLINE: (f64, f64, f64) = (1.0, 1.0, 1.0);
 
 /// §A's tick ladder: `0.2 0.5 1 2 5 10 30 60 120 300 600 s`, the FIRST one whose spacing at this zoom is at
 /// least 70 px apart — a label every 30 px would be a grey bar, and every 700 px a ruler with no marks.
@@ -718,7 +696,7 @@ fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         if b.insert {
             continue;
         }
-        fill(cr, KEPT_GREEN, b.x, rows.selection, b.w.max(1.0), SELECTION_BAND_PX, 1.0);
+        fill(cr, KEPT_TINT, b.x, rows.selection, b.w.max(1.0), SELECTION_BAND_PX, 1.0);
     }
     ink(cr, KEPT_BORDER);
     for (x, _, _) in cut_trim::border_positions(&boxes) {
@@ -726,6 +704,7 @@ fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         let _ = cr.fill();
     }
 }
+
 
 /// The effects lane: one row per overlapping group, each bar in its kind's colour.
 fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
@@ -773,9 +752,17 @@ fn draw_picture_rows(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
     };
     // §1: "the band has a picture at every zoom". One frame is shown, the one nearest the second at the
     // view's left edge — `frame_near` picks it by the file name's own timestamp, and the mark sits where
-    // that second lands. Frames are not decoded here: a draw must never block on a decode (§7).
+    // that second lands. Frames are not decoded here: a draw must never block on a decode (§7), and the
+    // window of names a pass asks about is ONE §D batch wide ([`batch_of`], `thumbBatch 6`), the loader's
+    // bound rather than the row's whole list.
     let at = (scene.origin / scene.pps).max(0.0);
-    let Some(near) = frame_near(paths, at) else {
+    let step = frame_step_seconds(paths.len());
+    let first = if step > 0.0 {
+        (at / step).floor() as usize
+    } else {
+        0
+    };
+    let Some(near) = frame_near(batch_of(paths, first), at) else {
         return;
     };
     fill(
@@ -787,6 +774,37 @@ fn draw_picture_rows(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
         rows.row_h,
         1.0,
     );
+}
+
+/// The seconds between two entries of a row's frame list: Prepare extracts one frame every 250 ms, which is
+/// what a `.jpg` name's stamp is spaced by and the only thing a frame's place in the list can be measured
+/// against. §10 lists this in its frame-extraction sentence (`intervalSeconds`, 0.25 at the default) without a
+/// `P.` id of its own for the reader's copy, so the band states it once here and says so.
+const FRAME_STEP_SECONDS: f64 = 0.25;
+
+/// One entry of a row's frame list stands for this many seconds of tape; a list of one or none stands for the
+/// whole row, which no window of the list can express, so it answers 0 and the caller takes the first batch.
+fn frame_step_seconds(count: usize) -> f64 {
+    if count < 2 {
+        return 0.0;
+    }
+    FRAME_STEP_SECONDS
+}
+
+/// How many thumbnails one pass of the band takes off the list to show: inventory §D's `thumbBatch 6`
+/// ("decoded in a worker in batches of 6 at the row height"). The prototype hands a loader six files at a time
+/// so a long row costs six decodes a round and not the row's whole list; this band shows one representative
+/// frame per row and reads no pixels at all (a draw must never block on a decode), so the number here bounds
+/// how far one pass looks into the frame list — six seconds of tape at Prepare's own 250 ms grid — which is
+/// where the prototype's batch and this page's cheap draw meet. §6 lists it, so it is a constant and a row.
+pub const THUMB_BATCH: usize = 6;
+
+/// The slice one batch covers: at most [`THUMB_BATCH`] paths starting at `start`, empty past the end. A plain
+/// function of a list and an index so the batch's shape can be tested without a window or a decode.
+pub fn batch_of(paths: &[std::path::PathBuf], start: usize) -> &[std::path::PathBuf] {
+    let from = start.min(paths.len());
+    let to = from.saturating_add(THUMB_BATCH).min(paths.len());
+    &paths[from..to]
 }
 
 /// §27 Tracks: "each row's first audio track as a strip below it". One plate per recorded row, in the
@@ -835,7 +853,7 @@ fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f6
                 continue;
             }
             for stripe in 0..3i32 {
-                fill(cr, RECORDING_EDGE, x + stripe as f64, rows.pictures, 1.0, height, 1.0);
+                fill(cr, EDGE_AMBER, x + stripe as f64, rows.pictures, 1.0, height, 1.0);
             }
         }
     }
@@ -916,14 +934,14 @@ fn draw_selection(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     }
     fill(
         cr,
-        SELECT_BLUE,
+        SELECTION_BLUE,
         x0,
         rows.selection,
         width.max(1.0),
         SELECTION_BAND_PX,
         0.45,
     );
-    ink(cr, SELECT_BLUE);
+    ink(cr, SELECTION_BLUE);
     for x in [x0, band_x(scene, to)] {
         cr.rectangle(x - 1.0, rows.selection, 2.5, SELECTION_BAND_PX);
         let _ = cr.fill();
@@ -1023,7 +1041,10 @@ fn draw_in_out_marks(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
     let height = rows.pictures + rows.row_h;
     // No clamp to the tape: `band_x` runs linearly past the last filmed second, so a selection that reaches
     // beyond the recording still shows both of its marks at their own seconds.
-    for (x, colour) in [(band_x(scene, from), MARK_IN), (band_x(scene, to), MARK_OUT)] {
+    for (x, colour) in [
+        (band_x(scene, from), MARK_IN_GREEN),
+        (band_x(scene, to), MARK_OUT_RED),
+    ] {
         if x < 0.0 || x > tape {
             continue;
         }

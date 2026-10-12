@@ -128,6 +128,16 @@ pub enum Origin {
 /// A policy value and the origin the form shows beside it. The spec says "a
 /// `source` per field" without fixing the JSON spelling; a `{"value", "source"}`
 /// object is self-describing and carries the origin through a save (00-principles §3).
+/// A `targetLengthSeconds` field for a project file written before the field existed, or written without
+/// it: §10's default, which is "no target".
+fn no_target_field() -> Field<f64> {
+    Field {
+        value: crate::tools::cutpass::NO_TARGET,
+        origin: Origin::Default,
+        because: None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Field<T> {
     pub value: T,
@@ -174,6 +184,13 @@ pub struct Policy {
     /// `P.policy.decorationsPass`: whether F3.11's decoration pass is asked at all.
     #[serde(rename = "decorationsPass")]
     pub decorations_pass: Field<bool>,
+    /// `P.policy.targetLengthSeconds`: the length the cut aims at, seconds, 0 = none (§10's default).
+    /// Nothing derives it yet — F0.7 is the flow that would read the User Context and write one — so every
+    /// session opens at 0 and the Suggest press says "NO TARGET LENGTH". It is a policy FIELD rather than a
+    /// literal at the call so the derivation, when it lands, has somewhere to write and the page picks it up
+    /// through `cut_suggest_model_run::target_length_seconds` without a rewiring.
+    #[serde(rename = "targetLengthSeconds", default = "no_target_field")]
+    pub target_length_seconds: Field<f64>,
 }
 
 impl Default for Policy {
@@ -185,7 +202,13 @@ impl Default for Policy {
             keep_swearing: Field { value: true, origin: Origin::Default, because: None },
             captions_pass: Field { value: true, origin: Origin::Default, because: None },
             speed_pass: Field { value: true, origin: Origin::Default, because: None },
+            target_length_seconds: Field {
+                value: crate::tools::cutpass::NO_TARGET,
+                origin: Origin::Default,
+                because: None,
+            },
             decorations_pass: Field { value: true, origin: Origin::Default, because: None },
+
         }
     }
 }

@@ -10,6 +10,7 @@ pub mod settings;
 pub mod shell_beats;
 /// §05-cut#1-screen — the Cut page's two drawing areas: the track band that paints every §1 mark, and the
 /// playhead's own layer. Split out of `window.rs`, which is past its size budget.
+pub mod cut_colours;
 pub mod cut_tracks;
 /// F0.4 §S2/§S6 — the driver that feeds [`crate::lucky`]'s chain real outcomes, and the CSS rule that
 /// makes the gears turn. Split out of `window.rs`, which is past its size budget.

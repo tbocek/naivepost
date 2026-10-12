@@ -222,6 +222,54 @@ pub fn hold_still(hold: bool) -> bool {
 ///
 /// The person's clock does not depend on any of this: [`crate::cut_play::cut_time`] applies the cut's rates
 /// to the number printed, so the readout stays the finished video's time whatever the process can do.
+/// S5 "speed effects at their flat rate", handed to the player at the head.
+///
+/// A rate change under a running preview is asked for as a re-cue, and re-cueing on every tick that asks is a
+/// stutter the ear hears: inventory §D's `rateSeekGap 250 ms` is the floor the prototype holds its flushing
+/// seeks to (`gui/player.go`'s `SetRateNow` — inside the gap the rate is put back so a later tick asks again).
+/// The same floor applies to the one re-cue this player can do, so it lives here, and [`rate_seek_action`] is the
+/// rule apart from any clock so a test can ask it directly.
+pub const RATE_SEEK_GAP_MS: u64 = 250;
+
+/// What a rate change asks of the player: re-cue now, or leave the rate alone and let a later tick ask again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RateSeek {
+    /// Too soon after the last one: the rate goes back and nothing is re-cued.
+    Hold,
+    /// At or past the gap: the re-cue may happen, and its moment is the one to remember.
+    Seek,
+}
+
+/// §D's `rateSeekGap`: the plain answer, asked of elapsed time rather than of a clock, so a test needs neither.
+/// An unchanged rate never asks at all — nothing moved, so nothing stumbles.
+pub fn rate_seek_action(changed: bool, since_last_ms: Option<u64>) -> RateSeek {
+    if !changed {
+        return RateSeek::Hold;
+    }
+    match since_last_ms {
+        // No seek has happened yet on this player: the first one is never too soon.
+        None => RateSeek::Seek,
+        Some(elapsed) if elapsed >= RATE_SEEK_GAP_MS => RateSeek::Seek,
+        Some(_) => RateSeek::Hold,
+    }
+}
+
+/// The last moment a rate change was allowed to re-cue, in `Instant`-free milliseconds this module keeps so
+/// [`set_rate`] can answer its own `since_last_ms`. Per process, not per window: one player is running.
+fn last_rate_seek() -> &'static std::sync::Mutex<Option<u64>> {
+    static SLOT: std::sync::OnceLock<std::sync::Mutex<Option<u64>>> = std::sync::OnceLock::new();
+    SLOT.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Milliseconds since the process started — the only clock this module reads, and it never decides a rule
+/// itself: [`rate_seek_action`] is handed the elapsed number.
+fn uptime_ms() -> u64 {
+    std::time::UNIX_EPOCH
+        .elapsed()
+        .map(|since| since.as_millis() as u64)
+        .unwrap_or_default()
+}
+
 pub fn set_rate(files: &[String], rate: f64, at_secs: f64, log: &dyn Fn(&str)) -> bool {
     if playing_pid().is_none() {
         return false;
@@ -233,6 +281,14 @@ pub fn set_rate(files: &[String], rate: f64, at_secs: f64, log: &dyn Fn(&str)) -
         ));
         return false;
     }
+    // The flat rate WANTS a re-cue, but only once per gap: two ticks asking in a row would replace a player
+    // that was already re-cued a hundred milliseconds ago, which is the stutter the gap exists to prevent.
+    let now = uptime_ms();
+    let since_last = *last_rate_seek().lock().expect("the rate-seek slot");
+    if rate_seek_action(true, since_last.map(|last| now.saturating_sub(last))) == RateSeek::Hold {
+        return false;
+    }
+    *last_rate_seek().lock().expect("the rate-seek slot") = Some(now);
     match cue_clips(files, at_secs, log) {
         Ok(_) => true,
         Err(why) => {

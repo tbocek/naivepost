@@ -14,6 +14,8 @@ use crate::cut_hear;
 use crate::cut_clamp;
 use crate::cut_insert;
 use crate::cut_select;
+use crate::ui;
+use crate::cut_play_back;
 use crate::suggest;
 use crate::cut_copy;
 use crate::cut_captions;
@@ -112,6 +114,12 @@ fn secs(values: &[f64]) -> String {
 
 fn param(id: &'static str, spelled: String, from: &'static str) -> Param {
     Param { id, spelled, from }
+}
+
+/// One of §6's colours, spelled as three components (`0.2 0.8 0.3`) so a reader can compare it with the tuple in
+/// `spec/inventory/cut.md` §D without decoding a hex string.
+fn colour(id: &'static str, rgb: crate::ui::cut_colours::Rgb, from: &'static str) -> Param {
+    param(id, crate::ui::cut_colours::spell(rgb), from)
 }
 
 /// Every parameter Prepare reads, in §4's order: the eighteen it names by hand, then `P.audio`'s chunk,
@@ -567,14 +575,15 @@ fn engineering() -> Vec<Param> {
 /// moves with it. The rows split as §6 splits them — what bounds an edit, what the suggest pass and the target
 /// arithmetic compute on, what the preview does, then the engineering choices around pixels and formats.
 ///
-/// Deliberately absent, because no rule in this tree reads them yet: `P.eng.talkPadSeconds`, and §D's
-/// `rateSeekGap` 250 ms and thumbnail batch 6. The dead-air pair (`deadAirMaxSeconds`,
+/// Deliberately absent, because no rule in this tree reads them yet: nothing does now — `P.eng.talkPadSeconds`,
+/// §D's `rateSeekGap` 250 ms and thumbnail batch 6 all gained a reader and a row below.
+/// The dead-air pair (`deadAirMaxSeconds`,
 /// `deadAirKeepSeconds`) and `P.eng.seamMaxSeconds` are no longer among them: F2.14 S2a and S3 read all
 /// three from `src/suggest.rs`, so each has a row below. (`P.eng.preloadLeadSeconds` is no longer one of them:
 /// `preview::PRELOAD_LEAD_SECONDS` reads it, so its row is in `cut()`.)
 /// A number nothing reads has no module to live in, which is the rule this catalogue exists to keep — each of
-/// those appears here the round its rule is written. The Cut tints (§10's colour list) are absent for the same
-/// reason: no constant outside `src/ui`'s drawing holds one. §6 also groups the preview numbers under a heading, and
+/// those appears here the round its rule is written. §6's colours are catalogued at the foot of this list from
+/// `ui::cut_colours`, the one module that spells them. §6 also groups the preview numbers under a heading, and
 /// §10 has no such family (they are listed in `spec/inventory/cut.md` §D), so those rows take a `preview.`
 /// prefix rather than inventing ids §10 does not carry — the same choice `machine.jpegQuality` made.
 pub fn cut() -> Vec<Param> {
@@ -602,8 +611,8 @@ pub fn cut() -> Vec<Param> {
         // --- what the suggest pass and the target arithmetic compute on ---------------------------
         param(
             "P.policy.targetLengthSeconds",
-            format!("{} (none)", num(cutpass::NO_TARGET)),
-            "cutpass::NO_TARGET",
+            format!("{} (none)", num(crate::project::Policy::default().target_length_seconds.value)),
+            "project::Policy::target_length_seconds",
         ),
         // F2.14 S2a: the dead-air pair, both read by the words path's walk-back in `src/suggest.rs`.
         param(
@@ -784,6 +793,20 @@ pub fn cut() -> Vec<Param> {
             "preview::PRELOAD_LEAD_SECONDS",
         ),
         param("preview.cardFps", num(cut_insert::PREVIEW_FPS), "cut_insert::PREVIEW_FPS"),
+        // §6's preview group in full: the two numbers §D names that had no reader when this list was first
+        // written. The rate-seek floor is read by `cut_play_back::set_rate` before it replaces a player;
+        // the thumbnail batch bounds how far one band pass looks into a row's frame list.
+        param(
+            "P.eng.talkPadSeconds",
+            num(suggest::TALK_PAD_SECONDS),
+            "suggest::TALK_PAD_SECONDS",
+        ),
+        param(
+            "preview.rateSeekGapMs",
+            format!("{} ms", cut_play_back::RATE_SEEK_GAP_MS),
+            "cut_play_back::RATE_SEEK_GAP_MS",
+        ),
+        param("preview.thumbBatch", ui::cut_tracks::THUMB_BATCH.to_string(), "ui::cut_tracks::THUMB_BATCH"),
         // --- engineering: pixel reaches, band heights, zoom, undo, the wave cache ------------------
         // §6 lists these as a family and §10 gives them no `P.` ids of their own (§I's implicit constants),
         // so each is spelled after §D's name for it — as `machine.jpegQuality` does for the JPEG quality.
@@ -802,6 +825,59 @@ pub fn cut() -> Vec<Param> {
         // The waveform cache's format is its magic: a file that does not start with these four bytes is read
         // again rather than trusted, which is the whole reason it was renamed AWV2 → AWV3 → AWV4.
         param("layout.waveCacheMagic", String::from_utf8_lossy(wave::MAGIC).to_string(), "wave::MAGIC"),
+        // --- §6's "colours" ------------------------------------------------------------------------
+        // §10 counts the Cut page's tints among its engineering values (line 133's "timeline: … colours") but
+        // gives none a `P.` id, so each takes the bare `cut.colour.` prefix the way `machine.` and `preview.`
+        // rows do. Each is read by the painter that puts it on screen — `ui::cut_colours` is the only place one
+        // is spelled, so moving a row here moves the ink.
+        colour("cut.colour.keptTint", ui::cut_colours::KEPT_TINT, "ui::cut_colours::KEPT_TINT"),
+        colour(
+            "cut.colour.keptBorder",
+            ui::cut_colours::KEPT_BORDER,
+            "ui::cut_colours::KEPT_BORDER",
+        ),
+        colour(
+            "cut.colour.selectionBlue",
+            ui::cut_colours::SELECTION_BLUE,
+            "ui::cut_colours::SELECTION_BLUE",
+        ),
+        colour(
+            "cut.colour.insertViolet",
+            ui::cut_colours::INSERT_VIOLET,
+            "ui::cut_colours::INSERT_VIOLET",
+        ),
+        colour("cut.colour.scrim", ui::cut_colours::SCRIM, "ui::cut_colours::SCRIM"),
+        colour(
+            "cut.colour.speedTint",
+            ui::cut_colours::SPEED_TINT,
+            "ui::cut_colours::SPEED_TINT",
+        ),
+        colour(
+            "cut.colour.markInGreen",
+            ui::cut_colours::MARK_IN_GREEN,
+            "ui::cut_colours::MARK_IN_GREEN",
+        ),
+        colour(
+            "cut.colour.markOutRed",
+            ui::cut_colours::MARK_OUT_RED,
+            "ui::cut_colours::MARK_OUT_RED",
+        ),
+        colour(
+            "cut.colour.edgeAmber",
+            ui::cut_colours::EDGE_AMBER,
+            "ui::cut_colours::EDGE_AMBER",
+        ),
+        colour("cut.colour.ground", ui::cut_colours::GROUND, "ui::cut_colours::GROUND"),
+        colour(
+            "cut.colour.laneGround",
+            ui::cut_colours::LANE_GROUND,
+            "ui::cut_colours::LANE_GROUND",
+        ),
+        colour(
+            "cut.colour.playhead",
+            ui::cut_colours::PLAYHEAD_RGB,
+            "ui::cut_colours::PLAYHEAD_RGB",
+        ),
     ]
 }
 

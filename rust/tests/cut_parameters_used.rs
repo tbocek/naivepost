@@ -8,6 +8,7 @@
 use naivepost::cut;
 use naivepost::params;
 use naivepost::tools::cutpass;
+use naivepost::ui::cut_colours;
 use naivepost::wave;
 
 /// §6's rows, in §6's order.
@@ -155,38 +156,84 @@ fn sec_05_cut_6_parameters_used_s4_the_engineering_group_is_the_constants_the_pa
     assert_eq!(row("layout.undoDepth").spelled, cut::UNDO_DEPTH.to_string());
     assert_eq!(row("layout.waveCacheMagic").spelled, "AWV4");
     assert_eq!(row("layout.waveCacheMagic").spelled, std::str::from_utf8(wave::MAGIC).unwrap());
+
+    // §6's last engineering item is its colour list, and each row answers with the tuple the painter uses — so a
+    // row that drifted from `cut_colours`, or from what `spec/inventory/cut.md` §D names, shows up here as a
+    // number rather than as a wrong pixel. The kept tint is the one the inventory spells in full (RGBA(0.2,0.8,
+    // 0.3,0.3)), which pins both halves of it: the ink and the alpha it is laid down at.
+    assert_eq!(row("cut.colour.keptTint").spelled, "0.2 0.8 0.3");
+    assert_eq!(cut_colours::KEPT_TINT_ALPHA, 0.3);
+    for (id, rgb) in [
+        ("cut.colour.keptTint", cut_colours::KEPT_TINT),
+        ("cut.colour.selectionBlue", cut_colours::SELECTION_BLUE),
+        ("cut.colour.insertViolet", cut_colours::INSERT_VIOLET),
+        ("cut.colour.markInGreen", cut_colours::MARK_IN_GREEN),
+        ("cut.colour.markOutRed", cut_colours::MARK_OUT_RED),
+        ("cut.colour.edgeAmber", cut_colours::EDGE_AMBER),
+        ("cut.colour.scrim", cut_colours::SCRIM),
+        ("cut.colour.speedTint", cut_colours::SPEED_TINT),
+        ("cut.colour.playhead", cut_colours::PLAYHEAD_RGB),
+    ] {
+        assert_eq!(row(id).spelled, cut_colours::spell(rgb), "{id} is not the tint being painted");
+    }
 }
 
 // --- S5: what is deferred ------------------------------------------------------------------------------------
 
-/// §05-cut#6-parameters-used — the ids §6 names that have no row here, and why: `talkPadSeconds (0.2)`,
-/// §6's preview `rateSeekGap 250 ms` / `thumb batch 6`, plus the two items with no constant at all (§I's
-/// 10 px hit reach and §10's colour list). A number nothing reads has no module to live in, which is the rule
-/// this catalogue exists to keep — so each appears the round its rule is written, and asserting their absence is
-/// what stops one arriving as a decoration. (`deadAirMaxSeconds`, `deadAirKeepSeconds` and
-/// `seamMaxSeconds` left this list when F2.14 wrote the walk-back that reads them.)
+/// §05-cut#6-parameters-used — what is still deferred, and the three that are NOT any more. A number nothing
+/// reads has no module to live in, which is the rule this catalogue exists to keep; each of the three below
+/// gained a reader this round, so each now has a row built from the constant its rule reads — asserting that
+/// (with the value §6 states) is what keeps a row from being a decoration:
+/// `P.eng.talkPadSeconds` (0.2) by [`naivepost::suggest::hole_has_speech`], which decides whether a hole the
+/// model dropped had speech in it; `preview.rateSeekGapMs` (250 ms) by [`naivepost::cut_play_back`]'s rate
+/// door, which refuses a second re-cue inside the gap; and `preview.thumbBatch` (6) by the band's own frame
+/// window. (`deadAirMaxSeconds`, `deadAirKeepSeconds` and `seamMaxSeconds` left the deferred list when F2.14
+/// wrote the walk-back that reads them; §10's colour list left it when `ui::cut_colours` gave every tint a
+/// constant the painter reads, so they are catalogued under `cut.colour.*`.)
 #[test]
 fn sec_05_cut_6_parameters_used_s5_what_is_deferred_is_absent_and_said_so() {
     let listed = ids();
-    for deferred in [
-        "talkPad",      // P.eng.talkPadSeconds 0.2 — no word-edge rule reads a pad yet
-        // `deadAir` and `seamMax` left this list: F2.14 S2a's dead-air removal and S3's hole closing
-        // read all three from src/suggest.rs, so each id now has a row built from its own constant.
-        // `preload` left this list: preview::PRELOAD_LEAD_SECONDS now reads P.eng.preloadLeadSeconds,
-        // so the id has a rule behind it and is catalogued in cut()'s preview group.
-        "seekGap",      // preview: rateSeekGap 250 ms
-        "thumbBatch",   // preview: thumbnail batch 6
-    ] {
-        assert!(
-            !listed.iter().any(|id| id.contains(deferred)),
-            "{deferred} has no rule reading it and so must not be catalogued"
-        );
-    }
+    assert!(
+        listed.iter().any(|id| id.contains("talkPad")),
+        "talkPad lost its rule again"
+    );
+    assert!(
+        listed.iter().any(|id| id.contains("rateSeekGap")),
+        "rateSeekGap lost its rule again"
+    );
+    assert!(
+        listed.iter().any(|id| id.contains("thumbBatch")),
+        "thumbBatch lost its rule again"
+    );
+    assert_eq!(number("P.eng.talkPadSeconds"), 0.2);
+    assert_eq!(row("preview.rateSeekGapMs").spelled, "250 ms");
+    assert_eq!(number("preview.thumbBatch"), 6.0);
 
     // §6's `10 px` hit reach: §I gives it as a radius on two widgets, no constant owns it.
     assert!(!listed.iter().any(|id| id.contains("hit")), "no rule owns the 10 px hit radius");
-    // And its colours: they are §10's list and the drawing layer's business, not a tuning value.
-    assert!(!listed.iter().any(|id| id.to_lowercase().contains("colour") || id.to_lowercase().contains("color")));
+    // Its colours DO have rows now, because `ui::cut_colours` holds each one and the painters read it: §10 lists
+    // them among the timeline's engineering values, so a tuning pass can move a tint from one place. Every colour
+    // row must name the constant it came from, not merely repeat a tuple nobody consults.
+    let colours: Vec<String> = listed
+        .iter()
+        .filter(|id| id.starts_with("cut.colour."))
+        .cloned()
+        .collect();
+    assert!(
+        colours.len() >= 8,
+        "§6's colour list needs a row per tint the page paints, found {}",
+        colours.len()
+    );
+    for param in rows() {
+        if !param.id.starts_with("cut.colour.") {
+            continue;
+        }
+        assert!(
+            param.from.starts_with("ui::cut_colours::"),
+            "{} does not name the colour constant the painter reads",
+            param.id
+        );
+    }
 }
 
 // --- S6: housekeeping ------------------------------------------------------------------------------------------
@@ -212,11 +259,18 @@ fn sec_05_cut_6_parameters_used_s6_every_row_names_where_its_value_lives() {
     assert_eq!(params::family("preview.playTickMs"), params::Family::Other);
     assert_eq!(params::family("layout.undoDepth"), params::Family::Other);
 
-    // §6's own order is kept: the edit bounds come first and the cache format last.
+    // §6's own order is kept: the edit bounds come first, the cache format ends the engineering group, and only
+    // §6's colours follow it (they are the last thing §6's sentence lists).
     assert_eq!(listed.first().unwrap(), "P.policy.minSceneSeconds");
-    assert_eq!(listed.last().unwrap(), "layout.waveCacheMagic");
+    assert_eq!(
+        listed.last().unwrap(),
+        "cut.colour.playhead",
+        "the colour rows go last, after the engineering group"
+    );
     let at = |id: &str| listed.iter().position(|row| row == id).unwrap();
     // §6's groups in order: the bounds it starts with, then the target arithmetic, then preview, then drawing.
     assert!(at("P.policy.reviewPadSeconds") < at("P.machine.footageWindow"));
     assert!(at("preview.playTickMs") < at("layout.edgeGrabPx"));
+    assert!(at("layout.edgeGrabPx") < at("layout.waveCacheMagic"));
+    assert!(at("layout.waveCacheMagic") < at("cut.colour.keptTint"));
 }

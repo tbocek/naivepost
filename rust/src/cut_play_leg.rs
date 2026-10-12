@@ -104,12 +104,26 @@ pub struct SpareArm {
 pub fn arm_spare_page(cut: &Cut, t: f64, page: &dyn CutPreviewPage) -> Option<f64> {
     let opened = arm_spare(cut, t);
     // Re-arming the second already held would only rebuild a pipeline that is already sitting on it, so the
-    // page is asked only when the armed second CHANGED.
-    let worth = opened.is_some() && opened != previous_spare();
+    // page is asked only when the armed second CHANGED — and at the §6 lead's cadence, so a jump the line is
+    // crawling toward does not cost one fresh process per tick. [`cut_play::worth_arming`] answers both, on
+    // times handed to it rather than read inside, so the rule is testable without a player or a clock.
+    let now = std::time::UNIX_EPOCH
+        .elapsed()
+        .map(|since| since.as_millis() as u64)
+        .unwrap_or_default();
+    let since_last = LAST_ARM_AT_MS.with(|slot| *slot.borrow());
+    let worth = cut_play::worth_arming(
+        since_last.map(|last| now.saturating_sub(last)),
+        previous_spare(),
+        opened,
+    );
     let prerolled = match (worth, opened) {
         (true, Some(at)) => page.arm_spare_at(at),
         _ => false,
     };
+    if prerolled {
+        LAST_ARM_AT_MS.with(|slot| *slot.borrow_mut() = Some(now));
+    }
     LAST_ARMED.with(|slot| *slot.borrow_mut() = opened);
     let swapped = SWAPPED.with(|cell| cell.take());
     SPARE_ARMS.with(|log| log.borrow_mut().push(SpareArm { at: opened, prerolled, swapped }));
@@ -193,6 +207,8 @@ thread_local! {
     static SPARE: std::cell::RefCell<Option<f64>> = const { std::cell::RefCell::new(None) };
     /// The second armed last tick, so a re-arm of the same second is recognisable as nothing to do.
     static LAST_ARMED: std::cell::RefCell<Option<f64>> = const { std::cell::RefCell::new(None) };
+    /// When an arm last built a process, for [`cut_play::worth_arming`]'s cadence.
+    static LAST_ARM_AT_MS: std::cell::RefCell<Option<u64>> = const { std::cell::RefCell::new(None) };
     static SPARE_ARMS: std::cell::RefCell<Vec<SpareArm>> = const { std::cell::RefCell::new(Vec::new()) };
     /// This tick's swap outcome, set by the loop and folded into the arm entry written just after it.
     static SWAPPED: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
@@ -241,7 +257,10 @@ pub fn dimmed(cut: &Cut, filmed: &[(f64, f64)]) -> Vec<(f64, f64)> {
 /// ground and than the pale kept green (lit ~0.71), while the kept boxes paint AFTER this so they
 /// always win, and it matches the 0.45 "dimmed black" weight `fx_lane::DIM_ALPHA` already uses for
 /// the same idea on the paused frame.
-pub const DIM_GREY: f64 = 0.45;
+///
+/// The grey itself is [`crate::ui::cut_colours::SCRIM`], §6's colour: the strip and the band dim their dropped
+/// stretches with one number, so it is spelled once and read here rather than repeated as a literal.
+pub const DIM_GREY: f64 = crate::ui::cut_colours::SCRIM.0;
 
 /// The old name stays as the alpha this replaced, so a reader who knows the number finds the reason it
 /// went: 0.18 was measured invisible against the ground in `rust/shots/05-cut.png` (§F2.2 S6 redo).

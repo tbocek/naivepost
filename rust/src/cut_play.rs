@@ -211,6 +211,26 @@ pub fn preload_ahead(segs: &[Seg], t: f64) -> Option<f64> {
     preview::preload_target(&kept_runs(segs), t)
 }
 
+/// §6's preview lead measured on the wall: has this long gone since the spare was last armed? Kept apart from
+/// [`preview::opens_ahead`], which asks the same three seconds off the CLIP's remaining time, because the arm
+/// question is "is this soon enough after the last arm to be worth a second process" and a re-arm of the second
+/// already held rebuilds a pipeline for nothing (see [`crate::cut_play_back::preroll`]'s one-slot note).
+pub const PRELOAD_ARM_GAP_MS: u64 = (preview::PRELOAD_LEAD_SECONDS * 1000.0) as u64;
+
+/// Whether an arm asked at `since_last_arm_ms` is worth a process at all: at or inside the lead, and the armed
+/// second is not the one the slot already holds. A plain function of two numbers so the cadence is testable
+/// without a player: `None` on the left means "never armed yet", which is always worth the first arm.
+pub fn worth_arming(since_last_arm_ms: Option<u64>, armed_held: Option<f64>, wants: Option<f64>) -> bool {
+    let Some(at) = wants else { return false };
+    if armed_held == Some(at) {
+        return false;
+    }
+    match since_last_arm_ms {
+        None => true,
+        Some(elapsed) => elapsed >= PRELOAD_ARM_GAP_MS,
+    }
+}
+
 // --- S5: the clock reads the cut's own time ----------------------------------------------------
 
 /// The cut's own second for a session second: the kept length before it, plus how far into the clip

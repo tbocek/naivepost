@@ -350,6 +350,25 @@ pub struct Walk {
     pub marks: Vec<(f64, f64)>,
 }
 
+/// `P.eng.talkPadSeconds` — "how close to a word still counts as inside it" (spec/10-parameters.md's row).
+/// The prototype's `talking()` (`gui/cut.go`) widens every speech span by exactly this on both sides before it
+/// asks whether a second falls inside it: a cut a fifth of a second from a word is a cut in that word as far as
+/// the ear is concerned. This tree asks that question in [`hole_has_speech`], the door the walk-back uses to
+/// decide whether a hole the model dropped was silence (keep it dropped) or speech (close it), so the pad
+/// belongs here rather than in the aligner's own, larger [`crate::align::PAD`], which answers how much sound to
+/// keep around an alignment piece and is a different rule with a different number.
+pub const TALK_PAD_SECONDS: f64 = 0.2;
+
+/// S3: does anybody talk inside this gap? Both spans are widened by [`TALK_PAD_SECONDS`] first — "inside a word"
+/// is what the question means, and a span that only touches the gap by a fifth of a second is still inside it.
+/// Kept as a plain function of two span lists so the walk-back's rule can be tested without a session.
+pub fn hole_has_speech(gap: (f64, f64), talked: &[(f64, f64)]) -> bool {
+    talked.iter().any(|talked| {
+        let padded = (talked.0 - TALK_PAD_SECONDS, talked.1 + TALK_PAD_SECONDS);
+        timeline::spans_overlap(padded, gap)
+    })
+}
+
 /// S3: close the small holes the model left, and only where somebody talked.
 ///
 /// A quiet hole is left open on purpose: closing it would join two scenes across a silence the speaker
@@ -363,7 +382,7 @@ pub fn close_holes(segs: &[(f64, f64)], talked: &[(f64, f64)], seam_max: f64) ->
             Some(last) => {
                 let gap = (last.1, from);
                 let small = gap.1 - gap.0 <= seam_max;
-                let spoken = talked.iter().any(|t| timeline::spans_overlap(*t, gap));
+                let spoken = hole_has_speech(gap, talked);
                 if small && spoken {
                     last.1 = to.max(last.1);
                 } else {

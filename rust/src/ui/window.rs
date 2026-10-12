@@ -92,6 +92,10 @@ use crate::narration::{self, Narration};
 use crate::narrate_data;
 use crate::narrate_preview;
 use crate::narrate_off::{self};
+// The strip's kept bars wear the page's own tints, read from the one module that spells them (§6's colours).
+use crate::ui::cut_colours::{
+    GROUND, INSERT_VIOLET, KEPT_BORDER, KEPT_TINT, KEPT_TINT_ALPHA, RULER_INK,
+};
 use crate::narrate_run::{self, JOBS, JOB_NARRATION, JOB_SPEAKING, SPEAKING_STATUS, STAGE_THINKING, Speak};
 use crate::narrate_screen;
 use crate::shell::{self, Move, Outcome, Page, Shell};
@@ -7010,13 +7014,13 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     let cut_ = newest_review_cut();
 
     // Ground first, so every mark after it sits on something.
-    cr.set_source_rgb(0.95, 0.95, 0.95);
+    cr.set_source_rgb(GROUND.0, GROUND.1, GROUND.2);
     cr.rectangle(0.0, 0.0, w, h);
     let _ = cr.fill();
 
     // The ruler row: whole-second ticks with their labels, then the kept bar under them.
     let ticks = cut_trim::ruler_ticks(TRACK_REC_END, strip_pps(), RULER_EVERY_SECONDS);
-    cr.set_source_rgb(0.45, 0.45, 0.45);
+    cr.set_source_rgb(RULER_INK.0, RULER_INK.1, RULER_INK.2);
     for (x, _) in &ticks {
         if *x <= w {
             cr.rectangle(*x, 0.0, 1.0, cut_trim::RULER_H);
@@ -7051,16 +7055,18 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     for b in &boxes {
         // Violet for an insert, the kept green for footage — the two colours the inventory lists, told
         // apart because only one of them may be trimmed.
+        // Violet for an insert, the kept green for footage — the two tints `cut_colours` holds and
+        // `params::cut()` catalogues, told apart because only one of them may be trimmed.
         if b.insert {
-            cr.set_source_rgba(0.55, 0.35, 0.75, 0.55);
+            cr.set_source_rgba(INSERT_VIOLET.0, INSERT_VIOLET.1, INSERT_VIOLET.2, 0.55);
         } else {
-            cr.set_source_rgba(0.2, 0.8, 0.3, 0.3);
+            cr.set_source_rgba(KEPT_TINT.0, KEPT_TINT.1, KEPT_TINT.2, KEPT_TINT_ALPHA);
         }
         cr.rectangle(b.x, top, b.w.max(1.0), cut_trim::BAR_H);
         let _ = cr.fill();
     }
     // Borders last and darker, so they read on top of the fill: these are the pixels a press takes.
-    cr.set_source_rgb(0.11, 0.42, 0.16);
+    cr.set_source_rgb(KEPT_BORDER.0, KEPT_BORDER.1, KEPT_BORDER.2);
     for (x, _, _) in cut_trim::border_positions(&boxes) {
         cr.rectangle(x - 0.5, top, 1.5, cut_trim::BAR_H);
         let _ = cr.fill();
