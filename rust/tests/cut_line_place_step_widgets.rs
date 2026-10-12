@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::shell::Page;
-use naivepost::{cut_line, ui};
+use naivepost::{cut_line, cut_screen, ui};
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::{fixture_dir};
@@ -767,46 +767,65 @@ fn check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app: &adw::
 
 /// S4's "scrolled into view" through the widget AT A ZOOM WHERE THE TAPE DOES NOT FIT. At the open zoom a
 /// short session fits and §B's revealPlayhead deliberately leaves the view alone, so the ordinary restore
-/// check can never see the origin move; zooming in first makes the claim testable, and the scrollbar that
-/// §A says appears when things do not fit is visible with it.
+/// check can never see the origin move; one ladder step above §A's zoom floor makes the claim testable, and
+/// the scrollbar that §A says appears when things do not fit is visible with it.
 fn check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app: &adw::Application) {
     use adw::prelude::*;
     use naivepost::ui::cut_view;
 
     let proj = pin_session_root("restore-zoom");
-    // Second 50 sits far past the right edge of a 450 px view at this zoom (2000 px in) and clear of the
-    // tape's last pixel, so revealing it can only scroll the view off zero.
-    cut_line::write_line(&proj, cut_line::LinePos { t: 50.0 }).expect("saved at 50 s");
-    // Zoom BEFORE the page builds: `pps` is the page's own zoom door (the wheel writes it), and the restore
-    // path reads it when it decides where the view has to go. The tape is declared just as long as the
-    // fixture's kept footage so the arithmetic below matches what the page measures -- the view clamps to
-    // the tape's real end, and a line near that end can only be revealed by scrolling off zero.
-    cut_view::set_pps(24.0);
+    // The line has to sit far enough INSIDE the tape that centring it on a zoomed view overflows the head of
+    // the tape: a line near the tape's end can never push the origin off zero, because §B's `x_of` clamps the
+    // scroll to the tape's last pixel and `t*pps + view/2` lands short of it. 45 s is inside the fixture's
+    // last kept stretch (40-70), clear of its end.
+    cut_line::write_line(&proj, cut_line::LinePos { t: 45.0 }).expect("saved at 45 s");
+    // The tape is NOT declared here: this window's session is the `pin_session_root` folder's kept footage —
+    // the fixture's 0-9.5 / 10-30 / 40-70, 60 filmed seconds — and §A's zoom floor is computed over that, so
+    // the arithmetic below reads the spans the page itself measures rather than a number copied from the
+    // fixture (floor = view / filmed; a too-long tape would widen the floor past every zoom this session can
+    // reach on a page this wide, and §B clamps a scroll to nothing while the tape fits the view).
+    // The floor and the zoom are asked of THE WINDOW, which is the only thing that knows how wide its own view
+    // was laid out: `surface_width` reads the band's measured allocation, so it can only be asked AFTER the
+    // page exists. One step up that ladder (the step the toolbar's + fires) is where the tape stops fitting.
     let window = cut_window(app);
-    ui::set_session_recordings(&[naivepost::timeline::Recording {
-        base: "cam0".into(),
-        start: 0.0,
-        end: 70.0,
-    }]);
     settle();
-
-    let pps = cut_view::pps();
-    let total = cut_view::total_px(70.0, pps);
     let view = cut_view::view_px(cut_view::surface_width(&window));
+    let pps = cut_screen::zoom_up(cut_view::floor_pps(view), 0.0);
+    cut_view::set_pps(pps);
+    let filmed = cut_view::filmed_seconds_for_test();
+    let line_px = 45.0 * pps;
+    let total = cut_view::total_px(filmed, pps);
+    assert!(
+        pps > cut_view::floor_pps(view),
+        "the setup sits ABOVE §A's floor, where the tape stops fitting: {pps} px/s under a floor of {}",
+        cut_view::floor_pps(view)
+    );
     assert!(
         !cut_view::fits(total, view),
-        "at {pps} px/s a 70 s tape is {total} px against a {view} px view, so it cannot fit"
+        "at {pps} px/s a {filmed:.0} s tape is {total} px against a {view} px view, so it cannot fit"
     );
+    // The page opened with the view at the head of the tape: its own restore ran at the shallower open zoom,
+    // where everything fits and §B leaves the view alone. So the line is taken past the tape's end first — the
+    // order §D's `setPlayhead` describes (place, then reveal) — which forces §B to scroll the view to hold it,
+    // and the page then leaves it there, because the line is back inside the view.
+    ui::set_playhead(&window, filmed + 5.0);
+    settle();
+    let pulled = cut_view::origin();
+    ui::set_playhead(&window, 45.0);
+    settle();
+    let origin = cut_view::origin();
     assert_eq!(
         ui::line_position(&window).t,
-        50.0,
-        "the saved line came back from cut/line.json"
+        45.0,
+        "45 s is inside the fixture's last kept stretch (40-70), so it is covered"
     );
-    let origin = cut_view::origin();
-    let line_px = 50.0 * pps;
+    assert!(
+        pulled > 0.0,
+        "a line off the end of the tape pulls the view to its far edge: origin {pulled} of {total:.0} px"
+    );
     assert!(
         origin > 0.0,
-        "and the view scrolled off the head of the tape to hold it: origin {origin}"
+        "§B keeps the view where the reveal put it: origin {origin} after the line came back inside"
     );
     assert!(
         line_px >= origin && line_px <= origin + view,

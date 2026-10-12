@@ -1335,6 +1335,11 @@ fn preview_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Wi
 /// overlays stay in the tree and are hidden by opacity — adding and removing widgets mid-refresh is what
 /// trips `gtk_box_append`'s parent assertion.
 pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
+    // §1's band costs a row per camera AND a row per cut lane, and an effect adds a row to the effects lane
+    // inside it, so the band's surfaces are sized to the cut before anything is redrawn. `install` could only
+    // size them for the empty page it was called on, and a `DrawingArea` clips its draw callback to its
+    // allocation — an added row painted below the old height simply never appeared.
+    crate::ui::cut_tracks::fit_band_height_for_window(window, &crate::ui::cut_view::band_scene_for(window));
     if LANE_REFRESH.with(|cell| cell.get()) {
         return;
     }
@@ -9241,7 +9246,8 @@ pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
 /// session fits (`cut_view::floor_pps`) rather than the placeholder strip's constant, so a session of any
 /// length stops at “all of it on screen”.
 pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
-    let width = crate::ui::cut_view::surface_width(window);
+    // The ladder's floor is the strip's fit (§A), not the full-page band's — see `zoom_surface_width`.
+    let width = crate::ui::cut_view::zoom_surface_width(window);
     let (next, _) = crate::ui::cut_view::zoom_step(
         inward,
         &crate::timeline::filmed_runs(&page_recordings()),

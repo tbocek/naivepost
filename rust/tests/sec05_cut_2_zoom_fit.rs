@@ -67,9 +67,19 @@ fn check_the_floor_is_the_fit(app: &adw::Application) {
     let window = cut_page(app);
     let zoom_out = button(&window, "zoom-out-button");
     // The strip's own view: what the page measures its floor against.
+    // The strip's own view, which is what the ladder's floor is worked out from: `strip_pps` (the door the
+    // placeholder's paint and press geometry read) clamps at `view_px(window::STRIP_WIDTH)` whatever GTK has
+    // laid out, and §A's "all of it on screen" for a session that fits this 480 px strip is exactly that fit.
     let view = ui::cut_view::view_px(f64::from(ui::window::STRIP_WIDTH));
     let want = timeline::floor_pps(&timeline::filmed_runs(&tape()), view);
     assert_ne!(want, ui::window::TRACK_STRIP_PPS, "this tape's fit is not the open zoom: {want}");
+    // The ladder's floor is measured over the placeholder strip, and this check works its fit out from that
+    // same 480 px — one surface, asked of the window rather than assumed (`cut_view::zoom_surface_width`).
+    assert_eq!(
+        view,
+        ui::cut_view::view_px(ui::cut_view::zoom_surface_width(&window)),
+        "the ladder's floor is measured over the strip this check works its fit out from"
+    );
 
     for _ in 0..40 {
         zoom_out.emit_by_name::<()>("clicked", &[]);

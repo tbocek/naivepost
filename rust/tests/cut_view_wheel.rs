@@ -20,6 +20,8 @@ static RAN_CONTROLLERS: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 static RAN_STEP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_ZOOM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_BUTTONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_BAND_CONTROLLER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_BAND_EMIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// A tape long enough that the view has somewhere to go: 20 minutes at any zoom is more timeline than a
 /// page, so the scrollbar shows and a scroll can be seen to move.
@@ -108,11 +110,30 @@ fn check_a_notch_over_the_transport_steps_the_line(app: &adw::Application) {
 fn check_a_notch_over_the_tracks_zooms_and_shift_pans(app: &adw::Application) {
     let window = cut_window(app);
     let runs = timeline::filmed_runs(&tape());
-    let view = ui::cut_view::view_px(ui::cut_view::surface_width(&window));
+    // The view the page itself measures — `wheel_gestures_view`, the width §1's band spans — because that is
+    // what `apply_wheel` hands `cut_screen::wheel` for BOTH halves of this rule: the zoom's floor AND Shift's
+    // eighth. A 20-minute tape across it floors well below the open zoom, so a notch here has room to travel.
+    let view = ui::cut_view::wheel_gestures_view(&window);
+    let wheel_floor = timeline::floor_pps(&runs, view);
+
+    let pps_before = ui::cut_view::pps();
+    // A notch DOWN is one step of the ladder out, and the floor has to be far enough below for it to land:
+    // `zoom_around` clamps, so a page already at its floor answers "stay put" rather than one step.
+    if pps_before <= wheel_floor * cut_screen::ZOOM_STEP {
+        for _ in 0..8 {
+            let _ = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, false, -1.0, 0.0, |_| {});
+        }
+        settle();
+    }
+    let pps_before = ui::cut_view::pps();
+    assert!(
+        pps_before > wheel_floor * cut_screen::ZOOM_STEP,
+        "setup: the notch needs one step of room below it: floor {wheel_floor}, zoom {pps_before}"
+    );
+
     let total = ui::cut_view::total_px(1200.0, ui::cut_view::pps());
     assert!(!ui::cut_view::fits(total, view), "20 min at the open zoom needs the bar");
 
-    let pps_before = ui::cut_view::pps();
     let said = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, false, -1.0, 0.0, |_| {})
         .expect("a zoom has a sentence");
     settle();
@@ -149,7 +170,10 @@ fn check_a_notch_over_the_tracks_zooms_and_shift_pans(app: &adw::Application) {
 /// fits — which for a twenty-minute tape is far below the constant the placeholder strip was sized with.
 fn check_the_zoom_buttons_rescale_and_stop_at_the_fit(app: &adw::Application) {
     let window = cut_window(app);
-    let view = ui::cut_view::view_px(ui::cut_view::surface_width(&window));
+    // The surface the ladder actually measures its floor over — `cut_view::zoom_surface_width`, asked of the
+    // window rather than assumed, so a page whose band is wider than the placeholder cannot move the number
+    // under this check without saying so here.
+    let view = ui::cut_view::view_px(ui::cut_view::zoom_surface_width(&window));
     let floor = timeline::floor_pps(&timeline::filmed_runs(&tape()), view);
     let button = |name: &str| {
         widget_in(&window, name)
@@ -190,6 +214,134 @@ fn check_the_zoom_buttons_rescale_and_stop_at_the_fit(app: &adw::Application) {
     window.close();
 }
 
+/// Badge **24-31** on the widget that actually draws them: the page's tracks live on `track-band` (built by
+/// `cut_tracks::build`, inserted by `cut_tracks::install`), not on F2.8's placeholder `track-strip`. A
+/// controller over the placeholder alone would leave a notch on the ruler, the kept bars and the picture rows
+/// doing nothing, so the wire is pinned here by reading the band's own controller list off the widget.
+fn check_the_drawn_band_carries_the_tracks_controller(app: &adw::Application) {
+    let window = cut_window(app);
+    let band = widget_in(&window, "track-band").expect("the page draws its tracks on track-band");
+    let held = band.observe_controllers();
+    let names: Vec<String> = (0..held.n_items())
+        .filter_map(|index| held.item(index))
+        .filter(|controller| controller.is::<gtk::EventControllerScroll>())
+        .map(|controller| {
+            controller
+                .downcast_ref::<gtk::EventControllerScroll>()
+                .and_then(|c| c.name().map(|name| name.to_string()))
+                .unwrap_or_default()
+        })
+        .collect();
+    assert!(
+        names.iter().any(|name| name == "wheel-track-band"),
+        "the drawn band carries no tracks wheel controller: {names:?}"
+    );
+    // Exactly one: a second one would answer one notch as two steps.
+    assert_eq!(
+        names.iter().filter(|name| *name == "wheel-track-band").count(),
+        1,
+        "the band answers a notch more than once: {names:?}"
+    );
+    window.close();
+}
+
+/// The same gesture fired the toolkit's way, at the controller the band wears: a notch zooms around the
+/// cursor, a Shift notch pans an eighth of the view, and neither may stop at the placeholder strip's floor.
+fn check_a_notch_emitted_on_the_band_zooms_and_pans(app: &adw::Application) {
+    let window = cut_window(app);
+    let tape_runs = timeline::filmed_runs(&tape());
+    let view = ui::cut_view::wheel_gestures_view(&window);
+    // The floor the notch will be clamped at, read through the same door the page reads it.
+    let wheel_floor = timeline::floor_pps(&tape_runs, view);
+    let band = widget_in(&window, "track-band").expect("the page draws its tracks on track-band");
+    let held = band.observe_controllers();
+    let controller = (0..held.n_items())
+        .filter_map(|index| held.item(index))
+        .filter_map(|item| item.downcast::<gtk::EventControllerScroll>().ok())
+        .find(|c| c.name().is_some_and(|name| name == "wheel-track-band"))
+        .expect("the band's tracks controller");
+
+    // Zoom: a notch up over the band, emitted as the scroll signal GTK would deliver it. Out of the floor's
+    // way first — `zoom_around` clamps, so a page already sitting at its floor answers "stay where the whole
+    // session fits" to a DOWN notch instead of moving one step.
+    let pps_before = ui::cut_view::pps();
+    if pps_before <= wheel_floor * cut_screen::ZOOM_STEP {
+        for _ in 0..8 {
+            let _ = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, false, -1.0, 0.0, |_| {});
+        }
+        settle();
+    }
+    let pps_before = ui::cut_view::pps();
+    // The signal's return is a `gboolean` at the GObject level (`glib::Propagation` is rust-only), so the
+    // emit asks for that and reads back whether the page stopped the event — which is what "the wire
+    // answered" means.
+    let handled = controller.emit_by_name::<bool>("scroll", &[&0.0f64, &-1.0f64]);
+    settle();
+    assert!(handled, "the band's wheel controller did not claim the emitted notch");
+    let pps_after = ui::cut_view::pps();
+    assert!(
+        pps_after > pps_before,
+        "a notch emitted on the drawn band zoomed: {pps_before} -> {pps_after}"
+    );
+    assert!(
+        (pps_after - pps_before * cut_screen::ZOOM_STEP).abs() < pps_after * 0.001,
+        "the notch moved exactly one wheel step: {pps_before} -> {pps_after}"
+    );
+
+    // Pan: the shift flag comes off the event that woke the signal, and a bare emit carries no modifier
+    // state headless, so the Shift branch is driven through the SAME door the controller's closure uses
+    // (`apply_wheel` with shift = true) rather than pretending an emit had a keyboard state. The zoom emit
+    // above is what proves the wire; this proves what the wire does with a shifted notch.
+    let origin_before = ui::cut_view::origin();
+    // The eighth is measured HERE, at the moment of the pan, not from the `view` read at the top of this check:
+    // the band's width is only known once GTK has laid the page out, and the zoom notch plus its settle above is
+    // what gets it laid out — an eighth taken before that is a different screenful than the one the page panned.
+    let view = ui::cut_view::wheel_gestures_view(&window);
+    let said = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, true, -1.0, 0.0, |_| {})
+        .expect("a pan has a sentence");
+    settle();
+    assert!(said.contains("scrolled"), "{said}");
+    let moved = (ui::cut_view::origin() - origin_before).abs();
+    let eighth = cut_screen::pan_px(view);
+    assert!(
+        (moved - eighth).abs() < eighth.max(1.0) * 0.5 + 1.0,
+        "a Shift notch pans about an eighth of the view ({eighth:.0} px): {origin_before} -> {}",
+        ui::cut_view::origin()
+    );
+
+    // And the ladder runs down to where the session fits, which is §A's wording for zooming out — the
+    // placeholder strip's constant would stop far short of it on a twenty-minute tape.
+    let floor = timeline::floor_pps(&tape_runs, view);
+    for _ in 0..200 {
+        ui::cut_view::apply_wheel(&window, WheelOver::Tracks, false, 1.0, 0.0, |_| {});
+    }
+    settle();
+    assert_eq!(
+        ui::cut_view::pps(),
+        floor,
+        "notches out stop where the whole session is on screen ({floor})"
+    );
+    window.close();
+}
+
+#[test]
+fn sec_05_cut_1_screen_s4_the_drawn_band_carries_the_tracks_wheel_controller() {
+    round();
+    assert!(
+        RAN_BAND_CONTROLLER.load(std::sync::atomic::Ordering::SeqCst),
+        "the band-controller check never ran"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_s5_a_wheel_notch_on_the_band_zooms_around_the_cursor_and_a_shift_notch_pans_an_eighth() {
+    round();
+    assert!(
+        RAN_BAND_EMIT.load(std::sync::atomic::Ordering::SeqCst),
+        "the band-emit check never ran"
+    );
+}
+
 fn round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -206,6 +358,10 @@ fn round() {
             RAN_ZOOM.store(true, std::sync::atomic::Ordering::SeqCst);
             check_the_zoom_buttons_rescale_and_stop_at_the_fit(app);
             RAN_BUTTONS.store(true, std::sync::atomic::Ordering::SeqCst);
+            check_the_drawn_band_carries_the_tracks_controller(app);
+            RAN_BAND_CONTROLLER.store(true, std::sync::atomic::Ordering::SeqCst);
+            check_a_notch_emitted_on_the_band_zooms_and_pans(app);
+            RAN_BAND_EMIT.store(true, std::sync::atomic::Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);

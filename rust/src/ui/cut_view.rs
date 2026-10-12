@@ -44,15 +44,47 @@ fn filmed_seconds() -> f64 {
         .sum()
 }
 
-/// The page's own surface width. The band asks GTK for its measured allocation rather than trusting a
-/// constant: at the open zoom the placeholder strip is 480 px wide and the real band fills the page,
-/// so whichever it is, the view is what is on screen.
+/// The same number, for a reader outside this module that has to do the tape's arithmetic the page's way —
+/// §A's zoom floor and the scrollbar's fit rule both divide the view by it, so a check that guessed the
+/// session's length would be testing its own guess. Named for that second reader; the program asks the
+/// private one.
+pub fn filmed_seconds_for_test() -> f64 {
+    filmed_seconds()
+}
+
+/// The page's own surface width: §1's real band, asked of GTK for its measured allocation rather than trusted
+/// to a constant — the band spans the page column (`set_hexpand`), so it is wider than the 480 px placeholder
+/// packed beside it, and it is the surface the tape, the ruler and the red line are actually drawn on. This is
+/// what the scrollbar's fit rule and §B's reveal are measured over; the zoom ladder's floor is NOT — that one
+/// reads [`zoom_surface_width`], which stays on the strip the ladder has always been sized against.
 pub fn surface_width(window: &adw::ApplicationWindow) -> f64 {
     let content = match window.content() {
         Some(content) => content,
         None => return STRIP_FALLBACK_PX,
     };
-    ["track-band", "track-strip"]
+    ["track-band", "track-playhead"]
+        .iter()
+        .find_map(|name| find_widget_by_name(&content, name))
+        .map(|widget| f64::from(widget.width()))
+        .filter(|px| *px > 0.0)
+        .unwrap_or_else(|| zoom_surface_width(window))
+}
+
+/// The width the page's ZOOM arithmetic is measured over: always F2.8's placeholder strip, never §1's band.
+/// Read OFF THE WINDOW rather than through [`surface_width`], which falls back to this function when its own
+/// search finds nothing — calling each other would turn an un-laid-out window (every headless test) into
+/// infinite recursion.
+///
+/// The strip and not the band because that 480 px is what the ladder has been sized against since it existed:
+/// `strip_pps`, the door the placeholder's paint and press geometry read, clamps at `view_px(window::STRIP_WIDTH)`
+/// whatever GTK has laid out, so a floor worked out over the full-page band would be a number nothing on screen
+/// agrees with — − would stop there while the strip still showed the tape from its first second.
+pub fn zoom_surface_width(window: &adw::ApplicationWindow) -> f64 {
+    let content = match window.content() {
+        Some(content) => content,
+        None => return STRIP_FALLBACK_PX,
+    };
+    ["track-strip"]
         .iter()
         .find_map(|name| find_widget_by_name(&content, name))
         .map(|widget| f64::from(widget.width()))
@@ -280,7 +312,9 @@ pub fn apply_wheel<S: Fn(i64)>(
     dx: f64,
     on_step: S,
 ) -> Option<String> {
-    let view = view_px(surface_width(window));
+    // A Shift notch pans an eighth of the view the tape is drawn on, so `cut_screen::wheel` gets the page's own
+    // width; the zoom branch below re-reads it over the strip, which is where the ladder's floor lives.
+    let view = wheel_gestures_view(window);
     match cut_screen::wheel(over, shift, dy, dx, view) {
         cut_screen::Wheel::StepFrames { frames } => {
             on_step(frames);
@@ -308,11 +342,22 @@ pub fn attach_wheel<S>(
     S: Fn(&adw::ApplicationWindow, i64) + 'static,
 {
     let on_step = std::rc::Rc::new(on_step);
-    for (name, over) in targets {
-        let (name, over) = (*name, *over);
+    // The caller's list plus the band §1's tracks are actually drawn on. `track-band` is not in the caller's
+    // list because that list lives in `window.rs`, past its size budget, and because a widget built later than
+    // this call (the band arrives from `cut_tracks::install`) belongs to whoever builds it: naming it here
+    // keeps one rule — every ground the page shows gets exactly one controller of its kind.
+    let mut grounds: Vec<(&'static str, cut_screen::WheelOver)> = targets.to_vec();
+    grounds.push(("track-band", cut_screen::WheelOver::Tracks));
+    for (name, over) in grounds {
+        let (name, over) = (name, over);
         let Some(widget) = find_widget_by_name(window.upcast_ref(), name) else {
             continue;
         };
+        // One controller per widget: a second scroll controller on ground that already has one would answer
+        // the same notch twice, zooming two steps where the person rolled one.
+        if carries_scroll_controller(&widget) {
+            continue;
+        }
         let controller = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
         controller.set_name(Some(&format!("wheel-{name}")));
         let win = window.clone();
@@ -333,15 +378,34 @@ pub fn attach_wheel<S>(
     }
 }
 
+/// Whether this widget already answers a scroll wheel. Read off the widget rather than remembered, so a
+/// re-wire (a test's second `wire_wheel_gestures`, a page rebuilt on a tab switch) cannot stack controllers.
+fn carries_scroll_controller(widget: &gtk::Widget) -> bool {
+    let held = widget.observe_controllers();
+    (0..held.n_items())
+        .filter_map(|index| held.item(index))
+        .any(|controller| controller.is::<gtk::EventControllerScroll>())
+}
+
 /// Carry out what `cut_screen::wheel` decided, then redraw. Returns the sentence for the status line,
 /// or `None` for a step — which belongs to the transport, and says nothing here.
+/// The width ONE wheel gesture is carried out over: §1's band when GTK has laid it out, else the placeholder
+/// strip. Both doors below (`apply_wheel`, and this) read it, so the eighth of the view a Shift notch pans and
+/// the floor that notch's zoom clamps at come from the same screenful — measured once per gesture rather than
+/// once per branch, which is what kept them disagreeing while each asked for itself.
+pub fn wheel_gestures_view(window: &adw::ApplicationWindow) -> f64 {
+    view_px(surface_width(window))
+}
+
 fn apply_wheel_result(
     window: &adw::ApplicationWindow,
     action: cut_screen::Wheel,
 ) -> Option<String> {
     let runs = timeline::filmed_runs(&cut_folds::page_recordings());
     let filmed: f64 = runs.iter().map(|(start, end)| end - start).sum();
-    let view = view_px(surface_width(window));
+    // The surface the caller measured — see [`wheel_gestures_view`], which both wheel doors go through so a
+    // notch's zoom clamp and its eighth cannot disagree about how wide the page is.
+    let view = wheel_gestures_view(window);
     let total = total_px(filmed, pps());
     let said = match action {
         cut_screen::Wheel::StepFrames { .. } => None,
@@ -363,10 +427,23 @@ fn apply_wheel_result(
     said
 }
 
+/// The surfaces a page redraw has to queue, in one place so the list and the page cannot drift apart.
+/// `track-band` is the tape; `track-playhead` is §1's red line on ITS OWN layer, which is exactly why it
+/// needs naming here — a draw callback only runs for a widget someone asked to be redrawn, so leaving the
+/// line's surface out of this list meant the 2 px line was painted once at its opening position and then
+/// never moved again, through a zoom, a scroll or a click that placed it. `track-strip` is F2.8's
+/// placeholder strip, still packed under the band and still repainted by the same door.
+pub fn repaint_targets() -> [&'static str; 3] {
+    ["track-band", "track-playhead", "track-strip"]
+}
+
 /// Redraw what the view changed: the band measures itself at the new zoom, the bar follows it.
 pub fn repaint_page(window: &adw::ApplicationWindow) {
     let Some(content) = window.content() else { return };
-    for name in ["track-band", "track-strip"] {
+    // §1's band is a row per camera AND a row per cut lane, and it was sized before the page had a cut, so
+    // every redraw asks first whether the scene it is about to paint still fits the surfaces it has.
+    crate::ui::cut_tracks::fit_band_height_for_window(window, &band_scene_for(window));
+    for name in repaint_targets() {
         if let Some(band) = find_widget_by_name(&content, name) {
             band.queue_draw();
         }
@@ -436,6 +513,9 @@ pub fn on_scroll_changed<F: Fn(f64) + 'static>(
 /// tab's copy (the `fold-all-button` lesson). The door `window.rs` calls after any zoom, scroll or cut.
 pub fn refresh_page_scrollbar(window: &adw::ApplicationWindow) {
     let Some(content) = window.content() else { return };
+    // Same door as [`repaint_page`]: a zoom or a scroll can change what the scene costs, and the bar beside it
+    // is repainted from those same numbers.
+    crate::ui::cut_tracks::fit_band_height_for_window(window, &band_scene_for(window));
     if let Some(bar) = find_widget_by_name(&content, "track-scrollbar")
         .and_then(|bar| bar.downcast::<gtk::Scrollbar>().ok())
     {

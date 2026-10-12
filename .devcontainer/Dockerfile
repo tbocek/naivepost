@@ -16,6 +16,7 @@ RUN apk add --no-cache \
         xvfb xvfb-run \
         font-dejavu font-noto font-noto-emoji \
         adwaita-icon-theme hicolor-icon-theme librsvg \
+        ffmpeg \
         dconf gsettings-desktop-schemas
 
 RUN groupadd --gid 1000 dev \

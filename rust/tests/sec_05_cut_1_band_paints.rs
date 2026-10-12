@@ -217,6 +217,12 @@ fn run_widget_round() {
             SCROLLBAR_RAN.store(true, Ordering::SeqCst);
             page_hangs_band_and_red_line_on_two_layers(app);
             LAYERS_RAN.store(true, Ordering::SeqCst);
+            page_band_grows_for_a_lane(app);
+            GROWTH_RAN.store(true, Ordering::SeqCst);
+            page_band_spans_the_page(app);
+            SPAN_RAN.store(true, Ordering::SeqCst);
+            page_redraw_reaches_the_red_line_layer(app);
+            LINE_RAN.store(true, Ordering::SeqCst);
             app.quit();
         });
         let _ = app.run_with_args::<String>(&[]);
@@ -225,6 +231,169 @@ fn run_widget_round() {
 
 static SCROLLBAR_RAN: AtomicBool = AtomicBool::new(false);
 static LAYERS_RAN: AtomicBool = AtomicBool::new(false);
+static GROWTH_RAN: AtomicBool = AtomicBool::new(false);
+static SPAN_RAN: AtomicBool = AtomicBool::new(false);
+static LINE_RAN: AtomicBool = AtomicBool::new(false);
+
+/// Badge **30**'s wire: the page's own redraw door names the red line's surface. A `DrawingArea` only runs
+/// its draw callback for a widget someone queued, and §1 puts the line on its OWN layer, so a redraw list that
+/// leaves `track-playhead` out paints the line once at its opening position and never moves it again — not on
+/// a zoom, not on a scroll, not on a click that placed it. Read off the same list the door iterates, and
+/// against the real page, so the two cannot drift apart.
+#[test]
+fn sec_05_cut_1_screen_s30_the_page_redraw_moves_the_red_line_layer_too() {
+    let targets = naivepost::ui::cut_view::repaint_targets();
+    assert!(
+        targets.contains(&"track-band"),
+        "the tape is redrawn by the page's door: {targets:?}"
+    );
+    assert!(
+        targets.contains(&"track-playhead"),
+        "§1's red line has its own layer, so the page's redraw has to name it or it never moves: {targets:?}"
+    );
+    // And every one of those names is a widget the Cut page really builds — a name in the list that no page
+    // contains would pass the rule test while drawing nothing.
+    run_widget_round();
+    assert!(LINE_RAN.load(Ordering::SeqCst), "the page-side half of this check never ran");
+}
+
+/// The page half of badge **30**: each name the redraw door queues (but the placeholder strip, which lives
+/// outside the band's stack) resolves to a real widget inside `track-layers`.
+fn page_redraw_reaches_the_red_line_layer(app: &adw::Application) {
+    common::release_last_window();
+    let model = naivepost::project::load(&common::fixture_dir()).expect("fixture loads");
+    let window = naivepost::ui::build_window(app, &model, "Cut");
+    window.set_default_size(1400, 900);
+    window.present();
+    common::settle();
+    let layers = common::widget_in(&window, "track-layers").expect("the band's stacked layers exist");
+    for name in naivepost::ui::cut_view::repaint_targets() {
+        if name == "track-strip" {
+            continue; // F2.8's placeholder, packed beside the stack rather than inside it
+        }
+        let found = common::widget_in(&window, name)
+            .unwrap_or_else(|| panic!("the redraw door names {name}, but the page builds no such widget"));
+        assert!(
+            found.parent().is_some(),
+            "{name} is in the tree but parentless, so nothing lays it out"
+        );
+        // Both of the band's own layers live in the one overlay §1's stack is.
+        let inside = found
+            .parent()
+            .map(|parent| parent.upcast_ref::<gtk::Widget>() == layers.upcast_ref::<gtk::Widget>())
+            .unwrap_or(false);
+        assert!(inside, "{name} sits outside the band's overlay, so the stack does not cover it");
+    }
+    common::hold_last_window(window);
+}
+
+/// Badge **24-31** on the real page: the tape spans the PAGE. §A's page is a paned whose bottom holds the
+/// toolbar, the tracks and the scrollbar, and `spec/img/05-cut.png` shows the ruler, the kept bars and the
+/// wave strips running its whole width — a band fixed at the placeholder's 480 px leaves the right two thirds
+/// of the screen as an empty plate, which is what the first shot of this item showed. Measured as an
+/// allocation, not as a colour: the width is GTK's decision, so only the laid-out widget can answer it.
+fn page_band_spans_the_page(app: &adw::Application) {
+    let model = naivepost::project::load(&common::fixture_dir()).expect("fixture loads");
+    let window = naivepost::ui::build_window(app, &model, "Cut");
+    // Every Cut-page snapshot needs the size before `present()` or the page collapses to one column.
+    window.set_default_size(1400, 900);
+    window.present();
+    common::settle();
+    let band = common::widget_in(&window, "track-band")
+        .expect("the Cut page draws the track band")
+        .downcast::<gtk::DrawingArea>()
+        .expect("the band is a drawing area");
+    let line = common::widget_in(&window, "track-playhead")
+        .expect("the red line has its own layer")
+        .downcast::<gtk::DrawingArea>()
+        .expect("the line is a drawing area");
+    let page = f64::from(window.width());
+    let tape = f64::from(band.width());
+    assert!(page > 0.0 && tape > 0.0, "both laid out: page {page}, band {tape}");
+    assert!(
+        tape > f64::from(tracks::BAND_WIDTH_PX),
+        "the band outgrew the placeholder's floor: {tape} px over {page} px of window"
+    );
+    // The page's own column, not the window's: the Cut page sits inside the tab stack and the panes' handles,
+    // so what the band can be is the column it was packed into. §1 asks that the tape fill the page, and
+    // `set_hexpand` hands it exactly that, so it is the bottom box's width one-to-one.
+    let column = band
+        .parent()
+        .and_then(|layers| layers.parent())
+        .map(|host| f64::from(host.width()))
+        .unwrap_or(0.0);
+    assert!(column > 0.0, "the band's own column is laid out too");
+    assert!(
+        (column - tape).abs() <= 1.0,
+        "the tape is as wide as the page column it fills: {tape} px in a {column} px column \
+         ({page} px window, {} px placeholder floor)",
+        tracks::BAND_WIDTH_PX
+    );
+    // §1: the red line is "across both bands", so it is as wide as the tape it lies on.
+    assert_eq!(tape, f64::from(line.width()), "the red line spans what the band spans");
+    // And the view the zoom floor, the scrollbar's page size and the wheel are all computed from is this
+    // surface's width minus the gutter — one subtraction, in `cut_view`, no second copy.
+    let view = naivepost::ui::cut_view::view_px(naivepost::ui::cut_view::surface_width(&window));
+    assert!(
+        (view - (tape - cut_screen::GUTTER_PX)).abs() < 1.0,
+        "the page's view is the band it shows: view {view}, band {tape}"
+    );
+    common::hold_last_window(window);
+}
+
+/// Badge **25** at a scroll: a kept scene whose bar begins off the LEFT edge still paints the part that is
+/// on screen, AND the tape's own right edge is where ground stops — a bar that overhangs is cut there, not
+/// smeared into the empty ground past the filmed material (which is what `hexpand` made possible: the surface
+/// is now wider than the session at the open zoom).
+#[test]
+fn sec_05_cut_1_screen_s1_a_bar_at_the_tape_edge_is_cut_there() {
+    // The fixture-like scene: a recording 0..50 s at PPS 2 lays the tape out to 30 + 50*2 = 130 px, while the
+    // painted strip is 300 px wide. A kept scene 0..20 s ends well inside the tape; a kept scene reaching to
+    // the very last filmed second ends AT it, so its bar stops there and the ground past it stays ground.
+    let edge = scene(); // segs 0..20, recording 0..50
+    let read = painted(&edge);
+    // INSIDE the selection band the painter laid out: its top is `cut_trim::RULER_H`, its height
+    // `SELECTION_BAND_PX` — read from the same two constants `rows_of` uses, not guessed below the ruler.
+    let bar_y = (naivepost::cut_trim::RULER_H + SELECTION_BAND_PX / 2.0) as i32;
+    let green = |x: i32| rgb(&read.0, read.1, x, bar_y);
+    let ground = green(WIDTH - 2); // right of the tape: bare ground, by the setup
+    let inked: Vec<i32> = (2..WIDTH - 2).filter(|x| green(*x) != ground).collect();
+    let last = inked.last().copied().unwrap_or(-1);
+    // The tape's last painted pixel: gutter + filmed seconds * pps, the same arithmetic `band_x` uses.
+    let tape_end = (cut_screen::GUTTER_PX + 50.0 * PPS) as i32;
+    assert!(last > 0, "the kept scene paints green: {inked:?}");
+    assert!(
+        last <= tape_end + 2,
+        "nothing is inked past the tape's end at {tape_end}: last inked x {last}"
+    );
+    // And a scene that WOULD run past it (its seconds reach the last filmed second) is cut there rather than
+    // extrapolated over the empty ground: same green, same stop.
+    let to_the_end = Scene {
+        segs: vec![Seg { s: 0.0, e: 50.0, ..Default::default() }],
+        ..scene()
+    };
+    let over = painted(&to_the_end);
+    let over_inked: Vec<i32> = (2..WIDTH - 2)
+        .filter(|x| rgb(&over.0, over.1, *x, bar_y) != ground)
+        .collect();
+    let over_last = over_inked.last().copied().unwrap_or(-1);
+    assert!(
+        over_last <= tape_end + 2 && over_last > 0,
+        "a bar to the last filmed second stops at the tape ({tape_end}), not at the strip's edge: {over_last}"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_s16_the_band_spans_the_page_width() {
+    run_widget_round();
+    assert!(SPAN_RAN.load(Ordering::SeqCst), "the page-width check never ran");
+}
+
+#[test]
+fn sec_05_cut_1_screen_an_added_lane_grows_the_drawn_band() {
+    run_widget_round();
+    assert!(GROWTH_RAN.load(Ordering::SeqCst), "the band-growth check never ran");
+}
 
 #[test]
 fn sec_05_cut_1_screen_the_scrollbar_gears_one_screenful_at_40_px() {
@@ -290,6 +459,78 @@ fn page_hangs_band_and_red_line_on_two_layers(app: &adw::Application) {
         parent.upcast_ref::<gtk::Widget>().type_()
     );
     assert_eq!(band_area.width(), line_area.width(), "both layers span the same width");
+    common::hold_last_window(window);
+}
+
+/// Badge **31** on the real page: an edit that adds a lane must also make the drawn band taller, or the row
+/// it added is painted outside the surface's allocation and nobody sees it. The paint checks above size their
+/// own `cairo` surface and so cannot see this: only the page's own `track-band` can.
+fn page_band_grows_for_a_lane(app: &adw::Application) {
+    let model = naivepost::project::load(&common::fixture_dir()).expect("fixture loads");
+    let window = naivepost::ui::build_window(app, &model, "Cut");
+    window.present();
+    common::settle();
+    let band = common::widget_in(&window, "track-band")
+        .expect("the Cut page draws the track band")
+        .downcast::<gtk::DrawingArea>()
+        .expect("the band is a drawing area");
+    // One lane, on the cut the page actually paints from. Two, so "it grew" is a comparison the page can
+    // not answer by coincidence: one lane could already fit inside the height the page opened with.
+    let with_lane = naivepost::cut::Cut {
+        segs: vec![naivepost::cut::Seg { s: 0.0, e: 20.0, ..Default::default() }],
+        lanes: vec![
+            naivepost::cut::Lane {
+                name: "mic-lav".to_string(),
+                src: "project:sources/mic-lav.wav".to_string(),
+                at: 2.0,
+                off: 0.0,
+                dur: 10.0,
+            },
+            naivepost::cut::Lane {
+                name: "mic-boom".to_string(),
+                src: "project:sources/mic-boom.wav".to_string(),
+                at: 2.0,
+                off: 0.0,
+                dur: 10.0,
+            },
+        ],
+        ..Default::default()
+    };
+    naivepost::ui::seed_review_cut(&window, &with_lane);
+    naivepost::ui::set_session_recordings(&[naivepost::timeline::Recording {
+        base: "take-a".to_string(),
+        start: 0.0,
+        end: 60.0,
+    }]);
+    // What the band's surfaces were sized to when the page opened, and what the two new lanes make it need.
+    let opened = band.size_request().1;
+    let need = tracks::band_height_for(&naivepost::ui::cut_view::band_scene_for(&window));
+    assert!(
+        need > opened,
+        "two lanes must cost rows the page did not open with: sized {opened} px, scene needs {need} px"
+    );
+    // Drive the page's own redraw door — the one every verb already calls — and then ask what it sized to.
+    // The REQUEST is the number to compare: a window that has not been allocated yet measures 0 or its old
+    // height in `height()`, while the size the next layout will honour is the one `fit_band_height` wrote.
+    naivepost::ui::cut_view::repaint_page(&window);
+    common::settle();
+    assert!(
+        band.size_request().1 >= need,
+        "the band's surface is sized {} px but its own scene needs {need} px (it opened at {opened} px): a \
+         cut lane's row would be painted outside what the page allocated",
+        band.size_request().1
+    );
+    // §1: the red line crosses BOTH layers, so the layer above the band grows with it or stops short.
+    let line = common::widget_in(&window, "track-playhead")
+        .expect("the Cut page draws the playhead layer")
+        .downcast::<gtk::DrawingArea>()
+        .expect("the playhead is its own drawing area");
+    assert!(
+        line.size_request().1 >= need,
+        "the red line's layer is sized {} px while the band is sized {} px",
+        line.size_request().1,
+        band.size_request().1
+    );
     common::hold_last_window(window);
 }
 

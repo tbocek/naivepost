@@ -963,6 +963,31 @@ architecture behind them.
             }
             window.present();
         }
+        // §1's tape is as wide as the page, so a snapshot has to ask for its picture AFTER GTK laid the page
+        // out: a `DrawingArea` clips its draw callback to its own allocation, and headless nothing repaints
+        // between the map and the shot. One `queue_draw` after the layout is enough — it lands on the same
+        // surface the band paints into, at the width the paned actually gave it.
+        if screen_page(&screen) == Some("Cut") {
+            // Drain the loop so GTK has laid the page out before anything asks it for a width: `present()`
+            // only queues the map, and headless nothing else runs between here and the pixels. Without this
+            // the band's draw is clipped to its pre-layout request and the tape stops at its floor.
+            let context = glib::MainContext::default();
+            for _ in 0..64 {
+                while context.pending() {
+                    context.iteration(false);
+                }
+            }
+            // The red line too: §1 puts it on its own layer at the second the preview stands on, and a shot
+            // that never placed one showed no line at all (badges 30). Placed through the page's own door,
+            // then repainted, exactly as a click on the tape would.
+            if screen == "05-cut" {
+                // The band's red line is the PREVIEW's playhead (`band_scene_for` reads it off the player),
+                // so that is the door this has to go through — `set_line_position` moves the cursor state,
+                // which the painter never asks. Placed before the redraw, exactly as a click on the tape does.
+                ui::set_playhead(&window, 24.0);
+            }
+            crate::ui::cut_view::repaint_page(&window);
+        }
         let painted = subject.clone().unwrap_or_else(|| window.clone().upcast());
         // `03-runbar-busy` records a GLYPH, and a glyph is not legible in a 1334 px window shot, so this
         // screen paints the ▶ itself into `<out>` and the whole window beside it as `-window.png`: the
