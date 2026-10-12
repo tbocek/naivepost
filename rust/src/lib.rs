@@ -73,6 +73,7 @@ pub mod cut_suggest;
 pub mod suggest;
 pub mod cut_speed;
 pub mod cut_speed_pass;
+pub mod cut_suggest_passes;
 pub mod cut_suggest_words;
 pub mod cut_suggest_words_run;
 pub mod cut_screen;

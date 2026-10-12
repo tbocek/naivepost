@@ -611,6 +611,14 @@ name = "f2_14_press_model"
 path = "tests/f2_14_press_model.rs"
 
 [[test]]
+name = "f2_14_s3_land_through_the_page"
+path = "tests/f2_14_s3_land_through_the_page.rs"
+
+[[test]]
+name = "f2_14_s2b_the_passes_run_after_the_cut"
+path = "tests/f2_14_s2b_the_passes_run_after_the_cut.rs"
+
+[[test]]
 name = "f2_14_press_words"
 path = "tests/f2_14_press_words.rs"
 

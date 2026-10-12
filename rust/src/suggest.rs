@@ -423,6 +423,14 @@ pub fn snap_edge(candidates: &[(f64, Candidate)], stamp: f64, outward_is_earlier
     best.map(|(point, _)| point).unwrap_or(stamp)
 }
 
+/// §S3's second line, spelled once: `">>> …and N effect(s): the speeds, the captions and the
+/// decorations"`. Two doors print it — [`apply`] after its own clamp, and
+/// [`crate::cut_suggest_passes`], which counts what the three passes actually placed after the cut landed —
+/// so the wording lives here rather than in either caller.
+pub fn effects_line(count: usize) -> String {
+    format!(">>> \u{2026}and {count} effect(s): the speeds, the captions and the decorations")
+}
+
 /// What the walk-back produced.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Applied {
@@ -487,10 +495,7 @@ pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk)
             segs.len() + kept_inserts.len(),
             tools::mm_ss(total)
         ),
-        format!(
-            ">>> \u{2026}and {} effect(s): the speeds, the captions and the decorations",
-            effects.len()
-        ),
+        effects_line(effects.len()),
     ];
     Applied {
         segs,

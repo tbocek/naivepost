@@ -105,6 +105,17 @@ fn press_model(window: &adw::ApplicationWindow, busy: bool) -> String {
     }
     land_spans(window, &made.segs);
     land_effect_pair(window, &made.applied);
+    // §S2b's `M2` node: the cut landed, so now the passes that work over a cut are asked — captions, speeds,
+    // decorations, and only those the policy switched on. Their own sentences go to the log as they said them,
+    // then §S3's effect line counts what actually landed (the walk-back's clamped effects plus theirs).
+    let policy_ = crate::ui::session_policy(window);
+    let pass_lines =
+        crate::cut_suggest_passes::run_after_cut(window, &policy_, |said| {
+            crate::ui::window::log_line(said)
+        });
+    for line in &pass_lines {
+        crate::ui::window::log_line(line);
+    }
     // The status row takes the short sentence (`suggest::apply`'s own first log line); the long pair of
     // `>>>` lines is already in the log, written by the module that computed them.
     if !made.said.is_empty() {
