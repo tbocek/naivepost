@@ -141,6 +141,9 @@ pub mod cut_volume_hear;
 /// F3.10 ⏩ Speeds: the pass's own half of the shell — read the page, telephone, write back. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod cut_speeds_pass;
+/// F3.11 ✨ Decorations: the pass's own half of the shell — read the page, telephone, write back. Split out
+/// of `window.rs`, which is past its size budget.
+pub mod cut_effects_pass;
 /// F2.1 ▶'s page half: the filmed runs and footage files a press hands the media leg, and the button's face.
 /// Split out of `window.rs`, which is past its size budget.
 pub mod cut_record_play;
@@ -372,10 +375,11 @@ pub use window::speeds_pass_button;
 pub use window::refresh_speeds_gate;
 pub use window::set_speeds_pass;
 // F3.11 Decorations proposed by the model: the pass's seams, so a test can fire ✨ Decorations by name and read
-// the same cut state the logic test in `tests/cut_effects_proposed.rs` checks.
+// the same cut state the logic test in `tests/cut_effects_proposed.rs` checks. The pass itself is
+// `cut_effects_pass`.
 pub use window::decorations_pass_button;
-pub use window::run_effects_pass;
-pub use window::run_effects_pass_with_reply;
+pub use cut_effects_pass::run_effects_pass;
+pub use cut_effects_pass::run_effects_pass_with_reply;
 pub use window::narrate_stage;
 pub use window::show_narrate_stage;
 pub use window::press_narrate_run;

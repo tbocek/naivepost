@@ -121,6 +121,8 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         "06-preview" | "06-zoom" | "06-speed" | "06-text" | "06-volume" | "06-label"
         // §F3.10's pass screen: no `spec/img` counterpart, so it names itself after the flow.
         | "06-speeds"
+        // §F3.11's, the same: driven through the page's own decorations-pass door.
+        | "06-decorations"
         | "06-lane" | "06-svg" | "06-effect-menu" => Some("Cut"),
         "07-narrate" | "07-take" => Some("Narrate"),
         "08-produce" | "08-words" => Some("Produce"),
@@ -497,6 +499,68 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 .map(|row| row.text().to_string())
                 .unwrap_or_default();
             println!("snapshot: 06-speeds | {landed} speed bar(s) | status: {shown} | {said}");
+        }
+        // §F3.11's pass screen, beside `06-speeds` and built exactly as it is: no `spec/img/06-decorations.png`
+        // exists, so this is a program-side screen driven through the page's own doors — never by poking state:
+        //   1. the same kept two-clip cut (the fixture keeps one clip and `fx: []`, which answers "nothing to
+        //      ask about");
+        //   2. `run_effects_pass_with_reply` — the scripted door for the TELEPHONE only, answering all three
+        //      kinds at once so the lane shows each of their colours: a zoom on clip 1, a stop on clip 2, a
+        //      volume with a gain on clip 2's tail. The model names no centre and no ramp because §F3.11 asks it
+        //      for none — the app places those. Every rule after the reply (membership, the app's own defaults,
+        //      both log lines) and every write (`record_edit`, the lane repaint, the status row) is the pass's
+        //      own, called exactly as the ✨ Decorations button calls it;
+        //   3. the lane and the readouts repaint inside that call, as a click does.
+        if screen == "06-decorations" {
+            let two = cut::Cut {
+                segs: vec![
+                    cut::Seg { s: 0.0, e: 20.0, cam: 0, ..Default::default() },
+                    cut::Seg { s: 20.0, e: 40.0, cam: 0, ..Default::default() },
+                ],
+                ..Default::default()
+            };
+            ui::seed_review_cut(&window, &two);
+            let said = ui::run_effects_pass_with_reply(
+                &window,
+                &[
+                    crate::cut_effects_pass::Call {
+                        clip: 1,
+                        kind: "zoom".to_string(),
+                        start: 2.0,
+                        end: 6.0,
+                        gain: None,
+                    },
+                    crate::cut_effects_pass::Call {
+                        clip: 2,
+                        kind: "stop".to_string(),
+                        start: 1.0,
+                        end: 4.0,
+                        gain: None,
+                    },
+                    crate::cut_effects_pass::Call {
+                        clip: 2,
+                        kind: "volume".to_string(),
+                        start: 8.0,
+                        end: 14.0,
+                        gain: Some(0.25),
+                    },
+                ],
+            );
+            // Read back from the page rather than from the returned sentence: a shot that printed only what the
+            // call handed back would still print it if nothing reached the cut or the status row.
+            let landed: Vec<String> = ui::review_cut_of(&window)
+                .fx
+                .iter()
+                .map(|fx| format!("{}@{:.0}", fx.kind, fx.t))
+                .collect();
+            let shown = ui::find_status(window.upcast_ref())
+                .map(|row| row.text().to_string())
+                .unwrap_or_default();
+            println!(
+                "snapshot: 06-decorations | {} bar(s): {} | status: {shown} | {said}",
+                landed.len(),
+                landed.join(" ")
+            );
         }
         // the dropdown row fires (`tests/volume_form_widgets.rs` presses exactly this) rather than poking state.
         if screen == "06-volume" {
@@ -1134,7 +1198,12 @@ architecture behind them.
             if screen_page(&screen) == Some("Cut") || screen_page(&screen) == Some("Narrate") {
                 // 1280x800 rather than the Cut page's 1240x900: at 900 the Narrate shot renders ~3000 px
                 // tall and every control reads as a hairline. This is closer to §1's own screenshot ratio.
-                window.set_default_size(1280, 800);
+                // The two pass screens (`06-speeds`, `06-decorations`) are the exception, and this is the ONE
+                // place their width is asked for: their subject is an effects bar laid out along SECONDS, and in
+                // a narrow column two clips' worth of bars crowd into the leftmost tenth of the tape, where
+                // neither a colour nor a gap reads off the shot. So they keep 2400 instead of being pulled back.
+                let wide = matches!(screen.as_str(), "06-speeds" | "06-decorations");
+                window.set_default_size(if wide { 2400 } else { 1280 }, 800);
             }
             window.present();
         }

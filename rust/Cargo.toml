@@ -1578,3 +1578,27 @@ path = "tests/f3_10_s5_live_speeds_same_rate_stretches_merge_and_the_line_is_sai
 [[test]]
 name = "f3_10_speeds_button_widget"
 path = "tests/f3_10_speeds_button_widget.rs"
+
+[[test]]
+name = "f3_11_s1_live_effects_ask_carries_the_clips_and_speeds"
+path = "tests/f3_11_s1_live_effects_ask_carries_the_clips_and_speeds.rs"
+
+[[test]]
+name = "f3_11_s2_live_effects_clip_outside_the_list_rejects_the_whole_reply"
+path = "tests/f3_11_s2_live_effects_clip_outside_the_list_rejects_the_whole_reply.rs"
+
+[[test]]
+name = "f3_11_s3_live_effects_unknown_kind_and_empty_span_are_skipped"
+path = "tests/f3_11_s3_live_effects_unknown_kind_and_empty_span_are_skipped.rs"
+
+[[test]]
+name = "f3_11_s4_live_effects_answer_is_cached"
+path = "tests/f3_11_s4_live_effects_answer_is_cached.rs"
+
+[[test]]
+name = "f3_11_s5_live_effects_two_rounds_then_the_give_up_line"
+path = "tests/f3_11_s5_live_effects_two_rounds_then_the_give_up_line.rs"
+
+[[test]]
+name = "f3_11_effects_button_widget"
+path = "tests/f3_11_effects_button_widget.rs"
