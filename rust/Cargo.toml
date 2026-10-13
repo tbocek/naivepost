@@ -1510,3 +1510,15 @@ path = "tests/sec_05_cut_7_rules_cut_json.rs"
 [[test]]
 name = "sec_05_cut_7_rules_suggest"
 path = "tests/sec_05_cut_7_rules_suggest.rs"
+
+[[test]]
+name = "sec_05_cut_8_preview_sound_wired"
+path = "tests/sec_05_cut_8_preview_sound_wired.rs"
+
+[[test]]
+name = "sec_05_cut_8_suggest_wired"
+path = "tests/sec_05_cut_8_suggest_wired.rs"
+
+[[test]]
+name = "sec_05_cut_8_suggest_press_wired"
+path = "tests/sec_05_cut_8_suggest_press_wired.rs"

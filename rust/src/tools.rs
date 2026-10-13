@@ -364,6 +364,12 @@ pub fn web_search_offered(job: Job) -> bool {
     roles::web_tools(job)
 }
 
+/// Whether a tool is one of the pair §8 withdraws after a first rejection. Named once here so the cut loop
+/// and any later flow take the same two tools away, and never mistake `FinishCut` for a web tool.
+pub fn is_web_tool(tool: Tool) -> bool {
+    matches!(tool, Tool::WebSearch | Tool::WebRead)
+}
+
 /// Seconds as `mm:ss`, the reading a model recognises as a moment on the timeline.
 ///
 /// Used where §3.6 tells us to quote the model's own number back in the units it meant: "past the

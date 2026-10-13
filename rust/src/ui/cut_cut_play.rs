@@ -102,7 +102,16 @@ pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64) {
 /// out. A player that will not start is logged and answered `false`; the tick's arithmetic and every other
 /// preview rule are unaffected, which is the "carry on elsewhere" half of §0 (F2.1's cue door says the same).
 pub fn cue_running(window: &adw::ApplicationWindow, at: f64) -> bool {
-    cue_files(&ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now()), at)
+    let cued = cue_files(&ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now()), at);
+    // §05-cut#8 bullet 2: the log carries the reason (`cue_files` already wrote it) and the status row says
+    // where to find it. Both halves, because a status that reads "playback failed" without a reason and a
+    // reason nobody was told about are the same failure twice over.
+    if !cued {
+        if let Some(status) = ui::find_status(window.upcast_ref()) {
+            status.set_text(&crate::preview::playback_status("Cut"));
+        }
+    }
+    cued
 }
 
 /// The same cue with the footage already named. Split out because a test can name two files it wrote itself,

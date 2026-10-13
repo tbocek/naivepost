@@ -158,6 +158,10 @@ pub enum Fault {
     TooMany(usize),
     /// A segment under the shortest stretch this cut keeps.
     Short(f64),
+    /// A fault the whole-cut check already words itself — `cutpass`'s own sentence for a count or a length,
+    /// passed through so one voice faults the model rather than two. §8's rule is about ordering and joining
+    /// every fault at once, not about re-wording what another module already words.
+    Quoted(String),
 }
 
 impl Fault {
@@ -167,6 +171,9 @@ impl Fault {
             Fault::PastEnd(_) => 0,
             Fault::TooFew(_) | Fault::TooMany(_) => 1,
             Fault::Short(_) => 2,
+            // A quoted fault carries its own precedence already: `cut_problems` returns worst-first, and the
+            // stable sort keeps that order among the equals it is joined with.
+            Fault::Quoted(_) => 1,
         }
     }
 
@@ -186,6 +193,7 @@ impl Fault {
             short_scenes: Vec::new(),
         };
         match self {
+            Fault::Quoted(said) => said.clone(),
             Fault::PastEnd(claimed) => past_end_fault(*claimed),
             Fault::TooFew(got) => {
                 // The low end is the only threshold this variant breaks: `max_segments` and every other window

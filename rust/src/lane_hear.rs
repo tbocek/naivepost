@@ -307,7 +307,9 @@ fn apply_with(
                     None => start_lane(&name, &text, from, gain, log),
                 };
                 if let Err(why) = asked {
-                    log(&format!("    >>> preview: {why}"));
+                    // §05-cut#8 bullet 2: a lane that drops out is NAMED, because the rest of the preview
+                    // carries on and a silent row nobody can identify is not a local failure — it is a mystery.
+                    log(&crate::preview::mix_lane_failure(&name, &why));
                 }
             }
             LaneAction::Stopped => {

@@ -20,6 +20,7 @@
 //! Every network leg is a caller-supplied closure, so no test dials a socket — the shape
 //! `fix_call` and `narrate_tts::speak_line` already use.
 
+use crate::cut_suggest;
 use crate::cut_suggest_words_run;
 use crate::cut_effect_decisions::Candidate;
 use crate::exchanges::{Message, Mode, Part, ToolCall};
@@ -30,6 +31,7 @@ use crate::roles::Job;
 use crate::services::{self, Server};
 use crate::settings::{self, Paths};
 use crate::suggest;
+use crate::timeline;
 use crate::tool_loop;
 use crate::tools::{self, cutpass, Tool};
 
@@ -41,6 +43,28 @@ pub const PROMPT_KEY: &str = "cut";
 /// §S2b's first pass, counted from 1. The bound itself is `P.eng.llmAttempts` and is asked through
 /// [`suggest::attempts_exhausted`], so the loop never repeats the number.
 pub const FIRST_ATTEMPT: u32 = 1;
+/// The spans a proposed segment must have a recording under: the filmed runs of this session's kept footage,
+/// read straight off the session's recordings rather than off what the words path happened to keep. `runs_of`
+/// trims a run to its words and drops a recording nobody spoke over, so reading only its spans would drop a
+/// segment inside a real, wordless recording — footage that exists. §8's rule is about footage.
+pub fn filmed_spans(inputs: &cut_suggest_words_run::Inputs) -> Vec<(f64, f64)> {
+    let spoken: Vec<(f64, f64)> = inputs.runs.iter().map(|run| run.span).collect();
+    let _ = inputs;
+    let recordings: Vec<timeline::Recording> = spoken
+        .iter()
+        .map(|(start, end)| timeline::Recording {
+            base: String::new(),
+            start: *start,
+            end: *end,
+        })
+        .collect();
+    timeline::filmed_runs(&recordings)
+}
+
+/// The reply text the attempt loop watches, for §8's two "the reply that just arrived" rules: whether the
+/// next call still asks for reasoning, and where the progress line sits. Filled by [`watch_reply`], which
+/// wraps the caller's `ask`, so what is read is the bytes the dial handed back — never a scripted position.
+pub const WATCH_IDLE: &str = "";
 /// §S2 S7's `one rewrite, from the first answer`: the answer a refused attempt had already placed, and
 /// what `correction` is wrapped around. `attempt`'s `complaint` is `None` on the first pass — the model
 /// has not been told anything yet — and [`suggest::answer`]'s join after one, §S2 S6's `every fault at
@@ -51,6 +75,18 @@ pub fn correction(problems: &[String]) -> String {
         suggest::answer(problems)
     )
 }
+/// §05-cut#8: `the checks answer with every fault at once, worst first, joined by "; "`. `check` is the
+/// whole-cut check's own list; `past_end` is a number the model wrote with its colons taken out, which is
+/// faulted with the conversion shown on the model's OWN digits (`2804 … 1684`) because that is the only way
+/// it can tell "too big" from "misread". With no such number the wording is unchanged — `cutpass` words a
+/// count or a length, and §8 is about ordering and joining, not re-wording.
+pub fn correction_from(check: &[String], past_end: Option<u32>) -> String {
+    format!(
+        "That is not a valid cut: {}. Add, drop or move segments and call finish_cut again.",
+        crate::ui::cut_suggest_watch::faults(check, past_end)
+    )
+}
+
 /// §S2b's wording for a call that could not be read at all: named job, named reason, per §02's rule
 /// that a failure says which model it came from.
 pub fn unreadable(why: &str) -> String {
@@ -257,6 +293,24 @@ pub fn acceptable(plan: &cutpass::Plan, target: f64) -> bool {
     suggest::whole_cut_problems(&placed(plan), target).is_empty()
 }
 
+/// The number the model typed that fell past the end of the footage, in ITS OWN digits — the shape §8's
+/// conversion is about. A model that stamps `[28:04]` and drops the colon writes `2804`; the tool refused it
+/// against the footage end in seconds, so the digits are recovered from the refusal the model was given, and
+/// a refusal that quoted no such number answers `None` rather than guessing one.
+pub fn past_end_claim(problems: &[String], footage_end: f64) -> Option<u32> {
+    let marker = " is past the end of the footage, which runs to ";
+    for said in problems {
+        let (claim, _) = said.split_once(marker)?;
+        // The tool quotes its own `mm:ss`; the digits WITHOUT the colon are exactly what the model sent.
+        let digits: String = claim.chars().filter(|c| c.is_ascii_digit()).collect();
+        let claimed: u32 = digits.parse().ok()?;
+        if f64::from(claimed) > footage_end {
+            return Some(claimed);
+        }
+    }
+    None
+}
+
 /// One attempt: the two messages, `tool_loop::run` over the offered tools, every call answered from
 /// `plan`, and whether the plan it ended with is a cut. The loop's log lines come back in order — the
 /// `>>>` round lines, §3's per-call notes, and §2's `!!!` line when the rounds ran out.
@@ -303,12 +357,29 @@ pub fn attempt_with<F>(
 where
     F: FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String>,
 {
+    attempt_with_tools(system, user, complaint, plan, target, &tools::offered(Job::ModelCut), ask)
+}
+
+/// The same attempt with the tool list handed in. §8's web-tool rule decides per attempt which tools go out,
+/// so the list is the caller's to own — reading `tools::offered` inside would put the decision in two places
+/// and let the loop log a withdrawal the request then ignored.
+pub fn attempt_with_tools<F>(
+    system: &str,
+    user: &str,
+    complaint: Option<&str>,
+    plan: &mut cutpass::Plan,
+    target: f64,
+    offered: &[Tool],
+    ask: &mut F,
+) -> (bool, bool, Vec<String>)
+where
+    F: FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String>,
+{
     let messages = opening(system, user, complaint);
-    let offered = tools::offered(Job::ModelCut);
     let run = tool_loop::run(
         STEP,
         messages,
-        &offered,
+        offered,
         |conversation, offered| ask(conversation, offered),
         |call| answer_call(plan, call),
     );
@@ -370,26 +441,51 @@ where
         .collect();
     let mut logs: Vec<String> = Vec::new();
     let mut previous: Option<Vec<String>> = None;
+    // §8's attempt state — thinking, web tools, and where the progress line last stood — carried as one thing
+    // so no branch can update part of it and forget the rest.
+    let mut call = crate::ui::cut_suggest_watch::Call::new();
+    // The replies this attempt received, refreshed by [`watch_reply`] on every dial. §8's progress and thinking
+    // rules are both about the reply that just arrived, so they read this and nothing else.
+    let last_reply = std::cell::RefCell::new(Vec::new());
+    let mut watch = watch_reply(&mut ask, &last_reply);
+    // What every second of this session was filmed by: §8 drops a segment with no recording at either end
+    // BEFORE its length is judged, because a stretch nobody filmed has no length to argue about.
+    let filmed = filmed_spans(&inputs);
     // The bound is `P.eng.llmAttempts`, asked through `attempts_exhausted` so the number lives once.
     // Every attempt gets a fresh `Plan`: a correction round repairs the model's answer, not the tool's
     // arithmetic, and a plan carried over would let a refused segment survive into the next answer.
     for number in FIRST_ATTEMPT.. {
         // §S2 S6's complaint goes back to the model as its own correction request: every fault at once,
-        // worst first, in `cutpass`'s words. The first pass has none to send.
+        // worst first, in `cutpass`'s words, and with §8's past-the-end conversion when the model's own
+        // digits are recoverable from the refusal it got. The first pass has none to send.
         let complaint = previous
             .as_ref()
-            .map(|problems| correction(problems))
+            .map(|problems| correction_from(problems, past_end_claim(problems, end)))
             .unwrap_or_default();
         let complaint = (!complaint.is_empty()).then_some(complaint.as_str());
         if suggest::attempts_exhausted(number) {
             break;
         }
+        // §8: the web tools come off after the FIRST rejection, and the page is told they did.
+        let (offered, withdrawn) = call.offer();
+        logs.extend(withdrawn);
         let mut plan = new_plan(&inputs, &walk, end, target);
+        last_reply.borrow_mut().clear();
         let (_finished, ok, round_logs) =
-            attempt_with(&system, &user, complaint, &mut plan, target, &mut ask);
+            attempt_with_tools(&system, &user, complaint, &mut plan, target, &offered, &mut watch);
         logs.extend(round_logs);
+        // §8: an answer that was all reasoning and no answer gets its next call asked WITHOUT thinking, and
+        // the log says why the question changed.
+        logs.extend(retry_note(&mut call, &last_reply));
         if ok {
-            let applied = suggest::apply(&placed(&plan), &inserts, &cut.fx, &walk);
+            // §8's drop runs BEFORE the length is judged, so the count the walk-back is built from is the one
+            // the page ends up with: a segment with no recording at either end names a stretch of session that
+            // was never filmed, and nothing downstream should be sized around it.
+            let dropped = cut_suggest::drop_unfilmed(placed(&plan), &filmed);
+            if dropped.1 > 0 {
+                logs.push(cut_suggest::dropped_log(number, dropped.1));
+            }
+            let applied = suggest::apply(&dropped.0, &inserts, &cut.fx, &walk);
             let said = Landed::landed_log(&applied.log);
             // §S3's two log lines go out with the round lines, in the order the flowchart prints them:
             // the rounds that produced the answer, then what the walk-back made of it.
@@ -403,6 +499,13 @@ where
                 applied,
             };
         }
+        // A refused answer counts against BOTH of §8's rules: the check below is the correction's source, and
+        // the web tools are withdrawn on the first one. An EMPTY reply was already charged as the first
+        // rejection when the thinking rule read it, so charging it twice would move the withdrawal one attempt
+        // early and make the web-tool rule depend on which of two readers looked first.
+        if call.answered(&replies_text(&last_reply)) {
+            call.note_rejected();
+        }
         previous = Some(suggest::whole_cut_problems(&placed(&plan), target));
     }
     logs.push(format!(">>> {STEP}: {}", suggest::NO_VALID_CUT));
@@ -413,6 +516,46 @@ where
         segs: Vec::new(),
         applied: suggest::Applied::default(),
     }
+}
+
+/// The wrapper that keeps §8's three "the reply that just arrived" rules honest: the attempt loop reads the
+/// text the dial ACTUALLY handed back, so neither the thinking rule nor the progress numbers can be scripted.
+/// The request is non-streaming today (`live_ask` passes `streaming: false`; the delta pump in
+/// [`crate::llm_stream_leg`] belongs to another item), so one call's reply is one snapshot of the answer — and
+/// the loop needs EVERY call of an attempt, not the last one: a model that asked for three segments and then
+/// called `finish_cut` wrote its answer in the first reply and said nothing in the second. So the running text
+/// is a log of every reply this attempt received, and "wrote nothing" means not one reply wrote anything.
+pub fn watch_reply<'a, F>(
+    ask: &'a mut F,
+    seen: &'a std::cell::RefCell<Vec<String>>,
+) -> impl FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String> + 'a
+where
+    F: FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String>,
+{
+    move |conversation, offered| {
+        let turn = ask(conversation, offered)?;
+        seen.borrow_mut().push(crate::ui::cut_suggest_watch::reply_text(&turn));
+        Ok(turn)
+    }
+}
+
+/// The replies one attempt received, as one text: empty only when every reply in it was empty, which is what
+/// §8's "the model spent the whole call thinking and wrote nothing" reads.
+fn replies_text(replies: &std::cell::RefCell<Vec<String>>) -> String {
+    let mut text = String::new();
+    for reply in replies.borrow().iter() {
+        text.push_str(reply);
+    }
+    text
+}
+
+/// §8's thinking rule, read off the reply that just arrived: `Some` is the one line saying the next call asks
+/// without reasoning. Split from the loop because the loop is already reading four rules at once.
+fn retry_note(
+    call: &mut crate::ui::cut_suggest_watch::Call,
+    replies: &std::cell::RefCell<Vec<String>>,
+) -> Option<String> {
+    call.note_reply_text(&replies_text(replies))
 }
 
 /// `session.txt` — the timeline the model copies its seconds off. An unreadable file goes into the

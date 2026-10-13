@@ -2689,6 +2689,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
                 .borrow_mut()
                 .push(Rc::new(std::cell::RefCell::new(cut_hear::PreviewVolume::default())))
         });
+        // §05-cut#8 bullet 2: the stream volume goes to full ONCE, here, before any tick has asked for a
+        // gain — through this app's own element, never the sound server's remembered stream volume.
+        crate::ui::preview_sound::reset_stream_volume_once(&window);
         if let Some(scale) = preview_volume_scale(&window) {
             wire_preview_volume(&scale, &window);
         }
@@ -5256,14 +5259,24 @@ pub fn apply_mix(
     // clock, so its pipeline may not carry on under a frozen picture — `card_hold_advance` says the line does
     // not move, and the same rule mutes the footage here. The card's OWN sound is what plays instead, which is
     // why this mutes the footage and never the card.
-    if crate::ui::cut_card_preview::card_hearing(
+    let held_by_card = crate::ui::cut_card_preview::card_hearing(
         &cut::Cut { segs: segs.to_vec(), ..Default::default() },
         t,
     )
-    .is_some_and(|hearing| hearing.footage_held)
-    {
+    .is_some_and(|hearing| hearing.footage_held);
+    if held_by_card {
         mix.footage_muted = true;
     }
+    // §05-cut#8 bullet 2: ONE line per CHANGE of the footage's own mute, naming the reason. Asked with the
+    // answer the player held a tick ago and before it is overwritten below, which is what keeps a 100 ms tick
+    // from printing the same mute eight times. The wording is `preview::sound_change`'s; this door only says
+    // WHEN, and the reason is which of the two causes this tick's silence has.
+    crate::ui::preview_sound::report_mute_change(
+        crate::ui::preview_sound::heard_before(window),
+        crate::ui::preview_sound::heard_now(&mix),
+        held_by_card,
+        &|line| log_line(line),
+    );
     if let Some(player) = live_player(window) {
         player.borrow_mut().footage_muted = mix.footage_muted;
     }

@@ -69,6 +69,9 @@ pub mod cut_view;
 /// `tools::cutpass::Plan`, and the walk-back of whatever passed. Split out of `window.rs`, which is
 /// past its size budget; it lands nothing (that is `cut_suggest_land`'s write).
 pub mod cut_suggest_model_run;
+/// §05-cut#8 bullet 3 — the Suggest call's own progress and retry rules, in the shape the attempt loop can
+/// carry. Split out of `cut_suggest_model_run`, which is past its size budget.
+pub mod cut_suggest_watch;
 /// §05-cut#2 — landing a suggestion: the walk-back's answer becomes the cut on screen AND the history's
 /// base in one write. Split out of `window.rs`, which is past its size budget.
 pub mod cut_suggest_land;
@@ -104,6 +107,9 @@ pub mod cut_session;
 /// §05-cut#7-rules bullet 8 — the strip is a window drawn under a translate: the one place its scroll, its
 /// px-per-second and the pixel↔second conversion live, so the painter and the press cannot disagree.
 pub mod cut_strip_view;
+/// §05-cut#8 bullet 2: the mute line, the stream-volume reset, and the reason each names. Split out of
+/// `window.rs`, which is past its size budget.
+pub mod preview_sound;
 /// F2.1 ▶'s page half: the filmed runs and footage files a press hands the media leg, and the button's face.
 /// Split out of `window.rs`, which is past its size budget.
 pub mod cut_record_play;
