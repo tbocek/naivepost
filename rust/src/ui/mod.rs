@@ -110,6 +110,9 @@ pub mod cut_card_preview;
 /// F2.6 S1/S2 on the PAINTED band: the gesture that draws, resizes and moves a selection, read off the
 /// geometry the painter uses. Split out of `window.rs`, which is past its size budget.
 pub mod cut_select_press;
+/// F3.8 S1/S2/S3 — the effects-lane bar's own drag gesture: when a press is a click, when it picks the band
+/// up, and how far the hand may take it. Split out of `window.rs`, which is past its size budget.
+pub mod cut_band_press;
 /// F2.7: the page's half of Add / Split / Remove / ⌦ — the four doors, what each writes, the snap-list
 /// gather and the ✕ dispatch. Split out of `window.rs`, which is past its size budget.
 pub mod cut_verb_press;
@@ -462,3 +465,6 @@ pub use window::press_effect_bar;
 pub use window::press_edit_effect;
 pub use window::remove_effect_at;
 pub use window::remove_held_effect;
+/// F3.8: the bar gesture's own doors — `wire_bar` is called from `refresh_effects_lane`, and the two state
+/// readers are what `drag_held_band` asks about the drag in flight.
+pub use cut_band_press::{bar_gesture_for_test, band_drag_in_flight, take_history_step, wire_bar};

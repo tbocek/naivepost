@@ -1404,6 +1404,10 @@ name = "f3_6_gain_reaches_sound"
 path = "tests/f3_6_gain_reaches_sound.rs"
 
 [[test]]
+name = "f3_8_band_gesture_widgets"
+path = "tests/f3_8_band_gesture_widgets.rs"
+
+[[test]]
 name = "svg_drawing_widgets"
 path = "tests/svg_drawing_widgets.rs"
 

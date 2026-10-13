@@ -1371,6 +1371,10 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
             let bar_widget = ensure_named_child(&row_box, &format!("fx-bar-{}", bar.index), |slot| {
                 let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 0);
                 box_.set_size_request(48, slot);
+                // F3.8 S1/S2/S3: the bar's OWN drag gesture, attached once per bar widget for the same reason
+                // the ✕ is connected once — a refresh that added a second controller would answer one press
+                // twice. The rules it forwards to live in `fx_band`; this is only the wire.
+                crate::ui::cut_band_press::wire_bar(window, bar.index, &box_);
                 box_
             });
             // F3.8 S1/S3: the bar's DRAWN width comes from the record's own length, with 48 px only as a
@@ -5014,7 +5018,16 @@ pub fn drag_held_band(
     // §7's `cut.json is written by one function`: the write is refused while a gesture is in flight
     // ([`crate::cut_save::gesture_in_flight`]), so a drag tick updates state and the release writes the answer.
     save_insert_cut(&cut_);
-    record_edit(window, &cut_);
+    // §7's one Undo per drag: while a bar gesture is in flight the FIRST tick spends the history entry and the
+    // rest ride on it (a mouse-move loop would otherwise cost one step per pixel). A direct call with no
+    // gesture in flight keeps recording every time, which is what `band_hold_widgets` pins.
+    if !crate::ui::cut_band_press::band_drag_in_flight()
+        || crate::ui::cut_band_press::take_history_step()
+    {
+        record_edit(window, &cut_);
+    } else {
+        seed_review_cut(window, &cut_);
+    }
     set_held_effect(Some(cut_.fx[index].clone()));
     // S1 put the line on the band's start when the band was picked up; a drag that moves the band carries the
     // line along with it, or the refresh below would read the OLD line against the NEW position and drop the
