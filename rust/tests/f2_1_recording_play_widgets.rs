@@ -62,16 +62,17 @@ fn pin_session(tag: &str) -> PathBuf {
     root
 }
 
-/// A player program that records what it was asked for, answers TERM, and stays alive until then. This is
-/// the seam the program itself reads (`play_back::player_program` → `NAIVEPOST_PLAYER`), so no test helper
-/// is consulted anywhere in `src/`.
+/// The fake player: records each spawn's arguments as ONE line (so a cue and a later loudness re-cue are two
+/// readable lines), answers TERM, and stays alive until then. This is the seam the program itself reads
+/// (`play_back::player_program` → `NAIVEPOST_PLAYER`), so no test helper is consulted anywhere in `src/`.
 fn fake_player(root: &Path) -> PathBuf {
     let log = root.join("player-argv.txt");
     let script = root.join("fake-player.sh");
     std::fs::write(
         &script,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\ntrap 'exit 0' TERM INT\nwhile :; do sleep 0.1; done\n",
+            "#!/bin/sh\nprintf '%s ' \"$@\" >> '{}'\nprintf '\\n' >> '{}'\ntrap 'exit 0' TERM INT\nwhile :; do sleep 0.1; done\n",
+            log.display(),
             log.display()
         ),
     )
@@ -81,13 +82,34 @@ fn fake_player(root: &Path) -> PathBuf {
     script
 }
 
-/// What the fake player wrote down, one argument per line.
-fn argv_of(root: &Path) -> Vec<String> {
+/// What the fake player wrote down: one line per spawn, its arguments space-separated. `argv_of` returns those
+/// lines; a check that wants ONE spawn's arguments splits the line it cares about.
+fn argv_lines(root: &Path) -> Vec<String> {
     std::fs::read_to_string(root.join("player-argv.txt"))
         .unwrap_or_default()
         .lines()
         .map(str::to_string)
         .collect()
+}
+
+/// The arguments of ▶'s OWN cue, split back into words — the LAST gapless spawn in the log, because if a later
+/// press re-cued, that is the cue the check below is about.
+///
+/// A loudness ask is a second spawn on purpose (F2.5 S2 moves the footage's sound by playbin's volume PROPERTY,
+/// and this leg's only way to ask that property is to re-cue the same files at the same second), so once the
+/// preview is playing the newest thing the player was asked for is a tick's `--volume` re-cue at the tick's own
+/// tenth-of-a-second, not the press's cue. The two are told apart by what the app itself puts in the argv:
+/// [`naivepost::play_back::command_for`] cues gapless (`--gapless`) and [`naivepost::play_back::volume_args`]
+/// never does, so the cue is found by its own flag rather than by being last — which keeps this asserting the
+/// press's cue without loosening it to "whatever the leg spawned most recently".
+fn cue_argv_of(root: &Path) -> Vec<String> {
+    let cue = argv_lines(root)
+        .iter()
+        .rev()
+        .find(|line| line.split_whitespace().any(|arg| arg == "--gapless"))
+        .cloned()
+        .unwrap_or_default();
+    cue.split_whitespace().map(str::to_string).collect()
 }
 
 /// A Cut-page window over a session whose tape is `project:sources/lecture.mkv`, whole and filmed.
@@ -132,7 +154,7 @@ fn check_s3_a_press_gives_the_window_real_filmed_runs(app: &adw::Application) {
         "and a real media process was started for it"
     );
 
-    let args = argv_of(&root);
+    let args = cue_argv_of(&root);
     println!("PLAYER ARGV: {args:?}");
     assert!(
         args.iter().any(|arg| arg.ends_with("sources/lecture.mkv")),
@@ -160,7 +182,7 @@ fn check_s2_cues_the_real_player_program_at_the_red_line(app: &adw::Application)
         .expect("▶")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    let args = argv_of(&root);
+    let args = cue_argv_of(&root);
     let at = args.iter().position(|arg| arg == "-s").and_then(|i| args.get(i + 1));
     assert_eq!(at.map(String::as_str), Some("42.5"), "the cue names the red line: {args:?}");
     assert!(play_back::playing_pid().is_some(), "and it is a live process");
@@ -223,7 +245,7 @@ fn check_s1_switches_and_carries_on(app: &adw::Application) {
     );
     // S1 says "already playing: carry on", so the press that switched starts NO process — the one already
     // running is the one being carried on. A fresh stub log proves nothing was cued by this press.
-    let args = argv_of(&root);
+    let args = argv_lines(&root);
     assert!(args.is_empty(), "carrying on cues nothing new, it keeps what runs: {args:?}");
     // And because ours is now the running preview, the button wears ⏸ rather than lying about ▶.
     assert!(button.label().is_some_and(|l| l.contains('\u{23f8}')), "the face followed the switch");
