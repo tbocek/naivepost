@@ -539,8 +539,13 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             let staged = cut::Cut {
                 segs: vec![cut::Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
                 fx: vec![
-                    // A zoom standing at the line's second, framed off-centre so the dim outside its rect and
-                    // the white stroke are both visible rather than hidden behind a full-frame camera.
+                    // A zoom standing at the line's second, framed off-centre and tighter than the full frame:
+                    // `fx_zoom::SETTLED` is hf 1.0, which hides nothing, so the dim would have no bands outside its
+                    // rect and the white stroke would fall on the panel's own edge. hf is the height FRACTION of
+                    // the footage and the rect takes the same share of the width, so it cannot go smaller for free:
+                    // under `fx_lane::PLATE_MIN_PX` of width `fx_lane::room_px` answers "no room", the debt plate
+                    // hides, and §06's own caption for this screen — "the caption is fitted into its box" — needs
+                    // that plate in the shot. Off-centre so the rect reads as a crop, not as a border.
                     cut::Fx {
                         kind: "zoom".to_string(),
                         t: 78.0,
@@ -548,7 +553,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                         trans: 2.0,
                         cx: Some(0.42),
                         cy: Some(0.55),
-                        hf: Some(0.55),
+                        hf: Some(0.6),
                         ..Default::default()
                     },
                     // A speed whose sound runs to the scene's end: the one answer that draws the dashed debt
@@ -602,6 +607,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // real session's line does.
             // The caption through its real doors: arm ❝ Text, land a box on the panel, type, Apply. Apply
             // writes through `record_edit`, so this is the caption the lane and the frame both already hold.
+            // Dragged with the line at 81 s, not 82 s: a caption's first 0.3 s is its fade-in
+            // (`fx_lane::visibility_at` answers 0 at the exact second it starts), so one placed ON 1:22 would be
+            // painted at alpha 0 in the very shot §06 shows it visible in. Landing it a second earlier puts the
+            // whole fade BEFORE the spec's second, so 1:22 sees the finished caption — the drag still decides the
+            // seconds, as it does for a hand.
+            ui::set_line_position(&window, cut_line::LinePos { t: 81.0 });
             ui::note_place(true);
             let landed = ui::press_text_item(&window);
             let _ = landed;
@@ -613,7 +624,14 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             }
             let said = ui::press_text_apply(&window);
             println!("snapshot: 06-preview | {said}");
+            // Back to the spec's own second now that the caption is on the cut: everything after this line reads
+            // the plate, the debt and the camera at 1:22, which is where §06's screenshot stands.
+            ui::set_line_position(&window, cut_line::LinePos { t: 82.0 });
             ui::refresh_effects_lane(&window);
+            // The shot is taken with NOTHING in hand: §2 gives the full-alpha-plus-dashed-outline treatment to the
+            // held record only, and a frozen dashed outline would claim a hand that is not there. What makes the
+            // words show complete at 1:22 is the landing a second earlier (above) — their real alpha is 1 there,
+            // so the painter needs no special case to draw the fitting §S4 promises.
             // The frame's own picture too: `cut_picture::refresh` is the only door that decides which recorded
             // second sits behind the dim, so without it the panel paints its rect over an empty plate.
             let _ = ui::cut_picture::refresh(&window);

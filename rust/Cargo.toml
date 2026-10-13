@@ -1538,3 +1538,7 @@ path = "tests/sec_05_cut_8_suggest_press_wired.rs"
 [[test]]
 name = "f3_1_press_on_the_preview"
 path = "tests/f3_1_press_on_the_preview.rs"
+
+[[test]]
+name = "f3_4_caption_on_the_preview"
+path = "tests/f3_4_caption_on_the_preview.rs"

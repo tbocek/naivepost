@@ -813,6 +813,22 @@ pub fn zoom_drag_ended_with_source(
             return "no zoom armed \u{2014} pick \u{2295} Zoom first".to_string();
         }
         if held_effect().is_none() {
+            // F3.4 S5 (`a press without travel toggles play/pause wherever it lands`): a click that landed inside an
+            // overlay's own box is the picture's toggle, not a framing question — the box must not swallow it.
+            // Claimed here because this is where the panel's ONE button-1 release arrives; `cut_preview_press`
+            // performs it through the picture's own door and answers `None` for every other click, so §F3.1's
+            // after-S5 rule below is untouched.
+            let at = paste_line(window);
+            let fit = crate::ui::cut_preview_frame::fit_size_of(
+                window,
+                PREVIEW_PANEL_W,
+                PREVIEW_PANEL_H,
+            );
+            if let Some(said) =
+                crate::ui::cut_preview_press::play_toggle_on_press(window, at, fit, from)
+            {
+                return said;
+            }
             let said = crate::ui::cut_zoom_hand::press_on_release(window, from);
             if !said.is_empty() {
                 return said;

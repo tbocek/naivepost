@@ -87,6 +87,13 @@ pub mod cut_picture;
 /// rect, the stroked rect, the overlays at their real alpha, and the mask plus titles while playing.
 /// Its widgets are built here and its draw func installed from `window.rs`, which keeps its own budget.
 pub mod cut_preview_frame;
+/// F3.4 S4 — the caption's preview draw: its box, the shared fitter's size and lines, and the white bold words
+/// with their dark dilated edge. Split out so `cut_preview_frame` stays a painter that composes no rule of its own.
+pub mod cut_preview_caption;
+/// F3.4 S5 (`a press without travel toggles play/pause wherever it lands`) — the preview panel's one button-1
+/// gesture asks this whether a click landed on an overlay's box, and if so plays or pauses through the picture's own
+/// door instead of falling through to the framing flow.
+pub mod cut_preview_press;
 /// §06-effects#2-the-lane-and-the-preview — assembling the preview panel and the effects lane under it into
 /// the Cut page, and keeping the overlay stack in step with the frame. Split out of `window.rs`, which is
 /// past its size budget.

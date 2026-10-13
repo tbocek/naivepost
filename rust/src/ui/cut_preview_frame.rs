@@ -325,7 +325,7 @@ pub fn paint(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
 }
 
 /// The paused half: the dim, the stroked rect, then the overlays.
-fn paint_paused(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
+pub fn paint_paused(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
     let fit = frame.fit;
     let (x, y, w, h) = camera_rect_px(&seen.camera, fit);
     // "outside the camera rect dimmed black 0.45": four bands, never a wash over the whole panel.
@@ -393,6 +393,17 @@ fn paint_overlay(cr: &cairo::Context, frame: &Frame, index: usize, alpha: f64, o
         return;
     };
     if !fx_lane::drawn_paused(effect.effect_kind().expect("filtered by paused_scene")) {
+        return;
+    }
+    // F3.4 S4 (`same function for preview and render`): a caption is laid out by `cut_preview_caption`, which
+    // asks `fx_text::fit` — the thumbnail's own fitter — for its size and lines. The generic path below stays for
+    // a drawing, whose words are its file rather than its `text`.
+    if effect.effect_kind() == Some(cut::EffectKind::Text) {
+        crate::ui::cut_preview_caption::draw(cr, effect, frame.fit, alpha);
+        if outline {
+            let box_ = crate::ui::cut_preview_caption::box_of(effect, frame.fit);
+            draw_box_outline(cr, box_, true, fx_lane::HELD_OUTLINE, alpha);
+        }
         return;
     }
     let (width, height) = frame.fit;
