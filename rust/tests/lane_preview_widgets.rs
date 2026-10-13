@@ -28,9 +28,9 @@ static RAN_EMPTY_LANE: AtomicBool = AtomicBool::new(false);
 static RAN_BAR_IN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_HELD_OVERLAY: AtomicBool = AtomicBool::new(false);
 static RAN_UNDO_TAKES_BAR: AtomicBool = AtomicBool::new(false);
+static RAN_SEAT: AtomicBool = AtomicBool::new(false);
 
-/// Let the main context run what the widget emissions queued.
-
+// Let the main context run what the widget emissions queued.
 fn click(window: &adw::ApplicationWindow, name: &str) {
     ui::line_step_button(window, name)
         .unwrap_or_else(|| panic!("the Cut page drew no {name}"))
@@ -94,9 +94,38 @@ fn held_caption() -> Fx {
     }
 }
 
+/// §2 / `spec/img/06-lane.png`: the lane sits directly BENEATH the preview frame, so in this page's child order
+/// `effects-lane` comes immediately after `preview-panel`. The panel is what the lane belongs under — it is
+/// where an effect's overlays are painted, so the frame and the lane stay in one view; the camera rows and the
+/// ruler sit above both, which is why the older "under the band, above the camera rows" seat was wrong.
+fn the_lane_sits_under_the_frame(app: &adw::Application) {
+    let window = cut_page(app, &tape(), &Cut::default());
+    assert!(widget_in(&window, "preview-panel").is_some(), "the Cut page drew the preview panel");
+    let lane_box = widget_in(&window, "effects-lane").expect("the Cut page drew the effects-lane holder");
+    let parent = lane_box.parent().expect("the lane is packed in the page box");
+    let mut order: Vec<String> = Vec::new();
+    let mut child = parent.first_child();
+    while let Some(node) = child {
+        order.push(node.widget_name().to_string());
+        child = node.next_sibling();
+    }
+    let panel_at = order.iter().position(|n| n == "preview-panel").expect("the page drew the preview panel");
+    let lane_at = order.iter().position(|n| n == "effects-lane").expect("effects-lane is in the page box");
+    assert_eq!(
+        lane_at,
+        panel_at + 1,
+        "the lane is the page's next child after the frame it sits under, got order {order:?}"
+    );
+    RAN_SEAT.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
+}
+
 /// §06-effects#2 — the lane and the preview draw what the records hold: one row when empty, a named bar per
 /// record, the one in hand full and outlined, and nothing left behind when Undo takes a record away.
 fn lane_preview_round(app: &adw::Application) {
+    the_lane_sits_under_the_frame(app);
+
     // --- (a) an EMPTY cut still draws exactly one row ---------------------------------------------
     // §2: the lane is never empty. Seen through the widget: the holder exists, has ONE child, and that child
     // is `fx-lane-row-0`.
@@ -218,6 +247,7 @@ fn sec_06_effects_2_the_lane_and_the_preview_wire_the_lane_and_the_preview_draw_
     assert!(RAN_BAR_IN_ROW.load(Ordering::SeqCst), "the bar-in-row check never ran");
     assert!(RAN_HELD_OVERLAY.load(Ordering::SeqCst), "the held-overlay check never ran");
     assert!(RAN_UNDO_TAKES_BAR.load(Ordering::SeqCst), "the undo-takes-the-bar check never ran");
+    assert!(RAN_SEAT.load(Ordering::SeqCst), "the lane-seat check never ran");
     // Silence the unused-import lint for the kind the fixtures spell as a string.
     let _ = EffectKind::Text;
 }

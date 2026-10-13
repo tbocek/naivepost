@@ -530,6 +530,95 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // "Zoom picked up" sentence the lane prints.
             ui::press_effect_bar(&window, 0, 100.0, 200.0, 20.0, false);
         }
+        // §06-effects#2's own screen (`spec/img/06-preview.png`): the preview DURING a zoom and a caption at
+        // 1:22 — the camera rect framing the lecturer, the caption fitted into its box, the plate a delayed
+        // sound earns. The fixture cannot show any of it (its `cut/cut.json` has `fx: []`), so the two records
+        // are seeded here the way `06-lane` seeds its bars, and the caption is then placed through ❝ Text's own
+        // doors rather than pushed in: what the panel paints must be what the app would paint.
+        if screen == "06-preview" {
+            let staged = cut::Cut {
+                segs: vec![cut::Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
+                fx: vec![
+                    // A zoom standing at the line's second, framed off-centre so the dim outside its rect and
+                    // the white stroke are both visible rather than hidden behind a full-frame camera.
+                    cut::Fx {
+                        kind: "zoom".to_string(),
+                        t: 78.0,
+                        dur: 12.0,
+                        trans: 2.0,
+                        cx: Some(0.42),
+                        cy: Some(0.55),
+                        hf: Some(0.55),
+                        ..Default::default()
+                    },
+                    // A speed whose sound runs to the scene's end: the one answer that draws the dashed debt
+                    // tail (§2), with enough debt on it to clear `fx_lane::DEBT_TAIL_MIN_SECONDS`. `trans` is
+                    // spelled out because a default of 1 s would make the first second of the record a fade, and
+                    // the plate's debt is read at the line's second (82.0), five seconds into this bar.
+                    cut::Fx {
+                        kind: "speed".to_string(),
+                        t: 77.0,
+                        dur: 6.0,
+                        trans: 0.0,
+                        tout: 0.0,
+                        rate: 0.5,
+                        snd: "scene".to_string(),
+                        ..Default::default()
+                    },
+                    // And an effect-end one beside it, which gets NO tail: the difference is the point.
+                    cut::Fx {
+                        kind: "speed".to_string(),
+                        t: 96.0,
+                        dur: 6.0,
+                        trans: 0.0,
+                        tout: 0.0,
+                        rate: 0.5,
+                        snd: "own".to_string(),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            };
+            ui::seed_review_cut(&window, &staged);
+            ui::set_session_recordings(&[crate::timeline::Recording {
+                base: "session-tape".to_string(),
+                start: 0.0,
+                end: 300.0,
+            }]);
+            // Badge **1** needs a frame to show, and the demo fixture ships no extracted frames, so the shot
+            // writes one real PNG into the folder the page lists them from — the same door `05-cut` uses.
+            seed_snapshot_frame(&dir, "session-tape", 82.0);
+            ui::cut_picture::set_preview_camera_base("session-tape");
+            // Without the folder the frame lives in, `refresh` has nothing to decode and the panel paints its
+            // rect over an empty plate (`05-cut` sets the same door).
+            ui::cut_picture::set_snapshot_dir(&dir);
+            // The spec's second: 1:22, four seconds into the zoom and inside the scene-end speed's seconds.
+            ui::set_line_position(&window, cut_line::LinePos { t: 82.0 });
+            ui::set_playhead(&window, 82.0);
+            // The plate's two conditions are both asked of the page in `refresh_effects_lane`: the room
+            // (`fx_lane::room_px` × `PLATE_MIN_PX`) and the debt (`fx_lane::plate_debt_at` over this cut at the
+            // line's second). Nothing extra is poked here — the scene-end speed staged above is what makes the
+            // debt true at 1:22 (5 s of its 6 s run by then), so the sentence arrives through the same door a
+            // real session's line does.
+            // The caption through its real doors: arm ❝ Text, land a box on the panel, type, Apply. Apply
+            // writes through `record_edit`, so this is the caption the lane and the frame both already hold.
+            ui::note_place(true);
+            let landed = ui::press_text_item(&window);
+            let _ = landed;
+            ui::text_drag_ended(&window, (60.0, 96.0), (180.0, 118.0));
+            if let Some(view) = crate::ui::window::find_widget_by_name(window.upcast_ref(), "text-field-words")
+                .and_then(|w| w.downcast::<gtk::TextView>().ok())
+            {
+                view.buffer().insert_at_cursor("Ethereum in one lecture");
+            }
+            let said = ui::press_text_apply(&window);
+            println!("snapshot: 06-preview | {said}");
+            ui::refresh_effects_lane(&window);
+            // The frame's own picture too: `cut_picture::refresh` is the only door that decides which recorded
+            // second sits behind the dim, so without it the panel paints its rect over an empty plate.
+            let _ = ui::cut_picture::refresh(&window);
+            crate::ui::cut_view::repaint_page(&window);
+        }
         // §F2.12's own screen: three inserts staged through the chooser seam, the radios and Apply, then S1's
         // refusal last. All of it lives in `snapshot_insert` -- `run` is past the size another block fits in.
         if screen == "05-insert" {

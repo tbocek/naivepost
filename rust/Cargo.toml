@@ -832,6 +832,10 @@ name = "lane_preview_surfaces"
 path = "tests/lane_preview_surfaces.rs"
 
 [[test]]
+name = "sec_06_effects_2_lane_preview_wired"
+path = "tests/sec_06_effects_2_lane_preview_wired.rs"
+
+[[test]]
 name = "lane_preview_widgets"
 path = "tests/lane_preview_widgets.rs"
 

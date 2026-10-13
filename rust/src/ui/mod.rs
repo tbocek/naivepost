@@ -80,6 +80,17 @@ pub mod cut_suggest_land;
 pub mod cut_suggest_press;
 pub mod cut_form_frame;
 pub mod cut_picture;
+/// §06-effects#2-the-lane-and-the-preview — the preview panel's painted frame: the dim outside the camera
+/// rect, the stroked rect, the overlays at their real alpha, and the mask plus titles while playing.
+/// Its widgets are built here and its draw func installed from `window.rs`, which keeps its own budget.
+pub mod cut_preview_frame;
+/// §06-effects#2-the-lane-and-the-preview — assembling the preview panel and the effects lane under it into
+/// the Cut page, and keeping the overlay stack in step with the frame. Split out of `window.rs`, which is
+/// past its size budget.
+pub mod cut_preview_panel;
+/// §06-effects#2-the-lane-and-the-preview — whether a lane bar earns its dashed debt tail, and the class it
+/// wears. Split out of `window.rs`, which is past its size budget.
+pub mod cut_debt_tail;
 /// F2.12 S7 — the card preview pass: ffmpeg renders a card's frames at 8 fps (one for a still), the nearest
 /// rendered one goes on the panel, and a spliced card holds the footage while it plays. Split out of
 /// `window.rs`, which is past its size budget.

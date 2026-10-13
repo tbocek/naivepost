@@ -518,64 +518,11 @@ fn page_box(
         // search for `camera-rows` from it finds nothing. The rows are drawn by `refresh_camera_rows`,
         // which `build_window` calls after `set_content` alongside the other Cut-page wiring.
 
-        // §06-effects#2-the-lane-and-the-preview — the effects lane, its own strip under the camera
-        // rows (where `spec/img/06-lane.png` puts it), and the preview panel beside it. THE CUT PAGE
-        // ONLY, for the same reason `fold-badges` is: `page_box` runs once per tab, and a second box
-        // sharing the name makes every lookup ambiguous. Built EMPTY here and filled by
-        // `refresh_effects_lane` after `set_content`, exactly like `camera-rows`.
-        let lane_box = gtk::Box::new(gtk::Orientation::Vertical, 1);
-        lane_box.set_widget_name("effects-lane");
-        lane_box.set_tooltip_text(Some(
-            "one row per overlapping group \u{00b7} each kind its own colour",
-        ));
-        box_.insert_child_after(&lane_box, Some(&previous));
-        previous = lane_box.upcast();
-
-        // The preview as one frame: the dim outside the camera rect, the rect itself, the overlays at
-        // their real alpha, and the plate a delayed sound earns. No drawing happens here; the numbers all
-        // come from `fx_lane`'s view-model and are pushed in by `refresh_effects_lane`.
-        //
-        // The panel's height is pinned (`135` = 240 x 9/16, the picture's own shape) rather than left to
-        // the children's vexpand: with only expanding children inside a vertical page column, GTK gave the
-        // box its 240 px width but let the three parts share it as ~78 px each, so nothing read as a
-        // picture. A fixed height makes the frame what it claims to be.
-        let preview = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-        preview.set_widget_name("preview-panel");
-        preview.set_size_request(PREVIEW_PANEL_W as i32, PREVIEW_PANEL_H as i32);
-        preview.set_halign(gtk::Align::Start);
-        preview.set_tooltip_text(Some(
-            "paused: everything outside the camera rect dimmed \u{00b7} playing: only the mask and the titles",
-        ));
-
-        let dim = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        dim.set_widget_name("preview-dim");
-        dim.set_vexpand(true);
-        dim.set_hexpand(true);
-        preview.append(&dim);
-
-        let rect = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        rect.set_widget_name("preview-camera-rect");
-        rect.set_vexpand(true);
-        rect.set_hexpand(true);
-        preview.append(&rect);
-
-        // The overlay stack holds one child per effect that draws while paused, named by its index in the
-        // cut's `fx` list so a test reads the same index the logic test asserts on.
-        let overlays = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        overlays.set_widget_name("preview-overlays");
-        overlays.set_vexpand(true);
-        overlays.set_hexpand(true);
-        preview.append(&overlays);
-
-        let plate = gtk::Label::new(None);
-        plate.set_widget_name("preview-plate");
-        plate.set_visible(false);
-        preview.append(&plate);
-
-        // §A's GtkPicture: the frame of the session, behind the dim, the rect and the overlays.
-        rect.prepend(&cut_picture::build());
-
-        box_.append(&preview);
+        // §06-effects#2 — the preview frame and, directly beneath it, the effects lane, in the order
+        // `spec/img/06-lane.png` gives them. Both are built by `cut_preview_panel::install` (window.rs is past
+        // its size budget) and come back empty: `refresh_effects_lane` fills them once this window has a cut.
+        // The return value is unread — nothing after this arm packs beside the panel — so it is dropped.
+        let _ = crate::ui::cut_preview_panel::install(&box_, &previous);
     }
 
     // F2.11 S1 — the whole-cut fold badge's holder, beside the camera rows. THE CUT PAGE ONLY:
@@ -1300,7 +1247,8 @@ fn install_lane_css_once() {
         (violet[2] * 255.0).round() as i32
     ));
     css.push_str(".drawing-box { border: 1px dashed #ffffff; }\n");
-    css.push_str(".preview-dimmed { background-color: rgba(0, 0, 0, 0.45); }\n");
+    css.push_str(&super::cut_debt_tail::css());
+    css.push_str(&super::cut_preview_frame::css());
     // F0.4 S2: the gears' turning rule, installed with the rest so one provider carries both.
     css.push_str(&super::lucky_run::gears_css());
 
@@ -1407,6 +1355,7 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
             let width = cut_bar_width_px(cut_.fx[bar.index].dur);
             let drawn = width.max(48.0).round();
             bar_widget.set_size_request(drawn as i32, bar_widget.height().max(1));
+            crate::ui::cut_debt_tail::wear_tail(&bar_widget, &cut_, bar.index, t, &crate::ui::page_recordings());
             set_class(&bar_widget, "fx-kind-zoom-staying", bar.staying);
             if !bar.staying {
                 set_class(&bar_widget, &format!("fx-kind-{}", spell_kind(bar.kind)), true);
@@ -1478,13 +1427,9 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         }
     }
 
-    if let Some(dim) = preview_widget(window, "preview-dim") {
-        dim.set_opacity(scene.dim_alpha);
-        set_class(&dim, "preview-dimmed", scene.dim_alpha > 0.0);
-    }
     if let Some(rect) = preview_widget(window, "preview-camera-rect") {
         // F3.1 S1: while a zoom is armed the camera layer goes DOWN so the whole source shows — a box cannot
-        // be drawn against a frame that is already cropped. The class is added AND removed off `armed`, so a
+        // be drawn against a frame that is already cropped. The opacity is added AND removed off `armed`, so a
         // disarmed page always gets its stroke back.
         let armed = zoom_armed();
         rect.set_opacity(if armed || scene.rect_stroke_px <= 0.0 {
@@ -1493,18 +1438,17 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
             1.0
         });
     }
+    crate::ui::cut_preview_frame::repaint(window);
     if let Some(stack) = preview_widget(window, "preview-overlays")
         .and_then(|w| w.downcast::<gtk::Box>().ok())
     {
-        sync_overlay_stack(&stack, &scene, held_index);
+        crate::ui::cut_preview_panel::sync_overlay_stack(&stack, &scene, held_index);
     }
     if let Some(panel) = preview_widget(window, "preview-panel") {
-        // F3.1 S1: the arm's own mark on the panel — while armed the camera layer is down, and the class says
-        // so in CSS rather than leaving the state invisible. Removed when not armed, same rule as `preview-dimmed`.
-        // The same rule `set_camera_layer_down` applies on an arm/disarm without rebuilding anything: a full
-        // refresh has to paint the arm too, and both paths must agree or a refresh could undo the arm's look.
-        let armed = zoom_armed();
-        set_class(&panel, "zoom-camera-down", armed);
+        // F3.1 S1: the arm's own mark on the panel. The same rule `set_camera_layer_down` applies on an
+        // arm/disarm without rebuilding anything: a full refresh has to paint the arm too, and both paths must
+        // agree or a refresh could undo the arm's look.
+        set_class(&panel, "zoom-camera-down", zoom_armed());
         // The room is the panel's own width once laid out. Before layout GTK reports 0 for it, which is
         // "not measured yet" rather than "no room", so the natural size it asks its parent for stands in:
         // reading an unrealized 0 as no room would hide the plate from every headless check while a real
@@ -1625,6 +1569,7 @@ fn find_in_holder(holder: &gtk::Widget, name: &str) -> Option<gtk::Box> {
 /// HOLDER. Height is `layout.effectRowPx` per row, so an empty lane is still one row deep.
 fn sync_lane_rows(lane: &gtk::Box, rows: usize) {
     let height = fx_lane::lane_height_px(rows) / rows.max(1) as f64;
+    lane.set_size_request(-1, (height * rows as f64).ceil() as i32);
     let existing = lane.observe_children().n_items() as usize;
     for index in existing..rows {
         let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 2);
@@ -1642,43 +1587,6 @@ fn sync_lane_rows(lane: &gtk::Box, rows: usize) {
     while let Some(node) = child {
         node.set_size_request(-1, height.ceil() as i32);
         child = node.next_sibling();
-    }
-}
-
-/// Bring the overlay stack to exactly the overlays this frame lists, then push their alphas and classes.
-fn sync_overlay_stack(stack: &gtk::Box, scene: &fx_lane::PausedScene, held_index: Option<usize>) {
-    let wanted: Vec<String> = scene
-        .overlays
-        .iter()
-        .map(|(index, _, _)| format!("preview-overlay-{index}"))
-        .collect();
-    // Remove children whose name is no longer wanted, from the holder.
-    let mut node = stack.first_child();
-    while let Some(child) = node {
-        let next = child.next_sibling();
-        if !wanted.contains(&child.widget_name().to_string()) {
-            stack.remove(&child);
-        }
-        node = next;
-    }
-    for (index, _kind, alpha) in &scene.overlays {
-        let name = format!("preview-overlay-{index}");
-        let overlay = ensure_named_child(stack, &name, |_| {
-            let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            box_.set_vexpand(true);
-            box_
-        });
-        // The one in hand draws full (§2: "the held one full"); every other keeps the real alpha its glides
-        // give it. `held_full` answers which, so nothing here re-derives who is held.
-        let shown = if Some(*index) == held_index && scene.held_full {
-            1.0
-        } else {
-            *alpha
-        };
-        overlay.set_opacity(shown);
-        // The dashed violet outline is ADDED and REMOVED by state: an outline left on after the effect was
-        // put down would claim something is still in hand.
-        set_class(&overlay, "held-effect", Some(*index) == held_index && scene.held_outline_dashed);
     }
 }
 
@@ -2941,6 +2849,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     crate::ui::cut_select_press::attach(&window);
     cut_form_frame::wire_close(&window);
     cut_picture::wire_click(&window);
+    crate::ui::cut_preview_frame::install_draw(&window);
     // §2: land a suggestion — its cut AND the new base — through the page's own doors.
     crate::ui::cut_suggest_land::install(newest_review_cut, |window, landed| {
         publish_cut(landed);
@@ -5700,6 +5609,9 @@ pub fn set_playhead(window: &adw::ApplicationWindow, at: f64) {
         player.borrow_mut().playhead = Some(at);
     }
     crate::ui::cut_view::follow_playhead(window, at);
+    // The tick writes the playhead; the playing half reads the smoothed clock at paint time, so this is what
+    // keeps the black mask and the camera layer from drifting off the picture between ticks.
+    crate::ui::cut_preview_frame::repaint(window);
 }
 
 /// Stand the preview in one of its three modes (recording / ✂ cut / ▶✂✂ review), playing or not,
@@ -9491,6 +9403,12 @@ fn wire_zoom_drag(window: &adw::ApplicationWindow) {
     gesture.connect_drag_begin(move |_g, x, y| {
         start_begin.set((x, y));
     });
+    let start_update = start.clone();
+    let win_update = window.clone();
+    gesture.connect_drag_update(move |_g, dx, dy| {
+        let (sx, sy) = start_update.get();
+        crate::ui::cut_preview_frame::note_box(Some((sx, sy, dx, dy)), &win_update);
+    });
     let win_end = window.clone();
     gesture.connect_drag_end(move |_g, dx, dy| {
         let (sx, sy) = start.get();
@@ -9516,6 +9434,7 @@ fn wire_zoom_drag(window: &adw::ApplicationWindow) {
         if let Some(status_line) = find_status(win_end.upcast_ref()) {
             status_line.set_text(&say);
         }
+        crate::ui::cut_preview_frame::note_box(None, &win_end);
     });
     panel.add_controller(gesture.clone());
     ZOOM_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
