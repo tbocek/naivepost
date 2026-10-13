@@ -325,9 +325,13 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     };
     let speech: Vec<ToSpeak> = speech_plan(run, tree, mats, speaking);
 
-    // S3: one clip per segment, after the speed splits, with every drop already named.
+    // S3: one clip per segment, after the speed splits, with every drop already named. The split is
+    // `cut_speed_split::sped_segs`, which cuts footage at each rate boundary and stamps the averaged, ramped rate —
+    // without it the planner sees an unstamped list and every clip comes out at ×1 however many speeds are on the
+    // lane. Clip numbers follow THIS list, so "clip 7" means the same here as in the log and on the Cut page.
+    let sped = crate::cut_speed_split::sped_cut(&run.cut);
     let (clips, plan_logs) = render::plan_clips(
-        &run.cut.segs,
+        &sped,
         mats.fx_for,
         &run.aspect,
         mats.exists,

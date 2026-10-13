@@ -112,8 +112,10 @@ pub fn step(page: &dyn RecordingPreviewPage, runs: &[(f64, f64)], elapsed_secs: 
             return held.status;
         }
     }
-    // S3: "every second plays, cuts and all" — the advance never skips, whatever the cut removed.
-    let mut at = preview::play_advance(from, elapsed_secs, false);
+    // S3: "every second plays, cuts and all" — the advance never skips, whatever the cut removed. The step is one
+    // tick at the FLAT rate of the second the line left (§06 §2: the preview runs speed at one rate and does not
+    // follow the ramps), so a hand-drawn ×2 moves the line twice as far per tick.
+    let mut at = crate::cut_speed_play::advance(&page.cut().fx, from, elapsed_secs);
     // S3: at a recording's end the line walks on to the next one; a camera still rolling there keeps the
     // line where it is and the player re-cues onto that file instead.
     at = preview::walk_on(runs, at).unwrap_or(at);
@@ -170,7 +172,11 @@ pub fn start(window: Rc<adw::ApplicationWindow>) {
         }
         // The session clock, smoothed to the moment between ticks (§D's face, mm:ss.d).
         if let Some(head) = page.playhead() {
-            let shown = preview::live_clock(head, since_ms, 1.0);
+            let shown = preview::live_clock(
+                head,
+                since_ms,
+                crate::cut_speed_play::flat_rate_at(&page.cut().fx, head),
+            );
             if let Some(status) = find_status(page.0.upcast_ref()) {
                 status.set_text(&clock_note(shown));
             }

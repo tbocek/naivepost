@@ -163,12 +163,18 @@ pub fn describe(window: &adw::ApplicationWindow, fit: (f64, f64), held: &Held) -
 /// through [`preview::live_clock`] — the smoothed clock §2 names, which is what keeps the mask from shimmering
 /// off the picture between ticks. A player that has never been played answers `None`, and [`camera_clock`]
 /// falls back to the line.
+///
+/// The rate is the FLAT rate of the second the line left ([`crate::cut_speed_play::flat_rate_at`]), not 1: §2's
+/// one rate per stretch is the same number the tick advanced by, so reading the camera at rate 1 while the line
+/// runs at ×2 would slide the mask off the picture exactly when a hand-drawn speed is on screen.
 pub fn live_of(window: &adw::ApplicationWindow) -> Option<f64> {
     let player = crate::ui::preview_player(window);
     if !player.transport.playing {
         return None;
     }
-    player.playhead.map(|at| preview::live_clock(at, 0, 1.0))
+    player
+        .playhead
+        .map(|at| preview::live_clock(at, 0, crate::cut_speed_play::flat_rate_at(&crate::ui::window::newest_review_cut().fx, at)))
 }
 
 /// What one painted frame needs, gathered at the refresh that asks for the repaint. The page holds every

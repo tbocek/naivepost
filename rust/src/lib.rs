@@ -44,6 +44,8 @@ pub mod policy;
 pub mod policy_call;
 pub mod cut_cam;
 pub mod cut_clamp;
+pub mod cut_speed_split;
+pub mod cut_speed_play;
 pub mod cut_fold;
 pub mod cut_cards;
 pub mod cut_insert;

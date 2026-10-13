@@ -105,7 +105,7 @@ fn f3_3_s2_the_form_asks_six_questions() {
     );
 
     // The two lists are one list read twice: each row stores the key fx_record reads, in order.
-    let stored = speed::SOUND_CHOICES.map(|row| speed::sound_stored(row));
+    let stored = speed::SOUND_CHOICES.map(speed::sound_stored);
     assert_eq!(stored, ["", "pitch", "own", "scene", "mute"]);
     assert_eq!(fx_record::snd_of(&Fx { snd: stored[0].into(), ..Default::default() }), fx_record::Snd::Default);
     assert_eq!(fx_record::snd_of(&Fx { snd: stored[1].into(), ..Default::default() }), fx_record::Snd::Pitch);
@@ -366,4 +366,205 @@ fn f3_3_s5d_a_staircase_is_built_whole_or_not_at_all() {
 
     // No ramps at all is one flat stretch too — the same answer by a different road.
     assert_eq!(speed::stairs(2.0, 5.0, 0.0, 0.0), vec![speed::Span { from: 0.0, to: 5.0, rate: 2.0 }]);
+}
+
+// --- the render's pass: the split that §08 S3 promises and `plan_clips` was never given ----------------------
+
+fn seg(s: f64, e: f64) -> naivepost::cut::Seg {
+    naivepost::cut::Seg { s, e, ..Default::default() }
+}
+
+/// F3.3 (the arithmetic after S4), run by the program: the segments handed to the render are CUT where the clock
+/// changes and carry the averaged rate, which is what `produce_exec::plan` now does before `plan_clips`.
+#[test]
+fn f3_3_s5e_the_render_splits_segments_at_rate_boundaries() {
+    use naivepost::cut_speed_split as split;
+
+    // Two speeds overlapping by a third: three spans, the middle one the AVERAGE of the two rates.
+    let fx = [rate_at(0.0, 10.0, 2.0), rate_at(5.0, 10.0, 4.0)];
+    let pieces = split::sped_segs(&[seg(0.0, 20.0)], &fx);
+    assert!(pieces.len() > 1, "one scene, several clocks: {pieces:?}");
+    for piece in &pieces {
+        assert!(piece.e > piece.s, "no empty piece: {pieces:?}");
+    }
+    // Every piece carries the rate of the span covering its middle — read back through the render's own door so the
+    // test cannot disagree with it about which second answers for a piece.
+    for piece in &pieces {
+        let mid = (piece.s + piece.e) / 2.0;
+        assert_eq!(
+            speed::applied_rate(piece.rate),
+            speed::rate_at(&fx, mid),
+            "piece {piece:?} disagrees with the span list"
+        );
+    }
+    // The overlap really is the average, not the first or the last rate asked for.
+    let overlap = pieces
+        .iter()
+        .find(|piece| piece.s >= 5.0 && piece.e <= 10.0)
+        .expect("a piece inside the overlap");
+    assert_eq!(speed::applied_rate(overlap.rate), 3.0, "{overlap:?}");
+
+    // A cut with no speed effect comes back unchanged, piece for piece: nothing was re-timed, so nothing was cut.
+    let plain = [seg(0.0, 12.0), seg(12.0, 30.0)];
+    assert_eq!(split::sped_segs(&plain, &[]), plain.to_vec());
+    let text_only = [Fx { kind: "text".into(), t: 2.0, dur: 4.0, ..Default::default() }];
+    assert_eq!(split::sped_segs(&plain, &text_only), plain.to_vec());
+}
+
+/// F3.3 (`ramps are geometric staircases`): the stairs reach the RENDER, not only the span list — a ramped band
+/// arrives as more clips than it was, each one a flat rate the encoder can build, none under the floor.
+#[test]
+fn f3_3_s5e_a_ramp_reaches_the_render_as_its_staircase() {
+    use naivepost::cut_speed_split as split;
+
+    // ×8 over 12 s with 4 s ramps: the staircase needs several stairs to keep each ≥ P.eng.rampStepSeconds.
+    let fx = [rate_at(0.0, 12.0, 8.0).clone()];
+    let mut ramped = fx[0].clone();
+    ramped.trans = 4.0;
+    ramped.tout = 4.0;
+    let stairs = speed::stairs(ramped.rate, ramped.dur, ramped.trans, ramped.tout);
+    assert!(stairs.len() > 1, "the ramp makes stairs: {stairs:?}");
+
+    let pieces = split::sped_segs(&[seg(0.0, 30.0)], &[ramped.clone()]);
+    assert!(
+        pieces.len() >= stairs.len(),
+        "the render got {} pieces for {} stairs: {pieces:?}",
+        pieces.len(),
+        stairs.len()
+    );
+    // And every piece it got is encodable: on-screen seconds at or above P.eng.minClipSeconds.
+    for piece in &pieces {
+        let on_screen = (piece.e - piece.s) / speed::applied_rate(piece.rate);
+        assert!(
+            on_screen >= cutpass::MIN_CLIP_SECONDS - 1e-9,
+            "a clip the encoder cannot make: {piece:?} = {on_screen} s on screen"
+        );
+    }
+    // Rates climb then fall: the first stair is slower than the flat middle, the last slower again.
+    let sped: Vec<f64> = pieces.iter().map(|p| p.rate).collect();
+    assert!(
+        sped.windows(2).any(|w| w[1] > w[0]) && sped.windows(2).any(|w| w[1] < w[0]),
+        "the staircase went up and came back down: {sped:?}"
+    );
+}
+
+/// F3.3 (`footage under a still runs at 1×`) through the planner: a stop reaches `plan_clips` as a piece whose
+/// rate is nought — the only thing that says a frame is held — while the footage either side keeps its own clock.
+#[test]
+fn f3_3_s5e_a_stop_gives_the_render_a_rate_of_nought() {
+    use naivepost::cut_speed_split as split;
+
+    let stop = rate_at(10.0, 4.0, 0.0);
+    let pieces = split::sped_segs(&[seg(0.0, 30.0)], std::slice::from_ref(&stop));
+    let held = pieces
+        .iter()
+        .find(|piece| piece.s >= 10.0 && piece.e <= 14.0)
+        .expect("a piece inside the stop");
+    assert_eq!(held.rate, 0.0, "a stop must arrive as rate 0, not as 1x: {held:?}");
+    for piece in pieces.iter().filter(|p| p.e <= 10.0 || p.s >= 14.0) {
+        assert_eq!(speed::applied_rate(piece.rate), 1.0, "plain footage: {piece:?}");
+    }
+
+    // All the way into the plan: the CLIP over the stop is 1× for the encoder and holds the stop's own seconds on
+    // screen, which is §4's "the picture stands still there while the clock runs".
+    // A fn item, not a closure: `fx_for` is `impl Fn(&Seg)` and a closure borrowing `stop` is not general
+    // enough for it — the same shape `tests/produce_details_confirmed.rs` uses.
+    fn held_fx(_seg: &naivepost::cut::Seg) -> Vec<Fx> {
+        vec![rate_at(10.0, 4.0, 0.0)]
+    }
+    let exists = |_path: &str| true;
+    let (clips, logs) = naivepost::produce_render::plan_clips(
+        &pieces,
+        held_fx,
+        "16:9",
+        exists,
+        &[],
+        &[],
+        (1920, 1080),
+    );
+    assert!(logs.is_empty(), "nothing should be dropped: {logs:?}");
+    let clip = clips
+        .iter()
+        .find(|clip| clip.seg_s >= 10.0 && clip.seg_s < 14.0)
+        .expect("a clip over the stop");
+    assert_eq!(clip.rate, 1.0, "the encoder gets 1x under a still: {clip:?}");
+    assert_eq!(clip.on_screen, 4.0, "and the still's own seconds: {clip:?}");
+}
+
+// --- the preview's own reading: one flat rate, and a stop that holds one frame -------------------------------
+
+/// §06 §2 (`preview runs speed at one flat rate ... render follows ramps and averages overlaps`): the preview
+/// averages overlapping rates too, but it never walks the span list — one second answers with one number.
+#[test]
+fn f3_3_s6_the_preview_runs_one_flat_rate() {
+    use naivepost::cut_speed_play as play;
+
+    let fx = [rate_at(0.0, 10.0, 2.0), rate_at(5.0, 10.0, 4.0)];
+    // In the overlap the two rates average, exactly as the render's answer does there.
+    assert_eq!(play::flat_rate_at(&fx, 7.0), 3.0);
+    // Outside it each effect's own rate is what plays, and past both records the tape runs as filmed.
+    assert_eq!(play::flat_rate_at(&fx, 2.0), 2.0);
+    assert_eq!(play::flat_rate_at(&fx, 12.0), 4.0);
+    assert_eq!(play::flat_rate_at(&fx, 99.0), 1.0);
+    assert_eq!(play::flat_rate_at(&[], 5.0), 1.0, "no speed at all is \u{d7}1");
+
+    // One tick of the line moves by that rate, which is what makes a hand-drawn speed observable without a render.
+    assert_eq!(play::advance(&fx, 2.0, 0.1), 2.2, "\u{d7}2 for one tenth of a second");
+    assert_eq!(play::advance(&fx, 7.0, 0.1), 7.3, "the averaged stretch advances by the average");
+    assert_eq!(play::advance(&[], 4.0, 0.1), 4.1, "plain footage still walks at wall clock");
+}
+
+/// §06 §2's deliberate difference, pinned from both sides: inside a ramp the render changes rate stair by stair
+/// while the preview holds one number for the whole band. The two MUST differ here — if they ever agree, one of the
+/// two readings has been unified away and this test is the thing that notices.
+#[test]
+fn f3_3_s6_the_preview_ignores_the_staircase() {
+    use naivepost::cut_speed_play as play;
+
+    let mut ramped = rate_at(0.0, 12.0, 8.0);
+    ramped.trans = 4.0;
+    ramped.tout = 4.0;
+    let fx = [ramped.clone()];
+    let stairs = speed::stairs(ramped.rate, ramped.dur, ramped.trans, ramped.tout);
+    assert!(stairs.len() > 1, "this band must be worth a staircase: {stairs:?}");
+
+    // The preview: one flat rate everywhere on the band.
+    for t in [0.5, 2.0, 6.0, 10.0, 11.5] {
+        assert_eq!(play::flat_rate_at(&fx, t), 8.0, "flat over the whole band at {t}");
+    }
+    // The render: a different rate inside the glide-in, because that is where the stairs are.
+    let inside_glide = stairs[0].rate;
+    assert_ne!(inside_glide, 8.0, "the first stair is not the effect's rate");
+    assert_eq!(speed::rate_at(&fx, 0.5), speed::applied_rate(inside_glide));
+    assert!(
+        speed::rate_at(&fx, 0.5) != play::flat_rate_at(&fx, 0.5),
+        "the two readings have collapsed into one: §2 says they must stay apart"
+    );
+}
+
+/// §F3.3 S4 (`the picture stands still there while the clock runs`): a stop names the frame it holds, and the
+/// clock keeps walking across it at the footage's own speed.
+#[test]
+fn f3_3_s6_a_stop_holds_one_frame_while_the_clock_runs() {
+    use naivepost::cut_speed_play as play;
+
+    let stop = rate_at(10.0, 4.0, 0.0);
+    let fx = [stop.clone()];
+    assert_eq!(play::still_band_at(&fx, 10.0), Some((10.0, 14.0)));
+    assert_eq!(play::still_band_at(&fx, 13.9), Some((10.0, 14.0)));
+    assert_eq!(play::still_band_at(&fx, 14.0), None, "the stop ends with its last second");
+    assert_eq!(play::still_band_at(&fx, 9.9), None);
+
+    // Inside it the panel shows the stop's FIRST second; outside it the clock's own second.
+    assert_eq!(play::picture_second(&fx, 12.5), 10.0, "one held frame, not twelve seconds of them");
+    assert_eq!(play::picture_second(&fx, 9.0), 9.0);
+    assert_eq!(play::picture_second(&fx, 20.0), 20.0);
+    assert_eq!(play::picture_second(&[], 5.0), 5.0, "a cut with no stop is unchanged");
+
+    // And the clock does not stop: under a still the footage runs at 1\u{d7}, so one tick is one tick.
+    assert_eq!(play::flat_rate_at(&fx, 12.0), 1.0, "\u{d7}0 is not a rate anything plays at");
+    assert_eq!(play::advance(&fx, 12.0, 0.1), 12.1, "the line keeps walking across the still");
+    // Two stops overlapping: earliest `t` wins, the same tie-break every other overlapping answer uses.
+    let pair = [rate_at(12.0, 4.0, 0.0), rate_at(10.0, 4.0, 0.0)];
+    assert_eq!(play::still_band_at(&pair, 13.0), Some((10.0, 14.0)), "earliest start decides");
 }

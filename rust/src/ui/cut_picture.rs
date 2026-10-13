@@ -145,9 +145,16 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     // F2.12 S7 first: a card is not the session's own picture, so a line standing on one shows the card's
     // rendered frame and nothing else. Answers `None` for footage, which is every second there is a frame to
     // search for below.
-    if let Some((frame, held)) =
-        crate::ui::cut_card_preview::card_frame(window, &ui::window::newest_review_cut(), ui::line_position(window).t)
-    {
+    if let Some((frame, held)) = crate::ui::cut_card_preview::card_frame(
+        window,
+        &ui::window::newest_review_cut(),
+        // The FRAME's second, not the clock's: a line standing on a stop keeps showing that stop's first frame
+        // (§F3.3 S4), and a card cannot be re-timed anyway — this answers `t` unchanged when no stop covers it.
+        crate::cut_speed_play::picture_second(
+            &ui::window::newest_review_cut().fx,
+            ui::line_position(window).t,
+        ),
+    ) {
         // The held sentence belongs to the frame it explains: say it while the card is on the panel, because
         // everywhere else on this page the picture moves when the clock does.
         if let (Some(line), Some(status)) = (held, ui::find_status(window.upcast_ref())) {
@@ -194,7 +201,13 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     // `preview_asked_for_test` reports: which recording the panel asked, at which second of THAT file — the
     // ask a watch provokes and the frame looked up cannot drift apart, because they are computed in one place.
     let at = timeline::local_at(
-        ui::line_position(window).t,
+        // Same rule one door down: under a stop the panel shows the held frame, so that is the second asked for.
+        // With no stop covering the line `picture_second` answers `t` unchanged, which is what
+        // `preview_asked_for_test` has always reported.
+        crate::cut_speed_play::picture_second(
+            &ui::window::newest_review_cut().fx,
+            ui::line_position(window).t,
+        ),
         recording.start,
         0.0,
         timeline::shift_of(&ui::window::newest_review_cut(), &base),
