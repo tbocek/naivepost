@@ -2858,6 +2858,23 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         cut_history(window).borrow_mut().suggested(landed);
         refresh_history_buttons(window);
     });
+    // §F2.14 S2b: the Suggest call's progress, painted (§S2b's "streaming progress counts segments"). One
+    // reply's reading goes back through the page's one progress door, so the bar and the status row are drawn
+    // exactly as every other beat draws them, with no second painting path.
+    crate::ui::cut_suggest_progress::install(|window, progress| {
+        let (Some(bar), Some(status)) = (
+            crate::ui::window::progress_bar(window),
+            crate::ui::window::find_status(window.upcast_ref()),
+        ) else {
+            return;
+        };
+        if progress.pulsing {
+            bar.pulse();
+        } else {
+            bar.set_fraction(progress.fraction.clamp(0.0, 1.0));
+        }
+        status.set_text(&progress.line);
+    });
     // §07-narrate#1-screen: the Narrate page's controls, wired after `set_content` like every other
     // control in this window, so the widgets being wired are inside the realized tree.
     crate::ui::narrate_page::wire(&window);

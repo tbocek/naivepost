@@ -78,6 +78,9 @@ pub mod cut_suggest_land;
 /// §05-cut#2 S1/S2 — what the Cut page's ▶ says and shows when it is Suggest, including why a started
 /// preview is not this press's to take. Split out of `window.rs`, which is past its size budget.
 pub mod cut_suggest_press;
+/// §F2.14 S2b — painting the Suggest call's progress ("streaming progress counts segments") on the run bar.
+/// Split out of `window.rs`, which is past its size budget.
+pub mod cut_suggest_progress;
 pub mod cut_form_frame;
 pub mod cut_picture;
 /// §06-effects#2-the-lane-and-the-preview — the preview panel's painted frame: the dim outside the camera

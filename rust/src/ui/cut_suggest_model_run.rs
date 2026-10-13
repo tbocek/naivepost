@@ -447,6 +447,9 @@ where
     // The replies this attempt received, refreshed by [`watch_reply`] on every dial. §8's progress and thinking
     // rules are both about the reply that just arrived, so they read this and nothing else.
     let last_reply = std::cell::RefCell::new(Vec::new());
+    // §S2b's "streaming progress counts segments": the replies are collected by the dial (below), and the
+    // progress each one earns is reported after the round, where this loop still owns `call` — the same `Call`
+    // answers §8's thinking rule there, and a closure borrowing it for the whole attempt would not allow it.
     let mut watch = watch_reply(&mut ask, &last_reply);
     // What every second of this session was filmed by: §8 drops a segment with no recording at either end
     // BEFORE its length is judged, because a stretch nobody filmed has no length to argue about.
@@ -473,6 +476,13 @@ where
         last_reply.borrow_mut().clear();
         let (_finished, ok, round_logs) =
             attempt_with_tools(&system, &user, complaint, &mut plan, target, &offered, &mut watch);
+        // The progress this attempt's replies earned, reported now that the loop owns `call` again.
+        // `Call::report` answers the bar's sentence, its fraction and whether it still pulses; `watch` is the
+        // page's door, and no door means no page to tell (a logic test), which is the same answer.
+        for reply in last_reply.borrow().iter() {
+            let progress = call.report(reply, end);
+            crate::ui::cut_suggest_progress::watch(&progress);
+        }
         logs.extend(round_logs);
         // §8: an answer that was all reasoning and no answer gets its next call asked WITHOUT thinking, and
         // the log says why the question changed.
@@ -534,7 +544,10 @@ where
 {
     move |conversation, offered| {
         let turn = ask(conversation, offered)?;
-        seen.borrow_mut().push(crate::ui::cut_suggest_watch::reply_text(&turn));
+        // Record the reply for §8's thinking and web-tool rules, and for the progress report the loop makes
+        // from it once it owns `call` again (§S2b's "streaming progress counts segments").
+        seen.borrow_mut()
+            .push(crate::ui::cut_suggest_watch::reply_text(&turn));
         Ok(turn)
     }
 }
