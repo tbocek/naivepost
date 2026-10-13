@@ -33,7 +33,11 @@ pub fn press_strip(
     y_px: f64,
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
-    let at = x_px / crate::ui::window::SELECT_SURFACE_PPS;
+    // §7's translate: the strip is a WINDOW, so the second under the pointer is the widget pixel plus however
+    // far the window has been scrolled — `cut_strip_view::seconds_at` is the one conversion this surface uses,
+    // and it is the inverse of what the painter offsets by (see that module). Dividing by pps alone would put a
+    // scrolled click on whichever clip happened to be painted there instead of the one it names.
+    let at = crate::ui::cut_strip_view::seconds_at(x_px);
     // §7: `a selection is of what it was DRAWN on`. This strip's own table answers the surfaces it actually
     // draws — ruler at the top, one picture row with its wave strip, and the effects lane along the bottom — so
     // a y in this widget's 48 px box resolves against THAT split, read as drawn. `cut_tracks::bands_for`
@@ -202,5 +206,3 @@ pub fn attach(window: &adw::ApplicationWindow, band: &gtk::Widget) {
 /// How many picture rows the placeholder strip draws: one. Its box is 48 px tall and holds a ruler, that row
 /// with its wave strip, and the effects lane along the bottom (`cut_select::PLACEHOLDER_BANDS` is that split).
 pub const STRIP_PICTURE_ROWS: usize = 1;
-
-

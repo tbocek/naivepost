@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 
 use crate::clock;
 use crate::cut::Cut;
+use crate::layout;
 use crate::project::Project;
 use crate::settings;
 use crate::sources;
@@ -112,6 +113,12 @@ pub fn for_open_session(cut_: &Cut) -> Option<Vec<Recording>> {
     Some(session_recordings(&project, cut_, &root, &project_dir))
 }
 
+/// The OPEN project's folder as a tree — the same resolution [`open_roots`] answers, shaped for
+/// [`crate::ui::cut_rebuild`], which asks a file inside it.
+fn open_tree() -> Option<layout::Tree> {
+    layout::Tree::new(&save_apply::open_dir()?).ok()
+}
+
 /// The door an open or a Rescan calls: this window's session spans, asked of the OPEN PROJECT through
 /// [`for_open_session`] and written into the page's own session slot, so every reader of
 /// `page_recordings()` (the row list, folds, lanes, the painter) sees the same spans.
@@ -119,6 +126,16 @@ pub fn for_open_session(cut_: &Cut) -> Option<Vec<Recording>> {
 /// Nothing is overwritten when there is no folder to resolve against or nothing in it answered ffprobe:
 /// the page keeps the spans it was seeded with rather than collapsing to no rows at all.
 pub fn refresh_page_spans(cut_: &Cut) -> Option<Vec<Recording>> {
+    // §7's `the page is rebuilt only when Prepare's output changed`: the spans come from what Prepare wrote
+    // (`transcript/session.tsv` places every take on the session clock), so when that file has not moved since
+    // the page last drew, this whole recompute — reload the project, ffprobe each footage file, rebuild the row
+    // list and the badges — has a known answer and is skipped. A skip returns the spans already on screen rather
+    // than nothing, so a caller cannot mistake "nothing new" for "no session".
+    if let Some(tree) = open_tree() {
+        if !crate::ui::cut_rebuild::output_changed(&tree) {
+            return Some(crate::ui::cut_folds::page_recordings());
+        }
+    }
     let spans = for_open_session(cut_)?;
     if spans.is_empty() {
         return None;

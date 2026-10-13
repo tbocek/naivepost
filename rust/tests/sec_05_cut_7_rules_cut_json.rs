@@ -29,6 +29,7 @@ use common::{cut_page, release_last_window, settle};
 static RAN_REMOVE: AtomicBool = AtomicBool::new(false);
 static RAN_TRIM: AtomicBool = AtomicBool::new(false);
 static RAN_EXISTS: AtomicBool = AtomicBool::new(false);
+static RAN_NOT_A_SEAM: AtomicBool = AtomicBool::new(false);
 
 /// A footage scene from `s` to `e` on camera row `cam`.
 fn seg(s: f64, e: f64) -> Seg {
@@ -169,10 +170,32 @@ fn round(app: &adw::Application) {
             );
             RAN_EXISTS.store(true, Ordering::Relaxed);
         }
+
+        // --- (d) the writer resolves the session itself; it is not a seam a check fills -------------------
+        {
+            let before_cwd = std::env::current_dir().expect("cwd readable");
+            crate::cut_save::write_cut(&three_clips()).expect("the one writer wrote");
+            let written_then_exists = tree().cut_json().is_file() && cut_save::exists();
+            std::fs::remove_dir_all(tree().cut_json().parent().expect("cut/ has a parent"))
+                .expect("cut/ removed");
+            let gone = cut_save::exists();
+            let after_cwd = std::env::current_dir().expect("cwd readable again");
+            assert!(
+                written_then_exists && !gone,
+                "§7's writer answers from the program's OWN resolution: write_cut put the file where `exists` \
+                 looks ({written_then_exists}) and taking the folder away makes the gate say no again ({gone})"
+            );
+            assert_eq!(
+                before_cwd, after_cwd,
+                "neither call moved the working directory — nothing was handed in from outside"
+            );
+            RAN_NOT_A_SEAM.store(true, Ordering::Relaxed);
+        }
     }
 
+/// The test's own name carries §7 bullet 7 and its `s7` case; the checks inside are labelled (a)-(d).
 #[test]
-fn sec_05_cut_7_rules_cut_json_written_by_one_function() {
+fn sec_05_cut_7_rules_s7_cut_json_written_by_one_function() {
     // Pin cwd BEFORE anything builds: `startup::session_dir(current_dir())` is where every write lands, and
     // leaving it at rust/ writes a stray `rust/session.naivepost/` into the repo.
     let root = std::env::temp_dir().join(format!("np-cut-json-{}", std::process::id()));
@@ -198,10 +221,12 @@ fn sec_05_cut_7_rules_cut_json_written_by_one_function() {
     assert!(
         RAN_REMOVE.load(Ordering::Relaxed)
             && RAN_TRIM.load(Ordering::Relaxed)
-            && RAN_EXISTS.load(Ordering::Relaxed),
-        "all three checks run in one round: remove={:?} trim={:?} exists={:?}",
+            && RAN_EXISTS.load(Ordering::Relaxed)
+            && RAN_NOT_A_SEAM.load(Ordering::Relaxed),
+        "all four checks run in one round: remove={:?} trim={:?} exists={:?} not_a_seam={:?}",
         RAN_REMOVE.load(Ordering::Relaxed),
         RAN_TRIM.load(Ordering::Relaxed),
-        RAN_EXISTS.load(Ordering::Relaxed)
+        RAN_EXISTS.load(Ordering::Relaxed),
+        RAN_NOT_A_SEAM.load(Ordering::Relaxed)
     );
 }

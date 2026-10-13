@@ -1506,3 +1506,7 @@ libc = "0.2"
 [[test]]
 name = "sec_05_cut_7_rules_cut_json"
 path = "tests/sec_05_cut_7_rules_cut_json.rs"
+
+[[test]]
+name = "sec_05_cut_7_rules_suggest"
+path = "tests/sec_05_cut_7_rules_suggest.rs"

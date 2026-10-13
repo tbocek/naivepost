@@ -22,40 +22,24 @@ thread_local! {
     static GESTURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Write `cut_` to this session's `cut.json` through [`cut::save`] — the one door §7 means. Errors come back as
-/// the string `cut::save` produced rather than being swallowed, so a caller can say where it failed instead of
-/// leaving a silent difference between the page and the disk.
+/// Write `cut_` to this session's `cut.json` through [`cut::save`] — the one door §7 means. The folder is
+/// resolved here, from the process working directory exactly as every other page's door resolves it
+/// (`startup::session_dir(current_dir())`), so no caller hands in a location and nothing outside a test can
+/// make the writer look somewhere else. Errors come back as the string `cut::save` produced rather than being
+/// swallowed, so a caller can say where it failed instead of leaving a silent difference between page and disk.
 pub fn write_cut(cut_: &Cut) -> Result<(), String> {
     if gesture_in_flight() {
         return Ok(());
     }
-    let root = std::env::current_dir().unwrap_or_default();
-    write_cut_for_test(&root, cut_)
-}
-
-/// The same write with the project root named — TEST SEAM: the program's doors take the process working
-/// directory through [`write_cut`], exactly as `add_files` and the source rows do, while a check points at a
-/// temp `.naivepost` instead of moving cwd (which would move every other page's resolution with it).
-pub fn write_cut_for_test(root: &std::path::Path, cut_: &Cut) -> Result<(), String> {
-    if gesture_in_flight() {
-        return Ok(());
-    }
-    let dir = startup::session_dir(root);
+    let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
     let tree = layout::Tree::new(&dir).map_err(|err| err.to_string())?;
     cut::save(cut_, &tree)
 }
 
-/// §7 (`its existence unlocks Narrate and Produce`): the gate is the FILE, asked of the same resolution the/// writer uses, so a page cannot believe it has a cut that is not on disk. [`crate::cut::exists`] stays the
-/// predicate over a `Tree`; this is the version that knows where the tree is.
-pub fn exists() -> bool {
-    let root = std::env::current_dir().unwrap_or_default();
-    exists_for_test(&root)
-}
-
 /// The write into a session folder the CALLER already resolved. The suggest flow is the case that needs it:
-/// §F2.14 S1 refuses on "no session", so that flow resolves the folder itself (and a test may point it at a
-/// temp `.naivepost` through `set_session_for_test`), and the write has to land in exactly that folder rather
-/// than in whatever `current_dir()` says. Still the one writer — same `cut::save`, same mid-drag refusal.
+/// §F2.14 S1 refuses on "no session", so that flow resolves the folder itself and must write into exactly the
+/// folder it checked, not into whatever `current_dir()` says afterwards. Still the one writer — same
+/// `cut::save`, same mid-drag refusal.
 pub fn write_cut_at(cut_: &Cut, tree: &layout::Tree) -> Result<(), String> {
     if gesture_in_flight() {
         return Ok(());
@@ -63,11 +47,12 @@ pub fn write_cut_at(cut_: &Cut, tree: &layout::Tree) -> Result<(), String> {
     cut::save(cut_, tree)
 }
 
-/// [`exists`] with the project root named — TEST SEAM (`_for_test` in the sense that only a check names a
-/// folder): the program's doors ask [`exists`], which takes the process working directory like every other
-/// page's resolution, while a check points at its own temp `.naivepost` without moving cwd.
-pub fn exists_for_test(root: &std::path::Path) -> bool {
-    let dir = startup::session_dir(root);
+/// §7 (`its existence unlocks Narrate and Produce`): the gate is the FILE, asked of the same resolution the
+/// writer uses, so a page cannot believe it has a cut that is not on disk. [`crate::cut::exists`] stays the
+/// predicate over a `Tree`; this is the version that knows where the tree is, and it finds that out the same way
+/// [`write_cut`] does rather than being told.
+pub fn exists() -> bool {
+    let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
     match layout::Tree::new(&dir) {
         Ok(tree) => cut::exists(&tree),
         Err(_) => false,

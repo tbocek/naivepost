@@ -12,7 +12,7 @@
 
 use glib::object::Cast;
 
-use crate::cut::{Cut, Seg};
+use crate::cut::{self, Cut, Seg};
 use crate::suggest::Applied;
 
 /// The window's edit door, in the shape a caller outside `ui::window` can reach: publish the cut, record
@@ -263,7 +263,10 @@ fn screen_cut() -> Cut {
 /// decorations, not the page's layout decisions.
 pub fn suggested_cut(before: &Cut, answer: &Applied) -> Cut {
     let mut landed = before.clone();
-    landed.segs = answer
+    // The footage half is the walk-back's own seconds; everything else in `before` that is a hand-placed card
+    // is added back by [`Cut::keep_inserts`], which is where §7's `keeps inserts` is spelled — including the
+    // time ordering, so a card at 0:12 lands between two suggested scenes rather than after them.
+    let footage: Vec<Seg> = answer
         .segs
         .iter()
         .map(|(s, e)| Seg {
@@ -271,15 +274,18 @@ pub fn suggested_cut(before: &Cut, answer: &Applied) -> Cut {
             e: *e,
             ..Default::default()
         })
-        .chain(inserts_of(before).into_iter().chain(answer.kept_inserts.iter().cloned()))
+        .chain(answer.kept_inserts.iter().cloned())
         .collect();
+    landed.segs = cut::keep_inserts(&footage, &before.segs);
     landed.fx = answer.effects.clone();
     landed
 }
 
-/// Hand-placed cards in the cut on screen — the ones a suggestion must not touch (§7). Read by
-/// [`suggested_cut`] on every landing, so the answer to "which segs are cards" is spelled once.
-fn inserts_of(cut: &Cut) -> Vec<Seg> {
+/// Hand-placed cards in the cut on screen — the ones a suggestion must not touch (§7). [`Cut::keep_inserts`]
+/// applies the same filter to `before` inside [`suggested_cut`], so the rule is spelled once in `cut.rs` and
+/// this is the page's own name for what that filter keeps: an insert is a card nobody filmed, and no re-suggest
+/// has a claim on it.
+pub fn inserts_of(cut: &Cut) -> Vec<Seg> {
     cut.segs.iter().filter(|seg| seg.is_insert()).cloned().collect()
 }
 

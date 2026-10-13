@@ -6993,21 +6993,30 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     cr.rectangle(0.0, 0.0, w, h);
     let _ = cr.fill();
 
-    // The ruler row: whole-second ticks with their labels, then the kept bar under them.
+    // The ruler row: whole-second ticks with their labels, then the kept bar under them. §7's translate: every
+    // tape x slides by `cut_strip_view::scroll_px`, so scrolling moves the ruler with the clips
+    // instead of leaving it pinned to the widget.
     let ticks = cut_trim::ruler_ticks(TRACK_REC_END, strip_pps(), RULER_EVERY_SECONDS);
+    let _ = cr.save();
+    cr.translate(-crate::ui::cut_strip_view::scroll_px(), 0.0);
     cr.set_source_rgb(RULER_INK.0, RULER_INK.1, RULER_INK.2);
     for (x, _) in &ticks {
-        if *x <= w {
-            cr.rectangle(*x, 0.0, 1.0, cut_trim::RULER_H);
-            let _ = cr.fill();
-        }
+        cr.rectangle(*x, 0.0, 1.0, cut_trim::RULER_H);
+        let _ = cr.fill();
     }
     draw_strip_labels(cr, &ticks, w);
+    let _ = cr.restore();
 
     let boxes = cut_trim::clip_boxes(&cut_.segs, strip_pps());
+    let top = cut_trim::RULER_H;
     // F2.2 S6: the removed stretches inside filmed material are painted dim BEFORE the kept boxes go
     // on top, so a clip always wins over the dim and only the gaps show it. Dimmed whether or not ▶✂
     // is running: the kept bar already shows only kept material, so the gap IS the removed stretch.
+    // §7's translate again: the dim spans are tape seconds too, so they slide with everything else — painted
+    // through cairo's own translate rather than by editing a shared painter that the PAINTED band (which
+    // translates its whole context already) also calls.
+    let _ = cr.save();
+    cr.translate(-crate::ui::cut_strip_view::scroll_px(), 0.0);
     cut_play_leg::paint_dimmed(
         cr,
         &cut_play_leg::dimmed(&cut_, &crate::timeline::filmed_runs(page_recordings().as_slice())),
@@ -7015,19 +7024,25 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
         cut_trim::BAR_H,
         strip_pps(),
     );
+    let _ = cr.restore();
     if boxes.is_empty() {
         cr.select_font_face("Sans", cairo::FontSlant::Normal, gtk::cairo::FontWeight::Normal);
         cr.set_font_size(11.0);
         cr.set_source_rgb(0.45, 0.45, 0.45);
-        let _ = cr.move_to(6.0, cut_trim::RULER_H + cut_trim::BAR_H * 0.6);
+        cr.move_to(6.0, cut_trim::RULER_H + cut_trim::BAR_H * 0.6);
         let _ = cr.show_text(cut_trim::STRIP_EMPTY_HINT);
         crate::ui::cut_trim_press::paint_bands(cr, w, &cut_, &page_recordings(), strip_pps());
         crate::ui::cut_trim_press::paint_laid_pieces(cr, w, &cut_, strip_pps());
         return;
     }
 
-    let top = cut_trim::RULER_H;
+    // §7's translate again: a box fully scrolled past either edge draws nothing, one running off the right
+    // edge draws its visible part (`visible` clips), which is what makes the strip a window rather than a
+    // picture that gets cut off.
+    let _ = cr.save();
+    cr.translate(-crate::ui::cut_strip_view::scroll_px(), 0.0);
     for b in &boxes {
+        let x = b.x;
         // Violet for an insert, the kept green for footage — the two colours the inventory lists, told
         // apart because only one of them may be trimmed.
         // Violet for an insert, the kept green for footage — the two tints `cut_colours` holds and
@@ -7037,7 +7052,7 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
         } else {
             cr.set_source_rgba(KEPT_TINT.0, KEPT_TINT.1, KEPT_TINT.2, KEPT_TINT_ALPHA);
         }
-        cr.rectangle(b.x, top, b.w.max(1.0), cut_trim::BAR_H);
+        cr.rectangle(x, top, b.w.max(1.0), cut_trim::BAR_H);
         let _ = cr.fill();
     }
     // Borders last and darker, so they read on top of the fill: these are the pixels a press takes.
@@ -7046,10 +7061,16 @@ fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
         cr.rectangle(x - 0.5, top, 1.5, cut_trim::BAR_H);
         let _ = cr.fill();
     }
+    let _ = cr.restore();
     // F2.8 S2: the two rows under the kept bar — the recorders' band and the wave strip — drawn from the
-    // SAME bands a press resolves against, so a plate the eye saw is the plate the hand picked.
+    // SAME bands a press resolves against, so a plate the eye saw is the plate the hand picked. §7's translate
+    // covers them too: both painters take tape pixels, so cairo slides them as one block (the lane plates,
+    // the wave strips and the laid-piece bars all move with the clips above them).
+    let _ = cr.save();
+    cr.translate(-crate::ui::cut_strip_view::scroll_px(), 0.0);
     crate::ui::cut_trim_press::paint_bands(cr, w, &cut_, &page_recordings(), strip_pps());
     crate::ui::cut_trim_press::paint_laid_pieces(cr, w, &cut_, strip_pps());
+    let _ = cr.restore();
 }
 
 /// Draw the ruler's labels onto the strip's cairo context. Cairo text is best-effort in the headless
@@ -7059,7 +7080,7 @@ fn draw_strip_labels(cr: &cairo::Context, ticks: &[(f64, String)], w: f64) {
     cr.set_source_rgb(0.35, 0.35, 0.35);
     for (x, label) in ticks {
         if *x <= w {
-            let _ = cr.move_to(x + 2.0, 11.0);
+            cr.move_to(x + 2.0, 11.0);
             let _ = cr.show_text(label);
         }
     }
@@ -7103,6 +7124,8 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
     // where a border may go lives here: `press_trim_border` asks `cut_trim::clamp_edge` for that.
     trimmer.connect_drag_begin(move |_g, px, _py| {
         let boxes = cut_trim::clip_boxes(&newest_review_cut().segs, strip_pps());
+        // The strip's own zoom converts this pixel; §7's translate is not added here because the strip widget
+        // has no scroll of its own yet (`cut_strip_view::scroll_px` is zero and documented as such).
         let taken = cut_trim::border_at(&boxes, px);
         TRIM_DRAGS.with(|cell| {
             *cell.borrow_mut() = taken.map(|(index, border)| TrimDrag {

@@ -95,7 +95,15 @@ pub mod cut_line_press;
 pub mod cut_lane;
 /// F2.10: the session's recordings — stamped names, hand shifts and probed lengths — which is what gives a
 /// second camera a row of its own. Split out of `window.rs`, past its size budget.
+/// §05-cut#7-rules bullet 8 — `the page is rebuilt only when Prepare's output changed`: the identity of
+/// `transcript/session.tsv`, cheap enough to ask on every refresh.
+pub mod cut_rebuild;
+/// F2.10: the session's recordings — stamped names, hand shifts and probed lengths — which is what gives a
+/// second camera a row of its own. Split out of `window.rs`, past its size budget.
 pub mod cut_session;
+/// §05-cut#7-rules bullet 8 — the strip is a window drawn under a translate: the one place its scroll, its
+/// px-per-second and the pixel↔second conversion live, so the painter and the press cannot disagree.
+pub mod cut_strip_view;
 /// F2.1 ▶'s page half: the filmed runs and footage files a press hands the media leg, and the button's face.
 /// Split out of `window.rs`, which is past its size budget.
 pub mod cut_record_play;

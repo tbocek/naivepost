@@ -46,6 +46,10 @@ pub(crate) fn finish(applied: &Applied, project: &Project, status: &gtk::Label) 
     // F2.10: the Cut page's rows come from what this PROJECT films — its footage files' name stamps, the
     // hand corrections in `cut.shift` and each file's probed length — so the session slot is re-asked here,
     // after the open took the folder on and before any page reads its rows.
+    // §7 (`the page is rebuilt only when Prepare's output changed`) lives inside that door: an open takes on a
+    // whole new folder, so it forgets the previous project's fingerprint first — otherwise tonight's
+    // `session.tsv` matching last night's byte for byte would skip a rebuild the new project actually needs.
+    crate::ui::cut_rebuild::forget();
     crate::ui::cut_session::refresh_page_spans(&crate::ui::window::newest_review_cut());
     // Then the two pages that own their own repaint, each reading the state it renders.
     crate::ui::narrate_page::refresh(&window);
