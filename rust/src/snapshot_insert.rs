@@ -9,7 +9,9 @@
 //! 1. a card spliced BETWEEN the footage (S5 "the video gets longer by the card");
 //! 2. a card laid OVER a drawn selection, which costs the footage those seconds (S5 "replaces those seconds");
 //! 3. a video put on a LANE of its own, which adds the band's lane row and cuts nothing (S5 "a row of its own");
-//! 4. the S1 refusal, with no line and no selection — the flow's last word when nothing was aimed at.
+//! 4. the SAME card asked with no length at all, so its Seconds entry comes from the file's own last moving
+//!    moment (§5) rather than from a number the caller handed it;
+//! 5. the S1 refusal, with no line and no selection — the flow's last word when nothing was aimed at.
 //!
 //! One form is drawn per press and Apply hides it again, so a single PNG cannot hold all four answers: what
 //! this shot records is the page AFTER the three inserts — five segments, the over card sitting on the footage
@@ -113,6 +115,29 @@ fn video_card(dir: &Path) -> std::path::PathBuf {
     path
 }
 
+/// A card with a moving moment of its own, written next to the seeded badges. §5's "card length = last moving
+/// moment, offered as the insert's length" is what this stage shows: `insert_chosen_with_length` asked with no
+/// length answers it from the FILE, because ffprobe reads an SVG as one frame and cannot. The animation ends at
+/// 1.6 s, so the Seconds entry opens there rather than at `cut_insert::DEFAULT_SECONDS`. Its holes are declared
+/// (§G's `<!-- Input: ... -->`) so the form draws the field row §A puts above the radios.
+fn timed_card(dir: &Path) -> std::path::PathBuf {
+    let assets = dir.join("assets");
+    let _ = std::fs::create_dir_all(&assets);
+    let path = assets.join("timed.svg");
+    // Rewritten every run: the shot depends on what is IN this file (its animation, its declared hole), so a
+    // copy left over from an earlier build of the snapshot must not survive.
+    std::fs::write(
+        &path,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\">\
+         <!-- Input: title | Title | what the card says -->\
+         <rect width=\"1920\" height=\"1080\" fill=\"#0d1117\"/>\
+         <g transform=\"translate(0,40)\"><text x=\"960\" y=\"720\" font-size=\"240\" text-anchor=\"middle\" fill=\"#ffffff\">{{title}}</text>\
+         <animateTransform attributeName=\"transform\" type=\"translate\" values=\"0 40;0 0\" keyTimes=\"0;1\" dur=\"1.6s\" fill=\"freeze\" additive=\"sum\"/></g></svg>",
+    )
+    .expect("a card file whose own timing the form can read");
+    path
+}
+
 /// The cut the strip shows for the shot: the three staged inserts, asked of [`cut_insert::place`] directly --
 /// the same call Apply makes -- rather than through the open form, because these segments only have to EXIST
 /// for the band to draw them.
@@ -200,13 +225,44 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     said.push(ui::close_insert_form(window));
     ui::seed_review_cut(window, &staged);
 
-    // 4. The last word on the status row: S1's refusal, no line claimed and nothing marked -- what the flow
+    // 4. §5's own length: the SAME card as stage 1, but asked with no length, so nothing but the file can say how
+    // long it runs. Its Seconds entry reads 1.6 -- the animation's last moving moment -- where every stage above
+    // was handed an explicit number, and the log line says both that number and the default it beat.
+    ui::seed_review_cut(window, &staged);
+    ui::note_place(true);
+    ui::clear_selection(window);
+    ui::set_line_position(window, LinePos { t: 15.0 });
+    let timed = ui::insert_chosen_with_length(window, &timed_card(dir), 15.0, None);
+    let shown = find_form_entry(window, "insert-seconds")
+        .text()
+        .to_string();
+    said.push(format!(
+        "{timed}; seconds {} (the card's own time, not {})",
+        shown,
+        cut_insert::DEFAULT_SECONDS
+    ));
+
+    // The form this stage drew is what `05-insert-form` paints (§G's whole form column: the declared field, the
+    // three radios, the Seconds entry at the card's own second, Cancel + Insert it), so it stays open here and
+    // nothing after it closes it. The refusal below needs no form of its own -- it IS the absence of one.
+    //
+    // 5. The last word on the status row: S1's refusal, no line claimed and nothing marked -- what the flow
     // answers when nothing was aimed at. AFTER everything else on purpose: an open form hides the readout
     // column §1 puts beside it.
     ui::note_place(false);
     ui::clear_selection(window);
     said.push(ui::press_insert(window));
     said
+}
+
+/// An entry the form drew, found under this window's own `insert-form` holder — the same walk [`pick_mode`] does,
+/// on the widget names §G lists.
+fn find_form_entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
+    let form =
+        ui::window::find_widget_by_name(window.upcast_ref(), "insert-form").expect("the form holder exists");
+    let found = ui::window::find_widget_by_name(&form, name)
+        .unwrap_or_else(|| panic!("the insert form drew no {name}"));
+    found.downcast::<gtk::Entry>().expect("the seconds entry is an entry")
 }
 
 /// The band's own arithmetic behind the shot, so the log line can say what the strip should be showing:

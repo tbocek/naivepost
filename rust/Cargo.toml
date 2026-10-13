@@ -1606,3 +1606,11 @@ path = "tests/f3_11_s5_live_effects_two_rounds_then_the_give_up_line.rs"
 [[test]]
 name = "f3_11_effects_button_widget"
 path = "tests/f3_11_effects_button_widget.rs"
+
+[[test]]
+name = "produce_cards_bake"
+path = "tests/produce_cards_bake.rs"
+
+[[test]]
+name = "cards_length_widget"
+path = "tests/cards_length_widget.rs"

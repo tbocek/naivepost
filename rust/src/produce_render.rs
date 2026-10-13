@@ -788,6 +788,20 @@ pub fn encode_command(
     burned: Option<&str>,
     out: &std::path::Path,
 ) -> Vec<String> {
+    encode_command_with(clip, settings, inputs, burned, out, false)
+}
+
+/// [`encode_command`] with one extra answer: does this clip read a baked card that has no own length? Then its
+/// frames are looped (`-stream_loop -1`), because the cut's slot is longer than one pass of an endlessly repeating
+/// document and `-t` on the output trims it back to the seconds the cut asked for.
+pub fn encode_command_with(
+    clip: &Clip,
+    settings: &Produce,
+    inputs: &[(&str, Option<&str>)],
+    burned: Option<&str>,
+    out: &std::path::Path,
+    loops_card: bool,
+) -> Vec<String> {
     let mut argv = vec!["ffmpeg".into()];
     // The picture's own seek first, always before its -i (inventory §B: "0 picture (-ss before -i)").
     if clip.seg_s > 0.0 {
@@ -795,6 +809,11 @@ pub fn encode_command(
         argv.push(format!("{:.3}", clip.seg_s));
     }
     let mut filter_inputs = 0;
+    // §5 (`-t` on the output for inserts, sounds, freezes, rated clips) trims the loop to the slot; `-stream_loop -1`
+    // only belongs on a card with no strip of its own, which is what `loops_card` says.
+    if loops_card {
+        argv.extend(["-stream_loop".into(), "-1".into()]);
+    }
     for (kind, path) in inputs {
         match (*kind, path) {
             ("sound", None) => {
@@ -803,6 +822,13 @@ pub fn encode_command(
             (_, Some(path)) => {
                 if matches!(*kind, "text" | "svg" | "still") {
                     argv.extend(["-loop".into(), "1".into(), "-framerate".into(), "30".into()]);
+                }
+                // §5 (`to frames at the render fps (default 25)`): a baked card is an image2 sequence, not a looped
+                // still — its own frame rate is the bake's, so ffmpeg must be told that number and nothing else.
+                // The number itself belongs to `produce_cards`, which owns the bake and spells it the way the
+                // demuxer wants it (an integer rate; no card is timed for a fractional one).
+                if *kind == "card" {
+                    argv.extend(["-framerate".into(), crate::produce_cards::bake_fps_arg()]);
                 }
                 argv.push("-i".into());
                 argv.push(path.to_string());

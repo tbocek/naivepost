@@ -6439,6 +6439,29 @@ fn insert_form_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
         .ok()
 }
 
+/// The holder that is DRAWING a form right now, as opposed to the empty ones the other tabs carry (see
+/// `page_box`: an unscoped name exists once per tab, and a tree-wide lookup can land on a hidden one). A
+/// snapshot of the form asks this rather than the name, so the shot cannot be of an empty box.
+pub fn visible_insert_form(window: &adw::ApplicationWindow) -> Option<gtk::Widget> {
+    fn walk(root: &gtk::Widget) -> Option<gtk::Widget> {
+        if root.widget_name() == "insert-form"
+            && root.is_visible()
+            && root.observe_children().n_items() > 0
+        {
+            return Some(root.clone());
+        }
+        for child in root.observe_children().iter::<glib::Object>() {
+            let Ok(child) = child else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            if let Some(found) = walk(&widget) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    walk(window.upcast_ref())
+}
+
 /// What the open form stands for, so Apply can place the file the chooser returned at the second the page
 /// read when Insert was pressed. Held per window because two windows may each have an insert half-finished;
 /// the newest one is the one whose buttons were just clicked.
@@ -6838,7 +6861,12 @@ pub fn insert_chosen_with_length(
     // against. `None` — a still, an unreadable file, a machine with no ffprobe — falls back to
     // `P.policy.insertDefaultSeconds`, which is the whole point of the fallback rather than a failure.
     let probed = crate::ui::cut_card_preview::probe_card_seconds(window, &raw);
-    let file_seconds = file_seconds.or(probed);
+    // S3's order: a selection's seconds beat the file's, and the file's beat the default. For a card "the file's
+    // own length" is its last moving moment (§5), which no probe can answer — ffprobe reads an SVG as one frame.
+    // `offer_seconds` is that door; it reads the document only when there is nothing else to ask.
+    let file_seconds = file_seconds
+        .or(probed)
+        .or_else(|| crate::produce_cards::offer_seconds(&raw));
     let plan = cut_insert::form_plan(&raw, band.as_ref(), file_seconds, animated, false, false, false);
     // The card's holes are read off the document; a non-SVG gets no fields and the door ignores the argument.
     let mut fields: Vec<cut_insert::Field> = Vec::new();

@@ -399,6 +399,10 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                 Some(path) => vec![("video", Some(path))],
                 None => Vec::new(),
             };
+            // Set when this clip reads a baked card that has no own length; see `produce_cards::Staged::loops`.
+            let mut loops_card = false;
+            // Kept beside `inputs` because the card's paths are invented here and must outlive the block that made them.
+            let mut card_paths: Vec<(&str, String)> = Vec::new();
             // §4: whatever this clip's effects read has to exist before ffmpeg is asked for it — a generated title
             // sheet is only an input once it is on disk. One call per clip; the same answer builds the filters.
             let built = crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch);
@@ -410,10 +414,35 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             for (kind, path) in built.inputs.iter() {
                 inputs.push((kind.as_str(), path.as_deref()));
             }
+            // §5: a card is not read as the file it is. Its holes are filled (or it is redrawn from its generator),
+            // and an animated one is baked to one static SVG per frame at the bake fps — all of that is
+            // `produce_cards`' decision; this writes what it produced into the scratch folder BEFORE the command is
+            // built, exactly as the title sheets above are, and hands ffmpeg the frames or the one filled file.
+            if let Some(mut card_input) = crate::produce_cards::stage(clip, source.as_deref()) {
+                effect_logs.extend(card_input.logs.iter().cloned());
+                for (path, text) in &card_input.files {
+                    if let Err(err) = std::fs::write(path, text) {
+                        eprintln!("produce: {}: {err}", path.display());
+                    }
+                }
+                for (kind, path) in std::mem::take(&mut card_input.inputs) {
+                    // `stage` answers with one of two kinds, so the spelling is fixed here rather than carried as a
+                    // `String` the caller would have to borrow from a value that is about to be dropped.
+                    let kind: &'static str = if kind == "card" { "card" } else { "svg" };
+                    card_paths.push((kind, path));
+                }
+                // A card with no own length (an indefinite repeat) runs its frames again until the slot is full.
+                if card_input.loops {
+                    loops_card = true;
+                }
+            }
+            for (kind, path) in card_paths.iter() {
+                inputs.push((*kind, Some(path.as_str())));
+            }
             // The > 10× cap and a missing drawing are said here, beside the clip they belong to, so the render log
             // reads in clip order like every other line about a clip.
             effect_logs.extend(built.logs.iter().cloned());
-            let argv = render::encode_command(clip, settings, &inputs, None, &file);
+            let argv = render::encode_command_with(clip, settings, &inputs, None, &file, loops_card);
             ClipEncode {
                 stem,
                 file,

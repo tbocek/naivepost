@@ -175,7 +175,7 @@ fn comments(doc: &str) -> Vec<String> {
 
 /// The three characters that change what a document means. Quotes are left alone: holes sit in text content and in
 /// already-quoted attributes this module never builds by concatenation.
-fn xml_escape(value: &str) -> String {
+pub fn xml_escape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for c in value.chars() {
         match c {
@@ -399,12 +399,17 @@ pub fn parse_delay(text: &str) -> Option<f64> {
 
 /// S4 (`badge` — one big letter with a caption). The animation slides the letter up into place and stops; its keyTimes
 /// start at 0, so the file opened in a browser is the finished badge.
+///
+/// The stamp's `data-naivepost-args` spells these two as `letter=<L>&caption=<text>` (the spelling
+/// [`crate::produce_cards::redraw`] reads back when a path asks for a different badge than the one that shipped), and
+/// the generators write it so a redraw can merge over real defaults instead of inventing them.
 pub fn badge_svg(letter: &str, caption: &str) -> String {
     let (w, h) = CANVAS;
     let cx = w / 2;
     let letter_y = h * 3 / 4;
+    let args = format!("letter={}&caption={}", esc(letter), esc(caption));
     format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" data-naivepost=\"{BADGE}\" data-naivepost-args=\"\">\
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" data-naivepost=\"{BADGE}\" data-naivepost-args=\"{args}\">\
          <rect width=\"{w}\" height=\"{h}\" fill=\"{BACKGROUND}\"/>\
          <g transform=\"translate(0,0)\"><text x=\"{cx}\" y=\"{letter_y}\" font-size=\"640\" text-anchor=\"middle\" fill=\"#ffffff\">{letter}</text>\
          <animateTransform attributeName=\"transform\" type=\"translate\" values=\"0 40;0 0\" keyTimes=\"0;1\" dur=\"1s\" fill=\"freeze\" additive=\"sum\"/></g>\
@@ -420,6 +425,31 @@ pub fn badge_svg(letter: &str, caption: &str) -> String {
 /// board itself settles.
 pub fn tier_svg(rows: &[Item], new: &[Arrival]) -> String {
     let (w, h) = CANVAS;
+    // The board's own defaults, spelled the way a path would spell them: one row per tier letter holding that row's
+    // items, and `new=` the arrivals list. A path's arguments are merged over these (§8).
+    let mut defaults: Vec<String> = TIER_ROWS
+        .iter()
+        .filter_map(|row| {
+            rows.iter()
+                .find(|item| item.name.eq_ignore_ascii_case(row))
+                .map(|item| format!("{row}={}", item.name))
+        })
+        .collect();
+    if !new.is_empty() {
+        let list: Vec<String> = new
+            .iter()
+            .map(|arrival| match (&arrival.logo, arrival.delay) {
+                (Some(logo), Some(delay)) => format!("{}[{delay}s]: {logo}", arrival.label),
+                (Some(logo), None) => format!("{}: {logo}", arrival.label),
+                (None, Some(delay)) => format!("{}[{delay}s]", arrival.label),
+                (None, None) => arrival.label.clone(),
+            })
+            .collect();
+        defaults.push(format!("new={}", list.join(", ")));
+    }
+    // Each value is escaped on the way in, so the joined string needs no second pass: escaping it would rewrite the
+    // `%XX` those values already carry.
+    let args = defaults.join("&");
     let mut body = String::new();
     for (n, row) in TIER_ROWS.iter().enumerate() {
         let y = 160 + n as i32 * 140;
@@ -444,7 +474,7 @@ pub fn tier_svg(rows: &[Item], new: &[Arrival]) -> String {
         ));
     }
     format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" data-naivepost=\"{TIER}\" data-naivepost-args=\"\">\
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" data-naivepost=\"{TIER}\" data-naivepost-args=\"{args}\">\
          <rect width=\"{w}\" height=\"{h}\" fill=\"{BACKGROUND}\"/>{body}</svg>"
     )
 }
@@ -551,7 +581,7 @@ pub fn parse_anim(tag: &str) -> Option<Anim> {
 }
 
 /// An attribute's value out of a tag, unquoted. Enough of an XML reader for the three tags this bake understands.
-fn attribute(tag: &str, key: &str) -> Option<String> {
+pub fn attribute(tag: &str, key: &str) -> Option<String> {
     let start = tag.find(&format!("{key}=\""))? + key.len() + 2;
     let rest = &tag[start..];
     let end = rest.find('"')?;
@@ -624,7 +654,10 @@ pub fn value_at(anim: &Anim, t: f64) -> Option<String> {
     // A repeat wraps the clock back inside one run; `indefinite` never leaves it.
     let mut clock = elapsed;
     if anim.repeat != f64::INFINITY {
-        if elapsed > run * anim.repeat {
+        // `>=`, not `>`: at exactly the end of the last run the animation has finished, and a frozen one holds its
+        // final value there rather than a hair short of it. That single frame is what makes the last frame of a
+        // baked strip the finished card instead of a picture still mid-ramp.
+        if elapsed >= run * anim.repeat {
             // Over: `freeze` holds the last value, anything else lets go and the attribute returns to the file's own.
             return anim.freeze.then(|| anim.values.last().unwrap().clone());
         }

@@ -124,7 +124,13 @@ fn sec_06_effects_8_details_confirmed_against_the_code_verification_pass_s3_a_se
 fn sec_06_effects_8_details_confirmed_against_the_code_verification_pass_s4_a_card_is_stamped_redrawn_or_filled_in() {
     let badge = cards::badge_svg("S", "top");
     let board = cards::tier_svg(&[], &[]);
-    assert_eq!(cards::stamped(&badge), Some((BADGE, "")), "{BADGE} ships with no arguments");
+    // A shipped card records the arguments it was drawn with, so a path can be merged OVER them (§8) rather than
+    // replacing them: `produce_cards::changed_note` reads this string to decide whether the path changed anything.
+    assert_eq!(
+        cards::stamped(&badge),
+        Some((BADGE, "letter=S&caption=top")),
+        "{BADGE} ships with its own letter and caption recorded"
+    );
     assert_eq!(cards::stamped(&board), Some((TIER, "")));
 
     // The two attributes §8 names are the ones the generators write on the root.

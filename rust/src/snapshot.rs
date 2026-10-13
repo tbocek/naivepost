@@ -124,6 +124,10 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         // §F3.11's, the same: driven through the page's own decorations-pass door.
         | "06-decorations"
         | "06-lane" | "06-svg" | "06-effect-menu" => Some("Cut"),
+        // §06-effects#5's own screen: the INSERT FORM with a card's own seconds already in it. No `spec/img`
+        // counterpart, so `spec/inventory/cut.md` §G is again the widget reference (heading, declared field,
+        // three radios, Seconds, Cancel + Insert it).
+        | "05-insert-form" => Some("Cut"),
         "07-narrate" | "07-take" => Some("Narrate"),
         "08-produce" | "08-words" => Some("Produce"),
         _ => None,
@@ -744,7 +748,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         }
         // §F2.12's own screen: three inserts staged through the chooser seam, the radios and Apply, then S1's
         // refusal last. All of it lives in `snapshot_insert` -- `run` is past the size another block fits in.
-        if screen == "05-insert" {
+        if screen == "05-insert" || screen == "05-insert-form" {
             let said = crate::snapshot_insert::stage(&window, &dir);
             let words: Vec<String> = said.iter().map(|line| line.replace('|', "/")).collect();
             println!("snapshot: 05-insert | {}", words.join(" | "));
@@ -1035,6 +1039,16 @@ architecture behind them.
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.
         let subject: Option<gtk::Widget> = match screen.as_str() {
+            // The insert form as §G draws it, staged by the same doors `05-insert` uses: the heading the page
+            // pins ("insert timed.svg"), the card's declared field, the three radios, Seconds at the CARD's own
+            // time, Cancel + Insert it. Painted as the whole window at a width the form column can fill -- the
+            // form is part of the Cut page and cannot be reparented out of it (GTK refuses a child that already
+            // has a parent), so the PAGE must reach a readable width for its rows not to collapse. The stage ran
+            // above, in the `05-insert` arm's own door -- which leaves THIS form open on purpose.
+            "05-insert-form" => {
+                window.set_default_size(760, 900);
+                None
+            }
             // §08's second image is the ✎ dialog, not the page behind it, so the dialog is the subject
             // here -- same reason `03-settings` paints its own window. Opened the way the chip opens it,
             // with the mark's own words already in the box.
@@ -1202,8 +1216,11 @@ architecture behind them.
                 // place their width is asked for: their subject is an effects bar laid out along SECONDS, and in
                 // a narrow column two clips' worth of bars crowd into the leftmost tenth of the tape, where
                 // neither a colour nor a gap reads off the shot. So they keep 2400 instead of being pulled back.
+                // `05-insert-form` keeps its own smaller size, asked where its subject is chosen above.
                 let wide = matches!(screen.as_str(), "06-speeds" | "06-decorations");
-                window.set_default_size(if wide { 2400 } else { 1280 }, 800);
+                if screen != "05-insert-form" {
+                    window.set_default_size(if wide { 2400 } else { 1280 }, 800);
+                }
             }
             window.present();
         }
