@@ -7,15 +7,17 @@
 //! back; it decides none of it.
 //!
 //! Two rules from §J hold this module together:
-//! * rule 13 — Remove takes exactly the selection, floored at [`cut_select::MIN_SECONDS`]
-//!   (`P.eng.minPieceSeconds`); the 1 s floor ([`cut_select::MIN_SCENE_SECONDS`],
+//! * rule 13 — Remove takes exactly the selection, floored at [`cut_rules::floor`]` (Floor::Remove)`
+//!   (`P.eng.minPieceSeconds`); the 1 s floor ([`cut_rules::floor`]` (Floor::Keep)`,
 //!   `P.policy.minSceneSeconds`) is only for proposing and copying, which is why ＋ Add refuses below it
-//!   and － Remove does not ask.
+//!   and － Remove does not ask. The two floors are named by verb in [`crate::cut_rules`] so the pairing —
+//!   which verb may leave what remainder — is stated once rather than being inferred from two constants.
 //! * rule 14 — a Split border survives coalesce until merged by a drag. That is literally
 //!   [`cut::Seg::split`]: the right half of a split carries it, so no automatic pass may join it back.
 
 use crate::cut::{Fx, Seg};
-use crate::cut_select::{Scope, Selection, ANY_ROW, MIN_SECONDS, MIN_SCENE_SECONDS};
+use crate::cut_rules::{self, Floor};
+use crate::cut_select::{Scope, Selection, ANY_ROW, MIN_SECONDS};
 
 /// The three F2.7 verbs as (widget name, label, tooltip), in the spec's order. Held here rather than in
 /// the page so the buttons a test finds by name and the rules it presses are declared together.
@@ -118,8 +120,9 @@ pub fn add(sel: Option<&Selection>, segs: &[Seg], snap_points: &[f64]) -> Outcom
             "\u{ff0b} Add keeps footage \u{2014} the selection is {recording}'s sound"
         ));
     }
-    if band.length() < MIN_SCENE_SECONDS {
-        // P.policy.minSceneSeconds
+    if band.length() < cut_rules::floor(Floor::Keep) {
+        // P.policy.minSceneSeconds, read as the KEEP verb's floor: a scene shorter than a second is not
+        // something anyone chose to watch.
         return Outcome::Refused(format!(
             "nothing to add: {} selected, a scene is 1 s or more",
             crate::tools::tenths(band.length())
@@ -129,7 +132,7 @@ pub fn add(sel: Option<&Selection>, segs: &[Seg], snap_points: &[f64]) -> Outcom
     let start = snap_end(band.start, snap_points);
     let end = snap_end(band.end, snap_points);
     // Snapping may walk the two ends onto each other; a zero-length band keeps nothing.
-    if end - start < MIN_SECONDS {
+    if end - start < cut_rules::floor(Floor::Remove) {
         return Outcome::Refused(format!(
             "nothing to add: {} selected, a scene is 1 s or more",
             crate::tools::tenths(band.length())

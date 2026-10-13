@@ -470,6 +470,8 @@ thread_local! {
 /// The move gesture's `drag-begin`: start the hold clean, so the first real move is the one that pushes.
 pub fn begin_move() {
     MOVE_PUSHED.with(|cell| cell.set(false));
+    // §7: the file waits for the release. Every write between now and `end_move` is refused at the writer.
+    crate::cut_save::begin_gesture();
     DRAG_FOLDS.with(|cell| cell.borrow_mut().clear());
     DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
 }
@@ -540,14 +542,18 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
         crate::ui::window::seed_review_cut(window, &cut_open);
         crate::ui::cut_folds::refresh_fold_badges(window);
     }
-    // One Undo per gesture: the first real move pushes, the rest of the hold updates in place.
+    // §7's one Undo per drag, in full: the FIRST real move of the hold spends the history step and nothing
+    // else does, and the FILE waits for the gesture's end on both paths — a write per mouse-move is I/O in the
+    // drag loop, and the disk would hold whichever edge the pointer last passed.
     if already_pushed() {
         crate::ui::window::seed_review_cut(window, &cut_);
     } else {
         crate::ui::window::record_edit(window, &cut_);
         MOVE_PUSHED.with(|cell| cell.set(true));
     }
-    crate::ui::window::save_insert_cut(&cut_);
+    // NOT a file write: this runs on every mouse-move of the hold. §7's one writer stays at the gesture's end
+    // (the release path below, and `end_move`), because a file per tick is I/O in the drag loop and would leave
+    // the disk holding whichever edge the pointer happened to be over when it last moved.
     true
 }
 
@@ -555,6 +561,15 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
 /// S3: an unmoved right press is a click. Nothing is written, nothing is undone; the page says `this one`.
 /// `spec/inventory/cut.md`'s summary of this surface is the source of the wording.
 pub const CLICK_STATUS: &str = "this one";
+
+/// §7 bullet 7 / F2.8 S1: the trim's release. The drag itself only updates state (§7's `one Undo per drag`
+/// skips the history mid-hold); THIS is the door that writes `cut.json`, so the file ends up holding the edge
+/// the hand left rather than whichever one a mid-drag tick happened to catch.
+pub fn end_release() {
+    // The gesture ends HERE, so the write below is the first one the hold is allowed.
+    crate::cut_save::end_gesture();
+    window::save_insert_cut(&window::newest_review_cut());
+}
 
 /// F2.8 S2 ("refold after"): the drag released. Put back exactly the folds this drag opened, newest span
 /// first so a list that shifted under the unfolds lands where it was, and leave every other fold alone —
@@ -564,6 +579,10 @@ pub fn end_move(window: &adw::ApplicationWindow) {
     if opened.is_empty() {
         DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
         MOVE_PUSHED.with(|cell| cell.set(false));
+        // The hold still moved the edge, so the release still writes it: §7's one writer runs at the gesture's
+        // end whether or not the drag had any fold to put back.
+        crate::cut_save::end_gesture();
+        crate::ui::window::save_insert_cut(&crate::ui::window::newest_review_cut());
         return;
     }
     let mut cut_ = crate::ui::window::newest_review_cut();
@@ -575,6 +594,7 @@ pub fn end_move(window: &adw::ApplicationWindow) {
     // `record_edit`, not a bare seed: opening the drag's folds and refolding them is ONE act of the hand,
     // so the refold belongs to the step the move already opened rather than spending one of its own.
     crate::ui::window::record_edit(window, &cut_);
+    crate::cut_save::end_gesture();
     crate::ui::cut_folds::save_folds(&cut_);
     crate::ui::cut_folds::refresh_fold_badges(window);
     DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
@@ -617,4 +637,65 @@ pub fn scrub_picture(window: &adw::ApplicationWindow, at_secs: f64) -> bool {
         return false;
     }
     crate::cut_play_back::cue_clips(&files, at_secs, &|line| crate::ui::window::log_line(line)).is_ok()
+}
+
+/// F2.8 S1 with the drag in hand remembered: `first` says whether THIS move is the hold's first, which is the
+/// only one that spends an Undo step (§7's `one Undo per drag`, read through [`cut_trim::pushes_undo`] and
+/// [`crate::cut_hand::picking_up`]). Mid-drag updates still write the cut and still persist it — they just leave
+/// the history alone, so one ↶ takes back a whole drag rather than one mouse-move at a time. Split out of
+/// `window.rs`, which is past its size budget; the rule about where a border may go stays in [`cut_trim`].
+pub fn press_border_move(
+    window: &adw::ApplicationWindow,
+    index: usize,
+    border: cut_trim::Border,
+    to: f64,
+    first: bool,
+) -> f64 {
+    let mut cut_ = crate::ui::window::newest_review_cut();
+    let clamped = cut_trim::clamp_edge(&cut_.segs, index, border, to, 0.0, window::TRACK_REC_END);
+    match border {
+        cut_trim::Border::Start => {
+            if let Some(seg) = cut_.segs.get_mut(index) {
+                seg.s = clamped;
+            }
+        }
+        cut_trim::Border::End => {
+            if let Some(seg) = cut_.segs.get_mut(index) {
+                seg.e = clamped;
+            }
+        }
+    }
+    // S1 on release: a neighbour landed against within a frame joins back into one scene, and the sentence says
+    // so because putting that border back is the thing a person may want most.
+    let status = if cut_trim::merge_pair(&cut_.segs, index).is_some() {
+        cut_trim::merge(&mut cut_.segs, index)
+            .and_then(|(held, _)| cut_.segs.get(held))
+            .map(|seg| cut_trim::joined_status(seg.s, seg.e))
+            .unwrap_or_default()
+    } else {
+        cut_.segs
+            .get(index)
+            .map(|seg| cut_trim::trim_status(index + 1, seg.s, seg.e))
+            .unwrap_or_default()
+    };
+    if crate::ui::cut_hand::picking_up(first) {
+        window::record_edit(window, &cut_);
+    } else {
+        // Still writing the cut and still refreshing what reads it — only the history step is withheld.
+        window::seed_review_cut(window, &cut_);
+        window::refresh_history_buttons(window);
+        window::refresh_cut_readouts(window);
+    }
+    // A trim is an edit either way, so cut.json gets it on both paths: a trim lost on reopen is a trim that
+    // never happened.
+    window::save_insert_cut(&cut_);
+    // S1: the picture follows the edge, at the second the cut now holds (not the pixel the pointer reached,
+    // which a clamp may have stopped short of).
+    scrub_picture(window, edge_second(index, border));
+    if !status.is_empty() {
+        if let Some(status_line) = window::find_status(window.upcast_ref()) {
+            status_line.set_text(&status);
+        }
+    }
+    clamped
 }

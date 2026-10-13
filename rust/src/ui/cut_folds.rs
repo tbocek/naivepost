@@ -13,8 +13,6 @@ use gtk4 as gtk;
 use crate::cut::{self, Cut};
 use crate::cut_fold;
 use crate::cut_screen;
-use crate::layout;
-use crate::startup;
 use crate::ui::cut_cameras::refresh_camera_rows;
 use crate::ui::window::{
     self as window, find_status, find_widget_by_name, newest_review_cut, record_edit,
@@ -320,11 +318,8 @@ pub fn press_fold_all(window: &adw::ApplicationWindow) -> String {
 /// field of it, so a toggle lands in `cut/cut.json` on the same path the page loaded from. A project
 /// with no tree (nothing saved yet) keeps its folds in memory only — there is no file to write into.
 pub(crate) fn save_folds(cut_: &Cut) {
-    let root = std::env::current_dir().unwrap_or_default();
-    let dir = startup::session_dir(&root);
-    if let Ok(tree) = layout::Tree::new(&dir) {
-        let _ = cut::save(cut_, &tree);
-    }
+    // §7's one writer: a fold toggle lands in `cut/cut.json` through `cut_save`, the same door every edit uses.
+    let _ = crate::cut_save::write_cut(cut_);
 }
 
 /// F2.11 S2 (`An emptied bottom row stays until its \u{2715}`): the row cross's seam. Whether the row

@@ -1,3 +1,6 @@
+/// §05-cut#7-rules bullet 1 — the page's ONE hand: one thread-local slot, so `cut_rules::pick_up`'s rule
+/// (`One thing held at a time`) binds across an edge, a clip and an effect instead of three independent slots.
+pub mod cut_hand;
 /// §02-services.md §4.1 — the Cut page's snap points when no aligner is named: read out of
 /// `cache/waves`. Split out of `window.rs`, at its size budget.
 pub mod wave_snap;
@@ -256,6 +259,9 @@ pub use window::review_cut_segs_count;
 // F2.7: the three verb buttons, the ⌦ key and the two "what is in hand" seams.
 pub use window::find_status;
 pub use window::held_clip;
+/// The segment in hand either way — whole clip or held edge — for doors that move a segment without asking
+/// which the hand took. `held_clip` alone answers only the whole-clip case (§7's mutual exclusion).
+pub use window::held_segment;
 pub use window::held_edge;
 pub use window::held_now;
 pub use window::set_held_edge;

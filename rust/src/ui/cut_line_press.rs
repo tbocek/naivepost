@@ -34,13 +34,31 @@ pub fn press_strip(
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
     let at = x_px / crate::ui::window::SELECT_SURFACE_PPS;
-    let surface = cut_select::surface_at(y_px, &crate::cut_select::PLACEHOLDER_BANDS, 1);
+    // §7: `a selection is of what it was DRAWN on`. This strip's own table answers the surfaces it actually
+    // draws — ruler at the top, one picture row with its wave strip, and the effects lane along the bottom — so
+    // a y in this widget's 48 px box resolves against THAT split, read as drawn. `cut_tracks::bands_for`
+    // measures the PAINTED band (thumbnail-tall rows, effects lane above them); asking it about a press in a
+    // 48 px placeholder box sends every click below the ruler past the last row and answers "no track", which is
+    // how this strip lost the ability to watch a row at all. Same rule, two surfaces, each read by its own
+    // drawing: the painted band's press goes through `bands_for` in [`press`], this one through the table its
+    // surface was sized for ([`crate::ui::cut_select_press::Geometry::of`] takes that same table for a drag here).
+    let surface = cut_select::surface_at(y_px, &cut_select::PLACEHOLDER_BANDS, STRIP_PICTURE_ROWS);
     let on_picture = matches!(surface, Surface::PictureRow(_));
     let row = match surface {
         Surface::PictureRow(row) => row,
         _ => cut_line::PICTURE_ROW,
     };
     press_in(window, at, on_picture, row, false, now_ms)
+}
+
+/// §7 bullet 2 (`a selection is of what it was DRAWN on`) through the PAINTED band: which ground a press y
+/// resolves to, read off the geometry the painter uses for this window's cut — the lane depth from its effects,
+/// the row count from the session's recordings. A drag and a click cannot disagree about a y because both ask
+/// it of this one table.
+pub fn surface_at_band(window: &adw::ApplicationWindow, y_px: f64) -> Surface {
+    let cut_ = ui::review_cut_of(window);
+    let bands = cut_tracks::bands_for(crate::fx_lane::row_count(&cut_.fx));
+    cut_select::surface_at(y_px, &bands, crate::timeline::row_count(&ui::page_recordings(), &cut_))
 }
 
 /// One press on the band at `(x_px, y_px)` in the band's own pixels, at `now_ms` for the write throttle.
@@ -52,24 +70,19 @@ pub fn press(
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
     let cut_ = ui::review_cut_of(window);
-    let recordings = ui::page_recordings();
     // The zoom and the scroll the band paints with. `Scene::of` hands `paint_at` `cut_view::pps()` and
     // `cut_view::origin()` untranslated, so a press converts by those two numbers and nothing else.
     let pps = cut_view::pps();
     let origin = cut_view::origin();
-    let row_count = crate::timeline::row_count(&recordings, &cut_);
     let at = ((x_px - cut_view::gutter_px() - origin) / pps).max(0.0);
     // §B's gutter is the band's left strip -- the 30 px that carry the row name plates, not tape. A press
     // there sizes rows and must move no line and watch nothing (S1's parenthetical).
     let gutter = x_px < cut_view::gutter_px();
 
-    // Which band the y fell in, off the arithmetic the painter lays out (see `cut_tracks::bands_for`).
-    // The lane's row count comes from the SAME source as its painted height: `Scene::of` measures the lane
-    // from the newest review cut, so a press must too, or the rows shift under the pointer.
-    let bands = cut_tracks::bands_for(crate::fx_lane::row_count(
-        &crate::ui::window::newest_review_cut().fx,
-    ));
-    let surface = cut_select::surface_at(y_px, &bands, row_count);
+    // Which band the y fell in, off the arithmetic the painter lays out (see [`surface_at_band`]). The lane's
+    // row count comes from the SAME source as its painted height: `Scene::of` measures the lane from the newest
+    // review cut, so a press must too, or the rows shift under the pointer.
+    let surface = surface_at_band(window, y_px);
     let on_picture = matches!(surface, Surface::PictureRow(_));
     let row = match surface {
         Surface::PictureRow(row) => row,
@@ -185,3 +198,9 @@ pub fn attach(window: &adw::ApplicationWindow, band: &gtk::Widget) {
     band.add_controller(gesture.clone());
     crate::ui::window::store_band_line_gesture(gesture);
 }
+
+/// How many picture rows the placeholder strip draws: one. Its box is 48 px tall and holds a ruler, that row
+/// with its wave strip, and the effects lane along the bottom (`cut_select::PLACEHOLDER_BANDS` is that split).
+pub const STRIP_PICTURE_ROWS: usize = 1;
+
+

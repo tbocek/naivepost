@@ -238,6 +238,11 @@ path = "tests/cut_review_cuts_widgets.rs"
 name = "cut_rules"
 path = "tests/cut_rules.rs"
 
+# §05-cut#7-rules bullet 1 through the page's own doors: one hold, one Undo per trim drag.
+[[test]]
+name = "sec_05_cut_7_hand_widgets"
+path = "tests/sec_05_cut_7_hand_widgets.rs"
+
 [[test]]
 name = "cut_screen_readouts"
 path = "tests/cut_screen_readouts.rs"
@@ -1497,3 +1502,7 @@ ureq = "3.4.2"
 # F0.3 ⏹ kills the subprocesses a run registered (`stop_legs::signal`); already in the lock as a
 # transitive dep, so this adds no new download.
 libc = "0.2"
+
+[[test]]
+name = "sec_05_cut_7_rules_cut_json"
+path = "tests/sec_05_cut_7_rules_cut_json.rs"

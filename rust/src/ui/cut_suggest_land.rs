@@ -144,7 +144,10 @@ fn land_effect_pair(window: &adw::ApplicationWindow, answer: &Applied) {
         recorder(window, &with_effects);
     }
     if let Some(Some(tree)) = session_tree() {
-        let _ = crate::cut::save(&with_effects, &tree);
+        // §7's one writer, and the tree is `session_tree`'s OWN — written into that folder rather than into
+        // whatever `current_dir()` happens to say, because a test points ▶ at a temp `.naivepost` of its own
+        // (`set_session_for_test`) and the write must land where the refusal looked.
+        let _ = crate::cut_save::write_cut_at(&with_effects, &tree);
     }
 }
 
@@ -300,7 +303,7 @@ pub fn land_spans(window: &adw::ApplicationWindow, spans: &[(f64, f64)]) -> Cut 
         recorder(window, &landed);
     }
     if let Some(Some(tree)) = session_tree() {
-        let _ = crate::cut::save(&landed, &tree);
+        let _ = crate::cut_save::write_cut_at(&landed, &tree);
     }
     landed
 }

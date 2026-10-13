@@ -48,6 +48,9 @@ pub mod cut_fold;
 pub mod cut_cards;
 pub mod cut_insert;
 pub mod cut_rules;
+/// §05-cut#7-rules bullet 7 — the ONE door that writes `cut.json`: it resolves the session folder and hands the
+/// cut to [`crate::cut::save`], so no editing door repeats the path logic or skips the write.
+pub mod cut_save;
 pub mod effect_details;
 pub mod effect_overlap;
 pub mod effect_rules;

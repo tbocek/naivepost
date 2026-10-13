@@ -190,8 +190,11 @@ fn check_delete_takes_the_effect_first(app: &adw::Application) {
         "an effect outranks a held clip and a live band"
     );
 
-    // With the effect put down, the held card answers next — the only door a spliced insert has.
+    // With the effect put down, the held card answers next — the only door a spliced card has. Under §7 the hand
+    // holds ONE thing, so the card that was in it before the effect went there when the effect was picked up:
+    // putting the effect down re-arms the card, which is the hand walking down ⌦'s order.
     ui::set_held_effect(None);
+    ui::set_held_clip(Some(seg(5.0, 9.0, 0)));
     let second = ui::press_delete_key(&window);
     assert!(
         status_text(&window).starts_with("removed the card"),

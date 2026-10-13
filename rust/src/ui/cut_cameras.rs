@@ -20,7 +20,7 @@ use crate::ui::cut_verb_press::press_badge;
 #[allow(unused_imports)] // kept for the seams' own callers; the crosses now fire through `press_badge`
 use crate::ui::cut_folds::{press_lane_cross, press_row_cross, CROSS_GLYPH};
 use crate::ui::window::{
-    find_status, find_widget_by_name, held_clip, line_position, newest_review_cut, record_edit,
+    find_status, find_widget_by_name, held_segment, line_position, newest_review_cut, record_edit,
     set_watched_row, watched_row,
 };
 
@@ -72,7 +72,7 @@ fn badge_scene(window: &adw::ApplicationWindow) -> Option<usize> {
     cut_cam::held_or_line_scene(
         &newest_review_cut(),
         Some(line_second(window)),
-        held_clip().as_ref(),
+        held_segment().as_ref(),
     )
 }
 

@@ -131,7 +131,7 @@ pub fn open_form_title(window: &adw::ApplicationWindow) -> Option<String> {
     if ui::held_effect().is_some() {
         return Some("edit the effect".to_string());
     }
-    if ui::held_clip().is_some() || ui::held_edge().is_some() {
+    if ui::held_segment().is_some() || ui::held_edge().is_some() {
         return Some("picked up clip".to_string());
     }
     None

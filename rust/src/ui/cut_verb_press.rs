@@ -88,7 +88,7 @@ pub fn press_delete_key(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
     let scene = held_scene_under_line(window);
     let outcome = cut_verbs::delete_verb(
         ui::held_effect().as_ref(),
-        ui::held_clip().as_ref(),
+        ui::held_segment().as_ref(),
         band.as_ref(),
         scene.as_ref(),
         &segs,

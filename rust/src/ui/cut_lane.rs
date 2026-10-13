@@ -33,6 +33,9 @@ pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
     let lane = crate::cut_lanes::lane_from(&file, at, seconds, &taken);
     let name = lane.name.clone();
     cut_.lanes.push(lane);
+    // §7's one writer: ⇲ Lane is an act of the hand that ends here, so the line belongs on disk before the
+    // page is repainted from it.
+    window::save_insert_cut(&cut_);
     window::record_edit(window, &cut_);
     cut_copy::lane_status(seconds, 0.0, &name, at)
 }

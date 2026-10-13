@@ -12,6 +12,7 @@ use naivepost::cut_rules::{self, Floor};
 use naivepost::cut_screen;
 use naivepost::cut_select::{self, Scope, Surface, ANY_ROW};
 use naivepost::cut_trim::{self, Border};
+use naivepost::cut_select::Selection;
 use naivepost::hand_edit;
 use naivepost::layout::Tree;
 use naivepost::preview;
@@ -304,4 +305,59 @@ fn sec_05_cut_7_rules_s8_a_draw_asks_for_a_window_and_never_for_a_frame() {
     assert!(hand_edit::edited(Some(later), Some(now)), "the text moved after the marks");
     assert!(!hand_edit::edited(Some(now), Some(later)), "a redraw is not an edit");
     assert!(!hand_edit::edited(None, Some(now)), "nothing to compare against");
+}
+
+// --- bullet 2b: the two floors, one per verb ------------------------------------------------------------------
+
+/// §05-cut#7-rules — `A border belongs to both buttons; … a selection is of what it was drawn on`, and §I's
+/// rule 13 that finishes `Remove takes exactly the selection`: the floor under a Remove is a frame, the floor
+/// under a proposal is a second. Two verbs, two floors, and the pair is only meaningful if each verb answers
+/// with ITS OWN refusal — so both refusals are pinned by their reason strings here, not just by true/false.
+#[test]
+fn sec_05_cut_7_rules_s2b_the_two_floors_refuse_different_things() {
+    let segs = vec![clip(0.0, 60.0)];
+    let band = |start: f64, end: f64| Selection {
+        start,
+        end,
+        scope: Scope::Footage { row: 0 },
+    };
+
+    // A 0.3 s band: too short to be a scene anyone chose to watch, so ＋ Add refuses it at Floor::Keep…
+    let short = band(10.0, 10.3);
+    let added = naivepost::cut_verbs::add(Some(&short), &segs, &[]);
+    assert!(
+        matches!(added, naivepost::cut_verbs::Outcome::Refused(_)),
+        "a 0.3 s proposal must be refused, not kept: {}",
+        added.status()
+    );
+    assert_eq!(
+        added.status(),
+        format!(
+            "nothing to add: {} selected, a scene is 1 s or more",
+            naivepost::tools::tenths(0.3)
+        ),
+        "the refusal names the keep floor it hit"
+    );
+    // …while － Remove takes exactly those same seconds, because its floor is a frame, not a second.
+    let removed = naivepost::cut_verbs::delete_verb(None, None, Some(&short), None, &segs);
+    assert!(
+        matches!(removed, naivepost::cut_verbs::Outcome::Applied { .. }),
+        "Remove must take the marked 0.3 s as marked: {}",
+        removed.status()
+    );
+
+    // A 0.03 s band is under even the frame-sized floor, and that is where the pair of floors shows: Remove
+    // refuses a selection it cannot take without leaving a sub-frame flicker, while the same band was no
+    // obstacle to the verb above (which refused for being under a SECOND). The sentence names the piece floor.
+    let sliver = band(10.0, 10.03);
+    let refused = naivepost::cut_verbs::remove(Some(&sliver), &[clip(0.0, 60.0)]);
+    assert!(
+        matches!(refused, naivepost::cut_verbs::Outcome::Refused(_)),
+        "a selection under one frame is not something Remove can take: {}",
+        refused.status()
+    );
+
+    // And the floors themselves, read through the module that pairs them with their verbs.
+    assert_eq!(cut_rules::floor(Floor::Keep), 1.0); // P.policy.minSceneSeconds
+    assert_eq!(cut_rules::floor(Floor::Remove), 0.04); // P.eng.minPieceSeconds
 }

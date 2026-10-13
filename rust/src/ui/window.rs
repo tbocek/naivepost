@@ -5009,6 +5009,8 @@ pub fn nudge_held_effect(window: &adw::ApplicationWindow, delta: f64) -> String 
     let (t, dur) = fx_band::nudged(&held, delta);
     cut_.fx[index].t = t;
     cut_.fx[index].dur = dur;
+    // §7's mid-drag rule: a drag tick that happens while a gesture is in flight is refused by `cut_save` itself,
+    // so the file waits for the release. A keyboard nudge is a whole act of the hand and writes.
     save_insert_cut(&cut_);
     record_edit(window, &cut_);
     set_held_effect(Some(cut_.fx[index].clone()));
@@ -5050,6 +5052,8 @@ pub fn drag_held_band(
     };
     cut_.fx[index].t = t;
     cut_.fx[index].dur = dur;
+    // §7's `cut.json is written by one function`: the write is refused while a gesture is in flight
+    // ([`crate::cut_save::gesture_in_flight`]), so a drag tick updates state and the release writes the answer.
     save_insert_cut(&cut_);
     record_edit(window, &cut_);
     set_held_effect(Some(cut_.fx[index].clone()));
@@ -5166,11 +5170,17 @@ pub fn press_fx_lane(window: &adw::ApplicationWindow) -> cut_select::FxLanePress
     answer
 }
 
-/// The surface the placeholder track area draws today, and how many rows of it exist. Until F2.8/F2.10/
-/// F2.11 own the real surfaces this answers the placeholder geometry (`cut_select::PLACEHOLDER_BANDS`)
-/// with one camera row -- the same single row the page shows -- so every band is reachable by y.
+/// The surface the placeholder track area draws today, and how many rows of it exist. §7's `a selection is of
+/// what it was drawn on` is what this answers: the strip is a 48 px box holding a ruler, ONE picture row with
+/// its wave strip, and the effects lane along the bottom, so every band is reachable by y — read off that split
+/// rather than off the painted band's taller geometry, which would answer most of this box as "past the last
+/// row". Both press paths on this widget go through here ([`crate::ui::cut_line_press::press_strip`] and
+/// `wire_select_surface`'s drag) so a click and a drag cannot disagree about a y.
 fn placeholder_surface_bands() -> (cut_select::SurfaceBands, usize) {
-    (cut_select::PLACEHOLDER_BANDS, 1)
+    (
+        cut_select::PLACEHOLDER_BANDS,
+        crate::ui::cut_line_press::STRIP_PICTURE_ROWS,
+    )
 }
 
 /// This window's ✕ Clear selection button (F2.6 S2), looked up by its stable name.
@@ -5949,49 +5959,65 @@ pub(crate) fn set_review_segs(window: &adw::ApplicationWindow, segs: &[cut::Seg]
 
 /// What ⌦ would take first: the effect in hand. Set by the effects-lane rounds when a person picks one
 /// up; a seam today so the delete order is testable before those pixels exist.
+///
+/// `None` puts the effect down and nothing else ([`crate::ui::cut_hand::drop_effect`]): the door that deleted
+/// the effect does not also decide what the next ⌦ takes.
 pub fn set_held_effect(effect: Option<cut::Fx>) {
-    HELD_EFFECT.with(|cell| *cell.borrow_mut() = effect);
+    match effect {
+        Some(fx) => {
+            crate::ui::cut_hand::pick_up(crate::ui::cut_hand::Hand::Effect(fx));
+        }
+        None => crate::ui::cut_hand::clear_all(),
+    };
 }
 
 /// Read side of [`set_held_effect`].
 pub fn held_effect() -> Option<cut::Fx> {
-    HELD_EFFECT.with(|cell| cell.borrow().clone())
+    crate::ui::cut_hand::held_effect()
 }
 
 /// What ⌦ takes next: the clip in hand — `the only way to remove a spliced card` (§J rule 8). Same
 /// seam arrangement as the held effect: real drags set it from F2.8/F2.9 onward.
 pub fn set_held_clip(seg: Option<cut::Seg>) {
-    HELD_CLIP.with(|cell| *cell.borrow_mut() = seg);
+    match seg {
+        Some(seg) => {
+            crate::ui::cut_hand::pick_up(crate::ui::cut_hand::Hand::Clip(seg));
+        }
+        None => crate::ui::cut_hand::clear_all(),
+    };
 }
 
-/// Read side of [`set_held_clip`].
+/// Read side of [`set_held_clip`]: the hand holds a WHOLE clip, as opposed to one of its edges.
 pub fn held_clip() -> Option<cut::Seg> {
-    HELD_CLIP.with(|cell| cell.borrow().clone())
+    crate::ui::cut_hand::held_clip()
+}
+
+/// The segment in hand either way — whole clip or held edge — for the doors that move a segment without asking
+/// which of the two the hand took.
+pub fn held_segment() -> Option<cut::Seg> {
+    crate::ui::cut_hand::held_clip_or_edge()
 }
 
 /// F2.4 S1b: put a picked clip EDGE in the hand (the 12 px reach, `// layout.lineReachPx`).
 pub fn set_held_edge(seg: Option<cut::Seg>) {
-    HELD_EDGE.with(|cell| *cell.borrow_mut() = seg);
+    match seg {
+        Some(seg) => {
+            crate::ui::cut_hand::pick_up(crate::ui::cut_hand::Hand::Edge(seg));
+        }
+        None => crate::ui::cut_hand::clear_all(),
+    };
 }
 
 /// Read side of [`set_held_edge`].
 pub fn held_edge() -> Option<cut::Seg> {
-    HELD_EDGE.with(|cell| cell.borrow().clone())
+    crate::ui::cut_hand::held_edge()
 }
 
 /// F2.4 S2/S3: what the line is holding right now, in the order the spec steps them — edge first, then
 /// the whole clip, then an effect. This is what a frame-step or arrow press asks; with the hardcoded
 /// `None` that stood here before, a real key press could never take the nudge branch at all.
 pub fn held_now() -> Option<cut_line::Held> {
-    if held_edge().is_some() {
-        Some(cut_line::Held::Edge)
-    } else if held_clip().is_some() {
-        Some(cut_line::Held::Clip)
-    } else if held_effect().is_some() {
-        Some(cut_line::Held::Effect)
-    } else {
-        None
-    }
+    crate::ui::cut_hand::held_kind()
 }
 
 /// F2.4 S1b: turn what the first left press picked into the hold it means. Edge goes to the edge slot so
@@ -6018,14 +6044,6 @@ thread_local! {
     /// F2.12 S1: whether this session has been told where its red line stands. `None` means no line was
     /// ever placed, which is the state that makes "click the timeline where the insert goes first" true.
     pub(crate) static INSERT_PLACE_KNOWN: std::cell::RefCell<Option<bool>> =
-        const { std::cell::RefCell::new(None) };
-    static HELD_EFFECT: std::cell::RefCell<Option<cut::Fx>> =
-        const { std::cell::RefCell::new(None) };
-    static HELD_CLIP: std::cell::RefCell<Option<cut::Seg>> =
-        const { std::cell::RefCell::new(None) };
-    /// F2.4 S1b: the clip edge a first left press picked up within `layout.lineReachPx` (12 px).
-    /// Kept apart from the whole-clip hold because a frame step must move the edge, not the clip.
-    static HELD_EDGE: std::cell::RefCell<Option<cut::Seg>> =
         const { std::cell::RefCell::new(None) };
     /// F2.4 S1: which picture row this window is watching. Only a picture-band click sets it, and only
     /// while nothing plays with sources loaded — `cut_line::watches_row` owns that; this just remembers.
@@ -6114,57 +6132,17 @@ thread_local! {
 
 /// F2.8 S1: drag one clip's border to `to` (session seconds). [`cut_trim::clamp_edge`] decides where it
 /// may go — a scene's worth of length, the next clip, the recording's end — this writes that answer into
-/// the window's cut and prints the sentence it earned. No rule lives here.
+/// the window's cut and prints the sentence it earned. No rule lives here; the write itself is
+/// [`cut_trim_press::press_border_move`], which is also what the strip's own drag calls with the hold's
+/// "is this the first move" flag beside it.
 pub fn press_trim_border(
     window: &adw::ApplicationWindow,
     index: usize,
     border: cut_trim::Border,
     to: f64,
 ) -> f64 {
-    let mut cut_ = newest_review_cut();
-    let clamped = cut_trim::clamp_edge(&cut_.segs, index, border, to, 0.0, TRACK_REC_END);
-    match border {
-        cut_trim::Border::Start => {
-            if let Some(seg) = cut_.segs.get_mut(index) {
-                seg.s = clamped;
-            }
-        }
-        cut_trim::Border::End => {
-            if let Some(seg) = cut_.segs.get_mut(index) {
-                seg.e = clamped;
-            }
-        }
-    }
-    // S1 on release: a neighbour landed against within a frame joins back into one scene, and the
-    // sentence says so because putting that border back is the thing a person may want most.
-    let status = if cut_trim::merge_pair(&cut_.segs, index).is_some() {
-        let joined = cut_trim::merge(&mut cut_.segs, index);
-        match joined {
-            Some((held, _)) => cut_.segs.get(held).map(|seg| {
-                cut_trim::joined_status(seg.s, seg.e)
-            }).unwrap_or_default(),
-            None => String::new(),
-        }
-    } else {
-        cut_.segs
-            .get(index)
-            .map(|seg| cut_trim::trim_status(index + 1, seg.s, seg.e))
-            .unwrap_or_default()
-    };
-    record_edit(window, &cut_);
-    // A trim is an edit, so cut.json gets it: a trim lost on reopen is a trim that never happened.
-    save_insert_cut(&cut_);
-    // S1: the picture follows the edge, at the second the cut now holds (not the pixel the pointer reached,
-    // which a clamp may have stopped short of).
-    crate::ui::cut_trim_press::scrub_picture(
-        window,
-        crate::ui::cut_trim_press::edge_second(index, border),
-    );
-    if !status.is_empty() {        if let Some(status_line) = find_status(window.upcast_ref()) {
-            status_line.set_text(&status);
-        }
-    }
-    clamped
+    // A call that stands on its own is a whole gesture, so it spends the step it earned.
+    crate::ui::cut_trim_press::press_border_move(window, index, border, to, false)
 }
 
 /// The recording's own span the placeholder strip stands inside. A placeholder number for a placeholder
@@ -6512,7 +6490,7 @@ fn show_insert_form(
 
     let heading = gtk::Label::new(Some(&format!(
         "{} \u{2014} {}",
-        cut_insert::edit_verb(cut_insert::hold(held_clip().as_ref())),
+        cut_insert::edit_verb(cut_insert::hold(held_segment().as_ref())),
         cut_insert::base_name(path)
     )));
     heading.set_widget_name("insert-heading");
@@ -6601,7 +6579,7 @@ fn show_insert_form(
     holder.append(&sec_row);
 
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let apply = gtk::Button::with_label(if cut_insert::hold(held_clip().as_ref()) {
+    let apply = gtk::Button::with_label(if cut_insert::hold(held_segment().as_ref()) {
         "Apply"
     } else {
         "Insert it"
@@ -6731,11 +6709,8 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
 /// Write the mutated cut where it was read from. Same path as `save_folds`: `cut::save` writes the whole cut,
 /// and the segments an insert added are fields of it. A project with no tree keeps the insert in memory only.
 pub(crate) fn save_insert_cut(cut_: &Cut) {
-    let root = std::env::current_dir().unwrap_or_default();
-    let dir = startup::session_dir(&root);
-    if let Ok(tree) = layout::Tree::new(&dir) {
-        let _ = cut::save(cut_, &tree);
-    }
+    // §7's one writer: the session resolution and the call to `cut::save` are `cut_save`'s, not this door's.
+    let _ = crate::cut_save::write_cut(cut_);
 }
 
 /// A landed cut is written by the flow that landed it — `cut_suggest_words_run` for the words cut,
@@ -6758,7 +6733,7 @@ pub fn save_seed_for_test(window: &adw::ApplicationWindow, cut_: &Cut) {
 pub fn press_insert(window: &adw::ApplicationWindow) -> String {
     // S6 first: a held card is edited, not replaced. A card that went away while its dialog was open says so
     // rather than opening a form for something that is no longer there.
-    if let Some(held) = held_clip() {
+    if let Some(held) = held_segment() {
         let cut_ = newest_review_cut();
         if held.is_insert() && cut_insert::find_card(&cut_, &held.ins, held.s).is_none() {
             return cut_insert::GONE.to_string();
@@ -6917,7 +6892,7 @@ pub fn refresh_insert_button(window: &adw::ApplicationWindow) {
         // F3.8 S1: `Insert becomes ✎ Edit` when an EFFECT is held too, not only a card. §A.9 says it in the
         // same breath as "band → hold", so the held-effect case joins the held-card one here rather than being
         // a second rule somewhere else. The word still comes from `cut_insert::edit_verb`, never retyped.
-        let editing = cut_insert::hold(held_clip().as_ref()) || held_effect().is_some();
+        let editing = cut_insert::hold(held_segment().as_ref()) || held_effect().is_some();
         button.set_label(cut_insert::edit_verb(editing));
     }
 }
@@ -7098,6 +7073,9 @@ struct TrimDrag {
     border: cut_trim::Border,
     /// When the last scrub happened, for `cut_trim::scrubs`' throttle.
     scrubbed_ms: Option<u64>,
+    /// Whether THIS hold has spent its one Undo step yet (§7: one Undo per drag). False at `drag-begin`, true
+    /// from the first move that pushed; every later update of the same hold writes state without pushing.
+    pushed: bool,
 }
 
 /// Milliseconds since an arbitrary origin, for the scrub throttle. Monotonic enough for a 90 ms gate; the
@@ -7116,6 +7094,9 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
     let Some(strip) = track_strip(window) else { return };
 
     let trimmer = gtk::GestureDrag::new();
+    // §7: `A border belongs to both buttons; moving is the right button's verb`. The mover below says
+    // `set_button(3)`; this one now says its own half of that sentence instead of leaving it to GTK's default.
+    trimmer.set_button(1);
     // The border a drag chases, seeded from the press position over the drawn layout. Until F2.10/F2.11
     // own the real rows, this strip's own geometry (`cut_trim::clip_boxes` at `TRACK_STRIP_PPS`) is what
     // the pointer is pointing at — so the hand grabs exactly the pixel the eye saw, and no rule about
@@ -7128,6 +7109,7 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
                 index,
                 border,
                 scrubbed_ms: None,
+                pushed: false,
             })
         });
     });
@@ -7137,6 +7119,14 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
     trimmer.connect_drag_update(move |_g, x, _y| {
         TRIM_DRAGS.with(|cell| {
             let Some(mut drag) = cell.borrow_mut().take() else { return };
+            // §7's `one Undo per drag` is decided HERE, before the scrub gate: the hold's first move spends the
+            // single step and every later tick of the same hold writes the edge in place. Read ahead of the
+            // gate on purpose — a tick the 90 ms gate swallowed never wrote anything, so it must not be the tick
+            // that spends the step either, and a drag whose first few ticks were swallowed still gets exactly
+            // one step from the first tick that did write. `first` is read before the gate below and applied
+            // only on the ticks that pass it, which is what makes the step the hold's first WRITE rather than
+            // its first event.
+            let first = !drag.pushed;
             // S1: the picture scrubs live, but at most every `SCRUB_MS` — an accurate seek per mouse-move
             // event is a pipeline that never stops flushing. `// preview.scrubMs`
             let now = now_millis();
@@ -7145,7 +7135,10 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
                 return;
             }
             drag.scrubbed_ms = Some(now);
-            press_trim_border(&win_upd, drag.index, drag.border, x / strip_pps());
+            drag.pushed = true;
+            crate::ui::cut_trim_press::press_border_move(
+                &win_upd, drag.index, drag.border, x / strip_pps(), first,
+            );
             // S1: the picture follows the border the hand is dragging, at the second the cut now holds.
             let landed = crate::ui::cut_trim_press::edge_second(drag.index, drag.border);
             crate::ui::cut_trim_press::scrub_picture(&win_upd, landed);
@@ -7225,6 +7218,8 @@ fn wire_track_strip(window: &adw::ApplicationWindow) {
     let win_released = window.clone();
     mover.connect_drag_end(move |_g, _x, _y| {
         crate::ui::cut_trim_press::end_move(&win_released);
+        // §7 bullet 7: the release is where a trim reaches `cut.json` — the hold only updates state.
+        crate::ui::cut_trim_press::end_release();
     });
     strip.add_controller(mover.clone());
     MOVE_GESTURES.with(|cell| *cell.borrow_mut() = Some(mover));
@@ -9240,6 +9235,8 @@ fn publish_cut(cut_: &cut::Cut) {
 /// move the pointer or reset the base, and recording them would put the undo itself on the undo stack.
 pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     publish_cut(cut_);
+    // Whether the write was an edit at all is the history's own question (`note_change`), not the door's:
+    // a drag released at the second it was already at changes nothing and therefore takes no step.
     cut_history(window).borrow_mut().note_change(cut_);
     refresh_history_buttons(window);
     // Every edit changes the timeline, and four of the form column's readings answer from it. That column is
@@ -9628,7 +9625,7 @@ fn wire_zoom_esc(window: &adw::ApplicationWindow) {
 /// Which of the four history buttons may be pressed right now, from the stack's own counts. Called
 /// from [`refresh_selection_readout`] so a greyed history button is today's answer along with every
 /// other greyed control on the page, never a leftover from the last draw.
-fn refresh_history_buttons(window: &adw::ApplicationWindow) {
+pub(crate) fn refresh_history_buttons(window: &adw::ApplicationWindow) {
     let history = cut_history(window);
     let held = history.borrow();
     let depth = held.depth();
