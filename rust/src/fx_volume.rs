@@ -175,6 +175,9 @@ pub struct Form {
     pub tout: f64,
     /// The curve's display name; [`fx_zoom::curve_stored`] decides what gets written.
     pub curve: String,
+    /// §1's new column, carried in by the page rather than typed: `""` is the whole bed, a lane's name that lane
+    /// only. Read off the press's seconds by [`lane_for_press`] and checked against the cut by [`lane_answer`].
+    pub lane: String,
 }
 
 /// F3.6 S3: the percent a stored gain is worth — 100 for untouched, 0 for silence, [`max_percent`] at the ceiling.
@@ -198,7 +201,9 @@ pub fn gain_of_percent(percent: f64) -> f64 {
 /// file re-saves byte-identically (§06#1).
 ///
 /// Nothing else on [`Fx`] is written: a volume has no box, no words, no file and no camera row — §1's table marks all
-/// of those `–` for it, and [`fx_record::uses`] is what says so.
+/// of those `–` for it, and [`fx_record::uses`] is what says so. The one exception is §1's new `lane` column, which
+/// the form carries in from the seconds the press was built from ([`lane_for_press`]) rather than from a field:
+/// §A.6 gives this form five fields and a lane is not one of them.
 pub fn apply(form: &Form) -> Result<Fx, String> {
     if form.dur < MIN_SECONDS {
         return Err(format!(
@@ -215,8 +220,36 @@ pub fn apply(form: &Form) -> Result<Fx, String> {
         tout,
         gain: gain_of_percent(form.percent),
         ease: fx_zoom::curve_stored(&form.curve).to_string(),
+        lane: form.lane.clone(),
         ..Default::default()
     })
+}
+
+/// §06-effects#1-record (`lane … "" = the whole bed; a lane's name = that lane only`): which lane a press works on.
+/// §1 grants the column but §A.6 gives the form no lane field, so the answer comes from the SECONDS the press was
+/// built from: a stretch lying wholly inside one named lane belongs to that lane, and anything else — no lanes at
+/// all, a stretch crossing a lane's edge, a stretch outside every one, or two lanes overlapping the same seconds
+/// (which one the person meant is then unknowable) — is the whole bed, spelled `""`. Deciding it from the seconds
+/// means ✂ Copy / ✎ Edit of an existing band keep saying the same thing the band said.
+pub fn lane_for_press(lanes: &[crate::cut::Lane], t: f64, dur: f64) -> String {
+    let inside = |lane: &crate::cut::Lane| lane.at <= t && t + dur <= lane.at + lane.dur;
+    let mut names = lanes.iter().filter(|lane| inside(lane)).map(|lane| lane.name.clone());
+    match (names.next(), names.next()) {
+        (Some(one), None) => one,
+        _ => String::new(),
+    }
+}
+
+/// The same column read back through what the cut still has: a lane the record names is kept verbatim, and a name
+/// that is no longer one of the cut's lanes costs the record nothing (§1's `""`), because a volume left naming a
+/// renamed or deleted lane would be heard as silence on a lane that does not exist. This is what makes a lane
+/// rename safe rather than silently wrong.
+pub fn lane_answer(lanes: &[crate::cut::Lane], named: &str) -> String {
+    if lanes.iter().any(|lane| lane.name == named) {
+        named.to_string()
+    } else {
+        String::new()
+    }
 }
 
 // --- S5: what the page says -----------------------------------------------------------------------------------------

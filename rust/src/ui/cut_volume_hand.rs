@@ -110,6 +110,21 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         holder.remove(&old);
     }
     LAST_VOLUME_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    // §1's `lane` is settled HERE, not in Apply: these are the seconds the form is about, and only this window
+    // knows which lanes it has. A record that already named one keeps it (`lane_answer`); a fresh press gets the
+    // lane its seconds fall wholly inside, or `""` for the whole bed — and §A.6 gives the form no field for it,
+    // so nothing on screen can contradict what gets stored.
+    let fx = &{
+        let answered = crate::fx_volume::lane_answer(&review_cut_of(window).lanes, &fx.lane);
+        cut::Fx {
+            lane: if answered.is_empty() {
+                crate::fx_volume::lane_for_press(&review_cut_of(window).lanes, fx.t, fx.dur)
+            } else {
+                answered
+            },
+            ..fx.clone()
+        }
+    };
 
     let heading = gtk::Label::new(Some(&fx_volume::form_title(fx.t, fx.dur)));
     heading.set_xalign(0.0);
@@ -197,7 +212,9 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
 }
 
 /// The form a press starts from, built out of the record so no default is invented in the widget layer. The
-/// percent is the stored gain read in the field's own unit; the curve starts on the one choice §A.1 lists.
+/// percent is the stored gain read in the field's own unit; the curve starts on the one choice §A.1 lists; and the
+/// lane rides along from the record itself, so ✎ Edit of a volume that names one lane keeps naming it (§F3.8's
+/// "always takes its values from the live effect").
 fn volume_form_of(fx: &cut::Fx) -> fx_volume::Form {
     fx_volume::Form {
         t: fx.t,
@@ -206,6 +223,7 @@ fn volume_form_of(fx: &cut::Fx) -> fx_volume::Form {
         trans: fx.trans,
         tout: fx.tout,
         curve: fx_zoom::CURVE_CHOICES[0].to_string(),
+        lane: fx.lane.clone(),
     }
 }
 
@@ -292,6 +310,10 @@ pub fn press_volume_apply(window: &adw::ApplicationWindow) -> String {
         trans: read("volume-field-fade-in", stored.trans),
         tout: read("volume-field-fade-out", stored.tout),
         curve,
+        // §1's `lane`: not a field, so nothing re-derives it here — [`show_volume_form`] settled it against this
+        // window's lanes when the form opened (the press's own seconds, or the edited record's answer), and no
+        // field the user can type moves who owns those seconds.
+        lane: stored.lane.clone(),
     };
     let effect = match fx_volume::apply(&form) {
         Ok(effect) => effect,
@@ -379,4 +401,3 @@ pub(crate) fn wire_volume_esc(window: &adw::ApplicationWindow) {
 pub fn paused_preview_gain(window: &adw::ApplicationWindow, t: f64) -> f64 {
     fx_volume::heard_while_paused(&review_cut_of(window).fx, t)
 }
-

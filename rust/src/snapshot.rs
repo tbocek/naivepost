@@ -430,7 +430,34 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // No Apply here: Apply closes the form, and the screen F3.5 names IS the form. The record it would
             // write is proven by `tests/svg_drawing_widgets.rs`; the shot shows what the user is being asked.
         }
-        // F3.6's screen is the volume form OPEN (`spec/img/06-volume.png`), so the shot drives the same door
+        // F3.1's screen is the zoom form OPEN (`spec/img/06-zoom.png`), and like `06-volume`/`06-svg` the shot
+        // must reach it through the doors the widgets fire — arm (⊕ Zoom), a box on the preview, the form that
+        // lands — rather than by poking state. The fixture seeds no red line of its own, so without these two
+        // lines the arm refuses (§F3.1 S1: "click a track first") and the shot was the bare Cut page with no
+        // form in it at all.
+        if screen == "06-zoom" {
+            ui::note_place(true);
+            ui::note_zoom_place(true);
+            ui::set_line_position(&window, cut_line::LinePos { t: 81.0 });
+            let said = ui::press_zoom_item(&window);
+            assert!(ui::zoom_armed(), "snapshot: 06-zoom could not arm -- {said}");
+            // A drawn box, fired through the panel's own gesture exactly as `tests/zoom_drag_widgets.rs` does:
+            // begin at the press point, release with the OFFSET that signal carries.
+            let gesture = ui::zoom_gesture(&window).expect("the page wired a drag onto the preview panel");
+            gesture.emit_by_name::<()>("drag-begin", &[&120.0f64, &90.0f64]);
+            gesture.emit_by_name::<()>("drag-end", &[&520.0f64, &330.0f64]);
+            assert!(ui::zoom_form_open().is_some(), "snapshot: 06-zoom drew no form");
+            // No Apply here either: Apply closes the form, and the screen §F3.1 names IS the form.
+        }
+        // F3.2's screen is the speed form OPEN (`spec/img/06-speed.png`): with only a line and no marked band
+        // the answer is a stop at the line (§F3.2 S1), so the shot places a line and presses the dropdown row,
+        // which is what `tests/speed_form_widgets.rs` presses. Without this the shot was the bare Cut page.
+        if screen == "06-speed" {
+            ui::note_place(true);
+            ui::set_line_position(&window, cut_line::LinePos { t: 81.0 });
+            let said = ui::press_speed_item(&window);
+            assert!(ui::speed_form_open().is_some(), "snapshot: 06-speed drew no form -- {said}");
+        }
         // the dropdown row fires (`tests/volume_form_widgets.rs` presses exactly this) rather than poking state.
         if screen == "06-volume" {
             // A placed line 81 s in, so the heading reads the band the press opens with -- spelled by

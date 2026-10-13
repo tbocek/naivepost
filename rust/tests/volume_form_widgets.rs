@@ -42,7 +42,6 @@ static RAN_PAUSED: AtomicBool = AtomicBool::new(false);
 const EPS: f64 = 1e-9;
 
 /// Let the main context run what the widget emissions queued.
-
 fn dropdown(window: &adw::ApplicationWindow, name: &str) -> gtk::DropDown {
     widget(window, name)
         .downcast::<gtk::DropDown>()
@@ -353,6 +352,7 @@ fn volume_round(app: &adw::Application) {
             trans: fx_volume::FADE_SECONDS,
             tout: fx_volume::FADE_SECONDS,
             curve: fx_zoom::CURVE_CHOICES[0].to_string(),
+            lane: String::new(),
         })
         .expect_err("0.05 s is under effects.volumeMinSeconds, so the rule itself refuses");
         assert_eq!(

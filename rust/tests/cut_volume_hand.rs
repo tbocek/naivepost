@@ -36,6 +36,7 @@ fn form(percent: f64, dur: f64, trans: f64, tout: f64) -> fx_volume::Form {
         trans,
         tout,
         curve: fx_zoom::CURVE_CHOICES[0].to_string(),
+        lane: String::new(),
     }
 }
 

@@ -268,6 +268,10 @@ name = "cut_six_effects_record"
 path = "tests/cut_six_effects_record.rs"
 
 [[test]]
+name = "sec_06_effects_1_record_columns"
+path = "tests/sec_06_effects_1_record_columns.rs"
+
+[[test]]
 name = "cut_six_lane_preview"
 path = "tests/cut_six_lane_preview.rs"
 

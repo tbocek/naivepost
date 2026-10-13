@@ -887,7 +887,8 @@ pub fn zoom_drag_ended_with_source(
         None,
         &cut_.fx,
         fx_zoom::aspect_is_set(&cut_),
-        0,
+        // §1's `cam`: the row this zoom was framed on is the row the page is watching, not a literal 0.
+        press_row(window),
     );
     set_zoom_armed(false);
     // The arm is off, so the camera comes back up. The record is not on the cut yet -- its bar arrives with
@@ -6284,10 +6285,22 @@ pub fn press_move_at(
     gesture
 }
 
-/// The row a right-press would land on. Until the rows are drawn the strip sits on row 0; the seam keeps
-/// the page from inventing a row number of its own.
+/// The row a right-press would land on, and the row a zoom records itself as framed on (§1's new `cam` column).
+/// The page's own answer is F2.4's watched row — the one a picture-band click left behind — because that is the
+/// only place the person ever says "this camera"; with nothing watched the strip sits on row 0, and a row number
+/// past the rows this cut has costs nothing but a reframe nobody can see, so it is clamped back.
 pub(crate) fn press_row(_window: &adw::ApplicationWindow) -> usize {
-    0
+    let Some(row) = watched_row() else {
+        return 0;
+    };
+    let rows = crate::timeline::rows_for(
+        &crate::timeline::kept_footage_recordings(&newest_review_cut()),
+        &newest_review_cut(),
+    )
+    .into_iter()
+    .max()
+    .map_or(1, |last| last + 1);
+    row.min(rows - 1)
 }
 
 /// The folds this window's drag in flight asked to open, newest write last. Read by the fold surface when
