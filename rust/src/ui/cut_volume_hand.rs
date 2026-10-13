@@ -192,9 +192,7 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     buttons.append(&apply);
     buttons.append(&cancel);
 
-    let footer = gtk::Label::new(Some(
-        "Kept as you type \u{2014} \u{21b6} Undo takes the whole edit back.",
-    ));
+    let footer = gtk::Label::new(Some(crate::fx_band::KEPT_AS_YOU_TYPE));
     footer.set_xalign(0.0);
     footer.add_css_class("dim-label");
     footer.set_widget_name("volume-form-footer");

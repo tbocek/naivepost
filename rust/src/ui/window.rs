@@ -5317,6 +5317,15 @@ pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos
             slot.borrow_mut().0 = pos;
         }
     });
+    // F3.6 S5 (`applied in the preview even while paused`): a line that LANDED on a second, so that second's
+    // loudness goes to sound now — a parked line inside a raised passage must be heard at that loudness or the
+    // fades cannot be judged without playing. `note_place(true)` is what says "a person put the line down":
+    // `set_line_position` is also the setup door (snapshots and tests park a line before any hand was there), and
+    // a gain ask for a second nobody chose would be the app speaking for a user. While TRANSPORT is running the
+    // tick hands the same number itself, so this asks only of a still frame and the two never both speak.
+    if place_known() && !preview_player(window).transport.playing {
+        crate::ui::cut_volume_hear::apply_paused_gain(window, pos.t);
+    }
 }
 
 /// A user moved the line: store it and let [`cut_line::LineWriter`] decide whether that is worth a
@@ -7288,7 +7297,7 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
     fn drop_spare(&self) { crate::ui::cut_cut_play::release_spare(); }
     fn hold_still(&self, hold: bool) -> bool { crate::ui::cut_cut_play::freeze(hold) }
     fn play_rate(&self, rate: f64, at: f64) -> bool { crate::ui::cut_cut_play::hand_rate(&self.0, rate, at) }
-    fn apply_gain(&self, gain: f64) { crate::ui::cut_cut_play::hand_gain(&self.0, gain); }
+    fn apply_gain(&self, gain: f64, at_secs: f64) { crate::ui::cut_cut_play::hand_gain(&self.0, gain, at_secs); }
     fn say_clock(&self, clock: f64, ended: bool) {
         if let Some(status) = find_status(self.0.upcast_ref()) {
             status.set_text(&cut_play_leg::clock_line(clock, ended));

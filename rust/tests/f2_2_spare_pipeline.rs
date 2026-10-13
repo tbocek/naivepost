@@ -371,7 +371,7 @@ impl cut_play_leg::CutPreviewPage for WatchPage {
     fn play_rate(&self, rate: f64, at: f64) -> bool {
         naivepost::cut_play_back::set_rate(&["take-a.mp4".to_string()], rate, at, &|_| {})
     }
-    fn apply_gain(&self, _gain: f64) {}
+    fn apply_gain(&self, _gain: f64, _at_secs: f64) {}
 }
 
 /// S5's press cue on a real process: the press starts the cut preview's RUNNING player, and a cue replaces

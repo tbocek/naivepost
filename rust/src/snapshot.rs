@@ -460,10 +460,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         }
         // the dropdown row fires (`tests/volume_form_widgets.rs` presses exactly this) rather than poking state.
         if screen == "06-volume" {
-            // A placed line 81 s in, so the heading reads the band the press opens with -- spelled by
-            // `fx_volume::form_title`, never hardcoded here. Two seconds from the line is `LINE_SECONDS`.
-            ui::note_place(true);
-            ui::set_line_position(&window, cut_line::LinePos { t: 81.0 });
+            // A marked stretch, which is what §F3.6's own heading reads: the spec's picture says
+            // `Volume 1:21 – 1:25`, four seconds, and a band is how a person gets exactly that (a bare line
+            // gives the form `LINE_SECONDS` from the line instead). Fired through the page's selection seam,
+            // the same one a drag leaves behind — not by poking state.
+            ui::draw_selection(&window, crate::cut_select::Surface::SelectionBand, None, 81.0, 85.0);
             let said = ui::press_volume_item(&window);
             // No Apply here either: Apply closes the form, and the screen §F3.6 names IS the form. The record
             // it would write, and that one ↶ takes back, is proven by `tests/volume_form_widgets.rs`.

@@ -332,7 +332,7 @@ pub fn start_cut_preview_tick(window: &adw::ApplicationWindow, page: Rc<dyn CutP
             if changed_rate(answers.rate) && !released {
                 page.play_rate(answers.rate, step.head);
             }
-            page.apply_gain(answers.gain);
+            page.apply_gain(answers.gain, step.head);
             page.say_clock(step.clock, step.ended);
             // Past the last clip the preview pauses (S5), so the processes it was holding go back now.
             if step.ended {
@@ -372,7 +372,8 @@ pub trait CutPreviewPage {
     /// S5 "volume effects apply": hand this second's GAIN to the preview's sound. Not a percent, and the
     /// page must not write it into the slider — the slider belongs to the room (F2.5 S6); the second's own
     /// gain goes to the player's volume, the way `cut_hear::Mix::gain` is handed about everywhere else.
-    fn apply_gain(&self, gain: f64);
+    /// `at_secs` travels with it because the leg asks playbin's volume property AT a second (F3.6 S5).
+    fn apply_gain(&self, gain: f64, at_secs: f64);
 }
 
 /// The cut's rate for these seconds, as last handed to the player — so a re-cue costs one per rate CHANGE,

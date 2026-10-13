@@ -74,6 +74,11 @@ pub fn cue(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, St
         .map_err(|err| format!("{} failed: {err}", crate::subprocess::shown(&program, &refs)))?;
     let pid = child.id();
     *held().lock().expect("the player slot") = Some(pid);
+    // The list travels beside the pid so [`set_volume`] can re-cue THE SAME files at a new loudness; without
+    // this a gain ask would find nothing to hand back and silently do nothing forever.
+    if let Ok(mut files) = running_files().lock() {
+        *files = files_of(&args);
+    }
     // The child is deliberately not waited on: it plays until `halt`. Dropping it here leaves it running.
     std::mem::forget(child);
     Ok(pid)
@@ -84,6 +89,12 @@ pub fn cue(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, St
 fn running_files() -> &'static Mutex<Vec<String>> {
     static SLOT: std::sync::OnceLock<Mutex<Vec<String>>> = std::sync::OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// The footage names out of a built argv: everything after the flags [`command_for`] puts first (four of them,
+/// and the last is the start position), which is where the files always begin.
+fn files_of(args: &[String]) -> Vec<String> {
+    args.iter().skip(4).cloned().collect()
 }
 
 /// The pid of the player this leg started, if one is running.

@@ -60,7 +60,7 @@ pub fn reset_stream_volume_once(window: &adw::ApplicationWindow) {
     // drift apart unnoticed.
     debug_assert_eq!(gain, RESET_TO, "the reset writes the level it was told to");
     STREAM_RESET.with(|done| done.set(true));
-    crate::ui::cut_cut_play::hand_gain(window, gain);
+    crate::ui::cut_cut_play::hand_gain(window, gain, crate::ui::line_position(window).t);
 }
 
 /// What the gain a built window carries after the build-time reset — a read for a check, not a door the

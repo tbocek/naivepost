@@ -86,9 +86,20 @@ pub fn hand_rate(window: &adw::ApplicationWindow, rate: f64, at: f64) -> bool {
 /// already multiplied it in, so writing a gain back as a percent would move the slider out from under the
 /// hand that set it. This writes the player's own `volume` property instead (the muted-by-property shape F2.5
 /// S6 established) and leaves the scale alone.
-pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64) {
+///
+/// F3.6 S5: and it carries the number to the process that makes sound. [`crate::play_back::set_volume`] asks
+/// playbin's volume PROPERTY at `at_secs` — a seek, never a stop — which is what lets a gain follow an effect
+/// without tearing the stream down; when nothing is running or the answer has not changed it does nothing.
+pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64, at_secs: f64) {
     if let Some(player) = live_player(window) {
         player.borrow_mut().volume = Some(gain);
+    }
+    // Only a RUNNING process may be asked, and only one THIS leg started: `play_back::cue` is ▶'s door (F2.1 —
+    // the press is what starts this process), so a gain arriving while nothing plays must not cue a player nobody
+    // asked for. It would also re-cue at the second the gain was named in rather than at the second ▶ chose,
+    // which is how a parked line once moved the red line's `-s` by a tenth of a second.
+    if crate::play_back::playing_pid().is_some() {
+        crate::play_back::set_volume(gain, at_secs);
     }
 }
 

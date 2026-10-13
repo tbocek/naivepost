@@ -132,6 +132,9 @@ pub mod cut_strip_view;
 /// §05-cut#8 bullet 2: the mute line, the stream-volume reset, and the reason each names. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod preview_sound;
+/// F3.6 S5: the door that hands a PAUSED second's gain to the footage leg, so a parked line inside a raised
+/// passage is heard at that loudness. No rule of its own — it asks `ui::paused_preview_gain` and `cut_hear::mix_gain`.
+pub mod cut_volume_hear;
 /// F2.1 ▶'s page half: the filmed runs and footage files a press hands the media leg, and the button's face.
 /// Split out of `window.rs`, which is past its size budget.
 pub mod cut_record_play;
