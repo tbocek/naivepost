@@ -119,6 +119,8 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         // edge came from the app's snap points. No `spec/img/05-suggest.png` exists either.
         | "05-suggest" => Some("Cut"),
         "06-preview" | "06-zoom" | "06-speed" | "06-text" | "06-volume" | "06-label"
+        // §F3.10's pass screen: no `spec/img` counterpart, so it names itself after the flow.
+        | "06-speeds"
         | "06-lane" | "06-svg" | "06-effect-menu" => Some("Cut"),
         "07-narrate" | "07-take" => Some("Narrate"),
         "08-produce" | "08-words" => Some("Produce"),
@@ -449,14 +451,52 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             assert!(ui::zoom_form_open().is_some(), "snapshot: 06-zoom drew no form");
             // No Apply here either: Apply closes the form, and the screen §F3.1 names IS the form.
         }
-        // F3.2's screen is the speed form OPEN (`spec/img/06-speed.png`): with only a line and no marked band
-        // the answer is a stop at the line (§F3.2 S1), so the shot places a line and presses the dropdown row,
-        // which is what `tests/speed_form_widgets.rs` presses. Without this the shot was the bare Cut page.
+        // §F3.3's screen is the speed form OPEN (`spec/img/06-speed.png`): with only a line and no marked
+        // band the answer is a stop at the line (§F3.2 S1), so the shot places a line and presses the
+        // dropdown row, which is what `tests/speed_form_widgets.rs` presses. Without this the shot was the
+        // bare Cut page. The spec's own caption for that image reads `Speed ×0.5 on a selected stretch`, so
+        // it is §F3.3's hand form, and nothing about §F3.10's pass belongs in this shot.
         if screen == "06-speed" {
             ui::note_place(true);
             ui::set_line_position(&window, cut_line::LinePos { t: 81.0 });
             let said = ui::press_speed_item(&window);
             assert!(ui::speed_form_open().is_some(), "snapshot: 06-speed drew no form -- {said}");
+        }
+        // §F3.10's own screen: the Cut page AFTER a ⏩ Speeds pass placed what the model asked for, with that
+        // pass's sentence on the status row. `spec/img` has no speed-pass image (the file named `06-speed.png`
+        // is §F3.3's hand form), so this is a program-side screen like `05-suggest` / `06-lane`, driven the
+        // same way — through the page's own doors, never by poking state:
+        //   1. a kept two-clip cut so the pass has a batch to ask about (the fixture's `cut.json` keeps one
+        //      clip and `fx: []`, which answers "nothing to ask about");
+        //   2. `run_speeds_pass_with_reply` — the scripted door for the TELEPHONE only. Every rule after the
+        //      reply (membership, the caption refusal, the gap merge, both log lines) and every write
+        //      (`record_edit`, the lane repaint, the status row) is the pass's own, called exactly as the
+        //      button calls it;
+        //   3. the lane, the camera rows and the readouts repaint inside that call, as a click does.
+        if screen == "06-speeds" {
+            let two = cut::Cut {
+                segs: vec![
+                    cut::Seg { s: 0.0, e: 20.0, cam: 0, ..Default::default() },
+                    cut::Seg { s: 20.0, e: 40.0, cam: 0, ..Default::default() },
+                ],
+                ..Default::default()
+            };
+            ui::seed_review_cut(&window, &two);
+            let said = ui::run_speeds_pass_with_reply(
+                &window,
+                &[crate::cut_speed_pass::Call { clip: 2, rate: 1.5 }],
+            );
+            // Read back from the page rather than from the returned sentence: a shot that printed only what the
+            // call handed back would still print it if nothing reached the cut or the status row.
+            let landed = ui::review_cut_of(&window)
+                .fx
+                .iter()
+                .filter(|fx| fx.kind == "speed")
+                .count();
+            let shown = ui::find_status(window.upcast_ref())
+                .map(|row| row.text().to_string())
+                .unwrap_or_default();
+            println!("snapshot: 06-speeds | {landed} speed bar(s) | status: {shown} | {said}");
         }
         // the dropdown row fires (`tests/volume_form_widgets.rs` presses exactly this) rather than poking state.
         if screen == "06-volume" {

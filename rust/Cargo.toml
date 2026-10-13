@@ -1554,3 +1554,27 @@ path = "tests/f3_1_press_on_the_preview.rs"
 [[test]]
 name = "f3_4_caption_on_the_preview"
 path = "tests/f3_4_caption_on_the_preview.rs"
+
+[[test]]
+name = "f3_10_s1_live_speeds_ask_carries_the_clips_message"
+path = "tests/f3_10_s1_live_speeds_ask_carries_the_clips_message.rs"
+
+[[test]]
+name = "f3_10_s2_live_speeds_reply_refused_on_a_captioned_clip"
+path = "tests/f3_10_s2_live_speeds_reply_refused_on_a_captioned_clip.rs"
+
+[[test]]
+name = "f3_10_s4_live_speeds_answer_is_cached"
+path = "tests/f3_10_s4_live_speeds_answer_is_cached.rs"
+
+[[test]]
+name = "f3_10_s3_live_speeds_rate_near_one_is_silence_and_an_empty_answer_is_a_whole_answer"
+path = "tests/f3_10_s3_live_speeds_rate_near_one_is_silence_and_an_empty_answer_is_a_whole_answer.rs"
+
+[[test]]
+name = "f3_10_s5_live_speeds_same_rate_stretches_merge_and_the_line_is_said"
+path = "tests/f3_10_s5_live_speeds_same_rate_stretches_merge_and_the_line_is_said.rs"
+
+[[test]]
+name = "f3_10_speeds_button_widget"
+path = "tests/f3_10_speeds_button_widget.rs"

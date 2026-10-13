@@ -138,6 +138,9 @@ pub mod preview_sound;
 /// F3.6 S5: the door that hands a PAUSED second's gain to the footage leg, so a parked line inside a raised
 /// passage is heard at that loudness. No rule of its own — it asks `ui::paused_preview_gain` and `cut_hear::mix_gain`.
 pub mod cut_volume_hear;
+/// F3.10 ⏩ Speeds: the pass's own half of the shell — read the page, telephone, write back. Split out of
+/// `window.rs`, which is past its size budget.
+pub mod cut_speeds_pass;
 /// F2.1 ▶'s page half: the filmed runs and footage files a press hands the media leg, and the button's face.
 /// Split out of `window.rs`, which is past its size budget.
 pub mod cut_record_play;
@@ -363,9 +366,8 @@ pub use window::captions_pass_button;
 pub use window::refresh_captions_gate;
 pub use window::set_captions_pass;
 // F3.10 Speeds proposed by the model: the pass's seams, so a test can fire ⏩ Speeds by name and read the
-// placed rates through the same cut state the logic tests check.
-pub use window::run_speeds_pass;
-pub use window::run_speeds_pass_with_reply;
+// placed rates through the same cut state the logic tests check. The pass itself is `cut_speeds_pass`.
+pub use cut_speeds_pass::{run_speeds_pass, run_speeds_pass_with_reply};
 pub use window::speeds_pass_button;
 pub use window::refresh_speeds_gate;
 pub use window::set_speeds_pass;

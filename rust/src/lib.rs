@@ -11,6 +11,7 @@ pub mod decision_homes;
 pub mod degraded;
 pub mod cut;
 pub mod captions_ask;
+pub mod speeds_ask;
 pub mod produce_translate_ask;
 pub mod cut_captions;
 pub mod cut_copy;
