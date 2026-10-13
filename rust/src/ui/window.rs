@@ -802,9 +802,22 @@ pub fn zoom_drag_ended_with_source(
     to: (f64, f64),
     source: (f64, f64),
 ) -> String {
-    // An unarmed page draws no zoom box: the press that would have armed it never happened, so say so
-    // rather than opening a form for a box nobody asked for.
+    // §F3.1's paragraph after S5: with nothing armed or held, a release on the preview is a PRESS about framing,
+    // not a box nobody asked for — a press inside a zoom's box takes that zoom, a press clear of every box draws
+    // a new rectangle for the zoom in force. A release that covered real pixels is still a hand-drawn box and
+    // stays refused (only ⊕ Zoom frames by hand); one under the floor was a click, which is what the rule reads.
     if !zoom_armed() {
+        let width = (to.0 - from.0).abs();
+        let height = (to.1 - from.1).abs();
+        if fx_zoom::drag_counts(width, height) {
+            return "no zoom armed \u{2014} pick \u{2295} Zoom first".to_string();
+        }
+        if held_effect().is_none() {
+            let said = crate::ui::cut_zoom_hand::press_on_release(window, from);
+            if !said.is_empty() {
+                return said;
+            }
+        }
         return "no zoom armed \u{2014} pick \u{2295} Zoom first".to_string();
     }
     let width = (to.0 - from.0).abs();
@@ -883,7 +896,7 @@ fn zoom_form_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
 ///
 /// Children are cleared FROM THE HOLDER, never by a tree-wide name search: a closed GTK window keeps its
 /// widgets parented, and searching globally can wipe another window's form (the fold-badge lesson).
-fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
+pub(crate) fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
     // Hidden FIRST, before anything is touched: while the holder is invisible its children cannot be seen as
     // "already parented here" by a later pass, and the clear below then removes exactly what this holder owns.
     if let Some(holder) = zoom_form_box_raw(window) {
@@ -9500,6 +9513,12 @@ fn zoom_form_owner(window: &adw::ApplicationWindow) -> bool {
             .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
             .unwrap_or(false)
     })
+}
+
+/// F3.1 (the paragraph after S5): the page's seam for a press on the paused preview at a point in the panel's
+/// own px — the rule is `cut_zoom_hand::press_on_release`; nothing is decided here.
+pub fn cut_zoom_press(window: &adw::ApplicationWindow, at_px: (f64, f64)) -> String {
+    crate::ui::cut_zoom_hand::press_on_release(window, at_px)
 }
 
 pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {

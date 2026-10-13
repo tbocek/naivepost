@@ -94,6 +94,7 @@ pub mod cut_preview_panel;
 /// §06-effects#2-the-lane-and-the-preview — whether a lane bar earns its dashed debt tail, and the class it
 /// wears. Split out of `window.rs`, which is past its size budget.
 pub mod cut_debt_tail;
+pub mod cut_zoom_hand;
 /// F2.12 S7 — the card preview pass: ffmpeg renders a card's frames at 8 fps (one for a still), the nearest
 /// rendered one goes on the panel, and a spliced card holds the footage while it plays. Split out of
 /// `window.rs`, which is past its size budget.
@@ -387,6 +388,12 @@ pub use window::press_zoom_cancel;
 pub use window::press_zoom_esc;
 pub use window::set_zoom_armed;
 pub use window::refresh_effects_lane;
+// F3.1's module-level seams: the press on the paused preview, and the plate beside the rect.
+pub use cut_zoom_hand::{
+    plate_shown_for_test as zoom_plate_shown,
+};
+/// F3.1's page seam: a press on the paused preview, answered from this window's own line and painted boxes.
+pub use window::cut_zoom_press;
 pub use window::effects_lane_box;
 pub use cut_verb_press::{press_add, press_delete_key, press_remove, press_split};
 pub use window::note_edit;
