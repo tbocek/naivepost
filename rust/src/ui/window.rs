@@ -7675,8 +7675,8 @@ fn wire_captions_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
 /// button is the decision taken in its spirit, so the pass can be started and its gate seen.
 pub const SPEEDS_PASS_LABEL: &str = "\u{23e9} Speeds";
 
-/// F3.10 S1–S5, the pass itself, lives in [`crate::ui::cut_speeds_pass`]: window.rs is past its size budget,
-/// and the pass needs none of this file's state — only the doors it already exports.
+// F3.10 S1–S5, the pass itself, lives in [`crate::ui::cut_speeds_pass`]: window.rs is past its size budget,
+// and the pass needs none of this file's state — only the doors it already exports.
 
 /// F3.10: move this session's speeds gate directly, the way `set_captions_pass` moves its own.
 pub fn set_speeds_pass(window: &adw::ApplicationWindow, on: bool) {
