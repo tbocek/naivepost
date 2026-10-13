@@ -19,6 +19,8 @@ use gtk4 as gtk;
 use crate::preview;
 use crate::cut::{self, Cut};
 use crate::fx_lane::{self, PausedScene};
+use crate::fx_svg;
+use crate::fx_text;
 use crate::fx_zoom::{self, Camera};
 
 /// The painted surface's widget name. A test that wants to know the panel is drawn rather than plates-only
@@ -114,9 +116,17 @@ pub fn held_frame(cut: &Cut, box_px: Option<(f64, f64, f64, f64)>) -> Held {
             .iter()
             .position(|effect| effect.kind == held.kind && effect.t == held.t)
     });
-    // A box is only under the hand while ⊕ Zoom is armed: once the drag ended the record is placed, and
-    // continuing to dash its box would claim the hand is still there (§2: an unfinished one is dashed).
-    let box_px = if crate::ui::zoom_armed() { box_px } else { None };
+    // §2's "a box being drawn dashed": a box is only under the hand while an arm that DRAWS one is up — ⊕ Zoom,
+    // ▨ SVG or ❝ Text, each of which drags its rectangle on this panel. Once the drag ended the record is placed,
+    // and continuing to dash its box would claim the hand is still there (§2: an unfinished one is dashed).
+    let box_px = if crate::ui::zoom_armed()
+        || crate::ui::cut_svg::svg_armed()
+        || crate::ui::cut_text_hand::text_armed()
+    {
+        box_px
+    } else {
+        None
+    };
     Held { index, box_px }
 }
 
@@ -384,6 +394,63 @@ fn paint_playing(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
     let _ = cr.fill();
 }
 
+/// The preview's own pixels: this pixbuf as a cairo surface, alpha premultiplied on the way in. The seam exists
+/// for one check (a test wants to prove a raster file is the kind of thing the preview can actually paint), and
+/// the rule behind it — gdk-pixbuf's RGBA into cairo's premultiplied ARgb32 — lives once in
+/// [`raster_surface`], which this only forwards to.
+pub fn raster_surface_for_test(path: &std::path::Path) -> Option<cairo::ImageSurface> {
+    let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_file(path).ok()?;
+    raster_surface(&pixbuf)
+}
+
+/// The drawing's box in the fitted picture's px — the same four fractions §06#1 stores for an overlay, read the way
+/// [`crate::ui::cut_preview_caption::box_of`] reads a caption's so a dragged box cannot mean two different rectangles
+/// depending on which kind of thing was dragged. A record with no stored box takes §F3.5's default, `MIDDLE`.
+fn svg_box_px(effect: &cut::Fx, fit: (f64, f64)) -> (f64, f64, f64, f64) {
+    let (cx, cy) = effect.centre();
+    fx_text::Box_ {
+        cx,
+        cy,
+        wf: effect.wf.unwrap_or(fx_svg::MIDDLE.wf),
+        hf: effect.hf.unwrap_or(fx_svg::MIDDLE.hf),
+    }
+    .to_px(fit.0, fit.1)
+}
+
+/// This pixbuf as a cairo surface, alpha premultiplied on the way in (see the caller). `None` if either step
+/// refuses — a png that will not decode is a missing raster, and the caller treats it as one.
+fn raster_surface(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurface> {
+    let (w, h) = (pixbuf.width(), pixbuf.height());
+    if w <= 0 || h <= 0 {
+        return None;
+    }
+    let channels = pixbuf.n_channels().max(3) as usize;
+    let stride = pixbuf.rowstride() as usize;
+    let bytes = pixbuf.read_pixel_bytes();
+    let src = &bytes[..];
+    let has_alpha = pixbuf.has_alpha();
+    // The buffer is filled BEFORE cairo is handed it: `create_for_data` borrows the vec for the surface's life, so
+    // there is no `modify_data` to write through afterwards, and writing after the hand-over would be writing
+    // through a borrow the surface already owns.
+    let out_stride = (w * 4) as usize;
+    let mut pixels = vec![0u8; out_stride * h as usize];
+    for y in 0..h as usize {
+        for x in 0..w as usize {
+            let from = y * stride + x * channels;
+            if from + 2 >= src.len() {
+                break;
+            }
+            let (r, g, b) = (src[from] as u32, src[from + 1] as u32, src[from + 2] as u32);
+            let a = if has_alpha { src[from + 3] as u32 } else { 255 };
+            // Premultiply, then pack B,G,R,A little-endian: what cairo's ARgb32 means on this machine.
+            let word = (b * a / 255) | ((g * a / 255) << 8) | ((r * a / 255) << 16) | (a << 24);
+            let at = y * out_stride + x * 4;
+            pixels[at..at + 4].copy_from_slice(&word.to_le_bytes());
+        }
+    }
+    cairo::ImageSurface::create_for_data(pixels, cairo::Format::ARgb32, w, h, out_stride as i32).ok()
+}
+
 /// One overlay: the caption's words or a drawing's file, wherever the record says, at `alpha`.
 fn paint_overlay(cr: &cairo::Context, frame: &Frame, index: usize, alpha: f64, outline: bool) {
     if alpha <= 0.0 {
@@ -403,6 +470,47 @@ fn paint_overlay(cr: &cairo::Context, frame: &Frame, index: usize, alpha: f64, o
         if outline {
             let box_ = crate::ui::cut_preview_caption::box_of(effect, frame.fit);
             draw_box_outline(cr, box_, true, fx_lane::HELD_OUTLINE, alpha);
+        }
+        return;
+    }
+    // F3.5 S5 (`preview raster 512 px, cached per file`): a drawing is its FILE, so the preview paints the raster
+    // ffmpeg made for it — into `fx_svg::fit_inside`, the one place preview and render agree that "the drawing keeps
+    // its own shape inside it" (see [`crate::fx_svg::fit_inside`]'s own note). The path comes from the program's own
+    // cache, never a guess: with no raster (§A.5's failure path) the INK is missing but the placement is not, so the
+    // box is still outlined and the person can see where the drawing will sit.
+    if effect.effect_kind() == Some(cut::EffectKind::Svg) {
+        let box_ = svg_box_px(effect, frame.fit);
+        let raster = crate::ui::cut_svg::raster_of(&effect.src)
+            .and_then(|file| gtk::gdk_pixbuf::Pixbuf::from_file(file).ok());
+        // The drawing's own shape: the png's width over its height, which is the svg's shape because ffmpeg was
+        // asked to keep it (`-keep_ar 1`). No raster means no known shape, and `fit_inside` then answers the box.
+        let aspect = raster
+            .as_ref()
+            .map(|pixbuf| pixbuf.width() as f64 / (pixbuf.height().max(1)) as f64)
+            .unwrap_or(0.0);
+        let (dx, dy, dw, dh) = fx_svg::fit_inside(box_.2, box_.3, aspect);
+        let drawn = (box_.0 + dx, box_.1 + dy, dw, dh);
+        if let Some(pixbuf) = raster.filter(|_| dw > 0.0 && dh > 0.0) {
+            // gdk-pixbuf gives RGBA bytes; cairo's ARgb32 is native-endian BGRA with PREMULTIPLIED alpha, so the
+            // copy converts both per pixel — that is what keeps a transparent card transparent over the video,
+            // which is exactly what §S5's "transparent" asks for. `set_source_pixbuf` would be one line, but gtk4-rs
+            // 0.11 does not expose it, so the pixels are carried by hand through [`raster_surface`].
+            // An unreadable png costs the ink, not the placement: the outline below still says where it goes.
+            if let Some(surface) = raster_surface(&pixbuf) {
+                // `translate`/`scale` return nothing (they only mark the context on error); `save`,
+                // `set_source_surface` and `paint_with_alpha` return a Result, which is ignored the way this
+                // painter already ignores `show_text` — a cairo error here means the surface is already unusable,
+                // and a half-drawn card is no worse than none for a preview.
+                let _ = cr.save();
+                cr.translate(drawn.0, drawn.1);
+                cr.scale(dw / surface.width() as f64, dh / surface.height() as f64);
+                let _ = cr.set_source_surface(&surface, 0.0, 0.0);
+                let _ = cr.paint_with_alpha(alpha);
+                let _ = cr.restore();
+            }
+        }
+        if outline {
+            draw_box_outline(cr, drawn, true, fx_lane::HELD_OUTLINE, alpha);
         }
         return;
     }

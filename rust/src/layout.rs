@@ -261,6 +261,14 @@ impl Tree {
         self.dir.join("cache/llm").join(step).join(sha256)
     }
 
+    /// F3.5 S5 (`preview raster 512 px, cached per file`): where a drawing's preview copy is kept — one png per
+    /// source file, named by [`crate::fx_svg::raster_file_name`]. Beside the other caches because it is the same
+    /// kind of thing: derived from inputs, safe to throw away, and re-made on the next ask.
+    pub fn svg_raster_dir(&self) -> PathBuf {
+        self.dir.join("cache/svg")
+    }
+
+
     /// Waveform envelopes, one file per lane.
     pub fn wave(&self, lane: &str) -> PathBuf {
         self.dir.join("cache/waves").join(format!("{lane}.wave"))
@@ -491,6 +499,7 @@ impl Tree {
             "cache/llm",
             "cache/waves",
             "cache/edges",
+            "cache/svg",
             "cut",
             "narrate/tts",
             "narrate/samples",

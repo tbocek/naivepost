@@ -285,6 +285,21 @@ pub fn ffmpeg_raster(ffmpeg: &str, path: &str, out: &str) -> Vec<String> {
     ]
 }
 
+/// F3.5 S5 (`cached per file`): the name this drawing's preview copy is kept under, one per SOURCE file.
+///
+/// The hash is what makes "per file" mean per file: two drawings can share a base name in different folders
+/// (`assets/logo.svg` and `assets/old/logo.svg`), so naming the raster after [`base`] would hand both the same png
+/// and show someone the wrong drawing. `llm_cache::key` is the project's existing digest over a list of parts, used
+/// here with the path as its single part rather than a second sha256 implementation; `.png` goes on the end because
+/// ffmpeg picks its muxer from the extension, and the digest is hex so the whole name is filesystem-safe.
+pub fn raster_file_name(path: &str) -> String {
+    let digest = crate::llm_cache::key(&[serde_json::Value::String(path.to_string())]);
+    // An uncomputable key is no key (llm_cache's own rule), but a path string always encodes, so `None` here would
+    // mean a caller passed something that is not a path at all — fall back to a fixed name rather than panic.
+    let hex = digest.unwrap_or_else(|| "drawing".to_string());
+    format!("{hex}.png")
+}
+
 /// F3.5 S5 (`the drawing keeps its own shape inside it`): the rectangle a drawing is drawn into — as large as it can
 /// be inside the box, aspect kept, centred on the axis the fit left short. Returns (x, y, w, h) in the same units it
 /// was given.
@@ -325,6 +340,10 @@ struct Entry {
     /// Whether this file's failure has already been printed. §A.5's "failure logged once": a drawing that cannot be
     /// read is asked about on every frame the preview draws, and a log full of the same line hides what else broke.
     logged: bool,
+    /// Where this file's 512 px copy lives, once it exists. The form's picture and the preview's painter both read
+    /// it back through [`Rasters::raster_of`], so the file ffmpeg wrote is remembered rather than re-derived — and
+    /// a drawing whose raster failed holds `None`, which is how "no picture, box only" reaches the panel.
+    raster: Option<std::path::PathBuf>,
 }
 
 /// F3.5 S5 (`cached per file`): the preview's rasters, one per FILE rather than one per effect — the same logo in six
@@ -362,6 +381,24 @@ impl Rasters {
         let entry = self.entries.entry(path.to_string()).or_default();
         entry.busy = false;
         entry.ready = true;
+    }
+
+    /// F3.5 S5: the raster arrived AND where it landed. This is the door the program's own raster call uses —
+    /// `done` alone would mark a file ready while leaving the panel with nothing to paint, because "ready" without
+    /// a path is a claim about work nobody can show.
+    pub fn done_with(&mut self, path: &str, file: &std::path::Path) {
+        let key = path.to_string();
+        let entry = self.entries.entry(key).or_default();
+        entry.busy = false;
+        entry.ready = true;
+        entry.raster = Some(file.to_path_buf());
+    }
+
+    /// Where this file's preview copy is, `None` while it has not been made (or its making failed). Read-only:
+    /// unlike [`Rasters::request`] this takes on no job, so the painter can ask every frame without arming a
+    /// second raster behind the first one's back.
+    pub fn raster_of(&self, path: &str) -> Option<std::path::PathBuf> {
+        self.entries.get(path).and_then(|entry| entry.raster.clone())
     }
 
     /// F3.5 S5 (`failure logged once`): the line for a drawing that cannot be shown, `Some` only the first time this

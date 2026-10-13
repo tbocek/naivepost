@@ -558,7 +558,7 @@ fn f3_5_s5_the_raster_is_512_px_transparent_and_one_per_file(app: &adw::Applicat
     assert_eq!(fx_svg::PREVIEW_RASTER_PX, 512.0, "the preview copy is 512 px");
     let window = land_click_form(app, 30.0);
     assert!(
-        label_text(&window, "svg-preview-raster").contains("512"),
+        label_text(&window, "svg-preview-raster-note").contains("512"),
         "the form's raster row states the size"
     );
 

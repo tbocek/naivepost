@@ -118,6 +118,9 @@ pub fn svg_chosen(window: &adw::ApplicationWindow, file: Option<&str>) -> String
             // measured against the OUTPUT frame), so NO svg path calls `set_camera_layer_down` — stepping the
             // camera aside would move the ground the box is being drawn on. That call belongs to ⊕ Zoom alone.
             request_svg_raster(&name);
+            // A raster that came back from disk (the file was seen before) is ready the instant the ask returns, so
+            // a form already open gets its picture now rather than on the next redraw.
+            paint_svg_raster(window, &name);
             // A marked stretch outranks the line for the tail's wording; a band under every effect's floor for
             // "marked" (cut_speed::MIN_MARKED_SECONDS) is not a band at all, exactly as F3.3/F3.4 read it.
             let marked = selection(window)
@@ -130,23 +133,62 @@ pub fn svg_chosen(window: &adw::ApplicationWindow, file: Option<&str>) -> String
     }
 }
 
-/// Ask for this file's preview raster and say what the cache answered. The CACHE and the argument vector are the
-/// testable halves; running ffmpeg stays with `crate::subprocess`, so nothing is spawned here (and nothing could
-/// run headless anyway). One logo placed six times therefore asks once.
-fn request_svg_raster(path: &str) {
+/// Ask for this file's preview raster and say what the job answered. The CACHE, the argument vector and the running
+/// of ffmpeg each keep their own home — [`fx_svg::Rasters`] decides whether work is needed, `cut_svg_raster::make`
+/// runs ffmpeg and keeps the png — so one logo placed six times asks once: the second call finds the cache busy or
+/// ready, and the third finds the file already on disk.
+pub fn request_svg_raster(path: &str) {
     // // effects.previewRasterPx — 512 px, rgba, cached per file (S5).
     let slot = SVG_RASTERS.with(|cell| cell.borrow_mut().request(path));
-    if slot == fx_svg::Slot::NeedsRaster {
-        // This is the call that WOULD run for a cold file, logged rather than executed:
-        // fx_svg::ffmpeg_raster("ffmpeg", path, out) -> argv.
-        let argv = fx_svg::ffmpeg_raster("ffmpeg", path, "/tmp/svg-raster.png");
-        log_line(&format!(
-            "preview raster queued: {} px for {} ({} args)",
-            fx_svg::PREVIEW_RASTER_PX as i32,
-            fx_svg::base(path),
-            argv.len()
-        ));
+    if slot != fx_svg::Slot::NeedsRaster {
+        return;
     }
+    // Which ffmpeg and which folder are `make_here`'s business — the same doors every other ffmpeg job uses, so a
+    // path typed into Settings is honoured here too and no folder is invented for the occasion.
+    match make_here(path) {
+        Ok(file) => {
+            SVG_RASTERS.with(|cell| cell.borrow_mut().done_with(path, &file));
+            log_line(&format!(
+                "preview raster ready: {} ({} px)",
+                fx_svg::base(path),
+                fx_svg::PREVIEW_RASTER_PX as i32
+            ));
+        }
+        Err(reason) => {
+            // §A.5: said ONCE per file, in the spec's own words, because a broken drawing is asked about on every
+            // frame the preview draws. A repeat gets `None` and stays quiet.
+            let line = SVG_RASTERS.with(|cell| cell.borrow_mut().failure_line(path, &reason));
+            if let Some(line) = line {
+                log_line(&line);
+            }
+        }
+    }
+}
+
+/// F3.5 S5: where this project keeps its rasters, `None` with no project open
+/// ([`crate::ui::window::narrate_session_tree`] is the app's one answer for "this session's folder", resolved the
+/// way every other flow resolves it). Public because [`make_here`] is.
+pub fn raster_dir() -> Option<std::path::PathBuf> {
+    crate::ui::window::narrate_session_tree().map(|tree| tree.svg_raster_dir())
+}
+
+/// F3.5 S5: make (or find) this drawing's raster in THIS project's cache folder, answering which ffmpeg and which
+/// folder this session uses so a caller does not have to. The ask below goes through here; anything else that has to
+/// settle a file's preview copy without a window in hand uses it too.
+pub fn make_here(path: &str) -> Result<std::path::PathBuf, String> {
+    let paths = crate::settings::from_environment();
+    let program = match &paths {
+        Some(paths) => crate::audio_task::ffmpeg_program(paths),
+        None => crate::run_stages::FFMPEG.to_string(),
+    };
+    let dir = raster_dir().ok_or_else(|| "no project folder to keep the raster in".to_string())?;
+    crate::ui::cut_svg_raster::make(&program, path, &dir, &|line| log_line(line))
+}
+
+/// F3.5 S5: where this drawing's preview copy is, `None` when there is none yet (or its making failed). Read-only,
+/// so the form's picture and the preview's painter can ask without taking on a raster job themselves.
+pub fn raster_of(path: &str) -> Option<std::path::PathBuf> {
+    SVG_RASTERS.with(|cell| cell.borrow().raster_of(path))
 }
 
 /// The cache's answer for a file right now — Ready / Busy / Failed / NeedsRaster. `Rasters` has no read-only
@@ -314,12 +356,25 @@ pub(crate) fn show_svg_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     curve_row.append(&curve_key);
     curve_row.append(&curve_value);
 
-    // The preview raster row: how big the preview's copy of this drawing is rendered, and where that job stands.
+    // The preview raster row: the drawing's own 512 px copy, shown as a PICTURE (§F3.5's form line says "preview
+    // raster 512 px", and a picture is what that asks for), with the cache's sentence beside it underneath.
     // // effects.previewRasterPx (512, transparent, cached per file).
-    let raster = gtk::Label::new(Some(&svg_raster_note(&fx.src)));
-    raster.set_xalign(0.0);
-    raster.add_css_class("dim-label");
+    let raster = gtk::Picture::new();
     raster.set_widget_name("svg-preview-raster");
+    raster.set_content_fit(gtk::ContentFit::Contain);
+    // 200 x 150: the form column is about 240 px wide and this row sits between the Curve row and the buttons, so
+    // a square-ish box at two thirds of the column shows a card or a badge without pushing the Apply button off the
+    // shot. `Contain` keeps the raster's own shape inside it, which is the same bargain §S5 makes on the video.
+    raster.set_size_request(200, 150);
+    raster.set_margin_top(4);
+    raster.set_margin_bottom(4);
+    paint_svg_raster_in(&raster, &fx.src);
+
+    let raster_note = gtk::Label::new(Some(&svg_raster_note(&fx.src)));
+    raster_note.set_xalign(0.0);
+    raster_note.add_css_class("dim-label");
+    raster_note.set_wrap(true);
+    raster_note.set_widget_name("svg-preview-raster-note");
 
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     let apply = gtk::Button::with_label("Apply");
@@ -343,6 +398,7 @@ pub(crate) fn show_svg_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     holder.append(&fade_out);
     holder.append(&curve_row);
     holder.append(&raster);
+    holder.append(&raster_note);
     holder.append(&buttons);
     holder.append(&footer);
     holder.set_visible(true);
@@ -351,6 +407,34 @@ pub(crate) fn show_svg_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     set_svg_form(Some(svg_form_of(fx)));
     // Buttons wired after the widgets are in the tree, so the lookup by name finds them.
     wire_svg_buttons(window);
+}
+
+/// Put this drawing's raster on the form's picture row, if there is one.
+///
+/// The file comes from the program's own cache ([`raster_of`]), never from a guess at a path, and it goes through
+/// gdk-pixbuf exactly as [`crate::ui::cut_picture::show_frame`] puts a frame of footage on the preview: a png that
+/// cannot be decoded leaves the row EMPTY rather than showing a stale drawing, because an old card beside a new
+/// file name would say something false about the file the row names.
+pub fn paint_svg_raster(window: &adw::ApplicationWindow, path: &str) {
+    let Some(picture) = find_widget_by_name(window.upcast_ref(), "svg-preview-raster")
+        .and_then(|w| w.downcast::<gtk::Picture>().ok())
+    else {
+        // No form on screen: nothing to update. The next `show_svg_form` paints the row from the cache anyway.
+        return;
+    };
+    paint_svg_raster_in(&picture, path);
+}
+
+/// The same, against the widget itself — so the freshly built row gets its picture during `show_svg_form`, before
+/// anyone could look it up by name.
+fn paint_svg_raster_in(picture: &gtk::Picture, path: &str) {
+    let texture = raster_of(path)
+        .and_then(|file| gtk::gdk_pixbuf::Pixbuf::from_file(&file).ok())
+        .map(|pixbuf| gtk::gdk::Texture::for_pixbuf(&pixbuf));
+    match texture {
+        Some(texture) => picture.set_paintable(Some(&texture)),
+        None => picture.set_paintable(None::<&gtk::gdk::Paintable>),
+    }
 }
 
 /// The raster row's sentence: the size, and what the per-file cache says about this file right now.
@@ -399,8 +483,11 @@ fn set_svg_armed(armed: bool) {
 /// Replace the carried drawing without touching the arm or the open form -- what Choose… ends up doing once the
 /// chooser answers and the box has already been drawn.
 pub fn swap_svg_file(window: &adw::ApplicationWindow, file: &str) {
-    let _ = window;
     set_svg_file(Some(file.to_string()));
+    // A form already open must show the drawing its file row now names, so the raster is asked for here too and the
+    // picture pushed in if it arrived (S5's `cached per file` means a re-chosen logo is instant).
+    request_svg_raster(file);
+    paint_svg_raster(window, file);
 }
 
 /// Drop the arm and the chosen file WITHOUT touching an open form. `press_svg_cancel` takes the form down too,

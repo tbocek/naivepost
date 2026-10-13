@@ -146,6 +146,8 @@ mod cut_label_hand;
 mod cut_text_hand;
 mod cut_folds;
 mod cut_svg;
+/// F3.5 S5: the ffmpeg call that makes a drawing's 512 px preview raster, run for real from [`cut_svg`]'s ask.
+mod cut_svg_raster;
 /// F0.7 S5 — the policy form: every field with its value, source and reason.
 mod narrate_lines;
 /// F4.7 (**Text**) — the row's text box: what a typed tag does to the line, and when it reaches disk.
@@ -158,9 +160,9 @@ pub use settings::badge;
 // F3.5 ▨ SVG drawing by hand: the doors this shell and the widget tests call, under the `ui::` names they
 // always had (they lived in `window.rs` until they moved to `cut_svg`).
 pub use cut_svg::{
-    press_svg_apply, press_svg_cancel, press_svg_choose, press_svg_esc, press_svg_item,
-    release_svg_arm_only, svg_armed, svg_chosen, svg_chosen_file, svg_drag_ended,
-    svg_drag_ended_with_source, svg_form_open, svg_raster_state, swap_svg_file,
+    make_here, press_svg_apply, press_svg_cancel, press_svg_choose, press_svg_esc, press_svg_item,
+    raster_dir, raster_of, release_svg_arm_only, svg_armed, svg_chosen, svg_chosen_file,
+    svg_drag_ended, svg_drag_ended_with_source, svg_form_open, svg_raster_state, swap_svg_file,
 };
 // §07-narrate#1-screen — the page's seams: the state it renders, the refresh that paints it, and one
 // function per press so a widget test can compare what the click printed with what the rule answered.

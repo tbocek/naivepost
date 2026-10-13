@@ -1396,6 +1396,10 @@ name = "suggest_flow"
 path = "tests/suggest_flow.rs"
 
 [[test]]
+name = "f3_5_svg_raster_made"
+path = "tests/f3_5_svg_raster_made.rs"
+
+[[test]]
 name = "svg_drawing_widgets"
 path = "tests/svg_drawing_widgets.rs"
 
