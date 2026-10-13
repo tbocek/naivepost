@@ -521,6 +521,9 @@ fn sec_02_services_1_the_four_servers_s1_diarization_and_alignment_ride_the_same
     .expect("word times read");
     assert_eq!(words.len(), 1);
 
+    // The server records on its own thread, so the aligner's request can still be unwritten when the count is
+    // taken: wait for it before reading the list, or the count reads 1 and this test fails at random.
+    wait_for_recorded_at(&url, "/v1/tasks/run", "hello there");
     let all = recorded_at(&url);
     // Only this test's two envelopes, told apart by the text only the aligner's request carries and
     // the diarizer's own model id; other tests dial the same endpoint from other threads.

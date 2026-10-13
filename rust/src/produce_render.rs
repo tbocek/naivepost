@@ -122,10 +122,18 @@ pub struct Clip {
     pub frame: (i32, i32),
     pub lanes: Vec<String>,
     pub lines: Vec<Placed>,
-    /// Volume cues the clip carries; their filters are [`render_fx`]'s answer, counted here for the log.
+    /// Volume cues the clip carries; [`crate::produce_fx_chain`] reads them back when it builds the real per-cue
+    /// filters.
     pub cues: usize,
     /// How deep the camera goes into the frame (1.0 = no zoom), capped by S5's caller before encoding.
     pub camera_depth: f64,
+    /// The effects this segment carries — what every §4 filter is built from, read through the same `fx_for` door
+    /// as the cues. The footage's own shape and `produce/clips/` come along for the same reason: a camera rectangle
+    /// needs the first, a generated title sheet needs the second, and both belong beside the clip rather than being
+    /// guessed at by whoever builds its filters.
+    pub fx: Vec<Fx>,
+    pub src: (i32, i32),
+    pub scratch: std::path::PathBuf,
 }
 
 /// One narration line as the render places it: clip-relative output seconds, the tempo it has to be spoken
@@ -218,6 +226,9 @@ pub fn plan_clips(
             lines,
             cues,
             camera_depth: 1.0,
+            fx,
+            src: src_shape,
+            scratch: std::path::PathBuf::new(),
         });
     }
     (clips, logs)
@@ -587,6 +598,9 @@ pub fn frame_rate_name(frame_rate: project::FrameRate) -> &'static str {
 /// subtitles go before the text overlays because §4 composites an effect after the camera *and* the burned
 /// cues, which is what keeps a title above a caption rather than under it.
 pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec<String> {
+    // §4's order for one clip: camera under the burned cues, printed things after them (`picture_order()`);
+    // `produce_fx_chain` builds both halves. The speed step goes FIRST so later filters work in on-screen seconds.
+    let built = crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch);
     let mut chain = Vec::new();
     if (clip.rate - 1.0).abs() > f64::EPSILON {
         if let Some(filter) = render_fx::setpts(clip.rate) {
@@ -599,7 +613,7 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
         // is derived here by [`blur_sigma`] from the finished height — [`BLUR_SIGMA_FRACTION`] of it,
         // floored at [`BLUR_SIGMA_MIN`] — so one rule owns both numbers and the catalogue reads them
         // off the same pair. (It does not come from `render_fx`: nothing there derives a sigma.)
-        chain.push(format!("split=2[bg][fg]"));
+        chain.push("split=2[bg][fg]".into());
         chain.push(format!(
             "[bg]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},gblur=sigma={}[bg]",
             clip.frame.0,
@@ -617,9 +631,10 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
     if let Some(cues) = burned {
         chain.push(format!("subtitles={cues}"));
     }
+    // The effects' picture filters land last, under nothing (§4: a title holds still while the camera moves under it).
+    chain.extend(built.video);
     chain
 }
-
 /// The frame rate as a filter (the camera's own path under VFR) — the in-graph half of [`frame_rate_args`].
 fn frame_rate_filter(frame_rate: &str, vfr: bool) -> Vec<String> {
     if frame_rate == "source" {
@@ -650,12 +665,15 @@ pub fn audio_chain(clip: &Clip, settings: &Produce, lanes: usize, hush: &[(f64, 
     if lanes > 0 {
         chain.push(format!("amix=inputs={}:normalize=0", lanes + 1));
     }
-    // The gain cues are render_fx's own filters, applied after the bed and before the narration (§4).
-    for _ in 0..clip.cues {
-        chain.push("volume=expr:eval=frame".into());
+    // §4's volume cues: ONE `volume=<expr>:eval=frame` per cue, chained in turn so overlapping ones multiply, after
+    // the bed and before the narration. `produce_fx_chain` builds them and the sped-sound answer; nothing here
+    // restates a filter. A read head brings its own two dips, so the plain seam dip stands down when they are there.
+    let built = crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch);
+    chain.extend(built.audio.iter().cloned());
+    let dips = chain.iter().any(|f| f.starts_with("afade="));
+    if !dips {
+        chain.push(format!("afade=t=out:st=0:d={}", crate::fx_lane::SOUND_DIP_SECONDS));
     }
-    let dip = crate::fx_lane::SOUND_DIP_SECONDS;
-    chain.push(format!("afade=t=out:st=0:d={dip}"));
     for line in &clip.lines {
         if line.speech <= 0.0 {
             continue;

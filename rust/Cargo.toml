@@ -1216,6 +1216,10 @@ name = "render_effect_filters"
 path = "tests/render_effect_filters.rs"
 
 [[test]]
+name = "sec_06_effects_4_render"
+path = "tests/sec_06_effects_4_render.rs"
+
+[[test]]
 name = "repeat_match_share"
 path = "tests/repeat_match_share.rs"
 

@@ -343,6 +343,11 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     // Speech lengths before the cues are cut, so a cue spans what will actually be heard on it.
     let mut clips = clips;
     fill_speech(&mut clips, &run.lines);
+    // §4's effects need two things the planner cannot guess: where their files go and what the footage looks like.
+    // The scratch folder is this run's `produce/clips/`, already created above; the shape came in with `Materials`.
+    for clip in clips.iter_mut() {
+        clip.scratch = scratch.clone();
+    }
 
     // S4: the cues on the produced clock. Each clip's lines become cues on its own clock and are moved
     // onto the video's with the offsets `produced_clocks` answers, then tidied once for the whole track:
@@ -379,6 +384,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
 
     // S5: one encode per clip. No burned-in sheet is passed: `Subtitles::BurnedIn`'s overlay is F5.4's
     // own rendering round, and the plan carries the cues it would be drawn from.
+    let mut effect_logs: Vec<String> = Vec::new();
     let encodes: Vec<ClipEncode> = clips
         .iter()
         .enumerate()
@@ -389,10 +395,24 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             // Clip 0 gets no `-ss` at all because `encode_command` omits it when `seg_s == 0.0`, which is
             // right and not something a test should expect to find there.
             let source = (mats.source_file)(clip);
-            let inputs: Vec<(&str, Option<&str>)> = match source.as_deref() {
+            let mut inputs: Vec<(&str, Option<&str>)> = match source.as_deref() {
                 Some(path) => vec![("video", Some(path))],
                 None => Vec::new(),
             };
+            // §4: whatever this clip's effects read has to exist before ffmpeg is asked for it — a generated title
+            // sheet is only an input once it is on disk. One call per clip; the same answer builds the filters.
+            let built = crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch);
+            for (path, text) in &built.title_files {
+                if let Err(err) = std::fs::write(path, text) {
+                    eprintln!("produce: {}: {err}", path.display());
+                }
+            }
+            for (kind, path) in built.inputs.iter() {
+                inputs.push((kind.as_str(), path.as_deref()));
+            }
+            // The > 10× cap and a missing drawing are said here, beside the clip they belong to, so the render log
+            // reads in clip order like every other line about a clip.
+            effect_logs.extend(built.logs.iter().cloned());
             let argv = render::encode_command(clip, settings, &inputs, None, &file);
             ClipEncode {
                 stem,
@@ -401,8 +421,8 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             }
         })
         .collect();
-
-    // S6: the join, only when there is something to join.
+    // §4's cap-and-log line joins the plan's own lines so a reader sees it with the clip's other news.
+    let plan_logs: Vec<String> = plan_logs.into_iter().chain(effect_logs).collect();
     let join = if encodes.is_empty() {
         None
     } else {

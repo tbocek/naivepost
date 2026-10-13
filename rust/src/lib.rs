@@ -141,6 +141,7 @@ pub mod produce_embed;
 pub mod produce_flow;
 pub mod produce_data;
 pub mod produce_exec;
+pub mod produce_fx_chain;
 pub mod produce_details;
 pub mod produce_render;
 pub mod produce_runs;
