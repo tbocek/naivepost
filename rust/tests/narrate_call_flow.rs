@@ -284,6 +284,117 @@ fn f4_2_s22_the_same_request_driven_twice_asks_again_and_is_never_answered_from_
     assert_eq!(first, second, "and both drives produce the same lines");
 }
 
+/// A server that answers with a bare JSON array is answering the same question as one that wraps it in
+/// `{"entries":[...]}`: the wrapper was never the point, so the loop must USE the list rather than spend
+/// an attempt refusing its formatting. The lines land on the CLIPS' own bounds, not the echoed ones.
+#[test]
+fn f4_2_a_bare_json_array_answer_is_used() {
+    let clips = vec![seg(0.0, 10.0), seg(10.0, 20.0)];
+    let answer = r#"[{"start":0,"end":10,"at":1,"text":"Proof of stake changed the cost.","emotion":"calm"},{"start":10,"end":20,"at":0,"text":"","emotion":""}]"#;
+    let mut seen: Vec<(u32, u32)> = Vec::new();
+    let written = drive(
+        &clips,
+        |_, _| Ok(answer.to_string()),
+        |written, total| seen.push((written, total)),
+        &everything_fits,
+        |problem| panic!("a bare array is a usable answer, nothing to reject: {problem}"),
+    )
+    .expect("the array answer is used, not refused");
+    assert_eq!(written.len(), 2, "both clips answered: {written:?}");
+    assert_eq!((written[0].start, written[0].end), (0.0, 10.0), "clip 1's own bounds");
+    assert_eq!((written[1].start, written[1].end), (10.0, 20.0), "clip 2's own bounds");
+    assert_eq!(written[0].at, 1.0, "the offset the writer gave survives");
+    assert_eq!(written[0].text, "Proof of stake changed the cost.");
+    assert!(written[1].text.is_empty(), "clip 2's empty text is said silence, kept as written");
+    assert!(!seen.is_empty(), "streaming progress reached the caller: {seen:?}");
+    assert_eq!(seen.last().copied(), Some((2, 2)), "and ended at every clip written: {seen:?}");
+}
+
+/// One clip, and the model answered with a single entry object instead of a list. Same reasoning: the
+/// shape varies, the answer does not.
+#[test]
+fn f4_2_a_single_entry_object_answer_is_used() {
+    let clips = vec![seg(0.0, 10.0)];
+    let answer = r#"{"start":0,"end":10,"at":2,"text":"One line.","emotion":"calm"}"#;
+    let written = drive(
+        &clips,
+        |_, _| Ok(answer.to_string()),
+        |_, _| {},
+        &everything_fits,
+        |problem| panic!("one entry object is a usable answer: {problem}"),
+    )
+    .expect("a lone entry object is used, not refused");
+    assert_eq!(written.len(), 1, "{written:?}");
+    assert_eq!(written[0].at, 2.0, "the placement is the one it gave");
+    assert_eq!(written[0].text, "One line.");
+}
+
+/// An answer that is not entries at all still has to fail the way a refusal should: after the three
+/// attempts, with the reason naming what came back rather than pretending lines were written.
+#[test]
+fn f4_2_an_answer_that_is_not_entries_says_what_came_back() {
+    let clips = two_clips();
+    let prose = "the clips look fine to me";
+    let mut asked = 0u32;
+    let mut rejects: Vec<String> = Vec::new();
+    let refused = drive(
+        &clips,
+        |_, _| {
+            asked += 1;
+            Ok(prose.to_string())
+        },
+        |_, _| {},
+        &everything_fits,
+        |problem| rejects.push(problem.to_string()),
+    )
+    .expect_err("prose is not an answer");
+    assert_eq!(asked, pass::attempts(), "every attempt was spent: {asked}");
+    assert_eq!(asked, roles_attempts(), "and the count is the one `roles` owns");
+    assert!(refused.contains("narration entries"), "it says what failed: {refused}");
+    assert!(refused.contains(prose), "and quotes what came instead: {refused}");
+    // One rejection line per unusable reply, plus the thinking-off line the loop adds once when an
+    // attempt wrote nothing (§F4.2: a call spent entirely thinking gets no reasoning budget again).
+    let rejections: Vec<&String> = rejects.iter().filter(|line| line.contains("rejected")).collect();
+    assert_eq!(rejections.len(), pass::attempts() as usize, "each rejection was reported: {rejects:?}");
+    for (index, line) in rejections.iter().enumerate() {
+        assert_eq!(
+            *line,
+            &pass::rejected_log(index as u32 + 1, &refused),
+            "attempt {} is said in the loop's own wording",
+            index + 1
+        );
+    }
+    assert!(
+        rejects.iter().any(|line| *line == pass::thinking_off_log()),
+        "the first prose reply wrote nothing, so thinking went off for the next: {rejects:?}"
+    );
+    // Nothing was claimed as written: a failed run writes nothing (§F4.2's last paragraph).
+    assert!(!refused.contains("written"), "a refusal claims no lines: {refused}");
+}
+
+/// §F4.2's streaming progress: the bar is told about EVERY clip as it closes, in order, with the total
+/// always the whole batch — so the wait reads as work advancing rather than as one jump at the end.
+#[test]
+fn f4_2_the_bar_is_told_every_clip_that_closes() {
+    let clips = vec![seg(0.0, 10.0), seg(10.0, 20.0), seg(20.0, 30.0)];
+    // One entry per clip, each answering the next in order; `drive` reports as it walks them.
+    let answer = entries(&[
+        entry(0.0, 10.0, 0.0, "first line", "calm"),
+        entry(10.0, 20.0, 0.0, "second line", "calm"),
+        entry(20.0, 30.0, 0.0, "third line", "calm"),
+    ]);
+    let mut ticks: Vec<(u32, u32)> = Vec::new();
+    drive(
+        &clips,
+        |_, _| Ok(answer.clone()),
+        |written, total| ticks.push((written, total)),
+        &everything_fits,
+        |problem| panic!("a complete reply has nothing to reject: {problem}"),
+    )
+    .expect("all three clips answered");
+    assert_eq!(ticks, vec![(1, 3), (2, 3), (3, 3)], "one step per closed clip, total always the batch");
+}
+
 /// The single attempt count lives in `roles`; asserted here so a retuned number moves this test rather
 /// than passing quietly on either side of the change.
 fn roles_attempts() -> u32 {

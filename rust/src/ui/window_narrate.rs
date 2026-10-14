@@ -141,12 +141,19 @@ pub(crate) fn live_narrate_reply(
         }
         return Ok(written);
     }
-    crate::narrate_ask::run(tree, &live_project(), bounds)
+    crate::narrate_ask::run(tree, &live_project(), bounds, &mut |written, total| {
+        // §F4.2's streaming progress onto the shell's bar: the door has no window of its own, so the
+        // stage is painted on the newest window this thread holds — the same accessor the ▶ handler uses.
+        show_narrate_progress(&ui::main_window(), written, total as usize);
+    })
 }
 
 /// A scripted reply that answers slowly enough for a ⏹ press to land inside it: `per_clip` is spent
 /// before each clip's line, and the live cancel switch is re-read between them. Without it a headless
 /// run answers in microseconds and there is nothing left to stop.
+///
+/// Handing this an EMPTY list does not disarm it: the door stores an `Option`, so `&[]` still leaves an
+/// (empty) slow script armed and [`narrate_script_loaded`] keeps answering true.
 pub fn set_narrate_script_slow(
     reply: &[(u32, f64, &str, &str)],
     per_clip: std::time::Duration,
@@ -597,6 +604,21 @@ pub fn narrate_stages() -> Vec<String> {
 /// caught (`narration stopped` before any line landed, `speaking stopped` after one did, §F4.1 S7).
 pub fn narrate_wrote() -> bool {
     NARRATE_WROTE.get()
+}
+
+/// Stream one step of the writing job onto the bar: `written` of `of` clips have closed.
+///
+/// This ADVANCES the queue the run already opened (job 0, `narration 1/2`) rather than rebuilding it the
+/// way [`show_narrate_stage`] does for a bare face — a rebuild would drop the speaking job the run has
+/// already listed. The monotonic rule is not repeated here: `narrate_call::drive` clamps every reading
+/// through [`crate::narrate_pass::progress_forward`] before calling back, so a retry resumes at the count
+/// the first attempt reached instead of falling the bar back to zero.
+pub fn show_narrate_progress(window: &adw::ApplicationWindow, written: u32, of: usize) {
+    let stage = narrate_run::writing(written as usize, of);
+    let stage_queue = live_stage_queue(window);
+    stage_queue.borrow_mut().prog(0, written as f64 / of.max(1) as f64, &stage);
+    NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
+    set_narrate_stage(window, &stage, false);
 }
 
 /// Put the narration run's bar face on screen without running the run: `narration 1/2` open, two of

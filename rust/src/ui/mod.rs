@@ -435,6 +435,7 @@ pub use window::narrate_stage;
 pub use window::narrate_pulsed;
 pub use window::narrate_stages;
 pub use window::narrate_wrote;
+pub use window::show_narrate_progress;
 pub use window::show_narrate_stage;
 pub use window::press_narrate_run;
 pub use window::set_narrate_script;

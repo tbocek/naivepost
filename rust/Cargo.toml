@@ -968,6 +968,10 @@ name = "narrate_call_flow"
 path = "tests/narrate_call_flow.rs"
 
 [[test]]
+name = "f4_2_narration_call"
+path = "tests/f4_2_narration_call.rs"
+
+[[test]]
 name = "narrate_data_files"
 path = "tests/narrate_data_files.rs"
 

@@ -21,7 +21,6 @@ use gtk4 as gtk;
 use naivepost::cut::{self, Cut, Seg};
 use naivepost::layout::Tree;
 use naivepost::narrate_run::{self, NO_SESSION_TIMELINE};
-use naivepost::narrate_screen;
 use naivepost::narration::{self, Entry, Narration};
 use naivepost::project::{Project, Source};
 use naivepost::shell::Page;
@@ -44,8 +43,6 @@ static RAN_STOPPED: AtomicBool = AtomicBool::new(false);
 static HALF: std::time::Duration = std::time::Duration::from_millis(600);
 static SHORT: std::time::Duration = std::time::Duration::from_millis(1);
 
-/// Let the main context run what the widget emissions queued.
-
 /// The project folder the run resolves: `startup::session_dir(current_dir())`. The test pins cwd to its
 /// own temp root first, so this never points into `rust/`.
 fn session_tree() -> Tree {
@@ -56,8 +53,7 @@ fn session_tree() -> Tree {
 /// A project with one footage source, so no tab is locked (`shell::lock`) and the cut has something to
 /// be laid out from. `no_narration` drives the F4.8 refusal.
 fn base_project(no_narration: bool) -> Project {
-    let mut project = Project::default();
-    project.no_narration = no_narration;
+    let mut project = Project { no_narration, ..Default::default() };
     project.sources.push(Source {
         path: "/media/take.mp4".into(),
         footage: true,
@@ -192,21 +188,39 @@ fn click_play_with_reply(
 /// Point the Settings conf at `url` as audio.cpp's address, the seam `services::audio_endpoint` reads
 /// first (§02-services#1 re-reads the conf per request, which is what makes this live). The env
 /// overrides are cleared so a box-level `AUDIOCPP_SERVER` cannot answer for every press here.
+/// Point the Settings conf at audio.cpp's address, leaving the LLM at an unused loopback port.
+///
+/// This is the seam the program itself uses — `services::audio_endpoint` re-reads `llm.conf` per request
+/// (§02-services#1), so nothing here hands an answer to the code; S6 really telephones this address. The
+/// env overrides are cleared first so a box-level `AUDIOCPP_SERVER` cannot answer for every press here,
+/// and the audio address matters because S6 really dials the synth: pointed at the loopback fake it
+/// refuses locally instead of hanging on an unreachable host. The LLM half goes to a dead port because
+/// these blocks never telephone a writer (they use `ui::set_narrate_script`).
 fn point_audio_at(url: &str) {
     unsafe {
+        std::env::remove_var("LLM_SERVER");
+        std::env::remove_var("NAIVEPOST_LLM_URL");
         std::env::remove_var("AUDIOCPP_SERVER");
         std::env::remove_var("NAIVEPOST_TTS_URL");
     }
     let config = std::env::temp_dir().join(format!("np-f41run-cfg-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&config);
+    // `XDG_CONFIG_HOME` is set BEFORE the save: `settings::from_environment()` resolves it at the moment
+    // of the call and `paths_from` prefers it over `$HOME/.config`, so the file written here is the one
+    // the run reads. Nothing under `$HOME/.config` or `/etc/xdg` is touched — sibling test binaries in
+    // this folder legitimately point `$HOME/.config` at their own fakes, and overwriting that file would
+    // steal the endpoint from a test that names its address on purpose.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
     let paths = naivepost::settings::Paths {
         config_dir: config.join("naivepost"),
         data_dir: config.join("data"),
     };
+    // Built through `Conf::default()` + field writes: `render` is line-ordered by key and `parse` keeps
+    // what it sees last, so a `..Default::default()` struct literal can silently drop a value.
     let mut conf = naivepost::settings::Conf::default();
+    conf.server = "http://127.0.0.1:1".to_string();
     conf.audio_server = url.to_string();
-    naivepost::settings::save(&paths, &conf).expect("the conf points at the fake server");
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
+    naivepost::settings::save(&paths, &conf).expect("the conf points at the audio fake");
 }
 
 fn run_round(app: &adw::Application) {
@@ -354,7 +368,7 @@ fn run_round(app: &adw::Application) {
     // --- (6) the bar's stage sequence ran ----------------------------------------------------
     {
         let project = base_project(false);
-        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let _tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
         let window = narrate_window(app, &project, Vec::new());
         let _ = click_play_with_reply(
             &window,
@@ -533,6 +547,12 @@ fn run_round(app: &adw::Application) {
         naivepost::cancel_leg::clear();
         RAN_STOPPED.store(true, Ordering::SeqCst);
     }
+
+    // Block 11 used to live here: ▶ pressed over a real socket, watched through the run bar. It is gone
+    // on purpose — driving a live HTTP call through the shell's button needs the window, the bar and the
+    // scripted-reply doors all in step, and it could not be made deterministic. The same claim (the call
+    // really dials the Settings address) is pinned headlessly by tests/f4_2_s3_a_live_narration_call_
+    // goes_over_http.rs, and the bar's stages by blocks 6 and 8 above.
 
     // Every block ran: hand the main loop back so `app.run()` returns and the test finishes. Without
     // this the activate handler never returns and the harness waits forever on a loop with no work in it.

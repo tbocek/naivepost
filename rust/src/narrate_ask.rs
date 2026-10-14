@@ -21,6 +21,7 @@ pub fn run(
     tree: &Tree,
     project: &crate::project::Project,
     bounds: &[(f64, f64)],
+    progress: &mut dyn FnMut(u32, u32),
 ) -> Result<Vec<Written>, String> {
     let cut_ = cut::load(tree).unwrap_or_default();
     let segs: Vec<Seg> = bounds
@@ -57,7 +58,9 @@ pub fn run(
             )
             .map(|round| round.answer)
         },
-        |_written, _total| {},
+        // §F4.2's streaming progress = written clips / clips, handed straight to the caller so the
+        // run bar moves per clip instead of arriving in one jump at the end.
+        progress,
         // \u00a712 #23: a refusal has to say WHICH clip's lines will not fit, so they get rewritten shorter here
         // instead of squeezed by the render later. The page's mirror IS that measurement \u{2014} the same
         // ladder the render runs (`narrate_screen::mirror_fit` over `produce_render::fit`), with speech
@@ -71,7 +74,7 @@ pub fn run(
 /// others that share it, and the clip is named when the ladder has to slide or speed to land them. A clip
 /// whose bounds no longer match a segment is skipped rather than guessed at \u{2014} `run` dropped such a
 /// bound for the same reason.
-fn unfitted_clips(segs: &[Seg], written: &[Written]) -> Vec<u32> {
+pub fn unfitted_clips(segs: &[Seg], written: &[Written]) -> Vec<u32> {
     let mut bad: Vec<u32> = Vec::new();
     for (number, seg) in segs.iter().enumerate() {
         let mine: Vec<&Written> = written

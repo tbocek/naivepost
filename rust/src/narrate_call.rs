@@ -21,7 +21,6 @@ use crate::narrate_reply;
 use crate::narrate_run;
 use crate::project::Project;
 use crate::textfmt::SessionLine;
-use serde::Deserialize;
 
 /// One narration call's two messages, as data: held apart so a test can read each side without a
 /// server, and so the request can be logged or re-sent without rebuilding it.
@@ -105,29 +104,6 @@ pub fn request_from_tree(
 
 // --- S3/S4/S5: the attempt loop ---------------------------------------------------------------
 
-/// One entry of the prototype's `{"entries":[{start,end,at,text,emotion}]}` reply shape (§F4.2).
-///
-/// A local struct rather than [`crate::narration::Entry`] because the two differ where it matters: an
-/// `Entry` stores its bounds as the clip's own (copied verbatim from the cut) and is what a saved file
-/// holds, while this one carries what the model *echoed*, which is exactly the thing being checked —
-/// a match within [`narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS`] turns one into the other.
-#[derive(Debug, Clone, Deserialize)]
-struct EntryReply {
-    start: f64,
-    end: f64,
-    #[serde(default)]
-    at: f64,
-    #[serde(default)]
-    text: String,
-    #[serde(default)]
-    emotion: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ReplyBody {
-    entries: Vec<EntryReply>,
-}
-
 /// Whether a tool answer is a success rather than the `{}` error shape every refusal comes in — read as
 /// JSON, because both of its answers are JSON and matching on a prefix would break the moment a
 /// sentence starts like a key (the same test `cut_captions` uses for its own tools).
@@ -179,10 +155,13 @@ where
 
     for attempt in 1..=narrate_pass::attempts() {
         let answer = reply(attempt, thinking)?;
-        let body: ReplyBody = match serde_json::from_str(&answer) {
-            Ok(parsed) => parsed,
+        // The shape is read by `narrate_reply`, which accepts the wrapper document, a bare list and a
+        // single entry object: all three answer the same question, and refusing two of them would burn
+        // an attempt over a wrapper nobody asked for.
+        let entries = match narrate_reply::entries_of(&answer) {
+            Ok(entries) => entries,
             Err(problem) => {
-                last_problem = format!("the reply was not the entries shape: {problem}");
+                last_problem = format!("the reply could not be read as narration entries: {problem}");
                 reject(&mut on_reject, attempt, &last_problem, false, &mut thinking);
                 continue;
             }
@@ -193,7 +172,7 @@ where
         let mut answered: Vec<u32> = Vec::new();
         let mut cursor = 0usize;
         let mut problem = String::new();
-        for entry in &body.entries {
+        for entry in &entries {
             let found = (cursor..clips.len()).find(|&i| {
                 (entry.start - clips[i].s).abs() <= narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS
                     && (entry.end - clips[i].e).abs() <= narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS

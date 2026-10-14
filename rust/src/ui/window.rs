@@ -2697,7 +2697,7 @@ pub use crate::ui::window_narrate::{
     press_narrate_run,
     pull_half_typed, refuse_narrate_run, refuse_narrate_run_with_busy, set_narrate_script,
     set_narrate_script_slow,
-    set_status_line, show_narrate_stage,
+    set_status_line, show_narrate_progress, show_narrate_stage,
 };
 pub(crate) use crate::ui::window_narrate::live_project;
 
