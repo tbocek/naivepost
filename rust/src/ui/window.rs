@@ -2922,6 +2922,12 @@ pub fn clear_logs_for_test() {
     LOGS.with(|logs| logs.borrow_mut().clear());
 }
 
+/// What the log holds right now, for the test that must say WHY a write did not land rather than only that
+/// it did not: a failed `narrate/pitch.txt` write is invisible on disk but named in the log.
+pub fn logs_for_test() -> Vec<String> {
+    LOGS.with(|logs| logs.borrow().clone())
+}
+
 /// The one line a finished run leaves about its audio housekeeping. Called from the unload thread,
 /// so it goes through the same log sink as everything else; `log_line` itself stays `pub(crate)`
 /// because only this crate's own flows are allowed to write to the user's log.

@@ -1012,6 +1012,10 @@ name = "narrate_off_page"
 path = "tests/narrate_off_page.rs"
 
 [[test]]
+name = "sec_07_narrate_3_data"
+path = "tests/sec_07_narrate_3_data.rs"
+
+[[test]]
 name = "narrate_off_tick_widgets"
 path = "tests/narrate_off_tick_widgets.rs"
 

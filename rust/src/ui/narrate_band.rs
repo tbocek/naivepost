@@ -172,6 +172,12 @@ pub fn band_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk::Ges
     DRAG.with(|slot| slot.borrow().clone())
 }
 
+/// Stand a span in the band's selection slot, the way a drag's release leaves one, for the test that checks
+/// what ＋ WRITES rather than how the span was chosen (the pixel mapping has its own test).
+pub fn set_selection_for_test(_window: &adw::ApplicationWindow, span: (f64, f64)) {
+    SELECTION.with(|slot| *slot.borrow_mut() = Some(span));
+}
+
 thread_local! {
     /// The drag this window put on the band, so a test can reach the one the page installed.
     static DRAG: std::cell::RefCell<Option<gtk::GestureDrag>> =

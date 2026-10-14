@@ -72,6 +72,29 @@ pub fn previous(tree: &Tree) -> Option<Narration> {
     serde_json::from_str(&text).ok()
 }
 
+/// Where the run reads its starting record from: `narrate/narration.json` when it can be read, [`previous`]
+/// when it cannot. A corrupt current file would otherwise answer "no lines at all", and the save a moment
+/// later would overwrite the only readable copy of what was there — one generation back is worth more than
+/// starting from nothing (§07-narrate#3-data lists `narration.prev.json` as exactly that generation). The
+/// MISSING file is not this case: [`crate::narration::load`] already answers an empty record for it, which
+/// is a fresh session rather than damage.
+///
+/// Returns the record and whether the fallback was taken, so the caller can say which file it read.
+pub fn load_or_previous(tree: &Tree) -> Result<(Narration, bool), String> {
+    if let Ok(record) = crate::narration::load(tree) {
+        return Ok((record, false));
+    }
+    previous(tree)
+        .map(|record| (record, true))
+        .ok_or_else(|| {
+            format!(
+                "{} cannot be read and neither can {}",
+                tree.narration_json().display(),
+                tree.narration_prev_json().display()
+            )
+        })
+}
+
 // --- voice.txt ----------------------------------------------------------------
 
 /// §07-narrate#3-data: the id `narrate/voice.txt` holds when the file is not there — the

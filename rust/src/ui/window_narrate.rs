@@ -17,6 +17,7 @@ use gtk4 as gtk;
 use crate::cut;
 use crate::layout;
 use crate::narrate_data;
+use crate::narrate_details;
 use crate::narrate_off::{self};
 use crate::narrate_run::{self, JOBS, JOB_NARRATION, JOB_SPEAKING, SPEAKING_STATUS, STAGE_THINKING};
 use crate::ui::narrate_run_speak as narrate_speak;
@@ -293,7 +294,23 @@ where
         return said;
     };
     let cut_ = cut::load(&tree).unwrap_or_default();
-    let existing = narration::load(&tree).unwrap_or_default();
+    let existing = match narrate_data::load_or_previous(&tree) {
+        Ok((record, false)) => record,
+        // The current file is unreadable, so this run starts from the kept generation instead. Said out
+        // loud because otherwise "started from one old line" and "a fresh session" look identical.
+        Ok((record, true)) => {
+            ui::log_line(&narrate_details::previous_fallback_log(
+                &tree.narration_prev_json(),
+            ));
+            record
+        }
+        Err(why) => {
+            ui::log_line(&format!("!!! narrate: {why}"));
+            let said = narrate_run::failed_status("narration");
+            say_on_status(window, &said);
+            return said;
+        }
+    };
     let voice = narrate_data::read_voice(&tree);
     let rewrite = project.policy.narration_rewrite.value;
     // The clips this run writes for are the VISIBLE SEGMENTS of the cut in play order. NOT
@@ -308,15 +325,9 @@ where
     clips.sort_by(|a, b| a.0.total_cmp(&b.0));
     let plan = narrate_run::plan_run(rewrite, &clips, &existing, &voice);
 
-    // S2: pull half-typed rows into the record, then keep the previous generation before anything
-    // overwrites it. Both happen before the save so the file on disk matches what the run believes.
+    // S2: pull half-typed rows into the record. The previous generation is NOT copied here — that waits
+    // until a valid reply is in hand (see the save below), so a failed call cannot discard a good file.
     let mut record = pull_half_typed(window, &existing);
-    if let Err(error) = narrate_data::keep_previous(&tree) {
-        ui::log_line(&format!("!!! could not keep narration.prev.json -- {error}"));
-        let said = narrate_run::failed_status("narration");
-        say_on_status(window, &said);
-        return said;
-    }
     // S3: save the project, open the two jobs, and put the reason on the log BEFORE the call goes out.
     if let Err(error) = crate::project::save(project, tree.dir()) {
         ui::log_line(&format!("!!! could not save the project -- {error}"));
@@ -384,6 +395,20 @@ where
 
     // S4: fold the written lines in (the silent list survives inside `fold_written`), save, publish.
     record = narrate_run::fold_written(&record, &written);
+    // The copy of what was there goes to `narrate/narration.prev.json` only now that a valid reply is in
+    // hand (§07-narrate#3-data: it is the PREVIOUS generation). A call that failed, answered nothing or was
+    // stopped never reaches here, so it cannot throw away a good file on the way to producing nothing.
+    if let Err(why) = narrate_data::keep_previous(&tree) {
+        ui::log_line(&format!("!!! could not keep the previous narration -- {why}"));
+        let said = narrate_run::failed_status("narration");
+        say_on_status(window, &said);
+        return said;
+    }
+    if tree.narration_prev_json().is_file() {
+        ui::log_line(&narrate_details::previous_kept_log(
+            &tree.narration_prev_json().display().to_string(),
+        ));
+    }
     if let Err(error) = narration::save(&record, &tree) {
         ui::log_line(&format!("!!! could not write narration.json -- {error}"));
         let said = narrate_run::failed_status("narration");

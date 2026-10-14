@@ -163,7 +163,19 @@ pub fn re_roll_refusal(heard_or_edited: bool, tick_checked: bool) -> Option<&'st
 /// written only once a valid narration came back, which is why it follows [`crate::narrate_data::keep_previous`].
 /// Four leading spaces because it hangs under the step's own line rather than starting one.
 pub fn previous_kept_log(path: &str) -> String {
+    // The spec names the file but not the wording; this line is the app's.
     format!("    the narration it replaced is kept at {path}")
+}
+
+/// §07-narrate#3-data: said when the current `narration.json` could not be read and the run started from
+/// the kept generation instead. The spec lists the fallback but does not spell the sentence out; naming
+/// the file it fell back to is what makes the log useful, since a silent start-from-nothing looks identical
+/// to a fresh session otherwise.
+pub fn previous_fallback_log(path: &std::path::Path) -> String {
+    format!(
+        "    narration.json could not be read -- starting from the kept copy at {}",
+        path.display()
+    )
 }
 
 /// §6 (`Re-roll / sample refusals`): ↻ on a clip whose line is a caption — with the captions-only voice

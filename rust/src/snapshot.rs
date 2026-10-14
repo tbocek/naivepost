@@ -996,7 +996,30 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // seeds its lines: through the page's own publish door (`set_state` + `refresh`), which is what
         // every flow calls after it edits the publish state, so the slots, the rows and the readouts
         // are drawn by the page from this state rather than painted here.
-        if screen == "08-produce" {
+        // The rows above are published through `set_state`, a process-wide copy, and the shell builds the
+    // Narrate page's box once PER TAB, so any later `build()` seeds itself from what the project's files
+    // hold. For a fixture with none, that answer is "nothing on disk", which would reset the published
+    // voice, shift and take list back to their defaults. Writing the two files here is what §07-narrate#3-data
+    // says a real project has; the renderer is only saying the shot's project did.
+    if screen == "07-narrate" {
+        // The page seeds its voice, shift and takes from the project's own `narrate/` files (§07-narrate#3-data,
+        // `narrate_page::build`), and that seed runs AFTER the publish below: the shell builds the Narrate box
+        // once PER TAB, so a `build()` later than this one re-reads the files and a fixture with none would
+        // reset the shot to "own", 0.0 and an empty band. So the renderer writes the files the shot's project
+        // is supposed to have left behind — the same three the spec lists — rather than only pretending to.
+        if let Some(tree) = crate::ui::window::narrate_session_tree() {
+            let _ = crate::narrate_data::write_voice(&tree, "narrator1");
+            if let Some(recording) = crate::ui::narrate_seed::take_recording_key(&tree) {
+                let _ = crate::narrate_data::save_takes(
+                    &tree,
+                    &recording,
+                    &[crate::narrate_data::Take { s: 1.0, e: 6.0 }],
+                );
+            }
+        }
+    }
+
+    if screen == "08-produce" {
             let mut state = ui::produce_page::read_state();
             state.frames = (1..=3)
                 .map(|n| format!("project:produce/publish/frame-{n}.jpg"))

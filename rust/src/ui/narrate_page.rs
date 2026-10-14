@@ -168,6 +168,11 @@ pub fn build() -> gtk::Widget {
     // checked box over a page whose state says `narration_off`.
     tick.set_active(narrate_off::tick_checked(session_no_narration()));
     left.append(&tick);
+    // §07-narrate#3-data: the page seeds itself from the project's own files (see
+    // `narrate_seed::seed_from_disk`, which says what may overwrite what a flow published).
+    if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        set_state(crate::ui::narrate_seed::seed_from_disk(&tree, read_state()));
+    }
 
     // **2** the preview: one fixed 16:9 frame, the same pinned-height trick the Cut page's
     // `preview-panel` uses so GTK cannot collapse it against an expanding sibling.
@@ -319,6 +324,8 @@ pub fn build() -> gtk::Widget {
     pitch.set_round_digits(1);
     pitch.set_widget_name("pitch-slider");
     pitch.set_tooltip_text(Some(&narrate_screen::pitch_tip()));
+    // Seeded from the state above, so control and state agree on `narrate/pitch.txt`'s shift.
+    pitch.set_value(read_state().pitch);
     left.append(&pitch);
 
     // **14–21** the lines column: one row per entry, sorted by clip then offset.
@@ -980,9 +987,10 @@ pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) ->
         s.takes = narrate_screen::add_takes(&s.takes, selection);
         s.takes.clone()
     });
-    // S4: the reference was cut from the OLD take set, so it is wrong the moment this one lands.
-    if let Some(tree) = crate::ui::window::narrate_session_tree() {
-        voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Takes);
+    // S4: the reference was cut from the OLD take set, so it is wrong the moment this one lands; the picks
+    // live in `narrate/takes.json`, not in this window (§07-narrate#3-data).
+    if let Some(why) = crate::ui::narrate_seed::note_takes_for_session(&takes) {
+        say(window, &format!("could not save the takes \u{2014} {why}"));
     }
     refresh(window);
     say(
@@ -1011,8 +1019,8 @@ pub fn press_take_remove(window: &adw::ApplicationWindow, selection: (f64, f64))
         s.takes.clone()
     });
     // S4: same rule as adding — subtracting seconds changes what the base was cut from.
-    if let Some(tree) = crate::ui::window::narrate_session_tree() {
-        voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Takes);
+    if let Some(why) = crate::ui::narrate_seed::note_takes_for_session(&takes) {
+        return say(window, &format!("could not save the takes \u{2014} {why}"));
     }
     refresh(window);
     if takes.is_empty() {
@@ -1168,15 +1176,17 @@ pub fn press_sample_reroll(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// **13** pitch: clamped to the slider's ends, reported with the voice it will clone from.
+/// **13** pitch: clamped to the slider's ends and reported with the voice it will clone from.
 pub fn press_pitch(window: &adw::ApplicationWindow, delta: f64) -> String {
     let pitch = mutate(|s| {
         s.pitch = narrate_screen::clamp_pitch(s.pitch + delta);
         s.pitch
     });
-    // S4: a pitch change invalidates only the shifted copy; the base stays and re-shifts.
-    if let Some(tree) = crate::ui::window::narrate_session_tree() {
-        voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Pitch);
+    // S4: a pitch change invalidates only the shifted copy; the base stays and re-shifts. The value goes to
+    // `narrate/pitch.txt` (§07-narrate#3-data); a write failure goes to the log, since this press speaks of
+    // the voice.
+    if let Some(why) = crate::ui::narrate_seed::note_pitch_for_session(pitch) {
+        crate::ui::window::log_line(&format!("!!! could not save the pitch -- {why}"));
     }
     let voice = read_state().voice;
     say(window, &narrate_details::voice_line(&voice, pitch))
@@ -1233,10 +1243,7 @@ pub fn press_voice(window: &adw::ApplicationWindow, id: &str) -> String {
         voice_ref::VoiceChoice::Silent(said) => {
             // Captions speak nothing, so there is no reference to cut or keep: drop it the way a voice
             // change drops it, and remember the choice.
-            if let Some(tree) = crate::ui::window::narrate_session_tree() {
-                let _ = narrate_data::write_voice(&tree, id);
-                voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Voice);
-            }
+            let _ = crate::ui::narrate_seed::note_voice_for_session(id);
             mutate(|state| state.voice = id.to_string());
             // A new voice means a different recording, so the band's hand (its selection, zoom and red
             // bar) is about another take and must not carry over.
@@ -1245,12 +1252,9 @@ pub fn press_voice(window: &adw::ApplicationWindow, id: &str) -> String {
             say(window, &said)
         }
         voice_ref::VoiceChoice::Chosen { id, said } => {
-            if let Some(tree) = crate::ui::window::narrate_session_tree() {
-                if let Err(why) = narrate_data::write_voice(&tree, &id) {
-                    crate::ui::window::log_line(&why);
-                    return say(window, voice_ref::INSTALL_FAILED);
-                }
-                voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Voice);
+            if let Err(why) = crate::ui::narrate_seed::note_voice_for_session(&id) {
+                crate::ui::window::log_line(&why);
+                return say(window, voice_ref::INSTALL_FAILED);
             }
             mutate(|state| state.voice = id.clone());
             crate::ui::narrate_band::clear_hand();
@@ -1362,7 +1366,15 @@ pub fn wire(window: &adw::ApplicationWindow) {
                 {
                     let w = w.clone();
                     move || {
-                        mutate(|s| s.pitch = narrate_screen::clamp_pitch(value));
+                        let pitch = mutate(|s| {
+                            s.pitch = narrate_screen::clamp_pitch(value);
+                            s.pitch
+                        });
+                        // §07-narrate#3-data: once per drag rather than per pixel, written by the same
+                        // call the keyboard step makes.
+                        if let Some(why) = crate::ui::narrate_seed::note_pitch_for_session(pitch) {
+                            crate::ui::window::log_line(&format!("!!! could not save the pitch -- {why}"));
+                        }
                         let voice = read_state().voice;
                         say(&w, &narrate_details::voice_line(&voice, value));
                         glib::ControlFlow::Break
