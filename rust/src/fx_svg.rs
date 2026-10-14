@@ -412,7 +412,13 @@ impl Rasters {
             return None;
         }
         entry.logged = true;
-        Some(format!("the drawing {} cannot be shown: {}", base(path), reason))
+        // §8 spells the line with §D's `>>> ` prefix; the body is what this module owns.
+        Some(format!(
+            "{}the drawing {} cannot be shown: {}",
+            crate::effect_details::PREFIX,
+            base(path),
+            reason
+        ))
     }
 
     /// How many files this holds a copy of — one per file, which is the invariant §A.5 states and a test pins.

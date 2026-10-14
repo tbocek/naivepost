@@ -143,7 +143,7 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
         .iter()
         .find(|e| e.effect_kind() == Some(EffectKind::Speed) && !crate::fx_record::is_stop(e) && !e.snd.is_empty())
     {
-        built.audio.extend(sound_of(clip, speed, footage));
+        built.audio.extend(sound_of(clip, speed));
     }
 
     // --- volume: one filter per cue, in turn ------------------------------------------------------------------------
@@ -175,16 +175,22 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
 /// it fades in and out — two real `afade`s at the run's ends, [`crate::fx_lane::SOUND_DIP_SECONDS`] apiece, computed
 /// through [`render_fx::read_head`] so the dip length lives in one place. Pitch and mute answer with their own
 /// filters instead, and both replace the plain seam dip rather than stacking on it.
-fn sound_of(clip: &Clip, speed: &Fx, footage: f64) -> Vec<String> {
+fn sound_of(clip: &Clip, speed: &Fx) -> Vec<String> {
     match speed.snd.as_str() {
-        "own" | "scene" => {
-            let (in_at, out_at) = render_fx::read_head((0.0, footage));
-            let dip = crate::fx_lane::SOUND_DIP_SECONDS;
-            vec![
-                format!("afade=t=in:st={in_at:.3}:d={dip}"),
-                format!("afade=t=out:st={out_at:.3}:d={dip}"),
-            ]
-        }
+        // §8 bullet 4: the head opens where the planner said it does (`clip.read_head`,
+        // which is the drift and the tape question together), and the whole 0.15 s dip
+        // is split HALF to each side of the join — the outgoing side loses half, the
+        // incoming side the other half, so the join as a whole is dipped once.
+        "own" | "scene" => match clip.read_head {
+            None => render_fx::sound_filters(clip.rate, ""),
+            Some((from, to)) => {
+                let half = crate::effect_details::dip_each_side();
+                vec![
+                    format!("afade=t=in:st={from:.3}:d={half}"),
+                    format!("afade=t=out:st={to:.3}:d={half}"),
+                ]
+            }
+        },
         other => render_fx::sound_filters(clip.rate, other),
     }
 }

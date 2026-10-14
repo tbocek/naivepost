@@ -1408,6 +1408,9 @@ fn finish_produce(
                     ),
                     translate: &translate_leg(),
                     sources: &move || sources_for_stamp.clone(),
+                    // §8 bullet 4: tape question, answered the way the Cut page answers
+                    // it — the filmed stretches of this page's own recordings.
+                    on_recording: !crate::ui::cut_folds::page_recordings().is_empty(),
                     // S5's picture input: an insert reads its own asset, footage and a `copy:` stretch read
                     // the first footage recording. Resolved here, where the project is held, by the same
                     // rule `Seg::insert_asset` uses.
@@ -1452,4 +1455,3 @@ fn finish_produce(
     }
     say(window, ending.status)
 }
-

@@ -302,7 +302,10 @@ fn f3_5_s5b_one_raster_per_file_and_one_log_line_per_file() {
     // A failure is remembered and never retried — a broken svg does not mend between preview frames — and it is
     // printed once, naming the drawing as `base` spells it rather than by its long path.
     let first = rasters.failure_line("/x/assets/logo.svg", "ffmpeg drew nothing");
-    assert_eq!(first.as_deref(), Some("the drawing logo.svg cannot be shown: ffmpeg drew nothing"));
+    assert_eq!(
+        first.as_deref(),
+        Some(">>> the drawing logo.svg cannot be shown: ffmpeg drew nothing")
+    );
     assert_eq!(rasters.failure_line("/x/assets/logo.svg", "ffmpeg drew nothing"), None);
     assert_eq!(rasters.request("/x/assets/logo.svg"), Slot::Failed);
 
@@ -310,7 +313,10 @@ fn f3_5_s5b_one_raster_per_file_and_one_log_line_per_file() {
     // under its bare name before it failed under its path, and the cache keys on the path as given — two paths are
     // two files until something says otherwise.)
     let other = rasters.failure_line("badge.svg", "no such file");
-    assert_eq!(other.as_deref(), Some("the drawing badge.svg cannot be shown: no such file"));
+    assert_eq!(
+        other.as_deref(),
+        Some(">>> the drawing badge.svg cannot be shown: no such file")
+    );
     assert_eq!(rasters.len(), 3);
 
     // Two effects on one logo share one entry, and a finished raster is Ready for both of them.

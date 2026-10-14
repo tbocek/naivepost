@@ -159,7 +159,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s2_plan
     fn no_fx(_: &Seg) -> Vec<Fx> {
         Vec::new()
     }
-    let (clips, logs) = render::plan_clips(&[short], no_fx, "16:9", |_| true, &[], &[], (1920, 1080));
+    let (clips, logs) = render::plan_clips(&[short], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true);
     assert!(clips.is_empty());
     assert_eq!(logs.len(), 1, "{logs:?}");
     assert!(logs[0].contains("clip 1"), "{}", logs[0]);

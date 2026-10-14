@@ -86,6 +86,7 @@ fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Wor
         src_shape: (1920, 1080),
         wav_of: &no_wav,
         source_file: &any_source,
+        on_recording: true,
         cues: exec::Cues { all: Vec::new(), languages: Vec::new() },
         words,
         // This file is about S1/S2; the S3 leg answers every number so the walk is never the thing that

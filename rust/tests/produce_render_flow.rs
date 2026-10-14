@@ -149,7 +149,7 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
     // Footage plans with its own rate; the frame box is render_fx's answer for the aspect.
     let mut fast = seg(0.0, 20.0);
     fast.rate = 2.0;
-    let (clips, logs) = r::plan_clips(&[fast.clone()], no_fx, "16:9", |_| true, &[], &[], (1920, 1080));
+    let (clips, logs) = r::plan_clips(&[fast.clone()], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true);
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(clips.len(), 1);
     assert_eq!(clips[0].no, 1);
@@ -171,7 +171,7 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
         |file| !file.contains("gone"),
         &[],
         &[],
-        (1920, 1080),
+        (1920, 1080), true,
     );
     assert_eq!(clips.len(), 2);
     assert_eq!(logs, vec!["clip 2: media/gone.mp4 is not there any more \u{2014} skipped"]);
@@ -182,14 +182,14 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
     let mut copy = seg(0.0, 5.0);
     copy.ins = "copy:12.5".to_string();
     copy.dur = 5.0;
-    let (clips, logs) = r::plan_clips(&[copy], no_fx, "source", |_| false, &[], &[], (1920, 1080));
+    let (clips, logs) = r::plan_clips(&[copy], no_fx, "source", |_| false, &[], &[], (1920, 1080), true);
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(clips[0].source, "copy:12.5");
 
     // Under the bound: dropped, and the log names the lines it took with it.
     let short = seg(60.0, 60.4);
     let lost = vec![entry(60.0, 63.0, 0.3, "a line on the dropped clip")];
-    let (clips, logs) = r::plan_clips(&[short], no_fx, "source", |_| true, &[], &lost, (1920, 1080));
+    let (clips, logs) = r::plan_clips(&[short], no_fx, "source", |_| true, &[], &lost, (1920, 1080), true);
     assert!(clips.is_empty());
     assert_eq!(
         logs,
@@ -198,21 +198,21 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
 
     // Exactly the bound survives — the comparison is `<`, so 0.5 s renders.
     let edge = seg(60.0, 60.5);
-    let (clips, logs) = r::plan_clips(&[edge], no_fx, "source", |_| true, &[], &[], (1920, 1080));
+    let (clips, logs) = r::plan_clips(&[edge], no_fx, "source", |_| true, &[], &[], (1920, 1080), true);
     assert_eq!(clips.len(), 1);
     assert!(logs.is_empty(), "{logs:?}");
 
     // A stop's rate of nought is not a clock: the footage runs on at 1× under its still.
     let mut stop = seg(0.0, 6.0);
     stop.rate = 0.0;
-    let (clips, _) = r::plan_clips(&[stop], no_fx, "source", |_| true, &[], &[], (1920, 1080));
+    let (clips, _) = r::plan_clips(&[stop], no_fx, "source", |_| true, &[], &[], (1920, 1080), true);
     assert_eq!(clips[0].rate, 1.0);
 
     // A lane the scene hears is on the clip; one it hushes is not.
     let lanes = vec![lane("Music", 0.0, 30.0), lane("Game", 0.0, 30.0)];
     let mut quiet = seg(0.0, 10.0);
     quiet.quiet = vec!["Game".to_string()];
-    let (clips, _) = r::plan_clips(&[quiet], no_fx, "source", |_| true, &lanes, &[], (1920, 1080));
+    let (clips, _) = r::plan_clips(&[quiet], no_fx, "source", |_| true, &lanes, &[], (1920, 1080), true);
     assert_eq!(clips[0].lanes, vec!["Music".to_string()]);
 
     assert_eq!(r::no_clip_log(), "no clip could be placed on a recording");

@@ -480,7 +480,7 @@ fn f3_3_s5e_a_stop_gives_the_render_a_rate_of_nought() {
         exists,
         &[],
         &[],
-        (1920, 1080),
+        (1920, 1080), true,
     );
     assert!(logs.is_empty(), "nothing should be dropped: {logs:?}");
     let clip = clips

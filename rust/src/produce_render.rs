@@ -132,6 +132,13 @@ pub struct Clip {
     /// needs the first, a generated title sheet needs the second, and both belong beside the clip rather than being
     /// guessed at by whoever builds its filters.
     pub fx: Vec<Fx>,
+    /// §8 bullet 4: the planned 1× read head for this clip, in its own seconds,
+    /// `None` when the head does not open (no drift, a card, or no tape under it).
+    /// [`crate::produce_fx_chain`] dips the joins it is given and nothing else.
+    pub read_head: Option<(f64, f64)>,
+    /// Set by [`crate::produce_exec`] before the filters are built: does this
+    /// session have tape? A clip on no recording cannot read its sound back.
+    pub on_recording: bool,
     pub src: (i32, i32),
     pub scratch: std::path::PathBuf,
 }
@@ -171,6 +178,7 @@ pub fn matches(entry: &Entry, seg: &Seg) -> bool {
 /// [`Seg::insert_asset`]), which keeps this a pure function; `entries` are the narration's lines, matched to
 /// clips by [matches](fn@matches) and fitted by [`fit`]; `lanes` is the project's lane list, asked per clip
 /// through [`cut_hear`] rather than re-derived here.
+#[allow(clippy::too_many_arguments)] // the plan reads the session through these doors by design
 pub fn plan_clips(
     segs: &[Seg],
     fx_for: impl Fn(&Seg) -> Vec<Fx>,
@@ -179,6 +187,7 @@ pub fn plan_clips(
     lanes: &[Lane],
     entries: &[Entry],
     src_shape: (i32, i32),
+    on_recording: bool,
 ) -> (Vec<Clip>, Vec<String>) {
     let frame = render_fx::frame_box(aspect, src_shape.0, src_shape.1);
     let mut clips: Vec<Clip> = Vec::new();
@@ -220,6 +229,18 @@ pub fn plan_clips(
             .map(|(entry_index, entry)| (entry_index, entry.at, 0.0))
             .collect();
         let (lines, _) = fit(&mine, on_screen);
+        // §8 bullet 4: the run is PLANNED here, not assumed by the filter builder.
+        // A speed effect says the sound keeps its own clock; the debt is the footage's
+        // own seconds less what the picture will show, the same arithmetic the Cut
+        // page's debt tail uses, and the head only opens where that debt is worth it.
+        let head = read_head_plan(seg, &fx).filter(|_| {
+            crate::produce_read_head::opens(
+                seg.e - seg.s,
+                on_screen,
+                crate::produce_read_head::source_is_footage(seg),
+                on_recording,
+            )
+        });
         clips.push(Clip {
             no,
             seg_s: seg.s,
@@ -232,6 +253,8 @@ pub fn plan_clips(
             cues,
             camera_depth: 1.0,
             fx,
+            read_head: head,
+            on_recording: false,
             src: src_shape,
             scratch: std::path::PathBuf::new(),
         });
@@ -482,7 +505,7 @@ pub fn read_head_plan(seg: &Seg, fx: &[Fx]) -> Option<(f64, f64)> {
     let own = fx.iter().any(|effect| {
         effect.effect_kind() == Some(crate::cut::EffectKind::Speed) && matches!(effect.snd.as_str(), "own" | "scene")
     });
-    own.then(|| (seg.s, seg.e))
+    own.then_some((seg.s, seg.e))
 }
 
 // ---- S4: subtitles on the produced clock -----------------------------------------

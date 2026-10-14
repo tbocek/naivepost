@@ -456,6 +456,7 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
         src_shape: (1920, 1080),
         wav_of: &wav_of,
         source_file: &source_file,
+        on_recording: true,
         cues: exec::Cues::default(),
         sources: &sources,
         words: &words,

@@ -214,6 +214,16 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     );
     PREVIEW_ASKED.with(|slot| *slot.borrow_mut() = Some((base.clone(), at)));
     let found = cut_tracks::frame_near(&paths, at);
+    // §8 (`unrenderable still ">>> the stop frame at m:ss cannot be shown in the preview:
+    // <err>"`): a stop holds a frame, and when the search above finds none the preview owes
+    // that sentence — said, never enforced: the stop stays on the lane and the render may well
+    // manage what this one-shot file search could not.
+    crate::ui::cut_stop_frame::say_missing_still(
+        window,
+        &ui::window::newest_review_cut().fx,
+        ui::line_position(window).t,
+        found.is_some(),
+    );
     show_frame(window, found.as_deref())
 }
 

@@ -40,6 +40,7 @@ fn clip(no: usize, rate: f64, on_screen: f64) -> Clip {
         rate,
         frame: (1920, 1080),
         src: (1920, 1080),
+        on_recording: true,
         scratch: common::temp_root("scratch"),
         ..Default::default()
     }
@@ -130,13 +131,15 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_the_sound_answer_fo
 fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_an_own_clock_run_gets_two_real_dips() {
     let dip = naivepost::fx_lane::SOUND_DIP_SECONDS;
     assert_eq!(dip, 0.15, "P.eng.soundDipSeconds is the dip's whole length");
+    let half = naivepost::effect_details::dip_each_side();
     let mut own = clip(1, 2.0, 10.0); // 20 s of footage read at 1× under a 10 s picture
     own.fx = vec![speed(0.0, 10.0, 2.0, "own")];
+    own.read_head = Some((0.0, 20.0)); // §8: the plan decides the run, not the filter builder
     let sound = render::audio_chain(&own, &Produce::default(), 0, &[]).join(",");
-    // The read head is planned over the FOOTAGE the clip plays through (20 s at 1× under a 10 s picture), which is
-    // what `render_fx::read_head` is handed — so the dips sit at the two ends of that run, not at 0 and 10.
-    assert!(sound.contains(&format!("afade=t=in:st=0.150:d={dip}")), "the head fades in: {sound}");
-    assert!(sound.contains(&format!("afade=t=out:st=19.850:d={dip}")), "and out at the run's end: {sound}");
+    // §8 (`the dip half on each side of the join`): each fade is HALF the lane's dip,
+    // one at each end of the run, so the join loses 0.15 s in all and not 0.3 s.
+    assert!(sound.contains(&format!("afade=t=in:st=0.000:d={half}")), "the head fades in: {sound}");
+    assert!(sound.contains(&format!("afade=t=out:st=20.000:d={half}")), "and out at the run's end: {sound}");
     assert_eq!(
         sound.matches("afade=").count(),
         2,
@@ -508,6 +511,7 @@ fn materials_with<'a>(fx: Vec<Fx>) -> exec::Materials<'a> {
         src_shape: (1920, 1080),
         wav_of,
         source_file,
+        on_recording: true,
         cues: exec::Cues { all: Vec::new(), languages: Vec::new() },
         words,
         translate,

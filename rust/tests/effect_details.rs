@@ -35,15 +35,18 @@ fn sec_06_effects_8_details_confirmed_against_the_code_verification_pass_s1_the_
     // It failed. The line is printed the first time and never again — a drawing that cannot be read is asked about
     // on every frame the preview draws, and a log full of one line hides everything else.
     let first = rasters.failure_line("/x/assets/map.svg", "ffmpeg drew nothing");
-    assert_eq!(first.as_deref(), Some("the drawing map.svg cannot be shown: ffmpeg drew nothing"));
+    assert_eq!(
+        first.as_deref(),
+        Some(">>> the drawing map.svg cannot be shown: ffmpeg drew nothing")
+    );
     assert_eq!(rasters.failure_line("/x/assets/map.svg", "ffmpeg drew nothing"), None);
     assert_eq!(rasters.request("/x/assets/map.svg"), Slot::Failed, "and it is not asked for again");
 
-    // §8 quotes the line with §D's `>>> ` prefix; the body above is what a caller hands to `log`.
+    // §8 quotes the line with §D's `>>> ` prefix, which the raster table itself spells.
     let said = rasters.failure_line("/y/assets/sting.svg", "no such file");
     assert_eq!(
-        effect_details::log(&said.expect("a first failure is said")),
-        ">>> the drawing sting.svg cannot be shown: no such file"
+        said.as_deref(),
+        Some(">>> the drawing sting.svg cannot be shown: no such file")
     );
 
     // Neither stops the effect: `apply` asks nothing of the rasters, so a file the preview cannot show is placed
@@ -268,7 +271,7 @@ fn sec_06_effects_8_details_confirmed_against_the_code_verification_pass_s6_seed
     assert!(matches!(ins::kind("card.svg"), Kind::Svg));
     let css_only = "<svg><style>#a{animation:m 2s}</style></svg>";
     let with_keyframes = "<svg><style>@keyframes m {from{opacity:0}}</style></svg>";
-    assert_eq!(css_only.contains("@keyframes"), false);
+    assert!(!css_only.contains("@keyframes"));
     assert!(with_keyframes.contains("@keyframes"));
     assert_eq!(ins::preview_fps(Kind::Svg, false), None, "a still is one texture");
     assert_eq!(ins::preview_fps(Kind::Svg, true), Some(ins::PREVIEW_FPS));

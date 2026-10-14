@@ -203,6 +203,14 @@ name = "sec_06_effects_6_parameters"
 path = "tests/sec_06_effects_6_parameters.rs"
 
 [[test]]
+name = "sec_06_effects_8_read_head"
+path = "tests/sec_06_effects_8_read_head.rs"
+
+[[test]]
+name = "sec_06_effects_8_details"
+path = "tests/sec_06_effects_8_details.rs"
+
+[[test]]
 name = "sec_06_effects_6_parameters_wire"
 path = "tests/sec_06_effects_6_parameters_wire.rs"
 

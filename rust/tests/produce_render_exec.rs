@@ -106,6 +106,7 @@ fn mats<'a>(
         src_shape: (1920, 1080),
         wav_of,
         source_file: &any_source,
+        on_recording: true,
         cues,
         words: &no_words,
         translate: &answer_every_number,

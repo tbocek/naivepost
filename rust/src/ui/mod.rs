@@ -86,6 +86,7 @@ pub mod cut_suggest_press;
 pub mod cut_suggest_progress;
 pub mod cut_form_frame;
 pub mod cut_picture;
+pub mod cut_stop_frame;
 /// §06-effects#2-the-lane-and-the-preview — the preview panel's painted frame: the dim outside the camera
 /// rect, the stroked rect, the overlays at their real alpha, and the mask plus titles while playing.
 /// Its widgets are built here and its draw func installed from `window.rs`, which keeps its own budget.

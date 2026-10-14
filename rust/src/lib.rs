@@ -145,6 +145,7 @@ pub mod produce_fx_chain;
 pub mod produce_cards;
 pub mod produce_details;
 pub mod produce_render;
+pub mod produce_read_head;
 pub mod produce_runs;
 pub mod produce_screen;
 pub mod produce_clip_cues;

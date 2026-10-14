@@ -115,6 +115,10 @@ pub struct Materials<'a> {
     /// — this module never guesses at roots. `None` means the clip has nothing to open, and its encode is
     /// skipped rather than sent to ffmpeg with no input.
     pub source_file: &'a dyn Fn(&render::Clip) -> Option<String>,
+    /// §8 bullet 4: does this session have tape at all? The render dips a join
+    /// only where the sound can actually be read back off a recording, so the
+    /// door that resolves each clip's source also answers whether there is one.
+    pub on_recording: bool,
     /// The cues to write, and the languages to translate them into.
     pub cues: Cues,
     /// The project's source list, which the stamp weighs: `run.sources` is the run's own snapshot shape and
@@ -338,6 +342,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         mats.lanes,
         &run.lines,
         mats.src_shape,
+        mats.on_recording,
     );
 
     // Speech lengths before the cues are cut, so a cue spans what will actually be heard on it.
@@ -347,6 +352,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     // The scratch folder is this run's `produce/clips/`, already created above; the shape came in with `Materials`.
     for clip in clips.iter_mut() {
         clip.scratch = scratch.clone();
+        clip.on_recording = mats.on_recording;
     }
 
     // S4: the cues on the produced clock. Each clip's lines become cues on its own clock and are moved

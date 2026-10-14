@@ -25,8 +25,11 @@ use crate::fx_lane;
 /// §8 (`failure logged once`; §D's log lines): the prefix every line the page logs carries. This tree writes it
 /// into the line rather than having the log pane add it — [`crate::cut_clamp::log_line`] and
 /// [`crate::cut_suggest`] do the same — so a caller hands over the body once and cannot forget or double it.
+/// §D's log prefix: a line the app says about itself starts with these three characters.
+pub const PREFIX: &str = ">>> ";
+
 pub fn log(body: &str) -> String {
-    format!(">>> {body}")
+    format!("{PREFIX}{body}")
 }
 
 /// §8 (`unrenderable still ">>> the stop frame at m:ss cannot be shown in the preview: <err>"`): the line for a
