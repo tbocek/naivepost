@@ -235,6 +235,8 @@ pub fn build() -> gtk::Widget {
     slider.set_draw_value(false);
     slider.set_widget_name("narrate-slider");
     slider.set_hexpand(true);
+    // §A.4: the bar is "the cut, end to end", so its own scale is the cut's length and a drag reads as a
+    // second of the finished video rather than a fraction nobody named. `refresh` keeps it in step from here on.
     slider.set_tooltip_text(Some(
         "The cut's own clock \u{2014} what the edit removed is not on this bar",
     ));
@@ -370,6 +372,34 @@ fn upcast_widget(w: gtk::Paned) -> gtk::Widget {
     w.upcast()
 }
 
+thread_local! {
+    /// True while the PAGE, not the user, is moving the scrub thumb. GTK fires `value-changed` for a
+    /// programmatic `set_value` exactly as it does for a drag, and the bar's handler seeks — so without this the
+    /// sync every repaint would turn into a phantom seek of the second it just painted.
+    static SYNCING_SCRUB: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Paint the scrub bar to the clock without asking it to seek: the flag is restored on every path, including
+/// one the sync itself panics on, so a failed repaint cannot leave the bar deaf to real drags.
+fn sync_scrub(window: &adw::ApplicationWindow, s: &NarrateState) {
+    let Some(slider) = widget_in(window, "narrate-slider")
+        .and_then(|w| w.downcast::<gtk::Scale>().ok())
+    else {
+        return;
+    };
+    SYNCING_SCRUB.with(|held| held.set(true));
+    slider.set_range(0.0, s.length.max(1.0));
+    if (slider.value() - s.session).abs() > 0.01 {
+        slider.set_value(s.session);
+    }
+    SYNCING_SCRUB.with(|held| held.set(false));
+}
+
+/// Whether this `value-changed` came from the page painting the bar rather than from a hand on the thumb.
+fn scrub_is_being_painted() -> bool {
+    SYNCING_SCRUB.with(std::cell::Cell::get)
+}
+
 /// Repaint the labels, the picker's rows and the line rows from the published state.
 pub fn refresh(window: &adw::ApplicationWindow) {
     install_page_css_once();
@@ -399,6 +429,9 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     crate::ui::narrate_band::show_only_with_recording(window);
     // So does the preview frame: the second it shows is `session`, which any seek just changed.
     crate::ui::narrate_picture::repaint(window);
+    // The scrub bar carries the same second (§A.4: the bar IS the cut's clock), so a seek by button, wheel or
+    // program moves the thumb instead of leaving it where the last drag put it.
+    sync_scrub(window, &s);
     // Why here: a flow that changes the voice without this leaves the dropdown on another row than the
     // page speaks.
     narrate_picker::follow(window, s.narrators, &s.voice_files, &s.voice);
@@ -669,27 +702,9 @@ pub(crate) fn say(window: &adw::ApplicationWindow, said: &str) -> String {
 }
 
 // --- the seams: one widget press, one rules call, one printed sentence -------------------------------
-
-/// ‹‹ back three seconds; the clock is what the button reports, §1 giving it no sentence of its own.
-pub fn press_back(window: &adw::ApplicationWindow) -> String {
-    mutate(|s| {
-        s.session = (s.session - narrate_screen::BACK_SECONDS).max(0.0);
-        s.cut_at = (s.cut_at - narrate_screen::BACK_SECONDS).max(0.0);
-    });
-    let s = read_state();
-    refresh(window);
-    say(window, &narrate_screen::clock_line(s.session, s.cut_at, s.length))
-}
-
-pub fn press_forward(window: &adw::ApplicationWindow) -> String {
-    mutate(|s| {
-        s.session += narrate_screen::BACK_SECONDS;
-        s.cut_at += narrate_screen::BACK_SECONDS;
-    });
-    let s = read_state();
-    refresh(window);
-    say(window, &narrate_screen::clock_line(s.session, s.cut_at, s.length))
-}
+// The transport's own seams (back / forward / the seek they end in) live in `narrate_page_seek`, because this
+// file is at its size budget and a seek is a rule of its own, not part of the drawing.
+pub use crate::ui::narrate_page_seek::{press_back, press_forward, seek_preview};
 
 /// The session spans the preview may cue against. An unpublished state (empty) is read as full coverage of
 /// the cut: the refusal exists for a recording that does not reach the cue, not for a flow that never said.
@@ -1340,27 +1355,24 @@ pub fn wire(window: &adw::ApplicationWindow) {
     wire_row_buttons(&win);
 
     // F4.5 S4: the scrub slider seeks, and a seek lands on the cut — the snapped second is what the
-    // player was asked for, not merely what the bar shows.
+    // player was asked for, not merely what the bar shows. Same seam the transport buttons use, so a drag
+    // cues the picture whether or not ▶ has ever run.
     if let Some(slider) = widget_in(&win, "narrate-slider")
         .and_then(|w| w.downcast::<gtk::Scale>().ok())
     {
         let w = win.clone();
         slider.connect_value_changed(move |scale| {
+            // A repaint moved the thumb; nobody dragged it. Seeking here would move the clock to its own
+            // snapped second before the user asked for anything.
+            if scrub_is_being_painted() {
+                return;
+            }
             let target = scale.value();
             let forward = target >= read_state().session;
-            if let Some(tree) = crate::ui::window::narrate_session_tree() {
-                let cut = crate::cut::load(&tree).unwrap_or_default();
-                if let Some((snapped, _rate)) = narrate_preview_leg::seek(
-                    &tree,
-                    &cut,
-                    target,
-                    forward,
-                    &mut narrate_preview_leg::spawn_player,
-                ) {
-                    mutate(|s| s.session = snapped);
-                }
-            }
-            let _ = w;
+            // The bar's own drag is the one seek that knows which clips the page is showing; the session's
+            // cut.json is the fallback for the buttons, which carry no clip list of their own.
+            let segs = read_state().segs;
+            seek_preview(&w, target, Some(&segs), forward);
         });
     }
 

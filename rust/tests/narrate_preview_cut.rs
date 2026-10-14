@@ -114,6 +114,39 @@ fn f4_5_s2_the_tick_follows_the_picture_and_the_narration_rides_along() {
     assert_eq!(view::resume_after_synthesis(17.4, 12.0, false), 17.4);
 }
 
+/// S2: the tick does not just ask questions — the picture's own second walks, one beat at a time, and it
+/// walks at the rate the cut says (`P.eng` speed effects have no player-side flag, so the app's clock is
+/// where a 2x stretch is expressed). Without this the head never moves and no boundary is ever reached.
+#[test]
+fn f4_5_s2_the_clock_walks_the_picture_along() {
+    let clips = [seg(10.0, 20.0), seg(30.0, 40.0)];
+    let delta = naivepost::preview::TICK_SECONDS;
+
+    // Inside a clip: one tick's worth further along.
+    assert_eq!(view::advance(15.0, delta, 1.0, &clips), 15.0 + delta);
+    // The boundary is `tick`'s business, so the clock stops ON it rather than walking through it.
+    assert_eq!(view::advance(19.97, delta, 1.0, &clips), 20.0, "never past the clip's end");
+    assert_eq!(view::advance(20.0, delta, 1.0, &clips), 20.0, "a second in a gap stands");
+    // In a gap, and past the last clip: nothing to walk over, which is what lets `tick` answer hold/skip.
+    assert_eq!(view::advance(25.0, delta, 1.0, &clips), 25.0);
+    assert_eq!(view::advance(45.0, delta, 1.0, &clips), 45.0);
+
+    // S3's rate at the seek: a stretched second covers twice the ground, a slowed one half.
+    assert_eq!(view::advance(15.0, delta, 2.0, &clips), 15.0 + 2.0 * delta);
+    assert_eq!(view::advance(15.0, delta, 0.5, &clips), 15.0 + 0.5 * delta);
+    assert_eq!(view::advance(19.98, delta, 2.0, &clips), 20.0, "the rate cannot cross a boundary either");
+
+    // And the pair that makes it real: walked up to a clip's end, the rules are the ones that decide.
+    let walked = view::advance(19.95, delta, 1.0, &clips);
+    assert_eq!(walked, 20.0);
+    let no_lines: [Entry; 0] = [];
+    assert_eq!(
+        view::tick(walked, &clips, &no_lines, &[], None),
+        view::Tick::SkipTo(30.0),
+        "the boundary the clock stopped on is the gap the rules skip forward from"
+    );
+}
+
 /// S3: what is heard is what will be rendered — the duck, the lanes as the cut has them, and the rate at the
 /// second being sought.
 #[test]
@@ -168,6 +201,30 @@ fn f4_5_s4_a_seek_in_a_gap_lands_on_the_cut() {
     let bracketed = [seg(0.0, 24.0), seg(10.0, 20.0), seg(26.0, 40.0)];
     assert_eq!(view::snap_seek(25.0, &bracketed, false), 24.0);
     assert_eq!(view::snap_seek(25.0, &bracketed, true), 26.0);
+}
+
+/// S4 with §C.4's `cutEdge`: the CLOCK's second is not the boundary the player is cued at but a second INSIDE
+/// the clip it fell back to, so the label never reads a second whose frame does not exist. Forward, and for a
+/// target already on a clip, the two agree.
+#[test]
+fn f4_5_s4_the_clock_lands_inside_the_clip_the_scrub_edge_defines() {
+    let clips = [seg(10.0, 20.0), seg(30.0, 40.0)];
+
+    // Back into the removed stretch: the cue gets the end itself, the clock the edge inside the clip.
+    assert_eq!(view::snap_seek(25.0, &clips, false), 20.0, "the player is cued at the boundary");
+    assert_eq!(
+        view::snap_clock(25.0, &clips, false),
+        20.0 - view::SCRUB_EDGE_SECONDS,
+        "the reading is inside the clip whose frame shows"
+    );
+    // Forward: the next clip's start is already inside that clip, so one number serves both.
+    assert_eq!(view::snap_clock(25.0, &clips, true), view::snap_seek(25.0, &clips, true));
+    // Already on a clip: its own second stands, in both directions.
+    assert_eq!(view::snap_clock(15.0, &clips, false), 15.0);
+    assert_eq!(view::snap_clock(15.0, &clips, true), 15.0);
+    // A clip too short to hold the edge cannot be left again: the clock stays on it.
+    let sliver = [seg(19.98, 20.0)];
+    assert_eq!(view::snap_clock(25.0, &sliver, false), 19.98, "never below the clip's own start");
 }
 
 /// S5: the blue row follows the playhead, and picking a row drops the picture where the line can be seen to

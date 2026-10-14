@@ -46,7 +46,11 @@ pub fn step_paused(window: &adw::ApplicationWindow, dy: f64) -> Option<f64> {
         // transport reads the same gesture.
         dy > 0.0,
     )?;
+    let state = crate::ui::narrate_page::read_state();
     crate::ui::narrate_page::mutate(|s| s.session = stepped);
+    // The still has to be the new frame, not just the number beside it: same seek seam the transport uses,
+    // which cues a frozen picture at the snapped second when nothing is playing.
+    crate::ui::narrate_page::seek_preview(window, stepped, Some(&state.segs), dy > 0.0);
     crate::ui::narrate_picture::repaint(window);
     Some(stepped)
 }

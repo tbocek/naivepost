@@ -194,6 +194,9 @@ pub fn opens_ahead(remaining_seconds: f64) -> bool {
 /// own), held here because this is the module whose rule reads it — S4's "ten times a second".
 pub const TICK_MS: u64 = 100;
 
+/// The same beat in seconds, for a clock that walks by it: one tick's worth of picture.
+pub const TICK_SECONDS: f64 = TICK_MS as f64 / 1000.0;
+
 /// S4: the line follows the player ten times a second.
 pub fn follows_per_second() -> usize {
     1000 / TICK_MS as usize

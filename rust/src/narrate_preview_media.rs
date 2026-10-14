@@ -59,6 +59,64 @@ pub fn picture_files(tree: &layout::Tree, cut: &Cut) -> Vec<String> {
     files
 }
 
+/// The files the player is asked for when the cue lands at `at`: the recording covering `at` FIRST, then the
+/// rest of the cut's footage in cut order.
+///
+/// [`picture_files`] alone cannot answer this. `-s` seeks into the FIRST file on the command line, so a cue at
+/// 40 s with `cam0.mp4` listed first would seek 40 s into cam0 — a second that belongs to cam1 — and show the
+/// wrong frame (or nothing). Rotating the list so the covering recording leads is what makes the same `-s`
+/// mean "this second of THIS file". A second outside every clip keeps the plain cut order: the next cue is a
+/// forward skip anyway, and guessing a camera for a removed second would play the wrong footage.
+pub fn cue_files(tree: &layout::Tree, cut: &Cut, at: f64) -> Vec<String> {
+    let all = picture_files(tree, cut);
+    let Some(first) = covering_source(tree, cut, at) else {
+        return all;
+    };
+    rotate_to(&all, &first)
+}
+
+/// The stored source path whose recording covers `at`, if any kept footage clip does.
+fn covering_source(tree: &layout::Tree, cut: &Cut, at: f64) -> Option<String> {
+    let root = std::env::current_dir().unwrap_or_default();
+    let sources = project::load(tree.dir())
+        .map(|held| held.sources)
+        .unwrap_or_default();
+    let covering = cut_hear::scene_at(&cut.segs, at)
+        .and_then(|scene| cut.segs.get(scene))
+        .filter(|seg| !seg.is_insert() && seg.e > seg.s)?;
+    footage_path(&root, tree, &sources, covering)
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// Move `wanted` to the front, keeping the rest in order; unchanged when it is already first or absent.
+fn rotate_to(files: &[String], wanted: &str) -> Vec<String> {
+    let Some(at) = files.iter().position(|file| file == wanted) else {
+        return files.to_vec();
+    };
+    let mut rotated = files[at..].to_vec();
+    rotated.extend_from_slice(&files[..at]);
+    rotated
+}
+
+/// The second INSIDE the recording that corresponds to cut-second `at`, speed effect included.
+///
+/// WHY this exists instead of passing `at` straight through: `gst-play-1.0` has no rate flag — measured on this
+/// container's `--help-all`, which lists only `--volume`, `-a/--accurate-seeks`, `-i/--instant-rate-changes`
+/// and `-s/--start-position`. So the only way a speed effect reaches the cue is by converting the SECOND the
+/// player is asked for: a 2× stretch must ask for twice the footage ground, a 0.5× half of it. That is what
+/// makes "S3 speed effects apply at seeks" true of the player rather than only of the app's clock, and it is
+/// the same decision [`crate::cut_play_back::set_rate`] records for the Cut page's player.
+///
+/// The footage's own start offset (`Seg::ss`) rides along: a clip that plays its recording from 12 s in must
+/// be cued at 12 s plus the distance into it, not at the distance alone.
+pub fn footage_second(cut: &Cut, at: f64) -> f64 {
+    let Some(scene) = scene_at(cut, at) else {
+        return at.max(0.0);
+    };
+    let travelled = (at - scene.s).max(0.0) * narrate_preview::seek_rate(&cut.fx, at);
+    (travelled + scene.ss.max(0.0)).max(0.0)
+}
+
 /// The one file covering one kept clip, or `None` after saying why there is none.
 ///
 /// Two spellings are accepted for "this camera's recording": the lane Prepare filed it under
@@ -218,9 +276,21 @@ pub fn signal_pids(pids: &[u32], hold: bool) {
     }
 }
 
+/// The cue the program last asked the player for: its argv and the pid it produced, kept so a tick's answer can
+/// be read back as the number it changed (`--volume=` after a duck, `-s` after a seek) instead of only being
+/// logged.
+#[derive(Debug, Clone, Default)]
+pub struct Cue {
+    pub args: Vec<String>,
+    pub pid: u32,
+}
+
 /// Cue the picture over the cut's own footage at `at`, through the same argv as any other cue, and hand back
-/// the child. Public so the page can move the picture by a second (a transport button, a wheel notch)
-/// without reaching into the leg's preview slot.
+/// what the player was asked for — the argv AND the child. Public so the page can move the picture by a second
+/// (a transport button, a wheel notch) without reaching into the leg's preview slot.
+///
+/// The argv travels with the child on purpose: "the duck reached the player" is only true if the number is in
+/// the command line that was run, and a caller that keeps only the pid cannot show that.
 pub fn cue_picture(
     program: &str,
     tree: &layout::Tree,
@@ -229,18 +299,23 @@ pub fn cue_picture(
     gain: f64,
     hold: bool,
     spawn: &mut crate::narrate_preview_leg::Spawn,
-) -> Result<std::process::Child, String> {
-    let files = picture_files(tree, cut);
+) -> Result<(std::process::Child, Cue), String> {
+    let files = cue_files(tree, cut, at);
     if files.is_empty() {
         return Err(narrate_preview::NO_RECORDING_AT_START.to_string());
     }
-    let args = bed_argv(&files, at, gain);
+    // The player is asked for the FOOTAGE second, not the cut's second: see [`footage_second`].
+    let args = bed_argv(&files, footage_second(cut, at), gain);
     said_argv(program, &args);
     let child = spawn(program, &args)?;
+    let cue = Cue {
+        args,
+        pid: child.id(),
+    };
     // A cue made while the preview is paused is a STILL: freeze the process at once so the new frame shows
     // rather than a clip starting under the person's thumb.
     if hold {
-        hold_pid(child.id(), true);
+        hold_pid(cue.pid, true);
     }
-    Ok(child)
+    Ok((child, cue))
 }

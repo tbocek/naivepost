@@ -1152,13 +1152,6 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     settings_.set_tooltip_text(Some(SETTINGS_TIP));
     header.pack_end(&settings_);
     wire_settings(&settings_, &window);
-    // §1's badge **6**: ⓘ, once, at header position 6 — read left to right the bar ends ⓘ ⚙ ⟳, so
-    // it is packed after Settings (each `pack_end` lands left of the previous one). It opens the
-    // same policy form as the run bar's gear through [`press_policy`]; its tooltip follows
-    // `Shell::help_page`, which a switch syncs and a bounce leaves on the page still shown. The
-    // four per-page ⓘ buttons stay for now: `cut_policy_form_widgets` presses
-    // `tab-info-button-Cut`, and §1's header-only layout is not yet enforced.
-    readout_row.append(&outputs_readout);
 
     // §1's badge **6**: ⓘ, once, at header position 6 — read left to right the bar ends ⓘ ⚙ ⟳, so
     // it is packed after Settings (each `pack_end` lands left of the previous one). It opens the

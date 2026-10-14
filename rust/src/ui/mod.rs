@@ -62,6 +62,7 @@ pub mod narrate_page;
 /// F4.4 — the row's speak-and-audition leg (▶ speak this line and ↻ re-roll): files the take over the real
 /// wire and plays it at the render's level, so the page above keeps only surface and wires.
 pub mod narrate_page_speak;
+pub mod narrate_page_seek;
 pub mod narrate_band;
 pub mod narrate_voices;
 pub mod narrate_picture;

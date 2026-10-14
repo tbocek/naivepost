@@ -95,6 +95,9 @@ pub struct Preview {
     failed: Failed,
     picture: Option<Child>,
     voice: Option<Child>,
+    /// The gain the live bed process was last asked for. `None` until something is cued; a tick whose answer
+    /// equals it spawns nothing at all (the stamp [`crate::play_back::set_volume`] keeps for the Cut page).
+    bed_gain: Option<f64>,
 }
 
 impl Default for Preview {
@@ -109,6 +112,7 @@ impl Default for Preview {
             failed: Failed::default(),
             picture: None,
             voice: None,
+            bed_gain: None,
         }
     }
 }
@@ -121,7 +125,7 @@ impl Preview {
     /// A picture that will not spawn is reported rather than swallowed: S1's refusal set is about there
     /// being nothing to show, and a player program that is not on the machine is the same case for the
     /// person — the page prints what comes back here instead of claiming a preview that has no process.
-    pub fn start(
+    fn start(
         &mut self,
         tree: &crate::layout::Tree,
         cut: &Cut,
@@ -137,8 +141,9 @@ impl Preview {
         // S3's bed level for this second: ducked while a line speaks, hushed when the scene says so.
         let gain = narrate_preview_media::bed_gain(cut, from, false, self.game_volume, self.volume);
         let program = PICTURE_PROGRAM.with(|name| name.borrow().clone());
-        let picture = player(&program, tree, cut, from, gain, false, spawn)?;
+        let (picture, _cue) = player(&program, tree, cut, from, gain, false, spawn)?;
         self.picture = Some(picture);
+        self.bed_gain = Some(gain);
         // S3: the lanes this second hears, said out loud so a hush that was typed into a scene shows up
         // on the run rather than silently changing the mix.
         let hushed = narrate_preview::lanes_heard(cut, from);
@@ -266,6 +271,17 @@ impl Preview {
     /// SAME set rather than keeping a second one that would disagree about what is sticky.
     pub fn failed_mut(&mut self) -> &mut Failed {
         &mut self.failed
+    }
+
+    /// S3's stamp: ask the live bed to run at `gain`, answering whether that is a NEW answer. A tick whose
+    /// answer equals the last one changes nothing and spawns nothing — re-cuing on every 100 ms beat would put
+    /// a seek in the middle of every clip for a duck that has not moved.
+    pub fn bed_gain_ask(&mut self, gain: f64) -> bool {
+        let changed = self.bed_gain != Some(gain);
+        if changed {
+            self.bed_gain = Some(gain);
+        }
+        changed
     }
 }
 
@@ -528,6 +544,12 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                     .is_some()
             });
             let heard = heard_at(&cut, from, speaking, game_volume);
+            // S2: the picture's own second moves here, one tick at a time and at the cut's rate — without it
+            // `tick` is asked the same second forever and only a gap skip ever moves the head.
+            let at = narrate_preview::advance(from, crate::preview::TICK_SECONDS, heard.rate, &cut.segs);
+            if at != from {
+                page.set_head(at);
+            }
             // A pause for a missing take is handled here rather than inside `step`: the wait is a dial
             // to a server, and `step` stays the pure decide-and-cue half so it can be driven by a test
             // without a socket.
@@ -555,7 +577,7 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                     },
                     None => {
                         let stepped =
-                            tick_loop(&tree, &cut, &entries, from, game_volume, volume, &mut spawn_player);
+                            tick_loop(&tree, &cut, &entries, at, game_volume, volume, &mut spawn_player);
                         if let Stepped::Moved { at, rate: _ } = stepped {
                             page.set_head(at);
                         }
@@ -732,7 +754,7 @@ fn player(
     gain: f64,
     hold: bool,
     spawn: &mut Spawn,
-) -> Result<Child, String> {
+) -> Result<(Child, narrate_preview_media::Cue), String> {
     narrate_preview_media::cue_picture(program, tree, cut, offset, gain, hold, spawn)
 }
 
@@ -809,10 +831,9 @@ fn held_children(held: &mut Option<Preview>) -> Vec<u32> {
 /// restarting the picture player at that second with the rate that second plays at, so the snap is
 /// not just arithmetic the page shows but the number the player was asked for.
 ///
-/// Cues however much of a preview exists — none running yet (the slider moved before ▶ ever did) included —
-/// because "drag to seek" asks to move the picture, not to move it only when the answer is interesting. A
-/// seek made while the preview is held re-cues FROZEN, so the still walks instead of playing.
-/// Answers `None` when the target was already exactly on the cut and no restart was needed.
+/// Cues however much of a preview exists — running, held, or not started at all (a still) — because "drag to
+/// seek" asks to move the picture, not to move it only when the answer is interesting. Answers `None` only
+/// when there is nothing to cue at all (no recording covers the cut), so the caller can say why.
 pub fn seek(
     tree: &crate::layout::Tree,
     cut: &Cut,
@@ -820,14 +841,19 @@ pub fn seek(
     forward: bool,
     spawn: &mut Spawn,
 ) -> Option<(f64, f64)> {
-    if (narrate_preview::snap_seek(target, &cut.segs, forward) - target).abs() < f64::EPSILON {
+    if narrate_preview_media::picture_files(tree, cut).is_empty() {
         return None;
     }
     let snapped = narrate_preview::snap_seek(target, &cut.segs, forward);
     let rate = narrate_preview::seek_rate(&cut.fx, snapped);
     RUNNING.with(|slot| {
         let mut held = slot.borrow_mut();
-        let preview = held.get_or_insert_with(Preview::default);
+        // No preview yet: this seek makes the still, so the slot stays empty and nothing is left running.
+        let Some(preview) = held.as_mut() else {
+            let gain = narrate_preview_media::bed_gain(cut, snapped, false, 1.0, 1.0);
+            let _ = player(&picture_program(), tree, cut, snapped, gain, true, spawn);
+            return;
+        };
         let was_held = preview.paused;
         preview.frozen = snapped;
         let gain = narrate_preview_media::bed_gain(
@@ -837,8 +863,11 @@ pub fn seek(
             preview.game_volume,
             preview.volume,
         );
-        if let Ok(child) = player(&picture_program(), tree, cut, snapped, gain, was_held, spawn) {
+        if let Ok((child, _cue)) = player(&picture_program(), tree, cut, snapped, gain, was_held, spawn) {
             preview.picture = Some(child);
+            // A seek is a fresh cue: the stamp follows it, or the next tick would read the duck it just
+            // replaced as "already applied".
+            preview.bed_gain = Some(gain);
         }
     });
     Some((snapped, rate))

@@ -248,6 +248,22 @@ pub fn tick(t: f64, segs: &[Seg], entries: &[Entry], takes: &[Take], speaking: O
     }
 }
 
+/// S2: the second the picture stands on one tick later. The head walks to the END of the clip it is in and
+/// no further: a boundary is where [`tick`] decides whether to hold or skip, so the clock may not walk
+/// through it on its own. A second already in a removed stretch stands (`tick` answers hold or skip), and a
+/// second past the last clip stands too — that is what makes `tick` answer [`Tick::Pause`].
+///
+/// `rate` is what the cut says this second plays at (S3's speed-at-the-seek): `gst-play-1.0` takes no rate
+/// flag ([`crate::cut_play_back::set_rate`] documents the same limit for the Cut page's player), so the
+/// app's own clock walks at the cut's rate and a 2x stretch moves the head twice as far per tick. The
+/// caller passes [`seek_rate`] for the second it is standing on.
+pub fn advance(t: f64, delta: f64, rate: f64, segs: &[Seg]) -> f64 {
+    let Some(scene) = cut_hear::scene_at(segs, t).and_then(|index| segs.get(index)) else {
+        return t;
+    };
+    ((t + delta * rate).max(0.0)).min(scene.e)
+}
+
 /// S2: where the picture goes when a synthesis ends. Success resumes at the line's own start, not at the
 /// second the picture froze: a hold can land mid-line (an edited line is re-synthesized where its old audio
 /// used to be), and starting the new wav at that stale offset would begin it past its end whenever the new
@@ -341,8 +357,30 @@ pub fn seek_rate(fx: &[Fx], t: f64) -> f64 {
 /// S4: a target inside a clip is its own answer; a target in a gap goes back to the previous clip's end or
 /// forward to the next clip's start, because those seconds are not in the video at all. Outside the cut there
 /// is no boundary to snap to, so the target stands and the caller decides what it means.
+/// §C.4 `cutEdge` (`P.eng.scrubEdgeSeconds`, §10): how far inside a clip a backwards scrub lands. Going back answers a second
+/// just INSIDE the clip it fell back to, so the frame that shows is that clip's last frame and not the black
+/// of the removed stretch; going forward lands exactly on the next clip's start, already inside its clip.
+/// SPLIT from the cue's snap on purpose: a player cued at a second outside the footage shows no frame, while
+/// the clock must read a second that is still ON a clip — one number cannot serve both jobs.
+pub const SCRUB_EDGE_SECONDS: f64 = 0.05;
+
+/// The second a seek's CLOCK takes (what the label reads), as opposed to the second the player is cued at
+/// ([`snap_seek`]): going back, the end of the clip nearest behind the target entered by `SCRUB_EDGE_SECONDS`,
+/// so the reading is inside the clip whose frame shows. Going forward, and for a target already on a clip, it
+/// is the same number the cue gets.
+pub fn snap_clock(t: f64, segs: &[Seg], forward: bool) -> f64 {
+    if forward || cut_hear::scene_at(segs, t).is_some() {
+        return snap_seek(t, segs, true);
+    }
+    segs.iter()
+        .filter(|seg| seg.e <= t)
+        .max_by(|left, right| left.e.total_cmp(&right.e))
+        .map_or(t, |seg| (seg.e - SCRUB_EDGE_SECONDS).max(seg.s))
+}
+
 pub fn snap_seek(t: f64, segs: &[Seg], forward: bool) -> f64 {
     if cut_hear::scene_at(segs, t).is_some() {
+        // Already on a clip: its own second stands.
         return t;
     }
     if forward {
@@ -355,7 +393,8 @@ pub fn snap_seek(t: f64, segs: &[Seg], forward: bool) -> f64 {
             .map_or(t, |seg| seg.s);
     }
     // The clip that ends nearest before the target. Not "the last one in the list": a preview runs the cut,
-    // so going back means the end closest behind this second, whatever order the segments arrived in.
+    // so going back means the end closest behind this second, whatever order the segments arrived in. The
+    // CLOCK enters that clip by the scrub's edge (`snap_clock`); the player is cued at the boundary itself.
     segs.iter()
         .filter(|seg| seg.e <= t)
         .max_by(|left, right| left.e.total_cmp(&right.e))

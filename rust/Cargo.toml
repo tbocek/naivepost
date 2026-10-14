@@ -796,6 +796,14 @@ name = "f4_5_s6_pause_is_a_freeze"
 path = "tests/f4_5_s6_pause_is_a_freeze.rs"
 
 [[test]]
+name = "f4_5_bed_cue"
+path = "tests/f4_5_bed_cue.rs"
+
+[[test]]
+name = "f4_5_transport_widgets"
+path = "tests/f4_5_transport_widgets.rs"
+
+[[test]]
 name = "fix_call"
 path = "tests/fix_call.rs"
 
