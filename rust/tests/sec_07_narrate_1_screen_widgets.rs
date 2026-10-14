@@ -24,6 +24,10 @@ static RAN_DRAG: AtomicBool = AtomicBool::new(false);
 static RAN_BUTTONS: AtomicBool = AtomicBool::new(false);
 static RAN_PAINT: AtomicBool = AtomicBool::new(false);
 static RAN_ADD_FILE: AtomicBool = AtomicBool::new(false);
+static RAN_POINTER: AtomicBool = AtomicBool::new(false);
+static RAN_SCROLLBAR: AtomicBool = AtomicBool::new(false);
+static RAN_FRAME_STEP: AtomicBool = AtomicBool::new(false);
+static RAN_BAND_SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// A session folder of our own, so nothing this test writes lands in a real project or another test's.
 fn scratch_root(tag: &str) -> std::path::PathBuf {
@@ -320,6 +324,11 @@ fn round(app: &adw::Application) {
         window.close();
         settle();
     }
+
+    // The pointer / scrollbar / frame-step / visibility checks run here rather than in their own `#[test]`
+    // because GTK binds to the first thread that initialises it: a second application on a second test
+    // thread dies at once. `second_round` is its own function so the two groups stay readable.
+    second_round(app);
 }
 
 /// How many distinct opaque colours an image holds: one flat CSS plate answers 1.
@@ -410,4 +419,249 @@ fn sec_07_narrate_1_screen_widgets_the_band_and_add_file_reach_their_rules() {
     assert!(RAN_BUTTONS.load(Ordering::SeqCst), "the take buttons never ran");
     assert!(RAN_PAINT.load(Ordering::SeqCst), "the band paint never ran");
     assert!(RAN_ADD_FILE.load(Ordering::SeqCst), "Add file\u{2026} never ran");
+    // The second round runs inside THIS activate (see `round`): GTK and libadwaita bind to the first
+    // thread that initialises them, and cargo runs the tests of a binary on different threads, so a
+    // second `app.run()` in another `#[test]` dies with "libadwaita may only be used from the main
+    // thread". One application, one main loop, every check as a stage of the same activate.
+    assert!(RAN_POINTER.load(Ordering::SeqCst), "the pointer check never ran");
+    assert!(RAN_SCROLLBAR.load(Ordering::SeqCst), "the scrollbar check never ran");
+    assert!(RAN_FRAME_STEP.load(Ordering::SeqCst), "the frame-step check never ran");
+    assert!(RAN_BAND_SHOWN.load(Ordering::SeqCst), "the band-visibility check never ran");
+}
+
+// --- S7/S8 + §A.7 visibility: the pointer, the scrollbar, the frame step ---------
+
+/// The controller of `widget` carrying `name`, found the way `cut_view_wheel.rs` finds one: walk the
+/// widget's own controller list rather than trusting that exactly one exists.
+fn controller(widget: &gtk::Widget, name: &str) -> gtk::EventController {
+    let held = widget.observe_controllers();
+    (0..held.n_items())
+        .filter_map(|index| held.item(index))
+        .find(|item| {
+            item.downcast_ref::<gtk::EventController>()
+                .is_some_and(|c| c.name().is_some_and(|n| n == name))
+        })
+        .and_then(|item| item.downcast::<gtk::EventController>().ok())
+        .unwrap_or_else(|| panic!("{} carries no controller named {name}", widget.widget_name()))
+}
+
+/// Is this `(x, y)` of an RGB buffer still the plate's dark ground? Same threshold as `is_ground`.
+fn rgb_is_ground(rgb: &[u8], width: i32, x: i32, y: i32) -> bool {
+    let at = ((y as usize) * width as usize + x as usize) * 3;
+    rgb[at] < 40 && rgb[at + 1] < 40 && rgb[at + 2] < 40
+}
+
+/// Blend cairo's premultiplied fill over the ground by hand, so the check names the ink it expects
+/// instead of accepting any brighter pixel: `paint` lays the pointer bar with `POINTER_COLOUR` alpha.
+fn blended(ground: (u8, u8, u8), want: (f64, f64, f64, f64)) -> (i32, i32, i32) {
+    let a = want.3;
+    (
+        (ground.0 as f64 * (1.0 - a) + want.0 * 255.0 * a).round() as i32,
+        (ground.1 as f64 * (1.0 - a) + want.1 * 255.0 * a).round() as i32,
+        (ground.2 as f64 * (1.0 - a) + want.2 * 255.0 * a).round() as i32,
+    )
+}
+
+// The four checks below are named after this item and run as a stage of `round`'s own activate (see the
+// note there): GTK binds to the first thread that initialises it, so they cannot live in a second
+// `#[test]` with its own application. Their assertions are the ones added to the test above.
+fn second_round(app: &adw::Application) {
+    // §A.7's visibility check runs FIRST on purpose: the reference wav it writes into the session
+    // folder outlives its window, so every later block measures a REAL recording length (60 s here),
+    // which is what makes the zoom-past-fit case reachable at all.
+    {
+        let mut quiet = base_state();
+        quiet.voice = narrate_screen::CAPTIONS.to_string();
+        let window = narrate_page(app, quiet);
+        let scroller = common::widget(&window, "take-band-scroller");
+        assert!(!scroller.is_visible(), "captions-only shows no take band (§A.7)");
+        let tree = naivepost::layout::Tree::new(naivepost::startup::session_dir(
+            &std::env::current_dir().unwrap(),
+        ))
+        .expect("the scratch session folder");
+        let reference = naivepost::narrate_data::base_reference(&tree);
+        std::fs::create_dir_all(reference.parent().expect("narrate folder")).expect("folder");
+        // 60 s of 8 kHz mono: long enough that zooming past fit outgrows the strip.
+        write_wav(&reference, 8_000, 60 * 8_000);
+        assert!(
+            naivepost::voice_ref::wav_header(&reference).is_some(),
+            "the test's own reference is a wav the band can measure"
+        );
+        assert!(
+            ui::narrate_band::recording_seconds().is_some(),
+            "the band reads its length off the file, not off a guess"
+        );
+        let voiced = narrate_page(app, base_state());
+        assert!(
+            common::widget(&voiced, "take-band-scroller").is_visible(),
+            "a voice with a recording gets its band back"
+        );
+        RAN_BAND_SHOWN.store(true, Ordering::SeqCst);
+        voiced.close();
+        settle();
+    }
+
+    // --- the faint red bar under the pointer (§1) -----------------------------------
+    {
+        ui::narrate_band::clear_hand();
+        let window = narrate_page(app, base_state());
+        let lane = common::widget(&window, "take-band");
+        let motion = controller(&lane, "motion-take-band");
+        let width = 400i32;
+        let height = narrate_screen::BAND_LANE_PX as i32;
+        let row = (narrate_screen::BAND_RULER_PX as i32 + 4).min(height - 1);
+        let bare = ui::narrate_band::painted_pixels_for_test(width, height).expect("bare paint");
+        // Whatever column the hand hovers must start as plain ground: take the first ground column
+        // below the ruler instead of assuming the envelope or a take left a particular one clear.
+        let column = (2..width)
+            .find(|&x| rgb_is_ground(&bare.0, bare.1, x, row))
+            .expect("the lane draws some ground to hover over");
+        motion.emit_by_name::<()>("motion", &[&(column as f64), &(row as f64)]);
+        settle();
+        assert!(
+            ui::narrate_band::pointer_px() >= 0.0,
+            "the motion controller stored its x"
+        );
+        let hovered = ui::narrate_band::painted_pixels_for_test(width, height).expect("hover paint");
+        let at = ((row as usize) * width as usize + column as usize) * 3;
+        let got = (hovered.0[at], hovered.0[at + 1], hovered.0[at + 2]);
+        let want = blended((28, 28, 29), ui::narrate_band::POINTER_COLOUR);
+        assert!(
+            got.0.abs_diff(want.0 as u8) <= 3
+                && got.1.abs_diff(want.1 as u8) <= 3
+                && got.2.abs_diff(want.2 as u8) <= 3,
+            "the pointer draws its own faint red at x={column}: got {got:?} want {want:?}"
+        );
+        motion.emit_by_name::<()>("leave", &[]);
+        settle();
+        assert!(
+            ui::narrate_band::pointer_px() < 0.0,
+            "a hand off the band leaves no pointer behind"
+        );
+        let left = ui::narrate_band::painted_pixels_for_test(width, height).expect("leave paint");
+        assert!(
+            rgb_is_ground(&left.0, left.1, column, row),
+            "the bar is gone once the pointer leaves: {:?}",
+            (left.0[at], left.0[at + 1], left.0[at + 2])
+        );
+        RAN_POINTER.store(true, Ordering::SeqCst);
+        drop(window);
+        settle();
+    }
+
+    // --- the band's own scrollbar appears past fit (§A.7) ---------------------------
+    {
+        // Its own tree handle: the session folder is the process cwd, which is what §A.7 wrote into.
+        let tree = naivepost::layout::Tree::new(naivepost::startup::session_dir(
+            &std::env::current_dir().unwrap(),
+        ))
+        .expect("the scratch session folder");
+        ui::narrate_band::clear_hand();
+        let window = narrate_page(app, base_state());
+        let lane = common::widget(&window, "take-band");
+        let wheel = controller(&lane, "wheel-take-band");
+        let viewport = ui::narrate_band::view_width_for_test();
+        // The band's own seconds come from the file it is drawn across, so read them back off that
+        // file (rate from the header, sample count from the bytes after its `data` chunk) instead of
+        // trusting a slot only a real paint would have filled.
+        let seconds = {
+            let path = naivepost::narrate_data::base_reference(&tree);
+            let (_, rate) = naivepost::voice_ref::wav_header(&path).expect("the 60 s reference");
+            let bytes = std::fs::read(&path).expect("the reference wav");
+            let data_at = (12..bytes.len().saturating_sub(4))
+                .find(|&i| &bytes[i..i + 4] == b"data")
+                .expect("a data chunk");
+            let declared = u32::from_le_bytes([
+                bytes[data_at + 4],
+                bytes[data_at + 5],
+                bytes[data_at + 6],
+                bytes[data_at + 7],
+            ]) as usize;
+            let samples = declared.min(bytes.len() - (data_at + 8)) / 2;
+            samples as f64 / rate as f64
+        };
+        let before = lane.width_request();
+        assert!(seconds > 30.0, "the band is drawn across the 60 s reference");
+        // One notch past fit and no further: px/s is `fit * zoom` capped at
+        // `narrate.bandMaxPps`, so a first notch always grows the content (60 s over ~560 px fits at
+        // under 10 px/s), while every later one only chases the cap — and GTK then allocates the lane
+        // wider than its parent, which makes the remembered viewport drift from this reading.
+        let _ = wheel.emit_by_name::<bool>("scroll", &[&0.0f64, &-1.0f64]);
+        settle();
+        let asked = lane.width_request();
+        // The request is exactly what `fit_lane_to_view` handed the widget after that notch, computed
+        // through the same door the program uses.
+        let want = naivepost::ui::narrate_band::lane_width(
+            ui::narrate_band::zoom(),
+            seconds,
+            viewport,
+        );
+        assert_eq!(asked, want as i32, "the lane asks for exactly its content width");
+        assert!(
+            want > viewport && asked > before,
+            "60 s past fit outgrows the {viewport}px strip: {before} -> {asked}, content {want}"
+        );
+        RAN_SCROLLBAR.store(true, Ordering::SeqCst);
+        drop(window);
+        settle();
+    }
+
+    // --- paused wheel steps one frame on the picture (§1) ---------------------------
+    {
+        let mut state = base_state();
+        state.playing = false;
+        state.session = 10.0;
+        let window = narrate_page(app, state);
+        let picture = common::widget(&window, "narrate-picture");
+        let wheel = controller(&picture, "wheel-narrate-picture");
+        let frame = naivepost::narrate_frame::frame_seconds(naivepost::narrate_frame::DEFAULT_FPS);
+        let started = ui::read_state().session;
+        let _ = wheel.emit_by_name::<bool>("scroll", &[&0.0f64, &1.0f64]);
+        settle();
+        let after = ui::read_state().session;
+        assert!(
+            (after - (started + frame)).abs() < 1e-9,
+            "one notch while paused is one frame: {started} -> {after}, frame {frame}"
+        );
+        // Playing: the players own the clock, so the same notch must not move the picture.
+        ui::set_state({
+            let mut running = ui::read_state();
+            running.playing = true;
+            running
+        });
+        let _ = wheel.emit_by_name::<bool>("scroll", &[&0.0f64, &1.0f64]);
+        settle();
+        assert_eq!(
+            ui::read_state().session, after,
+            "a notch on a moving picture changes nothing"
+        );
+        RAN_FRAME_STEP.store(true, Ordering::SeqCst);
+        // Close, not drop: `narrate_page` keeps a strong hold on the window it built, so this is the
+        // only thing that lets `app.run()` in the test above return.
+        window.close();
+        settle();
+    }
+}
+
+/// A tiny valid mono 16-bit PCM wav: enough header for `voice_ref::wav_header` and enough bytes for
+/// the band's own seconds arithmetic, without ffmpeg or a server.
+fn write_wav(path: &std::path::Path, rate: u32, samples: u32) {
+    let data_bytes = samples * 2;
+    let mut bytes: Vec<u8> = Vec::new();
+    let push = |bytes: &mut Vec<u8>, value: u32| bytes.extend_from_slice(&value.to_le_bytes());
+    let push16 = |bytes: &mut Vec<u8>, value: u16| bytes.extend_from_slice(&value.to_le_bytes());
+    bytes.extend_from_slice(b"RIFF");
+    push(&mut bytes, 36 + data_bytes);
+    bytes.extend_from_slice(b"WAVEfmt ");
+    push(&mut bytes, 16);
+    push16(&mut bytes, 1);
+    push16(&mut bytes, 1);
+    push(&mut bytes, rate);
+    push(&mut bytes, rate * 2);
+    push16(&mut bytes, 2);
+    push16(&mut bytes, 16);
+    bytes.extend_from_slice(b"data");
+    push(&mut bytes, data_bytes);
+    bytes.resize((44 + data_bytes) as usize, 0);
+    std::fs::write(path, bytes).expect("write the reference wav");
 }

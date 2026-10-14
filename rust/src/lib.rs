@@ -62,6 +62,7 @@ pub mod fx_band;
 pub mod narrate_pass;
 pub mod narrate_preview;
 pub mod narrate_preview_leg;
+pub mod narrate_frame;
 pub mod narrate_screen;
 pub mod narrate_band;
 pub mod voices;

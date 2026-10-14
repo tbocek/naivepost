@@ -394,6 +394,8 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     }
     // The band's own painted picture follows the same state: takes, voice, and where ▶ got to.
     crate::ui::narrate_band::repaint(window);
+    // And so does its very existence: §A.7 shows the band only for a narrator slot with a recording.
+    crate::ui::narrate_band::show_only_with_recording(window);
     // So does the preview frame: the second it shows is `session`, which any seek just changed.
     crate::ui::narrate_picture::repaint(window);
     // Why here: a flow that changes the voice without this leaves the dropdown on another row than the
@@ -1347,6 +1349,7 @@ pub fn wire(window: &adw::ApplicationWindow) {
     // The preview picture paints through the Cut page's own painter (`narrate_picture`), so the frame
     // here is the finished frame: crop, zoom, stops and titles at the second the page stands on.
     crate::ui::narrate_picture::install_draw(&win);
+    crate::ui::narrate_frame_wheel::install(&win);
     refresh(&win);
     // Rows are drawn by `refresh`, so their handlers go on after it: before this they do not exist yet.
     wire_row_buttons(&win);

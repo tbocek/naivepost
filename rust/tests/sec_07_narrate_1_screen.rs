@@ -249,3 +249,61 @@ fn sec_07_narrate_1_screen_s6b_the_folder_listing_is_sorted_wavs_only() {
     );
     std::fs::remove_dir_all(&dir).expect("clean up");
 }
+
+// --- S7: the lane asks for the width its zoom needs ------------------------------
+
+/// §07-narrate#1-screen (`own scrollbar once the wheel zooms past fit`): the scroller is `Automatic`,
+/// so a bar appears only when the lane ASKS for more than the viewport. The width it must ask for is the
+/// content's own width, floored at the 240 px `build_band` starts from — and that floor is exactly why a
+/// view at or below fit never grows a bar. The widget test pins the request on the real lane; this pins
+/// the arithmetic every caller of it uses.
+#[test]
+fn sec_07_narrate_1_screen_s7_the_lane_asks_for_exactly_the_content_it_zooms_to() {
+    use naivepost::ui::narrate_band::{LANE_MIN_PX, lane_width};
+
+    // (zoom, duration, viewport). Past fit means px/s × seconds wider than the strip showing it.
+    let views = [(1.0, 60.0, 300.0), (2.0, 60.0, 300.0), (8.0, 60.0, 300.0), (1.0, 4.0, 300.0)];
+    for (zoom, duration, viewport) in views {
+        let asked = lane_width(zoom, duration, viewport);
+        let content = band::content_px(zoom, duration, viewport);
+        assert_eq!(
+            asked,
+            content.max(LANE_MIN_PX),
+            "zoom {zoom} over {duration}s across {viewport}px: the request is the content, floored"
+        );
+        // The bar rule and the width rule are the same rule read two ways.
+        assert_eq!(
+            band::needs_scrollbar(zoom, duration, viewport),
+            asked > viewport + f64::EPSILON,
+            "zoom {zoom}: a scrollbar only where the request outgrows the viewport"
+        );
+    }
+    // At fit the lane keeps its 240 px floor, so nothing about the strip changes: no bar, no jump.
+    // (A short recording is the other case: `fit_pps` spreads it across the whole viewport, so its
+    // content is exactly the viewport and the floor never comes into play.)
+    assert_eq!(lane_width(1.0, 4.0, 300.0), 300.0, "a 4 s file fills the strip at fit and stops there");
+    assert!(!band::needs_scrollbar(1.0, 4.0, 300.0));
+}
+
+// --- S8: the paused preview steps one frame --------------------------------------
+
+/// §07-narrate#1-screen (`paused, wheel steps a frame`): one notch is one frame of the agreed rate,
+/// the step cannot leave the cut, and with no timeline there is no clock to step along. The rate is the
+/// app's fallback because this page composites its frame from the cut and has no footage file to probe.
+#[test]
+fn sec_07_narrate_1_screen_s8_a_frame_step_is_one_frame_and_never_leaves_the_cut() {
+    use naivepost::narrate_frame::{self as frame, DEFAULT_FPS};
+
+    assert_eq!(frame::frame_seconds(25.0), 0.04, "25 fps is a 40 ms frame");
+    assert_eq!(
+        frame::frame_seconds(0.0),
+        1.0 / DEFAULT_FPS,
+        "an unset rate falls back rather than dividing by zero"
+    );
+    assert_eq!(frame::step(10.0, 60.0, 0.04, true), Some(10.04), "forward is one frame");
+    assert_eq!(frame::step(10.0, 60.0, 0.04, false), Some(9.96), "back is one frame");
+    assert_eq!(frame::step(0.01, 60.0, 0.04, false), Some(0.0), "the start holds at zero");
+    assert_eq!(frame::step(59.99, 60.0, 0.04, true), Some(60.0), "the end holds at the length");
+    assert_eq!(frame::step(0.0, 0.0, 0.04, true), None, "no cut means no clock to step");
+    assert_eq!(frame::step(3.0, -1.0, 0.04, true), None, "a negative length is not a cut either");
+}

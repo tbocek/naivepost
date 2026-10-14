@@ -16,6 +16,16 @@ use crate::wave_build;
 
 /// The lane's height, from the module that catalogues it (`narrate.bandLanePx`).
 const LANE_PX: i32 = screen::BAND_LANE_PX as i32;
+/// The lane's own minimum width, the number `build_band` requests before any view exists.
+pub const LANE_MIN_PX: f64 = 240.0;
+
+/// The width the lane must ASK for to show what the view holds: `Automatic` on the scroller only
+/// produces a scrollbar once the child is wider than the viewport, so past fit the lane has to say how
+/// wide its content is. Floored at `build_band`'s 240 px minimum, which is what fit itself leaves it.
+pub fn lane_width(zoom: f64, duration: f64, viewport: f64) -> f64 {
+    band::content_px(zoom, duration, viewport).max(LANE_MIN_PX)
+}
+
 /// The ruler strip painted across the top of the lane (`narrate.bandRulerPx`).
 const RULER_PX: f64 = screen::BAND_RULER_PX;
 /// Wave peaks arrive at this rate from [`wave_build::ensure`]'s cache.
@@ -96,7 +106,63 @@ pub fn attach(window: &adw::ApplicationWindow) {
         glib::Propagation::Stop
     });
     lane.add_controller(wheel);
+
+    // ONE motion controller: §1 wants a faint red bar under the pointer, which is not a drag and so
+    // needs its own source of x. A motion controller grabs no button, so it cannot race the drag above.
+    let motion = gtk::EventControllerMotion::new();
+    motion.set_name(Some("motion-take-band"));
+    let hover_win = window.clone();
+    motion.connect_motion(move |_m, x, _y| {
+        note_pointer(x);
+        repaint(&hover_win);
+    });
+    let leave_win = window.clone();
+    motion.connect_leave(move |_| {
+        note_pointer(-1.0);
+        repaint(&leave_win);
+    });
+    lane.add_controller(motion);
+
+    fit_lane_to_view(window);
     repaint(window);
+}
+
+/// Hand `lane_width`'s answer to the widget. Called wherever the view changes — attach, zoom, pan.
+fn fit_lane_to_view(window: &adw::ApplicationWindow) {
+    let Some(lane) = lane_of(window) else { return };
+    let (duration, width) = size();
+    lane.set_size_request(lane_width(zoom(), duration, width) as i32, LANE_PX);
+}
+
+/// The pointer's bar as [`paint`] lays it down (§1's "faint red bar under the pointer"): the same red as
+/// the cue bar at roughly a third of its strength, so a pixel check can name the ink instead of guessing
+/// at a shade. Public for that reason alone — `paint` is its only other reader.
+pub const POINTER_COLOUR: (f64, f64, f64, f64) = (0.85, 0.25, 0.25, 0.35);
+
+/// The pointer's second x in lane px, or negative when it is off the band: §1's faint red bar follows the hand
+/// across the ruler and the lane, and nothing may draw it outside the widget it belongs to.
+fn note_pointer(x: f64) {
+    let inside = (0.0..=VIEW_WIDTH.with(|slot| slot.get())).contains(&x);
+    POINTER_X.with(|slot| slot.set(if inside { x } else { -1.0 }));
+}
+
+/// The pointer's x as the painter currently sees it: negative means no hand over the band, which is what
+/// a widget test reads back after firing the motion controller's `leave`.
+pub fn pointer_px() -> f64 {
+    POINTER_X.with(|slot| slot.get())
+}
+
+/// Show the band only for a voice that HAS a recording (§A.7: "visible only for a narrator slot with a
+/// recording") — captions-only, or a reference that is not on disk, leaves nothing to waveforms. The
+/// SCROLLER goes hidden rather than the lane, so the sensitivity rules that grey `take-band` still see it.
+pub fn show_only_with_recording(window: &adw::ApplicationWindow) {
+    let Some(scroller) = crate::ui::window::find_widget_by_name(
+        &window.content().expect("the window has content"),
+        "take-band-scroller",
+    ) else {
+        return;
+    };
+    scroller.set_visible(recording_seconds().is_some());
 }
 
 /// The band's gesture, kept for the test that fires it the way GTK does — the same reason
@@ -137,6 +203,18 @@ thread_local! {
 pub fn painted_view_for_test() -> (f64, f64) {
     let (duration, width) = size();
     (duration, crate::narrate_band::px_per_second(zoom(), duration, width))
+}
+
+/// The lane's last allocated width, as its painter saw it — the viewport `lane_width` is measured
+/// against, and what a wheel test compares the lane's own request to.
+pub fn view_width_for_test() -> f64 {
+    VIEW_WIDTH.with(|slot| slot.get())
+}
+
+/// The seconds the painter drew across, or 0.1 when no recording exists yet (the same floor `paint`
+/// hands the mapping), so a check can name the duration behind a width without reading ink.
+pub fn painted_seconds_for_test() -> f64 {
+    DURATION.with(|slot| slot.get().max(0.1))
 }
 
 /// The red bar's colour as [`paint`] lays it down, so a pixel check names the ink it expects rather than
@@ -298,14 +376,14 @@ fn zoom_by(window: &adw::ApplicationWindow, steps: f64) {
     let zoom = band::zoom_step(zoom(), -steps);
     ZOOM.with(|slot| slot.set(zoom));
     OFFSET.with(|slot| slot.set(band::clamp_view(offset(), zoom, duration, width)));
-    let _ = window;
+    fit_lane_to_view(window);
 }
 
 /// Pan the view by `delta` px (negative shows earlier seconds), clamped inside the recording.
 fn pan(window: &adw::ApplicationWindow, delta: f64) {
     let (duration, width) = size();
     OFFSET.with(|slot| slot.set(band::clamp_view(offset() + delta, zoom(), duration, width)));
-    let _ = window;
+    fit_lane_to_view(window);
 }
 
 /// `(duration, width)` of the view as last painted.
@@ -332,6 +410,10 @@ fn view_width(window: &adw::ApplicationWindow) -> f64 {
 /// cairo's target from GTK and cannot be handed one, so this runs THE SAME `paint` over a surface a
 /// test can read pixels from — which is how a check proves the lane was inked rather than left a bare
 /// CSS plate (`cut_preview_frame::raster_surface_for_test` is the Cut page's version of the idea).
+/// The band's own painted picture on an image surface, at the size a test asks for. A drawing area's
+/// cairo's target from GTK and cannot be handed one, so this runs THE SAME `paint` over a surface the
+/// test can read pixels from — which is how a check proves the lane was inked rather than merely named
+/// CSS plate (`cut_preview_frame::raster_surface_for_test` is the Cut page's version of the same door).
 pub fn painted_surface_for_test(
     width: i32,
     height: i32,
@@ -342,6 +424,43 @@ pub fn painted_surface_for_test(
         paint(&cr, width as f64, height as f64);
     }
     Ok(surface)
+}
+
+/// Paint the lane into an RGB buffer of the caller's choosing and return `(bytes, width, height)` plus
+/// the `(seconds, px/s)` that frame used. This is `painted_surface_for_test`'s work with the pixel copy
+/// kept out of the test: a pointer-bar check needs both the ink and the mapping that placed it, and one
+/// call gives both instead of letting the test rebuild the second half and hope it agrees.
+/// Paint the lane into an RGB buffer of the caller's choosing and return `(bytes, width, height)` plus
+/// the `(seconds, px/s)` that frame used. This is `painted_surface_for_test`'s work with the pixel copy
+/// kept out of the test: a pointer-bar check needs both the ink and the mapping that placed it, and one
+/// call gives both instead of letting the test rebuild the second half and hope it agrees.
+pub fn painted_pixels_for_test(
+    width: i32,
+    height: i32,
+) -> Result<(Vec<u8>, i32, i32, f64, f64), cairo::Error> {
+    let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, width, height)?;
+    let (seconds, pps) = painted_view_for_test();
+    let stride = surface.stride() as usize;
+    {
+        let cr = cairo::Context::new(&surface)?;
+        paint(&cr, width as f64, height.max(1) as f64);
+    }
+    let bytes = surface
+        .data()
+        .map_err(|_| cairo::Error::InvalidFormat)?
+        .as_ref()
+        .to_vec();
+    // Straight to `(r, g, b)` triples, premultiplied exactly as cairo laid it down: ARgb32 on a
+    // little-endian machine stores blue, green, red, alpha, so a faint bar arrives as ground + a third of
+    // its own colour — which is what a check compares against [`POINTER_COLOUR`] blended the same way.
+    let mut rgb = Vec::with_capacity((width * height) as usize * 3);
+    for row in 0..height as usize {
+        for column in 0..width as usize {
+            let at = row * stride + column * 4;
+            rgb.extend_from_slice(&[bytes[at + 2], bytes[at + 1], bytes[at]]);
+        }
+    }
+    Ok((rgb, width, height, seconds, pps))
 }
 
 /// This window's take band.
@@ -482,7 +601,7 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
 
     // 5. The faint red bar under the pointer.
     if let Some(x) = plan.pointer_px {
-        cr.set_source_rgba(0.85, 0.25, 0.25, 0.35);
+        cr.set_source_rgba(POINTER_COLOUR.0, POINTER_COLOUR.1, POINTER_COLOUR.2, POINTER_COLOUR.3);
         cr.rectangle(x, lane_top, 1.0, lane_h);
         let _ = cr.fill();
     }

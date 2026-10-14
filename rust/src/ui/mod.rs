@@ -62,6 +62,8 @@ pub mod narrate_page;
 pub mod narrate_band;
 pub mod narrate_voices;
 pub mod narrate_picture;
+/// §07-narrate#1-screen (**Preview**): the wheel that steps a frame while the picture is paused.
+pub mod narrate_frame_wheel;
 /// §07-narrate#1-screen **7**: the voice picker's rows, its shown row, and what a pick does.
 pub mod narrate_picker;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are

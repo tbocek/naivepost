@@ -241,6 +241,19 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // (stamped names + probed lengths) could never be laid out from the app's own rules. Taken on BEFORE
         // the window exists, because `build_window` seeds this window's session spans as it builds.
         ui::save_apply::note_open_for_snapshot(&dir);
+        if screen_page(&screen) == Some("Narrate") {
+            // BEFORE the window is shown: §A.7's visibility rule runs during `refresh`, and a scroller
+            // hidden then stays hidden however many refreshes follow — so the reference has to be on
+            // disk before the page first lays out, not after.
+            if let Some(tree) = crate::ui::window::narrate_session_tree() {
+                let reference = crate::narrate_data::base_reference(&tree);
+                if std::fs::create_dir_all(reference.parent().expect("narrate folder")).is_ok()
+                    && crate::voice_ref::wav_header(&reference).is_none()
+                {
+                    let _ = write_silence_wav(&reference, 8_000, 60 * 8_000);
+                }
+            }
+        }
         let window = ui::build_window(app, &model, page);
         // The strip paints from this window's cut slot, so a snapshot must show the cut that lives in
         // the project it was asked to render — not whatever the working-copy folder happens to hold.
@@ -1298,4 +1311,25 @@ thread_local! {
 pub fn exit_code(err: &str) -> ExitCode {
     eprintln!("snapshot: {err}");
     ExitCode::FAILURE
+}
+
+/// A mono 16-bit PCM wav of `samples` silent samples at `rate`: the smallest file `voice_ref`'s
+/// header reader and the take band's seconds arithmetic both accept, written without ffmpeg.
+pub fn write_silence_wav(path: &Path, rate: u32, samples: u32) -> std::io::Result<()> {
+    let data = (samples * 2) as usize;
+    let mut bytes = Vec::with_capacity(44 + data);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data as u32).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&rate.to_le_bytes());
+    bytes.extend_from_slice(&(rate * 2).to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&(data as u32).to_le_bytes());
+    bytes.resize(44 + data, 0);
+    std::fs::write(path, bytes)
 }
