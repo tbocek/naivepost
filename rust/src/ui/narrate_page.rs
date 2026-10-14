@@ -22,6 +22,7 @@ use crate::narrate_preview;
 use crate::narrate_preview_leg::{self, PreviewPage};
 use crate::narrate_edit;
 use crate::narrate_screen::{self, Audition, Fit};
+use crate::ui::narrate_page_speak;
 use crate::ui::narrate_picker;
 use crate::narrate_sample;
 use crate::narration::Entry;
@@ -880,58 +881,27 @@ pub fn press_line_speak(window: &adw::ApplicationWindow, index: usize) -> String
         None => match case {
             // The line IS to be spoken: hand it to F4.4 rather than only saying so. The audition above owns
             // what the refusals sound like; this leg owns whether a wav actually lands.
-            Audition::Speak { .. } => return speak_this_line(window, &s, entry),
+            Audition::Speak { from } => return speak_this_line(window, &s, entry, from),
             _ => narrate_screen::spoken_alone(index + 1),
         },
     };
     say(window, &line)
 }
 
-/// F4.4 for one row: the take's key and seed come from the record itself, the language and the server's
-/// answers from the published state, and the two network legs from the script thread-locals above (empty =
-/// no server dialled). Every step's own sentence reaches the status line verbatim: the module names the
-/// model and the reason, and the page adds nothing to that diagnosis.
-/// F4.4 for one row, over the real wire: the take's key and seed come from the record itself, the
-/// address, the key, the model id and the server's health off the Settings file as it stands NOW
-/// ([`crate::speak_leg`], which re-reads per call), and the project's language off the state the
-/// flow published. Every step's own sentence reaches the status line verbatim: the module names the
-/// reason where it failed and the page adds nothing to that diagnosis.
+/// F4.4 for one row, over the real wire: the page's own thin wire into
+/// [`crate::ui::narrate_page_speak::speak_and_audition`], which files the take and plays it. The two
+/// volumes are read here because they belong to this page's sliders — see the door's own doc comment.
 fn speak_this_line(
     window: &adw::ApplicationWindow,
     s: &NarrateState,
     entry: &Entry,
+    // The second the audition starts from — `narrate_screen::audition`'s lead-in, which decides whether
+    // the three seconds ahead are this line's own or still belong to the line above it.
+    from: f64,
 ) -> String {
-    let Some(tree) = crate::ui::window::narrate_session_tree() else {
-        return say(window, "no project folder is open \u{2014} nowhere to keep the take");
-    };
-    let key = crate::narration::key_for(entry, Some(&s.voice));
-    let seed = crate::narration::tts_seed(&key);
-    // F4.5 S2: the preview keys its takes on the same voice this row speaks with, and this press is
-    // the retry that clears any earlier failure of THIS wav before dialling, so a second failure reads
-    // as a second failure rather than as the first one still standing.
-    narrate_preview_leg::set_voice(&s.voice);
-    narrate_preview_leg::retry_wav(&key);
-    // P.policy.ttsLanguage is the PROJECT's language, so it is read off the project here rather
-    // than trusted to what was last published: a flow that never published one must not silently
-    // speak English over a Polish recording. An unreadable project leaves the state's value (or
-    // empty), and `narrate_tts::language` answers its fallback for empty alone.
-    let language = crate::project::load(tree.dir())
-        .map(|project| project.language)
-        .unwrap_or_else(|_| s.language.clone());
-    let outcome = crate::speak_leg::speak(
-        &tree,
-        &entry.text,
-        &entry.emotion,
-        seed,
-        &key,
-        &language,
-    );
-    if outcome.refused().is_some() {
-        // Sticky per wav: a lap of the cut that reaches this line must run mute and say so again rather
-        // than dial the server for a take that was already refused.
-        narrate_preview_leg::note_failed_wav(&key);
-    }
-    say(window, &crate::narrate_tts::outcome_said(&outcome))
+    let driver = PageDriver(window.clone());
+    let (game_volume, preview_volume) = (driver.game_volume(), driver.volume());
+    narrate_page_speak::speak_and_audition(window, s, entry, from, game_volume, preview_volume)
 }
 
 /// **17** ↻ re-roll: refused when there is nothing to draw again of.
@@ -956,7 +926,9 @@ pub fn press_line_reroll(window: &adw::ApplicationWindow, index: usize) -> Strin
             return say(window, narrate_details::nothing_picked());
         };
         refresh(window);
-        return speak_this_line(window, &after, entry);
+        // A re-roll speaks the NEW take in place (§C.3), so the audition starts at the line's own offset
+        // rather than 3 s ahead: those seconds belong to the take the person just heard.
+        return speak_this_line(window, &after, entry, entry.at);
     };
     say(window, &refused)
 }

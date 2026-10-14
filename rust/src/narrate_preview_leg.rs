@@ -674,8 +674,16 @@ pub fn voice() -> String {
 /// the two are kept apart deliberately: handing the duck straight to the voice would mean a
 /// `game_volume` of 1.0 left nothing lowered anywhere, and the S3 test that pins `duck(true, 0.22) ==
 /// 0.22` is about the bed, not about the take.
-fn ducked_voice(game_volume: f64) -> f64 {
+/// The take's own level while it speaks: `game_volume` clamped to [`VOICE_VOLUME_FLOOR`]. Public because
+/// the row's ▶ audition (`ui::narrate_page::speak_this_line`) plays ONE take with no bed under it and must
+/// ask for exactly the level a running preview would give that line — two rules for one number would let a
+/// solo audition and a lap of the cut sound different for the same wav.
+pub fn voice_gain(game_volume: f64) -> f64 {
     game_volume.clamp(VOICE_VOLUME_FLOOR, 1.0)
+}
+
+fn ducked_voice(game_volume: f64) -> f64 {
+    voice_gain(game_volume)
 }
 
 /// The argv one player is asked for: the file, the offset to start at, and the gain to play it at.
