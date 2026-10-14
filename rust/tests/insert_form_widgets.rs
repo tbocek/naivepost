@@ -24,7 +24,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip, cut_button as button};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip, tape, cut_button as button};
 
 static RAN_REFUSE: AtomicBool = AtomicBool::new(false);
 static RAN_LIVE: AtomicBool = AtomicBool::new(false);
@@ -71,11 +71,6 @@ fn cut_page(
     ui::note_place(false);
     settle();
     window
-}
-
-/// The session filmed 0–120 as one take.
-fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
 }
 
 /// Let the main context run what the widget emissions queued.

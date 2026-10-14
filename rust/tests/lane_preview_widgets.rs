@@ -22,7 +22,7 @@ use naivepost::timeline::Recording;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, widget_in};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, tape, widget_in};
 
 static RAN_EMPTY_LANE: AtomicBool = AtomicBool::new(false);
 static RAN_BAR_IN_ROW: AtomicBool = AtomicBool::new(false);
@@ -74,11 +74,6 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &Cut) -> adw::Ap
     settle();
     let _ = tape;
     window
-}
-
-/// The session filmed 0–120 as one take.
-fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
 }
 
 /// A caption covering the line at 12.0, faded in over 2 s so its own alpha at the line is NOT 1.0 — which is

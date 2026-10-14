@@ -23,7 +23,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{settle, status_text, entry, widget, label_text, cut_page_unpainted as cut_page};
+use common::{settle, status_text, entry, widget, label_text, click, cut_page_unpainted as cut_page};
 
 static RAN_BAND: AtomicBool = AtomicBool::new(false);
 static RAN_LINE_STOP: AtomicBool = AtomicBool::new(false);
@@ -39,14 +39,6 @@ fn dropdown(window: &adw::ApplicationWindow, name: &str) -> gtk::DropDown {
     widget(window, name)
         .downcast::<gtk::DropDown>()
         .unwrap_or_else(|_| panic!("`{name}` is a DropDown"))
-}
-
-
-fn click(window: &adw::ApplicationWindow, name: &str) {
-    ui::line_step_button(window, name)
-        .unwrap_or_else(|| panic!("the Cut page drew no clickable {name}"))
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
 }
 
 /// The strings a dropdown offers, in order. `DropDown::model()` is an `Option<ListModel>`, so it is unwrapped

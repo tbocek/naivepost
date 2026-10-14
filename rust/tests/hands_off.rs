@@ -10,7 +10,7 @@
 //! Cited tool: tool:set_policy.
 
 use naivepost::clock;
-use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::cut::{Cut, Fx};
 use naivepost::cut_clamp;
 use naivepost::cut_effect_decisions as ced;
 use naivepost::cut_speed_pass;
@@ -30,7 +30,7 @@ use naivepost::wave::Wave;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
-use common::{seg};
+use common::{seg, fx};
 
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
@@ -45,10 +45,6 @@ fn wave(total: f64, spans: &[(f64, f64, u8)]) -> Wave {
         }
     }
     Wave { hz: HZ, chans: vec![peaks] }
-}
-
-fn fx(kind: &str, t: f64, dur: f64) -> Fx {
-    Fx { kind: kind.into(), t, dur, ..Default::default() }
 }
 
 /// A speed run at one rate — `merge` only folds runs that hear the same thing, so both need a rate.

@@ -14,7 +14,7 @@ use naivepost::params;
 use naivepost::render_fx as render;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::seg;
+use common::{seg, fx};
 
 
 /// A spliced card: no footage under it, its own length.
@@ -23,15 +23,6 @@ fn card(dur: f64) -> Seg {
         s: 0.0,
         e: 0.0,
         ins: "project:assets/tier.svg".into(),
-        dur,
-        ..Default::default()
-    }
-}
-
-fn fx(kind: &str, t: f64, dur: f64) -> Fx {
-    Fx {
-        kind: kind.into(),
-        t,
         dur,
         ..Default::default()
     }

@@ -15,15 +15,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::cut::{Cut, Seg};
 use naivepost::cut_clamp::{self, MIN_SURVIVING_SECONDS};
 use naivepost::cut_select::Surface;
-use naivepost::shell::Page;
 use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, cut_page};
+use common::{settle, status_text, fx, cut_page};
 
 static RAN_VERB_CLAMP: AtomicBool = AtomicBool::new(false);
 static RAN_FLOOR: AtomicBool = AtomicBool::new(false);
@@ -39,16 +38,6 @@ fn seg(s: f64, e: f64, cam: i32) -> Seg {
         s,
         e,
         cam,
-        ..Default::default()
-    }
-}
-
-/// An effect of `kind` starting at `t` and lasting `dur` (fades included in `dur`, as §1 defines it).
-fn fx(kind: &str, t: f64, dur: f64) -> Fx {
-    Fx {
-        kind: kind.into(),
-        t,
-        dur,
         ..Default::default()
     }
 }

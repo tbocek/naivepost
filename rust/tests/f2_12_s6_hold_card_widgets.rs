@@ -23,7 +23,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{clip, cut_button as button, fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{clip, cut_button as button, fixture_dir, hold_last_window, release_last_window, settle, status_text, tape};
 
 static RAN_DOUBLE: AtomicBool = AtomicBool::new(false);
 static RAN_RIGHT: AtomicBool = AtomicBool::new(false);
@@ -59,11 +59,6 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &cut::Cut) -> ad
     ui::clear_selection(&window);
     settle();
     window
-}
-
-/// The session filmed 0–120 as one take, so every second below is on filmed material.
-fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
 }
 
 /// Fire the band's own hold gesture the toolkit's way.

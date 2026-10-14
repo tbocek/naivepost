@@ -23,7 +23,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{settle, status_text, entry, widget, label_text, cut_page_settled_first as cut_page};
+use common::{settle, status_text, entry, widget, label_text, click, cut_page_settled_first as cut_page};
 
 static RAN_REFUSE: AtomicBool = AtomicBool::new(false);
 static RAN_CHOOSER: AtomicBool = AtomicBool::new(false);
@@ -41,13 +41,6 @@ static RAN_RASTER: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
-
-fn click(window: &adw::ApplicationWindow, name: &str) {
-    ui::line_step_button(window, name)
-        .unwrap_or_else(|| panic!("the Cut page drew no clickable {name}"))
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
-}
 
 /// This window's drawing-form holder, and whether it is showing.
 fn form_holder(window: &adw::ApplicationWindow) -> gtk::Box {

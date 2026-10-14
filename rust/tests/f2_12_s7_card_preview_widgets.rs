@@ -15,12 +15,11 @@ use adw::prelude::*;
 use naivepost::cut::{self, Seg};
 use naivepost::shell::Page;
 use naivepost::subprocess;
-use naivepost::timeline::Recording;
 use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, tape};
 
 static RAN_SPLICED: AtomicBool = AtomicBool::new(false);
 static RAN_FOOTAGE: AtomicBool = AtomicBool::new(false);
@@ -32,11 +31,6 @@ fn card(at: f64, dur: f64, path: &str) -> Seg {
 
 fn clip(s: f64, e: f64) -> Seg {
     Seg { s, e, ..Default::default() }
-}
-
-/// The session filmed 0–120 as one take.
-fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
 }
 
 /// Build a window sitting on the Cut tab with this tape and cut, and open its folder so the card's frames

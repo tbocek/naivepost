@@ -419,15 +419,6 @@ pub fn fit_band_height_for_window(window: &adw::ApplicationWindow, scene: &Scene
     }
 }
 
-/// F2.12 S6: attach the card-hold press (right-click / double click) to a band. The rule and the gesture live
-/// in [`crate::ui::cut_card_hold`]; this is the seam that puts it on screen, finding the band through
-/// [`band_of`] rather than a remembered copy, and answering `None` when this window shows no painted band.
-pub fn wire_card_hold(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
-    let (surface, _layers) = band_of(window)?;
-    crate::ui::cut_card_hold::wire(window, &surface);
-    Some(surface)
-}
-
 /// How tall the band must be for the scene it is about to paint.
 pub fn band_height_px(scene: &Scene, thumb_px: u32) -> f64 {
     rows(scene, thumb_px).height(scene)

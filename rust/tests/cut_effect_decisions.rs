@@ -10,7 +10,7 @@
 //! P.policy.captionMinSeconds, P.policy.effectDefaultSeconds, P.policy.effectDefaultFades.
 //! Cited tools: add_segment, cut_status, finish_cut, set_clip_speed, add_effect, add_caption, get_frames.
 
-use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::cut::Cut;
 use naivepost::cut_clamp;
 use naivepost::cut_effect_decisions as ced;
 use naivepost::cut_trim;
@@ -20,7 +20,7 @@ use naivepost::tools::cutpass::{self, Plan};
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
-use common::{seg};
+use common::{seg, fx};
 
 /// Look a parameter up across the homes this round's ids live in: `params::find` answers Prepare's list
 /// only, and these rows are spread over §6 (`params::cut`) and §06#6 (`params::effects`).
@@ -46,10 +46,6 @@ fn error_of(reply: &str) -> String {
 
 /// A footage scene from `s` to `e`.
 /// An effect record of one kind at one span.
-fn fx(kind: &str, t: f64, dur: f64) -> Fx {
-    Fx { kind: kind.into(), t, dur, ..Default::default() }
-}
-
 // --- row 11: the weighted edge contest -----------------------------------------------------------------------------------
 
 #[test]

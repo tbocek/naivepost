@@ -10,7 +10,10 @@
 //! Pure rule + pure door: nothing here builds a window, because `suggested_cut` reads the cut it lands onto from
 //! its argument and the recorder slot only matters to the write, which `sec_05_cut_7_rules_s7_*` covers.
 
-use naivepost::cut::{self, Cut, Fx, Seg};
+use naivepost::cut::{self, Cut, Seg};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::fx;
 use naivepost::layout;
 use naivepost::suggest::Applied;
 use naivepost::ui::cut_suggest_land;
@@ -32,16 +35,6 @@ fn card(s: f64, e: f64, file: &str) -> Seg {
         s,
         e,
         ins: file.into(),
-        ..Default::default()
-    }
-}
-
-/// An effect of `kind` at `t` lasting `dur`.
-fn fx(kind: &str, t: f64, dur: f64) -> Fx {
-    Fx {
-        kind: kind.into(),
-        t,
-        dur,
         ..Default::default()
     }
 }

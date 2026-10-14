@@ -22,7 +22,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{settle, status_text, entry, widget, label_text, cut_page_settled_first as cut_page};
+use common::{settle, status_text, entry, widget, label_text, click, cut_page_settled_first as cut_page};
 
 static RAN_ARM: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
@@ -35,13 +35,6 @@ static RAN_BOX: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
-
-fn click(window: &adw::ApplicationWindow, name: &str) {
-    ui::line_step_button(window, name)
-        .unwrap_or_else(|| panic!("the Cut page drew no clickable {name}"))
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
-}
 
 /// The caption's TextView, found by name and downcast — the type itself is the Enter-is-a-newline rule.
 fn words_view(window: &adw::ApplicationWindow) -> gtk::TextView {

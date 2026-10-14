@@ -9,9 +9,11 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::{
-    cut::{Cut, Seg},
+    cut::{Cut, Fx, Seg},
     edges::AlignedWord,
+    project::Source,
     shell::Page,
+    timeline::Recording,
     params, ui,
 };
 
@@ -154,6 +156,45 @@ pub fn clip(s: f64, e: f64) -> Seg {
     Seg { s, e, cam: 0, ..Default::default() }
 }
 
+/// One effect on the lane — every field but kind, start and length at its default.
+pub fn fx(kind: &str, t: f64, dur: f64) -> Fx {
+    Fx {
+        kind: kind.into(),
+        t,
+        dur,
+        ..Default::default()
+    }
+}
+
+/// The session filmed 0–120 as one take.
+pub fn tape() -> Vec<Recording> {
+    vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
+}
+
+/// A footage source by path — the shape §F1's gates and joins read, with no narrator and no split voice.
+pub fn footage(path: &str) -> Source {
+    Source {
+        path: path.to_string(),
+        footage: true,
+        narrator: 0,
+        sepvoice: false,
+        tracks: vec![],
+    }
+}
+
+/// Fire a named button the way a press does: the `clicked` signal, then let the queued handler run.
+pub fn click(window: &adw::ApplicationWindow, name: &str) {
+    ui::line_step_button(window, name)
+        .unwrap_or_else(|| panic!("the Cut page drew no clickable {name}"))
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
+}
+
+/// Three clips of 20 s each: every sum built on them is exact in binary, so a wrong total cannot hide
+/// inside a rounding error.
+pub fn three_clips() -> Vec<(u32, f64)> {
+    vec![(1u32, 20.0), (2u32, 20.0), (3u32, 20.0)]
+}
 /// A parameter row from the PREPARE and CUT pages only — where a test wants to prove an id is catalogued
 /// on exactly one of those two lists rather than anywhere in the catalogue.
 pub fn row(id: &str) -> params::Param {

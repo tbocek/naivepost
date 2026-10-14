@@ -22,7 +22,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use naivepost::layout::Tree;
-use naivepost::project::{MarkingPass, Project, Source};
+use naivepost::project::{MarkingPass, Project};
+mod common;
+use common::footage;
 use naivepost::requests::{self, Word, WordsDoc};
 use naivepost::settings::{self, Conf};
 use serde_json::json;
@@ -247,16 +249,6 @@ pub fn point_at(port_url: &str) -> String {
 /// `session.naivepost` rides along as a `prepare/` folder inside the next one's. Counting keeps
 /// every scenario's folder separate, which is what makes the pass read the words it was seeded with.
 static FIXTURES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-fn footage(path: &str) -> Source {
-    Source {
-        path: path.to_string(),
-        footage: true,
-        narrator: 0,
-        sepvoice: false,
-        tracks: vec![],
-    }
-}
 
 /// Write one lane's `words.json`: each word one second long, word `n` spanning `n .. n+1`.
 fn seed_words(tree: &Tree, lane: &str, words: &[&str]) {

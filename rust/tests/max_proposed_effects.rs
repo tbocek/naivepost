@@ -8,14 +8,13 @@
 //! [`naivepost::cut_suggest::exempt_from_decorations_cap`]: a rate the cut asked for decides how long
 //! the segment runs, so it is not decoration and is not charged.
 
-use naivepost::cut::{EffectKind, Fx};
+use naivepost::cut::EffectKind;
 use naivepost::cut_effects_pass as pass;
 use naivepost::cut_suggest;
 use naivepost::params;
-
-fn fx(kind: &str, t: f64, dur: f64) -> Fx {
-    Fx { kind: kind.into(), t, dur, ..Default::default() }
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::fx;
 
 /// Look an id up across every catalogue section and insist on exactly one row.
 fn row(id: &str) -> params::Param {

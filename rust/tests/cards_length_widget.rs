@@ -24,7 +24,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip, cut_button as button};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip, tape, cut_button as button};
 
 static RAN_LENGTH: AtomicBool = AtomicBool::new(false);
 static RAN_FIELD: AtomicBool = AtomicBool::new(false);
@@ -52,11 +52,6 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &cut::Cut) -> ad
     ui::note_place(false);
     settle();
     window
-}
-
-/// The session filmed 0–120 as one take.
-fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
 }
 
 /// Find a named widget anywhere under `root` — the form puts its entries inside rows, so a flat scan of the

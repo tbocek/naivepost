@@ -9,6 +9,7 @@
 //! Each check pins its own cwd under a temp root named for itself (a pid-only root collides with other
 //! binaries' checks and with these five between themselves).
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::temp_dir_created as temp_dir;
 

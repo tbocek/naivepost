@@ -7,15 +7,12 @@
 mod harness;
 
 use harness::*;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::three_clips;
 use naivepost::speeds_ask;
 use serde_json::json;
 use naivepost::cut_speed_pass::Call;
-
-/// Three clips of 20 s each: every sum below is exact in binary, so a wrong total cannot hide in a
-/// rounding error.
-fn three_clips() -> Vec<(u32, f64)> {
-    vec![(1u32, 20.0), (2u32, 20.0), (3u32, 20.0)]
-}
 
 /// Which clips carry a caption: clip 3, with its one caption — `N caption(s) -- runs at 1`, spelled as
 /// §F3.10 spells it.

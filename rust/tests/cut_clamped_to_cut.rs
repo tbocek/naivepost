@@ -8,7 +8,7 @@ use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_clamp as clamp;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::seg;
+use common::{seg, fx};
 
 
 /// A spliced insert of `dur` seconds — its own picture, and no footage for an effect to sit on.
@@ -17,15 +17,6 @@ fn card(dur: f64) -> Seg {
         s: 0.0,
         e: 0.0,
         ins: "project:assets/tier.svg".into(),
-        dur,
-        ..Default::default()
-    }
-}
-
-fn fx(kind: &str, t: f64, dur: f64) -> Fx {
-    Fx {
-        kind: kind.into(),
-        t,
         dur,
         ..Default::default()
     }

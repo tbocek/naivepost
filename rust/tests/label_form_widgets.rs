@@ -28,7 +28,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{assert_close, entry, settle, status_text, widget, label_text, cut_page_unpainted as cut_page};
+use common::{assert_close, entry, settle, status_text, widget, label_text, click, cut_page_unpainted as cut_page};
 
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
 static RAN_LINE: AtomicBool = AtomicBool::new(false);
@@ -61,14 +61,6 @@ fn form_visible(window: &adw::ApplicationWindow) -> bool {
     form_holder(window).get_visible()
 }
 
-
-/// Fire a named button the way a press does: the `clicked` signal, then let the queued handlers run.
-fn click(window: &adw::ApplicationWindow, name: &str) {
-    ui::line_step_button(window, name)
-        .unwrap_or_else(|| panic!("the Cut page drew no clickable {name}"))
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
-}
 
 /// Mark a stretch on the ruler/selection ground — the same seam a drag leaves behind — so S1 has a band.
 fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {

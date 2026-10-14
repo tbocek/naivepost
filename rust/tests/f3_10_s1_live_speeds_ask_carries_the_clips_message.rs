@@ -12,6 +12,9 @@
 mod harness;
 
 use harness::*;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::three_clips;
 use naivepost::cut_speed_pass::Call;
 use naivepost::params;
 use naivepost::speeds_ask;
@@ -31,12 +34,6 @@ fn speeds_text(speeds: &[(u32, f64)]) -> String {
         "speeds": speeds.iter().map(|(clip, rate)| json!({ "clip": clip, "rate": rate })).collect::<Vec<_>>()
     })
     .to_string()
-}
-
-/// Three clips of 20 s each: the numbers are the ones §F3.10's own clip lines use, and every sum below is
-/// exact in binary, so a wrong total cannot hide inside a rounding error.
-fn three_clips() -> Vec<(u32, f64)> {
-    vec![(1u32, 20.0), (2u32, 20.0), (3u32, 20.0)]
 }
 
 /// Which clips carry a caption in this ask: clip 3, with its one caption — and the ask says so in its own

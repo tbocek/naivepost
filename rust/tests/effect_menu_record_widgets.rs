@@ -14,8 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{Cut, EffectKind};
-use naivepost::fx_record as rec;
+use naivepost::cut::Cut;
 use naivepost::fx_volume as vol;
 use naivepost::fx_zoom as zoom;
 use naivepost::shell::Page;
@@ -24,7 +23,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, cut_button as button};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, tape, cut_button as button};
 
 static RAN_VOLUME_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_ZOOM_ROW: AtomicBool = AtomicBool::new(false);
@@ -86,11 +85,6 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &Cut) -> adw::Ap
     settle();
     let _ = tape;
     window
-}
-
-/// The session filmed 0–120 as one take.
-fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
 }
 
 /// §06-effects#1-record — clicking a dropdown row records that kind, says so, and lands as ONE Undo.

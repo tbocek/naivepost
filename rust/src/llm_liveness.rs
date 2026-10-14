@@ -582,11 +582,6 @@ impl Gate {
         self.queue.len() < before
     }
 
-    /// Whether the step is queued right now.
-    pub fn is_waiting(&self, step: &str) -> bool {
-        self.queue.iter().any(|waiting| waiting == step)
-    }
-
     /// Who is queued, front first — the order they will be admitted in.
     pub fn waiting(&self) -> Vec<String> {
         self.queue.clone()

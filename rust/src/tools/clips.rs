@@ -290,13 +290,6 @@ impl Clips {
         }
     }
 
-    /// The effects placed on one clip.
-    pub fn effects_of(&self, clip: u32) -> &[Effect] {
-        match self.position(clip) {
-            Some(at) => &self.clips[at].effects,
-            None => &[],
-        }
-    }
 }
 
 /// One frame this pass can show, named by the clip and the offset it was asked for.

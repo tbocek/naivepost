@@ -17,6 +17,9 @@ use adw::prelude::*;
 use naivepost::clock::frame_name;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::footage;
 use naivepost::run;
 use naivepost::ui;
 
@@ -30,16 +33,6 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
     std::env::set_current_dir(&root).expect("cwd pinned to the session root");
     let tree = Tree::new(&dir).expect("a .naivepost folder is a project");
     (root, tree)
-}
-
-fn footage(path: &str) -> Source {
-    Source {
-        path: path.to_string(),
-        footage: true,
-        narrator: 0,
-        sepvoice: false,
-        tracks: vec![],
-    }
 }
 
 /// A fake audio.cpp on loopback: `/health` answers 200 and `/v1/models` names the ASR and diarization

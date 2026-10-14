@@ -26,6 +26,9 @@ pub mod log_link;
 pub mod log_paint;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_page;
+/// §08-produce#1-screen — the render legs the Produce page hands to `produce_exec`. Split out of
+/// `produce_page.rs`, which is past its size budget.
+mod produce_page_rows;
 /// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
 /// render's spawner seam. Split out of `produce_page`, which is at its size budget.
 pub mod produce_languages;
@@ -116,6 +119,33 @@ pub mod cut_band_press;
 /// F2.7: the page's half of Add / Split / Remove / ⌦ — the four doors, what each writes, the snap-list
 /// gather and the ✕ dispatch. Split out of `window.rs`, which is past its size budget.
 pub mod cut_verb_press;
+/// F2.12 Insert — the page's half: ⧉ Insert's door, the chooser, the form and Apply. Split out of
+/// `window.rs`, which is past its size budget.
+mod cut_insert_form;
+/// §05-cut#1-screen — the effects lane's rows, their CSS and the preview panel redrawn from them. Split out
+/// of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
+mod cut_lane_rows;
+/// §1's bench, the tab buttons and the readouts they repaint. Split out of `window.rs`, which is past its
+/// size budget. Its doors are re-exported through `window`.
+mod window_bench;
+/// §05-cut#1-screen — the selection band, the held effect and its live form, the preview's volume. Split
+/// out of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
+/// F0.7's policy doors and F0.13's gear: the ⚙/ⓘ form, its open slot, the User Context tracker and
+/// the debounced derivation. Split out of `window.rs`, which is past its size budget.
+mod window_policy;
+mod window_selection;
+/// §F2.8 — trim and move on the track strip, the copy/paste hand and the lane press. Split out of
+/// `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
+mod window_trim_strip;
+/// §02's run bar — the ▶ ⏹ 🎲 ▶✂ presses and their wires. Split out of `window.rs`, which is past its
+/// size budget. Its doors are re-exported through `window`.
+mod window_run_press;
+/// §1's widget doors — the named lookups, readouts and tooltip readers. Split out of `window.rs`, which is
+/// past its size budget. Every name is re-exported through `window`.
+mod window_doors;
+/// §F3.9/§F3.10/§F3.11 — the ✐ Captions, ⏩ Speeds and ✨ Decorations run-bar jobs and their gates. Split
+/// out of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
+mod cut_pass_gates;
 /// F2.4 S1/S1b — one press on the painted band, read where it actually landed (row, gutter, zoom, scroll).
 pub mod cut_line_press;
 /// §05-cut#2 §B — ⇲ Lane with nothing in hand: a footage file on a row of its own, probed. Split out of
@@ -277,7 +307,7 @@ pub use window::review_cuts_button;
 pub use window::seed_review_cut;
 /// F2.7: the write-to-cut.json door, so a check can start from a file on disk (every editing press already
 /// uses it; this only makes it reachable from outside `ui`).
-pub use window::save_seed_for_test;
+pub use cut_insert_form::save_seed_for_test;
 pub use window::play_recording_button;
 pub use window::set_preview_volume;
 pub use window::preview_volume;
@@ -337,14 +367,10 @@ pub use window::delete_key_controller;
 pub use window::line_click_gesture;
 pub use window::held_effect;
 // F2.12: the insert button's wire, the form's seams and its read-back for tests.
-pub use window::close_insert_form;
-pub use window::insert_chosen;
-pub use window::insert_chosen_with_length;
-pub use window::insert_open;
-pub use window::press_insert;
-pub use window::press_insert_apply;
-pub use window::note_place;
-pub use window::refresh_insert_button;
+pub use cut_insert_form::{
+    close_insert_form, insert_chosen, insert_chosen_with_length, insert_open, note_place,
+    press_insert, press_insert_apply, refresh_insert_button,
+};
 pub use window::press_effect_item;
 pub use window::press_zoom;
 pub use window::press_zoom_item;
@@ -383,7 +409,6 @@ pub use cut_effects_pass::run_effects_pass_with_reply;
 pub use window::narrate_stage;
 pub use window::show_narrate_stage;
 pub use window::press_narrate_run;
-pub use window::press_narrate_run_with_reply;
 pub use window::set_narrate_script;
 pub use window::narrate_script_loaded;
 pub use window::pull_half_typed;
@@ -413,8 +438,6 @@ pub use window::refresh_effects_lane;
 pub use cut_zoom_hand::{
     plate_shown_for_test as zoom_plate_shown,
 };
-/// F3.1's page seam: a press on the paused preview, answered from this window's own line and painted boxes.
-pub use window::cut_zoom_press;
 pub use window::effects_lane_box;
 pub use cut_verb_press::{press_add, press_delete_key, press_remove, press_split};
 pub use window::note_edit;

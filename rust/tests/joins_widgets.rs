@@ -19,7 +19,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use naivepost::layout::Tree;
-use naivepost::project::{MarkingPass, Project, Source};
+use naivepost::project::{MarkingPass, Project};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::footage;
 use naivepost::requests::{self, Word, WordsDoc};
 use naivepost::run;
 use naivepost::transcribe::SAMPLE_RATE;
@@ -89,16 +92,6 @@ fn serve_audio_for_the_presses(url: &str) {
     conf.audio_server = url.to_string();
     naivepost::settings::save(&paths, &conf).expect("the conf points at the fake server");
     unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
-}
-
-fn footage(path: &str) -> Source {
-    Source {
-        path: path.to_string(),
-        footage: true,
-        narrator: 0,
-        sepvoice: false,
-        tracks: vec![],
-    }
 }
 
 /// Write one lane's `words.json`: each word one second long, so word `n` spans samples

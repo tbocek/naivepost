@@ -11,11 +11,9 @@ use naivepost::cut::{Cut, Seg};
 use naivepost::cut_insert as ins;
 use naivepost::subprocess;
 use naivepost::ui::cut_card_preview as cards;
-
-/// A clip of footage, for the "not a card" cases.
-fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
-}
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::seg as clip;
 
 /// A spliced card: `s == e` with a `dur`, which is what makes it one.
 fn card(at: f64, dur: f64, path: &str) -> Seg {

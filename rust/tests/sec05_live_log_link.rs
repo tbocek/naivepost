@@ -16,6 +16,7 @@ use gtk4 as gtk;
 use naivepost::exchanges;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::{fixture_dir, hold_last_window, release_last_window};
 

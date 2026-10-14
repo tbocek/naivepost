@@ -17,7 +17,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use naivepost::layout::Tree;
-use naivepost::project::{Project, Source};
+use naivepost::project::Project;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::footage;
 use naivepost::{prepare_run, run, ui};
 
 /// A root with `<root>/session.naivepost/` made and cwd pinned to the root — the arrangement
@@ -60,16 +63,6 @@ fn point_audio_at(url: &str) {
     conf.audio_server = url.to_string();
     naivepost::settings::save(&paths, &conf).expect("the conf points at the dead port");
     unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
-}
-
-fn footage(path: &str) -> Source {
-    Source {
-        path: path.to_string(),
-        footage: true,
-        narrator: 0,
-        sepvoice: false,
-        tracks: vec![],
-    }
 }
 
 #[test]

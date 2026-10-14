@@ -27,7 +27,7 @@ use naivepost::ui::cut_preview_frame;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{cut_page_settled_first as cut_page, release_last_window, settle, widget, widget_in};
+use common::{cut_page_settled_first as cut_page, click, release_last_window, settle, widget, widget_in};
 
 static RAN_FRAME: AtomicBool = AtomicBool::new(false);
 static RAN_HELD: AtomicBool = AtomicBool::new(false);
@@ -58,13 +58,6 @@ macro_rules! step {
             return;
         }
     }};
-}
-
-fn click(window: &adw::ApplicationWindow, name: &str) {
-    ui::line_step_button(window, name)
-        .unwrap_or_else(|| panic!("the Cut page drew no clickable {name}"))
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
 }
 
 /// The file's key for a kind — the record stores a string and §06#1 is what types it.

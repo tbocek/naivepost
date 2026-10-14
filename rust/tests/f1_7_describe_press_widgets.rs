@@ -24,7 +24,10 @@ use adw::prelude::*;
 use naivepost::clock::frame_name;
 use naivepost::describe::FRAMES_PER_REQ;
 use naivepost::layout::Tree;
-use naivepost::project::{Project, Source};
+use naivepost::project::Project;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::footage;
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::ui;
 
@@ -228,10 +231,6 @@ fn seed_frames(tree: &Tree, seconds: &[f64], changes: &[f64]) {
     std::fs::write(tree.frames_marker(LANE), "0.25|1.0\n").expect("the marker");
     let rows: String = changes.iter().map(|at| format!("{at}\t5.0\n")).collect();
     std::fs::write(tree.scenes_tsv(LANE), rows).expect("scenes.tsv");
-}
-
-fn footage(path: &str) -> Source {
-    Source { path: path.to_string(), footage: true, narrator: 0, sepvoice: false, tracks: vec![] }
 }
 
 #[test]

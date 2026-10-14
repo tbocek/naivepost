@@ -12,6 +12,9 @@
 mod harness;
 
 use harness::*;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::three_clips;
 use naivepost::cut_speed_pass::{self, Call};
 use naivepost::params;
 use naivepost::speeds_ask;
@@ -26,13 +29,6 @@ fn speeds_json(speeds: &[(u32, f64)]) -> String {
         })
         .to_string(),
     )
-}
-
-/// Three clips of 20 s each, adjoining at their session seconds: clips 1 and 2 leave NO gap between them, which
-/// is the case the merge rule exists for. Ten-second multiples are exact in binary, so every expected number
-/// below is derived on paper rather than measured.
-fn three_clips() -> Vec<(u32, f64)> {
-    vec![(1u32, 20.0), (2u32, 20.0), (3u32, 20.0)]
 }
 
 /// No caption anywhere: both rates are ones the tool will apply, so the merge is the only thing left to test.

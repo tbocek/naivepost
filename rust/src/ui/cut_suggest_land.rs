@@ -281,14 +281,6 @@ pub fn suggested_cut(before: &Cut, answer: &Applied) -> Cut {
     landed
 }
 
-/// Hand-placed cards in the cut on screen — the ones a suggestion must not touch (§7). [`Cut::keep_inserts`]
-/// applies the same filter to `before` inside [`suggested_cut`], so the rule is spelled once in `cut.rs` and
-/// this is the page's own name for what that filter keeps: an insert is a card nobody filmed, and no re-suggest
-/// has a claim on it.
-pub fn inserts_of(cut: &Cut) -> Vec<Seg> {
-    cut.segs.iter().filter(|seg| seg.is_insert()).cloned().collect()
-}
-
 /// Land the WORDS cut (§S2a): the same door as [`land`], from the plain segments a no-model cut
 /// produced. Hand-placed inserts carry over — a words cut proposes scenes, it has no claim on a card
 /// a person placed — and the base moves with the cut, so Revert keeps the words cut and drops only
