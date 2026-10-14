@@ -228,21 +228,21 @@ fn f0_1_s5_produce_refreshes_the_publish_panel(window: &adw::ApplicationWindow, 
 
 /// S5: Narrate refits its lines to the cut, and S3's flush writes them back.
 ///
-/// Two separate things are checked here. The refit itself is asserted on the status line — that is
-/// what the user sees when the app moves a line for them. The write-back only happens for a flush
-/// that was OWED (S3: "leaving the tab writes what is half-typed even a beat early"), so this test
-/// marks one owed through the same `Pending` the Narrate page's typing will mark once F4.7 gives it
-/// an editor. Without that mark nothing is written, which is the rule, not a bug: a switch over an
-/// untouched narration costs no file.
+/// Two separate things are checked here, and the entry is deliberately one the refit has no reason to
+/// move: this file pins F0.1's own rule, that a switch over an untouched narration costs no file and the
+/// write-back belongs to a write the USER owes (S3: "leaving the tab writes what is half-typed even a
+/// beat early"). §F4.7 gives a refit that actually moved a line a write of its own the moment the tab is
+/// entered — the app did that work, so it is written without waiting for anybody to type — and that rule
+/// lives in `tests/narrate_edit_wire_widgets.rs`'s refit block, which arrives at Narrate in a window of
+/// its own instead of visiting it for the last time in this one.
 fn f0_1_s5_narrate_refits_its_lines(app: &adw::Application, dir: &Path) {
     let _ = dir;
-    // A line sitting on video the cut has since moved: the entry spans 10..14, the only clip is
-    // 5..12, well outside the 0.05 s tolerance, so the line must follow it.
-    let mut project = Project::default();
-    project.sources = one_source(true);
+    // A line already on its clip's own bounds: the refit sweep runs and finds nothing to move, so the
+    // status line says the sweep happened and the file is left alone until something is owed.
+    let project = Project { sources: one_source(true), ..Default::default() };
     let tree = session_tree(&project);
     cut::save(&cut_with(5.0, 12.0), &tree).expect("cut written");
-    narration::save(&narration_with(10.0, 14.0), &tree).expect("narration written");
+    narration::save(&narration_with(5.0, 12.0), &tree).expect("narration written");
 
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
@@ -250,16 +250,16 @@ fn f0_1_s5_narrate_refits_its_lines(app: &adw::Application, dir: &Path) {
 
     assert_eq!(
         ui::state(&window).status,
-        shell::refit_sentence(1, 0),
-        "S5 says what it did automatically: {:?}",
+        "",
+        "a sweep that found nothing to move says nothing — the status line is for work the app did: {:?}",
         ui::state(&window).status
     );
 
-    // Nothing was owed yet, so nothing was written: the file still holds the pre-refit bounds.
+    // Nothing was owed and nothing moved, so nothing was written: the file still holds the same bounds.
     let untouched = narration::load(&tree).expect("narration parses");
     assert_eq!(
         (untouched.entries[0].s, untouched.entries[0].e),
-        (10.0, 14.0),
+        (5.0, 12.0),
         "a switch with no pending write must not touch the file"
     );
 
@@ -273,7 +273,7 @@ fn f0_1_s5_narrate_refits_its_lines(app: &adw::Application, dir: &Path) {
     assert_eq!(
         (reread.entries[0].s, reread.entries[0].e),
         (5.0, 12.0),
-        "the flush on leaving the tab wrote the refit to disk"
+        "the flush on leaving the tab wrote the narration the window holds"
     );
 }
 

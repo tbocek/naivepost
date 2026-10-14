@@ -118,6 +118,22 @@ pub fn note_typing(window: &adw::ApplicationWindow, index: usize, typed: &str) -
     said
 }
 
+/// A row was added, moved or removed: the same `narration.json` holds it, so the write is owed now and
+/// must not wait for somebody to type in a box. The doors this serves are the page's ＋ at the playhead
+/// and the row's ＋ / 🗑 / time field; each has already done its own `mutate`, so the rows carried into the
+/// window's held record ARE the change.
+///
+/// It then writes through [`flush_owed`] — the SAME door the autosave timer, the tab leave and the close
+/// use — rather than only arming the 400 ms beat: a click is a finished edit, and a file that stays one
+/// edit behind until a timer happens to fire loses the row to anything that reads it first (Produce, the
+/// next visit, the marker question a delete asks of the file). Arming the beat as well would also clear
+/// nothing, and the standing timer would then fire a beat later and rewrite the boxes over this write.
+pub fn note_structure_change(window: &adw::ApplicationWindow) {
+    carry_into_held_record();
+    crate::ui::window::mark_narration_owed(window);
+    let _ = flush_owed(window);
+}
+
 /// Write whatever is owed, reading EVERY row box by name first so a half-typed line that never got its own
 /// commit still reaches the file. Returns `None` when nothing was owed, so the three doors (the autosave's
 /// timer, window close, Produce's read) can all be called unconditionally and stay silent when clean.

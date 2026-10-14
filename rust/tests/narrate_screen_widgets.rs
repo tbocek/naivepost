@@ -281,17 +281,22 @@ fn sec_07_narrate_1_screen_s9_a_line_is_added_where_the_cut_can_carry_it() {
 
     // The honest opposite: five characters are spoken by 15.5 s, so the seconds after that are free ground again and
     // \uff0b takes them. An estimate that never expired would refuse the rest of every clip.
-    assert_eq!(page::add_at_playhead(20.0, &clips, &[line(0.0, 30.0, 15.0, "words")]), Ok(0.0));
+    assert_eq!(page::add_at_playhead(20.0, &clips, &[line(0.0, 30.0, 15.0, "words")]), Ok(20.0));
 
     // Before a line has started speaking is free ground too: its window begins at its own second.
-    assert_eq!(page::add_at_playhead(12.0, &clips, &[line(0.0, 30.0, 15.0, &long)]), Ok(0.0));
+    assert_eq!(page::add_at_playhead(12.0, &clips, &[line(0.0, 30.0, 15.0, &long)]), Ok(12.0));
 
     // A line on another clip says nothing about these seconds.
-    assert_eq!(page::add_at_playhead(12.0, &clips, &[line(40.0, 60.0, 2.0, "words")]), Ok(0.0));
+    assert_eq!(page::add_at_playhead(12.0, &clips, &[line(40.0, 60.0, 2.0, "words")]), Ok(12.0));
 
-    // Past every line in the clip: the new line starts at the clip's head and the caller places it there.
-    assert_eq!(page::add_at_playhead(25.0, &clips, &[line(0.0, 30.0, 2.0, "words")]), Ok(0.0));
-    assert_eq!(page::add_at_playhead(45.0, &clips, &[line(0.0, 30.0, 2.0, "words")]), Ok(40.0));
+    // §F4.7's free add is "a line HERE": the pressed second, not the clip's head — the clip only says
+    // there is something to narrate at it. Past every line in the clip that second is still the playhead.
+    assert_eq!(page::add_at_playhead(25.0, &clips, &[line(0.0, 30.0, 2.0, "words")]), Ok(25.0));
+    assert_eq!(page::add_at_playhead(45.0, &clips, &[line(0.0, 30.0, 2.0, "words")]), Ok(45.0));
+
+    // ...bounded by the clip's last second, which can never hold a line start (§F4.7's move rule): a
+    // press at a clip's very end lands a second earlier rather than outside the clip.
+    assert_eq!(page::add_at_playhead(59.8, &clips, &[]), Ok(59.0));
 
     // The next line's second bounds the estimate: this press is a second clear of both starts and inside the first
     // line's window, so it is refused \u{2014} with the second to add after named as the later line's own start.

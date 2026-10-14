@@ -45,6 +45,8 @@ pub fn press_line_add_below(window: &adw::ApplicationWindow, index: usize) -> St
                 state.entries.insert(index + 1, fresh);
             });
             narrate_page::refresh(window);
+            // §F4.7: the new row is part of the narration record, so it is written like a typed line.
+            crate::ui::narrate_text::note_structure_change(window);
             narrate_page::say(
                 window,
                 &format!("a line added below at {}", narrate_screen::time_field(at)),
@@ -70,7 +72,12 @@ pub fn press_line_remove(window: &adw::ApplicationWindow, index: usize) -> Strin
         state.entries.remove(index);
     });
     if last_of_clip {
-        record_silence(clip_s, clip_e);
+        // §F4.7: the marker question is asked of the FILE, so the row that just went has to be out of it
+        // first — hence the write before the marker, not after.
+        crate::ui::narrate_text::note_structure_change(window);
+        record_silence(window, clip_s, clip_e);
+    } else {
+        crate::ui::narrate_text::note_structure_change(window);
     }
     narrate_page::refresh(window);
     narrate_page::say(window, &said)
@@ -101,9 +108,13 @@ pub fn press_line_move(window: &adw::ApplicationWindow, index: usize, typed: &st
                     row.at = at;
                 }
             });
-            // §F4.7: "A move emptying the old clip marks it deliberately silent, like a delete."
+            // §F4.7: a move rewrites the entry's bounds in the same file — owed like any other edit,
+            // and written BEFORE the emptied-clip marker for the reason given on `record_silence`.
             if old != (target.s, target.e) {
-                record_silence(old.0, old.1);
+                crate::ui::narrate_text::note_structure_change(window);
+                record_silence(window, old.0, old.1);
+            } else {
+                crate::ui::narrate_text::note_structure_change(window);
             }
             narrate_page::refresh(window);
             narrate_page::say(window, &narrate_edit::moved_said(&target, at))
@@ -128,10 +139,16 @@ fn restore_time_field(window: &adw::ApplicationWindow, index: usize, entry: &Ent
 /// Write the emptied clip into `narration.json`'s `silent` list through the file's own pair
 /// ([`crate::narration::load`] / [`crate::narration::save`]) — no second format writer. A delete
 /// after a delete must not write the same clip twice, so the already-marked answer decides.
-fn record_silence(clip_s: f64, clip_e: f64) {
+///
+/// The marker question is asked of the FILE, and the file still held the row being removed until the
+/// flush ran, so this writes the page's rows out first ([`crate::ui::narrate_text::note_structure_change`],
+/// which also marks the write owed) and only then asks whether the clip is empty: asking before would
+/// answer "the clip still speaks" and no marker would ever be written.
+fn record_silence(window: &adw::ApplicationWindow, clip_s: f64, clip_e: f64) {
     let Some(tree) = crate::ui::window::narrate_session_tree() else {
         return;
     };
+    crate::ui::narrate_text::note_structure_change(window);
     let Some(emptied) = narrate_edit::emptied_clip(&tree, clip_s, clip_e) else {
         return;
     };

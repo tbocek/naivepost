@@ -132,7 +132,7 @@ fn text_block(app: &adw::Application) {
         language: "en".into(),
     };
     release_last_window();
-    let window = ui::build_window(app, &naivepost::project::load(&tree.dir()).unwrap_or_default(), "Prepare");
+    let window = ui::build_window(app, &naivepost::project::load(tree.dir()).unwrap_or_default(), "Prepare");
     hold_last_window(window.clone());
     window.present();
     ui::tab_button(&window, Page::Narrate)
@@ -268,6 +268,90 @@ fn text_block(app: &adw::Application) {
     settle();
 }
 
+/// f4_7_s5_refit_on_entering_the_tab_writes_the_lines_it_moved — §F4.7's Refit through the real tab
+/// button, in its OWN window and its OWN folder: arriving at Narrate must move the line AND write it
+/// (the app did the work; nobody typed), which is the rule that cannot live in the block above — that
+/// window starts on Prepare, so its Narrate visit is already this window's last one, and F0.1's
+/// "a switch with no pending write must not touch the file" would be undone by a write made on arrival.
+fn refit_block(app: &adw::Application) {
+    // A folder of its own: this block rewrites both `cut/cut.json` and `narration.json` to make the cut
+    // look as if it moved, and the blocks that run after it read those same files.
+    let root = std::env::temp_dir().join(format!("np-f47-refit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("config")).expect("config root");
+    std::fs::create_dir_all(root.join("data")).expect("data root");
+    std::env::set_current_dir(&root).expect("cwd pinned to the refit root");
+    let tree = session_tree();
+    naivepost::project::save(&Project::default(), tree.dir()).expect("a project to open");
+    // The file carries a line on clip 0-10 at 2 s in; the cut on disk starts that clip at 12 instead,
+    // so the video under the words moved two seconds and the line must follow it.
+    naivepost::narration::save(
+        &naivepost::narration::Narration {
+            entries: vec![Entry {
+                s: 10.0,
+                e: 30.0,
+                at: 6.0,
+                text: "a line whose clip moved".into(),
+                emotion: "calm".into(),
+                ..Default::default()
+            }],
+            silent: vec![],
+        },
+        &tree,
+    )
+    .expect("the pre-refit record is written");
+    naivepost::cut::save(
+        &Cut {
+            segs: vec![Seg { s: 12.0, e: 30.0, ..Default::default() }],
+            ..Default::default()
+        },
+        &tree,
+    )
+    .expect("the moved cut is what the page will refit against");
+
+    release_last_window();
+    let window = ui::build_window(app, &naivepost::project::load(tree.dir()).unwrap_or_default(), "Prepare");
+    hold_last_window(window.clone());
+    window.present();
+    settle();
+    // The toolkit's own way in: click the Narrate tab.
+    ui::tab_button(&window, Page::Narrate)
+        .expect("the shell has a Narrate tab")
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert!(
+        status_text(&window).contains("the cut moved"),
+        "the page says what it did: {}",
+        status_text(&window)
+    );
+    let on_disk = naivepost::narration::load(&tree)
+        .expect("narration.json reads back")
+        .entries;
+    let refit = on_disk
+        .iter()
+        .find(|entry| entry.text == "a line whose clip moved")
+        .cloned()
+        .expect("the line is still on disk");
+    assert_eq!(
+        (refit.s, refit.e, refit.at),
+        (12.0, 30.0, 4.0),
+        "entering the tab WROTE the refit: the line follows its clip's new bounds and keeps its video second"
+    );
+    assert_eq!(
+        ui::read_state()
+            .entries
+            .iter()
+            .find(|entry| entry.text == "a line whose clip moved")
+            .map(|entry| (entry.s, entry.e, entry.at)),
+        Some((12.0, 30.0, 4.0)),
+        "and the rows show the same numbers the file now holds, so a later flush cannot undo it"
+    );
+    // The folder is this block's own, so nothing needs restoring for whoever runs next.
+    window.close();
+    settle();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 fn run_round(app: &adw::Application) {
     let root = std::env::temp_dir().join(format!("np-f47-wire-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -381,6 +465,22 @@ fn run_round(app: &adw::Application) {
     assert_eq!(added.entries[1].s, 0.0, "the new row belongs to the same clip");
     // audio end 2.0 + the worded gap 0.5 = 2.5 into the clip (§F4.7).
     assert_eq!(added.entries[1].at, 2.5, "the new row starts half a second after its audio");
+    // §F4.7: the row is part of the narration record, so the click writes it — nobody had to type.
+    wait_ms(AUTOSAVE_WAIT_MS);
+    let below = naivepost::narration::load(&tree)
+        .expect("narration.json reads back")
+        .entries;
+    assert_eq!(
+        below.len(),
+        3,
+        "f4_7_s2_add_below_click_lands_and_reaches_the_file: the file holds all three rows: {:?}",
+        below.iter().map(|e| (e.s, e.at)).collect::<Vec<_>>()
+    );
+    assert!(
+        below.iter().any(|entry| (entry.s, entry.at) == (0.0, 2.5)),
+        "and the inserted row is on disk at the second the page put it: {:?}",
+        below.iter().map(|e| (e.s, e.at)).collect::<Vec<_>>()
+    );
 
     // ---- (b) transport ＋: a free second adds, a speaking second refuses ----------------------
     let mut free = ui::read_state();
@@ -402,6 +502,31 @@ fn run_round(app: &adw::Application) {
         status_text(&window).starts_with("a line starts at "),
         "the add says where: {}",
         status_text(&window)
+    );
+    // f4_7_s1_add_at_playhead_click_lands_at_the_second_and_reaches_the_file: §F4.7's free add is "a
+    // line HERE", so the row carries the playhead's own second as a clip-relative offset (8.0 into the
+    // 0-10 clip), and the click wrote the record without anyone typing in a box.
+    let landed = ui::read_state()
+        .entries
+        .iter()
+        .filter(|entry| entry.s == 0.0 && entry.text.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        landed.iter().any(|entry| (entry.s, entry.e, entry.at) == (0.0, 10.0, 8.0)),
+        "the new row sits at the playhead second, not the clip's head: {:?}",
+        landed.iter().map(|e| (e.s, e.at)).collect::<Vec<_>>()
+    );
+    wait_ms(AUTOSAVE_WAIT_MS);
+    let on_disk = naivepost::narration::load(&tree)
+        .expect("narration.json reads back")
+        .entries;
+    assert!(
+        on_disk
+            .iter()
+            .any(|entry| (entry.s, entry.e, entry.at) == (0.0, 10.0, 8.0)),
+        "the add reached the file on its own: {:?}",
+        on_disk.iter().map(|e| (e.s, e.at)).collect::<Vec<_>>()
     );
 
     let mut speaking = ui::read_state();
@@ -512,6 +637,7 @@ fn run_round(app: &adw::Application) {
     // §F4.7 (**Text**) runs last in this binary: it closes its own window, and the page's published state
     // is process-wide, so one scenario per binary keeps the two blocks from reading each other's rows.
     text_block(app);
+    refit_block(app);
     let _ = std::fs::remove_dir_all(&root);
 }
 

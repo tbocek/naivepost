@@ -213,7 +213,7 @@ fn sec_07_narrate_4_parameters_used_s3_the_seconds_the_page_and_preview_wait_wit
         "＋ 1.5 s into a 2.2 s line has to be refused: {refused:?}"
     );
     let accepted = screen::add_at_playhead(12.5, &clips, &spoken);
-    assert_eq!(accepted, Ok(10.0), "past the estimate the clip is free again");
+    assert_eq!(accepted, Ok(12.5), "past the estimate the clip is free again, at the pressed second");
 }
 
 // --- S4: the take floor and the alpha that rides with a take ---------------------------------------------------

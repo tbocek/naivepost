@@ -34,6 +34,59 @@ fn f4_7_s1_silent_marker_becomes_the_line_instead_of_a_second_row() {
     assert_eq!(edit::silent_marker_on(20.0, &tagged), None, "a placement is not a silent marker");
 }
 
+/// S1: the free press lands the line where the playhead stands, not at the clip's head (§F4.7 "a line
+/// here"). The clip only decides that there IS footage at this second and bounds where a line can still
+/// be heard — never in the clip's last second, the same bound §F4.7 states for a move.
+#[test]
+fn f4_7_s1_a_free_press_lands_the_line_at_the_playhead_second() {
+    let segs = [seg(20.0, 40.0)];
+    assert_eq!(
+        narrate_screen::add_at_playhead(27.0, &segs, &[]),
+        Ok(27.0),
+        "the pressed second, not the clip's 20.0"
+    );
+    // A press so late that only the clip's final second is left: the line cannot start there, so it
+    // starts a second earlier rather than outside the clip.
+    assert_eq!(
+        narrate_screen::add_at_playhead(39.8, &segs, &[]),
+        Ok(39.0),
+        "clamped to the clip's last usable second (e - 1)"
+    );
+    // The clip's own start is still exactly itself — the clamp never pushes a line before the clip.
+    assert_eq!(narrate_screen::add_at_playhead(20.0, &segs, &[]), Ok(20.0));
+}
+
+/// S5 (refit on entering the tab): the lines follow their clips and the counts are what the status
+/// sentence spells. `shell::refit` owns the arithmetic; this pins it against the cut's new numbers.
+#[test]
+fn f4_7_s5_refit_moves_the_held_lines_and_the_counts_match() {
+    // The cut moved clip A two seconds later; the line keeps its place against the VIDEO, so its
+    // clip-relative `at` is rebased by the same amount it lost at the front.
+    let mut lines = vec![line(10.0, 30.0, 6.0, "spoken at 16 on the clock", "calm", "")];
+    let moved_clips = [seg(12.0, 30.0)];
+    assert_eq!(naivepost::shell::refit(&moved_clips, &mut lines), (1, 0));
+    assert_eq!(
+        (lines[0].s, lines[0].e, lines[0].at),
+        (12.0, 30.0, 4.0),
+        "the line adopted the new bounds and sits at the same video second (16 - 12)"
+    );
+    assert_eq!(
+        naivepost::shell::refit_sentence(1, 0),
+        "the cut moved \u{2014} 1 line(s) followed their clips",
+        "and that is what the page says after doing it"
+    );
+
+    // A line whose clip is gone stays put and is counted, never deleted.
+    let mut stranded = vec![line(100.0, 110.0, 2.0, "orphan", "", "")];
+    assert_eq!(naivepost::shell::refit(&moved_clips, &mut stranded), (0, 1));
+    assert_eq!((stranded[0].s, stranded[0].at), (100.0, 2.0), "untouched");
+    assert!(
+        naivepost::shell::refit_sentence(0, 1).contains("sit on video the cut no longer has"),
+        "{}",
+        naivepost::shell::refit_sentence(0, 1)
+    );
+}
+
 /// S1: the three ways ＋ refuses, each with its own sentence, checked in the flowchart's order.
 #[test]
 fn f4_7_s1_add_at_playhead_three_refusals_each_with_its_own_words() {

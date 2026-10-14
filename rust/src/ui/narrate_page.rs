@@ -825,6 +825,8 @@ pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
         Ok(at) => {
             // `add_at_playhead` answers with the clip's start, which is what the marker question and
             // the status sentence are both about.
+            // §F4.7's free add lands where the playhead stands, so the entry's clip-relative `at` is the
+            // gap between the two: `s`/`e` stay the clip's bounds (§C.1), `at` carries the placement.
             let said = if narrate_edit::silent_marker_on(at, &s.entries).is_some() {
                 // §F4.7: when the clip's only entry is the empty "deliberately silent" marker, THAT
                 // entry moves to the playhead and becomes the line — no second row. The spec gives no
@@ -850,13 +852,16 @@ pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
                     state.entries.push(Entry {
                         s: clip.s,
                         e: clip.e,
-                        at: 0.0,
+                        at: (at - clip.s).max(0.0),
                         ..Default::default()
                     });
                 });
                 format!("a line starts at {}", narrate_screen::time_field(at))
             };
             refresh(window);
+            // §F4.7: the record autosaves, and a new row lives in that same file — it must not wait for
+            // somebody to type in a box before it reaches disk.
+            crate::ui::narrate_text::note_structure_change(window);
             say(window, &said)
         }
         Err(refused) => {

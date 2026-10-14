@@ -839,7 +839,10 @@ pub fn add_at_playhead(at: f64, segs: &[Seg], entries: &[Entry]) -> Result<f64, 
             preview::clock(Some(line_end(entries, speaking)))
         ));
     }
-    Ok(clip.s)
+    // §F4.7's free add is "a line HERE": the playhead second, not the clip's head. The clip only decides
+    // that there IS something to narrate at this second (the refusals above), and bounds where a line can
+    // still be heard — never in the clip's last second, the same bound §F4.7 states for a move.
+    Ok(at.clamp(clip.s, (clip.e - 1.0).max(clip.s)))
 }
 
 /// The start of the line that already begins within [`ADD_NEAR_SECONDS`] of `at`, if any (§F4.7's node

@@ -59,7 +59,7 @@ use crate::sources::{self};
 use crate::ui::source_rows;
 use crate::startup;
 use crate::narration::{self, Narration};
-use crate::shell::{Move, Outcome, Page, Shell};
+use crate::shell::{Move, Outcome, Page, Refresh, Shell};
 use crate::PAGES;
 
 /// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
@@ -1598,6 +1598,24 @@ fn wire_switching(
         if owed {
             if let Some(tree) = tree.as_ref() {
                 let _ = narration::save(&held.borrow(), tree);
+            }
+        }
+        // §F4.7 (Refit): entering Narrate refitted the held lines against the cut and said so — work the
+        // app did, so it reaches disk whether or not anybody typed. The `owed` flush above only covers
+        // typing; without this the refit lands in a copy dropped at the end of the handler and the next
+        // visit re-reads the pre-refit file and says "the cut moved" forever.
+        if let Outcome::Shown {
+            refresh: Refresh::NarrateRefit { moved, orphan },
+            ..
+        } = outcome
+        {
+            if moved + orphan > 0 {
+                if let Some(tree) = tree.as_ref() {
+                    let _ = narration::save(&held.borrow(), tree);
+                    // The rows are drawn from the page's own state, which is a separate copy: publish the
+                    // refitted lines there too, or a later text flush writes the un-refit ones back.
+                    crate::ui::narrate_page::publish_lines(held.borrow().entries.clone());
+                }
             }
         }
         paint_tabs(&switcher, &shell.borrow(), &project);
