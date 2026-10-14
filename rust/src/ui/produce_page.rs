@@ -1411,6 +1411,30 @@ fn finish_produce(
                     // §8 bullet 4: tape question, answered the way the Cut page answers
                     // it — the filmed stretches of this page's own recordings.
                     on_recording: !crate::ui::cut_folds::page_recordings().is_empty(),
+                    // F4.3 step 1's bound: "grow the clip, ≤ 4 s, NEVER PAST THE FOOTAGE". The tape
+                    // this session has is the filmed runs off the page's own recordings (§F2.11 owns the
+                    // rows until then), so a clip's footage left is the end of the filmed run covering it
+                    // minus the clip's own end. A clip in no filmed run — or a session with no tape at all
+                    // — answers through [`crate::produce_render::unknown_footage`], which leaves the grow
+                    // at §10's own ceiling rather than forbidding it: unknown is not the same as zero.
+                    footage_left: &|seg: &crate::cut::Seg| {
+                        let covering = crate::timeline::filmed_runs(&crate::ui::cut_folds::page_recordings())
+                            .into_iter()
+                            .filter(|(start, _end)| *start <= seg.s)
+                            .map(|(_start, end)| end)
+                            .max_by(f64::total_cmp);
+                        match covering {
+                            Some(run_end) => (run_end - seg.e).max(0.0),
+                            None => crate::produce_render::unknown_footage(seg),
+                        }
+                    },
+                    // F4.3: speech length is the wav's duration. Measured here, where the path rule lives;
+                    // `produce_exec` only asks the question it was handed the answer to.
+                    wav_seconds: &|entry| {
+                        crate::produce_stamp::wav_of(&tree, entry, Some(&run.voice), 0)
+                            .as_ref()
+                            .and_then(|wav| crate::voice_ref::wav_seconds(std::path::Path::new(wav)))
+                    },
                     // S5's picture input: an insert reads its own asset, footage and a `copy:` stretch read
                     // the first footage recording. Resolved here, where the project is held, by the same
                     // rule `Seg::insert_asset` uses.

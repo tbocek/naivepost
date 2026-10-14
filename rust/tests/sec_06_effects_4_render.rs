@@ -512,6 +512,8 @@ fn materials_with<'a>(fx: Vec<Fx>) -> exec::Materials<'a> {
         wav_of,
         source_file,
         on_recording: true,
+        footage_left: &naivepost::produce_render::unknown_footage,
+        wav_seconds: &|_entry| None,
         cues: exec::Cues { all: Vec::new(), languages: Vec::new() },
         words,
         translate,

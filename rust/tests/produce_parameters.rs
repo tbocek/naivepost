@@ -71,7 +71,7 @@ fn sec_08_produce_4_parameters_used_s1_the_shortest_clip_and_the_bed_under_the_n
     let mut short = Seg::default();
     short.s = 10.0;
     short.e = 10.4;
-    let (clips, logs) = render::plan_clips(&[short], |_| Vec::new(), "16:9", |_| true, &[], &[], (1920, 1080), true);
+    let (clips, logs) = render::plan_clips(&[short], |_| Vec::new(), "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
     assert!(clips.is_empty(), "{clips:?}");
     assert_eq!(logs.len(), 1, "{logs:?}");
     assert!(logs[0].contains("too short to render, dropped"), "{}", logs[0]);

@@ -59,6 +59,9 @@ fn no_fx(_: &Seg) -> Vec<Fx> {
 }
 
 /// Nothing synthesized yet: every non-empty line still owes a take.
+/// A take that exists and measures 2.5 s: enough for the audio chain to duck the bed under it.
+fn seconds_2_5(_entry: &Entry) -> Option<f64> { Some(2.5) }
+
 fn no_wav(_: &Entry) -> Option<PathBuf> {
     None
 }
@@ -98,6 +101,7 @@ fn mats<'a>(
     lanes: &'a [Lane],
     cues: exec::Cues,
     wav_of: &'a dyn Fn(&Entry) -> Option<PathBuf>,
+    wav_seconds: &'a dyn Fn(&Entry) -> Option<f64>,
 ) -> exec::Materials<'a> {
     exec::Materials {
         exists: &missing_is_gone,
@@ -107,6 +111,8 @@ fn mats<'a>(
         wav_of,
         source_file: &any_source,
         on_recording: true,
+        footage_left: &naivepost::produce_render::unknown_footage,
+        wav_seconds,
         cues,
         words: &no_words,
         translate: &answer_every_number,
@@ -118,10 +124,13 @@ fn project_sources() -> Vec<Source> {
     project().sources
 }
 
+/// One recorded spawn: the step it belongs to and the argv it was asked for.
+type Spawned = (String, Vec<String>);
+
 /// What one run recorded: every argv spawned, every line logged, every line spoken.
 #[derive(Clone, Default)]
 struct Spy {
-    argv: Rc<RefCell<Vec<(String, Vec<String>)>>>,
+    argv: Rc<RefCell<Vec<Spawned>>>,
     logs: Rc<RefCell<Vec<String>>>,
     spoken: Rc<RefCell<Vec<String>>>,
 }
@@ -264,7 +273,7 @@ fn f5_2_s2_captions_only_speaks_nothing_and_warns_when_no_track() {
         captions,
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
     assert!(spy.spoken_vec().is_empty(), "captions only speaks NOTHING: {:?}", spy.spoken_vec());
     assert!(
         spy.logs_vec()
@@ -283,7 +292,7 @@ fn f5_2_s2_captions_only_speaks_nothing_and_warns_when_no_track() {
         captions,
     );
     let spy2 = Spy::new();
-    spy2.run(&run2, &tree2, &mats(&[], exec::Cues::default(), &no_wav), None);
+    spy2.run(&run2, &tree2, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
     assert!(
         !spy2.logs_vec().iter().any(|l| l.contains("nothing in the video")),
         "a tracked subtitle needs no warning: {:?}",
@@ -305,7 +314,7 @@ fn f5_2_s2_a_line_with_no_wav_is_spoken_and_the_job_line_counts_up() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &has_one_wav), None);
+    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &has_one_wav, &seconds_2_5), None);
     let spoken = spy.spoken_vec();
     assert_eq!(spoken, vec!["needs a voice".to_string()], "only the line with no wav is spoken");
     // One line owed a take, so the job line reads 1 of 1 — the total is what had to be spoken, not the
@@ -332,7 +341,7 @@ fn f5_2_s3_a_missing_insert_is_skipped_and_named() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
     assert!(
         spy.logs_vec()
             .iter()
@@ -371,7 +380,7 @@ fn f5_2_s4_final_srt_lands_in_the_scratch_folder() {
     let stale = scratch.join(render::final_srt_name());
     std::fs::write(&stale, b"an old sheet").unwrap();
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
     let written = std::fs::read_to_string(&stale).expect("final.srt is written in produce/clips");
     assert!(written.contains("-->"), "and it is a cue sheet, not leftovers: {written}");
     assert!(
@@ -393,7 +402,7 @@ fn f5_2_s5_every_clip_gets_its_own_encode_command_logged_before_it_runs() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
     let held = spy.argv.clone();
     let guard = held.borrow();
     let encodes: Vec<&Vec<String>> = guard
@@ -444,7 +453,7 @@ fn f5_2_s5_the_narration_sits_at_the_game_volume() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
     assert!(
         spy.joined().contains(&format!("volume={:.2}", game_volume)),
         "the bed is turned down to P.policy.gameVolume in the audio chain: {}",
@@ -464,7 +473,7 @@ fn f5_2_s6_join_is_a_stream_copy() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
     assert_eq!(spy.count_step(render::JOINING), 1, "one join for the whole run: {:?}", spy.steps());
     let join = spy.last_with("concat");
     let pairs: Vec<String> = join.windows(2).map(|w| format!("{} {}", w[0], w[1])).collect();
@@ -489,7 +498,7 @@ fn f5_2_s7_translation_is_asked_after_every_encode() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
     let steps = spy.steps();
     let logs = spy.logs_vec();
     let last_encode = steps
@@ -524,7 +533,7 @@ fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
     let cues = exec::Cues { all: Vec::new(), languages: Vec::new() };
     let (tree, run) = run_over("s8", vec![seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], tracked, "");
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
     let mux = spy.last_with("loudnorm");
     let joined = mux.join(" ");
     assert!(joined.contains(render::LOUDNORM), "the loudness filter is the spec's own string");
@@ -543,7 +552,7 @@ fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
     assert_eq!(choice, Subtitles::None, "webm forces 'none in the video'");
     let (tree2, run2) = run_over("s8-webm", vec![seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], webm, "");
     let spy2 = Spy::new();
-    spy2.run(&run2, &tree2, &mats(&[], cues.clone(), &no_wav), None);
+    spy2.run(&run2, &tree2, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
     let mux2 = spy2.last_with("loudnorm");
     assert!(!mux2.is_empty(), "the webm mux ran");
     assert!(
@@ -567,7 +576,7 @@ fn f5_2_s9_sidecars_exist_per_language_and_each_is_logged() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav), None);
+    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
     assert!(tree.final_srt(None).exists(), "the session's own .srt beside the video");
     assert!(tree.final_vtt(None).exists(), "…and its .vtt");
     assert!(tree.final_srt(Some("German")).exists(), "the ticked language's .srt");
@@ -594,7 +603,7 @@ fn f5_2_s10_a_stop_at_any_checkpoint_ends_the_run_without_the_stamp() {
     let stamp = tree.final_stamp();
     // No narration lines, so the first checkpoint the walk reaches is the one before the join.
     let spy = Spy::new();
-    let made = spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), Some(1));
+    let made = spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), Some(1));
     assert!(made.stopped, "the report says stopped");
     assert!(!made.ok, "and not ok");
     assert_eq!(spy.count_step("clip"), 2, "the encodes had already run: {:?}", spy.steps());
@@ -603,7 +612,7 @@ fn f5_2_s10_a_stop_at_any_checkpoint_ends_the_run_without_the_stamp() {
 
     // Stopped one checkpoint later: the join ran, the mux did not, still no stamp.
     let spy2 = Spy::new();
-    let made2 = spy2.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), Some(2));
+    let made2 = spy2.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), Some(2));
     assert!(made2.stopped, "stopped again, later in the run");
     assert_eq!(spy2.count_step(render::JOINING), 1, "two encodes plus the join");
     assert_eq!(spy2.count_step("muxing"), 0, "no mux: {:?}", spy2.steps());
@@ -622,7 +631,7 @@ fn f5_2_a_clean_run_reports_its_file_seconds_and_size() {
         "",
     );
     let spy = Spy::new();
-    let made = spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav), None);
+    let made = spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
     assert!(made.ok, "a run whose mux finished is ok: {:?}", made);
     assert!(!made.stopped);
     assert!(made.seconds > 0.0, "the run reports how long it took: {}", made.seconds);

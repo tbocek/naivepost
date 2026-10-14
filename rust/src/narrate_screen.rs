@@ -589,16 +589,26 @@ pub fn mirror_fit(clip_len: f64, lines: &[(usize, f64, f64)]) -> Fit {
     drop(placed);
     // Nothing was logged: either it fits with room to breathe, or it fits only by spending the tail.
     let speech: f64 = lines.iter().map(|(_, _, speak)| speak).sum();
-    let end = lines
-        .iter()
-        .map(|(_, at, speak)| *at + speak)
-        .fold(0.0_f64, f64::max);
+    // The PACKED run, not the raw placements: the render measures its need off the packed line starts
+    // (each held to the previous end + gap + tail), so a row that measured `at + speech` straight would
+    // disagree with the render about where the last word finishes — the one thing this mirror exists to
+    // prevent.
+    let packed = crate::produce_render::packed(lines);
+    let end = crate::produce_render::run_end(&packed);
     let slack = clip_len - (end + SPEECH_TAIL_SECONDS);
     if slack < 0.0 {
+        // Two reasons a run lands tight, and §1 says them in different words: the CLIP ends before the
+        // last word's breath is spent, or a later line had to be pushed off its placement because the
+        // line in front of it is still speaking. A push is visible here and nowhere else: the packed
+        // start sits past the `at` the line was written at.
+        let pushed = packed
+            .iter()
+            .zip(lines.iter())
+            .any(|(landed, (_, at, _))| landed.at > *at + 1e-9);
         return Fit::Tight {
             speech,
             before: clip_len - end,
-            next_line: false,
+            next_line: pushed,
         };
     }
     Fit::Fits

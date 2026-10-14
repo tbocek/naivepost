@@ -170,6 +170,14 @@ pub fn matches(entry: &Entry, seg: &Seg) -> bool {
     overlap >= line.min(clip) / 2.0
 }
 
+/// The answer a caller gives when it has no footage in hand: the produce page falls back here for a clip
+/// that sits in no filmed run ([`crate::ui::produce_page`]'s `footage_left` door), and a caller with no
+/// session timeline at all answers the same. `0.0`, which lets [`fit_in`] keep §10's own ceiling instead
+/// of silently forbidding any grow — not knowing is not the same as having no tape left.
+pub fn unknown_footage(_: &Seg) -> f64 {
+    0.0
+}
+
 /// S3: the render's pass over the segments — one clip each, in order. The caller hands the list **after**
 /// the speed splits ([`crate::cut_speed`] owns those; a rate boundary is what makes two clips), so this is
 /// arithmetic over an already-cut list and never touches the cut itself.
@@ -188,6 +196,7 @@ pub fn plan_clips(
     entries: &[Entry],
     src_shape: (i32, i32),
     on_recording: bool,
+    footage_left: impl Fn(&Seg) -> f64,
 ) -> (Vec<Clip>, Vec<String>) {
     // §9 (`both MUST use the first footage clip's frame`): `src_shape` IS that shape — the
     // door the produce page fills from the project's footage row — and `frame_box` returns it
@@ -234,7 +243,12 @@ pub fn plan_clips(
             .filter(|(_, entry)| matches(entry, seg))
             .map(|(entry_index, entry)| (entry_index, entry.at, 0.0))
             .collect();
-        let (lines, _) = fit(&mine, on_screen);
+        // F4.3 with its eyes open: the CLIP number (not the entry index) names the log, and the
+        // footage still running past this clip's end caps how far the clip may be grown. What the
+        // ladder decided is logged — "moved X s earlier" / "sped up Zx" — because a render that
+        // silently slid or squeezed the narration is a render the user cannot explain afterwards.
+        let (lines, fit_logs) = fit_in(&mine, on_screen, no, footage_left(seg));
+        logs.extend(fit_logs);
         // §8 bullet 4: the run is PLANNED here, not assumed by the filter builder.
         // A speed effect says the sound keeps its own clock; the debt is the footage's
         // own seconds less what the picture will show, the same arithmetic the Cut
@@ -340,11 +354,33 @@ pub const MAX_TEMPO: f64 = 1.25;
 /// with no synthesis arrives with `speech` 0.0: it takes no room and its cue is held to the next line or the
 /// clip's end, so a missing wav never moves the lines after it.
 pub fn fit(lines: &[(usize, f64, f64)], room: f64) -> (Vec<Placed>, Vec<String>) {
+    // The page's view of the ladder: no footage is in hand there, so the grow step keeps only §10's
+    // own ceiling, and the log names the entry because the page has no clip numbers to name.
+    fit_in(lines, room, entry_no(lines), MAX_EXTEND_SECONDS)
+}
+
+/// The same ladder with the two facts only a caller can supply: WHICH clip this is, and how much
+/// footage is left past its end. §F4.3 step 1 grows the clip "≤ P.eng.narrationMaxExtendSeconds,
+/// never past the footage", and only `plan_clips` knows the second half — so the grow is capped by
+/// `min(MAX_EXTEND_SECONDS, footage_left)`. A `footage_left` of 0 means the caller does not know
+/// (or there is no tape behind the clip): the grow then keeps the plain ceiling rather than
+/// silently forbidding any grow at all.
+pub fn fit_in(
+    lines: &[(usize, f64, f64)],
+    room: f64,
+    clip_no: usize,
+    footage_left: f64,
+) -> (Vec<Placed>, Vec<String>) {
     let mut logs: Vec<String> = Vec::new();
     if lines.is_empty() {
         return (Vec::new(), logs);
     }
-    let no = entry_no(lines);
+    let no = clip_no;
+    let grow = if footage_left > 0.0 {
+        MAX_EXTEND_SECONDS.min(footage_left)
+    } else {
+        MAX_EXTEND_SECONDS
+    };
 
     // 0 · pack as placed. Fits? Nothing to say and nothing to change.
     let placed = pack(lines, 1.0, 0.0);
@@ -354,7 +390,7 @@ pub fn fit(lines: &[(usize, f64, f64)], room: f64) -> (Vec<Placed>, Vec<String>)
 
     // 1 · grow the clip, never past the ceiling §10 gives. Growing is free of logs: it is what the render is
     // allowed to do silently, and the only reason to mention it would be that it stopped at the ceiling.
-    let extend = (run_end(&placed) + TAIL_SECONDS - room).clamp(0.0, MAX_EXTEND_SECONDS);
+    let extend = (run_end(&placed) + TAIL_SECONDS - room).clamp(0.0, grow);
     if fits_at(&placed, room, extend) {
         return (with_extend(placed, extend), logs);
     }
@@ -405,8 +441,16 @@ fn pack(lines: &[(usize, f64, f64)], tempo: f64, shift: f64) -> Vec<Placed> {
     placed
 }
 
+/// The pack rung on its own, for a caller that must know WHERE the lines actually landed rather than
+/// whether they fit: [`crate::narrate_screen::mirror_fit`] reads it to tell a run that is tight against
+/// the clip's end apart from one whose later line was pushed off its placement by the previous line's
+/// gap — §1 spells those two warnings differently, and only the packed run can say which happened.
+pub fn packed(lines: &[(usize, f64, f64)]) -> Vec<Placed> {
+    pack(lines, 1.0, 0.0)
+}
+
 /// Where the run finishes speaking.
-fn run_end(placed: &[Placed]) -> f64 {
+pub fn run_end(placed: &[Placed]) -> f64 {
     placed
         .iter()
         .map(|line| line.at + line.speech / line.tempo.max(1.0))

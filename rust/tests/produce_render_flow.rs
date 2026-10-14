@@ -27,11 +27,12 @@ fn temp(tag: &str) -> std::path::PathBuf {
 }
 
 fn seg(s: f64, e: f64) -> Seg {
-    let mut clip = Seg::default();
-    clip.s = s;
-    clip.e = e;
-    clip.ins = String::new();
-    clip
+    Seg {
+        s,
+        e,
+        ins: String::new(),
+        ..Default::default()
+    }
 }
 
 
@@ -149,7 +150,7 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
     // Footage plans with its own rate; the frame box is render_fx's answer for the aspect.
     let mut fast = seg(0.0, 20.0);
     fast.rate = 2.0;
-    let (clips, logs) = r::plan_clips(&[fast.clone()], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true);
+    let (clips, logs) = r::plan_clips(&[fast.clone()], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(clips.len(), 1);
     assert_eq!(clips[0].no, 1);
@@ -172,6 +173,7 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
         &[],
         &[],
         (1920, 1080), true,
+        naivepost::produce_render::unknown_footage,
     );
     assert_eq!(clips.len(), 2);
     assert_eq!(logs, vec!["clip 2: media/gone.mp4 is not there any more \u{2014} skipped"]);
@@ -182,14 +184,14 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
     let mut copy = seg(0.0, 5.0);
     copy.ins = "copy:12.5".to_string();
     copy.dur = 5.0;
-    let (clips, logs) = r::plan_clips(&[copy], no_fx, "source", |_| false, &[], &[], (1920, 1080), true);
+    let (clips, logs) = r::plan_clips(&[copy], no_fx, "source", |_| false, &[], &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(clips[0].source, "copy:12.5");
 
     // Under the bound: dropped, and the log names the lines it took with it.
     let short = seg(60.0, 60.4);
     let lost = vec![entry(60.0, 63.0, 0.3, "a line on the dropped clip")];
-    let (clips, logs) = r::plan_clips(&[short], no_fx, "source", |_| true, &[], &lost, (1920, 1080), true);
+    let (clips, logs) = r::plan_clips(&[short], no_fx, "source", |_| true, &[], &lost, (1920, 1080), true, naivepost::produce_render::unknown_footage);
     assert!(clips.is_empty());
     assert_eq!(
         logs,
@@ -198,21 +200,21 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
 
     // Exactly the bound survives — the comparison is `<`, so 0.5 s renders.
     let edge = seg(60.0, 60.5);
-    let (clips, logs) = r::plan_clips(&[edge], no_fx, "source", |_| true, &[], &[], (1920, 1080), true);
+    let (clips, logs) = r::plan_clips(&[edge], no_fx, "source", |_| true, &[], &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
     assert_eq!(clips.len(), 1);
     assert!(logs.is_empty(), "{logs:?}");
 
     // A stop's rate of nought is not a clock: the footage runs on at 1× under its still.
     let mut stop = seg(0.0, 6.0);
     stop.rate = 0.0;
-    let (clips, _) = r::plan_clips(&[stop], no_fx, "source", |_| true, &[], &[], (1920, 1080), true);
+    let (clips, _) = r::plan_clips(&[stop], no_fx, "source", |_| true, &[], &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
     assert_eq!(clips[0].rate, 1.0);
 
     // A lane the scene hears is on the clip; one it hushes is not.
     let lanes = vec![lane("Music", 0.0, 30.0), lane("Game", 0.0, 30.0)];
     let mut quiet = seg(0.0, 10.0);
     quiet.quiet = vec!["Game".to_string()];
-    let (clips, _) = r::plan_clips(&[quiet], no_fx, "source", |_| true, &lanes, &[], (1920, 1080), true);
+    let (clips, _) = r::plan_clips(&[quiet], no_fx, "source", |_| true, &lanes, &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
     assert_eq!(clips[0].lanes, vec!["Music".to_string()]);
 
     assert_eq!(r::no_clip_log(), "no clip could be placed on a recording");
@@ -328,17 +330,21 @@ fn f5_2_s3c_lane_report_and_read_head() {
     // An own-clock run is planned so its sound can be read at 1× under a sped-up picture; a pitched or
     // muted sound follows the picture and has no run to read.
     let clip = seg(10.0, 20.0);
-    let mut own = Fx::default();
-    own.kind = "speed".to_string();
-    own.snd = "own".to_string();
-    own.t = 10.0;
-    own.dur = 10.0;
-    own.rate = 2.0;
+    let own = Fx {
+        kind: "speed".to_string(),
+        snd: "own".to_string(),
+        t: 10.0,
+        dur: 10.0,
+        rate: 2.0,
+        ..Default::default()
+    };
     assert_eq!(r::read_head_plan(&clip, &[own]), Some((10.0, 20.0)));
 
-    let mut mute = Fx::default();
-    mute.kind = "speed".to_string();
-    mute.snd = "mute".to_string();
+    let mute = Fx {
+        kind: "speed".to_string(),
+        snd: "mute".to_string(),
+        ..Default::default()
+    };
     assert_eq!(r::read_head_plan(&clip, &[mute]), None);
     assert_eq!(r::read_head_plan(&clip, &[]), None);
 }

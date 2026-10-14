@@ -341,6 +341,24 @@ pub fn wav_header(path: &Path) -> Option<(u16, u32)> {
     Some((tag, rate))
 }
 
+/// How long a wav is, measured from its own header and size: the seconds of PCM the file
+/// holds. F4.3's render half needs this — speech length is THE WAV's duration when a wav
+/// exists, and nothing else may stand in for it (an entry's own span would make a line
+/// occupy room it never speaks into). `None` when there is no readable wav, which is how a
+/// line keeps length 0 and takes no room.
+///
+/// The same 16-bit PCM arithmetic the voice band uses to size its ruler
+/// ([`crate::ui::narrate_band::recording_seconds`]), without that function's floor: a real
+/// recording is never shorter than 0.1 s, a measured wav may be any length at all.
+pub fn wav_seconds(path: &Path) -> Option<f64> {
+    let bytes = std::fs::read(path).ok()?;
+    let (channels, rate) = wav_header(path)?;
+    // 16-bit PCM: the header's channels and rate say how many samples the body holds, and
+    // a canonical header is 44 bytes. A shorter file has no audio at all, not a negative one.
+    let bytes_per_second = (channels.max(1) as u64) * (rate.max(1) as u64) * 2;
+    Some((bytes.len().saturating_sub(44)) as f64 / bytes_per_second as f64)
+}
+
 /// Whether a picked wav needs re-cutting before the server will read it: no readable header, the
 /// extensible format tag, or a rate above 48 kHz.
 pub fn needs_re_cut(path: &Path) -> bool {

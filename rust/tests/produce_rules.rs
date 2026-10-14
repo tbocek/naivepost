@@ -29,10 +29,7 @@ use naivepost::project::{self, Codec, Container, Produce, Subtitles};
 const ITEM: &str = "§08-produce#5-rules";
 
 fn seg(s: f64, e: f64) -> Seg {
-    let mut clip = Seg::default();
-    clip.s = s;
-    clip.e = e;
-    clip
+    Seg { s, e, ..Default::default() }
 }
 
 fn no_fx(_: &Seg) -> Vec<Fx> {
@@ -202,7 +199,7 @@ fn sec_08_produce_5_rules_s1_the_clip_floor_and_the_log_it_owes() {
     gone.dur = 10.0;
     let fine = seg(20.0, 30.0);
 
-    let (clips, logs) = render::plan_clips(&[short, gone, fine], no_fx, "16:9", |_| false, &[], &[], (1920, 1080), true);
+    let (clips, logs) = render::plan_clips(&[short, gone, fine], no_fx, "16:9", |_| false, &[], &[], (1920, 1080), true, render::unknown_footage);
     // A missing insert is skipped — dropped from the video — while the too-short clip is dropped by the
     // floor. Both leave the list; each still logs its own number so the log matches the cut's numbering.
     assert_eq!(clips.iter().map(|clip| clip.no).collect::<Vec<usize>>(), [3], "{clips:?}");
@@ -217,7 +214,7 @@ fn sec_08_produce_5_rules_s1_the_clip_floor_and_the_log_it_owes() {
 
     // The floor is inclusive: exactly 0.5 s renders.
     let edge = seg(0.0, 0.5);
-    let (clips, logs) = render::plan_clips(&[edge], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true);
+    let (clips, logs) = render::plan_clips(&[edge], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
     assert_eq!(clips.len(), 1, "{logs:?}");
     assert!(logs.is_empty(), "{logs:?}");
 }
@@ -225,11 +222,12 @@ fn sec_08_produce_5_rules_s1_the_clip_floor_and_the_log_it_owes() {
 // ---- bullet 2: cues and sidecars ---------------------------------------------------------
 
 fn line(text: &str) -> Entry {
-    let mut entry = Entry::default();
-    entry.s = 1.0;
-    entry.e = 3.0;
-    entry.text = text.to_string();
-    entry
+    Entry {
+        s: 1.0,
+        e: 3.0,
+        text: text.to_string(),
+        ..Default::default()
+    }
 }
 
 fn word(text: &str, s: f64, e: f64) -> subs::Word {
@@ -519,7 +517,7 @@ fn sec_08_produce_5_rules_s4_the_tag_is_rewritten_even_when_the_encode_was_skipp
     // inserts have gone missing plans and logs instead of failing.
     let mut rated = seg(0.0, 12.0);
     rated.rate = 2.0;
-    let (clips, logs) = render::plan_clips(&[rated], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true);
+    let (clips, logs) = render::plan_clips(&[rated], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(clips.len(), 1);
     assert!((clips[0].on_screen - 6.0).abs() < 1e-9, "{}", clips[0].on_screen);

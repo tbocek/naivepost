@@ -109,6 +109,15 @@ pub struct Materials<'a> {
     pub src_shape: (i32, i32),
     /// Where a narration line's synthesis already is — `None` when it still has to be spoken.
     pub wav_of: &'a dyn Fn(&Entry) -> Option<PathBuf>,
+    /// F4.3: how long a line's synthesis IS, in seconds — `None` when there is no wav to measure.
+    /// The render's speech length comes from here and nowhere else, so a line with no take takes no
+    /// room. `plan` fills this from [`Materials::wav_of`] plus [`crate::voice_ref::wav_seconds`].
+    pub wav_seconds: &'a dyn Fn(&Entry) -> Option<f64>,
+    /// F4.3 step 1 ("grow the clip … never past the footage"): how many seconds of footage are
+    /// still there past the end of this segment. A clip whose footage runs out after 1 s may be
+    /// grown by 1 s, not by the full [`crate::produce_render::MAX_EXTEND_SECONDS`]. `0.0` means the
+    /// caller does not know, and the grow step then keeps only its own ceiling.
+    pub footage_left: &'a dyn Fn(&Seg) -> f64,
     /// S5: the file one clip reads its picture from. Footage and a `copy:` stretch read the run's first
     /// footage recording; an insert reads the asset named in the cut. The caller resolves the cut's own
     /// spelling (`project:` under the root, absolute elsewhere), exactly as it does for [`Materials::exists`]
@@ -289,21 +298,24 @@ pub fn speaking_line(done: usize, total: usize) -> String {
     render::speaking_job_line(done, total)
 }
 
-/// S5: the length of speech each placed line carries. `plan_clips` fits the lines against the room they
-/// have without knowing any wav's length (it builds `(index, at, 0.0)`), and the real take is only known
-/// once S2 has spoken — so the render fills the gap with the span the row was written to fill, which is
-/// F4.3's rule seen from this side: a line occupies the seconds between its own bounds. Without this the
-/// bed would never be turned down (`audio_chain` skips a zero-length line) and every cue would fall to the
-/// half-second floor.
-pub fn fill_speech(clips: &mut [render::Clip], entries: &[Entry]) {
+/// S5: the length of speech each placed line carries — **the wav's own duration**, measured
+/// from the file (§F4.3: "speech length = the wav's duration if it exists"). `plan_clips`
+/// fits the lines with 0.0 because it places them before any wav's length is known; the real
+/// take arrives by S2, so this is where the render measures it.
+///
+/// A line whose wav is missing keeps length 0 and therefore takes no room: its cue is held to
+/// the next line or the clip's end, not to the span the row was written over. Nothing here
+/// reads `entry.e - entry.s` any more — that was a stand-in for a measurement, and it handed a
+/// silent line the room of a spoken one.
+pub fn fill_speech(
+    clips: &mut [render::Clip],
+    entries: &[Entry],
+    seconds_of: &dyn Fn(&Entry) -> Option<f64>,
+) {
     for clip in clips.iter_mut() {
         for line in clip.lines.iter_mut() {
-            if line.speech > 0.0 {
-                continue;
-            }
-            if let Some(entry) = entries.get(line.entry_index) {
-                line.speech = (entry.e - entry.s).max(0.0);
-            }
+            let Some(entry) = entries.get(line.entry_index) else { continue };
+            line.speech = seconds_of(entry).unwrap_or(0.0).max(0.0);
         }
     }
 }
@@ -343,11 +355,13 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         &run.lines,
         mats.src_shape,
         mats.on_recording,
+        // F4.3 step 1's footage bound: how far past this clip's end the tape actually runs.
+        mats.footage_left,
     );
 
     // Speech lengths before the cues are cut, so a cue spans what will actually be heard on it.
     let mut clips = clips;
-    fill_speech(&mut clips, &run.lines);
+    fill_speech(&mut clips, &run.lines, mats.wav_seconds);
     // §4's effects need two things the planner cannot guess: where their files go and what the footage looks like.
     // The scratch folder is this run's `produce/clips/`, already created above; the shape came in with `Materials`.
     for clip in clips.iter_mut() {

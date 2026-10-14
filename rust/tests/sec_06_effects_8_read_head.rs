@@ -155,7 +155,7 @@ fn sec_06_effects_8_details_s4d_plan_clips_stores_the_run() {
     let mut sped_seg = Seg { s: 0.0, e: 20.0, rate: 2.0, ..Default::default() };
     let fx = vec![sped(2.0, "own", 0.0, 20.0)];
     let fx_for: &dyn Fn(&Seg) -> Vec<Fx> = &|_| fx.clone();
-    let (clips, logs) = render::plan_clips(&[sped_seg.clone()], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true);
+    let (clips, logs) = render::plan_clips(&[sped_seg.clone()], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(
         clips[0].read_head,
@@ -166,23 +166,23 @@ fn sec_06_effects_8_details_s4d_plan_clips_stores_the_run() {
 
     // The same seconds as a card: no tape to read back, so no run stored.
     sped_seg.ins = "cards/title.svg".into();
-    let (cards, _) = render::plan_clips(&[sped_seg.clone()], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true);
+    let (cards, _) = render::plan_clips(&[sped_seg.clone()], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
     assert_eq!(cards[0].read_head, None, "a card is not footage");
     assert_eq!(cards[0].source, "cards/title.svg");
 
     // Footage with no recording named for the session: same answer, other reason.
     sped_seg.ins = String::new();
-    let (gap, _) = render::plan_clips(&[sped_seg], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), false);
+    let (gap, _) = render::plan_clips(&[sped_seg], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), false, render::unknown_footage);
     assert_eq!(gap[0].read_head, None, "no tape closes the head");
 
     // A clip nobody re-timed has no own-clock sound, whatever the tape says.
     let plain = Seg { s: 0.0, e: 20.0, ..Default::default() };
-    let (still, _) = render::plan_clips(&[plain], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true);
+    let (still, _) = render::plan_clips(&[plain], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
     assert_eq!(still[0].read_head, None, "no speed effect, no run");
 
     // A 1.000× stretch shows what it films: no debt, so the head stays shut.
     let even = Seg { s: 0.0, e: 20.0, rate: 1.0, ..Default::default() };
-    let (flat, _) = render::plan_clips(&[even], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true);
+    let (flat, _) = render::plan_clips(&[even], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
     assert_eq!(flat[0].read_head, None, "no drift means no dip");
     assert!(
         clips[0]

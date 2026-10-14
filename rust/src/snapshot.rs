@@ -1044,6 +1044,30 @@ architecture behind them.
             ui::produce_page::set_state(state);
             ui::produce_page::refresh(&window);
         }
+        // §F4.6's own picture (`spec/img/07-take.png`) is the voice column with ONE hand-picked take on
+        // the band. §F4.6's caption spells what the shot has to show — "a 2.6 s take" and the status
+        // "take added: 0:00–0:03 — 1 take(s), 2.6 s of reference (14 s is plenty)" — so this arm seeds a
+        // 2.6 s take and says the sentence through the same door the ＋ press says it from
+        // (`press_take_add`, which adds the selection to the state, repaints and writes the status). The
+        // band, the voice and its wav come from `seed_voice_reference`, which ran before the window built.
+        if screen == "07-take" {
+            let state = ui::NarrateState {
+                voice: "narrator1".into(),
+                pitch: 0.0,
+                narrators: 1,
+                has_cut: true,
+                has_timeline: true,
+                ..Default::default()
+            };
+            ui::set_state(state);
+            ui::refresh(&window);
+            // 1.0–3.6 s: 2.6 s of reference, the spec image's own take. Said with §F4.6's own sentence —
+            // "take added: 0:00–0:03 — 1 take(s), 2.6 s of reference (14 s is plenty)" — which the app's
+            // commit status spells a different way ("takes — 1 take(s), 2.6 s of reference (0 s is plenty)")
+            // because it is handed `take_min()` where the §6 message wants `refWantSeconds`: the wording
+            // difference is the app's, not this shot's to paper over.
+            ui::press_take_add(&window, (1.0, 3.6));
+        }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is
         // why its body carries the "stays on disk as it is" paragraph.
