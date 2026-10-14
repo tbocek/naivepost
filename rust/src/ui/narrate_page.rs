@@ -714,6 +714,17 @@ pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
     match pressed {
         narrate_preview::Pressed::Refused(why) => say(window, &why),
         narrate_preview::Pressed::Playing { from } => {
+            // F4.5 S6: a press over a HELD preview thaws the same players rather than rebuilding them — a
+            // re-cue is a black frame where a still belongs, so the freeze is what ▶ walks on.
+            if narrate_preview_leg::hold_paused(false) == Some(true) {
+                return say(
+                    window,
+                    &format!(
+                        "playing on from {} \u{2014} \u{23f9} stops both players",
+                        narrate_screen::time_field(from)
+                    ),
+                );
+            }
             // F4.5 S1: the decision above is only half the press — the players have to actually run.
             // A picture that will not spawn is said, not swallowed: claiming a preview with no process
             // behind it is worse than naming the program that failed.
@@ -740,10 +751,12 @@ pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
             )
         }
         narrate_preview::Pressed::Paused => {
-            // A killed player keeps no position, so pausing ends both children and leaves `session`
-            // where it stands: the next press re-cues from the page's own playhead rather than from a
-            // second the dead process once held.
-            let _ = narrate_preview_leg::stop_running();
+            // S6's pause is a HOLD, not a kill: `SIGSTOP` leaves each player built and sitting on its own
+            // second, which is exactly what the next ▶ thaws. With nothing in the slot there is no player to
+            // freeze, and whatever was running is still owed to ⏹'s door.
+            if narrate_preview_leg::hold_paused(true).is_none() {
+                let _ = narrate_preview_leg::stop_running();
+            }
             say(window, "paused \u{2014} \u{25b6} plays on from here")
         }
     }

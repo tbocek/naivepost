@@ -27,6 +27,7 @@ use std::rc::Rc;
 
 use crate::cut::{Cut, Fx, Seg};
 use crate::narrate_preview::{self, Failed, Take};
+use crate::narrate_preview_media;
 use crate::narrate_tts;
 use crate::narration::{self, Entry};
 use crate::settings::{self, Conf};
@@ -128,14 +129,15 @@ impl Preview {
         from: f64,
         spawn: &mut Spawn,
     ) -> Result<String, String> {
-        let _ = (tree, entries);
+        let _ = entries;
         self.paused = false;
         self.waiting = None;
         self.speaking = None;
         self.frozen = from;
-        let rate = narrate_preview::seek_rate(&cut.fx, from);
+        // S3's bed level for this second: ducked while a line speaks, hushed when the scene says so.
+        let gain = narrate_preview_media::bed_gain(cut, from, false, self.game_volume, self.volume);
         let program = PICTURE_PROGRAM.with(|name| name.borrow().clone());
-        let picture = player(&program, from, rate, spawn)?;
+        let picture = player(&program, tree, cut, from, gain, false, spawn)?;
         self.picture = Some(picture);
         // S3: the lanes this second hears, said out loud so a hush that was typed into a scene shows up
         // on the run rather than silently changing the mix.
@@ -248,6 +250,18 @@ impl Preview {
             .collect()
     }
 
+    /// Freeze both players where they stand, or thaw them (`SIGSTOP`/`SIGCONT`). They stay in the slot, so ⏹
+    /// still owns them and their position survives. A freeze also ends the take's wait: S2's pause is a
+    /// STILL, not a dial to the speech server, so nothing queues behind a line being synthesized.
+    pub fn set_paused(&mut self, hold: bool) -> bool {
+        let was = std::mem::replace(&mut self.paused, hold);
+        if hold {
+            self.waiting = None;
+        }
+        narrate_preview_media::signal_pids(&self.children(), hold);
+        hold || was
+    }
+
     /// The set of refused takes this preview is reading. Public so the page hands a row's retry into the
     /// SAME set rather than keeping a second one that would disagree about what is sticky.
     pub fn failed_mut(&mut self) -> &mut Failed {
@@ -258,7 +272,6 @@ impl Preview {
 thread_local! {
     /// The one running preview per process, as `cut_play_leg::SPARE` keeps one armed spare pipeline.
     static RUNNING: std::cell::RefCell<Option<Preview>> = const { std::cell::RefCell::new(None) };
-
     /// The picture player's program name, resolved from Settings at the press that started this
     /// preview. [`picture_program`] re-reads it per call; this slot only exists so the spawn inside
     /// [`Preview::start`] can reach it without threading a fifth argument through the loop.
@@ -703,16 +716,24 @@ pub fn voice_args(file: &str, offset: f64, gain: f64) -> Vec<String> {
     player_args(file, offset, gain)
 }
 
-/// Spawn one player through the seam.
+/// Spawn the picture through the seam, over the cut's OWN footage files at the level S3 says.
+///
+/// The argv is [`narrate_preview_media::bed_argv`], so three things happen at once: the player is handed real
+/// files (not a placeholder name), the duck/hush reaches it as `--volume`, and the rate that second plays at
+/// is expressed by `-s` — `gst-play-1.0` has no rate flag (measured on its own `--help-all`), which is the
+/// same limitation [`crate::cut_play_back::set_rate`] documents for the Cut page's player. The app's clock
+/// still applies the rate ([`narrate_preview::seek_rate`]), so "speed effects apply at seeks" holds at the
+/// seek itself rather than only in arithmetic.
 fn player(
     program: &str,
+    tree: &crate::layout::Tree,
+    cut: &Cut,
     offset: f64,
-    rate: f64,
+    gain: f64,
+    hold: bool,
     spawn: &mut Spawn,
 ) -> Result<Child, String> {
-    // The picture takes the rate rather than a gain: S3 puts speed at the seek, and the picture has
-    // no duck of its own to apply.
-    spawn(program, &player_args("cut", offset, rate))
+    narrate_preview_media::cue_picture(program, tree, cut, offset, gain, hold, spawn)
 }
 
 /// S1/S6: start the one running preview from `from` (the press's answer) and hand back the sentence.
@@ -748,18 +769,28 @@ pub fn running() -> bool {
     RUNNING.with(|slot| slot.borrow().is_some())
 }
 
+/// S6's pause half and its release: freeze or thaw BOTH players of the running preview. `None` = no preview
+/// at all, so that press starts one instead; a `false` when thawing means nothing was held, so it re-cues.
+pub fn hold_paused(hold: bool) -> Option<bool> {
+    RUNNING.with(|slot| slot.borrow_mut().as_mut().map(|p| p.set_paused(hold)))
+}
+
 /// S6: stop the running preview, kill both children, and report the rules module's struct so
 /// `hand_play_back` answers from the same value. A preview that was never started stops nothing and
 /// says so with the same struct (both players come back `picture_paused`/`voice_paused`, since
 /// nothing is playing), with no pids to report.
 pub fn stop_running() -> (narrate_preview::Stopped, Vec<u32>) {
-    RUNNING.with(|slot| {
+    let said = RUNNING.with(|slot| {
         let mut held = slot.borrow_mut();
         match held.as_mut() {
             Some(preview) => preview.stop(),
             None => (narrate_preview::stop(), Vec::new()),
         }
-    })
+    });
+    // `Preview::stop` clears its own flag, but the slot is what `hold_paused` reads: leaving a stopped
+    // preview in place would make the next ⏸ answer a hold over nothing and the next ▶ thaw dead pids.
+    RUNNING.with(|slot| *slot.borrow_mut() = None);
+    said
 }
 
 /// The one running preview's pids, for the page to register with `run::Subprocesses` so ⏹ reaches
@@ -778,8 +809,10 @@ fn held_children(held: &mut Option<Preview>) -> Vec<u32> {
 /// restarting the picture player at that second with the rate that second plays at, so the snap is
 /// not just arithmetic the page shows but the number the player was asked for.
 ///
-/// Returns the snapped second and the rate sought at, or `None` when the target was already on the
-/// cut and the player needed no restart.
+/// Cues however much of a preview exists — none running yet (the slider moved before ▶ ever did) included —
+/// because "drag to seek" asks to move the picture, not to move it only when the answer is interesting. A
+/// seek made while the preview is held re-cues FROZEN, so the still walks instead of playing.
+/// Answers `None` when the target was already exactly on the cut and no restart was needed.
 pub fn seek(
     tree: &crate::layout::Tree,
     cut: &Cut,
@@ -787,21 +820,27 @@ pub fn seek(
     forward: bool,
     spawn: &mut Spawn,
 ) -> Option<(f64, f64)> {
-    let snapped = narrate_preview::snap_seek(target, &cut.segs, forward);
-    if (snapped - target).abs() < f64::EPSILON {
+    if (narrate_preview::snap_seek(target, &cut.segs, forward) - target).abs() < f64::EPSILON {
         return None;
     }
+    let snapped = narrate_preview::snap_seek(target, &cut.segs, forward);
     let rate = narrate_preview::seek_rate(&cut.fx, snapped);
     RUNNING.with(|slot| {
         let mut held = slot.borrow_mut();
-        if let Some(preview) = held.as_mut() {
-            preview.frozen = snapped;
-            if let Ok(child) = spawn(&picture_program(), &player_args("cut", snapped, rate)) {
-                preview.picture = Some(child);
-            }
+        let preview = held.get_or_insert_with(Preview::default);
+        let was_held = preview.paused;
+        preview.frozen = snapped;
+        let gain = narrate_preview_media::bed_gain(
+            cut,
+            snapped,
+            preview.speaking.is_some(),
+            preview.game_volume,
+            preview.volume,
+        );
+        if let Ok(child) = player(&picture_program(), tree, cut, snapped, gain, was_held, spawn) {
+            preview.picture = Some(child);
         }
     });
-    let _ = tree;
     Some((snapped, rate))
 }
 

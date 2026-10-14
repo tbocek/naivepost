@@ -60,15 +60,36 @@ fn lead_in() -> f64 {
     (entry().at - naivepost::narrate_screen::AUDITION_LEAD_SECONDS).max(0.0)
 }
 
-/// One player spawn as the recorder logged it: `<tag> <file> start=<s> gain=<g>`.
+/// One player spawn as the recorder logged it. The voice's argv is `player_args`'s own shape
+/// (`<file> start=<s> gain=<g>`); the picture's is the real player's flags (`--volume=<g> … -s <t> <files…>`,
+/// [`crate::narrate_preview_media::bed_argv`]), so each key is read under either spelling.
 fn arg_of(line: &str, key: &str) -> f64 {
-    let arg = line
-        .split_whitespace()
-        .find(|arg| arg.starts_with(key))
-        .unwrap_or_else(|| panic!("the player call carries its {key}: {line}"));
-    arg.trim_start_matches(key)
-        .parse::<f64>()
-        .unwrap_or_else(|why| panic!("{key} parses as a number in {line}: {why}"))
+    let long = key.to_string();
+    let short = match key {
+        "start=" => "-s",
+        "gain=" => "--volume=",
+        other => other,
+    };
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let found = words.iter().find(|arg| arg.starts_with(&long)).map(|arg| {
+        let rest = arg.trim_start_matches(&long).to_string();
+        // `--volume=0.800` answers `gain=`; a bare word is the value that follows its flag (`-s 2.0`).
+        if rest.is_empty() || rest.replace('.', "").parse::<f64>().is_err() {
+            let next = words.iter().position(|w| *w == *arg).and_then(|at| words.get(at + 1));
+            next.unwrap_or(arg).to_string()
+        } else {
+            rest
+        }
+    });
+    let value = found.or_else(|| {
+        words
+            .iter()
+            .position(|w| *w == short)
+            .and_then(|at| words.get(at + 1))
+            .map(|held| held.to_string())
+    });
+    let value = value.unwrap_or_else(|| panic!("the player call carries its {key}: {line}"));
+    value.parse::<f64>().unwrap_or_else(|why| panic!("{key} parses as a number in {line}: {why}"))
 }
 
 /// The scenario's facts. `run_round` fills it once and asserts the waits inside itself, so a press that

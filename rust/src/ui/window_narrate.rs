@@ -25,7 +25,6 @@ use crate::narration::{self, Narration};
 use crate::run;
 use crate::project::Project;
 use crate::runqueue;
-use crate::startup;
 use crate::ui::window as ui;
 
 // --- F4.1 ▶ Write and speak -----------------------------------------------------------------
@@ -73,8 +72,7 @@ pub(crate) fn narrate_bar_busy() -> bool {
 /// This session's project folder, resolved the way every other flow resolves it, so "this project" means
 /// one thing app-wide. `None` when no project is open.
 pub fn narrate_session_tree() -> Option<layout::Tree> {
-    let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
-    layout::Tree::new(&dir).ok()
+    crate::narrate_preview_media::session_tree()
 }
 
 /// F4.1 S1–S7 on this window. With no scripted reply this is the LIVE path: ▶ telephones the address

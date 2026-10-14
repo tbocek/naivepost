@@ -62,6 +62,9 @@ pub mod fx_band;
 pub mod narrate_pass;
 pub mod narrate_preview;
 pub mod narrate_preview_leg;
+/// F4.5's media answers for the preview: which files the picture plays and at what gain, so the leg that owns
+/// the two children asks instead of deciding.
+pub mod narrate_preview_media;
 pub mod narrate_frame;
 pub mod narrate_screen;
 pub mod narrate_band;

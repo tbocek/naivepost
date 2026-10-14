@@ -25,7 +25,7 @@ mod common;
 #[path = "speak_tts_wire_harness.rs"]
 mod harness;
 
-use common::{hold_last_window, release_last_window, settle, status_text};
+use common::{hold_last_window, release_last_window, settle};
 
 static RAN_PLAY: AtomicBool = AtomicBool::new(false);
 static RAN_STOP: AtomicBool = AtomicBool::new(false);
@@ -77,13 +77,26 @@ fn run_round(app: &adw::Application) {
         std::env::set_var("NAIVEPOST_PICTURE_PLAYER", "/bin/true");
         std::env::set_var("NAIVEPOST_VOICE_PLAYER", "/bin/true");
     }
-    let _ = fixture;
-
     // A cut with two clips and three lines. The first line's take is the one the fake will serve.
     let segs = vec![
         Seg { s: 0.0, e: 10.0, ins: "a.mp4".into(), dur: 10.0, ..Default::default() },
         Seg { s: 10.0, e: 20.0, ins: "b.mp4".into(), dur: 10.0, ..Default::default() },
     ];
+    // The play seam reads the CUT off disk (`cut::load`), not the seeded state, so the scenario writes
+    // the files a real session has: the cut, and one footage row whose file exists on disk — without a
+    // recording to cue, S1 answers `no recording covers the start of the cut` and nothing spawns.
+    naivepost::cut::save(&naivepost::cut::Cut { segs: segs.clone(), ..Default::default() }, &fixture.tree)
+        .expect("cut written");
+    std::fs::write(fixture.root.join("cam0.mp4"), b"stub footage").expect("footage on disk");
+    let project = naivepost::project::Project {
+        sources: vec![naivepost::project::Source {
+            path: "cam0.mp4".into(),
+            footage: true,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    naivepost::project::save(&project, fixture.tree.dir()).expect("project written");
     let entries = vec![
         Entry { s: 0.0, e: 10.0, at: 0.5, text: "first line".into(), emotion: String::new(), pos: String::new(), roll: 0 },
         Entry { s: 10.0, e: 20.0, at: 0.5, text: "second line".into(), emotion: String::new(), pos: String::new(), roll: 0 },
@@ -91,7 +104,6 @@ fn run_round(app: &adw::Application) {
     ];
 
     release_last_window();
-    let project = naivepost::project::Project::default();
     let window = ui::build_window(app, &project, "Narrate");
     hold_last_window(window.clone());
     window.present();
@@ -107,7 +119,8 @@ fn run_round(app: &adw::Application) {
         takes: vec![],
         voice: String::new(),
         pitch: 0.0,
-        session: 30.0,
+        // Inside a kept clip: a playhead past the last clip answers S1's uncovered refusal instead.
+        session: 5.0,
         cut_at: 1.0,
         length: 30.0,
         clips: 2,
