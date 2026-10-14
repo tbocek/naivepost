@@ -137,6 +137,16 @@ pub fn held_frame(cut: &Cut, box_px: Option<(f64, f64, f64, f64)>) -> Held {
 /// isolated test and a loaded suite makes a fraction land on the clamp depending on scheduler luck.
 pub fn fit_size_of(window: &adw::ApplicationWindow, width: f64, height: f64) -> (f64, f64) {
     let (w, h) = crate::ui::window::preview_picture_px(window);
+    // §9 (`both MUST use the first footage clip's frame`): the shape the fractions are
+    // multiplied by is the plate's agreed shape — the first footage recording's, decided in
+    // `cut_picture::refresh` through `effect_overlap::source_frame` — not whatever camera a
+    // watch happens to be showing. This is the one place preview fractions become pixels.
+    let (sw, sh) = crate::ui::cut_picture::plate_shape(window);
+    let (w, h) = if sw > 0 && sh > 0 {
+        (sw as f64, sh as f64)
+    } else {
+        (w, h)
+    };
     fit_size(w, h, width.max(w), height.max(h))
 }
 

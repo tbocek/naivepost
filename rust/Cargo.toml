@@ -203,6 +203,14 @@ name = "sec_06_effects_6_parameters"
 path = "tests/sec_06_effects_6_parameters.rs"
 
 [[test]]
+name = "sec_06_effects_9_where_recordings_overlap"
+path = "tests/sec_06_effects_9_where_recordings_overlap.rs"
+
+[[test]]
+name = "sec_06_effects_9_where_recordings_overlap_widgets"
+path = "tests/sec_06_effects_9_where_recordings_overlap_widgets.rs"
+
+[[test]]
 name = "sec_06_effects_8_read_head"
 path = "tests/sec_06_effects_8_read_head.rs"
 

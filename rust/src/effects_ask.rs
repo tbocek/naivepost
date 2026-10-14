@@ -96,6 +96,18 @@ fn current_paths() -> Option<Paths> {
 /// model for a timestamp it would have to compute, and a decoration is placed by the app from the clip number
 /// plus these two offsets.
 pub fn user_message(clips: &Clips, speeds: &[(u32, f64)]) -> String {
+    user_message_over(clips, speeds, &[], &[])
+}
+
+/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`): the
+/// ask with the session's camera rows and heard lanes named above the clip list. The pass
+/// that holds a real cut calls this; the two-argument form stays for a caller with no cut.
+pub fn user_message_over(
+    clips: &Clips,
+    speeds: &[(u32, f64)],
+    rows: &[String],
+    lanes: &[String],
+) -> String {
     let total: f64 = clips.clips().iter().map(|clip| clip.length).sum();
     let count = clips.clips().len();
     let mut lines = vec![format!(
@@ -105,7 +117,7 @@ pub fn user_message(clips: &Clips, speeds: &[(u32, f64)]) -> String {
         count
     )];
     lines.push(String::new());
-    lines.push(cut_effects_pass::brief(clips, speeds));
+    lines.push(cut_effects_pass::brief_over(clips, speeds, rows, lanes));
     lines.push(String::new());
     lines.push(
         "Decorate only what needs it, and answer with those decorations and nothing else \u{2014} a cut that \
@@ -270,6 +282,21 @@ pub fn ask(
     attempt: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
+    ask_named(tree, context, clips, speeds, &[], &[], attempt, cancel)
+}
+
+/// [`ask`] with the session's camera rows and heard lanes named in the brief (§9).
+#[allow(clippy::too_many_arguments)] // the ask carries the brief's rows and lanes beside its clips
+pub fn ask_named(
+    tree: &Tree,
+    context: &str,
+    clips: &Clips,
+    speeds: &[(u32, f64)],
+    rows: &[String],
+    lanes: &[String],
+    attempt: u32,
+    cancel: &dyn Fn() -> bool,
+) -> Asked {
     let conf = match current_paths().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         // An unreadable settings file is reported the way a down server is: the pass keeps the stumble and
@@ -282,7 +309,7 @@ pub fn ask(
     if services::server_url(&conf.server).is_none() {
         return failed("no LLM address is set \u{2014} nothing was asked".to_string());
     }
-    ask_at(tree, &conf, context, clips, speeds, attempt, cancel)
+    ask_at_over(tree, &conf, context, clips, speeds, rows, lanes, attempt, cancel)
 }
 
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
@@ -295,13 +322,30 @@ pub fn ask_at(
     attempt: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
+    ask_at_over(tree, conf, context, clips, speeds, &[], &[], attempt, cancel)
+}
+
+/// [`ask_at`] with the session's camera rows and heard lanes named in the brief (§9: the
+/// passes know nothing of cameras and lanes until there is more than one of either).
+#[allow(clippy::too_many_arguments)] // as [`ask_named`]: the brief's rows and lanes ride along
+pub fn ask_at_over(
+    tree: &Tree,
+    conf: &Conf,
+    context: &str,
+    clips: &Clips,
+    speeds: &[(u32, f64)],
+    rows: &[String],
+    lanes: &[String],
+    attempt: u32,
+    cancel: &dyn Fn() -> bool,
+) -> Asked {
     if clips.clips().is_empty() {
         // Nothing to ask about is not a failure and not worth a request.
         return Asked { calls: Vec::new(), failed: false, reason: String::new() };
     }
     let model = conf.model.clone();
     let system = effects_system(context);
-    let user = user_message(clips, speeds);
+    let user = user_message_over(clips, speeds, rows, lanes);
     // A retry asks with the same two messages, so it needs its own cache slot: without one the second round
     // would be served the reply that was just rejected (§6).
     let parts = cache_parts(&system, &user, &model, attempt);

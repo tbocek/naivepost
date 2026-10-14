@@ -189,6 +189,11 @@ pub fn plan_clips(
     src_shape: (i32, i32),
     on_recording: bool,
 ) -> (Vec<Clip>, Vec<String>) {
+    // §9 (`both MUST use the first footage clip's frame`): `src_shape` IS that shape — the
+    // door the produce page fills from the project's footage row — and `frame_box` returns it
+    // unchanged under aspect "source", so every clip in the video is cut to one frame however
+    // many cameras filmed it. The preview reads the same rule at its own seam
+    // ([`crate::ui::cut_picture`] names this call as the agreeing side).
     let frame = render_fx::frame_box(aspect, src_shape.0, src_shape.1);
     let mut clips: Vec<Clip> = Vec::new();
     let mut logs: Vec<String> = Vec::new();
@@ -214,8 +219,9 @@ pub fn plan_clips(
             .filter(|lane| lane_heard(lane, seg))
             .map(|lane| lane.name.clone())
             .collect();
-        // A cue naming a lane this scene does not hear reaches nothing here (§9's reach, read
-        // through `Cue::reaches`), so it is not counted as work the encode has to do.
+        // A cue naming a lane this scene does not hear reaches nothing here: the reach is
+        // §9's [`crate::effect_overlap::gain_reaches`], asked of every lane this scene hears,
+        // so a duck aimed at a silent recording is not counted as work the encode must do.
         let cues = render_fx::all_gain_cues(&fx, seg.s, rate, on_screen)
             .into_iter()
             .filter(|cue| heard.iter().any(|lane| cue.reaches(lane)))

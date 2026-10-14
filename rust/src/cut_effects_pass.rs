@@ -31,7 +31,23 @@ use crate::tools::clips::Clips;
 /// prototype's does. Two small format sites rather than one shared helper: each section of the spec quotes its own
 /// brief wording, so a helper would have to be parameterised by which section is asking — more machinery than text.
 pub fn brief(clips: &Clips, speeds: &[(u32, f64)]) -> String {
-    let mut lines = vec![cut_captions::CLIPS_HEADER.to_string()];
+    brief_over(clips, speeds, &[], &[])
+}
+
+/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`):
+/// the same brief with the session's camera rows and heard lanes in front of it, which is
+/// what a caller holding a real cut passes. One row and one lane adds nothing (§9's model
+/// passes know nothing of cameras until there is more than one to tell apart).
+pub fn brief_over(
+    clips: &Clips,
+    speeds: &[(u32, f64)],
+    rows: &[String],
+    lanes: &[String],
+) -> String {
+    let mut lines = crate::effect_overlap::brief_lines(rows, lanes)
+        .into_iter()
+        .collect::<Vec<_>>();
+    lines.push(cut_captions::CLIPS_HEADER.to_string());
     for clip in clips.clips() {
         let mut line = cut_captions::clip_line(clip.n, clip.length);
         let captions = clips.captions_of(clip.n).len();

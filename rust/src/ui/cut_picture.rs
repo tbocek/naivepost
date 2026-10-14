@@ -214,6 +214,16 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     );
     PREVIEW_ASKED.with(|slot| *slot.borrow_mut() = Some((base.clone(), at)));
     let found = cut_tracks::frame_near(&paths, at);
+    // §9 (`With cameras of different shapes, both MUST use the first footage clip's frame`):
+    // the panel used to measure its plate against whichever camera was playing while the
+    // render measured against the first footage clip for the whole video. `source_frame` is
+    // that one rule — the same call `produce_render::plan_clips` makes through `frame_box` —
+    // and the shape it picks is what the plate and every overlay on it are now fitted to.
+    let agreed = crate::effect_overlap::source_frame(
+        first_footage_shape(window),
+        shown_shape(found.as_deref()),
+    );
+    set_plate_shape(window, agreed);
     // §8 (`unrenderable still ">>> the stop frame at m:ss cannot be shown in the preview:
     // <err>"`): a stop holds a frame, and when the search above finds none the preview owes
     // that sentence — said, never enforced: the stop stays on the lane and the render may well
@@ -261,6 +271,61 @@ pub fn note_line_moved(window: &adw::ApplicationWindow, at: f64) {
 /// The click (§A: "click toggles play"). Forwards to the transport's OWN door with the session's filmed
 /// stretches, which is what makes a preview with nothing filmed refuse for the reason F2.1 gives rather
 /// than starting a blank player. Then the frame follows the line the press left the preview on.
+/// §9's two MUST-agree seams, measured here rather than assumed:
+/// the shape of the frame the panel is showing, and the shape of the session's FIRST
+/// footage recording. Both sides of `source_frame` come from real files: a decoded pixbuf
+/// for what is on screen, and Prepare's own extracted frames for the first footage row.
+/// The render agrees through `produce_render::plan_clips`, which fits every clip to the
+/// footage row's shape under aspect "source".
+///
+/// A frame file's own shape, or `None` when there is no frame or it will not decode.
+fn shown_shape(path: Option<&std::path::Path>) -> Option<(i32, i32)> {
+    let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_file(path?).ok()?;
+    let (w, h) = (pixbuf.width(), pixbuf.height());
+    (w > 0 && h > 0).then_some((w, h))
+}
+
+/// The first footage recording's shape, read from the frames Prepare already extracted for
+/// it — the same door `refresh` picks its picture through, so the two cannot disagree about
+/// which recording is first. `None` with no tape or no frames yet, which leaves the playing
+/// camera's shape standing ([`crate::effect_overlap::source_frame`]'s fallback).
+fn first_footage_shape(window: &adw::ApplicationWindow) -> Option<(i32, i32)> {
+    let _ = window;
+    let recordings = ui::page_recordings();
+    let first = recordings.first()?;
+    let tree = session_tree(window)?;
+    shown_shape(
+        cut_tracks::frame_paths(&tree, &first.base)
+            .first()
+            .map(|path| path.as_path()),
+    )
+}
+
+/// What the plate and every overlay on it are fitted to, as §9 says both sides must be.
+/// Read by [`crate::ui::cut_preview_frame::fit_size_of`], the one place the preview turns
+/// fractions into pixels, so a caption, a drawing and a zoom box all agree with the render.
+pub fn plate_shape(window: &adw::ApplicationWindow) -> (i32, i32) {
+    let _ = window;
+    PLATE_SHAPE.with(|slot| *slot.borrow()).unwrap_or(FALLBACK_SHAPE)
+}
+
+/// The shape a preview panel falls back to with nothing decoded yet: the shipped declaration
+/// the panel pins itself to, so an empty plate is still measured like a picture.
+const FALLBACK_SHAPE: (i32, i32) = (
+    crate::ui::window::PREVIEW_PANEL_W as i32,
+    crate::ui::window::PREVIEW_PANEL_H as i32,
+);
+
+thread_local! {
+    static PLATE_SHAPE: std::cell::RefCell<Option<(i32, i32)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Write what the plate is fitted to, from [`crate::effect_overlap::source_frame`].
+fn set_plate_shape(window: &adw::ApplicationWindow, shape: (i32, i32)) {
+    let _ = window;
+    PLATE_SHAPE.with(|slot| *slot.borrow_mut() = Some(shape));
+}
+
 pub fn wire_click(window: &adw::ApplicationWindow) {
     let Some(root) = window.content() else { return };
     let Some(button) = find(root.upcast_ref(), "preview-picture-button")

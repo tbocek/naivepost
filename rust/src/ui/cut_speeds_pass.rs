@@ -61,11 +61,25 @@ fn ask_speeds(
         .map(|clip| (clip.n, batch.captions_of(clip.n).len()))
         .filter(|(_, count)| *count > 0)
         .collect();
-    let asked = crate::speeds_ask::ask(
+    // §9 (`the caption, speed and decoration briefs name no camera or lane`): named once
+    // there is more than one row filming or more than one recording heard.
+    let cut_ = window::newest_review_cut();
+    let mut rows: Vec<String> = cut_
+        .segs
+        .iter()
+        .filter(|scene| scene.ins.is_empty())
+        .map(|scene| (crate::cut_cam::scene_row(scene) + 1).to_string())
+        .collect();
+    rows.sort_unstable();
+    rows.dedup();
+    let lanes: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
+    let asked = crate::speeds_ask::ask_named(
         &tree,
         &window::user_context(window),
         &clips,
         &captioned,
+        &rows,
+        &lanes,
         attempt,
         &crate::cancel_leg::cancel_check_now(),
     );

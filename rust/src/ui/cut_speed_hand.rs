@@ -384,8 +384,25 @@ pub fn press_speed_apply(window: &adw::ApplicationWindow) -> String {
     // status is the quote §F3.3 fixes.
     if let Some(notice) = crate::effect_overlap::says_render_only(&effect.snd) {
         log_line(notice);
+    } else if let Some(agree) = sound_promise(&effect.snd) {
+        // The other two rows of §9's table, said beside the first: `""` and `pitch`
+        // move with the picture's clock in both players, and `mute` is settled by the
+        // render joining the preview (one expression over the whole bed).
+        log_line(agree);
     }
     said
+}
+
+/// §9's two remaining sound rows as one sentence each, so the press says which promise
+/// it is keeping instead of staying silent about them. `own`/`scene` are
+/// [`crate::effect_overlap::says_render_only`]'s pair and never reach here.
+pub fn sound_promise(snd: &str) -> Option<&'static str> {
+    if crate::effect_overlap::preview_plays_pitch_as_render(snd) {
+        return Some("the preview plays this sound the way the render does");
+    }
+    crate::effect_overlap::says_render_only(snd).is_none().then_some(
+        "the preview silences the whole bed, and so now does the render",
+    )
 }
 
 /// F3.3 S3: Cancel drops the form and changes nothing on the cut — no record pushed, no history written, so ↶

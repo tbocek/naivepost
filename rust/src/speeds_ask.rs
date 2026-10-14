@@ -100,6 +100,18 @@ fn gap_seconds() -> f64 {
 /// prohibition, and a captioned clip is marked in its own line so the refusal in S2 is a rule the model was
 /// told before it broke it rather than a surprise it gets afterwards.
 pub fn user_message(clips: &[(u32, f64)], captioned: &[(u32, usize)], total_seconds: f64) -> String {
+    user_message_over(clips, captioned, total_seconds, &[], &[])
+}
+
+/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`): the
+/// speed ask with the session's camera rows and heard lanes named above the clip list.
+pub fn user_message_over(
+    clips: &[(u32, f64)],
+    captioned: &[(u32, usize)],
+    total_seconds: f64,
+    rows: &[String],
+    lanes: &[String],
+) -> String {
     let gap = gap_seconds();
     let mut lines = vec![format!(
         "{} {:.0} seconds over {} clip(s).",
@@ -107,6 +119,7 @@ pub fn user_message(clips: &[(u32, f64)], captioned: &[(u32, usize)], total_seco
         total_seconds,
         clips.len()
     )];
+    lines.extend(crate::effect_overlap::brief_lines(rows, lanes));
     lines.push(String::new());
     lines.push(crate::cut_captions::CLIPS_HEADER.to_string());
     for (number, length) in clips {
@@ -257,6 +270,22 @@ pub fn ask(
     attempt: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
+    ask_named(tree, context, clips, captioned, &[], &[], attempt, cancel)
+}
+
+/// [`ask`] with the session's camera rows and heard lanes named in the brief (§9: the passes
+/// know nothing of cameras and lanes until there is more than one of either to tell apart).
+#[allow(clippy::too_many_arguments)] // the ask carries the brief's rows and lanes beside its clips
+pub fn ask_named(
+    tree: &Tree,
+    context: &str,
+    clips: &[(u32, f64)],
+    captioned: &[(u32, usize)],
+    rows: &[String],
+    lanes: &[String],
+    attempt: u32,
+    cancel: &dyn Fn() -> bool,
+) -> Asked {
     let conf = match current_paths().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         // An unreadable settings file is reported the way a down server is: the pass keeps the stumble and
@@ -269,7 +298,7 @@ pub fn ask(
     if services::server_url(&conf.server).is_none() {
         return failed("no LLM address is set \u{2014} nothing was asked".to_string());
     }
-    ask_at(tree, &conf, context, clips, captioned, attempt, cancel)
+    ask_at_over(tree, &conf, context, clips, captioned, rows, lanes, attempt, cancel)
 }
 
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
@@ -282,6 +311,22 @@ pub fn ask_at(
     attempt: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
+    ask_at_over(tree, conf, context, clips, captioned, &[], &[], attempt, cancel)
+}
+
+/// [`ask_at`] with the session's camera rows and heard lanes named in the brief (§9).
+#[allow(clippy::too_many_arguments)] // as [`ask_named`]: the brief's rows and lanes ride along
+pub fn ask_at_over(
+    tree: &Tree,
+    conf: &Conf,
+    context: &str,
+    clips: &[(u32, f64)],
+    captioned: &[(u32, usize)],
+    rows: &[String],
+    lanes: &[String],
+    attempt: u32,
+    cancel: &dyn Fn() -> bool,
+) -> Asked {
     if clips.is_empty() {
         // Nothing to ask about is not a failure and not worth a request.
         return Asked { calls: Vec::new(), failed: false, reason: String::new() };
@@ -289,7 +334,7 @@ pub fn ask_at(
     let model = conf.model.clone();
     let total: f64 = clips.iter().map(|(_, length)| length).sum();
     let system = speeds_system(context);
-    let user = user_message(clips, captioned, total);
+    let user = user_message_over(clips, captioned, total, rows, lanes);
     // A retry asks with the same two messages, so it needs its own cache slot: without one the second round
     // would be served the reply that was just refused (§6). The fault itself travels in the conversation.
     let parts = cache_parts(&system, &user, &model, attempt);

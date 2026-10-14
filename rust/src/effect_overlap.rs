@@ -108,7 +108,7 @@ pub fn zoom_stops_at_the_cut(fx: &Fx, from_row: i32, to_row: i32) -> bool {
 pub fn place_stop(t: f64, segs: &[Seg]) -> Result<(), String> {
     let kept = segs
         .iter()
-        .any(|seg| !seg.is_insert() && seg.s <= t && t < seg.e);
+        .any(|seg| !seg.is_overwrite_insert() && seg.s <= t && t < seg.e);
     if kept {
         return Ok(());
     }
@@ -176,6 +176,57 @@ pub fn preview_camera(form_open: bool, watched: Option<i32>, lens: i32) -> i32 {
         return lens;
     }
     watched.unwrap_or(lens)
+}
+
+/// §9 (`With cameras of different shapes, both MUST use the first footage clip's frame`):
+/// whose shape "source" means. The render has always taken the first footage clip's; the
+/// preview took whichever camera was playing, so a 9:16 lecture and a 16:9 slide deck each
+/// got their own answer. This is the one rule both sides now read: the first footage clip
+/// wins, and only when there is no footage clip at all does the playing camera's shape stand.
+///
+/// The shape a side falls back to when it has read no frame at all is [`FALLBACK_SHAPE`].
+pub fn source_frame(
+    first_footage: Option<(i32, i32)>,
+    playing: Option<(i32, i32)>,
+) -> (i32, i32) {
+    first_footage.or(playing).unwrap_or(FALLBACK_SHAPE)
+}
+
+/// The shape a side falls back to when it has read no frame at all: the shipped preview
+/// declaration, which is what an empty plate is measured like until a picture arrives.
+pub const FALLBACK_SHAPE: (i32, i32) = (
+    crate::ui::window::PREVIEW_PANEL_W as i32,
+    crate::ui::window::PREVIEW_PANEL_H as i32,
+);
+
+/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`):
+/// whether a model brief has to say anything about cameras and lanes at all. One row and
+/// one lane is the single-camera case the passes were written for — nothing to name.
+pub fn names_rows_and_lanes(rows: usize, lanes: usize) -> bool {
+    rows > 1 || lanes > 1
+}
+
+/// The brief's one header line naming the camera rows and the heard lanes, or `None` in the
+/// single-camera-and-single-lane case ([`names_rows_and_lanes`] decides). The model passes
+/// know nothing of cameras and lanes unless this line says so, which is why a proposed volume
+/// hits the whole bed (§9's last paragraph). One format for every pass that asks.
+pub fn brief_lines(rows: &[String], lanes: &[String]) -> Option<String> {
+    // The one question this line asks is §9's: is there more than one of either to name?
+    if !names_rows_and_lanes(rows.len(), lanes.len()) {
+        return None;
+    }
+    let mut line = String::from("SHOWN FROM: ");
+    if rows.len() > 1 {
+        line.push_str(&format!("camera {}", rows.join(", camera ")));
+    } else {
+        line.push_str("one camera");
+    }
+    if lanes.len() > 1 {
+        line.push_str(&format!(", HEARD LANES: {}", lanes.join(", ")));
+    } else if lanes.len() == 1 {
+        line.push_str(&format!(", HEARD LANE: {}", lanes[0]));
+    }
+    Some(line)
 }
 
 /// §9 (`suggested scenes all take row 0`): the row a suggested scene is placed on, since the cut pass knows nothing

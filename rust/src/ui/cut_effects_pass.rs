@@ -53,11 +53,26 @@ fn ask_effects(
     // S1 says the call is told the captions AND the speeds, and both come off the batch itself so the brief
     // cannot disagree with the rules that read it. `effects_ask::user_message` lays the brief out.
     let rates = clip_rates(batch);
-    let asked = crate::effects_ask::ask(
+    // §9 (`the caption, speed and decoration briefs name no camera or lane`): the batch is
+    // told in words which cameras filmed it and which recordings are heard, but only once
+    // there is more than one of either to tell apart — see [`crate::effect_overlap::brief_lines`].
+    let cut_ = window::newest_review_cut();
+    let mut rows: Vec<String> = cut_
+        .segs
+        .iter()
+        .filter(|scene| scene.ins.is_empty())
+        .map(|scene| (crate::cut_cam::scene_row(scene) + 1).to_string())
+        .collect();
+    rows.sort_unstable();
+    rows.dedup();
+    let lanes: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
+    let asked = crate::effects_ask::ask_named(
         &tree,
         &window::user_context(window),
         batch,
         &rates,
+        &rows,
+        &lanes,
         attempt,
         &crate::cancel_leg::cancel_check_now(),
     );

@@ -583,16 +583,31 @@ pub struct Cue {
 }
 
 impl Cue {
-    /// [`crate::effect_overlap::gained_before_the_mix`] for this cue's reach.
+    /// [`crate::effect_overlap::gained_before_the_mix`] for this cue's reach: a cue naming
+    /// one lane runs before the lanes are summed, so the sum can still be taken apart.
     pub fn before_the_mix(&self) -> bool {
-        !self.lane.is_empty()
+        crate::effect_overlap::gained_before_the_mix(&self.as_effect())
     }
 
     /// [`crate::effect_overlap::gain_reaches`]: does this cue touch the lane named `lane`?
     /// The plan asks it per clip, so a duck naming a lane nobody hears in that scene is not
     /// counted as work the encode has to do.
     pub fn reaches(&self, lane: &str) -> bool {
-        self.lane.is_empty() || self.lane == lane
+        crate::effect_overlap::gain_reaches(&self.as_effect(), lane)
+    }
+
+    /// The cue read back as the record it came from, so §9's two reach predicates stay the
+    /// ONE wording in both the plan and the encode. A volume carries only kind, seconds,
+    /// gain and lane; nothing else here is consulted by either rule.
+    pub fn as_effect(&self) -> Fx {
+        Fx {
+            kind: "volume".to_string(),
+            t: self.from,
+            dur: (self.to - self.from).max(0.0),
+            gain: self.gain,
+            lane: self.lane.clone(),
+            ..Default::default()
+        }
     }
 }
 
