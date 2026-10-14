@@ -180,7 +180,7 @@ fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_
     assert_eq!(
         clear,
         ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
-        "at exactly OTHER_SPEAKER_CLEAR_SECONDS the neighbour is outside the window's guard"
+        "at exactly REF_PAD_SECONDS the neighbour is outside the window's guard"
     );
 
     // P.eng.refMinWordsPerSecond 1.5: 6 s needs 9 words; 8 is too sparse to clone from.
@@ -264,7 +264,104 @@ fn f4_6_s2_no_clean_solo_stretch_is_said() {
     );
 }
 
-// --- S3: the level-and-shift leg, the header rule, the rename -------------------------------
+// --- S2's ranking: words said, length only as the tie-break (§07-narrate §4's reference line) ----------
+
+/// §07-narrate#4-parameters-used — P.eng.refPadSeconds is read by the solo test itself: a neighbour 1.9 s
+/// away sits inside the pad and disqualifies the stretch, while one at exactly 2.0 s does not.
+#[test]
+fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window()
+{
+    assert_eq!(voice_ref::REF_PAD_SECONDS, 2.0, "P.eng.refPadSeconds spells 2");
+    // 1.9 s of clearance: inside the pad, so nobody can say the window is solo.
+    let crowded = voice_ref::plan_reference(
+        &[],
+        &[(0.0, 6.0, 1u32), (7.9, 9.0, 2)],
+        |_, _| 30,
+        1,
+    );
+    assert_eq!(
+        crowded,
+        ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
+        "1.9 s is inside P.eng.refPadSeconds, so the take would carry the other speaker's edge"
+    );
+    // Exactly 2.0 s: outside it, and the same turn is usable.
+    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], |_, _| 30, 1);
+    assert_eq!(
+        clear,
+        ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
+        "the pad is inclusive at its own value"
+    );
+}
+
+/// §07-narrate#4-parameters-used — the automatic ranking goes by the WORDS said in each solo stretch, with
+/// that stretch's own length breaking a tie. Both candidates here clear `refMinWordsPerSecond`, so the floor
+/// cannot be what decides between them.
+#[test]
+fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie_break()
+{
+    // A 6 s turn with 30 words against an 8 s turn with 15: both are dense enough (8 s needs 12), but the
+    // shorter one says twice as much, so it is the FIRST piece taken. The answer is re-sorted into time
+    // order before it comes back (§F4.6's cut reads forwards), so what proves the ranking here is which of
+    // the two a cap of ONE keeps — the same rule, seen where the order cannot hide it.
+    let turns = [(0.0, 8.0, 1u32), (20.0, 26.0, 1)];
+    let plan = voice_ref::plan_reference(
+        &[],
+        &turns,
+        |from, _| if (from - 20.0).abs() < f64::EPSILON { 30 } else { 15 },
+        1,
+    );
+    let ReferencePlan::Automatic(pieces) = plan else {
+        panic!("two clean turns must produce a plan, got {plan:?}");
+    };
+    assert_eq!(
+        pieces.len(),
+        2,
+        "neither turn reaches P.machine.refWantSeconds alone, so both are offered: {pieces:?}"
+    );
+    let wanted = voice_ref::REF_WANT_SECONDS;
+    // Both stretches are longer than the wanted length on their own, so whichever ranks FIRST is the only
+    // piece the loop takes: the stop happens before a second piece can be offered.
+    let capped = voice_ref::plan_reference(
+        &[],
+        &[
+            (0.0, wanted + 4.0, 1u32),
+            (wanted + 20.0, wanted + 26.0, 1),
+        ],
+        |from, _| if (from - (wanted + 20.0)).abs() < f64::EPSILON { 30 } else { 15 },
+        1,
+    );
+    let ReferencePlan::Automatic(capped) = capped else {
+        panic!("two clean turns must produce a plan, got {capped:?}");
+    };
+    assert_eq!(
+        capped,
+        vec![Piece { start: wanted + 20.0, end: wanted + 26.0 }],
+        "the denser 6 s turn is taken first even though it is the shorter one, so it is the one a stop at \
+         the wanted length keeps"
+    );
+
+    // Equal word counts fall back to length, and the tie is proved by what a stop at the wanted length
+    // KEEPS: three solo turns all saying 27 words — an 18 s one that alone passes P.machine.refWantSeconds,
+    // a 6 s one that would win if length were still the ranking, and a 14 s one. If the short turn ranked
+    // first it would be the only piece taken; instead the 18 s turn does.
+    let tied = voice_ref::plan_reference(
+        &[],
+        &[(0.0, 6.0, 1u32), (20.0, 38.0, 1), (60.0, 74.0, 1)],
+        |_, _| 27,
+        1,
+    );
+    let ReferencePlan::Automatic(pieces) = tied else {
+        panic!("three clean turns must produce a plan, got {tied:?}");
+    };
+    assert_eq!(
+        pieces,
+        vec![Piece { start: 20.0, end: 38.0 }],
+        "equal word counts, so length decides: the 18 s turn outranks the 6 s one and is the only piece \
+         needed to reach the wanted length"
+    );
+}
+
+// --- S3: the level-and-shift leg, the header rule, the rename ------------------------------------------
 
 #[test]
 fn f4_6_s3_the_base_is_leveled_to_minus_16_lufs_and_written_mono_48k() {

@@ -51,6 +51,52 @@ fn snap_reference(tree: &crate::layout::Tree, segs: Option<&[crate::cut::Seg]>) 
     cut
 }
 
+thread_local! {
+    /// The second the scrub bar was last dragged to, waiting out [`narrate_screen::SEEK_DEBOUNCE_MS`], with the
+    /// armed timer that will issue it. One pending drag at a time: each new move replaces the target and re-arms
+    /// the timer, so a drag across fifty pixels produces the seek the finger ended on, not fifty of them.
+    static PENDING_SCRUB: std::cell::RefCell<Option<(f64, glib::SourceId)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The scrub bar's drag, debounced (§1's slider, inventory §A.4's `debounced 120 ms`). Every `value-changed` a
+/// drag produces comes through here; only the LAST one is issued, after the bar has been quiet for
+/// [`narrate_screen::SEEK_DEBOUNCE_MS`]. The seek itself is the unchanged [`seek_preview`], so a dragged-to
+/// second lands on the cut exactly as a button's does. Only the DRAG waits: the transport buttons and the
+/// paused wheel call [`seek_preview`] directly, because each of those is one deliberate press, not a burst.
+pub fn note_scrub_drag(
+    window: &adw::ApplicationWindow,
+    target: f64,
+    segs: Option<&[crate::cut::Seg]>,
+    forward: bool,
+) {
+    let segs: Vec<crate::cut::Seg> = segs.map(|s| s.to_vec()).unwrap_or_default();
+    PENDING_SCRUB.with(|pending| {
+        if let Some((_, id)) = pending.borrow_mut().take() {
+            id.remove();
+        }
+        let id = glib::timeout_add_local(
+            std::time::Duration::from_millis(narrate_screen::SEEK_DEBOUNCE_MS),
+            {
+                let window = window.clone();
+                move || {
+                    // Clear first: the seek repaints, and that repaint must not find a drag still owed.
+                    PENDING_SCRUB.with(|pending| pending.borrow_mut().take());
+                    seek_preview(&window, target, Some(&segs), forward);
+                    glib::ControlFlow::Break
+                }
+            },
+        );
+        *pending.borrow_mut() = Some((target, id));
+    });
+}
+
+/// What the scrub bar is waiting to seek to, if a drag is mid-flight. Test-only readback: it proves a drag was
+/// held by the debounce rather than acted on per pixel, which is otherwise invisible from outside.
+pub fn pending_scrub_for_test() -> Option<f64> {
+    PENDING_SCRUB.with(|pending| pending.borrow().as_ref().map(|(target, _)| *target))
+}
+
 /// S4: a transport seek in one place — the picture is cued at the second asked for, and the page's clock
 /// takes the boundary the rules snapped it to (`snap_seek`, through the leg). Every door that moves the
 /// playhead (back, forward, the slider, the paused wheel) comes through here so none of them can be a

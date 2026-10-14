@@ -64,6 +64,7 @@ use crate::produce_runs;
 use crate::tools::{clips, cutpass, describe, retakes, textedit};
 use crate::wave;
 use crate::transcribe;
+use crate::voice_ref;
 use crate::word_list;
 
 /// One row of §10's table as Prepare uses it.
@@ -1036,16 +1037,13 @@ pub fn effects() -> Vec<Param> {
 /// inherit — the same bare-prefix rule §06-effects#6 took for `machine.` and `preview.` values. They are spelled as
 /// §10 spells them so a reader comparing this list against that line is comparing the same words.
 ///
-/// Two of §4's items have no row here, and each says why rather than being quietly skipped.
-/// `P.eng.speechCharsPerSecond` (§10:194, "15 (8..28)") is catalogued under the id §07-narrate#1-screen
-/// chose, `narrate.speechCharsPerSecond`, and its 8..28 floor and ceiling are absent because nothing corrects
-/// the estimate yet — [`narrate_screen::SPEECH_CHARS_PER_SECOND`] is the only one of the three a rule reads.
-/// `P.eng.narrationLeadSeconds`, `P.eng.narrationGapSeconds` and `P.eng.narrationMaxTempo` (F4.3's packing,
-/// growing and speeding) and the five automatic-reference values (`P.eng.refMinTakeSeconds`,
-/// `P.eng.refPadSeconds`, `P.machine.refWantSeconds`, `P.machine.refTakeMax`, `P.eng.refMinWordsPerSecond`,
-/// F4.6/F4.7's reference builder) have no rows because no rule in this tree reads them yet — the reason
-/// [`effects`] gives for the label form's floor and the decorations density: a number nothing reads has no
-/// module to live in.
+/// Every §4 item now has a row. Two of them are catalogued under an id other than the one §10's table prints,
+/// and say so rather than being quietly moved: `P.eng.speechCharsPerSecond` (§10:194, "15 (8..28)") lives under
+/// the id §07-narrate#1-screen chose, `narrate.speechCharsPerSecond`, with its band spelled in the same row;
+/// and F4.3's packing, growing and speeding (`P.eng.narrationLeadSeconds`, `P.eng.narrationGapSeconds`,
+/// `P.eng.narrationMaxTempo`) are catalogued here because §07's §4 names them, while the rule that reads them is
+/// the render's ([`produce_render::fit`]) — the same one-home-per-number rule [`effects`] gives for values whose
+/// section differs from their owner's.
 pub fn narrate() -> Vec<Param> {
     vec![
         // --- the take band (§1's number 10) ---------------------------------------------------------
@@ -1079,9 +1077,14 @@ pub fn narrate() -> Vec<Param> {
         ),
         // --- what a row says about a line that is not spoken yet (§1's numbers 15, 21) -----------------
         param("P.eng.narrationTailSeconds", num(narrate_screen::SPEECH_TAIL_SECONDS), "narrate_screen::SPEECH_TAIL_SECONDS"),
-        // §C.2's fallback rate: the only measure of a line before its take exists, so it is what both the row's
-        // estimate and the transport ＋'s refusal are built on.
-        param("narrate.speechCharsPerSecond", num(narrate_screen::SPEECH_CHARS_PER_SECOND), "narrate_screen::SPEECH_CHARS_PER_SECOND"),
+        // §C.2's fallback rate and §F4.3's clamp band, in the one row §10 gives them: the estimate is what both
+        // the row's warning and the transport ＋'s refusal are built on until a take exists to measure, and once
+        // it does, `narrate_page::speech_for` measures the rate off the wav and pushes it through 8..28.
+        param(
+            "narrate.speechCharsPerSecond",
+            speech_rate_spelled(),
+            "narrate_screen::SPEECH_CHARS_PER_SECOND + CHAR_RATE_MIN + CHAR_RATE_MAX",
+        ),
         // F4.7's "within 1 s of a line": the window in which ＋ jumps to a line instead of adding one.
         param("narrate.addNearSeconds", num(narrate_screen::ADD_NEAR_SECONDS), "narrate_screen::ADD_NEAR_SECONDS"),
         // --- what F4.2's call asks for (§10 puts these in §1's machine table and §2's policy table, and the
@@ -1130,13 +1133,38 @@ pub fn narrate() -> Vec<Param> {
             loudnorm_spelled(narrate_data::REF_LOUDNESS),
             "narrate_data::REF_LOUDNESS",
         ),
-        // --- the automatic voice reference (§F4.6 S2) -------------------------------------------------
-        // These four are deliberately NOT catalogued. §7 spells none of them, and §07-narrate#6 keeps
-        // them out of `params::narrate()` on purpose (its own note: "the five automatic-reference
-        // values ... stay out of the catalogue"; `tests/narrate_details.rs` asserts exactly that, so a
-        // later round cannot add one by accident). They are still one value in one place, the constant
-        // whose rule uses them: `voice_ref::REF_MIN_TAKE_SECONDS`, `REF_WANT_SECONDS`, `REF_TAKE_MAX`
-        // and `REF_MIN_WORDS_PER_SECOND`, each carrying its `P.*` id here for the reader.
+        // --- what the render does with a line that does not fit (§07 §4 names all three; the rule that reads
+        // them is `produce_render::fit`, so each names its owner rather than this page) -----------------------
+        param("P.eng.narrationLeadSeconds", num(produce_render::LEAD_SECONDS), "produce_render::LEAD_SECONDS"),
+        param("P.eng.narrationGapSeconds", num(produce_render::GAP_SECONDS), "produce_render::GAP_SECONDS"),
+        param("P.eng.narrationMaxTempo", num(produce_render::MAX_TEMPO), "produce_render::MAX_TEMPO"),
+        // --- the automatic voice reference (§F4.6 S2): every one read by `voice_ref::plan_reference` --------
+        param(
+            "P.eng.refMinTakeSeconds",
+            num(voice_ref::REF_MIN_TAKE_SECONDS),
+            "voice_ref::REF_MIN_TAKE_SECONDS",
+        ),
+        param(
+            "P.eng.refMinWordsPerSecond",
+            num(voice_ref::REF_MIN_WORDS_PER_SECOND),
+            "voice_ref::REF_MIN_WORDS_PER_SECOND",
+        ),
+        param(
+            "P.machine.refWantSeconds",
+            num(voice_ref::REF_WANT_SECONDS),
+            "voice_ref::REF_WANT_SECONDS",
+        ),
+        param(
+            "P.machine.refTakeMax",
+            voice_ref::REF_TAKE_MAX.to_string(),
+            "voice_ref::REF_TAKE_MAX",
+        ),
+        // --- §08 §4's fitting bound, read where the render applies it (the rest of F4.3 lives in §7) -------
+        param(
+            "P.eng.refPadSeconds",
+            num(voice_ref::REF_PAD_SECONDS),
+            "voice_ref::REF_PAD_SECONDS",
+        ),
     ]
 }
 
@@ -1168,15 +1196,27 @@ pub fn produce() -> Vec<Param> {
             blur_sigma_spelled(),
             "produce_render::blur_sigma",
         ),
-        // --- §08 §4's fitting bound, read where the render applies it (the rest of F4.3 lives in §7) -------
-        param("P.eng.narrationMaxTempo", num(produce_render::MAX_TEMPO), "produce_render::MAX_TEMPO"),
         // --- §08 §4's thumbnail: its size, its band, and how many frames the row holds ---------------------
+        // (`P.eng.narrationMaxTempo` used to sit here: §07's §4 names it too, so it now has one home in
+        // `narrate()`, still pointing at `produce_render::MAX_TEMPO`.)
         param("P.machine.thumbnailLongSide", produce_screen::THUMB_LONG_SIDE.to_string(), "produce_screen::THUMB_LONG_SIDE"),
         param("P.eng.titleBand", title_band_spelled(), "project::TitleBox::default"),
         param("P.policy.publishFrames", produce_screen::FIRST_IMAGES.to_string(), "produce_screen::FIRST_IMAGES"),
         param("P.eng.publishMaxFrames", produce_screen::MAX_IMAGES.to_string(), "produce_screen::MAX_IMAGES"),
         param("P.machine.briefMaxChars", produce_upload::BRIEF_MAX_CHARS.to_string(), "produce_upload::BRIEF_MAX_CHARS"),
     ]
+}
+
+/// §10 spells this row as `15 (8..28)`: the default a line is estimated at, and the band a MEASURED rate is
+/// clamped into (`narrate_screen::char_rate_clamped`). Spelling all three from the constants keeps the row from
+/// drifting from either half of the rule.
+fn speech_rate_spelled() -> String {
+    format!(
+        "{} ({}..{})",
+        num(narrate_screen::SPEECH_CHARS_PER_SECOND),
+        num(narrate_screen::CHAR_RATE_MIN),
+        num(narrate_screen::CHAR_RATE_MAX)
+    )
 }
 
 /// §10 spells `P.eng.loudness` as `I -14, TP -1.5, LRA 11`, which is the filter string read backwards: the

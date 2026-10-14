@@ -301,14 +301,13 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_refe
 
     // The automatic ranking behind the line — the speaker with the most turn time, solo turns (nobody else
     // within P.eng.refPadSeconds), narrowed to their words and ranked by words said with length as
-    // tie-break, takes under P.eng.refMinWordsPerSecond dropped unless that leaves none — is F4.6's
-    // decision and deliberately not re-implemented or restated here. Those ids stay out of the catalogue on
-    // purpose (see params::narrate()'s comment on the five automatic-reference values), which this asserts
-    // so a later round cannot catalogue one by accident.
+    // tie-break, takes under P.eng.refMinWordsPerSecond dropped unless that leaves none — is F4.6's decision
+    // and deliberately not re-implemented or restated here. Its five numbers are catalogued once each, in
+    // §07's section, built from the `voice_ref` constants `plan_reference` reads (§07-narrate#4-parameters-used).
     let rows = naivepost::params::narrate();
-    assert_eq!(spelled(&rows, "P.machine.refWantSeconds"), None);
-    assert_eq!(spelled(&rows, "P.eng.refPadSeconds"), None);
-    assert_eq!(spelled(&rows, "P.eng.refMinWordsPerSecond"), None);
+    assert_eq!(spelled(&rows, "P.machine.refWantSeconds").as_deref(), Some("14"));
+    assert_eq!(spelled(&rows, "P.eng.refPadSeconds").as_deref(), Some("2"));
+    assert_eq!(spelled(&rows, "P.eng.refMinWordsPerSecond").as_deref(), Some("1.5"));
     // The one rule that does read the wanted length is the take band's own status line.
     assert_eq!(det::REFERENCE_WANTED_SECONDS, 14.0);
 }

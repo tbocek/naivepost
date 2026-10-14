@@ -1016,6 +1016,10 @@ name = "sec_07_narrate_3_data"
 path = "tests/sec_07_narrate_3_data.rs"
 
 [[test]]
+name = "sec_07_narrate_4_parameters_used_widgets"
+path = "tests/sec_07_narrate_4_parameters_used_widgets.rs"
+
+[[test]]
 name = "narrate_off_tick_widgets"
 path = "tests/narrate_off_tick_widgets.rs"
 

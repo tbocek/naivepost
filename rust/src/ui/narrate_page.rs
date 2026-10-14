@@ -505,10 +505,10 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
         status.set_widget_name(&format!("line-status-{index}"));
         box_.append(&status);
         let warning = gtk::Label::new(Some(
-            &narrate_screen::fit_warning(fit_for(entry, &ordered)).unwrap_or_default(),
+            &narrate_screen::fit_warning(fit_for(entry, &ordered, &s.voice)).unwrap_or_default(),
         ));
         warning.set_widget_name(&format!("line-warning-{index}"));
-        if narrate_screen::row_is_red(fit_for(entry, &ordered)) {
+        if narrate_screen::row_is_red(fit_for(entry, &ordered, &s.voice)) {
             warning.add_css_class("error");
         }
         box_.append(&warning);
@@ -543,16 +543,17 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
 /// THIS clip goes through `narrate_screen::mirror_fit` together, so what the row warns about is what the render
 /// will do — including speeding the narration up, which a single line measured against its clip can never show.
 ///
-/// Speech length comes from §F4.3's page-only rule: characters over [`narrate_screen::SPEECH_CHARS_PER_SECOND`]
-/// (the page holds no measurement to clamp yet; when a take exists its wav length replaces this).
+/// Speech length comes from §F4.3's page-only rule: characters over the take's MEASURED rate once its wav is on
+/// disk ([`speech_for`]), over [`narrate_screen::SPEECH_CHARS_PER_SECOND`] until there is anything to measure.
 ///
 /// Two kinds of row never wear a fit warning because neither is spoken: an empty line and a caption (`pos` set —
 /// "the viewer reads it; never spoken"). Those answer `Fit::Fits` here rather than being filtered inside the
 /// mirror, since the skip is about what the row means, not about the ladder.
-fn fit_for(entry: &Entry, all: &[(usize, &Entry)]) -> Fit {
+fn fit_for(entry: &Entry, all: &[(usize, &Entry)], voice: &str) -> Fit {
     if entry.text.is_empty() || !entry.pos.is_empty() {
         return Fit::Fits;
     }
+    let tree = crate::ui::window::narrate_session_tree();
     // Every line standing on this clip's bounds, in play order, as the ladder wants it: (index, at, speech).
     let lines: Vec<(usize, f64, f64)> = all
         .iter()
@@ -561,15 +562,27 @@ fn fit_for(entry: &Entry, all: &[(usize, &Entry)]) -> Fit {
             let spoken = if other.text.is_empty() || !other.pos.is_empty() {
                 0.0
             } else {
-                narrate_screen::page_speech_seconds(
-                    other.text.chars().count(),
-                    narrate_screen::SPEECH_CHARS_PER_SECOND,
-                )
+                speech_for(tree.as_ref(), other, voice)
             };
             (*index, other.at, spoken)
         })
         .collect();
     narrate_screen::mirror_fit((entry.e - entry.s).max(0.0), &lines)
+}
+
+/// How long one line runs on the page: §F4.3's measured rate once its take's wav is on disk, §C.2's
+/// 15 chars/s until there is anything to measure, and the 8..28 clamp over either.
+fn speech_for(tree: Option<&crate::layout::Tree>, entry: &Entry, voice: &str) -> f64 {
+    let chars = entry.text.chars().count();
+    let measured = tree.and_then(|tree| {
+        crate::narrate_tts::take_seconds(tree, &crate::narration::key_for(entry, Some(voice)))
+    });
+    // A take's own seconds stand as they measured; only a wild measurement (past 8 or 28 chars/s) is moved,
+    // by the clamped rate back into seconds. No wav means no measurement, so §C.2's estimate answers.
+    match narrate_screen::measured_char_rate(chars, measured.unwrap_or(0.0)) {
+        Some(rate) if measured.is_some() => (chars as f64 / rate).max(f64::EPSILON),
+        _ => narrate_screen::page_speech_seconds(chars, narrate_screen::SPEECH_CHARS_PER_SECOND),
+    }
 }
 
 /// This project's `no_narration` flag as the page reads it at build time. No project folder, or an
@@ -711,7 +724,9 @@ pub(crate) fn say(window: &adw::ApplicationWindow, said: &str) -> String {
 // --- the seams: one widget press, one rules call, one printed sentence -------------------------------
 // The transport's own seams (back / forward / the seek they end in) live in `narrate_page_seek`, because this
 // file is at its size budget and a seek is a rule of its own, not part of the drawing.
-pub use crate::ui::narrate_page_seek::{press_back, press_forward, seek_preview};
+pub use crate::ui::narrate_page_seek::{
+    note_scrub_drag, pending_scrub_for_test, press_back, press_forward, seek_preview,
+};
 
 /// The session spans the preview may cue against. An unpublished state (empty) is read as full coverage of
 /// the cut: the refusal exists for a recording that does not reach the cue, not for a flow that never said.
@@ -1412,7 +1427,7 @@ pub fn wire(window: &adw::ApplicationWindow) {
             // The bar's own drag is the one seek that knows which clips the page is showing; the session's
             // cut.json is the fallback for the buttons, which carry no clip list of their own.
             let segs = read_state().segs;
-            seek_preview(&w, target, Some(&segs), forward);
+            note_scrub_drag(&w, target, Some(&segs), forward);
         });
     }
 

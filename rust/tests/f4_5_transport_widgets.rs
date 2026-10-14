@@ -135,12 +135,27 @@ fn run_buttons(app: &adw::Application) {
     settle();
 }
 
+/// `settle()` only drains what is already due; a scrub seek is issued by a timer armed 120 ms earlier, so a
+/// drag needs WAITING iterations before its effect can be read.
+fn wait_settled() {
+    let context = glib::MainContext::default();
+    for _ in 0..2000 {
+        if naivepost::ui::narrate_page_seek::pending_scrub_for_test().is_none() {
+            break;
+        }
+        context.iteration(true);
+    }
+    settle();
+}
+
 fn run_slider(app: &adw::Application) {
     // Nothing has ever played: the drag still seeks, and its snapped second is what the clock takes — the bar
     // is a transport, not a number painted next to one.
     let window = narrate_page(app, state_at(5.0));
     scale(&window, "narrate-slider").set_value(8.0);
-    settle();
+    // The drag is debounced (§1's slider: `debounced 120 ms`), so the seek comes when the bar goes quiet rather
+    // than on the emission -- `sec_07_narrate_4_parameters_used_widgets` pins that wait itself.
+    wait_settled();
     assert_eq!(
         ui::read_state().session,
         8.0,
@@ -152,7 +167,7 @@ fn run_slider(app: &adw::Application) {
     settle();
     let window = narrate_page(app, state_at(5.0));
     scale(&window, "narrate-slider").set_value(22.0);
-    settle();
+    wait_settled();
     assert_eq!(
         ui::read_state().session,
         25.0,

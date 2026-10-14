@@ -43,9 +43,9 @@ pub const REF_TAKE_MAX: usize = 3;
 /// diarizer guessing over music or a door slam.
 pub const REF_MIN_WORDS_PER_SECOND: f64 = 1.5;
 
-/// How far another speaker has to stay clear of a candidate take. The spec gives 2 s; it keeps the
-/// clone from hearing the other person's last word inside the reference.
-pub const OTHER_SPEAKER_CLEAR_SECONDS: f64 = 2.0;
+/// P.eng.refPadSeconds: how far another speaker has to stay clear of a candidate take. It keeps the clone
+/// from hearing the other person's last word inside the reference.
+pub const REF_PAD_SECONDS: f64 = 2.0;
 
 /// The rate ceiling a picked wav must respect to be readable by the speech server (§F4.6 S3).
 const READABLE_MAX_RATE: u32 = 48_000;
@@ -207,16 +207,16 @@ pub fn plan_reference(
     }
 
     // Solo stretches first: a window of the narrator's turns with no other speaker inside it, and at
-    // least OTHER_SPEAKER_CLEAR_SECONDS of clearance on each side.
-    let mut candidates: Vec<Piece> = Vec::new();
+    // least REF_PAD_SECONDS of clearance on each side.
+    let mut candidates: Vec<(Piece, usize)> = Vec::new();
     for &(start, end, speaker) in turns {
         if speaker != narrator_speaker {
             continue;
         }
         let clear = |other: &(f64, f64, u32)| {
             other.2 != narrator_speaker
-                && other.1 > start - OTHER_SPEAKER_CLEAR_SECONDS
-                && other.0 < end + OTHER_SPEAKER_CLEAR_SECONDS
+                && other.1 > start - REF_PAD_SECONDS
+                && other.0 < end + REF_PAD_SECONDS
         };
         if turns.iter().any(clear) {
             continue;
@@ -228,21 +228,23 @@ pub fn plan_reference(
         if (words as f64) < (end - start) * REF_MIN_WORDS_PER_SECOND {
             continue;
         }
-        candidates.push(Piece { start, end });
+        candidates.push((Piece { start, end }, words));
     }
     if candidates.is_empty() {
         return ReferencePlan::Unavailable(NO_CLEAN_STRETCH.to_string());
     }
 
-    // Longest first, so few pieces carry the wanted length; stop at the cap.
-    candidates.sort_by(|a, b| {
-        b.seconds()
-            .partial_cmp(&a.seconds())
-            .unwrap_or(std::cmp::Ordering::Equal)
+    // §F4.6's ranking: by the WORDS said in each stretch, its length only breaking a tie. Ranking by length
+    // alone would take a slow rambling take over a dense one carrying twice the speech, and the clone learns
+    // the voice, not the pacing, so density is what matters.
+    candidates.sort_by(|(a, a_words), (b, b_words)| {
+        b_words
+            .cmp(a_words)
+            .then(b.seconds().partial_cmp(&a.seconds()).unwrap_or(std::cmp::Ordering::Equal))
     });
     let mut chosen: Vec<Piece> = Vec::new();
     let mut total = 0.0;
-    for piece in candidates {
+    for (piece, _) in candidates {
         if chosen.len() >= REF_TAKE_MAX || total >= REF_WANT_SECONDS {
             break;
         }

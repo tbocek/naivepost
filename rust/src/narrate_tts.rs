@@ -341,6 +341,13 @@ pub fn take_path(tree: &Tree, key: &str) -> PathBuf {
     tree.tts_wav(&narration::tts_file(key))
 }
 
+/// How long this take's wav actually runs, or `None` when it is not on disk or its header cannot be read.
+/// §F4.3's measured rate needs a real length and nothing may stand in for it, so a missing file answers `None`
+/// rather than an estimate — the caller keeps its 15-chars/s default in that case.
+pub fn take_seconds(tree: &Tree, key: &str) -> Option<f64> {
+    crate::voice_ref::wav_seconds(&take_path(tree, key))
+}
+
 /// S5's write: refuse what [`reply_problem`] refuses — so a server's JSON error can never be filed as a take
 /// and replayed forever as silence — then put the bytes where [`take_path`] says they belong.
 pub fn write_take(tree: &Tree, key: &str, data: &[u8]) -> Result<PathBuf, String> {

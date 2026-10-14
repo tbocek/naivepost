@@ -122,8 +122,9 @@ fn sec_08_produce_4_parameters_used_s2_the_cue_bounds_and_the_translation_batch(
 fn sec_08_produce_4_parameters_used_s3_fitting_a_line_to_its_clip() {
     assert_eq!(ITEM, "§08-produce#4-parameters-used");
     // P.eng.narrationMaxExtendSeconds (4) and P.eng.narrationTailSeconds (0.2) are catalogued under §7;
-    // P.eng.narrationMaxTempo is this section's row. All three resolve exactly once.
-    assert_eq!(number("P.eng.narrationMaxTempo"), 1.25);
+    // P.eng.narrationMaxTempo is catalogued under §07, which also names it -- all three resolve exactly once,
+    // whichever section carries them (§07-narrate#4-parameters-used moved the tempo row).
+    assert_eq!(anywhere("P.eng.narrationMaxTempo").unwrap().spelled, "1.25");
     assert_eq!(render::MAX_TEMPO, 1.25);
     assert_eq!(anywhere("P.eng.narrationMaxExtendSeconds").unwrap().spelled, "4");
     assert_eq!(render::MAX_EXTEND_SECONDS, 4.0);
@@ -413,13 +414,13 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
             // §F5.7's page runs.
             "P.eng.thumbnailJPEGMax",
             "P.policy.publishWordsSnapPx",
-            // §4's mix, fitting bound and thumbnail — this round.
+            // §4's mix, fitting bound and thumbnail — this round. (`P.eng.narrationMaxTempo` used to be in
+            // this list: §07's §4 names it too, so it now has one home, in `params::narrate()`.)
             "P.policy.gameVolume",
             "P.eng.loudness",
             "P.eng.clipLimiter",
             // §4's frame-edge blur.
             "P.eng.blurSigma",
-            "P.eng.narrationMaxTempo",
             "P.machine.thumbnailLongSide",
             "P.eng.titleBand",
             "P.policy.publishFrames",

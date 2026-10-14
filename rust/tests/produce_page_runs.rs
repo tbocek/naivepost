@@ -677,7 +677,8 @@ fn f5_7_s8_the_produce_rows_stay_few_and_all_named() {
             "P.eng.clipLimiter",
             // §08 §4's frame-edge blur, catalogued between the limiter and the fitting ceiling.
             "P.eng.blurSigma",
-            "P.eng.narrationMaxTempo",
+            // (`P.eng.narrationMaxTempo` used to sit in this list: §07's §4 names it too, so it now has one
+            // home, in `params::narrate()`.)
             "P.machine.thumbnailLongSide",
             "P.eng.titleBand",
             "P.policy.publishFrames",

@@ -108,7 +108,11 @@ pub const CLICK_SLOP_PX: f64 = 3.0;
 
 /// F4.5's tick: how often the preview follows the players. Fast enough that a person never sees the picture
 /// and the clock disagree, slow enough not to be a second clock of its own.
-pub const TICK_MS: u64 = 100;
+///
+/// §4's engineering tick is ONE rate for the app, so this is `preview::TICK_MS` under the narrate page's name,
+/// not a second value: retuning it moves both pages' loops together, and `narrate.tickMs` catalogues the same
+/// number the narration loop asks `glib` for.
+pub const TICK_MS: u64 = crate::preview::TICK_MS;
 
 /// §1's slider (`Drag to seek; paused, the wheel steps a frame at a time`; inventory §A.4's `debounced 120 ms`):
 /// how long a drag is quiet before the seek is issued. One seek per gesture rather than one per pixel — the cut is
@@ -538,6 +542,19 @@ pub fn char_rate_clamped(rate: f64) -> f64 {
         return SPEECH_CHARS_PER_SECOND;
     }
     rate.clamp(CHAR_RATE_MIN, CHAR_RATE_MAX)
+}
+
+/// §F4.3's `characters / the narration's own measured rate (default 15 chars/s, clamped 8..28)`: the rate a
+/// line's take MEASURED at — its characters over the seconds its wav actually ran — pushed through
+/// [`char_rate_clamped`]. A wav's real length replaces the [`SPEECH_CHARS_PER_SECOND`] estimate as soon as the
+/// take exists; the clamp is what stops one odd measurement (a truncated file, a line padded with silence)
+/// making a row look free or endless. `None` when there is nothing to measure: no take, a caption, an empty
+/// line, or a wav whose header says zero audio.
+pub fn measured_char_rate(chars: usize, wav_seconds: f64) -> Option<f64> {
+    if chars == 0 || !wav_seconds.is_finite() || wav_seconds <= 0.0 {
+        return None;
+    }
+    Some(char_rate_clamped(chars as f64 / wav_seconds))
 }
 
 /// §F4.3's page-only half of "speech length": **on the Narrate page** a line whose take does not exist yet is

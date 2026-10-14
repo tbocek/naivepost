@@ -515,7 +515,10 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
         ("narrate.takeLabelPx", "narrate_screen::TAKE_LABEL_MIN_PX"),
         ("narrate.tickMs", "narrate_screen::TICK_MS"),
         ("narrate.seekDebounceMs", "narrate_screen::SEEK_DEBOUNCE_MS"),
-        ("narrate.speechCharsPerSecond", "narrate_screen::SPEECH_CHARS_PER_SECOND"),
+        (
+            "narrate.speechCharsPerSecond",
+            "narrate_screen::SPEECH_CHARS_PER_SECOND + CHAR_RATE_MIN + CHAR_RATE_MAX",
+        ),
         ("narrate.addNearSeconds", "narrate_screen::ADD_NEAR_SECONDS"),
     ] {
         assert_eq!(row(id).from, from, "{id}");
@@ -534,10 +537,17 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
     assert_eq!(spelled("narrate.autosaveMs"), "400");
     assert_eq!(row("narrate.autosaveMs").from, "shell::NARRATION_AUTOSAVE");
 
-    // Two rows §1 needs and §10 has no id for are absent rather than invented: the audition lead-in is the seek
-    // button's 3 s (§1 gives it no row) and the ＋'s half-second gap is F4.7's, so neither pretends to be tuned.
+    // The one row §1 needs that §10 has no id for stays absent rather than invented: the ＋'s half-second gap is
+    // F4.7's, so it does not pretend to be tuned here. F4.3's fitting trio now HAS ids and rows.
     let ids: Vec<&str> = params::narrate().iter().map(|param| param.id).collect();
-    assert!(!ids.contains(&"P.eng.narrationLeadSeconds"), "{ids:?}");
+    assert!(!ids.contains(&"narrate.addGapSeconds"), "{ids:?}");
+    for fitted in [
+        "P.eng.narrationLeadSeconds",
+        "P.eng.narrationGapSeconds",
+        "P.eng.narrationMaxTempo",
+    ] {
+        assert!(ids.contains(&fitted), "{fitted} is read by the render's ladder: {ids:?}");
+    }
     // The page's own rows are `P.eng.` or `narrate.`; the five extra ones are the narration flow's, which §10
     // puts in §1's machine table and §2's policy table rather than among the engineering constants
     // (§10:60, 87, 89, 90, and `P.policy.ttsLanguage` in §2).
@@ -556,7 +566,10 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
             "P.policy.ttsLanguage",
             // F4.1 S4's toggle: §07 names it in the flow diagram, not in its own §4 list, so it is
             // carried here with that reason rather than being read as a row from another chapter.
-            "P.policy.narrationRewrite"
+            "P.policy.narrationRewrite",
+            // The automatic reference's two aim values, which §10 files in §1's machine table.
+            "P.machine.refWantSeconds",
+            "P.machine.refTakeMax"
         ],
         "{foreign:?}"
     );

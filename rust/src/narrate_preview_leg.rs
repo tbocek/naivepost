@@ -522,7 +522,7 @@ pub trait PreviewPage {
 /// rather than watching a cut.
 pub fn start_tick(page: Rc<dyn PreviewPage>) {
     glib::timeout_add_local(
-        std::time::Duration::from_millis(crate::preview::TICK_MS),
+        std::time::Duration::from_millis(crate::narrate_screen::TICK_MS),
         move || {
             if !page.running() {
                 return glib::ControlFlow::Continue;

@@ -15,6 +15,7 @@ use naivepost::narration::{self, Entry};
 use naivepost::params;
 use naivepost::shell;
 use naivepost::textfmt::SessionLine;
+use naivepost::voice_ref;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::seg;
@@ -187,11 +188,12 @@ fn sec_07_narrate_4_parameters_used_s3_the_seconds_the_page_and_preview_wait_wit
         "narrate_screen::AUDITION_LEAD_SECONDS"
     );
 
-    // P.eng.speechCharsPerSecond is catalogued under the id §07-narrate#1-screen chose; §4 names the same value.
-    assert_eq!(number("narrate.speechCharsPerSecond"), 15.0);
+    // P.eng.speechCharsPerSecond is catalogued under the id §07-narrate#1-screen chose; §4 names the same value,
+    // and §10 spells it `15 (8..28)` -- the default plus the band a measured rate is clamped into.
+    assert_eq!(row("narrate.speechCharsPerSecond").spelled, "15 (8..28)");
     assert_eq!(
         row("narrate.speechCharsPerSecond").from,
-        "narrate_screen::SPEECH_CHARS_PER_SECOND"
+        "narrate_screen::SPEECH_CHARS_PER_SECOND + CHAR_RATE_MIN + CHAR_RATE_MAX"
     );
 
     // The lead-in: three seconds of picture before the line, never back past the clip's start.
@@ -214,6 +216,67 @@ fn sec_07_narrate_4_parameters_used_s3_the_seconds_the_page_and_preview_wait_wit
     );
     let accepted = screen::add_at_playhead(12.5, &clips, &spoken);
     assert_eq!(accepted, Ok(12.5), "past the estimate the clip is free again, at the pressed second");
+}
+
+// --- P.eng.refPadSeconds: the row, and the rule that reads it ------------------------------------------
+
+/// §07-narrate#4-parameters-used — the pad has a row built from the constant `plan_reference` guards its solo
+/// windows with, so the catalogue cannot drift from the clearance another speaker has to stay outside.
+#[test]
+fn sec_07_narrate_4_parameters_used_ref_pad_seconds_is_a_row_and_is_read()
+{
+    assert_eq!(number("P.eng.refPadSeconds"), 2.0);
+    assert_eq!(
+        row("P.eng.refPadSeconds").from,
+        "voice_ref::REF_PAD_SECONDS",
+        "the row must name the constant the solo test reads"
+    );
+    // Read, not just catalogued: a neighbour 1.9 s away sits inside the pad and costs the stretch its place,
+    // while one at exactly 2.0 s leaves it clean.
+    let crowded = voice_ref::plan_reference(
+        &[],
+        &[(0.0, 6.0, 1u32), (7.9, 9.0, 2)],
+        |_, _| 30,
+        1,
+    );
+    assert!(
+        matches!(crowded, voice_ref::ReferencePlan::Unavailable(_)),
+        "1.9 s of clearance is inside P.eng.refPadSeconds: {crowded:?}"
+    );
+    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], |_, _| 30, 1);
+    assert_eq!(
+        clear,
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 0.0, end: 6.0 }]),
+        "at the pad's own value the neighbour is outside the guard"
+    );
+}
+
+// --- the speech-rate band: measured off the take's wav, clamped 8..28 -------------------------------------
+
+/// §07-narrate#4-parameters-used — §10 spells `P.eng.speechCharsPerSecond` as `15 (8..28)`: the default and
+/// the two bounds, all three read. The bounds are not decoration — [`screen::measured_char_rate`] pushes a
+/// measurement through them, and the page measures one off every take whose wav is on disk.
+#[test]
+fn sec_07_narrate_4_parameters_used_s3_speech_rate_band_clamps_a_measurement() {
+    // A take that ran exactly at the default: 60 characters in 4 s.
+    assert_eq!(screen::measured_char_rate(60, 4.0), Some(15.0));
+    // Too fast to believe: 200 characters in 2 s would be 100 chars/s, so it comes back at the ceiling.
+    assert_eq!(screen::measured_char_rate(200, 2.0), Some(screen::CHAR_RATE_MAX));
+    assert_eq!(screen::measured_char_rate(200, 2.0), Some(28.0));
+    // Too slow likewise: 10 characters in 4 s is 2.5 chars/s, floored at 8.
+    assert_eq!(screen::measured_char_rate(10, 4.0), Some(8.0));
+    // Nothing to measure: no words, no seconds, or a header that made no sense.
+    assert_eq!(screen::measured_char_rate(0, 4.0), None);
+    assert_eq!(screen::measured_char_rate(60, 0.0), None);
+    assert_eq!(screen::measured_char_rate(60, f64::NAN), None);
+    assert_eq!(screen::measured_char_rate(60, -1.0), None);
+
+    // The clamp bites through the estimate too, so no caller can smuggle a wild rate past it.
+    assert_eq!(screen::page_speech_seconds(280, 100.0), 10.0, "280 chars at the 28 chars/s ceiling");
+    assert_eq!(screen::page_speech_seconds(80, 0.5), 10.0, "80 chars at the 8 chars/s floor");
+
+    // And the row spells all three, from the constants the rules read.
+    assert_eq!(row("narrate.speechCharsPerSecond").spelled, "15 (8..28)");
 }
 
 // --- S4: the take floor and the alpha that rides with a take ---------------------------------------------------
@@ -307,27 +370,46 @@ fn sec_07_narrate_4_parameters_used_s5_the_engineering_sentence_tick_debounce_au
     assert_ne!(narration::tts_seed(&key), narration::tts_seed(&rolled));
 }
 
-// --- S6: what §4 names that has no row, and why ---------------------------------------------------------------
+// --- S5b: one tick rate, read by both pages' loops ---------------------------------------------------------
 
-/// §07-narrate#4-parameters-used — the ids §4 lists that no rule in this tree reads yet. A number nothing reads
-/// has no module to live in, so asserting their absence is what stops one arriving as a decoration.
+/// §07-narrate#4-parameters-used — "tick 100 ms" is ONE engineering number, not two. The Cut page's loop and
+/// the narration preview's loop ask `glib` for the same interval, so the row cannot drift from either.
 #[test]
-fn sec_07_narrate_4_parameters_used_s6_what_this_section_names_that_has_no_row_and_why() {
+fn sec_07_narrate_4_parameters_used_s5_one_tick_rate_for_both_pages() {
+    assert_eq!(screen::TICK_MS, naivepost::preview::TICK_MS, "one rate, two names");
+    assert_eq!(naivepost::preview::TICK_MS, 100);
+    assert_eq!(row("narrate.tickMs").spelled, "100");
+    assert_eq!(row("narrate.tickMs").from, "narrate_screen::TICK_MS");
+    // The Cut page catalogues the same value under its own prefix, which is only honest while they are one.
+    assert!(params::cut()
+        .iter()
+        .any(|param| param.id == "preview.playTickMs"));
+}
+
+// --- S6: what §4 names that has no row, and why -------------------------------------------------------------
+
+/// §07-narrate#4-parameters-used — every id §4 names now has exactly one row, each built from a constant a rule
+/// reads. Asserting the count of homes is what stops a number arriving twice or as a decoration; the ids §10
+/// files in another chapter's table are included because "one home" means one in the whole catalogue.
+#[test]
+fn sec_07_narrate_4_parameters_used_s6_every_id_has_exactly_one_row() {
     let listed = all_sections();
 
-    // F4.3's fitting arithmetic: packing and speeding live in the render, which this tree has not written yet.
+    // F4.3's fitting arithmetic: read by the render's own ladder (`produce_render::fit`), catalogued here
+    // because §07's §4 names them.
     for id in [
         "P.eng.narrationLeadSeconds",
         "P.eng.narrationGapSeconds",
         "P.eng.narrationMaxTempo",
     ] {
-        assert!(
-            !listed.iter().any(|seen| seen == id),
-            "{id} is F4.3's fitting arithmetic, which has no constant in this tree: a row would claim a rule that does not exist"
+        assert_eq!(
+            listed.iter().filter(|seen| *seen == id).count(),
+            1,
+            "{id} must have exactly one row -- §F4.3's fitting reads it once"
         );
     }
 
-    // F4.6/F4.7's automatic voice reference, likewise unimplemented — hand-picked takes are the only ones taken.
+    // F4.6/F4.7's automatic voice reference: `voice_ref::plan_reference` reads all five.
     for id in [
         "P.eng.refMinTakeSeconds",
         "P.eng.refPadSeconds",
@@ -335,19 +417,20 @@ fn sec_07_narrate_4_parameters_used_s6_what_this_section_names_that_has_no_row_a
         "P.machine.refTakeMax",
         "P.eng.refMinWordsPerSecond",
     ] {
-        assert!(
-            !listed.iter().any(|seen| seen == id),
-            "{id} belongs to F4.6/F4.7's automatic voice reference, which this tree does not run yet"
+        assert_eq!(
+            listed.iter().filter(|seen| *seen == id).count(),
+            1,
+            "{id} is read by the automatic reference pick and belongs in the catalogue exactly once"
         );
     }
 
-    // §10:194 spells speechCharsPerSecond as "15 (8..28)". The 15 is read; nothing corrects the estimate, so the
-    // bounds are absent while the default has a row — under the id §07-narrate#1-screen chose.
-    assert!(listed.iter().any(|id| id == "narrate.speechCharsPerSecond"));
+    // §10:194 spells speechCharsPerSecond as "15 (8..28)": one row carrying the default AND its band, so no
+    // separate floor/ceiling id may appear beside it.
+    assert_eq!(listed.iter().filter(|id| *id == "narrate.speechCharsPerSecond").count(), 1);
     for bound in ["speechRateFloor", "speechRateCeiling", "speechCharsPerSecondFloor"] {
         assert!(
             !listed.iter().any(|id| id.contains(bound)),
-            "{bound} would be a bound nothing corrects"
+            "{bound} would be a second row for a bound §10 spells inside the one row"
         );
     }
 
@@ -373,7 +456,7 @@ fn sec_07_narrate_4_parameters_used_s6_what_this_section_names_that_has_no_row_a
 #[test]
 fn sec_07_narrate_4_parameters_used_s7_every_row_names_where_its_value_lives() {
     let rows = narrate_rows();
-    assert!(rows.len() >= 19, "{:?} rows", rows.len());
+    assert!(rows.len() >= 27, "{:?} rows", rows.len());
 
     for param in &rows {
         assert!(
@@ -406,7 +489,11 @@ fn sec_07_narrate_4_parameters_used_s7_every_row_names_where_its_value_lives() {
             "P.policy.ttsLanguage",
             // F4.1 S4's toggle: §07 names it in the flow diagram, not in its own §4 list, so it is
             // carried here with that reason rather than being read as a row from another chapter.
-            "P.policy.narrationRewrite"
+            "P.policy.narrationRewrite",
+            // The automatic reference's two aim values: §10 files them in §1's machine table, and §07's §4
+            // names both, so they are carried here for the same reason as the four above.
+            "P.machine.refWantSeconds",
+            "P.machine.refTakeMax"
         ],
         "{foreign:?} — anything else this section carries belongs in another chapter's table"
     );
