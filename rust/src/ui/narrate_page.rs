@@ -1198,6 +1198,15 @@ pub fn set_narration_off(window: &adw::ApplicationWindow, off: bool) -> String {
         }
     }
     mutate(|s| s.narration_off = off);
+    // A preview that is already running keeps running unless this stops it: greying the panel only
+    // takes away the controls, so the app would go on playing a narration through greyed-out widgets —
+    // sound coming out of a page whose tick says there is no narration. The tick's answer is that the
+    // narration is off NOW, so the players go with it, through the same door ⏹ uses for its legs.
+    // `narration.json` is still not opened by any of this.
+    if off && read_state().playing {
+        let _ = crate::narrate_preview_leg::stop_running();
+        mutate(|state| state.playing = false);
+    }
     apply_greys(window, off);
     let said = if off {
         format!(

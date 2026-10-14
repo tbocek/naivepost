@@ -654,3 +654,68 @@ fn f5_2_a_clean_run_reports_its_file_seconds_and_size() {
     assert_eq!(ending.status, render::STAGE_DONE);
     assert_eq!(ending.progress, flow::progress_text("produce/final.mp4", made.seconds, &made.size));
 }
+
+// ---- F4.8 Narration off: the render asks the seam, not itself ------------------------------------
+
+/// A Run whose `no_narration` is set straight on the struct rather than through a project file: this
+/// pair of tests is about which list `speech_plan` reads, and building the flag into a temp project
+/// would test `snapshot`, not the seam.
+fn run_with_lines(tag: &str, lines: Vec<Entry>, no_narration: bool) -> (Tree, flow::Run) {
+    let (_root, tree) = common::tree_in(tag);
+    let mut run = flow::snapshot(
+        Some(cut_of(vec![seg(0.0, 10.0)])),
+        &tree,
+        lines,
+        Produce::default(),
+        &project(),
+        Some(Publish::default()),
+        String::new(),
+    );
+    run.no_narration = no_narration;
+    (tree, run)
+}
+
+/// f4_8_s3_speech_plan_asks_the_narration_seam — with narration OFF the render speaks nothing, and it
+/// knows that because it asked [`naivepost::narrate_off::lines_to_speak`] rather than filtering the
+/// record by hand. `speaking` is passed as `true` on purpose: `plan()`'s own `speaking` guard already
+/// short-circuits on `no_narration`, so bypassing THAT guard is the only way to prove the answer came
+/// from the seam and not from the earlier branch. Before this fix the filter here looked at the text
+/// alone and both worded lines were handed back for synthesis.
+#[test]
+fn f4_8_s3_speech_plan_asks_the_narration_seam() {
+    let (tree, run) = run_with_lines(
+        "f48-off",
+        vec![entry(0.0, 4.0, 0.0, "first line"), entry(5.0, 9.0, 0.0, "second line")],
+        true,
+    );
+    let plan = exec::speech_plan(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), true);
+    assert!(
+        plan.is_empty(),
+        "narration off means the render has NOTHING to speak, even with `speaking` forced on: {plan:?}"
+    );
+}
+
+/// f4_8_s3_a_blank_line_is_never_spoken — the blank-line rule belongs to the seam and nowhere else.
+/// The middle row's text is spaces: a deliberate silence (§F4.7's 🗑 leaves one), so it is not spoken and
+/// only the two worded rows are owed takes, in the order the record lists them.
+#[test]
+fn f4_8_s3_a_blank_line_is_never_spoken() {
+    std::fs::write(&*SYNTHESIZED, b"a take from an earlier run").unwrap();
+    let (tree, run) = run_with_lines(
+        "f48-blank",
+        vec![
+            entry(0.0, 3.0, 0.0, "worded before"),
+            entry(4.0, 5.0, 0.0, "   "),
+            entry(6.0, 9.0, 0.0, "worded after"),
+        ],
+        false,
+    );
+    let plan =
+        exec::speech_plan(&run, &tree, &mats(&[], exec::Cues::default(), &has_one_wav, &seconds_2_5), true);
+    let asked: Vec<&str> = plan.iter().map(|to| to.text.as_str()).collect();
+    assert_eq!(
+        asked,
+        vec!["worded before", "worded after"],
+        "the silent middle row is dropped by the seam; the survivors are the worded ones, in order"
+    );
+}

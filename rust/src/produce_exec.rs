@@ -257,10 +257,12 @@ fn cue_on_clock(cue: &subs::Cue, produced_start: f64, rate: f64) -> subs::Cue {
     }
 }
 
-/// S2: what still has to be spoken, asked of [`render::speak_job`] so the rule stays in one place, and
-/// turned into the files each line lands in. A captions-only voice answers [`render::Speak::Nothing`], which
-/// is why nothing here synthesises for it.
-fn speech_plan(
+/// S2: what still has to be spoken. Which lines a run is ALLOWED to speak is not this module's rule:
+/// it comes through [`crate::narrate_off::lines_to_speak`], the one seam F4.8 names, so neither the
+/// narration tick nor a blank line (a deliberate silence) can be missed here. The list that seam
+/// returns is then asked of [`render::speak_job`] so the "which of these still need a take" rule stays
+/// in one place, and each answer is turned into the file it lands in.
+pub fn speech_plan(
     run: &Run,
     tree: &Tree,
     mats: &Materials,
@@ -269,18 +271,20 @@ fn speech_plan(
     if !speaking {
         return Vec::new();
     }
-    match render::speak_job(false, &run.lines, |entry| {
+    // The seam first: narration off answers empty, and a blank line is never spoken. Everything below
+    // works on THAT list, so no caller can speak a line the tick or a deliberate silence rules out.
+    let speakable = crate::narrate_off::lines_to_speak(run.no_narration, &run.lines);
+    match render::speak_job(false, &speakable, |entry| {
         (mats.wav_of)(entry).is_some_and(|wav| wav.is_file())
     }) {
         render::Speak::Nothing => Vec::new(),
-        render::Speak::Missing(_) => run
-            .lines
+        // The seam's OWN list is what gets spoken, walked in its own order. `index` is the position in
+        // that list — which is the record with the dropped lines taken out — so a silent row disappears
+        // without renumbering the survivors and two identical worded lines each keep their own take.
+        render::Speak::Missing(_) => speakable
             .iter()
             .enumerate()
-            .filter(|(_, entry)| {
-                !entry.text.trim().is_empty()
-                    && !(mats.wav_of)(entry).is_some_and(|wav| wav.is_file())
-            })
+            .filter(|(_, entry)| !(mats.wav_of)(entry).is_some_and(|wav| wav.is_file()))
             .map(|(index, entry)| ToSpeak {
                 index,
                 text: entry.text.clone(),

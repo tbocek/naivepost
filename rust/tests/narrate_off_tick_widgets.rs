@@ -57,29 +57,168 @@ fn staged_entries() -> Vec<Entry> {
     }]
 }
 
+/// One `adw::Application` and one main loop for the whole binary, as every widget test here has to be:
+/// a second `run()` in a second test aborts with "cannot acquire the default main context", so both
+/// scenarios ride this single activation, each building its own window and closing it before the next.
 static RUN: Once = Once::new();
 
-#[test]
-fn f4_8_s1_s2_s5_the_real_tick_greys_persists_and_leaves_the_record_alone() {
-    // Pin cwd to our own temp root BEFORE anything builds: the page resolves the project through
-    // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray folder into the repo.
-    let root = std::env::temp_dir().join(format!("np-narroff-wire-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("temp root created");
-    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
+/// Set by each block at its own last assertion, so a scenario that never got there is a failure rather
+/// than a silent pass next to the other test's success.
+static STOP_RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static TICK_RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// ONE `adw::Application`, one main loop, both scenarios walked inside it. libtest runs these two tests
+/// on separate threads of one process, and `Once::call_once` is what joins them: whichever thread gets
+/// there first runs the loop, and the other blocks in `call_once` until that loop has finished — so after
+/// either call returns, BOTH blocks have run and their flags can be read. A second
+/// `adw::Application::run` in the same process aborts on the already-acquired default main context, which
+/// is why neither test may start its own.
+fn shared_loop() {
     RUN.call_once(|| {
         let app = adw::Application::builder()
             .application_id(ui::APP_ID)
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.connect_activate(run_body);
-        app.run();
+        // Our own argv: handing cargo-test's flags to libgio aborts before activate runs.
+        app.run_with_args(&["naivepost"]);
     });
 }
 
+#[test]
+fn f4_8_s1_a_running_preview_stops_with_the_narration() {
+    shared_loop();
+    assert!(
+        STOP_RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the running-preview block never ran"
+    );
+}
+
+#[test]
+fn f4_8_s1_s2_s5_the_real_tick_greys_persists_and_leaves_the_record_alone() {
+    shared_loop();
+    assert!(
+        TICK_RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the tick round-trip block never ran"
+    );
+}
+
 fn run_body(app: &adw::Application) {
+    stop_body(app);
+    tick_round_trip(app);
+    app.quit();
+}
+
+/// Greying a panel whose sound is still coming out of the speakers would leave the app playing a
+/// narration the tick says there is none, so the tick's door stops the players as well as setting
+/// sensitivity. Nothing here spawns a child: with no preview in the leg's slot `stop_running` answers
+/// cleanly, which keeps the assertion about the PAGE's flag rather than about a process.
+fn stop_body(app: &adw::Application) {
+    // Its own project folder, written BEFORE the window is built: the page resolves its session through
+    // `startup::session_dir(current_dir())`, and the other scenario reuses this process's cwd.
+    let root = std::env::temp_dir().join(format!("np-narroff-stop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp root created");
+    std::env::set_current_dir(&root).expect("cwd pinned to the stop root");
+    naivepost::project::save(
+        &naivepost::project::Project { no_narration: false, ..Default::default() },
+        &root.join("demo.naivepost"),
+    )
+    .expect("a narrated project to start from");
     let model = naivepost::project::load(&fixture_dir()).expect("the fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    ui::tab_button(&window, Page::Narrate)
+        .expect("the shell has a Narrate tab")
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
+
+    // Stage the state the transport leaves behind while a preview runs: the same published copy the
+    // page reads, not a poke at a private field. The narration is ON here and goes off below, so the
+    // greys the earlier block left on these widgets are cleared before the check starts.
+    let mut running = ui::read_state();
+    running.playing = true;
+    running.narration_off = false;
+    ui::set_state(running);
+    ui::refresh(&window);
+    settle();
+    assert!(ui::read_state().playing, "the preview is running before the tick moves");
+    for name in GREYED_WIDGETS {
+        assert!(
+            widget_in(&window, name).unwrap().is_sensitive(),
+            "{name} is live again with the narration back on"
+        );
+    }
+
+    let session_root = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
+    let tree = naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
+    narration::save(
+        &Narration { entries: staged_entries(), silent: Vec::new() },
+        &tree,
+    )
+    .expect("record staged");
+    let record_before = std::fs::read(tree.narration_json()).expect("record readable");
+
+    let tick = widget_in(&window, "narration-tick")
+        .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+        .expect("the Narration tick is a check button");
+    // The emission a click produces: `set_active` moves the box AND fires `toggled`. The page's state is
+    // process-wide, so the round-trip block may have left the tick OFF; bring it back on through the same
+    // door before moving it off again, or this press would be a no-op.
+    if !tick.is_active() {
+        tick.set_active(true);
+        settle();
+    }
+    // The project file now says narrated (this scenario's own root), so the seeded record and the flag
+    // agree — which is what the status sentence below is about.
+    tick.set_active(false);
+    settle();
+
+    assert!(!ui::read_state().playing, "the running preview stopped with the narration");
+    assert!(ui::read_state().narration_off, "and the flag went off with it");
+    assert!(tick.is_sensitive(), "the tick stayed pressable \u{2014} it is the way back");
+    assert_eq!(
+        status_text(&window),
+        format!("narration off \u{2014} {} greyed", narrate_screen::off_greys().join(", ")),
+        "stopping the preview did not change what the tick says"
+    );
+    assert_eq!(
+        std::fs::read(tree.narration_json()).expect("still readable"),
+        record_before,
+        "stopping the players still never opens the record"
+    );
+
+    window.close();
+    settle();
+    // Publish the OFF state this block ends in: the page keeps its own copy process-wide, and the next
+    // scenario builds a fresh window over it.
+    ui::set_state({
+        let mut after = ui::read_state();
+        after.narration_off = true;
+        after.playing = false;
+        after
+    });
+    STOP_RAN.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn tick_round_trip(app: &adw::Application) {
+    // The cwd and the project folder are pinned BEFORE the window is built: the page resolves its session
+    // through `startup::session_dir(current_dir())`, and the scenario that ran first left the cwd on a
+    // folder it had already deleted (with `no_narration: true` written into that project file).
+    let root = std::env::temp_dir().join(format!("np-narroff-wire-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp root created");
+    std::env::set_current_dir(&root).expect("cwd pinned to the round-trip root");
+    let model = naivepost::project::load(&fixture_dir()).expect("the fixture loads");
+    naivepost::project::save(&model, &root.join("demo.naivepost"))
+        .expect("the narrated fixture project, in this scenario's own folder");
+    // The previous scenario left the published state with the narration off; this block starts from an ON
+    // project, so it puts the page back to what a narrated session opens with before building the window.
+    ui::set_state({
+        let mut fresh = ui::read_state();
+        fresh.narration_off = false;
+        fresh
+    });
     assert!(
         !model.no_narration,
         "the fixture must be a NARRATED project or the tick's resting state proves nothing"
@@ -109,12 +248,19 @@ fn run_body(app: &adw::Application) {
         .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
         .expect("the Narration tick is a check button");
 
-    // (a) S1/S2: the widget's resting state comes from the project's flag, not from a literal.
+    ui::set_narration_off(&window, false);
+    settle();
+    // (a) S1/S2: the widget's resting state comes from the project's flag, not from a literal. The
+    // running-preview block may have left the published state with the narration OFF, so this block puts
+    // it back on through the page's own door and clears the status line before checking what an ON page
+    // looks like — (d) below reads that line, and it must see only what (b)'s click prints.
     assert_eq!(
         tick.is_active(),
         narrate_off::tick_checked(false),
-        "a narrated project opens with the tick CHECKED"
+        "the tick is CHECKED with the narration on"
     );
+    // (d) reads this line, so it must show only what (b)'s click prints: clear it before firing.
+    ui::find_status(window.upcast_ref()).expect("the shell has a status line").set_text("");
     for name in GREYED_WIDGETS {
         assert!(
             widget_in(&window, name).unwrap().is_sensitive(),
@@ -176,15 +322,18 @@ fn run_body(app: &adw::Application) {
         saved.contains("\"no_narration\": true"),
         "the tick wrote its own flag, so it survives a reload: {saved}"
     );
-    assert_eq!(
+    assert!(
         naivepost::project::load(tree.dir())
             .expect("the project reloads")
             .no_narration,
-        true,
         "and a fresh read sees it"
     );
 
-    // (f) S5: back on through the same widget, the surfaces return and the record still matches.
+    // (f) S5: back on through the same widget, the surfaces return and the record still matches. The box
+    // is already checked from the reset in (a), so `set_active` would emit nothing; move it off first so
+    // this is a real emission of the handler, exactly as a user's second click would be.
+    tick.set_active(false);
+    settle();
     tick.set_active(true);
     settle();
     assert!(tick.is_active(), "the box came back on");
@@ -208,4 +357,5 @@ fn run_body(app: &adw::Application) {
 
     window.close();
     settle();
+    TICK_RAN.store(true, std::sync::atomic::Ordering::SeqCst);
 }
