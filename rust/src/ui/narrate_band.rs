@@ -1,0 +1,543 @@
+//! §07-narrate#1-screen, number **10** on the page: the take band's painted surface and its hand.
+//!
+//! The page (`crate::ui::narrate_page`) draws the widget and calls three things here: [`build_band`]
+//! (the lane inside its own horizontal scroller), [`attach`] (the ONE drag gesture and the ONE wheel
+//! controller), and [`repaint`] from `refresh`. Where a position means something — click-vs-drag,
+//! the zoom step, what a take's label says — is [`crate::narrate_band`]'s rule; this module only reads the
+//! event positions, writes slots, and puts ink where the plan says. Colours are §A.7's documented
+//! four: dark ground (the CSS plate), blue envelope, green takes, red cue bar.
+
+use adw::prelude::*;
+use gtk4 as gtk;
+
+use crate::narrate_band::{self as band, BandPaint};
+use crate::narrate_screen as screen;
+use crate::wave_build;
+
+/// The lane's height, from the module that catalogues it (`narrate.bandLanePx`).
+const LANE_PX: i32 = screen::BAND_LANE_PX as i32;
+/// The ruler strip painted across the top of the lane (`narrate.bandRulerPx`).
+const RULER_PX: f64 = screen::BAND_RULER_PX;
+/// Wave peaks arrive at this rate from [`wave_build::ensure`]'s cache.
+const PEAK_HZ: f64 = wave_build::PEAK_HZ;
+/// The scroll notches one wheel step spans, so a notch is one zoom step wherever the tracker is.
+const WHEEL_NOTCH_PX: f64 = 50.0;
+/// The red bar's width in px: two, so it reads over the ruler and the lane as ONE line.
+const BAR_PX: f64 = 2.0;
+
+/// The lane and the scroller it lives in, named as the page names it. Returned so the page can append
+/// it where §A.1 puts it; the scroller exists because §1 promises the band its "own scrollbar once the
+/// wheel zooms past fit" — `Automatic` means it appears exactly then and is absent at fit.
+pub fn build_band() -> (gtk::ScrolledWindow, gtk::DrawingArea) {
+    let lane = gtk::DrawingArea::new();
+    lane.set_widget_name("take-band");
+    lane.set_size_request(240, LANE_PX);
+    lane.add_css_class("narrate-plate");
+    // `Fill`, not `Start`: an area that hugs its own minimum keeps its 240 px request whatever the
+    // paned offers, so the band would be a stub in a 560 px column and every px/s mapping would be
+    // measured against the wrong width.
+    lane.set_halign(gtk::Align::Fill);
+    lane.set_hexpand(true);
+
+    let scroller = gtk::ScrolledWindow::new();
+    scroller.set_widget_name("take-band-scroller");
+    scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::External);
+    scroller.set_child(Some(&lane));
+    scroller.set_propagate_natural_height(false);
+    scroller.set_min_content_height(LANE_PX);
+    scroller.set_max_content_height(LANE_PX);
+    (scroller, lane)
+}
+
+/// Install the painter and both controllers on the band. Called once, from the page's `wire`, after
+/// `set_content` so the widget exists.
+pub fn attach(window: &adw::ApplicationWindow) {
+    let Some(lane) = lane_of(window) else { return };
+    lane.set_draw_func(move |_area, cr, width, height| {
+        paint(cr, width.max(1) as f64, height.max(1) as f64);
+    });
+
+    // ONE drag gesture, button 1: press and motion carry the live selection, release decides what it
+    // became. No second button-1 gesture on this widget — two would race and GTK's order, not the
+    // person's intent, would choose between selecting and setting the bar.
+    let drag = gtk::GestureDrag::new();
+    drag.set_button(1);
+    let begin_win = window.clone();
+    drag.connect_drag_begin(move |_g, x, _y| {
+        note_press(x);
+        repaint(&begin_win);
+    });
+    let move_win = window.clone();
+    drag.connect_drag_update(move |_g, x, _y| {
+        note_motion(x);
+        repaint(&move_win);
+    });
+    let end_win = window.clone();
+    drag.connect_drag_end(move |_g, x, _y| {
+        finish_drag(&end_win, x);
+    });
+    lane.add_controller(drag.clone());
+    DRAG.with(|slot| *slot.borrow_mut() = Some(drag));
+
+    // ONE vertical wheel controller: plain notches zoom, Shift pans an eighth of the view.
+    let wheel = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+    wheel.set_name(Some("wheel-take-band"));
+    let scroll_win = window.clone();
+    wheel.connect_scroll(move |ctrl, _dx, dy| {
+        let shift = ctrl
+            .current_event_state()
+            .contains(gtk::gdk::ModifierType::SHIFT_MASK);
+        if shift {
+            pan(&scroll_win, -band::pan_by(view_width(&scroll_win)));
+        } else {
+            zoom_by(&scroll_win, -dy / WHEEL_NOTCH_PX);
+        }
+        repaint(&scroll_win);
+        glib::Propagation::Stop
+    });
+    lane.add_controller(wheel);
+    repaint(window);
+}
+
+/// The band's gesture, kept for the test that fires it the way GTK does — the same reason
+/// `cut_select_press::band_selection_gesture_for_test` exists on the Cut page.
+pub fn band_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
+    let _ = window;
+    DRAG.with(|slot| slot.borrow().clone())
+}
+
+thread_local! {
+    /// The drag this window put on the band, so a test can reach the one the page installed.
+    static DRAG: std::cell::RefCell<Option<gtk::GestureDrag>> =
+        const { std::cell::RefCell::new(None) };
+    /// Fit-relative zoom of the view. 1.0 = the whole recording across the lane.
+    static ZOOM: std::cell::Cell<f64> = const { std::cell::Cell::new(1.0) };
+    /// Px scrolled from the recording's start; never outside the file ([`band::clamp_view`]).
+    static OFFSET: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    /// The red ▶-start bar, in seconds of the recording.
+    static RED_BAR: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    /// Has anyone put the red bar down yet? Until then it rides the cut's playhead.
+    static RED_BAR_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The live selection in seconds: written by motion, emptied by a click.
+    static SELECTION: std::cell::RefCell<Option<(f64, f64)>> =
+        const { std::cell::RefCell::new(None) };
+    /// The drag's press second, so release can ask `band::drag_or_click` with both ends.
+    static PRESS_X: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    /// The pointer's x in lane px, or negative when it is off the band.
+    static POINTER_X: std::cell::Cell<f64> = const { std::cell::Cell::new(-1.0) };
+    /// The lane's last allocated width, remembered so the wheel can pan before a repaint knows it.
+    static VIEW_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(240.0) };
+    /// The recording's seconds, as last handed to the painter.
+    static DURATION: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+}
+
+/// The band's view as its painter last set it: `(seconds, px/s)`. A test reads these so its own
+/// mapping is the painter's — including the case where no recording exists yet and the lane falls back
+/// to a short duration (which clamps px/s at `narrate.bandMaxPps`).
+pub fn painted_view_for_test() -> (f64, f64) {
+    let (duration, width) = size();
+    (duration, crate::narrate_band::px_per_second(zoom(), duration, width))
+}
+
+/// The red bar's colour as [`paint`] lays it down, so a pixel check names the ink it expects rather than
+/// accepting any bright dot near the right place.
+pub const RED_BAR_COLOUR: (u8, u8, u8) = (219, 51, 46);
+
+/// Where [`paint`] would put the red ▶-start bar in a lane `width` px wide and `height` px tall — the
+/// whole view it computes (`duration`, `pps`, `red_bar_px`), so a test that paints its own image reads
+/// the same numbers the ink used instead of rebuilding the mapping and hoping it agrees.
+pub fn painted_plan_for_test(width: f64, height: f64) -> band::Plan {
+    // The seconds `paint` measures for THIS width — asked through the painter's own door, so a bar or a
+    // take is mapped with the number the ink will use (with no recording on disk that fallback is short,
+    // and px/s is then clamped at `narrate.bandMaxPps`, which is exactly what the lane draws).
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 1, 1).expect("a scratch surface");
+    let probe = cairo::Context::new(&surface).expect("a scratch context");
+    paint(&probe, width, height.max(1.0));
+    // The plan is the one `paint` itself built for this exact width and left in nothing but its own frame,
+    // so ask it again with the numbers `paint` uses: the seconds it measures (0.1 with no recording on
+    // disk) and px/s over THIS width — which is what keeps a bar or take inside the image at all.
+    let (seconds, pps) = painted_view_for_test();
+    drop(probe);
+    drop(surface);
+    let state = crate::ui::narrate_page::read_state();
+    let red_bar = red_bar_or(state.session);
+    let mut plan = band::paint_plan(&band::BandPaint {
+        duration: seconds,
+        width,
+        zoom: zoom(),
+        // A standalone surface starts at the recording's left edge; a scrolled lane subtracts `offset`.
+        offset: 0.0,
+        pps,
+        red_bar,
+        pointer_x: -1.0,
+        selection: None,
+        takes: state.takes.clone(),
+        session: state.session,
+        playing: false,
+        envelope_decoded: recording_seconds().is_some(),
+    });
+    // The painter keeps this one in step with its own frame; a check must read the same number it drew.
+    plan.red_bar_px = band::second_to_px(red_bar, offset(), pps);
+    plan
+}
+
+/// Ask the lane to paint again. The page calls this from `refresh` after anything the picture reads
+/// changed — takes, voice, session, narration greys.
+pub fn repaint(window: &adw::ApplicationWindow) {
+    if let Some(lane) = lane_of(window) {
+        lane.queue_draw();
+    }
+}
+
+/// The view's fit-relative zoom.
+pub fn zoom() -> f64 {
+    ZOOM.with(|slot| slot.get())
+}
+
+/// The view's offset in px.
+pub fn offset() -> f64 {
+    OFFSET.with(|slot| slot.get())
+}
+
+/// The red ▶-start bar's second.
+pub fn red_bar() -> f64 {
+    RED_BAR.with(|slot| slot.get())
+}
+
+/// Where the red bar belongs when nothing has been clicked yet: the cut's playhead, so the band's ▶
+/// starts where the picture is. [`set_red_bar`] overwrites it for good; this is the fallback the page
+/// asks for, which keeps the page from poking a private slot.
+pub fn red_bar_or(session: f64) -> f64 {
+    match RED_BAR_SEEN.with(|slot| slot.get()) {
+        true => red_bar(),
+        false => session.max(0.0),
+    }
+}
+
+/// Has anyone clicked the band since it was cleared? `false` means the bar still sits at the playhead,
+/// which is what a page owes before the first click (§1) — and what a paint check reads that way.
+pub fn red_bar_seen_for_test() -> bool {
+    RED_BAR_SEEN.with(|slot| slot.get())
+}
+
+/// The live selection in seconds, or `None` when the band holds none. This is what the page's ＋ and −
+/// buttons are asked for, so the drag and the buttons cannot disagree about what is selected.
+pub fn live_selection() -> Option<(f64, f64)> {
+    SELECTION.with(|slot| *slot.borrow())
+}
+
+/// Put the red bar at a second (the door a test and any future shortcut use).
+pub fn set_red_bar(seconds: f64) {
+    RED_BAR.with(|slot| slot.set(seconds.max(0.0)));
+    RED_BAR_SEEN.with(|slot| slot.set(true));
+}
+
+/// Empty the band's hand: no selection, pointer off. Called when the voice changes, since the takes
+/// of one recording mean nothing over another's.
+pub fn clear_hand() {
+    SELECTION.with(|slot| *slot.borrow_mut() = None);
+    POINTER_X.with(|slot| slot.set(-1.0));
+    ZOOM.with(|slot| slot.set(1.0));
+    OFFSET.with(|slot| slot.set(0.0));
+    RED_BAR.with(|slot| slot.set(0.0));
+    RED_BAR_SEEN.with(|slot| slot.set(false));
+}
+
+/// One drag step's press: remember where the hand landed and hold that second as the bar's would-be
+/// place, so a click with no motion still means "here".
+fn note_press(x: f64) {
+    PRESS_X.with(|slot| slot.set(x));
+    SELECTION.with(|slot| *slot.borrow_mut() = None);
+}
+
+/// Motion during a drag: the live selection runs from the press to here, whichever way the pointer
+/// went. The band is a selection tool first, so the selection appears as the hand moves.
+fn note_motion(x: f64) {
+    SELECTION.with(|slot| *slot.borrow_mut() = selected(x));
+}
+
+/// The ONE door that turns a press plus the pointer's current x into SECONDS: [`band::selection_is_a_drag`]
+/// decides click-vs-drag (the same slop `take_press` uses), and the two pixel ends go through
+/// [`band::x_to_second`] with the lane's own offset and px/s. Motion and release both read this, so the
+/// live band and the take ＋ commits cannot disagree about which seconds were chosen.
+fn selected(x: f64) -> Option<(f64, f64)> {
+    let press = PRESS_X.with(|slot| slot.get());
+    // [`band::drag_or_click`] owns the slop and direction rule (`screen::take_press`); only its CASE is
+    // asked here, because the seconds come from this lane's own offset and px/s, which that rule does not
+    // know about. A click (SetBar) selects nothing — it moves the red bar instead.
+    match band::drag_or_click(press, x, 0.0) {
+        screen::TakePress::SetBar => None,
+        screen::TakePress::Select { .. } => {
+            let (start, pps) = view();
+            Some((
+                band::x_to_second(press.min(x), start, pps),
+                band::x_to_second(press.max(x), start, pps),
+            ))
+        }
+    }
+}
+
+/// Release: a press that barely travelled is a click and MOVES THE RED BAR (§1: "click sets the red
+/// bar"); a drag keeps its selection for ＋ and − to act on.
+fn finish_drag(window: &adw::ApplicationWindow, x: f64) {
+    match selected(x) {
+        Some(span) => SELECTION.with(|slot| *slot.borrow_mut() = Some(span)),
+        None => {
+            let (start, pps) = view();
+            let at = band::x_to_second(x, start, pps);
+            set_red_bar(at);
+            SELECTION.with(|slot| *slot.borrow_mut() = None);
+        }
+    }
+    repaint(window);
+}
+
+/// Zoom by `steps` notches (positive = bigger), clamped so the view cannot leave the file.
+fn zoom_by(window: &adw::ApplicationWindow, steps: f64) {
+    let (duration, width) = size();
+    let zoom = band::zoom_step(zoom(), -steps);
+    ZOOM.with(|slot| slot.set(zoom));
+    OFFSET.with(|slot| slot.set(band::clamp_view(offset(), zoom, duration, width)));
+    let _ = window;
+}
+
+/// Pan the view by `delta` px (negative shows earlier seconds), clamped inside the recording.
+fn pan(window: &adw::ApplicationWindow, delta: f64) {
+    let (duration, width) = size();
+    OFFSET.with(|slot| slot.set(band::clamp_view(offset() + delta, zoom(), duration, width)));
+    let _ = window;
+}
+
+/// `(duration, width)` of the view as last painted.
+fn size() -> (f64, f64) {
+    (
+        DURATION.with(|slot| slot.get()),
+        VIEW_WIDTH.with(|slot| slot.get()),
+    )
+}
+
+/// `(offset, pps)` the mapping runs on right now.
+fn view() -> (f64, f64) {
+    let (duration, width) = size();
+    (offset(), band::px_per_second(zoom(), duration, width))
+}
+
+/// The lane's width as the last paint saw it, for a wheel that pans before a repaint.
+fn view_width(window: &adw::ApplicationWindow) -> f64 {
+    let _ = window;
+    VIEW_WIDTH.with(|slot| slot.get())
+}
+
+/// The band's own painted picture on an image surface, at the size a test asks for. A draw func gets
+/// cairo's target from GTK and cannot be handed one, so this runs THE SAME `paint` over a surface a
+/// test can read pixels from — which is how a check proves the lane was inked rather than left a bare
+/// CSS plate (`cut_preview_frame::raster_surface_for_test` is the Cut page's version of the idea).
+pub fn painted_surface_for_test(
+    width: i32,
+    height: i32,
+) -> Result<cairo::ImageSurface, cairo::Error> {
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, width, height)?;
+    {
+        let cr = cairo::Context::new(&surface)?;
+        paint(&cr, width as f64, height as f64);
+    }
+    Ok(surface)
+}
+
+/// This window's take band.
+fn lane_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
+    let content = window.content()?;
+    crate::ui::window::find_widget_by_name(&content, "take-band")?.downcast().ok()
+}
+
+/// The seconds of the reference recording the band is drawn across: the file the voice is cloned
+/// from, measured by its own header. `None` when the voice is captions-only or has no file yet — the
+/// band then says so rather than drawing an empty ruler.
+pub fn recording_seconds() -> Option<f64> {
+    let tree = crate::ui::window::narrate_session_tree()?;
+    let reference = crate::narrate_data::base_reference(&tree);
+    let (channels, rate) = crate::voice_ref::wav_header(&reference)?;
+    let bytes = std::fs::metadata(&reference).ok()?.len();
+    // 16-bit mono PCM: the header's channels and rate say how many samples the file holds.
+    let bytes_per_second = (channels.max(1) as u64) * (rate.max(1) as u64) * 2;
+    Some(((bytes.saturating_sub(44)) as f64 / bytes_per_second as f64).max(0.1))
+}
+
+/// The peaks to draw, straight off the wave cache: measured by the same code Prepare's envelope step
+/// uses, so the band and the trim strips cannot disagree about where the loud parts are. Returns the
+/// cache's own peaks and rate; `Err` says why there are none.
+fn envelope(tree: &crate::layout::Tree, lane: &str, source: &std::path::Path) -> Result<Vec<u8>, String> {
+    let mut said = Vec::new();
+    wave_build::ensure(tree, lane, source, &mut |line| said.push(line.to_string()))?;
+    let (size, mtime) = stamp(source)?;
+    let wave = crate::wave::read(tree, lane, size, mtime)?
+        .ok_or_else(|| format!("{}: no envelope cached", source.display()))?;
+    let _ = said;
+    wave.chans.into_iter().next().ok_or_else(|| "empty envelope".to_string())
+}
+
+/// `stamp` is private to `wave_build`, so the band reads the same two numbers itself.
+fn stamp(path: &std::path::Path) -> Result<(i64, i64), String> {
+    let meta = std::fs::metadata(path).map_err(|err| format!("{}: {err}", path.display()))?;
+    let mtime = meta
+        .modified()
+        .map_err(|err| format!("{}: {err}", path.display()))?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|err| format!("{}: {err}", path.display()))?
+        .as_secs() as i64;
+    Ok((meta.len() as i64, mtime))
+}
+
+/// Paint one frame. Ink only: every position comes from [`band::paint_plan`]. The window is what a
+/// future per-window slot would read; today every slot here is per-thread like the page's other ones.
+pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
+    VIEW_WIDTH.with(|slot| slot.set(width));
+    let state = crate::ui::narrate_page::read_state();
+    let seconds = recording_seconds();
+    DURATION.with(|slot| slot.set(seconds.unwrap_or(0.0).max(0.1)));
+    let (duration, _) = size();
+    let pps = band::px_per_second(zoom(), duration, width);
+
+    // The ground, so the plate's CSS colour is under everything even where cairo paints first.
+    cr.set_source_rgb(0.11, 0.11, 0.115);
+    cr.rectangle(0.0, 0.0, width, height);
+    let _ = cr.fill();
+
+    let mut plan = band::paint_plan(&BandPaint {
+        duration,
+        width,
+        zoom: zoom(),
+        offset: offset(),
+        pps,
+        red_bar: red_bar_or(state.session),
+        pointer_x: POINTER_X.with(|slot| slot.get()),
+        selection: live_selection(),
+        takes: state.takes.clone(),
+        session: state.session,
+        playing: state.playing,
+        envelope_decoded: seconds.is_some(),
+    });
+    // `paint_plan` maps the red bar with the same helper this frame uses; keep them one number.
+    plan.red_bar_px = band::second_to_px(red_bar_or(state.session), offset(), pps);
+
+    // 1. The envelope, or the sentence that says it is not ready: §1's "reading the recording…"
+    // while the envelope decodes. Drawn as vertical bars in the lane under the ruler.
+    let lane_top = RULER_PX;
+    let lane_h = (height - RULER_PX).max(1.0);
+    if let Some(note) = &plan.note {
+        cr.set_source_rgb(0.75, 0.78, 0.82);
+        cr.set_font_size(10.0);
+        cr.move_to(4.0, lane_top + 14.0);
+        let _ = cr.show_text(note);
+    } else if let Some(peaks) = envelope_of(&state) {
+        draw_envelope(cr, &peaks.1, width, lane_top, lane_h);
+    }
+
+    // 2. The ruler: minute ticks across the top strip, seconds labelled.
+    cr.set_source_rgb(0.55, 0.58, 0.62);
+    cr.set_line_width(1.0);
+    cr.move_to(0.0, RULER_PX);
+    cr.line_to(width, RULER_PX);
+    let _ = cr.stroke();
+    cr.set_font_size(8.0);
+    let mut px = 0.0;
+    while px < width {
+        let second = band::ruler_second(px, offset(), pps);
+        if second > 0 && (second % 30) == 0 {
+            cr.move_to(px, 0.0);
+            cr.line_to(px, RULER_PX);
+            let _ = cr.stroke();
+            let _ = cr.show_text(&crate::tools::mm_ss(second as f64));
+        }
+        px += pps * 30.0;
+    }
+
+    // 3. The takes, green, each labelled with its duration alone when wide enough.
+    for (left, take_w, label) in &plan.takes {
+        if *take_w <= 0.0 {
+            continue;
+        }
+        cr.set_source_rgb(0.3, 0.75, 0.42);
+        cr.rectangle(*left, lane_top, *take_w, lane_h);
+        let _ = cr.fill_preserve();
+        cr.set_source_rgb(0.16, 0.42, 0.24);
+        let _ = cr.stroke();
+        if !label.is_empty() {
+            cr.set_source_rgb(0.05, 0.16, 0.09);
+            cr.set_font_size(9.0);
+            let _ = cr.text_extents(label);
+            cr.move_to(left + 3.0, lane_top + 11.0);
+            let _ = cr.show_text(label);
+        }
+    }
+
+    // 4. The blue live selection, over the takes so the hand always sees what it chose.
+    if let Some((left, w)) = plan.selection_px {
+        if w > 0.0 {
+            cr.set_source_rgba(0.25, 0.55, 0.95, 0.45);
+            cr.rectangle(left, lane_top, w, lane_h);
+            let _ = cr.fill();
+        }
+    }
+
+    // 5. The faint red bar under the pointer.
+    if let Some(x) = plan.pointer_px {
+        cr.set_source_rgba(0.85, 0.25, 0.25, 0.35);
+        cr.rectangle(x, lane_top, 1.0, lane_h);
+        let _ = cr.fill();
+    }
+
+    // 6. The red ▶-start bar, THROUGH the ruler too (§1's words), so it reads as one line.
+    let (bar_r, bar_g, bar_b) = RED_BAR_COLOUR;
+    cr.set_source_rgb(
+        bar_r as f64 / 255.0,
+        bar_g as f64 / 255.0,
+        bar_b as f64 / 255.0,
+    );
+    cr.rectangle(plan.red_bar_px - BAR_PX / 2.0, 0.0, BAR_PX, height);
+    let _ = cr.fill();
+
+    // 7. The playhead while ▶ walks the cut.
+    if let Some(x) = plan.playhead_px {
+        cr.set_source_rgb(0.95, 0.95, 0.98);
+        cr.rectangle(x, lane_top, 1.0, lane_h);
+        let _ = cr.fill();
+    }
+}
+
+/// The envelope for the voice in hand: `(peaks, their rate)`. Captions-only or a missing reference
+/// answers `None`, which is what makes the band print the "reading…" sentence instead.
+fn envelope_of(state: &crate::ui::narrate_page::NarrateState) -> Option<(f64, Vec<u8>)> {
+    let tree = crate::ui::window::narrate_session_tree()?;
+    let source = crate::narrate_data::base_reference(&tree);
+    if !source.exists() || state.voice == screen::CAPTIONS {
+        return None;
+    }
+    let lane = format!("voice:{}", state.voice);
+    let peaks = envelope(&tree, &lane, &source).ok()?;
+    Some((PEAK_HZ, peaks))
+}
+
+/// Vertical peak bars across the visible window, blue over the ground.
+fn draw_envelope(
+    cr: &cairo::Context,
+    peaks: &[u8],
+    width: f64,
+    lane_top: f64,
+    lane_h: f64,
+) {
+    let (duration, _) = size();
+    let pps = band::px_per_second(zoom(), duration, width);
+    let visible = band::visible_peaks(PEAK_HZ, peaks, offset(), pps, width);
+    cr.set_source_rgb(0.35, 0.6, 0.9);
+    let step = 1.0_f64.max(2.0_f64.min(pps / PEAK_HZ.max(1.0)));
+    for (at, peak) in &visible {
+        let x = band::second_to_px(*at, offset(), pps);
+        if x > width {
+            break;
+        }
+        let h = (lane_h - 4.0) * (*peak as f64 / 255.0);
+        cr.rectangle(x, lane_top + (lane_h - h) / 2.0, step, h.max(1.0));
+    }
+    let _ = cr.fill();
+}

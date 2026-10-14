@@ -207,6 +207,14 @@ name = "sec_06_effects_9_where_recordings_overlap"
 path = "tests/sec_06_effects_9_where_recordings_overlap.rs"
 
 [[test]]
+name = "sec_07_narrate_1_screen"
+path = "tests/sec_07_narrate_1_screen.rs"
+
+[[test]]
+name = "sec_07_narrate_1_screen_widgets"
+path = "tests/sec_07_narrate_1_screen_widgets.rs"
+
+[[test]]
 name = "sec_06_effects_9_where_recordings_overlap_widgets"
 path = "tests/sec_06_effects_9_where_recordings_overlap_widgets.rs"
 

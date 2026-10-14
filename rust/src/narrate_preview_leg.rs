@@ -614,6 +614,25 @@ fn take_key(entry: &Entry) -> String {
     narration::key_for(entry, Some(&voice_of(entry)))
 }
 
+/// F4.5 S1/S2: where a line's take wav is, if there is audio to hear. `None` when the entry is blank
+/// (nothing was spoken), when no file has been written for its key, or when the speech server refused
+/// this session's copy of it — the same three questions `take_states` asks the running preview, in one
+/// public door so a caller outside the tick loop cannot disagree with it about what is speakable.
+pub fn line_take(tree: &crate::layout::Tree, entries: &[Entry], line: usize) -> Option<std::path::PathBuf> {
+    let entry = entries.get(line)?;
+    if entry.text.trim().is_empty() {
+        return None;
+    }
+    let path = take_file(tree, entries, line)?;
+    let refused = RUNNING.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|preview| preview.failed.holds(&take_key(entry)))
+            .unwrap_or(false)
+    });
+    (!refused && path.exists()).then_some(path)
+}
+
 /// S2: the wav path of one line, for the voice to play and for a failure to name.
 pub fn take_file(tree: &crate::layout::Tree, entries: &[Entry], line: usize) -> Option<std::path::PathBuf> {
     entries

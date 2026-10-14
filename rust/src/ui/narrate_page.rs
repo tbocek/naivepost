@@ -22,6 +22,7 @@ use crate::narrate_preview;
 use crate::narrate_preview_leg::{self, PreviewPage};
 use crate::narrate_edit;
 use crate::narrate_screen::{self, Audition, Fit};
+use crate::ui::narrate_picker;
 use crate::narrate_sample;
 use crate::narration::Entry;
 use crate::voice_ref;
@@ -251,22 +252,9 @@ pub fn build() -> gtk::Widget {
     volume.set_tooltip_text(Some("Preview volume, shared with the Cut page"));
     left.append(&volume);
 
-    // **7** the voice picker: unlabelled, its rows are the module's list in the module's order.
-    let picker = gtk::DropDown::from_strings(&[
-        "No audio \u{2014} captions only",
-        "Narrator 1 \u{2014} cut from the recording",
-    ]);
-    picker.set_widget_name("voice-picker");
-    picker.set_tooltip_text(Some(&narrate_screen::sample_tip()));
-    // The row shown is the chosen voice's, spelled by `voice_options` rather than hardcoded: the spec's
-    // shot has the picker carrying `Narrator 1 — 2026-09-16 18-43-01.mkv` as its own face. A number
-    // outside the list leaves the dropdown on its first row, so this cannot crash on an empty state.
-    if let Some(row) = narrate_screen::voice_options(1, &[])
-        .iter()
-        .position(|option| option.id == read_state().voice)
-    {
-        picker.set_selected(row as u32);
-    }
+    // **7** the voice picker: unlabelled; its rows, its shown row and what a pick does all live in
+    // `narrate_picker`.
+    let picker = narrate_picker::build();
     left.append(&picker);
 
     // **8** the take band's ＋ − ▶ and **9** Add file….
@@ -291,15 +279,11 @@ pub fn build() -> gtk::Widget {
     take_row.append(&add_file);
     left.append(&take_row);
 
-    // **10** the take band itself.
-    let band = gtk::DrawingArea::new();
-    band.set_widget_name("take-band");
-    band.set_size_request(240, narrate_screen::BAND_LANE_PX as i32);
+    // **10** the take band itself: the lane inside its own horizontal scroller, painted by
+    // `narrate_band` (envelope, ruler, takes, red ▶-start bar, live selection, playhead).
+    let (band_scroller, band) = crate::ui::narrate_band::build_band();
     band.set_tooltip_text(Some(narrate_screen::band_status(&[])));
-    // Same reason as the preview's plate above: no draw handler, so the lane needs its own painted ground
-    // or the take marks have nothing to be drawn over.
-    band.add_css_class("narrate-plate");
-    left.append(&band);
+    left.append(&band_scroller);
 
     // **11** the sample sentence, **12** its ▶ ⏹ ⟳, **13** the pitch slider.
     let sample = gtk::Entry::new();
@@ -408,20 +392,13 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     if let Some(band) = widget_in(window, "take-band") {
         band.set_tooltip_text(Some(narrate_screen::band_status(&s.takes)));
     }
-    // The picker follows the published voice for the same reason the clock follows the published second:
-    // a flow that changes the voice without this leaves the dropdown showing row 0 while the state says
-    // otherwise, and the two disagree on screen.
-    if let Some(picker) = widget_in(window, "voice-picker")
-        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
-    {
-        let files: Vec<&str> = s.voice_files.iter().map(String::as_str).collect();
-        if let Some(row) = narrate_screen::voice_options(s.narrators, &files)
-            .iter()
-            .position(|option| option.id == s.voice)
-        {
-            picker.set_selected(row as u32);
-        }
-    }
+    // The band's own painted picture follows the same state: takes, voice, and where ▶ got to.
+    crate::ui::narrate_band::repaint(window);
+    // So does the preview frame: the second it shows is `session`, which any seek just changed.
+    crate::ui::narrate_picture::repaint(window);
+    // Why here: a flow that changes the voice without this leaves the dropdown on another row than the
+    // page speaks.
+    narrate_picker::follow(window, s.narrators, &s.voice_files, &s.voice);
     draw_rows(window, &s);
     // Always re-wired: the rows are rebuilt whole on every refresh, so their handlers go with the old
     // ones. A guard on the count would leave a same-length refresh with dead buttons.
@@ -625,6 +602,10 @@ impl narrate_preview_leg::PreviewPage for PageDriver {
 
     fn set_head(&self, at: f64) {
         mutate(|s| s.session = at);
+        // The painted frame walks with the line: the preview's crop, zoom and still are read at
+        // `session`, so the 100 ms tick is what makes the picture move.
+        crate::ui::narrate_picture::repaint(&self.0);
+        crate::ui::narrate_band::repaint(&self.0);
     }
 
     fn tree(&self) -> Option<crate::layout::Tree> {
@@ -662,6 +643,17 @@ impl narrate_preview_leg::PreviewPage for PageDriver {
     fn say(&self, said: &str) {
         say(&self.0, said);
     }
+}
+
+/// Add one name to the page's voice list, sorted, without repeating it. Public because "Add file…"
+/// lands a new voice this way and nothing else is allowed to reach into the page's state.
+pub fn offer_voice(name: &str) {
+    mutate(|state| {
+        if !state.voice_files.iter().any(|held| held == name) {
+            state.voice_files.push(name.to_string());
+            state.voice_files.sort();
+        }
+    });
 }
 
 /// Say it on the status line and in the log, the page's two output channels.
@@ -1018,11 +1010,34 @@ pub fn press_take_remove(window: &adw::ApplicationWindow, selection: (f64, f64))
     )
 }
 
-/// **8** ▶ plays the takes from the red bar (the raw recording when none).
+/// **8** ▶ plays the takes from the red bar (§1: "the takes, one after another — exactly what the
+/// model is cloned from"), and says the raw-recording case when there are none. With takes it is the
+/// same reference file the speech server is handed (`narrate/voice_ref.wav`, already cut to the takes
+/// in order), so what is heard is what gets cloned; with none it is the uncut base. The seconds named
+/// are the band's own red bar, which is where §1 says playback starts.
 pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
     let s = read_state();
     let total: f64 = s.takes.iter().map(|(a, b)| b - a).sum();
-    say(window, &narrate_details::playing_takes(s.takes.len(), total, s.session))
+    let said = narrate_details::playing_takes(
+        s.takes.len(),
+        total,
+        crate::ui::narrate_band::red_bar_or(s.session),
+    );
+    // The answer first, so the status line is the sentence §1 fixes; the player is what follows it,
+    // and a project with no reference on disk yet still gets the plain answer about its seconds.
+    if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        let file = if s.takes.is_empty() {
+            narrate_data::base_reference(&tree)
+        } else {
+            narrate_data::served_reference(&tree)
+        };
+        if file.exists() {
+            if let Ok(playing) = narrate_sample::play_file(&file) {
+                return say(window, &format!("{said} \u{2014} {playing}"));
+            }
+        }
+    }
+    say(window, &said)
 }
 
 /// **12** ▶ speaks the sample, or says which click would clear what stops it.
@@ -1193,6 +1208,9 @@ pub fn press_voice(window: &adw::ApplicationWindow, id: &str) -> String {
                 voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Voice);
             }
             mutate(|state| state.voice = id.to_string());
+            // A new voice means a different recording, so the band's hand (its selection, zoom and red
+            // bar) is about another take and must not carry over.
+            crate::ui::narrate_band::clear_hand();
             refresh(window);
             say(window, &said)
         }
@@ -1205,6 +1223,7 @@ pub fn press_voice(window: &adw::ApplicationWindow, id: &str) -> String {
                 voice_ref::invalidate_for_change(&tree, voice_ref::Changed::Voice);
             }
             mutate(|state| state.voice = id.clone());
+            crate::ui::narrate_band::clear_hand();
             refresh(window);
             say(window, &said)
         }
@@ -1214,14 +1233,7 @@ pub fn press_voice(window: &adw::ApplicationWindow, id: &str) -> String {
 /// The voices folder as it should be spelled in S1's "no longer in DIR" sentence. Read per press so a
 /// Settings change shows up in the next refusal rather than naming where the last one looked.
 fn voices_dir_label() -> String {
-    let shown = crate::settings::from_environment()
-        .and_then(|paths| crate::settings::read(&paths).ok())
-        .map(|conf| conf.voices.clone())
-        .unwrap_or_default();
-    if !shown.is_empty() {
-        return shown;
-    }
-    crate::settings::DEFAULT_VOICES.to_string()
+    crate::ui::narrate_voices::voices_folder().display().to_string()
 }
 
 /// Attach every handler. Called from `build_window` after `set_content`, like every other control on
@@ -1252,23 +1264,26 @@ pub fn wire(window: &adw::ApplicationWindow) {
             press_narrate_add_line(&w);
         });
     }
-    if let Some(picker) = widget_in(&win, "voice-picker")
-        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
-    {
+    narrate_picker::wire(&win);
+    if let Some(button) = crate::ui::line_step_button(&win, "take-add") {
         let w = win.clone();
-        // The picker answers by row, not by id: resolve the row through the same option list the page
-        // drew, so a wire cannot pick an id that was never offered.
-        picker.connect_selected_notify(move |picker| {
-            let s = read_state();
-            let files: Vec<&str> = s.voice_files.iter().map(String::as_str).collect();
-            let options = narrate_screen::voice_options(s.narrators, &files);
-            let row = picker.selected() as usize;
-            if let Some(option) = options.get(row) {
-                let id = option.id.clone();
-                if id != read_state().voice {
-                    press_voice(&w, &id);
-                }
-            }
+        // ＋ acts on whatever the hand just dragged on the band; with nothing selected the rule says so.
+        button.connect_clicked(move |_| {
+            let selection = crate::ui::narrate_band::live_selection().unwrap_or((0.0, 0.0));
+            press_take_add(&w, selection);
+        });
+    }
+    if let Some(button) = crate::ui::line_step_button(&win, "take-remove") {
+        let w = win.clone();
+        button.connect_clicked(move |_| {
+            let selection = crate::ui::narrate_band::live_selection().unwrap_or((0.0, 0.0));
+            press_take_remove(&w, selection);
+        });
+    }
+    if let Some(button) = crate::ui::line_step_button(&win, "voice-add-file") {
+        let w = win.clone();
+        button.connect_clicked(move |_| {
+            crate::ui::narrate_voices::press_add_file(&w);
         });
     }
     if let Some(button) = crate::ui::line_step_button(&win, "take-play") {
@@ -1326,6 +1341,12 @@ pub fn wire(window: &adw::ApplicationWindow) {
             );
         });
     }
+    // The take band's painter, gesture and wheel live in `narrate_band`; installed here, after the
+    // window exists, so the one drag and the one scroll controller land on the real widget.
+    crate::ui::narrate_band::attach(&win);
+    // The preview picture paints through the Cut page's own painter (`narrate_picture`), so the frame
+    // here is the finished frame: crop, zoom, stops and titles at the second the page stands on.
+    crate::ui::narrate_picture::install_draw(&win);
     refresh(&win);
     // Rows are drawn by `refresh`, so their handlers go on after it: before this they do not exist yet.
     wire_row_buttons(&win);

@@ -128,18 +128,24 @@ pub enum TakePress {
 }
 
 /// A press that travelled less than [`CLICK_SLOP_PX`] is a click: the person aimed at a second, not at a span.
+/// Left to right, whichever way the pointer went: a take's seconds have no direction. The two px ends
+/// become seconds through `x_to_second`, so `start` is the view's OFFSET (px scrolled from the start),
+/// exactly as [`crate::narrate_band::x_to_second`] defines it and as the ruler, the red bar and
+/// [`crate::narrate_band::take_box`] all read the view — not a number of seconds added to pixels.
 pub fn take_press(pressed_x: f64, released_x: f64, start: f64) -> TakePress {
     let travel = (released_x - pressed_x).abs();
     if travel <= CLICK_SLOP_PX {
         return TakePress::SetBar;
     }
-    // Left to right, whichever way the pointer went: a take's seconds have no direction.
     let (near, far) = if released_x > pressed_x {
         (pressed_x, released_x)
     } else {
         (released_x, pressed_x)
     };
-    TakePress::Select { from: start + near, to: start + far }
+    TakePress::Select {
+        from: crate::narrate_band::x_to_second(near, start, 1.0),
+        to: crate::narrate_band::x_to_second(far, start, 1.0),
+    }
 }
 
 /// Does this selection reach [`TAKE_MIN_SECONDS`]? Asked before the take is made so the answer is the sentence

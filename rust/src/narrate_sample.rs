@@ -83,6 +83,12 @@ pub fn speak(
 /// points it at a stub and the program is unchanged. The child is held so ⏹ can reach it through
 /// [`stop`]; `-autoexit` was passed, so a player nobody stops ends on its own.
 fn play(file: &std::path::Path) -> Result<String, String> {
+    play_file(file)
+}
+
+/// Hear one file on the voice player. Public because the take band's ▶ plays the same reference the
+/// speech server clones from, through the same seam (§1: "exactly what the model is cloned from").
+pub fn play_file(file: &std::path::Path) -> Result<String, String> {
     let player = narrate_preview_leg::voice_program();
     let path = file.to_string_lossy().into_owned();
     let args: Vec<String> = ["-nodisp", "-autoexit", "-loglevel", "quiet", "-i", &path]
