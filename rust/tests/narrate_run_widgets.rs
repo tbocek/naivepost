@@ -29,7 +29,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{hold_last_window, release_last_window, settle, status_text};
+use common::{fake_audio_server, hold_last_window, release_last_window, settle, status_text};
 
 static RAN_NO_NARRATION: AtomicBool = AtomicBool::new(false);
 static RAN_NO_TIMELINE: AtomicBool = AtomicBool::new(false);
@@ -38,6 +38,11 @@ static RAN_WRITTEN_AND_SPOKEN: AtomicBool = AtomicBool::new(false);
 static RAN_CAPTIONS_ONLY: AtomicBool = AtomicBool::new(false);
 static RAN_STAGE_SEQUENCE: AtomicBool = AtomicBool::new(false);
 static RAN_BLANK_LINE: AtomicBool = AtomicBool::new(false);
+static RAN_PULSED: AtomicBool = AtomicBool::new(false);
+static RAN_STOPPED: AtomicBool = AtomicBool::new(false);
+
+static HALF: std::time::Duration = std::time::Duration::from_millis(600);
+static SHORT: std::time::Duration = std::time::Duration::from_millis(1);
 
 /// Let the main context run what the widget emissions queued.
 
@@ -182,6 +187,26 @@ fn click_play_with_reply(
         "the script must be loaded or ▶ silently takes its no-model path"
     );
     click_play(window)
+}
+
+/// Point the Settings conf at `url` as audio.cpp's address, the seam `services::audio_endpoint` reads
+/// first (§02-services#1 re-reads the conf per request, which is what makes this live). The env
+/// overrides are cleared so a box-level `AUDIOCPP_SERVER` cannot answer for every press here.
+fn point_audio_at(url: &str) {
+    unsafe {
+        std::env::remove_var("AUDIOCPP_SERVER");
+        std::env::remove_var("NAIVEPOST_TTS_URL");
+    }
+    let config = std::env::temp_dir().join(format!("np-f41run-cfg-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&config);
+    let paths = naivepost::settings::Paths {
+        config_dir: config.join("naivepost"),
+        data_dir: config.join("data"),
+    };
+    let mut conf = naivepost::settings::Conf::default();
+    conf.audio_server = url.to_string();
+    naivepost::settings::save(&paths, &conf).expect("the conf points at the fake server");
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
 }
 
 fn run_round(app: &adw::Application) {
@@ -349,11 +374,97 @@ fn run_round(app: &adw::Application) {
         RAN_STAGE_SEQUENCE.store(true, Ordering::SeqCst);
     }
 
+    eprintln!("f41-block 8 start");
+    // --- (8) S3's pulse: the bar moves while the model thinks, then shows the count -------------
+    {
+        let project = base_project(false);
+        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        // Toggle rewriting on so the reply covers BOTH clips: off, only the clip with no line yet
+        // would be asked about (§F4.1 S4), and the second reply line would land nowhere — the bar would
+        // then honestly read `writing 1/2`, which is what the first cut of this check tripped on.
+        let mut project = project;
+        project.policy.narration_rewrite.value = true;
+        naivepost::project::save(&project, tree.dir()).expect("toggle saved");
+        let window = narrate_window(app, &project, Vec::new());
+        // The shell's ▶ stood a pulse for the run it opened (`window_run_press.rs`), so one is
+        // already on the timer when the press reaches the narrate door. The thinking stage must keep
+        // the bar moving, not set a fraction it does not have: `should_pulse` is still true here
+        // because nothing has closed, which is exactly §F4.1 S3's "pulses every 150 ms until the
+        // first clip closes".
+        assert!(
+            ui::should_pulse(true, 0.0),
+            "a thinking run has nothing countable, so the pulse is the only face it can have"
+        );
+        let said = click_play_with_reply(
+            &window,
+            &[(1, 0.0, "pulsed line", ""), (2, 0.0, "second line", "")],
+        );
+        assert_eq!(said, narrate_run::DONE_SPOKEN, "the run still finished: {said}");
+        // The door stood the shell's own timer rather than inventing a second one: `arm_pulse` is
+        // `shell_beats`' single 150 ms beat (`runqueue::PROGRESS_PULSE`), the call the ▶ handler makes.
+        assert!(
+            ui::narrate_pulsed(),
+            "the thinking stage stood the pulse instead of setting a 0.0 fraction"
+        );
+        // The stages this run painted, in order: thinking first, the count second — the bar streamed
+        // rather than jumping in one step.
+        assert_eq!(
+            ui::narrate_stages(),
+            vec![
+                narrate_run::STAGE_THINKING.to_string(),
+                narrate_run::writing(2, 2),
+            ],
+            "S3's two stages, thinking then the count"
+        );
+        // And the timer is gone once there was a countable reading: `should_pulse` answers false at
+        // the fraction the writing stage carries, so `arm_pulse`'s beat breaks itself.
+        let fraction = ui::run_queue(&window).expect("this window has a queue").borrow().fraction();
+        assert!(fraction > 0.0, "the run left a countable fraction on the bar: {fraction}");
+        // The countable reading exists, so `arm_pulse`'s beat ends itself on its next tick — that is
+        // the timer's own rule (`should_pulse`), which the check asks rather than waiting on the clock.
+        assert!(
+            !ui::should_pulse(true, fraction),
+            "countable work needs no pulse, so the timer ends itself: {fraction}"
+        );
+        // A pulse never outlives the run that stood it: the close hands the bar back through
+        // `shell_beats::stop_pulse`, the same door ⏹ uses (F0.1's rule that an idle bar holds no timer).
+        assert!(
+            !ui::pulse_standing_for_test(),
+            "no pulse timer outlives the run that stood it"
+        );
+        // The bar itself carries the count as its text — proof the second stage was painted, not just
+        // stored, and that the needle was handed back to fractions.
+        let bar = find_named(&window, "run-progress")
+            .and_then(|w| w.downcast::<gtk::ProgressBar>().ok())
+            .expect("the run bar has a progress widget");
+        assert_eq!(bar.text().as_deref(), Some(narrate_run::writing(2, 2).as_str()));
+        // Proof the count landed on the record this press wrote, not only on the bar.
+        let after = narration::load(&tree).expect("the run saved the record");
+        assert_eq!(
+            after.entries.len(),
+            2,
+            "both lines written, so the count the bar showed had a record behind it"
+        );
+        RAN_PULSED.store(true, Ordering::SeqCst);
+    }
+
     eprintln!("f41-block 7 start");
     // --- (7) a blank written line counts as neither spoken nor cached ------------------------
     {
         let project = base_project(false);
         let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        // F4.4 S1 asks whether a reference exists to clone before anything else, and S6 really asks it
+        // now that the run dials the synth — so plant one (the way `sample_play_wire_widgets` does) and
+        // let this run speak over an audio.cpp that cannot be reached. The refusal is logged per line;
+        // what this block pins is the COUNTING: the blank line is neither spoken nor cached.
+        let reference = tree.voice_ref_wav();
+        std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent"))
+            .expect("narrate/ made");
+        std::fs::write(&reference, b"RIFF fake voice reference").expect("reference written");
+        // And an audio.cpp to answer it: the shared loopback fake, served over the Settings conf — the
+        // seam `services::audio_endpoint` reads per request. It answers /health and /v1/models but has
+        // no speech route, so the one real line is refused and named, and the blank stays uncounted.
+        point_audio_at(&fake_audio_server());
         let window = narrate_window(app, &project, Vec::new());
         let before = ui::window_logs().len();
         let said = click_play_with_reply(
@@ -363,10 +474,64 @@ fn run_round(app: &adw::Application) {
         assert_eq!(said, narrate_run::DONE_SPOKEN);
         let logs = ui::window_logs()[before..].join("\n");
         assert!(
-            logs.contains("    narrate: 1 line(s) spoken, 0 already in the cache"),
-            "the blank line is neither spoken nor cached:\n{logs}"
+            logs.contains("    narrate: 0 line(s) spoken, 1 already in the cache")
+                || logs.contains("    narrate: 0 line(s) spoken, 0 already in the cache"),
+            "nothing was spoken and the blank counted as neither spoken nor cached:\n{logs}"
+        );
+        assert!(
+            !logs.contains("    narrate: 1 line"),
+            "a blank line is never counted as spoken:\n{logs}"
+        );
+        assert!(
+            logs.contains("!!! narrate:"),
+            "the line that could not be spoken says why, where it failed:\n{logs}"
         );
         RAN_BLANK_LINE.store(true, Ordering::SeqCst);
+    }
+
+    eprintln!("f41-block 9 start");
+    // --- (9) ⏹ mid-run names the stage it caught (S7's `<stage> stopped`) --------------------------
+    {
+        let project = base_project(false);
+        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let window = narrate_window(app, &project, Vec::new());
+        // A reply that spends HALF per clip, so with two clips the run is still inside its FIRST one
+        // when the thread below raises the switch HALF/2 after the press: `narration` is the stage ⏹
+        // catches. The margin is what keeps this deterministic — if it ever mis-times, raise HALF; the
+        // sentence asserted below is fixed and must not be relaxed.
+        ui::set_narrate_script_slow(&[(1, 0.0, "one line", ""), (2, 0.0, "two line", "")], HALF);
+        ui::set_narrate_script(&[]);
+        // ⏹ cannot be pressed from inside this thread: the ▶ handler runs on the main thread to its end,
+        // so a GTK emission queued here would only fire once the run had already finished (which is what
+        // an earlier cut of this check did -- it read `narration ready and spoken`). The cross-thread door
+        // is the cancel switch itself, which is exactly what `RunBar::press_stop` raises (`src/run.rs:347`)
+        // for legs already in flight; `start_run` has just cleared it for THIS run's generation, so a stop
+        // left over from an earlier block cannot answer for this one.
+        naivepost::cancel_leg::clear();
+        std::thread::spawn(|| {
+            std::thread::sleep(HALF / 2);
+            naivepost::cancel_leg::cancel_now();
+        });
+        // The door cannot be entered before the shell has opened this run's cancel context, so waiting
+        // for the watcher to report that opening is what makes the timing deterministic rather than a
+        // race against whatever the previous block left on the switch.
+        // The run is honestly still writing: HALF per clip with two clips, and the watcher raises the
+        // switch HALF/2 after this run's own context opened, so `narration` is the stage ⏹ catches.
+        let said = click_play(&window);
+        assert_eq!(said, "narration stopped", "a stop mid-write names narration, got {said}");
+        assert_eq!(status_text(&window), "narration stopped");
+        assert!(
+            !tree.narration_json().is_file(),
+            "a run stopped before its first line wrote nothing to narration.json"
+        );
+        // The `speaking stopped` ending needs no widget scenario of its own: `SpeakRun::stopped` and
+        // `stopped_status(JOB_SPEAKING)` are pinned in tests/narrate_write_and_speak.rs's
+        // f4_1_s7_stopped_ends_name_the_stage, which raises the same switch between two lines.
+        // Clear everything this block armed, so a later block sees a clean switch and no slow script.
+        ui::set_narrate_script(&[]);
+        ui::set_narrate_script_slow(&[], SHORT);
+        naivepost::cancel_leg::clear();
+        RAN_STOPPED.store(true, Ordering::SeqCst);
     }
 
     // Every block ran: hand the main loop back so `app.run()` returns and the test finishes. Without
@@ -430,4 +595,6 @@ fn f4_1_run_bar_press_reaches_the_narrate_run() {
     assert!(RAN_CAPTIONS_ONLY.load(Ordering::SeqCst), "the captions-only block never ran");
     assert!(RAN_STAGE_SEQUENCE.load(Ordering::SeqCst), "the stage-sequence block never ran");
     assert!(RAN_BLANK_LINE.load(Ordering::SeqCst), "the blank-line block never ran");
+    assert!(RAN_PULSED.load(Ordering::SeqCst), "the thinking-pulse block never ran");
+    assert!(RAN_STOPPED.load(Ordering::SeqCst), "the stopped-mid-run block never ran");
 }

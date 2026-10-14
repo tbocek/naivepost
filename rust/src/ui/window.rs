@@ -2692,8 +2692,11 @@ pub const DECORATIONS_PASS_LABEL: &str = "\u{2728} Decorations";
 // these are the doors this file still calls, kept at their paths. Everything else reaches the group
 // through `crate::ui::window_narrate` directly.
 pub use crate::ui::window_narrate::{
-    narrate_script_loaded, narrate_session_tree, narrate_stage, press_narrate_run,
+    narrate_pulsed, narrate_script_loaded, narrate_session_tree, narrate_stage, narrate_stages,
+    narrate_wrote,
+    press_narrate_run,
     pull_half_typed, refuse_narrate_run, refuse_narrate_run_with_busy, set_narrate_script,
+    set_narrate_script_slow,
     set_status_line, show_narrate_stage,
 };
 pub(crate) use crate::ui::window_narrate::live_project;

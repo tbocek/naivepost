@@ -66,6 +66,8 @@ pub mod narrate_picture;
 pub mod narrate_frame_wheel;
 /// §07-narrate#1-screen **7**: the voice picker's rows, its shown row, and what a pick does.
 pub mod narrate_picker;
+/// F4.1 S6: the speaking half of ▶ Write and speak — it dials audio.cpp for each line.
+pub mod narrate_run_speak;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_cameras;
@@ -430,9 +432,13 @@ pub use window::decorations_pass_button;
 pub use cut_effects_pass::run_effects_pass;
 pub use cut_effects_pass::run_effects_pass_with_reply;
 pub use window::narrate_stage;
+pub use window::narrate_pulsed;
+pub use window::narrate_stages;
+pub use window::narrate_wrote;
 pub use window::show_narrate_stage;
 pub use window::press_narrate_run;
 pub use window::set_narrate_script;
+pub use window::set_narrate_script_slow;
 pub use window::narrate_script_loaded;
 pub use window::pull_half_typed;
 pub use window::refuse_narrate_run;

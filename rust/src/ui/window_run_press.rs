@@ -438,9 +438,26 @@ pub(crate) fn wire_stop(
             shell.borrow().page,
             run::Transport::default(),
         );
+        // §F4.1 S7: on the Narrate page the stage's own ending outranks `stopping…`. The door that ran
+        // is `run_narrate_on`, and it ends with `narration stopped` / `speaking stopped` for the stage ⏹
+        // caught (`window_narrate.rs`); the generic STOPPING sentence says nothing about which half died.
+        let narrate_stage = run::step(shell.borrow().page) == run::Step::Narrate;
+        let stage_status = narrate_stage.then(|| {
+            crate::narrate_run::stopped_status(if ui::narrate_wrote() {
+                crate::narrate_run::JOB_SPEAKING
+            } else {
+                crate::narrate_run::JOB_NARRATION
+            })
+        });
         // Only write a sentence when there is one: S2's "nothing more" must leave an existing status
         // alone rather than blanking it.
-        if !stopped.status().is_empty() {
+        if matches!(stopped, run::Stopped::RunStopped { .. }) {
+            if let Some(stage) = stage_status.as_deref() {
+                status.set_text(stage);
+            } else {
+                status.set_text(stopped.status());
+            }
+        } else if !stopped.status().is_empty() {
             status.set_text(stopped.status());
         }
         paint_progress(

@@ -756,6 +756,14 @@ name = "f4_4_s2_a_model_that_cannot_clone_is_named"
 path = "tests/f4_4_s2_a_model_that_cannot_clone_is_named.rs"
 
 [[test]]
+name = "f4_1_s6_a_refusal_names_its_reason"
+path = "tests/f4_1_s6_a_refusal_names_its_reason.rs"
+
+[[test]]
+name = "f4_1_s6_the_speaking_half_dials_audio_cpp"
+path = "tests/f4_1_s6_the_speaking_half_dials_audio_cpp.rs"
+
+[[test]]
 name = "f4_4_s3_the_reference_uploads_itself_for_every_line"
 path = "tests/f4_4_s3_the_reference_uploads_itself_for_every_line.rs"
 

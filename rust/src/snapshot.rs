@@ -246,12 +246,8 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // hidden then stays hidden however many refreshes follow — so the reference has to be on
             // disk before the page first lays out, not after.
             if let Some(tree) = crate::ui::window::narrate_session_tree() {
-                let reference = crate::narrate_data::base_reference(&tree);
-                if std::fs::create_dir_all(reference.parent().expect("narrate folder")).is_ok()
-                    && crate::voice_ref::wav_header(&reference).is_none()
-                {
-                    let _ = write_silence_wav(&reference, 8_000, 60 * 8_000);
-                }
+                let band = seed_voice_reference(&tree);
+                println!("snapshot: take band seeded = {band}");
             }
         }
         let window = ui::build_window(app, &model, page);
@@ -1332,4 +1328,28 @@ pub fn write_silence_wav(path: &Path, rate: u32, samples: u32) -> std::io::Resul
     bytes.extend_from_slice(&(data as u32).to_le_bytes());
     bytes.resize(44 + data, 0);
     std::fs::write(path, bytes)
+}
+
+/// The shot's own take band, seeded the way §A.7 says it appears: the band is drawn only for a narrator
+/// slot whose recording is on disk, so `voice_ref_base.wav` has to exist before the page first lays out.
+/// An EMPTY voice.txt is the default project's voice, which is the captions-only choice — and captions
+/// have no recording, so the shot used to render a bare voice picker with no band under it.
+/// Writing the file is the state the app itself reaches by building a reference; the bench only gets
+/// there without ffmpeg. Returns whether a band can be drawn, so a screen can say which face it took.
+pub fn seed_voice_reference(tree: &crate::layout::Tree) -> bool {
+    let base = crate::narrate_data::base_reference(tree);
+    let Some(folder) = base.parent() else { return false };
+    if std::fs::create_dir_all(folder).is_err() {
+        return false;
+    }
+    if crate::voice_ref::wav_header(&base).is_none() {
+        // 8 kHz is the smallest rate `voice_ref::wav_header` accepts, and 60 s is plenty of band to fit.
+        if write_silence_wav(&base, 8_000, 60 * 8_000).is_err() {
+            return false;
+        }
+    }
+    // The slot the recording belongs to: `narrator1` is the always-available narrator, and naming it is
+    // what takes the page off the captions-only face (`narrate_screen::CAPTIONS` is the empty choice).
+    let _ = crate::narrate_data::write_voice(tree, "narrator1");
+    crate::ui::narrate_band::recording_seconds().is_some()
 }

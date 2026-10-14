@@ -8,6 +8,9 @@
 //! arrives through a closure for the same reason `run_captions_pass_with_reply` exists — a test drives the
 //! real route with a scripted answer and no socket.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use adw::prelude::*;
 use gtk4 as gtk;
 
@@ -15,8 +18,8 @@ use crate::cut;
 use crate::layout;
 use crate::narrate_data;
 use crate::narrate_off::{self};
-use crate::narrate_preview;
-use crate::narrate_run::{self, JOBS, JOB_NARRATION, JOB_SPEAKING, SPEAKING_STATUS, STAGE_THINKING, Speak};
+use crate::narrate_run::{self, JOBS, JOB_NARRATION, JOB_SPEAKING, SPEAKING_STATUS, STAGE_THINKING};
+use crate::ui::narrate_run_speak as narrate_speak;
 use crate::narrate_screen;
 use crate::narration::{self, Narration};
 use crate::run;
@@ -81,7 +84,13 @@ pub fn press_narrate_run(window: &adw::ApplicationWindow) -> String {
     // button's handler calls THIS function, and a test that wants the written-and-spoken case drives
     // the button rather than the seam. Empty means "ask for real", which is what the app does.
     let reply = NARRATE_SCRIPT.with(|cell| cell.borrow().clone());
-    if reply.is_empty() {
+    let slow = SLOW_NARRATE_SCRIPT.with(|cell| cell.borrow().is_some());
+    if reply.is_empty() && !slow {
+        return run_narrate_on(window, live_narrate_reply);
+    }
+    if slow {
+        // The slow script is read inside `live_narrate_reply`, which sleeps and re-reads the cancel
+        // switch per clip so a ⏹ press can land between two of them.
         return run_narrate_on(window, live_narrate_reply);
     }
     run_narrate_on(window, move |_tree, clips| {
@@ -107,7 +116,50 @@ pub(crate) fn live_narrate_reply(
     tree: &layout::Tree,
     bounds: &[(f64, f64)],
 ) -> Result<Vec<narrate_run::Written>, String> {
+    let slow = SLOW_NARRATE_SCRIPT.with(|cell| cell.borrow().clone());
+    if let Some((reply, per_clip)) = slow {
+        // A scripted answer that closes one clip at a time, so ⏹ pressed while the model is still
+        // "thinking" is seen by the next answer instead of landing after the run already ended.
+        let mut written = Vec::new();
+        for (clip, at, text, emotion) in reply {
+            std::thread::sleep(per_clip);
+            if crate::cancel_leg::cancelled() {
+                return Err("stopped while writing".into());
+            }
+            let Some((start, end)) =
+                bounds.get(clip.saturating_sub(1) as usize).copied()
+            else {
+                continue;
+            };
+            written.push(narrate_run::Written {
+                start,
+                end,
+                at,
+                text,
+                emotion,
+            });
+        }
+        return Ok(written);
+    }
     crate::narrate_ask::run(tree, &live_project(), bounds)
+}
+
+/// A scripted reply that answers slowly enough for a ⏹ press to land inside it: `per_clip` is spent
+/// before each clip's line, and the live cancel switch is re-read between them. Without it a headless
+/// run answers in microseconds and there is nothing left to stop.
+pub fn set_narrate_script_slow(
+    reply: &[(u32, f64, &str, &str)],
+    per_clip: std::time::Duration,
+) {
+    SLOW_NARRATE_SCRIPT.with(|cell| {
+        *cell.borrow_mut() = Some((
+            reply
+                .iter()
+                .map(|(clip, at, text, emotion)| (*clip, *at, text.to_string(), emotion.to_string()))
+                .collect(),
+            per_clip,
+        ))
+    });
 }
 
 /// One narration reply handed to the shell's ▶ by a test: `(clip number from 1, clip-relative second,
@@ -131,6 +183,7 @@ pub fn set_narrate_script(reply: &[(u32, f64, &str, &str)]) {
 /// reading the script rather than falling through to the no-model path.
 pub fn narrate_script_loaded() -> bool {
     !NARRATE_SCRIPT.with(|cell| cell.borrow().is_empty())
+        || SLOW_NARRATE_SCRIPT.with(|cell| cell.borrow().is_some())
 }
 
 /// F4.1's body for THIS window and the live session's project. Both doors — the seam above and the
@@ -267,26 +320,56 @@ where
         return said;
     }
     ui::log_line(&plan.log);
-    NARRATE_QUEUE.with(|queue| {
-        let mut queue = queue.borrow_mut();
-        queue.reset();
-        queue.phase(0.0, 0.5);
-        queue.job(0, JOB_NARRATION, 1, JOBS);
-        queue.push(0, plan.clips.len().max(1), "clip");
-        queue.prog(0, 0.0, STAGE_THINKING);
-        queue.job(1, JOB_SPEAKING, 2, JOBS);
-    });
-    set_narrate_stage(window, STAGE_THINKING);
+    // A fresh run answers "did it pulse?" with "not yet": the flag belongs to this run, not the last.
+    NARRATE_PULSED.with(|cell| cell.set(false));
+    NARRATE_STAGES.with(|stages| stages.borrow_mut().clear());
+    // A fresh run has written nothing yet, so a stop during the thinking stage names `narration`.
+    NARRATE_WROTE.set(false);
+    // The bar must stop pulsing the moment this run paints its own stage: the shell's ▶ stood a pulse
+    // for the run it opened, and the thinking stage overwrites that face, so the needle is ours now.
+    crate::ui::shell_beats::stop_pulse();
+    // The WINDOW's own queue is the bar's number from here on: the shell painted it when ▶ opened the
+    // run, `set_narrate_stage` writes `run-progress`' fraction from it, and `arm_pulse` below breaks
+    // itself on it — so the run, the widget and the timer all read one fraction instead of three.
+    // `NARRATE_QUEUE` stays as the fallback for a door with no shell (a snapshot, a bare seam call).
+    let stage_queue = live_stage_queue(window);
+    stage_queue.borrow_mut().reset();
+    stage_queue.borrow_mut().phase(0.0, 0.5);
+    stage_queue.borrow_mut().job(0, JOB_NARRATION, 1, JOBS);
+    stage_queue.borrow_mut().push(0, plan.clips.len().max(1), "clip");
+    stage_queue.borrow_mut().prog(0, 0.0, STAGE_THINKING);
+    stage_queue.borrow_mut().job(1, JOB_SPEAKING, 2, JOBS);
+    NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
+    // S3: the bar opens at "thinking about it" and PULSES — nothing has closed yet, so the queue's
+    // reading is 0.0 and only the shell's idle pulse can show the wait (§F4.1 S3: "pulses every 150 ms
+    // until the first clip closes").
+    set_narrate_stage(window, STAGE_THINKING, true);
 
     let written = match reply(&tree, &plan.clips) {
         Ok(lines) => lines,
         Err(error) => {
             ui::log_line(&format!("!!! narrate: the call failed -- {error}"));
-            let said = narrate_run::failed_status("narration");
+            // ⏹ caught the call in flight: the ending names the stage, not a generic failure (§S7).
+            let said = if crate::cancel_leg::cancelled() {
+                narrate_run::stopped_status(JOB_NARRATION)
+            } else {
+                narrate_run::failed_status("narration")
+            };
             say_on_status(window, &said);
             return said;
         }
     };
+    // ⏹ landed while the model was answering: nothing is saved and nothing is spoken (§S7's
+    // "<stage> stopped" — the stage is still `narration`, the speaking job has not opened).
+    if crate::cancel_leg::cancelled() {
+        let said = narrate_run::stopped_status(JOB_NARRATION);
+        say_on_status(window, &said);
+        return said;
+    }
+    // S6's half-way fact the ⏹ handler can ask for: whether this run's first job closed, i.e. whether
+    // lines were written before the stop. `narration stopped` and `speaking stopped` differ by exactly
+    // this, and the generic `stopping…` cannot tell them apart (§F4.1 S7).
+    NARRATE_WROTE.set(!written.is_empty());
     if written.is_empty() {
         // No line came back: nothing is saved, nothing is spoken, and the run says so plainly.
         let said = narrate_run::Outcome::NothingWritten.status();
@@ -307,9 +390,13 @@ where
     }
     // The bar's stage follows the clips as they close; headless they all arrive with the one reply, so
     // this is the final count in one step.
-    set_narrate_stage(window, &narrate_run::writing(written.len(), plan.clips.len()));
+    set_narrate_stage(window, &narrate_run::writing(written.len(), plan.clips.len()), false);
     ui::log_line(&narrate_run::written_log(written.len()));
-    NARRATE_QUEUE.with(|queue| queue.borrow_mut().done(0, 1.0));
+    // This run's own queue — the window's when a shell is open (see `run_narrate_with`), so the bar,
+    // the timer and the stage painter all read the fraction this run advances.
+    let stage_queue = live_stage_queue(window);
+    stage_queue.borrow_mut().done(0, 1.0);
+    NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
 
     // S5: a captions-only voice stops here — the lines exist and nothing is spoken.
     if plan.captions_only {
@@ -318,27 +405,46 @@ where
         return said;
     }
 
-    // S6: the speaking pass. F4.4 owns the POST /v1/audio/speech request; `narrate_tts` builds the
-    // request, the options and the take path but makes no call yet, so this seam reports what WOULD be
-    // synthesized and counts the cache honestly -- the cached half is a real file check, so a warm
-    // project really does report zero work.
+    // S6: the speaking pass, over the real wire. `narrate_run` decides WHICH lines get synthesized
+    // (blank is a deliberate silence, a take already in narrate/tts/ costs nothing); this half asks
+    // audio.cpp for each of them through `speak_leg::speak`, the same door the row's ▶ and the
+    // preview's walk use — so "N line(s) spoken" can never be reported for lines nobody dialled.
     say_on_status(window, SPEAKING_STATUS);
     // F4.8: the lines this pass may speak come through `narrate_off::lines_to_speak`, the one seam the
     // tick owns — with narration off it answers empty, so nothing is synthesized behind the tick's back,
     // and a blank line stays a deliberate silence that is never spoken.
     let to_speak = narrate_off::lines_to_speak(live_project().no_narration, &record.entries);
-    NARRATE_QUEUE
-        .with(|queue| queue.borrow_mut().push(1, to_speak.len().max(1), "line"));
-    let speaks = narrate_run::speak_pass(&voice, to_speak.as_slice(), |entry| {
-        let key = narration::key_for(entry, Some(&voice));
-        tree.tts_wav(&narration::tts_file(&key)).is_file()
-    });
-    for (index, speak) in speaks.iter().enumerate() {
-        if *speak == Speak::Synthesize {
-            ui::log_line(&narrate_preview::synthesizing(index));
+    live_stage_queue(window)
+        .borrow_mut()
+        .push(1, to_speak.len().max(1), "line");
+    let language = crate::project::load(tree.dir())
+        .map(|opened| opened.language)
+        .unwrap_or_default();
+    let run = narrate_speak::speak_lines(
+        &to_speak,
+        |entry| {
+            let key = narration::key_for(entry, Some(&voice));
+            tree.tts_wav(&narration::tts_file(&key)).is_file()
+        },
+        |entry| narrate_speak::dial_line(&tree, &voice, &language, entry),
+    );
+    // ⏹ cut the pass short between two lines: the summary says what got done, and the ending names the
+    // stage that stopped rather than claiming a finished narration (§S7).
+    if run.stopped {
+        for line in run.lines.iter().filter_map(|line| narrate_speak::refused(line)) {
+            ui::log_line(&format!("!!! narrate: {line}"));
         }
+        ui::log_line(&narrate_speak::stopped_speaking_log(&run));
+        let said = narrate_run::stopped_status(JOB_SPEAKING);
+        say_on_status(window, &said);
+        return said;
     }
-    let (spoken, cached) = narrate_run::tally(&speaks);
+    let (lines, spoken, cached) = (run.lines, run.spoken, run.cached);
+    // A refusal names the model and its reason where it failed and the run carries on with the rest
+    // (§Failure-is-specific), so each sentence reaches the log and the tally still closes the job.
+    for line in lines.iter().filter_map(|line| narrate_speak::refused(line)) {
+        ui::log_line(&format!("!!! narrate: {line}"));
+    }
     ui::log_line(&narrate_run::spoken_log(spoken, cached));
 
     // S7: the ending goes on the STATUS LINE, which is where the prototype never put it.
@@ -395,14 +501,53 @@ pub fn pull_half_typed(window: &adw::ApplicationWindow, existing: &Narration) ->
 /// What the bar's label reads right now, and where it is painted. Kept in thread-locals so the doors can
 /// report the sequence without having captured the builder's locals, and so a test can read the stages
 /// back instead of trusting a comment.
-pub(crate) fn set_narrate_stage(window: &adw::ApplicationWindow, stage: &str) {
+/// Paint the narration run's stage on the bar: the fraction its queue has earned, the stage's own
+/// words, and the tooltip that keeps counting while the stage says one short thing.
+///
+/// `pulse` stands F0.1/§2's 150 ms idle pulse (`runqueue::PROGRESS_PULSE`, the shell's one timer —
+/// [`crate::ui::shell_beats::arm_pulse`], the same call the ▶ handler makes for a Prepare run) instead
+/// of setting a fraction: while the run is thinking, the queue's reading is 0.0 by design — nothing has
+/// closed — so a bar that is only given a number sits still at zero exactly as long as the model takes.
+/// §F4.1 S3 asks for that wait to be visible as a pulse, and the timer ends itself the moment
+/// [`crate::ui::shell_beats::should_pulse`] says there is a countable fraction, which is when the next
+/// call here arrives with `pulse` false and hands the needle back.
+pub(crate) fn set_narrate_stage(window: &adw::ApplicationWindow, stage: &str, pulse: bool) {
     NARRATE_STAGE.with(|cell| cell.replace(stage.to_string()));
-    let fraction = NARRATE_QUEUE.with(|queue| queue.borrow().fraction());
-    let tip = NARRATE_QUEUE.with(|queue| queue.borrow().text_and_tip().1);
+    NARRATE_STAGES.with(|stages| stages.borrow_mut().push(stage.to_string()));
+    let stage_queue = live_stage_queue(window);
+    let fraction = stage_queue.borrow().fraction();
+    let tip = stage_queue.borrow().text_and_tip().1;
     if let Some(bar) = ui::find_widget_by_name(window.upcast_ref(), "run-progress")
         .and_then(|w| w.downcast::<gtk::ProgressBar>().ok())
     {
-        bar.set_fraction(fraction.clamp(0.0, 1.0));
+        let pulsed = match (pulse, live_run_handles()) {
+            (true, Some((run_bar, _))) => {
+                // §2's other half: a run that just painted a stage owns the needle, so any pulse the
+                // ▶ handler left standing goes down before this stage's own beat replaces it. One
+                // timer at a time is what keeps an idle bar still (F0.1).
+                crate::ui::shell_beats::stop_pulse();
+                // `arm_pulse`'s beat must watch the SAME fraction this run advances, so the queue
+                // handed over is [`live_stage_queue`]'s — the window's — not the timer's own copy.
+                let queue = live_stage_queue(window);
+                crate::ui::shell_beats::arm_pulse(&bar, &run_bar, &queue);
+                true
+            }
+            // Nothing to pulse on: no window handles (a door with no shell) or the run already closed.
+            // The fraction still goes on the bar, so the stage is never invisible.
+            (true, None) => {
+                crate::ui::shell_beats::stop_pulse();
+                bar.set_fraction(fraction.clamp(0.0, 1.0));
+                false
+            }
+            (false, _) => {
+                // The counted stage: take the beat down here rather than waiting for its next tick, so
+                // the bar cannot pulse one more time after the count landed.
+                crate::ui::shell_beats::stop_pulse();
+                bar.set_fraction(fraction.clamp(0.0, 1.0));
+                false
+            }
+        };
+        NARRATE_PULSED.with(|cell| cell.set(pulsed || cell.get()));
         bar.set_text(Some(stage));
         bar.set_show_text(true);
         if !tip.is_empty() {
@@ -411,9 +556,47 @@ pub(crate) fn set_narrate_stage(window: &adw::ApplicationWindow, stage: &str) {
     }
 }
 
+/// Whether the narration run's bar pulsed at any point in this run — the fact §F4.1 S3 asks for, which
+/// GTK gives nobody a way to read back off a `ProgressBar`. Set by [`set_narrate_stage`] when it stands
+/// the pulse timer; public so a check asserts the wait was shown rather than trusting a comment.
+pub fn narrate_pulsed() -> bool {
+    NARRATE_PULSED.with(|cell| cell.get())
+}
+
+/// The queue this run drives the bar through: the window's own (`ui::run_queue`) when a shell is open,
+/// so `arm_pulse`, `paint_progress` and [`set_narrate_stage`] read one fraction; the private
+/// [`NARRATE_QUEUE`] copy when the door was called with no shell behind it.
+fn live_stage_queue(window: &adw::ApplicationWindow) -> Rc<RefCell<runqueue::Queue>> {
+    ui::run_queue(window).unwrap_or_else(|| Rc::new(RefCell::new(NARRATE_QUEUE.with(|queue| queue.borrow().clone()))))
+}
+
+/// A `glib`-free handle pair the run's bar and queue travel in.
+type RunHandles = (Rc<RefCell<run::RunBar>>, Rc<RefCell<runqueue::Queue>>);
+
+/// This window's live run bar and queue, the same newest-slot rule [`crate::ui::run_close`] uses to find
+/// the widgets a close repaints. `None` when this thread has no built window.
+fn live_run_handles() -> Option<RunHandles> {
+    let bar = ui::RUN_BARS.with(|bars| bars.borrow().last().cloned())?;
+    let queue = ui::WINDOW_QUEUE.with(|queues| queues.borrow().last().cloned())?;
+    Some((bar, queue))
+}
+
 /// The stage text this run last put on the bar.
 pub fn narrate_stage() -> String {
     NARRATE_STAGE.with(|cell| cell.borrow().clone())
+}
+
+/// The stages this run put on the bar, in order — including the ones a later stage painted over, which
+/// is the only way a check can see "thinking about it" came FIRST. Appended by [`set_narrate_stage`]
+/// and cleared when a run opens, so it is this run's history and not the process's.
+pub fn narrate_stages() -> Vec<String> {
+    NARRATE_STAGES.with(|stages| stages.borrow().clone())
+}
+
+/// Whether this window's narrate run got past the writing job: ⏹ reads this to name the stage it
+/// caught (`narration stopped` before any line landed, `speaking stopped` after one did, §F4.1 S7).
+pub fn narrate_wrote() -> bool {
+    NARRATE_WROTE.get()
 }
 
 /// Put the narration run's bar face on screen without running the run: `narration 1/2` open, two of
@@ -431,8 +614,14 @@ pub fn show_narrate_stage(window: &adw::ApplicationWindow, written: usize, of: u
         queue.prog(0, if of == 0 { 0.0 } else { written as f64 / of as f64 }, &narrate_run::writing(written, of));
         queue.job(1, JOB_SPEAKING, 2, JOBS);
     });
-    set_narrate_stage(window, &narrate_run::writing(written, of));
+    set_narrate_stage(window, &narrate_run::writing(written, of), false);
 }
+
+/// One line of a scripted F4.1 reply: `(clip number from 1, clip-relative seconds, text, emotion)`.
+pub type ScriptedLine = (u32, f64, String, String);
+
+/// A slow scripted reply — its lines and the time spent before each one, see [`set_narrate_script_slow`].
+pub type SlowScript = Option<(Vec<ScriptedLine>, std::time::Duration)>;
 
 thread_local! {
     /// The narration run's own view of the bar: `narration 1/2` then `speaking 2/2`, each owning half
@@ -440,10 +629,20 @@ thread_local! {
     static NARRATE_QUEUE: std::cell::RefCell<runqueue::Queue> =
         std::cell::RefCell::new(runqueue::Queue::new());
     /// A scripted F4.1 narration reply for the shell's ▶ — see `set_narrate_script`.
-    static NARRATE_SCRIPT: std::cell::RefCell<Vec<(u32, f64, String, String)>> =
+    static NARRATE_SCRIPT: std::cell::RefCell<Vec<ScriptedLine>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// A slow scripted reply — see [`set_narrate_script_slow`].
+    static SLOW_NARRATE_SCRIPT: std::cell::RefCell<SlowScript> = const { std::cell::RefCell::new(None) };
     static NARRATE_STAGE: std::cell::RefCell<String> =
         const { std::cell::RefCell::new(String::new()) };
+    /// Whether this run pulsed the bar while thinking — see [`narrate_pulsed`].
+    static NARRATE_PULSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether the last narrate run reached its speaking job (its first job closed). ⏹ reads this to say
+    /// `narration stopped` or `speaking stopped` (§F4.1 S7).
+    static NARRATE_WROTE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Every stage this run painted, oldest first — see [`narrate_stages`].
+    static NARRATE_STAGES: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Put a sentence on this window's status line, the widget every other door writes, and log it too.

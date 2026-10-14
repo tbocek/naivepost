@@ -358,6 +358,57 @@ fn f4_1_s7_done_statuses() {
 }
 
 #[test]
+fn f4_1_s7_stopped_ends_name_the_stage() {
+    // §S7's fourth ending: `<stage> stopped`, and the stage is whichever job ⏹ caught. The door reaches
+    // it through the live cancel switch (`cancel_leg::cancelled()`), which `runqueue::start_run` clears
+    // per run and `RunBar::press_stop` raises — so a stop can only ever name the stage it interrupted.
+    assert_eq!(stopped_status(JOB_NARRATION), "narration stopped");
+    assert_eq!(stopped_status(JOB_SPEAKING), "speaking stopped");
+    assert_ne!(stopped_status(JOB_NARRATION), DONE_SPOKEN, "a stop is not a finished narration");
+
+    // The speaking half reports it: with the switch raised before the first line, nothing is dialled,
+    // nothing is counted, and the pass says it was cut short rather than reporting an ending.
+    naivepost::cancel_leg::reset_to(1);
+    naivepost::cancel_leg::clear();
+    let entries = vec![Entry {
+        s: 0.0,
+        e: 10.0,
+        at: 0.0,
+        text: "a line nobody will hear".into(),
+        emotion: String::new(),
+        pos: String::new(),
+        roll: 0,
+    }];
+    let dialed = std::cell::Cell::new(0usize);
+    let clean = naivepost::ui::narrate_run_speak::speak_lines(
+        &entries,
+        |_| false,
+        |_| {
+            dialed.set(dialed.get() + 1);
+            Ok(std::path::PathBuf::from("/tmp/take.wav"))
+        },
+    );
+    assert!(!clean.stopped && clean.spoken == 1, "with no stop the pass runs: {clean:?}");
+
+    naivepost::cancel_leg::cancel_now();
+    let stopped = naivepost::ui::narrate_run_speak::speak_lines(
+        &entries,
+        |_| false,
+        |_| {
+            dialed.set(dialed.get() + 1);
+            Ok(std::path::PathBuf::from("/tmp/take.wav"))
+        },
+    );
+    naivepost::cancel_leg::clear();
+    assert!(stopped.stopped, "the raised switch ended the pass");
+    assert_eq!(stopped.spoken, 0, "nothing was spoken after a stop: {stopped:?}");
+    assert!(stopped.lines.is_empty(), "no verdicts were earned: {:?}", stopped.lines);
+    assert_eq!(dialed.get(), 1, "the stopped pass dialled the synth for nothing");
+    // And the sentence the run puts on the status line is the stage's own, not the done wording.
+    assert_eq!(stopped_status(JOB_SPEAKING), "speaking stopped");
+}
+
+#[test]
 fn f4_1_s2_fold_replaces_only_covered_clips() {
     // A record with lines on clips 1 and 2; this run covered clip 1 only.
     let record = Narration {
