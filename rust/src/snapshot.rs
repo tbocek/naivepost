@@ -1051,22 +1051,46 @@ architecture behind them.
         // (`press_take_add`, which adds the selection to the state, repaints and writes the status). The
         // band, the voice and its wav come from `seed_voice_reference`, which ran before the window built.
         if screen == "07-take" {
+            // The CUT this shot needs is the demo project's own three clips, not an empty one: the arm runs
+            // after `build_window`'s seed, and `refresh` re-reads the state on every repaint, so the arm's
+            // `has_cut: true` promised a cut the page never had. With no clips the right column showed the
+            // "no narration lines yet — ＋ puts one at the playhead" hint and the Inputs readout read
+            // "0 clip(s) · 00:00", and the take band's own picture had nothing beside it. `cut::load` is
+            // the same door `05-cut` goes through, so the footage, the clock and the readout all agree with
+            // the project the shot was asked to render.
+            let clips = layout::Tree::new(&dir)
+                .ok()
+                .and_then(|tree| cut::load(&tree).ok())
+                .map(|loaded| {
+                    ui::seed_review_cut(&window, &loaded);
+                    loaded.segs.len()
+                })
+                .unwrap_or(0);
+            let footage = layout::Tree::new(&dir)
+                .ok()
+                .and_then(|tree| cut::load(&tree).ok())
+                .map(|loaded| loaded.segs.iter().map(|seg| seg.e - seg.s).sum())
+                .unwrap_or(0.0);
             let state = ui::NarrateState {
                 voice: "narrator1".into(),
                 pitch: 0.0,
                 narrators: 1,
-                has_cut: true,
+                has_cut: clips > 0,
                 has_timeline: true,
+                clips,
+                length: footage,
                 ..Default::default()
             };
             ui::set_state(state);
             ui::refresh(&window);
-            // 1.0–3.6 s: 2.6 s of reference, the spec image's own take. Said with §F4.6's own sentence —
-            // "take added: 0:00–0:03 — 1 take(s), 2.6 s of reference (14 s is plenty)" — which the app's
-            // commit status spells a different way ("takes — 1 take(s), 2.6 s of reference (0 s is plenty)")
-            // because it is handed `take_min()` where the §6 message wants `refWantSeconds`: the wording
-            // difference is the app's, not this shot's to paper over.
-            ui::press_take_add(&window, (1.0, 3.6));
+            // 0.0–2.6 s: 2.6 s of reference, the spec image's own take, said through the same door the
+            // ＋ press says it from — which now spells §F4.6's own sentence ("take added: 0:00–0:03 — 1
+            // take(s), 2.6 s of reference (14 s is plenty)"): the span of the seconds just dragged, then
+            // §6's commit status judged against `P.machine.refWantSeconds`.
+            // `mm_ss` floors, so the span this quotes for these seconds reads "00:00–00:02"; a take
+            // placed at 1.0–3.6 would quote "00:01–00:03" and the shot's status would not line up with
+            // its own caption's seconds.
+            ui::press_take_add(&window, (0.0, 2.6));
         }
         // F0.8's screen is the confirmation, not the window behind it: the dialog is what the spec
         // image shows, so it is what gets painted. The fixture is a named project folder, which is

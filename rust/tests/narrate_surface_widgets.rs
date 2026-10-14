@@ -474,6 +474,42 @@ fn narrate_round(app: &adw::Application) {
         "// P.eng.takeMinSeconds 0.4: a 0.2 s span is refused with the module's own sentence"
     );
     assert!(ui::read_state().takes.is_empty(), "no take was made");
+    // A span that clears `P.eng.takeMinSeconds` is accepted, and the sentence it says is §F4.6's own:
+    // the seconds just dragged, then §6's commit status judged against `P.machine.refWantSeconds` — the
+    // mark a reference is worth cloning at. `take_min()` there read "(0 s is plenty)" beside 2.6 s.
+    let added = ui::press_take_add(&window, (0.0, 2.6));
+    assert_eq!(
+        added,
+        format!(
+            "take added: 00:00\u{2013}00:02 \u{2014} {}",
+            narrate_details::commit_status(
+                "takes",
+                1,
+                2.6,
+                narrate_details::REFERENCE_WANTED_SECONDS
+            )
+        ),
+        "// \u{a7}F4.6's caption: 'take added: 0:00\u{2013}0:03 \u{2014} 1 take(s), 2.6 s of reference (14 s is plenty)', to the minute `mm_ss` floors to"
+    );
+    assert_eq!(status_text(&window), added, "the status line says it too");
+    // --- the take band's ▶ and the empty case, measured while NO take is on the band ------------------
+    // (the assertions below expect `takes.is_empty()`), so the take this arm added comes back off here.
+    ui::press_take_remove(&window, (0.0, 2.6));
+    settle();
+    assert!(ui::read_state().takes.is_empty(), "\u{ff}－ took the seconds back out");
+    // and the − sentence carries the same 14 s mark
+    ui::press_take_add(&window, (5.0, 8.0));
+    settle();
+    let minus = ui::press_take_remove(&window, (6.0, 7.0));
+    assert!(
+        minus.contains("(14 s is plenty)"),
+        "// \u{a7}6's commit status is judged against refWantSeconds: {minus}"
+    );
+    // \u{ff} take everything back off: the \u{25b6} assertion below is the NO-takes sentence, and a band
+    // left holding a take would answer with the takes-playing one instead.
+    ui::press_take_remove(&window, (5.0, 8.0));
+    settle();
+    assert!(ui::read_state().takes.is_empty(), "the band is empty again");
     button(&window, "take-play").emit_by_name::<()>("clicked", &[]);
     settle();
     assert_eq!(

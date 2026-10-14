@@ -962,6 +962,10 @@ pub fn press_line_reroll(window: &adw::ApplicationWindow, index: usize) -> Strin
 }
 
 /// **8** ＋ makes the selection a take, refused under P.eng.takeMinSeconds.
+///
+/// The sentence it says carries the selection's own span first (§F4.6's caption: "take added: 0:00–0:03 —
+/// 1 take(s), 2.6 s of reference (14 s is plenty)"), because the seconds someone just dragged are the
+/// fact the status has to confirm; the totals after the dash are [`narrate_details::commit_status`]'s.
 pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) -> String {
     if !narrate_screen::can_make_take(selection) {
         let seconds = selection.1 - selection.0;
@@ -978,11 +982,19 @@ pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) ->
     refresh(window);
     say(
         window,
-        &narrate_details::commit_status(
-            "takes",
-            takes.len(),
-            takes.iter().map(|(a, b)| b - a).sum(),
-            narrate_screen::take_min(),
+        &format!(
+            "take added: {}–{} \u{2014} {}",
+            crate::tools::mm_ss(selection.0),
+            crate::tools::mm_ss(selection.1),
+            // §6 spells the mark as `P.machine.refWantSeconds` (14 s), NOT the ＋ press's own floor:
+            // handing this `take_min()` read "(0 s is plenty)" beside a 2.6 s take, which is the
+            // sentence's whole point — is this enough voice to clone?
+            narrate_details::commit_status(
+                "takes",
+                takes.len(),
+                takes.iter().map(|(a, b)| b - a).sum(),
+                narrate_details::REFERENCE_WANTED_SECONDS,
+            )
         ),
     )
 }
@@ -1007,7 +1019,9 @@ pub fn press_take_remove(window: &adw::ApplicationWindow, selection: (f64, f64))
             "takes",
             takes.len(),
             takes.iter().map(|(a, b)| b - a).sum(),
-            narrate_screen::take_min(),
+            // Same mark as the ＋ sentence: §6's "(14 s is plenty)" is `P.machine.refWantSeconds`, the
+            // length the reference aims for, not the 0.4 s floor a single take has to clear.
+            narrate_details::REFERENCE_WANTED_SECONDS,
         ),
     )
 }
