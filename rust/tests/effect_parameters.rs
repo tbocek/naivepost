@@ -99,7 +99,7 @@ fn sec_06_effects_6_parameters_used_s2_the_bounds_shared_with_the_cut_page_are_c
     assert_eq!(number_anywhere("P.policy.captionMinSeconds"), clips::CAPTION_MIN_SECONDS);
     assert_eq!(number_anywhere("P.eng.effectMinSurvivingSeconds"), cut_clamp::MIN_SURVIVING_SECONDS);
 
-    assert_eq!(anywhere("P.eng.maxGain").from, "cut_hear::MAX_GAIN");
+    assert_eq!(anywhere("P.eng.maxGain").from, "fx_record::gain_ceiling");
     assert_eq!(cut_hear::MAX_GAIN, 10.0, "playbin's own ceiling is what §6 writes as maxGain (10)");
 
     let listed = effect_ids();

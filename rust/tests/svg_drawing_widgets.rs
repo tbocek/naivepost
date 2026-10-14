@@ -23,6 +23,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
+pub use common::find_in;
 use common::{settle, status_text, entry, widget, label_text, click, cut_page_settled_first as cut_page};
 
 static RAN_REFUSE: AtomicBool = AtomicBool::new(false);
@@ -38,9 +39,6 @@ static RAN_NOT_PLACED: AtomicBool = AtomicBool::new(false);
 static RAN_FLOOR: AtomicBool = AtomicBool::new(false);
 static RAN_APPLY_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_RASTER: AtomicBool = AtomicBool::new(false);
-
-/// Let the main context run what the widget emissions queued.
-
 
 /// This window's drawing-form holder, and whether it is showing.
 fn form_holder(window: &adw::ApplicationWindow) -> gtk::Box {
@@ -68,21 +66,6 @@ fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64))
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
     gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
-}
-
-/// Find a named widget inside a subtree we already hold (a form row), without walking the whole window.
-fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-    if node.widget_name() == name {
-        return Some(node.clone());
-    }
-    let mut child = node.first_child();
-    while let Some(current) = child {
-        if let Some(found) = find_in(&current, name) {
-            return Some(found);
-        }
-        child = current.next_sibling();
-    }
-    None
 }
 
 /// Put a line down so §S1's `a line?` answers yes, and pointing where we expect.

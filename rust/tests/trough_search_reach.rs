@@ -16,10 +16,9 @@
 // so the tail threshold is 156, the tail walk stops at bucket 320, and the trough scan covers
 // buckets 320..=400 (end + 80).
 
-use naivepost::edges::{self as edge, AlignedWord, Edges};
+use naivepost::edges::{self as edge, Edges};
 use naivepost::params;
 use naivepost::textfmt::Retake;
-use naivepost::wave::Wave;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
@@ -32,20 +31,9 @@ const WORD: u8 = 200;
 /// A dip below even the room: nothing quieter can be found in these envelopes.
 const DIP: u8 = 4;
 
-/// An envelope of `total` seconds, silent at [`ROOM`] except in these spans.
-fn wave(total: f64, spans: &[(f64, f64, u8)]) -> Wave {
-    let mut peaks = vec![ROOM; (total * HZ) as usize];
-    for (start, end, level) in spans {
-        for bucket in (start * HZ) as usize..(end * HZ) as usize {
-            peaks[bucket] = *level;
-        }
-    }
-    Wave { hz: HZ, chans: vec![peaks] }
-}
-
 /// One recording filling the session clock from second nought.
 fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
-    Edges::new(wave(total, spans), 0.0)
+    Edges::new(common::wave(total, spans, HZ, ROOM), 0.0)
 }
 
 #[allow(dead_code)]

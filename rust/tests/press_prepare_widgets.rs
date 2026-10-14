@@ -11,6 +11,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::fake_audio_server;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
 use naivepost::run;
@@ -28,45 +31,6 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
     std::env::set_current_dir(&root).expect("cwd pinned to the session root");
     let tree = Tree::new(&dir).expect("a .naivepost folder is a project");
     (root, tree)
-}
-
-/// A fake audio.cpp on loopback (§S5 asks it before any stage runs), and the conf that points this
-/// process at it. One conf for the whole binary: `XDG_CONFIG_HOME` belongs to the process, and every
-/// check here presses ▶, so they all need the same answer.
-fn fake_audio_server() -> String {
-    use std::io::{BufRead, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-    let port = listener.local_addr().expect("an address").port();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            std::thread::spawn(move || {
-                let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                    return;
-                }
-                loop {
-                    let mut header = String::new();
-                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
-                        break;
-                    }
-                }
-                let payload = if line.contains("/v1/models") {
-                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
-                } else {
-                    "{}"
-                };
-                let reply = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
-                    payload.len()
-                );
-                let _ = stream.write_all(reply.as_bytes());
-                let _ = stream.flush();
-            });
-        }
-    });
-    format!("http://127.0.0.1:{port}")
 }
 
 fn serve_audio_for_the_presses(url: &str) {

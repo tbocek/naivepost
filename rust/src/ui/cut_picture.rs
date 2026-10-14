@@ -177,7 +177,7 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     }
     // The watched row indexes the scene's rows; `scene_from` lays them in the recording order, so the row
     // number picks the recording rather than needing a second mapping.
-    let row = ui::watched_row().unwrap_or(0);
+    let row = ui::preview_row(window);
     // A snapshot names the session it is rendering (`snapshot.rs`), because its folder is the fixture and
     // not the working copy a real session writes frames into. Empty in every other case, so a live window
     // still answers from its own recordings.

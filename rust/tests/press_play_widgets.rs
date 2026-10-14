@@ -8,51 +8,7 @@ use naivepost::run;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir};
-
-/// One running GTK application for this test binary, taken in turn by the checks below — the same
-/// single-main-loop arrangement tests/smoke.rs needs for the same reason (`g_application_run` refuses
-/// a second claimant of the default main context). The presses happen inside one `activate`, in
-/// order, because ▶'s meaning depends on what the press before it did.
-/// A fake audio.cpp on loopback (§S5 asks it before any stage runs) — the shape
-/// `tests/press_prepare_widgets.rs` uses: healthy on `/health`, ASR + diarization on `/v1/models`.
-/// Without it every Prepare press below is refused by the preflight and never starts the step these
-/// checks are about.
-fn fake_audio_server() -> String {
-    use std::io::{BufRead, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-    let port = listener.local_addr().expect("an address").port();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            std::thread::spawn(move || {
-                let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                    return;
-                }
-                loop {
-                    let mut header = String::new();
-                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
-                        break;
-                    }
-                }
-                let payload = if line.contains("/v1/models") {
-                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
-                } else {
-                    "{}"
-                };
-                let reply = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
-                    payload.len()
-                );
-                let _ = stream.write_all(reply.as_bytes());
-                let _ = stream.flush();
-            });
-        }
-    });
-    format!("http://127.0.0.1:{port}")
-}
+use common::{fake_audio_server, fixture_dir};
 
 /// Point the settings this process reads at that server. One conf for the whole binary: every check
 /// here presses ▶, so they all need the same answer, and `XDG_CONFIG_HOME` belongs to the process.

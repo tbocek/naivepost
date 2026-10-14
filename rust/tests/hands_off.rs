@@ -26,7 +26,6 @@ use naivepost::project::{CutMode, Field, MarkingPass, Origin, Policy};
 use naivepost::separate;
 use naivepost::tools::clips::Clips;
 use naivepost::tools::cutpass::Plan;
-use naivepost::wave::Wave;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
@@ -35,17 +34,6 @@ use common::{seg, fx};
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
 const WORD: u8 = 120;
-
-/// An envelope silent at room level except in these spans.
-fn wave(total: f64, spans: &[(f64, f64, u8)]) -> Wave {
-    let mut peaks = vec![ROOM; (total * HZ) as usize];
-    for (start, end, level) in spans {
-        for bucket in (start * HZ) as usize..(end * HZ) as usize {
-            peaks[bucket] = *level;
-        }
-    }
-    Wave { hz: HZ, chans: vec![peaks] }
-}
 
 /// A speed run at one rate — `merge` only folds runs that hear the same thing, so both need a rate.
 fn speed(t: f64, dur: f64, rate: f64) -> Fx {
@@ -81,14 +69,14 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s1_word_time
 fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s2_the_envelope_places_inside_the_fence() {
     // The model chose the word ("stays", stamped 1.0..1.5). Where the cut actually falls inside the
     // fence after it is read off the sound, not proposed.
-    let tight = Edges::new(wave(6.0, &[(1.0, 1.5, WORD)]), 0.0);
+    let tight = Edges::new(common::wave(6.0, &[(1.0, 1.5, WORD)], HZ, ROOM), 0.0);
     let w = AlignedWord { word: "stays".into(), s: 1.0, e: 1.5 };
     // No width to choose in: the aligner's time is all there is.
     assert_eq!(tight.end_after(&w, 1.5), 1.5);
 
     // With room behind it, the envelope picks the quiet: a breath placed later moves the edge off the
     // stamp without changing which word was chosen.
-    let with_room = Edges::new(wave(6.0, &[(1.0, 1.5, WORD), (2.4, 3.0, WORD)]), 0.0);
+    let with_room = Edges::new(common::wave(6.0, &[(1.0, 1.5, WORD), (2.4, 3.0, WORD)], HZ, ROOM), 0.0);
     let placed = with_room.end_after(&w, 2.4);
     assert!(placed >= 1.5, "never before the word's own end");
     assert!(placed <= 2.4, "never past the limit the caller set");

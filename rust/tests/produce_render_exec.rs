@@ -26,21 +26,6 @@ use naivepost::project::{Container, Produce, Publish, Source, Subtitles};
 
 const ITEM: &str = "f5_2";
 
-fn temp_root(tag: &str) -> PathBuf {
-    // Removed at the start, not the end: a failing case never reaches its own cleanup.
-    let dir = std::env::temp_dir().join(format!("np-f52w-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn tree_in(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_root(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
-
 fn seg(s: f64, e: f64) -> Seg {
     Seg { s, e, cam: 0, ..Default::default() }
 }
@@ -233,7 +218,7 @@ fn run_over(
     settings: Produce,
     voice: &str,
 ) -> (Tree, flow::Run) {
-    let (_root, tree) = tree_in(tag);
+    let (_root, tree) = common::tree_in(tag);
     let run = flow::snapshot(
         Some(cut_of(segs)),
         &tree,
@@ -251,7 +236,7 @@ fn run_over(
 #[test]
 fn f5_2_s1_the_run_clears_the_scratch_folder() {
     assert_eq!(ITEM, "f5_2");
-    let (_root, tree) = tree_in("s1");
+    let (_root, tree) = common::tree_in("s1");
     let scratch = tree.clips_dir();
     std::fs::create_dir_all(&scratch).unwrap();
     std::fs::write(scratch.join("old-a.mp4"), b"x").unwrap();

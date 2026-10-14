@@ -21,22 +21,11 @@ use naivepost::produce_flow as flow;
 use naivepost::produce_render as render;
 use naivepost::produce_render::Clip;
 use naivepost::project::{Produce, Publish};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+pub use common::tree_in;
 
 const ITEM: &str = "sec_06_effects_4_render_how_each_effect_becomes_ffmpeg";
-
-fn temp_root(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("np-06e4-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn tree_in(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_root(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
 
 fn seg(s: f64, e: f64) -> Seg {
     Seg { s, e, cam: 0, ..Default::default() }
@@ -51,7 +40,7 @@ fn clip(no: usize, rate: f64, on_screen: f64) -> Clip {
         rate,
         frame: (1920, 1080),
         src: (1920, 1080),
-        scratch: temp_root("scratch"),
+        scratch: common::temp_root("scratch"),
         ..Default::default()
     }
 }
@@ -236,7 +225,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_a_zoom_past_ten_tim
     deep.hf = Some(0.02);
     let mut c = clip(1, 1.0, 30.0);
     c.fx = vec![deep.clone()];
-    let built = naivepost::produce_fx_chain::for_clip(&c, &c.fx, c.src, &temp_root("s3-cap"));
+    let built = naivepost::produce_fx_chain::for_clip(&c, &c.fx, c.src, &common::temp_root("s3-cap"));
     assert!(
         built.logs.iter().any(|l| l.contains("deeper than ffmpeg's 10") && l.contains("clip 1")),
         "the cap is said, naming the clip: {:?}",
@@ -259,7 +248,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_a_zoom_past_ten_tim
 /// frame-sized SVG, black round-joined stroke then white fill …), with alpha fades and an enable window`).
 #[test]
 fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_a_title_is_written_as_a_box_sized_svg_and_looped() {
-    let scratch = temp_root("s4-scratch");
+    let scratch = common::temp_root("s4-scratch");
     let mut c = clip(1, 1.0, 30.0);
     c.scratch = scratch.clone();
     c.fx = vec![text(6.0, "results")];
@@ -306,12 +295,12 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_a_drawing_is_scaled
     assert!(video.contains("input project:assets/arrow.svg"), "their file is read: {video}");
     assert!(video.contains("scale="), "into a box: {video}");
     assert!(video.contains("overlay="), "and laid over the picture: {video}");
-    let built = naivepost::produce_fx_chain::for_clip(&c, &c.fx.clone(), c.src, &temp_root("s4b"));
+    let built = naivepost::produce_fx_chain::for_clip(&c, &c.fx.clone(), c.src, &common::temp_root("s4b"));
     assert!(built.inputs.iter().any(|(k, p)| k == "svg" && p.as_deref() == Some("project:assets/arrow.svg")));
 
     let mut gone = clip(1, 1.0, 30.0);
     gone.fx = vec![drawing(6.0, "")];
-    let built = naivepost::produce_fx_chain::for_clip(&gone, &gone.fx.clone(), gone.src, &temp_root("s4c"));
+    let built = naivepost::produce_fx_chain::for_clip(&gone, &gone.fx.clone(), gone.src, &common::temp_root("s4c"));
     assert_eq!(built.logs.len(), 1, "the missing file is named: {:?}", built.logs);
     assert!(built.inputs.is_empty(), "and nothing is fed to ffmpeg that cannot be opened");
 }
@@ -403,7 +392,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s7_the_frame_box_names
 /// resolution a real render uses.
 #[test]
 fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s8_the_filters_reach_the_configured_ffmpeg() {
-    let (root, tree) = tree_in("s8-wire");
+    let (root, tree) = common::tree_in("s8-wire");
     let (stub, log) = ffmpeg_stub(&root);
     assert!(stub.exists(), "the stub is the tool the settings name");
     let fx = vec![

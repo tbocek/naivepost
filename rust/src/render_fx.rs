@@ -12,7 +12,6 @@
 //! `params::cut()` / `params::engineering()` catalogue it.
 
 use crate::cut::{EffectKind, Fx, Seg};
-use crate::cut_hear::MAX_GAIN;
 use crate::cut_speed;
 use crate::fx_lane;
 use crate::fx_record;
@@ -89,7 +88,12 @@ pub fn split_pictures(fx: &[Fx], seg: &Seg) -> Vec<Picture> {
             setpts: None,
         }];
     }
-    let spans = cut_speed::rate_spans(fx);
+    // §4's words are `clips split at rate boundaries, THE MIDDLE carries the rate`: a scene with no
+    // speed effect on it is one picture as filmed, and one with an effect over part of it splits into
+    // the staircase plus the untouched seconds either side. The stairs come from [`cut_speed::stairs_in`]
+    // through [`cut_speed::steps_of`], so every stretch handed to ffmpeg holds ONE rate: one `setpts`
+    // per stair here and one `atempo` chain per stair in the sound, rather than one filter per ramp.
+    let spans = cut_speed::render_stairs(fx, seg);
     // §4's words are `clips split at rate boundaries, THE MIDDLE carries the rate`: a scene with no speed effect over
     // it is one picture as filmed, and one with an effect over part of it splits into the sped stretch plus the
     // untouched seconds either side of it. Those seconds need no filter, which is why only the middle says anything.
@@ -561,19 +565,51 @@ pub fn scaled_into_box(src: &str, box_px: (i32, i32, i32, i32)) -> Vec<String> {
 // --- S5: volume ----------------------------------------------------------------------------------------------------
 
 /// One volume cue in the clip's own seconds.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+/// §9 (`A volume SHOULD carry `lane`: "" the whole bed (today), or one lane's name, gained
+/// before the mix`): a cue's reach and its place in the graph, as ONE pair read off what the
+/// record holds. A naming cue acts on one recording, so it must run while that recording is
+/// still apart from the others; an unnamed one is the bed and rides after the mix. The render
+/// (`render_fx::all_gain_cues`) and the preview (`cut_hear::mix_at`) take their halves from
+/// here, so a duck cannot run on one side of the mix and not the other.
 pub struct Cue {
     pub from: f64,
     pub to: f64,
     pub gain: f64,
     pub fin: f64,
     pub fout: f64,
+    /// The lane a naming cue acts on, empty for the whole bed.
+    pub lane: String,
+}
+
+impl Cue {
+    /// [`crate::effect_overlap::gained_before_the_mix`] for this cue's reach.
+    pub fn before_the_mix(&self) -> bool {
+        !self.lane.is_empty()
+    }
+
+    /// [`crate::effect_overlap::gain_reaches`]: does this cue touch the lane named `lane`?
+    /// The plan asks it per clip, so a duck naming a lane nobody hears in that scene is not
+    /// counted as work the encode has to do.
+    pub fn reaches(&self, lane: &str) -> bool {
+        self.lane.is_empty() || self.lane == lane
+    }
 }
 
 /// S5 (`one volume=<expr>:eval=frame per cue`): the cut's volume effects mapped onto one clip — same session-to-clip
 /// arithmetic a title uses, so a caption and a gain at the same second come and go together, and a gain under a speed
 /// effect stretches with its sound. A cue shorter than a frame is skipped rather than clamped: it cannot be heard.
 pub fn gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
+    all_gain_cues(fx, sess_s, rate, length)
+        .into_iter()
+        .filter(|cue| !cue.before_the_mix())
+        .collect()
+}
+
+/// Every volume cue, including the ones naming a lane. [`gain_cues`] hands back the bed's
+/// half; a caller that builds the whole audio graph splits the two sides through
+/// [`Cue::before_the_mix`].
+pub fn all_gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
     if length <= 0.0 || rate <= 0.0 {
         return Vec::new();
     }
@@ -588,9 +624,10 @@ pub fn gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
         out.push(Cue {
             from,
             to,
-            gain: effect.gain.clamp(0.0, MAX_GAIN),
+            gain: effect.gain.clamp(0.0, fx_record::gain_ceiling()),
             fin: effect.trans.max(0.0).min(to - from),
             fout: effect.tout.max(0.0).max((to - from) - effect.trans.max(0.0)).min(to - from),
+            lane: effect.lane().unwrap_or_default().to_string(),
         });
     }
     out
@@ -600,7 +637,7 @@ pub fn gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
 /// over each fade. `volume` re-reads its expression per frame anyway, so one expression covers the whole clip. The
 /// multiplier carries an explicit sign (`1-0.5000*…`, never `1+-0.5000*…`).
 pub fn gain_expr(cue: &Cue) -> String {
-    let g = cue.gain.clamp(0.0, MAX_GAIN);
+    let g = cue.gain.clamp(0.0, fx_record::gain_ceiling());
     let mut ramps = Vec::new();
     if cue.fin > 0.0 {
         ramps.push(format!("(t-{:.3})/{:.3}", cue.from, cue.fin));
@@ -690,7 +727,17 @@ pub fn clip_filters(fx: &[Fx], seg: &Seg, src: (i32, i32), frame: (i32, i32)) ->
     }
     let cues = gain_cues(&drawn, seg.s, 1.0, seg.e - seg.s);
     if !cues.is_empty() {
-        chain.push(gain_chain(&cues, "snd"));
+        // §9's lane reach on the whole-cut chain too: a naming cue still runs on its own
+        // recording, so it cannot ride the summed bed here either.
+        let (before, after): (Vec<_>, Vec<_>) = all_gain_cues(&drawn, seg.s, 1.0, seg.e - seg.s)
+            .into_iter()
+            .partition(|cue| cue.before_the_mix());
+        for cue in &before {
+            chain.push(gain_chain(std::slice::from_ref(cue), &cue.lane));
+        }
+        if !after.is_empty() {
+            chain.push(gain_chain(&after, "snd"));
+        }
     }
     // A stop is not a rate and appears here only as the overlay that holds its frame.
     for effect in drawn.iter().filter(|e| fx_record::is_stop(e)) {

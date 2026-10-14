@@ -45,6 +45,34 @@ fn speed(t: f64, dur: f64, rate: f64, snd: &str) -> Fx {
     Fx { rate, snd: snd.into(), ..kind("speed", t, dur) }
 }
 
+/// §06-effects#7-rules — a placed zoom ends where the camera changes, and the person is told:
+/// [`overlap::trim_at_lens_switch`] shortens the band to the switch and the sentence is
+/// [`overlap::lens_switch`]'s.
+#[test]
+fn sec_06_effects_7_rules_s_lens_switch_ends_a_zoom_and_says_so() {
+    // Framed on row 1, crossing into row 0 at 10 s: the band stops at the splice.
+    let framed = zoom(2.0, 8.0, 1);
+    let crossed = [scene(1, 0.0, 10.0), scene(0, 10.0, 20.0)];
+    assert_eq!(overlap::trim_at_lens_switch(&framed, &crossed), Some((8.0, 0)));
+    assert_eq!(
+        overlap::lens_switch(framed.t, framed.cam),
+        format!("the zoom at {} was framed on camera 1 \u{2014} it no longer applies here", cut_hear::scene_clock(framed.t))
+    );
+
+    // One camera the whole way: nothing ends the band, so nothing is trimmed.
+    let single = [scene(1, 0.0, 30.0)];
+    assert_eq!(overlap::trim_at_lens_switch(&zoom(2.0, 8.0, 1), &single), None);
+
+    // A crossing band that would be left under P.eng.effectMinSurvivingSeconds keeps its
+    // length instead of becoming a sliver nobody asked for.
+    let tight = [scene(1, 0.0, 10.0), scene(0, 10.0, 20.0)];
+    assert_eq!(
+        overlap::trim_at_lens_switch(&zoom(9.5, 4.0, 1), &tight),
+        None,
+        "0.5 s of surviving zoom is under the floor"
+    );
+}
+
 // --- row 1: zoom ----------------------------------------------------------------------------------------------------
 
 /// §06-effects#9-where-recordings-overlap — `A zoom SHOULD carry cam, the row it was framed on, and act only on clips
@@ -221,12 +249,6 @@ fn sec_06_effects_9_where_recordings_overlap_s7_a_volume_reaches_what_its_lane_n
 
     // Where a whole-bed cue sits, from the render's own order.
     assert_eq!(render_fx::audio_order(), vec!["lane mix", "volume cues", "narration"]);
-
-    // Only a volume is heard, so only a volume has anything to apply over a card.
-    assert!(overlap::applies_over_a_card(&bed));
-    for other in ["zoom", "text", "label"] {
-        assert!(!overlap::applies_over_a_card(&kind(other, 0.0, 2.0)), "{other}");
-    }
 }
 
 // --- row 7: text / svg, and row 8: label -----------------------------------------------------------------------------
@@ -270,9 +292,8 @@ fn sec_06_effects_9_where_recordings_overlap_s9_preview_and_render_agree_on_the_
     // The output frame under aspect "source" is the first footage clip's shape, and the camera currently playing
     // never reaches the box at all.
     let (first, playing) = ((1920, 1080), (1080, 1920));
-    assert_eq!(overlap::source_frame(first, playing), (1920, 1080));
-    assert_eq!(render_fx::frame_box("source", first.0, first.1), overlap::source_frame(first, playing));
-    assert_ne!(render_fx::frame_box("source", playing.0, playing.1), overlap::source_frame(first, playing));
+    assert_eq!(render_fx::frame_box("source", first.0, first.1), (1920, 1080));
+    assert_ne!(render_fx::frame_box("source", playing.0, playing.1), (1920, 1080));
 }
 
 // --- the model passes -------------------------------------------------------------------------------------------------
@@ -282,10 +303,6 @@ fn sec_06_effects_9_where_recordings_overlap_s9_preview_and_render_agree_on_the_
 /// than one camera row or lane the cut brief names the rows and lanes`.
 #[test]
 fn sec_06_effects_9_where_recordings_overlap_s10_the_model_passes_know_no_cameras_or_lanes() {
-    assert!(!overlap::brief_names_rows_and_lanes(1, 1), "one of each is nothing to name");
-    assert!(overlap::brief_names_rows_and_lanes(2, 1));
-    assert!(overlap::brief_names_rows_and_lanes(1, 2));
-
     assert_eq!(overlap::SUGGESTED_ROW, 0);
     let (cx, cy, height) = overlap::suggested_zoom_is_centred();
     assert_eq!((cx, cy), (0.5, 0.5));

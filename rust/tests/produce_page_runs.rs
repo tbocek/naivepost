@@ -11,13 +11,14 @@
 //! actually stops on is the snap grid). Tools cited: `tool:ffmpeg.encode` — ↻ Transcode is ffmpeg with the
 //! render's own settings and no model call.
 
-use std::path::PathBuf;
 
-use naivepost::layout::Tree;
 use naivepost::params;
 use naivepost::produce_render as render;
 use naivepost::produce_runs as runs;
 use naivepost::project::{Codec, Container, Produce, Publish, Resolution, Subtitles, TitleBox};
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+pub use common::tree_in;
 
 const ITEM: &str = "F5.7";
 
@@ -25,21 +26,6 @@ const ITEM: &str = "F5.7";
 /// pass as the item it implements.
 const SPEC_REWORD: &str = "Ask again for the title, thumbnail instruction and description — one LLM call, three \
 answers, nothing else rewritten (not even the picture it prints)";
-
-fn temp_root(tag: &str) -> PathBuf {
-    // Removed here rather than at the end of each test: a case that fails on an assertion never reaches its own
-    // cleanup, and a folder left in /tmp is a folder the next reader has to explain.
-    let dir = std::env::temp_dir().join(format!("np-f57-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
-
-fn tree_in(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_root(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
 
 /// One row of the catalogue's Produce section, by id.
 fn row(id: &str) -> String {
@@ -365,7 +351,7 @@ fn f5_7_s3_a_missing_copy_is_reported_and_the_choice_survives() {
 #[test]
 fn f5_7_s3_the_copy_is_recorded_and_reopening_finds_it() {
     assert_eq!(ITEM, "F5.7");
-    let (_root, tree) = tree_in("s3-record");
+    let (_root, tree) = common::tree_in("s3-record");
     // The record is the publish state, so a chosen picture travels with the project like the title does.
     let mut publish = Publish::default();
     publish.own = true;
@@ -502,7 +488,7 @@ fn f5_7_s6_the_default_name_is_the_projects_and_the_extension_is_forced() {
     assert_eq!(ITEM, "F5.7");
     // `<project>-thumbnail.jpg`: named after the project because at this point the user is naming a picture they
     // are about to upload somewhere else, not one of the project's own files.
-    let (_root, tree) = tree_in("s6-name");
+    let (_root, tree) = common::tree_in("s6-name");
     assert_eq!(tree.name(), Some("demo"));
     let name = runs::export_default("demo");
     assert_eq!(name, "demo-thumbnail.jpg");
@@ -541,7 +527,7 @@ fn f5_7_s7_a_copy_leaves_the_video_up_to_date() {
 #[test]
 fn f5_7_s7_a_copy_rewrites_no_settings_and_no_transcript() {
     assert_eq!(ITEM, "F5.7");
-    let (_root, tree) = tree_in("s7");
+    let (_root, tree) = common::tree_in("s7");
     // What ▶ reads: the settings row and the transcript files beside the project. A copy writes outside the
     // project folder, so none of it can change — pinned by hashing before and after.
     let stamp = render::codec_args(&settings()).join(" ");

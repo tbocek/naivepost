@@ -199,6 +199,14 @@ name = "sec_05_cut_6_parameters_used"
 path = "tests/sec_05_cut_6_parameters_used.rs"
 
 [[test]]
+name = "sec_06_effects_6_parameters"
+path = "tests/sec_06_effects_6_parameters.rs"
+
+[[test]]
+name = "sec_06_effects_6_parameters_wire"
+path = "tests/sec_06_effects_6_parameters_wire.rs"
+
+[[test]]
 name = "cut_play_leg"
 path = "tests/cut_play_leg.rs"
 

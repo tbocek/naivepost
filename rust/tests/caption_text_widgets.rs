@@ -22,6 +22,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
+pub use common::find_in;
 use common::{settle, status_text, entry, widget, label_text, click, cut_page_settled_first as cut_page};
 
 static RAN_ARM: AtomicBool = AtomicBool::new(false);
@@ -95,21 +96,6 @@ fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64))
         &[&(to.0 - from.0), &(to.1 - from.1)],
     );
     settle();
-}
-
-/// Find a named widget inside a subtree we already hold (a form row), without walking the whole window.
-fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-    if node.widget_name() == name {
-        return Some(node.clone());
-    }
-    let mut child = node.first_child();
-    while let Some(current) = child {
-        if let Some(found) = find_in(&current, name) {
-            return Some(found);
-        }
-        child = current.next_sibling();
-    }
-    None
 }
 
 /// Arm ❝ Text through the real dropdown row.

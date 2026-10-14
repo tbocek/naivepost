@@ -173,10 +173,10 @@ pub fn gain_under(fx: &[Fx], t: f64) -> f64 {
         if effect.effect_kind() != Some(crate::cut::EffectKind::Volume) {
             continue;
         }
-        let asked = effect.gain.clamp(0.0, MAX_GAIN);
+        let asked = effect.gain.clamp(0.0, crate::fx_record::gain_ceiling());
         gain *= 1.0 + (asked - 1.0) * envelope(effect, t);
     }
-    gain.clamp(0.0, MAX_GAIN)
+    gain.clamp(0.0, crate::fx_record::gain_ceiling())
 }
 
 /// F2.5 S5: the rate the PREVIEW runs at `t` — the first speed effect covering `t`, flat across its
@@ -267,7 +267,7 @@ impl PreviewVolume {
 /// F2.5 S6: the gain one pipeline is asked for — the room's slider and the cut's own say over the seconds
 /// under the line, multiplied and held to what the property will take ([`MAX_GAIN`]).
 pub fn mix_gain(volume: f64, fx_gain: f64) -> f64 {
-    (clamp_volume(volume) * fx_gain).clamp(0.0, MAX_GAIN)
+    (clamp_volume(volume) * fx_gain).clamp(0.0, crate::fx_record::gain_ceiling())
 }
 
 // --- the one answer a tick asks for ---------------------------------------------------------------------

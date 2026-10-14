@@ -28,7 +28,7 @@ use crate::ui::cut_colours::{
 };
 /// §1's playhead width: "2 px line on its own layer". Its colour is [`PLAYHEAD_RGB`].
 pub const PLAYHEAD_PX: f64 = 2.0;
-/// §A: the ruler is 18 px, the selection band 22 px, an effects row 26 (`cut_screen::EFFECT_ROW_PX`), a
+/// §A: the ruler is 18 px, the selection band 22 px, an effects row 26 (`fx_lane::lane_height_px(1)`), a
 /// picture row `thumbHt + 4`. The ruler's 16 vs 18 is the placeholder's number kept: `cut_trim::RULER_H`
 /// is what F2.8's press bands resolve against, and moving it would move a press.
 pub const SELECTION_BAND_PX: f64 = 22.0;
@@ -701,7 +701,7 @@ fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
 fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     for bar in fx_lane::lane_layout(&scene.fx) {
         let (from, to) = scene.fx[bar.index].spans();
-        let y = rows.effects + bar.row as f64 * cut_screen::EFFECT_ROW_PX;
+        let y = rows.effects + bar.row as f64 * fx_lane::lane_height_px(1);
         let (x0, width) = band_span_px(scene, from, to);
         if x0 >= tape || x0 + width < 0.0 {
             continue;
@@ -712,7 +712,7 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
             x0,
             y,
             width.max(0.0),
-            cut_screen::EFFECT_ROW_PX,
+            fx_lane::lane_height_px(1),
             0.6,
         );
     }

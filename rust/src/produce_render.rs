@@ -193,7 +193,7 @@ pub fn plan_clips(
         }
         // A rate of nought is a stop: the footage runs on at 1× and the still rides over it (§4), so the
         // clip's own clock stays 1× even though an effect in its list says otherwise.
-        let fx = fx_for(seg);
+        let fx = crate::effect_overlap::drawn_on_scene(&fx_for(seg), seg);
         let rate = if seg.rate > 0.0 { seg.rate } else { 1.0 };
         let on_screen = crate::narrate_pass::on_screen(seg);
         if on_screen < MIN_CLIP_SECONDS {
@@ -205,7 +205,12 @@ pub fn plan_clips(
             .filter(|lane| lane_heard(lane, seg))
             .map(|lane| lane.name.clone())
             .collect();
-        let cues = render_fx::gain_cues(&fx, seg.s, rate, on_screen).len();
+        // A cue naming a lane this scene does not hear reaches nothing here (§9's reach, read
+        // through `Cue::reaches`), so it is not counted as work the encode has to do.
+        let cues = render_fx::all_gain_cues(&fx, seg.s, rate, on_screen)
+            .into_iter()
+            .filter(|cue| heard.iter().any(|lane| cue.reaches(lane)))
+            .count();
         // The lines this clip was written for, in placement order, with the room the clip has after the
         // previous clips were counted — the fit is per clip, so each gets its own call.
         let mine: Vec<(usize, f64, f64)> = entries

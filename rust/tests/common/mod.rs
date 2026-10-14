@@ -420,3 +420,86 @@ pub fn label_text(window: &adw::ApplicationWindow, name: &str) -> String {
         .text()
         .to_string()
 }
+
+/// Find a named widget inside a subtree we already hold (a form row), without walking the whole window.
+pub fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    if node.widget_name() == name {
+        return Some(node.clone());
+    }
+    let mut child = node.first_child();
+    while let Some(current) = child {
+        if let Some(found) = find_in(&current, name) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
+/// A fake audio.cpp on loopback: `/health` answers 200 and `/v1/models` names the ASR and diarization
+/// models Prepare needs. §S5 is a real door now — the ▶ press asks the server before any stage runs —
+/// so a test that presses ▶ has to have something to answer.
+pub fn fake_audio_server() -> String {
+    use std::io::{BufRead, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("an address").port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
+                        break;
+                    }
+                }
+                let payload = if line.contains("/v1/models") {
+                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
+                } else {
+                    "{}"
+                };
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    payload.len(),
+                    payload
+                );
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.flush();
+            });
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+/// A project folder under a throwaway root: (root, tree). The root is removed on the NEXT call with
+/// the same tag, so a case that fails on an assertion never leaves it behind.
+pub fn tree_in(tag: &str) -> (std::path::PathBuf, naivepost::layout::Tree) {
+    let root = temp_root(tag);
+    let dir = root.join("demo.naivepost");
+    std::fs::create_dir_all(&dir).unwrap();
+    (root, naivepost::layout::Tree::new(&dir).unwrap())
+}
+
+/// A throwaway root for one test's own files, removed before the run rather than at the end of each
+/// test: a case that fails on an assertion never reaches its own cleanup, and a folder left in /tmp is
+/// a folder the next reader has to explain.
+pub fn temp_root(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("np-tree-{}-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// An envelope of `total` seconds, silent at `room` except in these spans.
+pub fn wave(total: f64, spans: &[(f64, f64, u8)], hz: f64, room: u8) -> naivepost::wave::Wave {
+    let mut peaks = vec![room; (total * hz) as usize];
+    for (start, end, level) in spans {
+        peaks[(start * hz) as usize..(end * hz) as usize].fill(*level);
+    }
+    naivepost::wave::Wave { hz, chans: vec![peaks] }
+}

@@ -76,6 +76,23 @@ fn badge_scene(window: &adw::ApplicationWindow) -> Option<usize> {
     )
 }
 
+/// §9 (`While an effect form is open, the preview MUST show the lens camera`): which row the
+/// picture panel draws. A form's press judges the lens camera, not the watched one.
+pub fn preview_row(window: &adw::ApplicationWindow) -> usize {
+    let cut_ = newest_review_cut();
+    let lens = badge_scene(window)
+        .map(|scene| cut_cam::scene_row(&cut_.segs[scene]))
+        .unwrap_or(0);
+    crate::effect_overlap::preview_camera(
+        super::cut_zoom_hand::zoom_form_open().is_some()
+            || super::cut_speed_hand::speed_form_open().is_some()
+            || super::cut_volume_hand::volume_form_open().is_some()
+            || super::cut_text_hand::text_form_open().is_some(),
+        crate::ui::watched_row().map(|watched| watched as i32),
+        lens,
+    ) as usize
+}
+
 /// F2.10 S3 (`if the line is in a kept scene shown from another row, status says ONCE …`): the seam a
 /// row's name plate forwards to. [`cut_cam::click_row`] owns the whole decision, including
 /// whether the "the cut shows camera M here" sentence is owed; this prints what comes back.

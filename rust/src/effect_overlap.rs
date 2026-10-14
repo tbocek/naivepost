@@ -39,6 +39,43 @@ pub fn acts_on_scene(fx: &Fx, scene: &Seg) -> bool {
     !scene.is_insert() && cut_cam::shown_from(fx.cam, cut_cam::scene_row(scene))
 }
 
+/// §9 (`A stop … SHOULD be refused when placed`) reads this record the same way the rest of
+/// the app does: a stop is a speed whose rate is 0.
+pub fn is_a_stop(fx: &Fx) -> bool {
+    crate::fx_record::is_stop(fx)
+}
+
+/// §9 (`Over inserts: none`, with the MUST row `the render MUST apply a volume over a card's
+/// own sound, as the preview does`): the effects a scene actually carries — its kept list
+/// minus what [`acts_on_scene`] says does not act here. A card brings its own picture, so a
+/// zoom framed on a camera stops at the splice, while a volume rides straight over it.
+pub fn drawn_on_scene(fx: &[Fx], scene: &Seg) -> Vec<Fx> {
+    fx.iter()
+        .filter(|effect| acts_on_scene(effect, scene))
+        .cloned()
+        .collect()
+}
+
+/// §9 (`A zoom does not cross into a clip from another camera`), applied where a zoom is
+/// placed: how long its band may be. The first kept footage scene after the one it starts in
+/// that is filmed from another row ends it, and [`zoom_stops_at_the_cut`] is that decision.
+/// `Some((length, row))` names the trimmed length and the row that ended it, so the caller can
+/// say [`lens_switch`]; `None` when the band never crosses a row change, or when trimming would
+/// leave it under [`crate::cut_clamp::MIN_SURVIVING_SECONDS`] — a sliver of a zoom is not worth
+/// an edit, so the whole band stays as placed.
+pub fn trim_at_lens_switch(fx: &Fx, segs: &[Seg]) -> Option<(f64, i32)> {
+    let start_row = segs
+        .iter()
+        .find(|scene| !scene.is_insert() && scene.s <= fx.t && fx.t < scene.e)
+        .map(cut_cam::scene_row)?;
+    let crossing = segs.iter().filter(|scene| !scene.is_insert()).find_map(|scene| {
+        let row = cut_cam::scene_row(scene);
+        (scene.s >= fx.t && zoom_stops_at_the_cut(fx, start_row, row)).then_some((scene.s, row))
+    })?;
+    let trimmed = crossing.0 - fx.t;
+    (trimmed >= crate::cut_clamp::MIN_SURVIVING_SECONDS).then_some((trimmed, crossing.1))
+}
+
 /// §9 (`A lens switch under a zoom says so: "the zoom at m:ss was framed on camera N — it no longer applies
 /// here"`): the sentence for a zoom whose camera stopped being the one on screen. The row is named by its **number**,
 /// as §9 spells it — [`cut_cam::row_name`] would give the recording's name, which is what the gutter and the badges
@@ -103,6 +140,10 @@ pub fn says_render_only(snd: &str) -> Option<&'static str> {
 /// `mute` answers false for a different reason from `own`/`scene`: it is not a pitch question at all, and §9 settles
 /// it by making the **render** join the preview (silence the whole bed, [`crate::render_fx::mute_expr`]) rather than
 /// the other way round. `own` and `scene` are [`says_render_only`]'s pair.
+/// §9 (`The preview MUST play "pitch" as the render does, or say it cannot`): which sound
+/// answers the preview can copy on the picture's clock. `mute` joins the other way round — the
+/// render goes silent for the whole bed ([`crate::render_fx::mute_expr`]) — and `own`/`scene`
+/// are [`says_render_only`]'s pair, so this is the row of §9's table that owes no notice.
 pub fn preview_plays_pitch_as_render(snd: &str) -> bool {
     matches!(snd, "" | "pitch")
 }
@@ -126,14 +167,6 @@ pub fn gained_before_the_mix(fx: &Fx) -> bool {
     fx.lane().is_some()
 }
 
-/// §9 (`The render MUST apply a volume over a card's own sound, as the preview does`): the render catching up with
-/// the preview, not a new option — a duck that stops working over a card is a duck the person did not ask to switch
-/// off. Only a volume is heard at all, so every other kind answers false; [`crate::fx_record::uses`] already says a
-/// zoom or a text has no gain field to apply.
-pub fn applies_over_a_card(fx: &Fx) -> bool {
-    fx.effect_kind() == Some(EffectKind::Volume)
-}
-
 /// §9 (`While an effect form is open, the preview MUST show the lens camera`): which row the preview draws. A form
 /// is opened to judge one effect against the picture it will change, so the watched row has to step aside — a zoom
 /// framed on the lens and shown over another camera's frame would be judged against the wrong picture. With no form
@@ -143,23 +176,6 @@ pub fn preview_camera(form_open: bool, watched: Option<i32>, lens: i32) -> i32 {
         return lens;
     }
     watched.unwrap_or(lens)
-}
-
-/// §9 (`With cameras of different shapes, both MUST use the first footage clip's frame`): whose shape aspect
-/// `source` means. The whole video has one output frame and it comes from the first footage clip, so the camera
-/// currently playing never gets a vote — otherwise switching cameras mid-video would resize the finished picture
-/// under the person's feet. [`crate::render_fx::frame_box`] stays the one place a box is computed from a shape; this
-/// only decides which shape is handed to it.
-pub fn source_frame(first_footage: (i32, i32), playing: (i32, i32)) -> (i32, i32) {
-    let _ = playing;
-    first_footage
-}
-
-/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`): when the model is told about
-/// them at all. One of each is nothing to name — there is no choice for the model to make and a paragraph about it
-/// would only be tokens spent saying so.
-pub fn brief_names_rows_and_lanes(rows: usize, lanes: usize) -> bool {
-    rows > 1 || lanes > 1
 }
 
 /// §9 (`suggested scenes all take row 0`): the row a suggested scene is placed on, since the cut pass knows nothing

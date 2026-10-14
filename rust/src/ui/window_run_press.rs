@@ -28,6 +28,8 @@ use crate::ui::window as ui;
 /// Where a press of ▶ is decided: [`run::RunBar::press`] on the held player's own transport (§F0.2 S2,
 /// which ⏹ reads the same way), then redraw and put the bar's sentence on the status line. A refusal
 /// outlives this handler: `press` leaves its status empty when a run starts, so refusals are remembered.
+#[allow(clippy::too_many_arguments)] // one ▶ press touches the whole bar: its buttons, queue, log and
+// progress widget, which belong to the window rather than to any one rule
 pub(crate) fn wire_play(
     play: &gtk::Button,
     stop_: &gtk::Button,
@@ -367,6 +369,7 @@ pub(crate) fn wire_play(
 ///
 /// `in_describe` is `false` here because the shell does not know which stage is running; F1.7's own
 /// round passes the real value when it drives Describe (S5 arms "describe from the start").
+#[allow(clippy::too_many_arguments)] // ⏹ must reach every widget ▶ painted, plus the run's own state
 pub(crate) fn wire_stop(
     stop_: &gtk::Button,
     play: &gtk::Button,
@@ -459,6 +462,7 @@ pub(crate) fn wire_stop(
 /// Produce go through their own flows — and all of that lives in [`crate::ui::lucky_run::press`].
 /// F0.4's driver body: the refusal, the bookkeeping, every step's real work and the end sentence all
 /// live in [`crate::ui::lucky_run`]; this handler only hands its handles over (spec/00-principles.md §5).
+#[allow(clippy::too_many_arguments)] // 🎲 forwards to `lucky_run`, which decides across the whole bar
 pub(crate) fn wire_lucky(
     lucky_button: &gtk::Button,
     bar: &Rc<RefCell<run::RunBar>>,

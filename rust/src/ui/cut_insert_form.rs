@@ -355,6 +355,8 @@ pub fn press_insert(window: &adw::ApplicationWindow) -> String {
 
 /// Open the native file chooser over `dir`. Kept apart from [`press_insert`] so the decision (where, which
 /// title, which filter) is testable without a display: a headless run simply never answers the dialog.
+#[allow(deprecated)] // GTK 4.10 deprecates the whole GtkFileChooser API; its replacement is a rewrite
+// of this chooser, so the deprecated calls stay and are named here rather than silently
 fn open_insert_chooser(
     window: &adw::ApplicationWindow,
     title: &str,

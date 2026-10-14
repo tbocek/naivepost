@@ -140,8 +140,23 @@ mod window_trim_strip;
 /// §02's run bar — the ▶ ⏹ 🎲 ▶✂ presses and their wires. Split out of `window.rs`, which is past its
 /// size budget. Its doors are re-exported through `window`.
 mod window_run_press;
-/// §1's widget doors — the named lookups, readouts and tooltip readers. Split out of `window.rs`, which is
-/// past its size budget. Every name is re-exported through `window`.
+/// F2.12 Insert — the form's half: its holder, what is open, the plan drawn and Apply. Split out of
+/// `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
+mod window_insert;
+/// §05-cut#1-screen — the history buttons and the zoom pair: the door from a press to the rule and
+/// the repaint from the answer. Split out of `window.rs`, which is past its size budget. Its doors
+/// are re-exported through `window`.
+mod window_history_zoom;
+/// F4.1 ▶ Write and speak — the window seam of one narration run: what a press is refused, the bar it
+/// paints, and the status lines it leaves. Split out of `window.rs`, which is past its size budget.
+/// Its doors are re-exported through `window`.
+/// §F2.4 — the red line and its frame stepping: where the line stands, what a step or an arrow does
+/// to it, the four step buttons and their key controller. Split out of `window.rs`, which is past its
+/// size budget; its doors are re-exported through `window`.
+mod window_line_step;
+mod window_narrate;
+/// §1's widget doors — the named lookups, readouts and tooltip readers. Split out of `window.rs`,
+/// which is past its size budget. Every name is re-exported through `window`.
 mod window_doors;
 /// §F3.9/§F3.10/§F3.11 — the ✐ Captions, ⏩ Speeds and ✨ Decorations run-bar jobs and their gates. Split
 /// out of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
@@ -350,7 +365,7 @@ pub use window::watched_row;
 pub use window::set_watched_row;
 pub use cut_cameras::{
     camera_rows_box, camera_watch, hand_preview_back, press_gutter_switch, press_lens_scene,
-    press_speaker_badge, press_watch_row, refresh_camera_rows, toggle_button,
+    press_speaker_badge, press_watch_row, preview_row, refresh_camera_rows, toggle_button,
 };
 // F2.10: the row list itself, rebuilt from the live cut by every refresh above.
 // F2.11: the fold badges and the two ✕, drawn as named widgets and forwarded by these seams.

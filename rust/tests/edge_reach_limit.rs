@@ -15,33 +15,20 @@
 // built from the constants (`2.0 + edge::EDGE_PAD`) rather than bare literals, so a re-tuned neighbour
 // moves the expectation with it instead of failing for the wrong reason.
 
-use naivepost::edges::{self as edge, AlignedWord, Edges};
+use naivepost::edges::{self as edge, Edges};
 use naivepost::params;
 use naivepost::textfmt::Retake;
-use naivepost::wave::Wave;
-
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{all_rows, word, anywhere};
+use common::{all_rows, anywhere};
 
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
 const WORD: u8 = 120;
 
-/// An envelope of `total` seconds, silent at [`ROOM`] except in these spans.
-fn wave(total: f64, spans: &[(f64, f64, u8)]) -> Wave {
-    let mut peaks = vec![ROOM; (total * HZ) as usize];
-    for (start, end, level) in spans {
-        for bucket in (start * HZ) as usize..(end * HZ) as usize {
-            peaks[bucket] = *level;
-        }
-    }
-    Wave { hz: HZ, chans: vec![peaks] }
-}
-
 /// One recording filling the session clock from second nought.
 fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
-    Edges::new(wave(total, spans), 0.0)
+    Edges::new(common::wave(total, spans, HZ, ROOM), 0.0)
 }
 
 /// One aligned word. This round asks the envelope alone (no word times), so the helper is kept for

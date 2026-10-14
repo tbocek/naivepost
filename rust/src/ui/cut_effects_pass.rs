@@ -103,8 +103,16 @@ fn place_effects_reply(
             }
         }
         if reply.usable() {
-            placed = Some(reply.effects.clone());
-            break;
+            // P.machine.maxProposedEffects is compared HERE, against what this reply would add:
+            // a runaway answer is unusable in the same way a bad clip number is, so it costs a
+            // round and its reason reaches the log. The density guide says; only this cap refuses.
+            let verdict = crate::cut_effects_pass::effect_cap_allows_reply(&reply.effects);
+            if !verdict.allowed {
+                window::log_line(&crate::cut_effects_pass::rejected(&verdict.reason));
+            } else {
+                placed = Some(reply.effects.clone());
+                break;
+            }
         }
         if let Some(problem) = &reply.fault {
             window::log_line(&crate::cut_effects_pass::rejected(problem));

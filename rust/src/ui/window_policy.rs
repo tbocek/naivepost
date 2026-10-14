@@ -208,13 +208,16 @@ pub fn forget_policy_form(form: &adw::Window) {
     });
 }
 
+/// Who answers one derivation request, injected so a check can stub the HTTP layer (`POLICY_SENDERS`).
+type PolicySenders = std::cell::RefCell<
+    Vec<Rc<std::cell::RefCell<dyn FnMut(&policy::DerivationRequest, &[String]) -> Vec<policy::Proposal>>>>,
+>;
+
 thread_local! {
     /// Who answers a derivation's request, newest last — the same newest-slot rule as
     /// [`WINDOW_SHELLS`]. Injected rather than hard-wired to the HTTP layer so the whole of F0.7 S2-S4
     /// is testable with no server: a check installs a stub here and drives the real ⚙.
-    static POLICY_SENDERS: std::cell::RefCell<
-        Vec<Rc<std::cell::RefCell<dyn FnMut(&policy::DerivationRequest, &[String]) -> Vec<policy::Proposal>>>>,
-    > = const { std::cell::RefCell::new(Vec::new()) };
+    static POLICY_SENDERS: PolicySenders = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 thread_local! {

@@ -10,8 +10,8 @@
 use crate::align;
 use crate::asr;
 use crate::cut_cards;
-use crate::cut_hear;
 use crate::cut_clamp;
+use crate::fx_record;
 use crate::cut_insert;
 use crate::cut_select;
 use crate::ui;
@@ -513,7 +513,7 @@ fn engineering() -> Vec<Param> {
             "word_list::RESPPELL_REACH_WORDS",
         ),
         // F2.5's mix: the ceiling every gain is held to, an effect's own and the slider's alike.
-        param("P.eng.maxGain", num(cut_hear::MAX_GAIN), "cut_hear::MAX_GAIN"),
+        param("P.eng.maxGain", num(fx_record::gain_ceiling()), "fx_record::gain_ceiling"),
         // §10's own row for the rejoin dip, catalogued from the module that fades it: the lane draws it and the render
         // plans its read head around the same number.
         param(
@@ -815,7 +815,7 @@ pub fn cut() -> Vec<Param> {
         param("layout.lineReachPx", num(cut_line::EDGE_REACH_PX), "cut_line::EDGE_REACH_PX"),
         param("layout.rulerPx", num(cut_screen::RULER_PX), "cut_screen::RULER_PX"),
         param("layout.selBandPx", num(cut_screen::SELECTION_BAND_PX), "cut_screen::SELECTION_BAND_PX"),
-        param("layout.effectRowPx", num(cut_screen::EFFECT_ROW_PX), "cut_screen::EFFECT_ROW_PX"),
+        param("layout.effectRowPx", num(fx_lane::lane_height_px(1)), "fx_lane::lane_height_px"),
         param("layout.waveLanePx", num(cut_screen::WAVE_LANE_PX), "cut_screen::WAVE_LANE_PX"),
         param("layout.laneGapPx", num(cut_screen::ROW_GAP_PX), "cut_screen::ROW_GAP_PX"),
         param("layout.zoomAtOpen", num(cut_screen::ZOOM_AT_OPEN), "cut_screen::ZOOM_AT_OPEN"),

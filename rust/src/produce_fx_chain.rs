@@ -150,9 +150,22 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
     // §4's `after the lane mix, before the narration` is the CALLER's seam (see produce_render::audio_chain); this
     // only answers what goes there. The cues come back in seconds already divided by the clip's rate, so a duck under
     // a 2× stretch moves and narrows with the sound it rides.
-    let cues = render_fx::gain_cues(&drawn, clip.seg_s, clip.rate, clip.on_screen);
-    if !cues.is_empty() {
-        built.audio.push(render_fx::gain_chain(&cues, "snd"));
+    let cues = render_fx::all_gain_cues(&drawn, clip.seg_s, clip.rate, clip.on_screen);
+    // §9's lane reach: a cue naming a lane runs BEFORE the lane mix, where that one
+    // recording can still be taken apart, and the rest ride after it. One list per side
+    // is what keeps the order honest — a lane-named duck appended to the summed bed would
+    // have no lane to act on any more.
+    let (before, after): (Vec<_>, Vec<_>) = cues
+        .into_iter()
+        .partition(|cue| cue.before_the_mix());
+    for cue in &before {
+        built.audio.push(render_fx::gain_chain(
+            std::slice::from_ref(cue),
+            &cue.lane,
+        ));
+    }
+    if !after.is_empty() {
+        built.audio.push(render_fx::gain_chain(&after, "snd"));
     }
     built
 }

@@ -24,20 +24,6 @@ use naivepost::project::{Produce, Publish, Source};
 
 const ITEM: &str = "f5_4";
 
-fn temp_root(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("np-f54w-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn tree_in(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_root(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
-
 
 /// An insert segment: `ins` names an asset, which is what makes the clip not-footage downstream.
 fn insert_seg(s: f64, e: f64, asset: &str) -> Seg {
@@ -113,7 +99,7 @@ fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Wor
 
 /// Plan only — S1/S2 are settled before any subprocess, and this file has no spawner to distract it.
 fn planned(tag: &str, segs: Vec<Seg>, lines: Vec<Entry>, words: Vec<subs::Word>) -> (Tree, exec::Plan) {
-    let (_root, tree) = tree_in(tag);
+    let (_root, tree) = common::tree_in(tag);
     let run = flow::snapshot(
         Some(cut_of(segs)),
         &tree,
@@ -276,7 +262,7 @@ fn f5_4_s2_the_plan_tidies_across_clips() {
     // asserted is the joined-and-tidied result, which is what the sheet holds.
     let mut both = first.clone();
     both.extend(second.clone());
-    let (_root, tree) = tree_in("s2-across");
+    let (_root, tree) = common::tree_in("s2-across");
     let run = flow::snapshot(
         Some(cut_of(vec![seg(0.0, 12.0), seg(12.0, 24.0)])),
         &tree,

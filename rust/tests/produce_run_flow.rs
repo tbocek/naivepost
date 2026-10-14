@@ -12,15 +12,16 @@
 //! ffmpeg stands for any case in this file.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use naivepost::cut::{self, Cut, Seg};
-use naivepost::layout::Tree;
 use naivepost::produce_flow as flow;
 use naivepost::produce_render as render;
 use naivepost::project::{Project, Publish, Source};
 use naivepost::run;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+pub use common::tree_in;
 
 const ITEM: &str = "F5.1";
 
@@ -33,28 +34,6 @@ const SPEC_SKIP: &str = ">>> the video is already what this page describes \u{20
 
 /// §F5.1 S2's confirmation body, quoted after the `<path> — size, age` line it follows.
 const SPEC_NO_UNDO: &str = "The encode takes minutes and there is no undo for it.";
-
-fn temp_root(tag: &str) -> PathBuf {
-    // Removed at the start rather than the end: a case that fails on an assertion never reaches its own
-    // cleanup, and a folder left in /tmp is one the next reader has to explain.
-    //
-    // Unique per CALL, not just per tag: `run_over` is reached by six tests in this binary and cargo
-    // runs them on parallel threads, so a shared folder means one thread's `remove_dir_all` deletes
-    // what another just made and its `create_dir_all` answers NotFound. The tag still says which case
-    // the folder belongs to; the counter only keeps two of them from ever naming the same path.
-    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let dir = std::env::temp_dir().join(format!("np-f51-{}-{tag}-{seq}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
-
-fn tree_in(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_root(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
 
 /// Two clips, so "N clips" reads as 2 in every opening-line assertion.
 fn two_clips() -> Vec<Seg> {
@@ -83,7 +62,7 @@ fn project_with_footage() -> Project {
 
 /// The run one `snapshot` call produces over `cut`, with `publish_written` set by the caller.
 fn run_over(cut: Cut, publish_written: bool) -> flow::Run {
-    let (_root, tree) = tree_in("run-over");
+    let (_root, tree) = common::tree_in("run-over");
     flow::snapshot(
         Some(cut),
         &tree,
@@ -171,7 +150,7 @@ fn f5_1_s2_no_video_encodes_without_asking() {
 #[test]
 fn f5_1_s3_snapshot_is_taken_from_what_is_handed_in() {
     let project = project_with_footage();
-    let (_root, tree) = tree_in("snap");
+    let (_root, tree) = common::tree_in("snap");
     let run = flow::snapshot(
         Some(cut_two()),
         &tree,
@@ -203,7 +182,7 @@ fn f5_1_s3_snapshot_is_taken_from_what_is_handed_in() {
 #[test]
 fn f5_1_s3_page_cut_beats_the_file() {
     // A saved file says one thing, the live editor another: the editor wins, so an unsaved tweak renders.
-    let (_root, tree) = tree_in("page-wins");
+    let (_root, tree) = common::tree_in("page-wins");
     let file_cut = Cut {
         segs: vec![Seg { s: 100.0, e: 110.0, cam: 0, ..Default::default() }],
         aspect: "4:3".into(),
@@ -219,7 +198,7 @@ fn f5_1_s3_page_cut_beats_the_file() {
 #[test]
 fn f5_1_s3_falls_back_to_cut_json() {
     // Nothing live: `cut/cut.json` answers, which is what render, subtitles, brief and stamp all read.
-    let (_root, tree) = tree_in("fallback");
+    let (_root, tree) = common::tree_in("fallback");
     let file_cut = Cut {
         segs: vec![
             Seg { s: 0.0, e: 5.0, cam: 0, ..Default::default() },

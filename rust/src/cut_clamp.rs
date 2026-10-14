@@ -41,6 +41,9 @@ pub struct Clamped {
     /// How many were dropped — point effect without a footage scene under it, band under the floor, label over an
     /// insert only. S5 logs the count and nothing else; which effect went is not said (§12's decision 19).
     pub dropped: usize,
+    /// The stops this pass left with no frame to hold: counted in `dropped`, and named here
+    /// because §9 wants a stop refused, not silently trimmed like the rest.
+    pub(crate) dropped_stops: Vec<Fx>,
 }
 
 /// F3.12 S1..S4 — hold every effect to the cut as it will actually play. `cut.segs` are the scenes *as applied*: this
@@ -51,11 +54,26 @@ pub fn clamp_to_cut(cut: &Cut) -> Clamped {
     for fx in &cut.fx {
         let Some(kept) = clamp_one(fx, &cut.segs) else {
             out.dropped += 1;
+            if crate::effect_overlap::is_a_stop(fx) {
+                out.dropped_stops.push(fx.clone());
+            }
             continue;
         };
         out.kept.push(kept);
     }
     out
+}
+
+/// §9 (`A stop at a dropped second SHOULD be refused when placed`), applied where the clamp
+/// already works out which effects the cut leaves without a home: a stop whose frame cannot be
+/// held is named here so its caller can say so, in the words [`crate::effect_overlap::no_frame`]
+/// gives. The clause lives there; this is the door it runs through.
+pub fn refused_stops(clamped: &Clamped) -> Vec<f64> {
+    clamped
+        .dropped_stops
+        .iter()
+        .map(|stopped| stopped.t)
+        .collect()
 }
 
 /// S5's line, verbatim from §F3.12: `">>> N effect(s) pointed at footage the final cut does not keep — dropped"`.

@@ -11,7 +11,7 @@
 //! and ramps become stairs. The preview keeps its own flat, first-covering-effect reading in
 //! [`crate::cut_hear::rate_under`] — see [`rate_at`] for why they stay apart.
 
-use crate::cut::{EffectKind, Fx};
+use crate::cut::{EffectKind, Fx, Seg};
 use crate::fx_lane;
 use crate::fx_record;
 use crate::fx_zoom;
@@ -418,7 +418,12 @@ pub fn stair_count(seconds: f64, from: f64, to: f64) -> usize {
 /// at the effect's own rate; a ramp of nought seconds contributes nothing. Split from [`ramps`] because `ramps` has
 /// to look at the stairs a pair of ramps would make before it can say whether those ramps happen at all, and a
 /// function that called `ramps` to answer that would be asking itself.
-fn stairs_in(t: f64, dur: f64, rate: f64, inp: f64, out: f64) -> Vec<Span> {
+///
+/// Each stair is a CONSTANT-RATE stretch, which is what makes it encodable: ffmpeg is asked for one
+/// `setpts=PTS/rate` and one tempo chain per stair, so a ramp is not one filter asked to vary but a
+/// row of filters each holding still. That is why the render takes its picture list from here
+/// ([`crate::render_fx::split_pictures`]) instead of from the effect's headline rate.
+pub fn stairs_in(t: f64, dur: f64, rate: f64, inp: f64, out: f64) -> Vec<Span> {
     // One ramp's stairs, appended in order. Kept a free fn with the destination passed in rather than a closure over
     // `steps`, which would be two mutable borrows of the same Vec.
     fn ramp(steps: &mut Vec<Span>, at: f64, length: f64, from: f64, to: f64) {
@@ -515,7 +520,10 @@ pub fn stairs(rate: f64, dur: f64, trans: f64, tout: f64) -> Vec<Span> {
     stairs_in(0.0, dur, rate, inp, out)
 }
 
-/// §F3.3: what one effect contributes to the cut's clock. A stop is one flat ×0 over its band with no stairs — there
+/// §F3.3: what one effect contributes to the cut's clock, with the rate [`clamp_speed`] allows
+/// counted before a single stair is — so a rate typed past `P.eng.maxRate`, or one that would leave
+/// less than `P.eng.minClipSeconds` on screen, reaches the render already inside both bounds instead
+/// of as an ask nothing clamps. A stop is one flat ×0 over its band with no stairs — there
 /// is no ramping into and out of standing still. A non-speed says nothing about the clock (§06#1 gives it no `rate`)
 /// and a band of nought seconds contributes nothing.
 pub fn steps_of(fx: &Fx) -> Vec<Span> {
@@ -526,13 +534,30 @@ pub fn steps_of(fx: &Fx) -> Vec<Span> {
     if fx.rate <= 0.0 {
         return vec![Span { from, to: from + fx.dur, rate: 0.0 }];
     }
-    stairs(fx.rate, fx.dur, fx.trans, fx.tout)
+    let (rate, _) = clamp_speed(fx.rate, fx.dur);
+    stairs(rate, fx.dur, fx.trans, fx.tout)
         .into_iter()
         .map(|mut step| {
             step.from += from;
             step.to += from;
             step
         })
+        .collect()
+}
+
+/// The stairs the RENDER encodes for one scene: every speed effect's staircase, clipped to the
+/// segment and averaged where they overlap — [`rate_spans`] read through [`stairs_in`], which is what
+/// decides how many constant-rate stretches a ramp becomes. Kept as its own door so the render's list
+/// and the preview's walk ask the same function and cannot disagree about where a rate changes.
+pub fn render_stairs(fx: &[Fx], seg: &Seg) -> Vec<Span> {
+    rate_spans(fx)
+        .into_iter()
+        .map(|mut span| {
+            span.from = span.from.max(seg.s);
+            span.to = span.to.min(seg.e);
+            span
+        })
+        .filter(|span| span.to > span.from)
         .collect()
 }
 

@@ -5,10 +5,10 @@
 //! Envelopes are written by hand at 200 Hz — the timeline's own rate, so a bucket is the 5 ms the spec
 //! counts silence in. Levels are read off the byte scale as a −70…0 dBFS meter: room 8 bytes, a word 120.
 
-use naivepost::edges::{self as edge, AlignedWord, Edges, Lane};
+use naivepost::edges::{self as edge, Edges, Lane};
 use naivepost::layout::Tree;
 use naivepost::textfmt::Retake;
-use naivepost::wave::{self, Wave};
+use naivepost::wave::{self};
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
@@ -18,18 +18,11 @@ const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
 const WORD: u8 = 120;
 
-/// An envelope of `total` seconds, silent at [`ROOM`] except in these spans.
-fn wave(total: f64, spans: &[(f64, f64, u8)]) -> Wave {
-    let mut peaks = vec![ROOM; (total * HZ) as usize];
-    for (start, end, level) in spans {
-        for bucket in (start * HZ) as usize..(end * HZ) as usize {
-            peaks[bucket] = *level;
-        }
-    }
-    Wave { hz: HZ, chans: vec![peaks] }
+/// One recording filling the session clock from second nought.
+fn wave(total: f64, spans: &[(f64, f64, u8)]) -> naivepost::wave::Wave {
+    common::wave(total, spans, HZ, ROOM)
 }
 
-/// One recording filling the session clock from second nought.
 fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
     Edges::new(wave(total, spans), 0.0)
 }

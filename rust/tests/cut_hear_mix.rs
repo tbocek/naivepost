@@ -172,7 +172,11 @@ fn f2_5_s5_two_volume_effects_multiply_and_fade() {
 
     let row = naivepost::params::find("P.eng.maxGain").expect("the ceiling is catalogued");
     assert_eq!(row.spelled, "10", "§10 spells it as a whole number");
-    assert_eq!(row.from, "cut_hear::MAX_GAIN", "and this module's rule owns it");
+    assert_eq!(
+        row.from,
+        "fx_record::gain_ceiling",
+        "the ceiling's one owner is the record rule both the preview and the render ask"
+    );
 }
 
 /// F2.5 (Hush and mix) S5: the rate follows the speed effect under the line — flat across its seconds, 1

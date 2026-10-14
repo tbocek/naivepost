@@ -276,6 +276,7 @@ const NO_SETTINGS: crate::settings::Paths = crate::settings::Paths {
 };
 
 /// Draw one row of the bench: its title, whether this machine holds it, and its text.
+#[allow(clippy::too_many_arguments)] // one bench row is title, machine line, path, tick and buttons
 fn paint_bench(
     row: &Rc<RefCell<bench::Bench>>,
     title: &gtk::Label,
@@ -455,6 +456,8 @@ fn descendants(root: &gtk::Widget) -> Vec<gtk::Widget> {
 /// `Shell::outputs` alone — this function only prefixes and sets labels, so a sentence on that row
 /// always traces back to a rule in `shell.rs`. The folder button is insensitive while there is no
 /// project folder to open, which is the visible proof the row knows what it is counting.
+#[allow(clippy::too_many_arguments)] // the readout row paints inputs, outputs, their folder button and
+// the log expander from one shell read
 pub(crate) fn paint_readouts(
     shell: &Shell,
     project: &Project,

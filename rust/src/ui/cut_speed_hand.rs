@@ -358,6 +358,17 @@ pub fn press_speed_apply(window: &adw::ApplicationWindow) -> String {
     };
     let effect = cut_speed::apply(&form);
     let mut cut_ = review_cut_of(window);
+    // §9 (`A stop at a dropped second SHOULD be refused when placed`): refuse BEFORE anything
+    // is written — a stop holds a frame, and the cut keeps none at a second it dropped or at a
+    // card. The form stays open with the reason, exactly as a refused length does. A cut with no
+    // scenes at all has no say either way, so nothing is refused there.
+    if crate::fx_record::is_stop(&effect) && !cut_.segs.is_empty() {
+        if let Err(reason) = crate::effect_overlap::place_stop(effect.t, &cut_.segs) {
+            log_line(&reason);
+            crate::ui::live_form_refused();
+            return reason;
+        }
+    }
     cut_.fx.push(effect.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
@@ -367,6 +378,13 @@ pub fn press_speed_apply(window: &adw::ApplicationWindow) -> String {
     close_speed_form(window);
     let said = cut_speed::placed_status(&effect);
     log_line(&said);
+    // §9 (`it SHOULD say "sound at 1× in the render only"`): `own` and `scene` run on a
+    // different clock from the picture, which one player cannot do — so the preview plays the
+    // sped sound and says what the render will not match. Its own line, because the placement
+    // status is the quote §F3.3 fixes.
+    if let Some(notice) = crate::effect_overlap::says_render_only(&effect.snd) {
+        log_line(notice);
+    }
     said
 }
 

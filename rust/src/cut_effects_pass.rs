@@ -229,13 +229,17 @@ pub fn defaults(kind: &str, at: f64, span: (f64, f64), gain: Option<f64>) -> Fx 
     match kind {
         "zoom" => {
             let glide = glide(dur);
+            // §9's model-pass clause is the source of the framing, so a suggestion and what
+            // is placed from it cannot drift into two numbers.
+            let (cx, cy, hf) = crate::effect_overlap::suggested_zoom_is_centred();
             Fx {
                 kind: "zoom".into(),
                 t,
                 dur,
-                cx: Some(0.5),
-                cy: Some(0.5),
-                hf: Some(ZOOM_HEIGHT),
+                cx: Some(cx),
+                cy: Some(cy),
+                hf: Some(hf),
+                cam: crate::effect_overlap::SUGGESTED_ROW,
                 trans: glide,
                 tout: glide,
                 ..Default::default()
@@ -243,19 +247,26 @@ pub fn defaults(kind: &str, at: f64, span: (f64, f64), gain: Option<f64>) -> Fx 
         }
         "stop" => {
             let fade = stop_fade(dur);
-            Fx { kind: "speed".into(), t, dur, rate: 0.0, trans: fade, tout: fade, ..Default::default() }
+            Fx { kind: "speed".into(), t, dur, rate: 0.0, trans: fade, tout: fade,
+                cam: crate::effect_overlap::SUGGESTED_ROW, ..Default::default() }
         }
         _ => {
             let ramp = ramp(dur);
-            Fx {
+            let placed = Fx {
                 kind: "volume".into(),
                 t,
                 dur,
                 gain: gain.unwrap_or(1.0),
                 trans: ramp,
                 tout: ramp,
+                cam: crate::effect_overlap::SUGGESTED_ROW,
                 ..Default::default()
-            }
+            };
+            debug_assert!(
+                crate::effect_overlap::suggested_volume_reaches_the_bed(&placed),
+                "a proposed volume must duck the whole bed"
+            );
+            placed
         }
     }
 }
@@ -306,6 +317,36 @@ pub fn proposed_effect_count(fx: &[crate::cut::Fx]) -> usize {
 ///
 /// Inclusive: a reply of exactly the cap is a reply the cap permits, which is the reading §10's word
 /// "cap" carries and the boundary a retune must not shift by accident.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CapVerdict {
+    pub allowed: bool,
+    pub reason: String,
+}
+
+/// §6's density ceiling applied to one proposed list: `allowed` says whether the reply may be
+/// placed, and `reason` is the sentence the log gets when it may not. The decorations pass asks it of
+/// every usable reply before placing anything (`ui::cut_effects_pass`).
+pub fn effect_cap_allows_reply(fx: &[crate::cut::Fx]) -> CapVerdict {
+    let count = proposed_effect_count(fx);
+    if effect_cap_allows(count) {
+        return CapVerdict {
+            allowed: true,
+            reason: String::new(),
+        };
+    }
+    CapVerdict {
+        allowed: false,
+        reason: format!(
+            "the reply proposes {count} effects, over P.machine.maxProposedEffects ({MAX_PROPOSED_EFFECTS})"
+        ),
+    }
+}
+
+/// Whether a counted reply fits under the cap.
+///
+/// Inclusive: a reply of exactly the cap is a reply the cap permits, which is the reading §10's word
+/// "cap" carries and the boundary a retune must not shift by accident. The pass asks it through
+/// [`check_reply_for_test`], which is where a refusal gets its sentence.
 pub fn effect_cap_allows(count: usize) -> bool {
     count <= MAX_PROPOSED_EFFECTS
 }

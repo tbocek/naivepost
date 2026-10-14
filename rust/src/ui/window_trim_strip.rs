@@ -62,6 +62,9 @@ pub fn move_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag>
     let _ = window;
     MOVE_GESTURES.with(|cell| cell.borrow().clone())
 }
+/// One window's move-drag press point, newest window first (`MOVE_PRESSED` below).
+type MovePressed = std::cell::RefCell<Vec<Rc<std::cell::RefCell<(f64, f64)>>>>;
+
 thread_local! {
     /// The trim drag in flight: which clip's which border the press took, and when it last scrubbed.
     /// `None` means the press fell where no border was in reach, so the drag does nothing at all.
@@ -74,7 +77,7 @@ thread_local! {
     /// F2.8 S2: where the move drag was PRESSED, (x, y) in strip px, newest window first. The scope has to
     /// be fixed at the press — `wave_strip` and `on_border` are read from this, not re-derived on each
     /// update, so a pointer wandering off the band mid-drag cannot change what was picked up.
-    static MOVE_PRESSED: std::cell::RefCell<Vec<Rc<std::cell::RefCell<(f64, f64)>>>> =
+    static MOVE_PRESSED: MovePressed =
         const { std::cell::RefCell::new(Vec::new()) };
     // F2.8 S2: the folds opened for the drag in flight live in `cut_trim_press` now — that module opens
     // them for the drag and refolds them on release, so nothing is held here.

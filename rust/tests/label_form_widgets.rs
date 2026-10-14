@@ -28,6 +28,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
+pub use common::find_in;
 use common::{assert_close, entry, settle, status_text, widget, label_text, click, cut_page_unpainted as cut_page};
 
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
@@ -39,10 +40,7 @@ static RAN_FLOOR: AtomicBool = AtomicBool::new(false);
 static RAN_APPLY_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_TAG: AtomicBool = AtomicBool::new(false);
 
-
 /// Let the main context run what the widget emissions queued.
-
-
 fn tooltip(window: &adw::ApplicationWindow, name: &str) -> String {
     widget(window, name)
         .tooltip_text()
@@ -99,21 +97,6 @@ fn holds(holder: &gtk::Widget, name: &str) -> bool {
         child = node.next_sibling();
     }
     false
-}
-
-/// Find a named widget inside a subtree we already hold (a form row), without walking the whole window.
-fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-    if node.widget_name() == name {
-        return Some(node.clone());
-    }
-    let mut child = node.first_child();
-    while let Some(current) = child {
-        if let Some(found) = find_in(&current, name) {
-            return Some(found);
-        }
-        child = current.next_sibling();
-    }
-    None
 }
 
 /// Open the label form over a marked band, the way a user does: mark, then press the dropdown's row.

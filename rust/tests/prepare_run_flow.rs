@@ -8,6 +8,9 @@
 use std::fs;
 use std::path::PathBuf;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::fake_audio_server;
 use naivepost::layout::Tree;
 use naivepost::prepare;
 use naivepost::prepare_run::{self, Phase, Start};
@@ -573,41 +576,4 @@ fn f1_1_s6_the_press_puts_the_bar_in_prepare_slices() {
     });
     app.run_with_args::<String>(&[]);
     assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the press check never ran");
-}
-
-/// A loopback audio.cpp that answers `/health` and names the two models every Prepare run needs.
-fn fake_audio_server() -> String {
-    use std::io::{BufRead, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-    let port = listener.local_addr().expect("an address").port();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            std::thread::spawn(move || {
-                let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                    return;
-                }
-                loop {
-                    let mut header = String::new();
-                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
-                        break;
-                    }
-                }
-                let payload = if line.contains("/v1/models") {
-                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
-                } else {
-                    "{}"
-                };
-                let reply = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
-                    payload.len()
-                );
-                let _ = stream.write_all(reply.as_bytes());
-                let _ = stream.flush();
-            });
-        }
-    });
-    format!("http://127.0.0.1:{port}")
 }

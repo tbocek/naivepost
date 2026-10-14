@@ -604,10 +604,7 @@ pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
 /// hand. Returns `None` when this window holds nothing, so the key travels on to whichever form or arm does
 /// own it — the per-kind Esc controllers keep their precedence and this one only claims the leftover.
 pub fn press_band_esc(window: &adw::ApplicationWindow) -> Option<String> {
-    if ui::held_effect().is_none() {
-        return None;
-    }
-    let _ = window;
+    let _ = ui::held_effect()?;
     ui::set_held_effect(None);
     refresh_effects_lane(window);
     ui::refresh_insert_button(window);

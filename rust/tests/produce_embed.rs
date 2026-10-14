@@ -7,29 +7,16 @@
 //! "JPEG 90" becomes `-q:v 2`, ffmpeg's own ladder rung). §F5.5 cites no `P.*` row of §10, so none is asserted
 //! here; the only number in the item is the JPEG quality, and it lives in `produce_embed`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use naivepost::layout::Tree;
 use naivepost::produce_embed as embed;
 use naivepost::project::{Codec, Container};
 use naivepost::roles::Language;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+pub use common::tree_in;
 
 const ITEM: &str = "F5.5";
-
-fn temp_root(tag: &str) -> PathBuf {
-    // Removed here rather than at the end of each test: a case that fails on an assertion never reaches its
-    // own cleanup, and a folder left in /tmp is a folder the next reader has to explain.
-    let dir = std::env::temp_dir().join(format!("np-f55-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
-
-fn tree_in(tag: &str) -> (PathBuf, Tree) {
-    let root = temp_root(tag);
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    (root, Tree::new(&dir).unwrap())
-}
 
 fn track(code: &str, name: &str, file: &str) -> embed::Track {
     embed::Track { code: code.to_string(), name: name.to_string(), file: file.to_string() }
@@ -134,7 +121,7 @@ fn f5_5_s3_the_poster_is_optional_and_named_by_base_name() {
     }
 
     // The three files it names are the ones §A fixes, beside each other.
-    let (root, tree) = tree_in("s3");
+    let (root, tree) = common::tree_in("s3");
     let (video, poster, html) = embed::paths(&tree, Container::Mp4);
     assert_eq!(video, tree.final_video("mp4"));
     assert_eq!(poster, tree.final_jpg());
@@ -208,7 +195,7 @@ fn f5_5_s4_tracks_come_from_the_files_on_disk() {
     // skipped the encode still write its tag rather than failing on a missing folder.
     assert!(embed::list_vtt(Path::new("/no/such/produce")).is_empty());
 
-    let (root, tree) = tree_in("s4");
+    let (root, tree) = common::tree_in("s4");
     let html = tree.final_html();
     let dir = html.parent().unwrap();
     std::fs::create_dir_all(dir).unwrap();
@@ -253,7 +240,7 @@ fn f5_5_s5_the_poster_is_the_thumbnail_as_a_jpeg() {
     assert_eq!(*argv.last().unwrap(), "/p/produce/final.jpg".to_string());
 
     // The poster is made from the thumbnail the project already has, and lands beside the video.
-    let (root, tree) = tree_in("s5");
+    let (root, tree) = common::tree_in("s5");
     let (video, poster, _) = embed::paths(&tree, Container::Mp4);
     let argv = embed::poster_command(&tree.thumbnail_png(), &poster);
     assert!(argv.contains(&tree.thumbnail_png().display().to_string()));
@@ -322,7 +309,7 @@ fn f5_5_s7_escaping_and_paths() {
     assert!(first.ends_with("preload=\"none\">"), "{first}");
 
     // write_tag creates the produce/ folder (a first render has never had one) and writes the body verbatim.
-    let (root, tree) = tree_in("s7");
+    let (root, tree) = common::tree_in("s7");
     assert!(!tree.final_html().exists());
     let body = embed::tag("final.mp4", None, &[track("en", "English", "final.vtt")]);
     embed::write_tag(&tree, &body).unwrap();
