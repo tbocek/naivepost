@@ -111,15 +111,6 @@ pub struct Cues {
     pub counts: crate::produce_subtitles_run::CueCounts,
 }
 
-impl Cues {
-    /// A sheet with no cues yet, only the languages ticked: a TEST seam for a check that owns the settings but
-    /// not the cut. The program's own door is `ui::produce_snapshot`, which fills `languages` and
-    /// `session_language` from the live project because the cues themselves are cut from the plan.
-    pub fn languages_only_for_test(languages: Vec<String>) -> Cues {
-        Cues { languages, ..Default::default() }
-    }
-}
-
 /// What the plan needs beyond the run's snapshot: the four lookups only a caller can answer, kept in one
 /// struct so the walk's signature stays readable and no call site guesses an argument order.
 pub struct Materials<'a> {
@@ -255,10 +246,10 @@ fn is_track_code(code: &str) -> bool {
         && code.bytes().all(|byte| byte.is_ascii_alphabetic())
 }
 
-/// The stems whose sidecar files this run owns — `final` for the session's own language, `final.<tick>` for
-/// every language the page ticked — which is exactly the set of files it would overwrite, so exactly those
-/// are the stale ones that must go first. A tick naming no track (blank, or §C's three-letter form) owns no
-/// file: leaving it is what "by exact name" means when the name is not this run's.
+/// The stems whose sidecar files this run owns — `final.<tick>` for every language the page ticked — which is
+/// exactly the set of files it would overwrite, so exactly those are the stale ones that must go first. A tick
+/// naming no track (blank, or a name `is_track_code` refuses) owns no file: leaving it is what "by exact name"
+/// means when the name is not this run's.
 ///
 /// The session's own stem is NEVER in the list. Its `.vtt` may well have been written by an earlier render,
 /// left in place because a stamp let this press skip the encode (§F5.3), and F5.5's `<video>` page lists
@@ -271,7 +262,9 @@ fn sidecar_stems(ticked: &[String]) -> Vec<String> {
     stems.extend(
         crate::produce_subtitles::track_languages("", ticked)
             .into_iter()
-            .filter(|code| is_track_code(code))
+            // The same `is_track_code` filter `plan` applies to the list it hands the translation leg, so the
+            // sweep can only name a file some language of THIS run would have written.
+            .filter(|code| is_track_code(code.trim()))
             .map(|code| format!("{stem}.{code}")),
     );
     stems
@@ -454,7 +447,29 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     // `clear_scratch`. The stems are the tracks this run writes beside the video: the session's own language
     // bare, plus `.code` for every language the page ticked. A language nobody ticked keeps its file — it
     // describes a translation somebody asked for and this run was not told to drop it.
-    let sheet_sides = sidecar_stems(&mats.cues.languages);
+    // The bare-stem pair is swept only when this run has cues to rewrite it with. An up-to-date video lets a
+    // press skip the encodes but not the sheet, and F5.5's `<video>` page lists whatever `.vtt` files are on
+    // disk with the video's own language first and `default`, so deleting the bare pair on a run that writes
+    // nothing would drop the default track over a press that said nothing.
+    // §5's "never an empty cue" and §S4's "stale ones deleted first" meet here: the sweep may only clear the
+    // bare-stem pair if this run has cues to replace it with. Whether it does is `sheet_will_have_cues`, which
+    // `plan` answers a little later from the same clip list, so the two cannot disagree.
+    let sheet_will_have_cues = clips.iter().any(|clip| {
+        !crate::produce_clip_cues::build(clip, &clip.lines, &run.lines, &(mats.words)(clip)).is_empty()
+    });
+    // The bare-stem pair is swept only when this run has cues to rewrite it with. An up-to-date video lets a
+    // press skip the encodes but not the sheet, and F5.5's `<video>` page lists whatever `.vtt` files are on
+    // disk with the video's own language first and `default`, so deleting the bare pair on a run that writes
+    // nothing would drop the default track over a press that said nothing.
+    let bare_stem: &[String] = if sheet_will_have_cues {
+        &[render::final_srt_name().trim_end_matches(".srt").to_string()]
+    } else {
+        &[]
+    };
+    let sheet_sides = sidecar_stems(&mats.cues.languages)
+        .into_iter()
+        .chain(bare_stem.iter().cloned())
+        .collect::<Vec<String>>();
     crate::produce_subtitles_run::clear_stale_sidecars(
         // The folder beside the video is where the sidecars live; `video` is this run's own file there.
         &tree.final_video(container_ext(settings)),
@@ -475,6 +490,8 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         .into_iter()
         .filter(|code| is_track_code(code.trim()))
         .collect(),
+        // The walk re-reads this list through `plan.translated`, and the stale sweep must use the SAME answer
+        // or a tick that names no track would sweep files the run never owns.
         ..Default::default()
     };
     for (clip, (start, _len)) in clips.iter().zip(render::produced_clocks(&clips).iter()) {
@@ -931,9 +948,16 @@ where
         .map(|t| (t.language.clone(), t.cues))
         .collect();
     for sidecar in &plan.sidecars {
+        // A `.code` sidecar must hold the translation the walk got back. When the translation leg could not
+        // be reached at all — a server down, a settings file unreadable — `track` still returns that language
+        // with the ORIGINAL cues and a warning, so the file is written from the plan's own track rather than
+        // from an empty cue list: an empty sidecar beside a finished video is the one answer §5 forbids.
         let out = match &sidecar.language {
             None => sidecar.clone(),
-            Some(code) => Sidecar { cues: by_code.get(code).cloned().unwrap_or_default(), ..sidecar.clone() },
+            Some(code) => match by_code.get(code) {
+                Some(cues) if !cues.is_empty() => Sidecar { cues: cues.clone(), ..sidecar.clone() },
+                _ => Sidecar { cues: plan.cues.all.clone(), ..sidecar.clone() },
+            },
         };
         if let Err(why) = write_sidecar(&out) {
             ran.failed = Some(why);

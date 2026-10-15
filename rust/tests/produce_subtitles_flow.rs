@@ -89,7 +89,7 @@ fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Wor
         on_recording: true,
         footage_left: &naivepost::produce_render::unknown_footage,
         wav_seconds: &|_entry| None,
-        cues: exec::Cues::languages_only_for_test(Vec::new()),
+        cues: common::produce_cues_for_test(Vec::new()),
         words,
         // This file is about S1/S2; the S3 leg answers every number so the walk is never the thing that
         // fails here. `tests/produce_translate_flow.rs` owns the refusals.
@@ -408,7 +408,7 @@ fn mats_with<'a>(
     settings: Produce,
 ) -> exec::Materials<'a> {
     exec::Materials {
-        cues: exec::Cues::languages_only_for_test(settings.translate.clone()),
+        cues: common::produce_cues_for_test(settings.translate.clone()),
         ..mats(lanes, words)
     }
 }

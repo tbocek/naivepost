@@ -337,9 +337,15 @@ pub fn session_row(
     }
 }
 
+/// A cue sheet holding only the ticked languages: a TEST seam for a check that owns the settings but not the
+/// cut. The program's own door is `ui::produce_snapshot`, which fills `languages` and `session_language` from
+/// the live project, because the cues themselves are cut from the plan.
+pub fn produce_cues_for_test(languages: Vec<String>) -> naivepost::produce_exec::Cues {
+    naivepost::produce_exec::Cues { languages, ..Default::default() }
+}
+
 /// A Produce row's spelled label, from §10's catalogue.
-pub fn produce_row(id: &str) -> String {
-    params::produce()
+pub fn produce_row(id: &str) -> String {    params::produce()
         .into_iter()
         .find(|param| param.id == id)
         .unwrap_or_else(|| panic!("{} is catalogued in §10's Produce rows", id))

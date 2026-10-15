@@ -24,6 +24,7 @@ const ITEM: &str = "§08-produce#5-rules";
 /// Every check but the last drives a clip whose footage says these two words, which is what gives the run a cue.
 const LOUD: &[&str] = &["the", "lecture"];
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::{clip as seg, produce_project as project};
 

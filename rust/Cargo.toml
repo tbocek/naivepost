@@ -1726,3 +1726,22 @@ path = "tests/cards_length_widget.rs"
 [[test]]
 name = "sec_08_produce_3_data"
 path = "tests/sec_08_produce_3_data.rs"
+
+# §08 §5 bullet 2's cue half, pressed on the real ▶. One press per process (`adw::Application::run` cannot be
+# re-entered, the spawner seam is thread-local), so the four checks are four targets; each is a two-line file
+# that names its check and includes `sec_08_produce_5_rules_press_shared.rs` for the press itself.
+[[test]]
+name = "sec_08_produce_5_rules_press_sidecars"
+path = "tests/sec_08_produce_5_rules_press_sidecars.rs"
+
+[[test]]
+name = "sec_08_produce_5_rules_press_silent"
+path = "tests/sec_08_produce_5_rules_press_silent.rs"
+
+[[test]]
+name = "sec_08_produce_5_rules_press_replaced"
+path = "tests/sec_08_produce_5_rules_press_replaced.rs"
+
+[[test]]
+name = "sec_08_produce_5_rules_press_webm"
+path = "tests/sec_08_produce_5_rules_press_webm.rs"
