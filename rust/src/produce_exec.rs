@@ -94,6 +94,10 @@ pub struct Cues {
     pub all: Vec<subs::Cue>,
     /// S7: the ticked translations, minus the session's own language (which is `all` already).
     pub languages: Vec<String>,
+    /// The language the bare-stem track is already in. The page never offers it (§1 keeps that tick off the
+    /// row), but a `naivepost.json` written by an older build can still carry it, and only this field lets the
+    /// render notice: `plan` drops it from [`Self::languages`] so it costs neither an ask nor a file.
+    pub session_language: String,
     /// S1 (§F5.4): the cues grouped per clip, in clip order, each on THAT clip's own seconds and already
     /// run through §S1's `an empty cue extends the previous`. Burned-in subtitles are lettered per clip
     /// inside the clip ([`crate::produce_subtitles_run::burn_file_for`]), so the encoder needs the per-clip
@@ -108,9 +112,10 @@ pub struct Cues {
 }
 
 impl Cues {
-    /// A sheet with no cues yet, only the languages the page ticked: what a caller that owns the settings
-    /// but not the cut hands to `Materials::cues`, since the cues themselves are cut from the plan.
-    pub fn languages_only(languages: Vec<String>) -> Cues {
+    /// A sheet with no cues yet, only the languages ticked: a TEST seam for a check that owns the settings but
+    /// not the cut. The program's own door is `ui::produce_snapshot`, which fills `languages` and
+    /// `session_language` from the live project because the cues themselves are cut from the plan.
+    pub fn languages_only_for_test(languages: Vec<String>) -> Cues {
         Cues { languages, ..Default::default() }
     }
 }
@@ -220,6 +225,10 @@ pub struct Plan {
     pub translated: Vec<String>,
     /// S9: the sidecars beside the video.
     pub sidecars: Vec<Sidecar>,
+    /// §08 §6's webm note: true when this run had something to say but its container cannot carry a subtitle
+    /// track. `walk` says [`crate::produce_details::WEBM_SRT_LOG`] after the mux, so the person learns that
+    /// their subtitles are the files beside the video rather than missing from it.
+    pub webm_without_track: bool,
     /// S10: the stamp, written only if the run comes back clean.
     pub stamp: String,
     pub video: PathBuf,
@@ -455,7 +464,17 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
 
     let mut cues = Cues {
         all: Vec::new(),
-        languages: mats.cues.languages.clone(),
+        // §1's second door. The page hides the session's own language; a setting that carries it anyway must
+        // still cost no ask and no `final.<own>.srt`, which is what `track_languages` answers. A blank tick
+        // names no track at all, and `is_track_code` is the same rule `sidecar_stems` applies to the stale
+        // sweep, so both ends of the list agree.
+        languages: crate::produce_subtitles::track_languages(
+            &mats.cues.session_language,
+            &mats.cues.languages,
+        )
+        .into_iter()
+        .filter(|code| is_track_code(code.trim()))
+        .collect(),
         ..Default::default()
     };
     for (clip, (start, _len)) in clips.iter().zip(render::produced_clocks(&clips).iter()) {
@@ -629,10 +648,15 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             cues: cues.all.clone(),
             log: render::sidecar_log(video_stem(), None),
         });
-        // One sidecar per language the run translates into. An empty tick writes nothing rather than a file
-        // named `final..srt`; what the two-letter rule of §C does is decide which STALE files belong to the
-        // run, which is the other end of the same list (see `is_track_code`).
-        for code in cues.languages.iter().filter(|code| !code.trim().is_empty()) {
+        // One sidecar per language the run translates into. A tick that names no track (blank) writes nothing
+        // rather than a file named `final..srt`, and a name that is not a §C code owns no file either — see
+        // `is_track_code`. What the page's own list can never contain is the session's language: §1 keeps it
+        // off the row, and `track_languages` is the second door for a setting written elsewhere.
+        for code in cues
+            .languages
+            .iter()
+            .filter(|code| is_track_code(code.trim()))
+        {
             sidecars.push(Sidecar {
                 language: Some(code.clone()),
                 srt: tree.final_srt(Some(code)),
@@ -670,6 +694,9 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         mux,
         translated: cues.languages.clone(),
         sidecars,
+        // §6: "after a webm mux: webm cannot carry an srt track …". The note belongs to a run that HAD cues:
+        // with nothing to say there is no track anywhere and nothing to explain.
+        webm_without_track: settings.container == Container::Webm && !cues.all.is_empty(),
         stamp,
         video: tree.final_video(container_ext(settings)),
         scratch,
@@ -863,7 +890,17 @@ where
     // S7 — the walk asks each ticked language once per batch. `plan.translated` came from
     // `Cues::languages`, which is already the ticked list minus the session's own (`track_languages`
     // drops it), so nothing here is translated into itself and the bare-stem track stays the original.
-    let tracked = crate::produce_translate::track(&plan.cues.all, "", &plan.translated, mats.translate);
+    let tracked = crate::produce_translate::track(
+        &plan.cues.all,
+        // The same language `plan` filtered on, so the two doors cannot disagree about what "the video's own
+        // language" means.
+        &plan.cues.session_language,
+        &plan.translated,
+        mats.translate,
+        // The walk's own log: every word the translation half says lands in the run's log, beside the ask it
+        // explains, and nowhere else.
+        |line| log(line),
+    );
     for code in &plan.translated {
         log(&render::translate_log(plan.cues.all.len(), code));
     }
@@ -878,6 +915,12 @@ where
             ran.failed = Some(format!("mux: {why}"));
             return ran;
         }
+    }
+    // §6: webm cannot carry an srt track, and the run said so AFTER the mux — the video is finished and
+    // correct by then; what the person needs to know is where their subtitles are instead (the sidecars S9
+    // writes beside it, which come next).
+    if plan.webm_without_track {
+        log(crate::produce_details::WEBM_SRT_LOG);
     }
 
     // S9 — the sidecars beside the video, each one logged. A `.code` track carries the TRANSLATED cues

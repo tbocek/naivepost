@@ -212,6 +212,9 @@ pub fn render_half(
             // be a second, worse opinion about the same track.
             cues: crate::produce_exec::Cues {
                 languages: run.settings.translate.clone(),
+                // §1's "own language never translated" needs the name to be knowable here: the page has hidden
+                // its tick, so only the render can catch a setting that still carries it.
+                session_language: crate::ui::window::live_project().language,
                 ..Default::default()
             },
             // S1 (§F5.4): the clip's own speech, off the session word list gathered at the press; the

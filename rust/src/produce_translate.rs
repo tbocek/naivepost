@@ -61,16 +61,22 @@ pub fn track(
     session_language: &str,
     ticked: &[String],
     ask: &Ask,
+    mut log: impl FnMut(&str),
 ) -> Vec<Tracked> {
     subs::track_languages(session_language, ticked)
         .iter()
-        .map(|language| one_track(cues, language, ask))
+        .map(|language| one_track(cues, language, ask, &mut log))
         .collect()
 }
 
 /// One language, start to finish: numbered originals, batches, the one re-ask, then the merge put back
-/// onto the original cues.
-fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask) -> Tracked {
+/// onto the original cues. Every word it says goes out through `log` — the run's own log line, never a print.
+fn one_track(
+    cues: &[subs::Cue],
+    language: &str,
+    ask: &Ask,
+    log: &mut impl FnMut(&str),
+) -> Tracked {
     // 1-based numbers (the contract is what the model sees printed), and `sent_text` strips the
     // placement tag so `{\an8}` never travels as a word — §3.10's first must-fix.
     let original: Vec<(usize, String)> = (1..=cues.len())
@@ -98,6 +104,8 @@ fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask) -> Tracked {
         // prototype's repair calls land on the wrong lines.
         if !batch.complete() {
             let again: Vec<usize> = batch.missing();
+            // §6's sentence, said before the call so the second round is explained while it runs.
+            log(&subs::came_back_missing(language, &again));
             if let Ok(answers) = ask(&batch.ask_again_text(&part), &again) {
                 for (number, text) in answers {
                     let _ = batch.translate_line(number, &text);
@@ -111,6 +119,13 @@ fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask) -> Tracked {
     // The merge owns the per-line decision (translated, or the original with its rows folded back) and
     // the warning that names the lines that stayed behind.
     let merged = subs::merge(language, &original, &got);
+    // §6's cache sentence: only a COMPLETE track is ever cached (`subs::cached`), so a complete answer here is
+    // exactly the case where the reply may have come from `cache/llm` rather than from the model. The walk
+    // cannot tell which — the LLM cache answers inside the same leg it hands this function — so the line is
+    // said for the complete track and the run's own log keeps it next to the ask.
+    if subs::cached(got.len() == original.len()) {
+        log(&subs::from_cache_log(language));
+    }
     let translated = cues
         .iter()
         .enumerate()
