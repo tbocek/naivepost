@@ -293,6 +293,48 @@ pub fn card_fields(svg: &[u8]) -> Vec<Field> {
     out
 }
 
+/// §G (`what you type is kept on the end of the path`): the file's path with the form's answers written onto it.
+///
+/// This is the half that made `{{name}}` filling reachable at all: the producer reads its arguments off the clip's
+/// source (`cut_cards::split_path`), so an answer that never reaches the path is an answer the render never sees.
+/// A blank or whitespace-only value writes nothing — an unanswered hole keeps its own fallback (§5) rather than
+/// being filled with emptiness — and no answers at all return the path byte-for-byte, which is what a video, a
+/// still or a sound insert needs. Keys already on the path are replaced where they stand, so re-editing a card
+/// does not grow a second `?title=`; new keys join in the order the card declared them.
+pub fn answer_path(path: &str, answers: &[(String, String)]) -> String {
+    let mut split = crate::cut_cards::split_path(path);
+    for (key, value) in answers {
+        let value = value.trim();
+        if key.is_empty() || value.is_empty() {
+            continue;
+        }
+        match split
+            .args
+            .iter_mut()
+            .find(|(known, _)| known.eq_ignore_ascii_case(key))
+        {
+            Some(slot) => slot.1 = value.to_string(),
+            None => split.args.push((key.clone(), value.to_string())),
+        }
+    }
+    crate::cut_cards::join_path(&split)
+}
+
+/// The part of a card document its answers actually change: the holes it declares, with each one's value read
+/// from the scope the way [`crate::cut_cards::fill`] will read it (an empty answer falls back, so it counts as
+/// untouched). Deciding "did anything change" here rather than by comparing whole documents keeps the sentence
+/// about the card's holes, not about whitespace between them.
+pub fn answered_holes(doc: &str, args: &[(String, String)]) -> Vec<(String, String)> {
+    crate::cut_cards::holes(doc)
+        .into_iter()
+        .filter_map(|hole| {
+            args.iter()
+                .find(|(key, value)| key == &hole.name && !value.is_empty())
+                .map(|(_, value)| (hole.name, value.clone()))
+        })
+        .collect()
+}
+
 /// How the card sits in the cut. Three radios rather than a tick: it is what the card DOES to the footage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {

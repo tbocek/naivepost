@@ -57,6 +57,9 @@ pub(crate) struct InsertOpen {
     pub(crate) path: String,
     pub(crate) at: f64,
     pub(crate) seconds: f64,
+    /// The card's declared fields, so Apply knows which `insert-field-*` entries this form drew and can read
+    /// them back. Empty for a still, a video or a sound, which is why nothing else changed.
+    pub(crate) fields: Vec<cut_insert::Field>,
 }
 
 thread_local! {
@@ -212,6 +215,7 @@ pub(crate) fn show_insert_form(
             path: path.to_string(),
             at,
             seconds: plan.seconds,
+            fields,
         })
     });
     holder.set_visible(true);
@@ -291,6 +295,21 @@ pub fn close_insert_form(window: &adw::ApplicationWindow) -> String {
     "the insert was cancelled".to_string()
 }
 
+/// §8's arrival sentence for the answers typed into the form, said now rather than left to the render: `filled in`
+/// only when a hole actually took a value. A stamped card is redrawn by its generator whatever was typed and
+/// already says so at the render; an unreadable file or a non-SVG says nothing here — the producer owns that note.
+fn card_arrival(path: &str, answers: &[(String, String)]) -> Option<String> {
+    if answers.is_empty() || !path.to_lowercase().ends_with(".svg") {
+        return None;
+    }
+    let doc = std::fs::read_to_string(std::path::Path::new(
+        &cut_cards::split_path(path).file,
+    ))
+    .ok()?;
+    (!cut_insert::answered_holes(&doc, answers).is_empty())
+        .then_some(cut_cards::FILLED_IN.to_string())
+}
+
 /// F2.12 S5: Apply / Insert it. Reads the form's own widgets, hands the answers to
 /// [`cut_insert::FormAnswer::from_form`] and [`cut_insert::place`], saves the cut through the same door the
 /// folds use, and returns [`cut_insert::Placed::status`] (or the refusal). No rule lives here.
@@ -307,8 +326,30 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
         .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
         .is_some_and(|tick| tick.is_active());
     let answer = cut_insert::FormAnswer::from_form(insert_mode_now(window), &text, fallback, silent);
+    // §G: what was typed into the card's own fields goes ONTO THE PATH, because that is where the render reads
+    // its arguments from. Reading them off the widgets the same form built (the names it wrote) keeps the widget
+    // layer to reading; deciding what an answer means is `cut_insert::answer_path`'s.
+    let answers: Vec<(String, String)> = open
+        .fields
+        .iter()
+        .map(|field| {
+            let typed = ui::find_widget_by_name(window.upcast_ref(), &format!("insert-field-{}", field.key))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
+                .map(|entry| entry.text().to_string())
+                .unwrap_or_default();
+            (field.key.clone(), typed)
+        })
+        .collect();
+    let said = card_arrival(&open.path, &answers);
     let mut cut_ = ui::newest_review_cut();
-    match cut_insert::place(&mut cut_, &open.path, open.at, answer.mode, answer.seconds, answer.silent) {
+    match cut_insert::place(
+        &mut cut_,
+        &cut_insert::answer_path(&open.path, &answers),
+        open.at,
+        answer.mode,
+        answer.seconds,
+        answer.silent,
+    ) {
         Ok(placed) => {
             ui::record_edit(window, &cut_);
             save_insert_cut(&cut_);
@@ -316,7 +357,11 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
             if let Some(holder) = insert_form_box(window) {
                 holder.set_visible(false);
             }
-            placed.status
+            match said {
+                // The card's own note first: what the parameters did, then where the card landed.
+                Some(note) => format!("{note} \u{2014} {}", placed.status),
+                None => placed.status,
+            }
         }
         Err(refusal) => refusal,
     }

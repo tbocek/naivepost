@@ -714,7 +714,20 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                     }
                 }
             };
-            if let Some(said) = stepped_said(&stepped) {
+            // §6's ending is news only about a preview that was actually being heard. `running()` only says a
+            // slot is held, and a slot can hold children that already exited — a player that spawns and leaves
+            // looks exactly like one that ran to its end — so life is read from THIS beat's own children. Over
+            // no live players the tick merely walked off the last clip of a cut nobody was listening to, and
+            // saying so would speak over whatever press just happened (an audition's "spoken \u{2014} <take>",
+            // for one); a page whose `playing` was left up from an earlier flow has nothing for ⏹ to have
+            // stopped either.
+            let ends_a_preview =
+                matches!(stepped, Stepped::Paused) && was_running && !running_children().is_empty();
+            let ends_a_preview =
+                matches!(stepped, Stepped::Paused) && was_running && !running_children().is_empty();
+            if let Some(said) = stepped_said(&stepped)
+                .filter(|_| !matches!(stepped, Stepped::Paused) || ends_a_preview)
+            {
                 page.say(&said);
             }
             // S3: name the mix this tick applied, on the log only (not the status line), so a hush
@@ -728,15 +741,13 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                     heard.hushed.join(", ")
                 ));
             }
-            if matches!(stepped, Stepped::Paused) {
+            if ends_a_preview {
                 let _ = stop_running();
                 // No ⏹ was pressed, so nothing else would tell the page its preview is over (§5).
                 // Only do it when a preview was actually going: a page whose `playing` was a staged or
                 // stale value has no players here to end, and answering `Paused` for it would
                 // contradict the page it just told the leg to trust.
-                if was_running {
-                    page.stopped();
-                }
+                page.stopped();
             }
             glib::ControlFlow::Continue
         },

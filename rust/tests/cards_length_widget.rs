@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{self, Seg};
+use naivepost::cut_cards as cards;
 use naivepost::cut_insert as ins;
 use naivepost::cut_screen;
 use naivepost::shell::Page;
@@ -29,6 +30,7 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle, status_
 static RAN_LENGTH: AtomicBool = AtomicBool::new(false);
 static RAN_FIELD: AtomicBool = AtomicBool::new(false);
 static RAN_APPLY: AtomicBool = AtomicBool::new(false);
+static RAN_ANSWER: AtomicBool = AtomicBool::new(false);
 
 /// Build a window already sitting on the Cut tab with the given tape and cut, the way the insert wire does.
 fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &cut::Cut) -> adw::ApplicationWindow {
@@ -176,6 +178,142 @@ fn apply_says_what_the_logic_would_say(app: &adw::Application) {
     window.close();
 }
 
+/// §G (`what you type is kept on the end of the path`) + §5: what goes into `insert-field-title` lands ON THE
+/// CLIP'S SOURCE, because that is the only place the producer reads a card's arguments from. A hole left blank
+/// writes no argument at all — the hole keeps its own fallback rather than being filled with emptiness — and a
+/// path that already carries one gains the new key without losing the old.
+fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
+    let window = cut_page(app, &tape(), &cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() });
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
+
+    // (a) one hole, one answer: the stored source carries it, and the document that answers it has no hole left.
+    // The chooser seam is handed the FILE (§G puts the parameters on the end of its path), so that is what this
+    // seam gets; the field starts empty and the typed value is what lands on the cut's source.
+    let plain = write_card_file(
+        "answered.svg",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\">\
+         <!-- Input: title | Title | what the board says -->\
+         <text x=\"100\" y=\"200\">{{title}}</text>\
+         <text x=\"100\" y=\"300\" opacity=\"0\">New<animate attributeName=\"opacity\" values=\"0;1\" \
+         keyTimes=\"0;1\" dur=\"2s\" fill=\"freeze\"/></text></svg>",
+    );
+    ui::insert_chosen_with_length(&window, std::path::Path::new(&plain), 20.0, Some(4.0));
+    settle();
+    field_entry(&window, "insert-field-title").set_text("Best maps");
+    button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
+    settle();
+    let placed = cut_of(&window)
+        .segs
+        .into_iter()
+        .find(|seg| seg.is_insert())
+        .expect("the answered card is in the cut");
+    let args = cards::split_path(&placed.ins).args;
+    assert_eq!(
+        args,
+        vec![("title".to_string(), "Best maps".to_string())],
+        "the typed answer rides on the path the render will read: {:?}",
+        placed.ins
+    );
+    let doc = std::fs::read_to_string(&plain).expect("the card file");
+    let answered: Vec<String> = ins::answered_holes(&doc, &args)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(answered, vec!["title".to_string()], "that answer fills the hole it names");
+    assert!(
+        !cards::fill(&doc, &args).contains("{{title}}"),
+        "the filled document has no hole left for the producer to leave unfilled"
+    );
+    window.close();
+
+    // (b) nothing typed: no `?` at all, so the card is asked about as the bare file it is.
+    let window = cut_page(app, &tape(), &cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() });
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
+    ui::insert_chosen_with_length(&window, std::path::Path::new(&plain), 20.0, Some(4.0));
+    settle();
+    button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
+    settle();
+    let bare = cut_of(&window)
+        .segs
+        .into_iter()
+        .find(|seg| seg.is_insert())
+        .expect("the unanswered card is in the cut");
+    assert_eq!(bare.ins, plain, "an empty field writes no argument: {}", bare.ins);
+    window.close();
+
+    // (c) a path that already carries an argument keeps it and gains the typed one, round-tripping split/join.
+    let window = cut_page(app, &tape(), &cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() });
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
+    // A card declaring TWO holes, so one answer can join an argument the path already carried instead of
+    // replacing it. The chooser hands back the file; §G's parameters ride on the end of its path.
+    let two_holes = write_card_file(
+        "written.svg",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\">\
+         <!-- Input: title | Title | what the board says -->\
+         <!-- Input: who | Who | whose record it is -->\
+         <text x=\"100\" y=\"200\">{{title}}</text>\
+         <text x=\"100\" y=\"300\">{{who}}</text>\
+         <text x=\"100\" y=\"400\" opacity=\"0\">New<animate attributeName=\"opacity\" values=\"0;1\" \
+         keyTimes=\"0;1\" dur=\"2s\" fill=\"freeze\"/></text></svg>",
+    );
+    let written = format!("{two_holes}?keep=on");
+    // (c) below asks `answer_path` about a source that already carries an argument, so nothing is placed here.
+    window.close();
+    // (c) a typed answer joins an argument the source already carried instead of replacing it, and the path
+    // round-trips split/join so the render splits exactly what the form wrote. The seam stands in for the
+    // chooser's FILE; `answer_path` is asked directly about a source that already carries `keep=on`, which is
+    // the state a re-edited card's clip is in (§G keeps parameters on the end of the path).
+    let joined = ins::answer_path(&written, &[("title".to_string(), "Ranks & records".to_string())]);
+    let args = cards::split_path(&joined).args;
+    assert_eq!(
+        args.iter().filter(|(key, _)| key == "keep").count(),
+        1,
+        "the argument the path already carried survives exactly once: {joined}"
+    );
+    assert!(
+        args.iter()
+            .any(|(key, value)| key == "title" && value == "Ranks & records"),
+        "and the typed one joins it: {joined}"
+    );
+    assert_eq!(
+        cards::join_path(&cards::split_path(&joined)),
+        joined,
+        "the path round-trips, so the render splits what the form wrote"
+    );
+    window.close();
+}
+
+/// The insert form holder THIS window drew its form into — the VISIBLE one, not merely the first box named
+/// `insert-form`. An unscoped name exists once per tab (`page_box` runs per tab) and a closed window's widgets
+/// stay parented somewhere, so a tree-wide lookup can land on another tab's or another window's empty holder and
+/// report "no such field" for a form that was drawn. The live holder is reached the way the form's own buttons
+/// are: from a widget only the open form draws, up to the box that holds them.
+fn live_holder(window: &adw::ApplicationWindow) -> gtk::Box {
+    child_named(window, "insert-mode-between")
+        .and_then(|radio| radio.parent())
+        .and_then(|parent| parent.downcast::<gtk::Box>().ok())
+        .expect("the open insert form drew its BETWEEN radio inside the form box")
+}
+
+/// A field entry of the open form, found under the holder that is drawing it.
+fn field_entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
+    let holder = live_holder(window);
+    child_named(&holder, name)
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        .unwrap_or_else(|| panic!("the open insert form drew no {name} under {:?}", all_names(holder.upcast_ref())))
+}
+
+/// Every widget name below `root`, so a miss says what WAS drawn rather than only what was not.
+fn all_names(root: &gtk::Widget) -> Vec<String> {
+    let mut out = vec![root.widget_name().to_string()];
+    for child in root.observe_children().iter::<glib::Object>() {
+        let Ok(child) = child else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        out.extend(all_names(&widget));
+    }
+    out
+}
+
 /// This window's cut as a whole, so its length is measured the way the page measures it.
 fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
     cut::Cut {
@@ -199,6 +337,8 @@ fn window_round() {
             RAN_FIELD.store(true, Ordering::SeqCst);
             apply_says_what_the_logic_would_say(app);
             RAN_APPLY.store(true, Ordering::SeqCst);
+            typed_answers_land_on_the_paths_arguments(app);
+            RAN_ANSWER.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -206,7 +346,7 @@ fn window_round() {
 }
 
 #[test]
-fn sec_06_effects_5_wire_a_cards_own_length_reaches_the_form_through_real_widgets() {
+fn sec_06_effects_5_cards_svg_inserts_wire_a_cards_own_length_reaches_the_form_through_real_widgets() {
     // Pin cwd BEFORE anything builds: the presses resolve the project through `startup::session_dir(current_dir())`,
     // and leaving it at rust/ writes a stray `rust/session.naivepost/` into the repo.
     let root = std::env::temp_dir().join(format!("np-card-len-root-{}", std::process::id()));
@@ -217,4 +357,8 @@ fn sec_06_effects_5_wire_a_cards_own_length_reaches_the_form_through_real_widget
     assert!(RAN_LENGTH.load(Ordering::SeqCst), "the offered-length check never ran");
     assert!(RAN_FIELD.load(Ordering::SeqCst), "the declared-field check never ran");
     assert!(RAN_APPLY.load(Ordering::SeqCst), "the Apply check never ran");
+    assert!(
+        RAN_ANSWER.load(Ordering::SeqCst),
+        "the typed-answer-to-path check never ran"
+    );
 }
