@@ -723,8 +723,6 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
             // stopped either.
             let ends_a_preview =
                 matches!(stepped, Stepped::Paused) && was_running && !running_children().is_empty();
-            let ends_a_preview =
-                matches!(stepped, Stepped::Paused) && was_running && !running_children().is_empty();
             if let Some(said) = stepped_said(&stepped)
                 .filter(|_| !matches!(stepped, Stepped::Paused) || ends_a_preview)
             {

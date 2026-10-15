@@ -118,6 +118,8 @@ fn mats<'a>(
         source_file: &any_source,
         on_recording: true,
         footage_left: &naivepost::produce_render::unknown_footage,
+        filmed_runs: naivepost::produce_plan_logs::NO_TAPE,
+        base_of: &|_seg| String::new(),
         wav_seconds,
         cues,
         words: &no_words,
@@ -633,7 +635,7 @@ fn f5_2_s5_a_clip_that_cannot_be_probed_claims_nothing() {
 #[test]
 fn f5_2_s7_translation_is_asked_after_every_encode() {
     let settings = Produce { translate: vec!["German".to_string()], ..Default::default() };
-    let cues = exec::Cues::languages_only(vec!["German".to_string()]);
+    let cues = common::produce_cues_for_test(vec!["German".to_string()]);
     let (tree, run) = run_over(
         "s7",
         vec![seg(0.0, 10.0), seg(10.0, 20.0)],
@@ -719,6 +721,8 @@ fn mats_with_fx<'a>(
         source_file: &any_source,
         on_recording: true,
         footage_left: &naivepost::produce_render::unknown_footage,
+        filmed_runs: naivepost::produce_plan_logs::NO_TAPE,
+        base_of: &|_seg| String::new(),
         wav_seconds,
         cues,
         words: &no_words,
@@ -1048,7 +1052,7 @@ fn f5_2_gap_s2_a_refused_line_is_said_and_the_render_goes_on() {
 #[test]
 fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
     let tracked = Produce { subtitles: Subtitles::TrackInFile, ..Default::default() };
-    let cues = exec::Cues::languages_only(Vec::new());
+    let cues = common::produce_cues_for_test(Vec::new());
     let (tree, run) = run_over("s8", vec![seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], tracked, "");
     let spy = Spy::new();
     spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
@@ -1085,7 +1089,7 @@ fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
 #[test]
 fn f5_2_s9_sidecars_exist_per_language_and_each_is_logged() {
     let settings = Produce { translate: vec!["German".to_string()], ..Default::default() };
-    let cues = exec::Cues::languages_only(vec!["German".to_string()]);
+    let cues = common::produce_cues_for_test(vec!["German".to_string()]);
     let (tree, run) = run_over(
         "s9",
         vec![seg(0.0, 10.0)],

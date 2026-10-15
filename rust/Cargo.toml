@@ -203,6 +203,10 @@ name = "sec_06_effects_6_parameters"
 path = "tests/sec_06_effects_6_parameters.rs"
 
 [[test]]
+name = "sec_06_effects_6_parameters_used_wire"
+path = "tests/sec_06_effects_6_parameters_used_wire.rs"
+
+[[test]]
 name = "sec_06_effects_9_where_recordings_overlap"
 path = "tests/sec_06_effects_9_where_recordings_overlap.rs"
 
@@ -1184,6 +1188,10 @@ name = "produce_parameters"
 path = "tests/produce_parameters.rs"
 
 [[test]]
+name = "produce_presses_clear_own"
+path = "tests/produce_presses_clear_own.rs"
+
+[[test]]
 name = "produce_presses_widgets"
 path = "tests/produce_presses_widgets.rs"
 
@@ -1202,6 +1210,10 @@ path = "tests/produce_rules.rs"
 [[test]]
 name = "f5_1_s4_the_render_speak_leg_dials_audio_cpp"
 path = "tests/f5_1_s4_the_render_speak_leg_dials_audio_cpp.rs"
+
+[[test]]
+name = "f5_5_video_tag_live"
+path = "tests/f5_5_video_tag_live.rs"
 
 [[test]]
 name = "produce_run_flow"
@@ -1240,6 +1252,14 @@ name = "produce_subtitles_flow"
 path = "tests/produce_subtitles_flow.rs"
 
 [[test]]
+name = "produce_rules_translation"
+path = "tests/produce_rules_translation.rs"
+
+[[test]]
+name = "sec_08_produce_6_details_confirmed"
+path = "tests/sec_08_produce_6_details_confirmed.rs"
+
+[[test]]
 name = "produce_tag_page"
 path = "tests/produce_tag_page.rs"
 
@@ -1254,6 +1274,10 @@ path = "tests/produce_translate_wire.rs"
 [[test]]
 name = "produce_upload_draw_wire"
 path = "tests/produce_upload_draw_wire.rs"
+
+[[test]]
+name = "produce_upload_media"
+path = "tests/produce_upload_media.rs"
 
 [[test]]
 name = "produce_upload_flow"
@@ -1702,3 +1726,26 @@ path = "tests/produce_cards_bake.rs"
 [[test]]
 name = "cards_length_widget"
 path = "tests/cards_length_widget.rs"
+
+[[test]]
+name = "sec_08_produce_3_data"
+path = "tests/sec_08_produce_3_data.rs"
+
+# §08 §5 bullet 2's cue half, pressed on the real ▶. One press per process (`adw::Application::run` cannot be
+# re-entered, the spawner seam is thread-local), so the four checks are four targets; each is a two-line file
+# that names its check and includes `sec_08_produce_5_rules_press_shared.rs` for the press itself.
+[[test]]
+name = "sec_08_produce_5_rules_press_sidecars"
+path = "tests/sec_08_produce_5_rules_press_sidecars.rs"
+
+[[test]]
+name = "sec_08_produce_5_rules_press_silent"
+path = "tests/sec_08_produce_5_rules_press_silent.rs"
+
+[[test]]
+name = "sec_08_produce_5_rules_press_replaced"
+path = "tests/sec_08_produce_5_rules_press_replaced.rs"
+
+[[test]]
+name = "sec_08_produce_5_rules_press_webm"
+path = "tests/sec_08_produce_5_rules_press_webm.rs"

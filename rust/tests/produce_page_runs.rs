@@ -685,6 +685,14 @@ fn f5_7_s8_the_produce_rows_stay_few_and_all_named() {
             "P.eng.publishMaxFrames",
             // §F5.6 S1's bound on the upload brief, catalogued where the brief reads it.
             "P.machine.briefMaxChars",
+            // §08 §4's engineering sentence: values §10 keeps in prose rather than in a table, so each takes
+            // the bare `produce.` prefix a value with no `P.` id gets, and spells itself from its rule's own
+            // constant (see tests/produce_parameters.rs s10/s11 for what backs each one).
+            "produce.exportLadder",
+            "produce.posterJPEGQuality",
+            "produce.sdWaitSeconds",
+            "produce.seekBeforeInput",
+            "produce.mp4StreamFlags",
         ]
     );
     for param in &rows {

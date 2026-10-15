@@ -883,7 +883,7 @@ pub fn encode_command_with(
     let mut argv = vec!["ffmpeg".into()];
     // The picture's own seek first, always before its -i (inventory §B: "0 picture (-ss before -i)").
     if clip.seg_s > 0.0 {
-        argv.push("-ss".into());
+        argv.push(SEEK_FLAG.into());
         argv.push(format!("{:.3}", clip.seg_s));
     }
     let mut filter_inputs = 0;
@@ -1041,6 +1041,21 @@ pub const MUX_FRACTION: f64 = 0.96;
 /// chose "track in file", and never for webm, which has no text track: that is decided by
 /// [`crate::produce_screen::apply_container_rules`] rather than guessed again here, so the settings row and
 /// the command cannot disagree about what webm carries.
+// The mp4-only tail of the mux, named because §08 §4 lists "faststart flags" among the engineering values this
+// page uses: a row in `params::produce()` spells these two consts, so the catalogue cannot drift from the argv.
+// So the file streams from the front instead of waiting for the moov atom at the end.
+pub const MP4_STREAM_FLAGS: [&str; 2] = ["-movflags", "+faststart"];
+
+// The two edit-list flags that stop mp4 writing a negative-CTS start that some players read as a black first
+// frame.
+pub const MP4_START_FLAGS: [&str; 4] = ["-use_editlist", "0", "-negative_cts_offsets", "on"];
+
+/// The picture's own seek flag, and the input flag it must precede (inventory §B: "0 picture (-ss before -i)").
+/// Named so §08 §4's "input ordering" has one home: `encode_command` pushes them and `params_produce` spells them.
+pub const SEEK_FLAG: &str = "-ss";
+/// The input flag [`SEEK_FLAG`] goes in front of.
+pub const INPUT_FLAG: &str = "-i";
+
 pub fn mux_command(
     video: &std::path::Path,
     audio: &std::path::Path,
@@ -1091,14 +1106,8 @@ pub fn mux_command(
     if settings.container == project::Container::Mp4 {
         // faststart so the file streams from the front, and the two edit-list flags that stop mp4 writing a
         // negative-CTS start that some players read as a black first frame.
-        argv.extend([
-            "-movflags".into(),
-            "+faststart".into(),
-            "-use_editlist".into(),
-            "0".into(),
-            "-negative_cts_offsets".into(),
-            "on".into(),
-        ]);
+        argv.extend(MP4_STREAM_FLAGS.iter().map(|flag| flag.to_string()));
+        argv.extend(MP4_START_FLAGS.iter().map(|flag| flag.to_string()));
     }
     argv.push(out.display().to_string());
     argv

@@ -203,6 +203,10 @@ pub fn poster_command(thumbnail: &Path, poster: &Path) -> Vec<String> {
 }
 
 /// Why the poster could not be written, in the one case the caller cannot work out for itself.
+///
+/// "Drawn" covers BOTH files the run can leave behind — the printed `thumbnail.png` and the plain
+/// `thumbnail-plain.png` the draw leg saves before any words go on it — because the poster is made from
+/// either; this sentence is only reached when neither exists.
 pub fn no_poster_reason() -> &'static str {
     "no thumbnail has been drawn yet"
 }

@@ -312,6 +312,10 @@ pub fn request_body(
     )
 }
 
+/// The row's image answer, re-exported so a caller names the door it fills rather than the module that
+/// draws the pixels behind the row.
+pub use crate::produce_upload_media::Sent;
+
 /// S6: the poll line. With nobody ahead it says only the status; with a queue it names how far back this
 /// job sits, because "drawing" for two minutes reads very differently when the log already said 7 ahead.
 pub fn poll_line(status: &str, ahead: usize) -> String {
@@ -387,6 +391,8 @@ pub struct PollState {
 
 /// The model leg: the brief in, the raw reply out (`Err` = the call did not happen).
 pub type AskModel = dyn Fn(&str) -> Result<String, String>;
+/// The publish leg: write `publish.json` + `description.txt` (S5).
+pub type SavePublish = dyn Fn(&Publish) -> Result<(), String>;
 /// The sd.cpp submit leg: the request body in, the job id out.
 pub type AskDraw = dyn Fn(&serde_json::Value) -> Result<DrawnJob, String>;
 /// One ask of a draw job, the finished picture's bytes included.
@@ -429,6 +435,16 @@ pub struct Materials<'a> {
     /// Whether the picture is the user's own — an own frame, or an edit instruction of their own. While it
     /// holds, a changed title is NOT reprinted: the picture is theirs (S5, decision 34).
     pub edited_by_hand: bool,
+    /// S3/S6: the row's entries as the pixels the image server actually takes — the base cropped to the
+    /// video's shape, the references raw ([`crate::produce_upload_media::request_images`]). The walk needs
+    /// this because a row entry is only a PROMISE about a picture: `frame:34.0` means nothing until something
+    /// finds the JPEG behind it. `urls` go out as `ref_images`; `base` decides whether the request line can
+    /// name a base at all.
+    pub request_images: &'a dyn Fn(&Publish) -> crate::produce_upload_media::Sent,
+    /// S3: put the chosen frame's cropped pixels where the print leg reads them, as the plain picture.
+    /// Without this leg a picked frame rewrites the row but produces no picture, so nothing can be printed
+    /// onto it and no stamp can be written.
+    pub own_picture: &'a dyn Fn(&Publish) -> Result<(), String>,
 }
 
 /// What the walk did. Every field is a thing a test pins about ORDER, not just outcome.
@@ -453,6 +469,13 @@ pub struct Outcome {
 /// The aspect a thumbnail is drawn at when nothing in the record says otherwise: 16:9, the shape
 /// `details::thumbnail_box_without_aspect` falls back to as well.
 pub const DEFAULT_ASPECT: &str = "16:9";
+
+/// The row §S3 leaves behind, split out of `walk` so the door a page or a test can reach is the same code the
+/// walk runs: the nearest extracted frame to `at`, as the row's ONLY entry. `Err` names why nothing was taken.
+pub fn picked_row(at: f64, nearest: impl Fn(f64) -> Option<f64>) -> Result<Vec<String>, String> {
+    let frame = nearest(at).ok_or("no extracted frame anywhere near it")?;
+    Ok(vec![format!("frame:{frame:.1}")])
+}
 
 /// S5–S7: the whole words half, in the spec's order.
 ///
@@ -509,7 +532,14 @@ pub fn walk(
         match (mats.nearest_frame)(at) {
             Some(frame) => {
                 next.own = true;
-                next.frames = vec![format!("frame:{frame:.1}")];
+                // One call to the rule, so the walk and any other door answer identically.
+                match picked_row(at, |_| Some(frame)) {
+                    Ok(row) => next.frames = row,
+                    Err(why) => {
+                        log(&details::chosen_frame_failed_log(&why));
+                        return out;
+                    }
+                }
                 out.own = true;
                 log(&details::chosen_frame_log(frame));
             }
@@ -561,7 +591,18 @@ pub fn walk(
         mats.edited_by_hand,
     );
     if next.own {
-        out.calls.push("own-frame".to_string());
+        // S3: the picked frame IS the picture, so it has to land on disk here — the row alone is a promise,
+        // and every later step (printing, stamping, the next run's "already drawn") reads a file.
+        match (mats.own_picture)(&next) {
+            Ok(()) => out.calls.push("own-frame".to_string()),
+            Err(why) => {
+                // A frame named but not present is the chosen-frame failure the spec names, not a drawn
+                // thumbnail decided silently: say why, then let the draw branch do what it can.
+                log(&details::chosen_frame_failed_log(&why));
+                out.error = Some(why);
+                return out;
+            }
+        }
     } else if details::already_drawn(true, mats.stored_stamp.as_deref() == Some(current.as_str())) {
         out.already_drawn = true;
         out.calls.push("already-drawn".to_string());
@@ -571,22 +612,31 @@ pub fn walk(
             return out;
         }
         let (wide, high) = frame_size_from_aspect(&aspect);
+        // S6: the images come from the media leg, so `ref_images` holds bytes the app read off disk — a
+        // cropped base and raw references — rather than the row's file names, which the server cannot open.
+        let sent = (mats.request_images)(&next);
         let body = request_body(
             &draw_prompt(&next.prompt, Band::of_box(&title_box(&next))),
             Some(&next.negative),
             wide,
             high,
-            &refs_of(&next),
+            &sent.urls,
         );
-        log(&details::request_log(
-            wide,
-            high,
-            &base_name(&base_of(&next)),
-            body_refs(&body),
-            100,
-            0.5,
-            0.5,
-        ));
+        if sent.base.is_none() {
+            // Nothing to edit: say exactly that rather than print a line claiming a base the request has not
+            // got, and send a body with no `ref_images` at all (`request_body` omits an empty list).
+            log(details::REQUEST_NO_IMAGES_LOG);
+        } else {
+            log(&details::request_log(
+                wide,
+                high,
+                &sent.base_name,
+                body_refs(&body),
+                sent.crop_percent,
+                sent.centre.0,
+                sent.centre.1,
+            ));
+        }
         let job = match (mats.ask_draw)(&body) {
             Ok(job) => job,
             Err(why) => {
@@ -677,7 +727,7 @@ pub fn walk(
 // ---- small readers over the record -------------------------------------------------
 
 /// `w:h` → the draw size. An unparseable shape falls back to the aspect-free rule.
-fn frame_size_from_aspect(aspect: &str) -> (u32, u32) {
+pub fn frame_size_from_aspect(aspect: &str) -> (u32, u32) {
     match aspect.split_once(':') {
         Some((w, h)) => {
             let w = w.trim().parse::<u32>().unwrap_or(16);
@@ -693,18 +743,11 @@ fn title_box(publish: &Publish) -> TitleBox {
     publish.title_box.unwrap_or_default()
 }
 
-/// The base image the model edits: the first frame, or empty when the row is empty.
-fn base_of(publish: &Publish) -> String {
+/// The base image the model edits: the first frame, or empty when the row is empty. Kept for the callers that
+/// ask which entry a run is about to edit; the REQUEST line reads its name off [`Sent`] instead, because the
+/// file behind the entry is the media leg's answer, not this module's.
+pub fn base_of(publish: &Publish) -> String {
     crate::publish::base(publish).unwrap_or_default().to_string()
-}
-
-/// The reference images: everything after the base, in order.
-fn refs_of(publish: &Publish) -> Vec<String> {
-    crate::publish::references(publish).to_vec()
-}
-
-fn base_name(path: &str) -> String {
-    path.rsplit('/').next().unwrap_or(path).to_string()
 }
 
 /// How many references actually went out in this body — read back off the JSON so the log states what was

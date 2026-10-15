@@ -487,6 +487,24 @@ pub fn held_window() -> Option<adw::ApplicationWindow> {
     ROOT.with(|held| held.borrow().clone()).and_then(|w| w.downcast::<adw::ApplicationWindow>().ok())
 }
 
+/// Publish a window as the page's live one WITHOUT rebuilding anything — a test's seam for the same slot `wire`
+/// writes. `draw_into` finds its Images box through `held_window()`, so a check that drives its own window's
+/// slots has to be the window held; without this, an earlier window left in the slot gets the repaint and the
+/// rows the check reads back never change. Nothing here constructs widgets, so it cannot recurse into `build`.
+/// Named `_for_test` because only a test asks: `wire` is the program's own door for this slot.
+pub fn hold_window_for_test(window: &adw::ApplicationWindow) {
+    ROOT.with(|held| *held.borrow_mut() = Some(window.clone().upcast()));
+}
+
+/// The page's own root, as `build()` published it — the tree every name lookup reaches, and therefore the one a
+/// check must have repainted. `draw_into` prefers the held window over this root, so in a binary that builds a
+/// fresh window per check the repaint lands on whichever window was built last unless the root is asked for by
+/// name; `page_image_box_for_test` is how a test asks.
+pub fn page_image_box_for_test() -> Option<gtk::Widget> {
+    ROOT.with(|held| held.borrow().clone())
+        .and_then(|root| crate::ui::window::find_widget_by_name(&root, "publish-images"))
+}
+
 /// Find one widget by name from the window this page sits in.
 pub fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     let content = window.content()?;
@@ -704,9 +722,10 @@ pub fn press_set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> Str
     crate::ui::produce_press_wiring::set_thumbnail(window, index)
 }
 
-/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit.
-pub fn press_export_thumbnail(window: &adw::ApplicationWindow, bytes: u64) -> String {
-    crate::ui::produce_press_wiring::export_thumbnail(window, bytes)
+/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit. The weight it reports is measured off
+/// the file the ladder wrote, so the widget hands over nothing but the press itself.
+pub fn press_export_thumbnail(window: &adw::ApplicationWindow) -> String {
+    crate::ui::produce_press_wiring::export_thumbnail(window)
 }
 
 /// **6** ↻ redraw: one sd.cpp call, nothing rewritten when the words are left alone.
@@ -928,6 +947,12 @@ pub fn set_own_thumbnail() {
     });
 }
 
+/// The other half of §F5.7's ↻ over the thumbnail: the picture goes back to the model, so it stops being the
+/// user's own. `produce_press_wiring::legs` pairs this with the write that persists it.
+pub fn clear_own_thumbnail() {
+    mutate(|st| st.own = false);
+}
+
 /// The row's container word (`"mp4"`/`"mkv"`/`"webm"`), for a press that names the file it copies.
 pub fn container_word() -> String {
     container_name(parse_container(&read_state().container)).to_string()
@@ -1105,14 +1130,21 @@ pub fn wire(window: &adw::ApplicationWindow) {
             let owned = name.to_string();
             button.connect_clicked(move |_| match owned.as_str() {
                 "add-image-button" => {
-                    let next = format!("project:produce/publish/frame-{}.jpg", read_state().frames.len() + 1);
+                    // The stand-in for the file chooser: a real extracted frame when the session has one, so
+                    // the row gains a picture the crop and the request can open (`produce_slots::real_frame_entry`).
+                    // With nothing extracted there is no chooser to answer, but §A's Add image still hands a
+                    // picture back — the row takes the next name it would have shown. A slot's Change… is
+                    // stricter (it swaps one picture for another, and with nothing on disk it refuses with
+                    // NO_FRAME_TO_ADD); an empty row has nothing to swap, only something to add.
+                    let next = crate::ui::produce_slots::real_frame_entry()
+                        .unwrap_or_else(|| format!("project:produce/publish/frame-{}.jpg", read_state().frames.len() + 1));
                     press_add_image(&w, &next);
                 }
                 "title-suggest" => {
                     press_suggest(&w);
                 }
                 "thumbnail-export" => {
-                    press_export_thumbnail(&w, 1024 * 1024);
+                    press_export_thumbnail(&w);
                 }
                 "thumbnail-redraw" => {
                     press_redraw_thumbnail(&w, true);
@@ -1270,8 +1302,8 @@ pub(crate) fn draw_into(s: &ProduceState) {
         set_thumbnail: std::rc::Rc::new(|w, i| {
             press_set_thumbnail(w, i);
         }),
-        // Change… stands in for the file chooser with a name synthesised at press time, just as
-        // ＋ Add image does; `next_stood_in` counts presses so a repeat press still moves the picture.
+        // Change… stands in for the file chooser by naming the newest frame the session holds, or a
+        // synthesised one when nothing is extracted: the slot always ends up holding a different picture.
         change: std::rc::Rc::new(|w, i| {
             let stood_in_for = crate::ui::produce_slots::next_stood_in();
             press_change_image(w, i, &stood_in_for);

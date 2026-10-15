@@ -335,7 +335,10 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s6_tran
     assert_eq!(merged.still_missing, vec![2]);
     assert_eq!(merged.lines.len(), 2);
     let warning = merged.warning.expect("the log names what stayed untranslated");
-    assert_eq!(warning, "!!! subtitles: de: line(s) 2 stayed in the original");
+    // The wording is §6's, spelled by `produce_subtitles::left_in_original_log` and pinned there and in
+    // `tests/produce_rules.rs`; this check is that the merge warns at all and names the number.
+    assert!(warning.contains("subtitles: de"), "{warning}");
+    assert!(warning.contains('2'), "the line number is named: {warning}");
 
     // Only a complete track is cached: a partial answer cached is a partial answer forever.
     assert!(subs::cached(true));

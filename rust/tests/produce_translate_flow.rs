@@ -41,6 +41,10 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 // ---- logic helpers -------------------------------------------------------------------------------
 
+/// A log sink for checks that do not care what the translation walk said: the wording itself is pinned by
+/// `tests/produce_rules.rs`, these tests are about the track it returns.
+fn ignore_log(_: &str) {}
+
 /// A track of `n` cues, each text distinct, all at the bottom (`pos` empty means the player's default).
 fn cues(n: usize) -> Vec<subs::Cue> {
     (0..n)
@@ -139,7 +143,7 @@ fn f5_4_s3_a_ticked_language_gets_translated_cues_not_the_original() {
     let original = cues(3);
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked = trans::track(&original, "English", &ticked(&["German"]), &ask);
+    let tracked = trans::track(&original, "English", &ticked(&["German"]), &ask, ignore_log);
 
     assert_eq!(tracked.len(), 1, "one ticked language, one track");
     let german = &tracked[0];
@@ -170,13 +174,13 @@ fn f5_4_s3_150_lines_is_one_request_and_151_is_two() {
 
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked = trans::track(&cues(150), "English", &ticked(&["German"]), &ask);
+    let tracked = trans::track(&cues(150), "English", &ticked(&["German"]), &ask, ignore_log);
     assert_eq!(asks.count(), 1, "a full 150-line track asked once");
     assert_eq!(tracked[0].missing.len(), 0);
 
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked = trans::track(&cues(151), "English", &ticked(&["German"]), &ask);
+    let tracked = trans::track(&cues(151), "English", &ticked(&["German"]), &ask, ignore_log);
     assert_eq!(asks.count(), 2, "151 lines asked twice, one per batch");
     // The second batch keeps the TRACK's numbers: line 151 is asked for as 151, never as 1.
     assert_eq!(asks.numbers_at(1), vec![151], "second batch asked for line 151 by its own number");
@@ -194,7 +198,7 @@ fn f5_4_s3_a_missing_number_is_asked_once_more_with_its_original_number() {
     seq.push(vec![]); // the re-ask answers everything it is named
     let _asks = Asks::default();
     let ask = asks.answer_sequence(seq);
-    let tracked = trans::track(&original, "English", &ticked(&["German"]), &ask);
+    let tracked = trans::track(&original, "English", &ticked(&["German"]), &ask, ignore_log);
 
     assert_eq!(asks.count(), 2, "one batch, one refusal of line 2, so exactly one re-ask");
     assert_eq!(asks.numbers_at(1), vec![2], "the re-ask named line 2 by the number it was given");
@@ -217,7 +221,7 @@ fn f5_4_s3_still_missing_ships_the_original_with_a_warning_and_caches_nothing() 
     // A closure that never answers line 2, in either round.
     let asks = Asks::default();
     let ask = asks.answer_skipping(vec![2, 2]);
-    let tracked = trans::track(&original, "English", &ticked(&["German"]), &ask);
+    let tracked = trans::track(&original, "English", &ticked(&["German"]), &ask, ignore_log);
     // The second round only re-asked 2 and skipped it again.
     assert_eq!(asks.numbers_at(1), vec![2]);
 
@@ -252,7 +256,7 @@ fn f5_4_s3_the_session_language_is_track_zero_and_never_asked() {
     let asks = Asks::default();
     let ask = asks.answer_all();
     let tracked =
-        trans::track(&cues(3), "English", &ticked(&["English", "German"]), &ask);
+        trans::track(&cues(3), "English", &ticked(&["English", "German"]), &ask, ignore_log);
     assert_eq!(tracked.len(), 1, "only the translated language gets a track here");
     assert_eq!(tracked[0].language, "German");
     assert_eq!(asks.count(), 1, "exactly one ask for the whole run");
@@ -265,7 +269,7 @@ fn f5_4_s3_the_session_language_is_track_zero_and_never_asked() {
     // Ticked with nothing but its own language: the walk does nothing at all and dials nobody.
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked = trans::track(&cues(3), "English", &ticked(&["English"]), &ask);
+    let tracked = trans::track(&cues(3), "English", &ticked(&["English"]), &ask, ignore_log);
     assert!(tracked.is_empty(), "the session's own language is not a translation target");
     assert_eq!(asks.count(), 0, "no ask was made for the session's own language");
 }
@@ -288,7 +292,7 @@ fn f5_4_s3_the_placement_tag_goes_stripped_and_comes_back_attached() {
     );
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked = trans::track(&[top.clone()], "English", &ticked(&["German"]), &ask);
+    let tracked = trans::track(std::slice::from_ref(&top), "English", &ticked(&["German"]), &ask, ignore_log);
     assert!(
         !asks.message_at(0).contains(r"\an8"),
         "the message carried no tag: {:?}",
@@ -318,7 +322,7 @@ fn f5_4_s3_the_placement_tag_goes_stripped_and_comes_back_attached() {
             .filter_map(|number| answers.get(number).cloned().map(|text| (*number, text)))
             .collect::<BTreeMap<usize, String>>())
     });
-    let tracked = trans::track(&cues(1), "English", &ticked(&["German"]), &*scripted);
+    let tracked = trans::track(&cues(1), "English", &ticked(&["German"]), &*scripted, ignore_log);
     assert_eq!(
         tracked[0].cues[0].text, wanted,
         "the model's own break survived — a re-wrap at 42 would have moved it"

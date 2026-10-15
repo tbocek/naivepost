@@ -960,6 +960,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // runs when the page is entered, orphans a line whose clip no longer exists (and an orphaned
             // line reads as one the cut threw away). A snapshot that wants four rows therefore has to show
             // four kept clips, which is what §1's image shows too.
+            state.length = state
+                .entries
+                .iter()
+                .map(|entry| entry.e - entry.s)
+                .sum::<f64>();
             state.segs = state
                 .entries
                 .iter()
@@ -974,7 +979,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             state.takes = vec![(1.0, 6.0)];
             state.pitch = 0.0;
             state.clips = 4;
-            state.length = 480.0;
+            // §1's shot shows what ▶ would still have to fix, and the row's own red warning was drawn in
+            // the shot while the Inputs row stayed bare -- the two read the same counts, so the shot must
+            // publish them. `shell::refit` is what a live page gets these from; a seeded shot has to state
+            // them, exactly as it states the entries and the segs above.
+            state.unwritten = 1;
+            state.off_cut = 1;
             state.has_cut = true;
             state.has_timeline = true;
             state.narrators = 1;

@@ -436,7 +436,9 @@ fn sec_12_decisions_narrate_and_produce_s38_an_untranslated_line_keeps_its_origi
     assert_eq!(merged.lines[1], "departure", "kept, because dropping a track for one line is worse");
     assert_eq!(merged.still_missing, vec![2, 3]);
     let warning = merged.warning.expect("and it is named, not silent");
-    assert!(warning.contains("stayed in the original"), "{warning}");
+    // §6's wording ("N line(s) left in the original (line 7, 92)") is spelled by `produce_subtitles` and
+    // pinned there; what this decision pins is that the numbers are said and the track still ships.
+    assert!(warning.contains("left in the original"), "{warning}");
     assert!(warning.contains("2, 3"), "both numbers, so a reader knows which line: {warning}");
 
     // A complete batch has nothing to warn about, and completeness is also what earns a cache place.

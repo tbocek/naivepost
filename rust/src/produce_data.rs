@@ -133,6 +133,45 @@ pub fn clip_path(tree: &Tree, no: usize, stamp: &str, container: &str) -> PathBu
 
 // --- the three groups, read off the disk ---------------------------------------------
 
+/// §6's five extras in `produce/clips/`, next to §3's four. §3's line names "encodes, final.srt,
+/// final.<code>.srt, concat.txt" and stops; §6 (`Details confirmed against the code`) adds what a run
+/// actually lays there — one burn-cue sheet per clip, one generated title document per text cue, a written
+/// copy of any parameterised static card, a `.frames/` folder per baked animation, and the stream-copy
+/// join — all cleared at the start of every render like §3's four. Spelled with the same placeholders as
+/// [`crate::produce_details::SCRATCH_KINDS`] so the two lists cannot drift: that const is §6's own words,
+/// this one is those entries under the `clips/` prefix §3 uses.
+pub const CLIPS_EXTRA: [&str; 5] = [
+    "clips/c%03d_<stamp>.srt",
+    "clips/c%03d_t%02d.svg",
+    "clips/<card copy>.svg",
+    "clips/<name>.frames/",
+    "clips/joined.<container>",
+];
+
+/// Every file `produce/` holds, §3 first and then §6's additions: what a caller reads when it wants the
+/// folder described completely rather than by the spec's shortest line. The program's own caller is
+/// [`crate::produce_exec`]'s scratch sweep, which clears exactly these `clips/` groups at the start of a
+/// render, so the list a person can read out of the spec and the list the run honours are the same data.
+pub fn catalogue() -> Vec<&'static str> {
+    DATA_FILES.iter().chain(CLIPS_EXTRA.iter()).copied().collect()
+}
+
+/// How many of [`catalogue`]'s entries live in `clips/` — the count §6's "cleared at the start of every
+/// render" sweeps. [`crate::produce_exec`] logs it on the S1 line so the log names how many kinds of scratch
+/// file the sweep covers instead of only how many files happened to be there.
+pub fn scratch_groups() -> usize {
+    catalogue().iter().filter(|entry| kind(entry) == Kind::Scratch).count()
+}
+
+/// The S1 line: what the sweep covered and what it found. Program's own caller is
+/// [`crate::produce_exec::walk`], which logs this after clearing `produce/clips/`.
+pub fn scratch_clear_log(groups: usize, gone: usize) -> String {
+    format!(
+        "    produce: cleared {gone} file(s) from {} \u{2014} {groups} kinds of scratch file",
+        SCRATCH
+    )
+}
+
 /// Which of §3's groups exist in this project right now, as entries of [`DATA_FILES`] — the empty
 /// string for none. Nothing is created or deleted here: it only reports, so a caller (and a test)
 /// can tell a project that has never been rendered from one whose render was cancelled halfway.

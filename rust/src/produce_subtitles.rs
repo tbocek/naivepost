@@ -508,17 +508,40 @@ pub fn merge(language: &str, original: &[(usize, String)], got: &BTreeMap<usize,
             }
         }
     }
-    let warning = (!still_missing.is_empty()).then(|| {
-        format!(
-            "!!! subtitles: {language}: line(s) {} stayed in the original",
-            still_missing
-                .iter()
-                .map(|number| number.to_string())
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
-    });
+    let warning = (!still_missing.is_empty()).then(|| left_in_the_original(language, &still_missing));
     Merge { lines, still_missing, warning }
+}
+
+/// §08 §6's own wording for the numbers that never came back, spelled once so the run's log and the spec say
+/// the same sentence: `!!! subtitles: <lang>: N line(s) left in the original (line 7, 92) -- the rest of the
+/// track is good`. The tail matters — the track shipped, and saying only what went wrong would read as a failure.
+pub fn left_in_the_original(language: &str, numbers: &[usize]) -> String {
+    format!(
+        "!!! subtitles: {language}: {} line(s) left in the original ({}) -- the rest of the track is good",
+        numbers.len(),
+        numbered_inline(numbers)
+    )
+}
+
+/// §08 §6's re-ask line: `>>> subtitles: <lang> came back missing line 7, 64, 92 -- asking again for N
+/// line(s)`. Said BEFORE the second call, so a slow second round is explained while it is running rather than after.
+pub fn came_back_missing(language: &str, numbers: &[usize]) -> String {
+    format!(
+        ">>> subtitles: {language} came back missing line {} -- asking again for {} line(s)",
+        numbered_inline(numbers),
+        numbers.len()
+    )
+}
+
+/// §08 §6's cache line, said when a complete cached track answered instead of the model: the person learns the
+/// minute they expected to wait did not happen, and why.
+pub fn from_cache_log(language: &str) -> String {
+    format!(">>> subtitles: {language} came from the cache -- the same lines were translated before")
+}
+
+/// A list of line numbers as §6 writes them inside parentheses: `line 7, 92`.
+fn numbered_inline(numbers: &[usize]) -> String {
+    numbers.iter().map(usize::to_string).collect::<Vec<String>>().join(", ")
 }
 
 /// S3 (`cached only when complete`): a partial answer cached is a partial answer forever — the next run sees

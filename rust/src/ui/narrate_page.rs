@@ -277,7 +277,10 @@ pub fn build() -> gtk::Widget {
     let take_add = gtk::Button::from_icon_name(narrate_screen::ADD_LINE_ICON);
     take_add.set_widget_name("take-add");
     take_add.set_tooltip_text(Some(narrate_details::take_add_hint()));
-    let take_remove = gtk::Button::with_label("\u{ff0d}");
+    // §1's Prototype note: the − is an icon, not U+FF0D — that sign is CJK-only and draws as a missing-glyph
+    // box without one, like the ＋ beside it. The tooltip keeps the prototype's wording (§6 spells its
+    // sentences with those glyphs), so the icon name lives here rather than in that string.
+    let take_remove = gtk::Button::from_icon_name(narrate_screen::TAKE_REMOVE_ICON);
     take_remove.set_widget_name("take-remove");
     take_remove.set_tooltip_text(Some(narrate_details::take_remove_hint()));
     let take_play = gtk::Button::with_label("\u{25b6}");

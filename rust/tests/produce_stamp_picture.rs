@@ -301,6 +301,24 @@ fn walk_once(tree: &Tree, instruction: &str, images: &[String], own: bool) -> Ru
         stored_stamp: stored,
         write_stamp: &write_stamp,
         edited_by_hand: false,
+        // S3/S6: the media legs. This file asks the STAMP's question, not the crop's, so the legs stand for
+        // "a session with a real folder" without an ffmpeg: the row's entries arrive as URLs of their own
+        // bytes, and a chosen frame is written as the plain picture from whatever is on disk already.
+        request_images: &|publish: &naivepost::project::Publish| {
+            naivepost::produce_upload_media::Sent {
+                base: (!publish.frames.is_empty()).then(|| "data:image/png;base64,".to_string()),
+                urls: if !publish.frames.is_empty() {
+                    vec!["data:image/png;base64,".to_string()]
+                } else {
+                    Default::default()
+                },
+                base_name: publish.frames.first().cloned().unwrap_or_default(),
+                crop_percent: 100,
+                centre: (0.5, 0.5),
+                skipped: Vec::new(),
+            }
+        },
+        own_picture: &|_publish: &naivepost::project::Publish| Ok(()),
     };
     let outcome = up::walk(
         "THE BRIEF",

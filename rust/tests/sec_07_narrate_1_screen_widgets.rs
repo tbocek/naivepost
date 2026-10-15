@@ -28,6 +28,9 @@ static RAN_POINTER: AtomicBool = AtomicBool::new(false);
 static RAN_SCROLLBAR: AtomicBool = AtomicBool::new(false);
 static RAN_FRAME_STEP: AtomicBool = AtomicBool::new(false);
 static RAN_BAND_SHOWN: AtomicBool = AtomicBool::new(false);
+static RAN_GLYPHS: AtomicBool = AtomicBool::new(false);
+static RAN_NUMBERED_WIDGETS: AtomicBool = AtomicBool::new(false);
+static RAN_INPUTS_READOUT: AtomicBool = AtomicBool::new(false);
 
 /// A session folder of our own, so nothing this test writes lands in a real project or another test's.
 fn scratch_root(tag: &str) -> std::path::PathBuf {
@@ -329,6 +332,7 @@ fn round(app: &adw::Application) {
     // because GTK binds to the first thread that initialises it: a second application on a second test
     // thread dies at once. `second_round` is its own function so the two groups stay readable.
     second_round(app);
+    third_round(app);
 }
 
 /// How many distinct opaque colours an image holds: one flat CSS plate answers 1.
@@ -427,6 +431,15 @@ fn sec_07_narrate_1_screen_widgets_the_band_and_add_file_reach_their_rules() {
     assert!(RAN_SCROLLBAR.load(Ordering::SeqCst), "the scrollbar check never ran");
     assert!(RAN_FRAME_STEP.load(Ordering::SeqCst), "the frame-step check never ran");
     assert!(RAN_BAND_SHOWN.load(Ordering::SeqCst), "the band-visibility check never ran");
+    assert!(RAN_GLYPHS.load(Ordering::SeqCst), "the take row's glyph check never ran");
+    assert!(
+        RAN_NUMBERED_WIDGETS.load(Ordering::SeqCst),
+        "the numbered-widget sweep never ran"
+    );
+    assert!(
+        RAN_INPUTS_READOUT.load(Ordering::SeqCst),
+        "the Inputs readout check never ran"
+    );
 }
 
 // --- S7/S8 + §A.7 visibility: the pointer, the scrollbar, the frame step ---------
@@ -641,6 +654,256 @@ fn second_round(app: &adw::Application) {
         window.close();
         settle();
     }
+}
+
+// --- §1's numbered widgets, the take row's glyph, and the Inputs readout -----------
+
+/// The page's own widget lookups, so a missing control fails with its §1 number rather than a bare panic.
+fn found(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
+    naivepost::ui::find_source_widget(window, name)
+        .unwrap_or_else(|| panic!("the Narrate page drew no `{name}`"))
+}
+
+fn tip_of(widget: &gtk::Widget) -> String {
+    widget.tooltip_text().unwrap_or_default().to_string()
+}
+
+fn label_of(button: &gtk::Widget) -> String {
+    button
+        .downcast_ref::<gtk::Button>()
+        .and_then(|b| b.label().map(String::from))
+        .unwrap_or_default()
+}
+
+fn text_of(widget: &gtk::Widget) -> String {
+    if let Some(entry) = widget.downcast_ref::<gtk::Entry>() {
+        return entry.text().to_string();
+    }
+    widget
+        .downcast_ref::<gtk::Label>()
+        .map(|l| l.text().to_string())
+        .unwrap_or_default()
+}
+
+/// **s9** — the take row's − is an icon, not a CJK-only sign, and its press still removes the dragged span.
+///
+/// §1's Prototype note rejects U+FF0B because only CJK fonts carry it; U+FF0D was the same hazard on this
+/// row. The check is on the BUILT button (what the user sees), and the removal goes through the real click
+/// so the icon swap cannot have broken the wire.
+fn s9_glyph_round(app: &adw::Application) {
+    let window = narrate_page(app, base_state());
+    let gesture = ui::narrate_band::band_gesture_for_test(&window).expect("the band gesture");
+    // Make a take first, by dragging and pressing the real ＋, so there is something to take away.
+    ui::narrate_band::clear_hand();
+    gesture.emit_by_name::<()>("drag-begin", &[&100.0f64, &20.0f64]);
+    gesture.emit_by_name::<()>("drag-update", &[&400.0f64, &20.0f64]);
+    gesture.emit_by_name::<()>("drag-end", &[&400.0f64, &20.0f64]);
+    settle();
+    let wanted = ui::narrate_band::live_selection().expect("a dragged span");
+    click(&window, "take-add");
+    settle();
+    assert_eq!(ui::read_state().takes.len(), 1, "\u{ff0b} made one take");
+
+    let remove = found(&window, "take-remove");
+    assert_eq!(
+        label_of(&remove),
+        "",
+        "the \u{2212} button draws an icon, not a full-width CJK-only label"
+    );
+    assert!(
+        !tip_of(&remove).is_empty(),
+        "the \u{2212} keeps its tooltip even without a text label"
+    );
+    // And the icon name is one this theme actually carries (bare `list-remove` resolves to nothing here).
+    assert_eq!(
+        naivepost::narrate_screen::TAKE_REMOVE_ICON,
+        "list-remove-symbolic"
+    );
+    click(&window, "take-remove");
+    settle();
+    assert!(
+        ui::read_state().takes.is_empty(),
+        "the icon button's press still removed the dragged span {wanted:?}"
+    );
+    RAN_GLYPHS.store(true, Ordering::SeqCst);
+    eprintln!("SEC07-1 s9 (take row glyph + real minus press) done");
+    window.close();
+    settle();
+}
+
+/// **s10** — every widget §1 numbers **1**-**22** is on the built page, carrying its wording. A loop, so a
+/// control that was never built (or lost its tooltip when it grew an icon face) fails by its number.
+fn s10_widgets_round(app: &adw::Application) {
+    let mut state = base_state();
+    // One written line and one caption, so the row's own parts (**14**, **16**-**21**) exist to be found.
+    state.entries = vec![
+        naivepost::narration::Entry { s: 0.0, e: 30.0, at: 1.0, text: "one spoken line".into(), ..Default::default() },
+        naivepost::narration::Entry { s: 30.0, e: 60.0, at: 0.0, text: "a caption".into(), pos: "top".into(), ..Default::default() },
+    ];
+    state.clips = 2;
+    let window = narrate_page(app, state);
+
+    // **1**-**13**: the left column, in §1's order, each checked for the thing §1 says it shows.
+    assert_eq!(
+        text_of(&found(&window, "sample-sentence")),
+        narrate_screen::DEFAULT_SAMPLE,
+        "**11** the sample sentence carries §1's default wording verbatim"
+    );
+    assert!(
+        tip_of(&found(&window, "voice-picker")).starts_with("Who speaks the narration"),
+        "**7** the voice picker's tooltip is §1's sentence"
+    );
+    assert_eq!(
+        tip_of(&found(&window, "voice-add-file")),
+        "Copy one recording into the voices folder and use it",
+        "**9** Add file\u{2026} says what it does"
+    );
+    for name in [
+        "narration-tick",      // **1**
+        "narrate-preview",     // **2**
+        "narrate-picture",     // **2**'s frame
+        "narrate-back-3s",     // **3**
+        "narrate-play",        // **3**
+        "narrate-forward-3s",  // **3**
+        "narrate-add-line",    // **4**
+        "narrate-slider",      // **5**
+        "narrate-clock",       // **5**
+        "narrate-volume",      // **6**
+        "voice-picker",        // **7**
+        "take-add",            // **8**
+        "take-remove",         // **8**
+        "take-play",           // **8**
+        "voice-add-file",      // **9**
+        "sample-sentence",     // **11**
+        "sample-play",         // **12**
+        "sample-stop",         // **12**
+        "sample-reroll",       // **12**
+        "pitch-slider",        // **13**
+        "narrate-lines",       // the rows below
+        "narrate-inputs",      // **22**
+    ] {
+        let widget = found(&window, name);
+        assert!(widget.is_visible(), "`{name}` is drawn, not hidden away");
+    }
+    // **10** the take band: its lane is on the page but stays hidden until the voice has a recording to
+    // draw across (§A.7), so it is checked by presence, not with the visible ones above.
+    assert!(found(&window, "take-band").upcast_ref::<gtk::Widget>().parent().is_some());
+    // **3** the transport's three buttons are clickable buttons, not labels.
+    for name in ["narrate-back-3s", "narrate-play", "narrate-forward-3s"] {
+        assert!(
+            found(&window, name).downcast_ref::<gtk::Button>().is_some(),
+            "`{name}` is a button the toolkit can click"
+        );
+    }
+    // **5** the clock reads "session · cut/length": one separator, then position over length.
+    let clock = text_of(&found(&window, "narrate-clock"));
+    assert_eq!(
+        (clock.matches('\u{b7}').count(), clock.matches('/').count()),
+        (1, 1),
+        "**5** the clock is \"session · cut/length\": {clock:?}"
+    );
+    // **13** pitch spans ±6 semitones.
+    let pitch = found(&window, "pitch-slider")
+        .downcast::<gtk::Scale>()
+        .expect("`pitch-slider` is a scale");
+    assert_eq!((pitch.adjustment().lower(), pitch.adjustment().upper()), (-6.0, 6.0));
+    assert!(
+        tip_of(&found(&window, "pitch-slider")).contains("reference"),
+        "**13** the pitch slider explains itself"
+    );
+
+    // **14**-**21**: row 0's parts. The time field, the status, the four row buttons and the text box.
+    assert_eq!(
+        text_of(&found(&window, "line-time-0")),
+        narrate_screen::time_field(1.0),
+        "**14** the time field shows the line's second on the session clock"
+    );
+    assert!(
+        !text_of(&found(&window, "line-status-0")).is_empty(),
+        "**15** the status says when the line ends"
+    );
+    for suffix in ["speak", "reroll", "remove"] {
+        let name = format!("line-{suffix}-0");
+        assert!(
+            found(&window, &name).downcast_ref::<gtk::Button>().is_some(),
+            "`{name}` is a real button (**16**, **17**, **19**)"
+        );
+    }
+    assert!(
+        found(&window, "line-add-below-0").is_visible(),
+        "**18** \u{ff0b} a line below"
+    );
+    assert_eq!(
+        text_of(&found(&window, "line-text-1")),
+        "[top] a caption",
+        "**20** a caption prints its placement tag in the box"
+    );
+    // **21** the fit warning exists as its own widget per row (empty where the line fits).
+    assert!(
+        found(&window, "line-warning-0").is_visible(),
+        "**21** the fit warning has a place on every row"
+    );
+    RAN_NUMBERED_WIDGETS.store(true, Ordering::SeqCst);
+    eprintln!("SEC07-1 s10 (numbered widgets 1-22) done");
+    window.close();
+    settle();
+}
+
+/// **s11** — the Inputs readout on the built page prints §1's sentences, both of them, from the state the
+/// shell publishes rather than from a string the test wrote.
+fn s11_inputs_round(app: &adw::Application) {
+    let mut stale = base_state();
+    stale.clips = 4;
+    stale.length = 195.0;
+    stale.unwritten = 1;
+    stale.off_cut = 2;
+    stale.has_cut = true;
+    stale.has_timeline = true;
+    let window = narrate_page(app, stale);
+    assert_eq!(
+        text_of(&found(&window, "narrate-inputs")),
+        "4 clip(s) \u{b7} 03:15 \u{b7} \u{26a0} 1 clip(s) unwritten, 2 line(s) off the cut",
+        "**22** the row spells the two counts \u{26a0} marks"
+    );
+    window.close();
+    settle();
+
+    let mut quiet = base_state();
+    quiet.clips = 4;
+    quiet.length = 195.0;
+    quiet.unwritten = 0;
+    quiet.off_cut = 0;
+    quiet.has_timeline = false;
+    let window = narrate_page(app, quiet);
+    assert_eq!(
+        text_of(&found(&window, "narrate-inputs")),
+        "4 clip(s) \u{b7} 03:15 \u{b7} no timeline",
+        "**22** a missing timeline is named on the row"
+    );
+    window.close();
+    settle();
+
+    let mut none = base_state();
+    none.has_cut = false;
+    none.clips = 0;
+    none.length = 0.0;
+    let window = narrate_page(app, none);
+    assert_eq!(
+        text_of(&found(&window, "narrate-inputs")),
+        "no cut yet \u{2014} build one on the Cut step",
+        "**22** with no cut the row says where to make one"
+    );
+    RAN_INPUTS_READOUT.store(true, Ordering::SeqCst);
+    eprintln!("SEC07-1 s11 (Inputs readout) done");
+    window.close();
+    settle();
+}
+
+/// The three checks above run as stages of the same application (see the note on `round`).
+fn third_round(app: &adw::Application) {
+    s9_glyph_round(app);
+    s10_widgets_round(app);
+    s11_inputs_round(app);
 }
 
 /// A tiny valid mono 16-bit PCM wav: enough header for `voice_ref::wav_header` and enough bytes for

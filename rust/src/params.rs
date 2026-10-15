@@ -1204,6 +1204,13 @@ pub fn produce() -> Vec<Param> {
         param("P.policy.publishFrames", produce_screen::FIRST_IMAGES.to_string(), "produce_screen::FIRST_IMAGES"),
         param("P.eng.publishMaxFrames", produce_screen::MAX_IMAGES.to_string(), "produce_screen::MAX_IMAGES"),
         param("P.machine.briefMaxChars", produce_upload::BRIEF_MAX_CHARS.to_string(), "produce_upload::BRIEF_MAX_CHARS"),
+        // --- §4's engineering sentence: values §10 keeps in prose, so each takes the bare `produce.` prefix
+        // and spells itself out of the constant or function its rule reads (`params_produce` builds the spelling).
+        param("produce.exportLadder", crate::params_produce::export_ladder(), "produce_runs::JPEG_QUALITIES + JPEG_RETRY_LIMIT"),
+        param("produce.posterJPEGQuality", crate::params_produce::poster_quality(), "produce_embed::POSTER_JPEG_QUALITY + POSTER_QSCALE"),
+        param("produce.sdWaitSeconds", crate::params_produce::sd_timeouts(), "bodies::sd_waits"),
+        param("produce.seekBeforeInput", crate::params_produce::seek_rule(), "produce_render::SEEK_FLAG + INPUT_FLAG"),
+        param("produce.mp4StreamFlags", crate::params_produce::mp4_flags(), "produce_render::MP4_STREAM_FLAGS + MP4_START_FLAGS"),
     ]
 }
 

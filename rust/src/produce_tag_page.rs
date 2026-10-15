@@ -67,20 +67,34 @@ pub fn build_and_write(
     make_poster: &MakePoster,
     mut log: impl FnMut(&str),
 ) -> TagPage {
-    let (_, jpg, html) = embed::paths(tree, container);
+    let (video, jpg, html) = embed::paths(tree, container);
 
     // 1. The poster: JPEG 90 off the thumbnail the words half drew. No thumbnail is said quietly and the
     //    tag goes out without a `poster=` — a page with no picture still plays.
-    let thumbnail = tree.thumbnail_png();
-    let poster = if !thumbnail.is_file() {
-        log(&embed::no_poster_log(embed::no_poster_reason()));
-        false
-    } else {
-        match make_poster(&embed::poster_command(&thumbnail, &jpg)) {
+    //    §F5.5 names THE THUMBNAIL as the poster's source, and the run can leave either of its two files on
+    //    disk: `thumbnail.png`, which is the printed picture (§F5.6 S7), or only `thumbnail-plain.png`,
+    //    which is what the draw leg saves before any words go on it (§F5.6 S6). The plain one is the same
+    //    frame without the lettering, so it is a legitimate poster and the page should not lose its picture
+    //    just because the print pass did not run. Only when NEITHER exists is there no poster at all.
+    let printed = tree.thumbnail_png();
+    let plain = tree.thumbnail_plain_png();
+    // `Option`, not a path that does not exist: "no poster" must be an answer the type carries, so the leg
+    // below cannot be reached with a made-up file name.
+    let source = match (printed.is_file(), plain.is_file()) {
+        (true, _) => Some(printed),
+        (false, true) => Some(plain),
+        (false, false) => None,
+    };
+    let poster = match &source {
+        None => {
+            log(&embed::no_poster_log(embed::no_poster_reason()));
+            false
+        }
+        Some(from) => match make_poster(&embed::poster_command(from, &jpg)) {
             // Ok alone is not enough: the file has to be there for `poster="final.jpg"` to be true.
             Ok(()) => jpg.is_file(),
             Err(_) => false,
-        }
+        },
     };
 
     // 2. The tracks: whatever `.vtt` files are beside the video, read off the folder rather than out of
@@ -89,9 +103,11 @@ pub fn build_and_write(
     let folder = jpg.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
     let tracks = embed::tracks(&embed::list_vtt(&folder), own_language, known);
 
-    // 3. The page itself: the bare tag, base names only.
+    // 3. The page itself: the bare tag, base names only. `src=` names the video THIS run wrote — `paths`
+    //    already resolved it against the chosen container, so an mkv or webm render gets a `src=` that
+    //    points at a file that exists instead of a hardcoded mp4 nobody made.
     let body = embed::tag(
-        &base(&tree.final_video("mp4")),
+        &base(&video),
         poster.then(|| base(&jpg)).as_deref(),
         &tracks,
     );
