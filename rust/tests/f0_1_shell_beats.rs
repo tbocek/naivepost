@@ -16,6 +16,9 @@ use naivepost::shell::{self, NARRATION_AUTOSAVE};
 use naivepost::startup;
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 /// What the seeded line says, so the box assertion names the same bytes.
 const BEFORE: &str = "written before the window existed";
 
@@ -80,14 +83,13 @@ fn check_autosave_beat(app: &adw::Application) {
     let entry = line_entry(&window, 0);
     assert_eq!(entry.text(), BEFORE, "the box starts from the file");
     entry.set_text(typed);
-    step_past_beat();
-    assert!(typed_written(&tree, "half-typed"), "the timer wrote on the beat; the box says {:?}", entry.text());
+    // The beat's moment is on this module's clock; the timer that asks about it is a real one.
+    ui::shell_beats::advance_clock_for_test(NARRATION_AUTOSAVE);
+    let shown = entry.text();
+    common::wait_until(&format!("the timer's write on the beat (the box says {shown:?})"), || {
+        typed_written(&tree, "half-typed")
+    });
     let _ = std::fs::remove_dir_all(&dir);
-}
-/// Past the beat in short steps, running the loop: the standing timer's `writable` answer decides the write.
-fn step_past_beat() {
-    let ctx = glib::MainContext::default();
-    for _ in 0..32 { ui::shell_beats::advance_clock_for_test(NARRATION_AUTOSAVE / 32); ctx.iteration(true); }
 }
 /// The row's live box; setting its text is what makes `changed` run, as a keystroke does.
 fn line_entry(window: &adw::ApplicationWindow, index: usize) -> gtk::Entry {

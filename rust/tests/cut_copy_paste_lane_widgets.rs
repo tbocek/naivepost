@@ -353,6 +353,7 @@ fn window_round() {
 
 #[test]
 fn f2_9_s1_s2_s3_copy_paste_and_lane_reach_the_window_through_real_widgets() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_SHORT.load(Ordering::SeqCst), "the short-selection check never ran");
     assert!(RAN_TAKEN.load(Ordering::SeqCst), "the taken-in-hand check never ran");

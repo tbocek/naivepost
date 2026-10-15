@@ -542,7 +542,7 @@ fn ffmpeg_stub(root: &Path) -> (PathBuf, PathBuf) {
     std::fs::create_dir_all(&bin).unwrap();
     let stub = bin.join("ffmpeg");
     let log = bin.join("argv.log");
-    std::fs::write(
+    common::write_script(
         &stub,
         format!(
             "#!/bin/sh\nlast=\"\"\nfor arg in \"$@\"; do last=\"$arg\"; printf '%s\\n' \"$arg\" >> '{}'; done\nprintf 'x' > \"$last\"\n",

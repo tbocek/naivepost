@@ -23,6 +23,9 @@ use naivepost::layout::Tree;
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::services;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 /// A per-test temp folder plus the `Paths` that point at it, so nothing here reads the real `$HOME`.
 struct Dirs {
     root: PathBuf,
@@ -65,7 +68,7 @@ impl Dirs {
         std::fs::create_dir_all(&bin).expect("the stub's folder");
         let stub = bin.join("ffmpeg");
         let log = bin.join("argv.log");
-        std::fs::write(
+        common::write_script(
             &stub,
             format!(
                 "#!/bin/sh\nlast=\"\"\nfor arg in \"$@\"; do last=\"$arg\"; printf '%s\\n' \"$arg\" >> '{log}'; done\nprintf 'x' > \"$last\"\n",

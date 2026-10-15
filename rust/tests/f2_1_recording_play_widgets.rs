@@ -68,10 +68,10 @@ fn pin_session(tag: &str) -> PathBuf {
 fn fake_player(root: &Path) -> PathBuf {
     let log = root.join("player-argv.txt");
     let script = root.join("fake-player.sh");
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
-            "#!/bin/sh\nprintf '%s ' \"$@\" >> '{}'\nprintf '\\n' >> '{}'\ntrap 'exit 0' TERM INT\nwhile :; do sleep 0.1; done\n",
+            "#!/bin/sh\nprintf '%s ' \"$@\" >> '{}'\nprintf '\\n' >> '{}'\ntrap 'exit 0' TERM INT\ni=0; while [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done\n",
             log.display(),
             log.display()
         ),

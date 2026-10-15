@@ -9,6 +9,9 @@ use naivepost::narrate_data;
 use naivepost::narrate_screen::CAPTIONS;
 use naivepost::voice_ref::{self, Piece, ReferencePlan, VoiceChoice};
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 fn files(names: &[&str]) -> Vec<String> {
     names.iter().map(|n| n.to_string()).collect()
 }
@@ -488,7 +491,7 @@ fn f4_6_s3_the_build_runs_the_configured_binary_and_names_it_when_it_fails() {
     let log = root.join("argv.log");
     // A script that records argv and writes whatever output path was passed last, which is how both
     // ffmpeg passes end here.
-    std::fs::write(
+    common::write_script(
         &fake,
         format!(
             "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '{}'\nfor a in \"$@\"; do out=\"$a\"; done\nprintf 'x' > \"$out\"\n",
@@ -640,7 +643,7 @@ fn fake_ffmpeg(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf
     let script = dir.join("fake-ffmpeg.sh");
     let log = dir.join("argv.log");
     // A script that records argv and writes whatever output path was passed last.
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
             "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '{}'\nfor a in \"$@\"; do out=\"$a\"; done\nprintf 'x' > \"$out\"\n",

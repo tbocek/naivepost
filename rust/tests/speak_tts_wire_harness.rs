@@ -129,11 +129,7 @@ impl FakeAudio {
                 let sender = sender.clone();
                 let script = script.clone();
                 let counters = counters.clone();
-                std::thread::spawn(move || {
-                    if let Some(seen) = serve(stream, &script, &counters) {
-                        let _ = sender.send(seen);
-                    }
-                });
+                std::thread::spawn(move || serve(stream, &script, &counters, &sender));
             }
         });
         FakeAudio { port, received }
@@ -177,11 +173,14 @@ fn take_at(list: &[Reply], index: &AtomicUsize) -> Reply {
     list[step.min(list.len() - 1)].clone()
 }
 
+/// Records the request before it answers: a record sent after the reply let the program's next call,
+/// which follows the answer at once, report first.
 fn serve(
     mut stream: TcpStream,
     script: &Arc<Mutex<Script>>,
     counters: &Arc<[AtomicUsize; 4]>,
-) -> Option<Seen> {
+    received: &mpsc::Sender<Seen>,
+) -> Option<()> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -215,6 +214,7 @@ fn serve(
         headers,
         body: payload,
     };
+    let _ = received.send(seen);
 
     // Which endpoint, which answer. The script is read under the lock so two lines asking at once
     // still spend their entries in order.
@@ -237,7 +237,7 @@ fn serve(
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.write_all(&reply.body);
     let _ = stream.flush();
-    Some(seen)
+    Some(())
 }
 
 fn reason(status: u16) -> &'static str {

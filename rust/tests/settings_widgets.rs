@@ -294,26 +294,26 @@ fn check_test_all_reports_every_kind(app: &adw::Application) {
 /// The most recent line the window logged. Shared thread-local, so callers take the tail rather than
 /// scanning everything earlier checks put there.
 fn last_log() -> String {
-    ui::window_logs()
-        .last()
-        .cloned()
-        .expect("something was logged")
+    common::last_log().expect("something was logged")
 }
 
 #[test]
 fn f0_13_s11_a_press_reads_the_typed_value_and_marks_the_badge_through_the_widgets() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_TYPED.load(Ordering::SeqCst), "the typed-value check never ran");
 }
 
 #[test]
 fn f0_13_s12_a_failure_marks_the_cross_keeps_the_reason_and_opens_the_log() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_FAILED.load(Ordering::SeqCst), "the failure check never ran");
 }
 
 #[test]
 fn f0_13_s13_test_all_reports_every_kind_without_short_circuiting() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_ALL.load(Ordering::SeqCst), "the Test All check never ran");
 }

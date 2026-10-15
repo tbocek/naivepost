@@ -38,6 +38,7 @@ static RAN_REFUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 /// headless test never answers — so nothing is saved and the status line stays quiet.
 #[test]
 fn f0_10_s2_the_save_button_offers_the_project_for_naming() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_OFFER.load(std::sync::atomic::Ordering::SeqCst),
@@ -48,6 +49,7 @@ fn f0_10_s2_the_save_button_offers_the_project_for_naming() {
 /// S1 through the widgets: ▶ starts a run (F0.2), and Save then says why it will not go ahead.
 #[test]
 fn f0_10_s1_save_is_refused_while_a_run_is_on() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_REFUSED.load(std::sync::atomic::Ordering::SeqCst),

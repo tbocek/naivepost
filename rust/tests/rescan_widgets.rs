@@ -64,6 +64,7 @@ fn check_rescan(app: &adw::Application) {
 
 #[test]
 fn f0_11_s1_rescanning_the_window_names_what_it_dropped() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN.load(Ordering::SeqCst), "the application never ran");
     assert!(OK.load(Ordering::SeqCst), "the check never finished");

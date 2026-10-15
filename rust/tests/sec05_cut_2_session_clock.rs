@@ -169,18 +169,21 @@ fn round() {
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_shifted_recording_moves_its_coordinates() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_SHIFTED.load(Ordering::SeqCst), "the shift-moves-coordinates check never ran");
 }
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_conversion_round_trips_around_the_offset() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_ROUNDTRIP.load(Ordering::SeqCst), "the round-trip check never ran");
 }
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s3_a_slided_recording_shows_at_its_new_place() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_WIRE.load(Ordering::SeqCst), "the seeded-shift widget check never ran");
 }

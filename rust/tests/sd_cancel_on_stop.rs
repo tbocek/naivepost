@@ -35,18 +35,18 @@ fn fake_sd(status: &'static str, body: &'static str) -> (String, Receiver<Seen>)
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
             let sender = sender.clone();
-            std::thread::spawn(move || {
-                if let Some(seen) = serve(stream, status, body) {
-                    let _ = sender.send(seen);
-                }
-            });
+            std::thread::spawn(move || serve(stream, status, body, &sender));
         }
     });
     (format!("http://127.0.0.1:{port}"), received)
 }
 
-fn serve(mut stream: TcpStream, status: &str, body: &str) -> Option<Seen> {
-    let seen = serve_inner(&mut stream);
+/// Records the request before it answers: a record sent after the reply let the program's next call,
+/// which follows the answer at once, report first.
+fn serve(mut stream: TcpStream, status: &str, body: &str, seen: &mpsc::Sender<Seen>) {
+    if let Some(request) = serve_inner(&mut stream) {
+        let _ = seen.send(request);
+    }
     let framed = format!(
         "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
@@ -54,7 +54,6 @@ fn serve(mut stream: TcpStream, status: &str, body: &str) -> Option<Seen> {
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    seen
 }
 
 fn serve_inner(stream: &mut TcpStream) -> Option<Seen> {

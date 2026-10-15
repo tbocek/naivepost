@@ -36,7 +36,7 @@ static RAN_BUILD_DOOR: AtomicBool = AtomicBool::new(false);
 fn plant_fake_ffmpeg(root: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
     let script = root.join("fake-ffmpeg.sh");
     let log = root.join("ffmpeg-argv.log");
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
             "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '{}'\nfor a in \"$@\"; do out=\"$a\"; done\nprintf 'x' > \"$out\"\n",

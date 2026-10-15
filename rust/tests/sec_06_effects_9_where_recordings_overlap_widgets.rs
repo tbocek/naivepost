@@ -52,16 +52,18 @@ fn round(app: &adw::Application) {
             .position(|choice| speed::sound_stored(choice) == "own")
             .expect("the form offers the own-clock answer");
         choose(&window, "speed-field-sound", own_row);
+        let before = ui::window::window_logs().len();
         click(&window, "speed-apply-button");
         let cut_ = ui::review_cut_of(&window);
         assert_eq!(cut_.fx.len(), 1, "Apply placed exactly one record");
         assert_eq!(cut_.fx[0].snd, "own", "the sound answer the dropdown was left on");
         // The notice is its OWN line in the log: the placement sentence stays what §F3.3 fixes
-        // and §9's promise is said beside it, not instead of it.
-        let said = ui::window::window_logs();
-        assert_eq!(
-            said.last().map(String::as_str),
-            Some(effect_overlap::says_render_only("own").expect("§9 spells the sentence")),
+        // and §9's promise is said beside it, not instead of it. Among the lines since Apply, not
+        // the last: the autosave writes its own line whenever its beat comes.
+        let notice = effect_overlap::says_render_only("own").expect("§9 spells the sentence");
+        let said = ui::window::window_logs()[before..].to_vec();
+        assert!(
+            said.iter().any(|line| line == notice),
             "the preview says what it cannot do instead of doing it quietly: {said:?}"
         );
         RAN_OWN_NOTICE.store(true, Ordering::SeqCst);
@@ -79,14 +81,12 @@ fn round(app: &adw::Application) {
         mark_band(&window, 20.0, 24.0);
         click(&window, "effect-item-speed");
         choose(&window, "speed-field-rate", speed::rate_index(0.0));
+        let before = ui::window::window_logs().len();
         click(&window, "speed-apply-button");
-        assert_eq!(
-            ui::window::window_logs()
-                .last()
-                .map(String::as_str)
-                .unwrap_or_default(),
-            effect_overlap::no_frame(20.0),
-            "the refusal names the moment and why"
+        let said = ui::window::window_logs()[before..].to_vec();
+        assert!(
+            said.iter().any(|line| *line == effect_overlap::no_frame(20.0)),
+            "the refusal names the moment and why: {said:?}"
         );
         assert!(
             ui::review_cut_of(&window).fx.is_empty(),

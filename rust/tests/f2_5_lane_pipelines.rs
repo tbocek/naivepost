@@ -21,6 +21,9 @@ use naivepost::lane_hear::{self, LaneAction};
 use naivepost::play_back;
 use naivepost::ui::cut_record_tick::{self, RecordingPreviewPage, TablePage};
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 /// A root whose session folder holds one recording per name, plus a fake player that records its argv.
 ///
 /// The script is the shape `tests/f2_1_recording_play_widgets.rs::fake_player` uses — write the arguments
@@ -48,10 +51,10 @@ impl Stage {
         // A fresh argv log per stage: the fake player overwrites it, but a stage that never starts one must
         // find nothing there rather than an earlier run's leftovers.
         let player = root.join("fake-player.sh");
-        std::fs::write(
+        common::write_script(
             &player,
             format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\ntrap 'exit 0' TERM INT\nwhile :; do sleep 0.1; done\n",
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\ntrap 'exit 0' TERM INT\ni=0; while [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done\n",
                 root.join("lane-argv.txt").display()
             ),
         )

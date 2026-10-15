@@ -26,6 +26,9 @@ use naivepost::separate_run;
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::services;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 /// What the fake took: the request line (`POST /v1/tasks/run HTTP/1.1` — one string, so a test matches
 /// the request rather than two of its halves), the `Host:` it came to (which is how a recorded request
 /// is traced back to the one fake that answered it), and the body it carried.
@@ -217,7 +220,7 @@ esac
         ),
     ] {
         let path = dir.join(name);
-        std::fs::write(&path, script).expect("the stub is written");
+        common::write_script(&path, script).expect("the stub is written");
         std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
             .expect("the stub runs");
     }

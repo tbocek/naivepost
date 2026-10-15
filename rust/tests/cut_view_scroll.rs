@@ -29,6 +29,7 @@ fn tape(seconds: f64) -> Vec<Recording> {
 
 #[test]
 fn sec_05_cut_1_screen_s9_the_scrollbar_thumb_is_geared_at_forty_px_per_screenful() {
+    common::pin_private_cwd();
     // §1: "thumb geared at high zoom so one screenful is always 40 px of drag". GTK moves the thumb
     // across the bar's own length, so that travel is the thumb's length in BAR pixels — and that is what
     // must be 40 px, at every zoom and every length.
@@ -74,6 +75,7 @@ fn sec_05_cut_1_screen_s9_the_scrollbar_thumb_is_geared_at_forty_px_per_screenfu
 
 #[test]
 fn sec_05_cut_1_screen_s9_the_scroll_hides_itself_when_the_whole_session_fits() {
+    common::pin_private_cwd();
     // §A: "hidden when everything fits" — a full-width thumb claims there is more to the right.
     let view = 1200.0 - cut_view::gutter_px();
     let short = cut_view::total_px(60.0, 4.0);
@@ -87,6 +89,7 @@ fn sec_05_cut_1_screen_s9_the_scroll_hides_itself_when_the_whole_session_fits() 
 
 #[test]
 fn sec_05_cut_1_screen_s9_a_scroll_stays_inside_the_timeline_at_both_ends() {
+    common::pin_private_cwd();
     let view = 1200.0 - cut_view::gutter_px();
     let total = cut_view::total_px(600.0, 40.0);
     // Past the right end: the last pixel is as far as the hand gets.
@@ -102,6 +105,7 @@ fn sec_05_cut_1_screen_s9_a_scroll_stays_inside_the_timeline_at_both_ends() {
 
 #[test]
 fn sec_05_cut_1_screen_s9_zooming_out_stops_where_the_session_fits_not_at_a_constant() {
+    common::pin_private_cwd();
     // Badge 22's tooltip: "it stops where the whole session is on screen". That number depends on how
     // long THIS session is, which is why the page asks `timeline::floor_pps` over the filmed runs rather
     // than handing the ladder `TRACK_STRIP_PPS` (4.0 whatever the session).
@@ -132,6 +136,7 @@ fn sec_05_cut_1_screen_s9_zooming_out_stops_where_the_session_fits_not_at_a_cons
 
 #[test]
 fn sec_05_cut_1_screen_s9_zooming_around_the_cursor_keeps_that_second_under_it() {
+    common::pin_private_cwd();
     // §A: the wheel zooms "around the cursor". The second under the pointer must stay put, or every
     // zoom is a hunt for the moment you were looking at.
     let view = 1200.0 - cut_view::gutter_px();
@@ -172,6 +177,7 @@ fn sec_05_cut_1_screen_s9_zooming_around_the_cursor_keeps_that_second_under_it()
 
 #[test]
 fn sec_05_cut_1_screen_s9_the_view_only_slips_to_follow_a_line_that_left_it() {
+    common::pin_private_cwd();
     // §B's `revealPlayhead`: recentre when the line is outside, leave it alone otherwise — a preview that
     // slid the view on every tick could never be read.
     let view = 1000.0;
@@ -196,6 +202,7 @@ fn sec_05_cut_1_screen_s9_the_view_only_slips_to_follow_a_line_that_left_it() {
 /// activate round this binary owns (the shape `tests/cut_view_wheel.rs` uses).
 #[test]
 fn sec_05_cut_1_screen_s9_a_wheel_over_the_tracks_zooms_or_pans_and_says_so() {
+    common::pin_private_cwd();
     static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     WHEEL_ROUND.call_once(|| {
         let app = adw::Application::builder()

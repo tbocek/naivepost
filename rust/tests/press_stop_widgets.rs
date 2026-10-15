@@ -154,6 +154,7 @@ fn stops_the_playing_cut_preview_through_the_button() {
 
 #[test]
 fn f0_3_s1_pressing_stop_while_the_cut_preview_plays_stops_the_player() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_PLAY.load(std::sync::atomic::Ordering::SeqCst),
@@ -241,6 +242,7 @@ fn says_nothing_when_there_is_nothing_to_stop(app: &adw::Application) {
 
 #[test]
 fn f0_3_pressing_the_stop_button_goes_through_the_bar() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN.load(std::sync::atomic::Ordering::SeqCst),

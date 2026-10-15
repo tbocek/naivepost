@@ -224,6 +224,7 @@ fn window_round() {
 
 #[test]
 fn f2_5_s6_the_preview_volume_control_hands_one_number_to_every_preview() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_VOLUME.load(Ordering::SeqCst), "the slider check never ran");
     assert!(RAN_MIX.load(Ordering::SeqCst), "the mix-seam check never ran");

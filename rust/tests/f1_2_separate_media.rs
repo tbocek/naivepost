@@ -32,7 +32,7 @@ mod common;
 fn stub(tag: &str, body: &str) -> PathBuf {
     let dir = unique_dir(&format!("f12-media-{tag}"));
     let script = dir.join("ffmpeg");
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
             "#!/bin/sh\ncd \"{dir}\" || exit 70\nprintf '%s\\n' \"$*\" >> argv.log\n{body}\n",

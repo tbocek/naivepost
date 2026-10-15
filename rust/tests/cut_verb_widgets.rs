@@ -238,6 +238,7 @@ fn window_round() {
 
 #[test]
 fn f2_7_s4_the_verb_buttons_and_delete_key_reach_the_window_through_real_widgets() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_BUTTONS.load(Ordering::SeqCst),

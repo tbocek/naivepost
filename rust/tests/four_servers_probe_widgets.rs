@@ -340,12 +340,14 @@ fn check_sd_row_asks_capabilities(window: &adw::ApplicationWindow) {
 
 #[test]
 fn sec_02_services_1_the_four_servers_s21_the_llm_test_button_telephones_the_typed_address() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_LLM.load(Ordering::SeqCst), "the llm row's live check ran");
 }
 
 #[test]
 fn sec_02_services_1_the_four_servers_s22_the_audio_test_button_makes_both_calls_it_proves() {
+    common::pin_private_cwd();
     round();
     assert!(
         RAN_AUDIO.load(Ordering::SeqCst),
@@ -355,6 +357,7 @@ fn sec_02_services_1_the_four_servers_s22_the_audio_test_button_makes_both_calls
 
 #[test]
 fn sec_02_services_1_the_four_servers_s23_the_sd_test_button_asks_capabilities_or_says_dead() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_SD.load(Ordering::SeqCst), "the sd row's live check ran");
 }

@@ -626,10 +626,10 @@ fn check_a_step_moves_one_frame_of_the_probed_rate(app: &adw::Application) {
     // simply not found, and the step silently falls back to 25 fps -- which looks like a model bug but is a
     // missing file.
     let probe_script = tools.join("ffprobe");
-    std::fs::write(&probe_script, "#!/bin/sh\necho 30000/1001\n").expect("probe stub");
+    common::write_script(&probe_script, "#!/bin/sh\necho 30000/1001\n").expect("probe stub");
     std::fs::set_permissions(&probe_script, PermissionsExt::from_mode(0o755)).expect("it runs");
     let ffmpeg = tools.join("fake-ffmpeg");
-    std::fs::write(&ffmpeg, "#!/bin/sh\nexit 0\n").expect("ffmpeg stub");
+    common::write_script(&ffmpeg, "#!/bin/sh\nexit 0\n").expect("ffmpeg stub");
     std::fs::set_permissions(&ffmpeg, PermissionsExt::from_mode(0o755)).expect("it runs");
     std::fs::write(
         conf_dir.join("llm.conf"),

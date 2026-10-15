@@ -181,12 +181,14 @@ fn round() {
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_suggestion_becomes_what_revert_goes_back_to() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_LOGIC.load(Ordering::SeqCst), "the base-moves-with-a-suggestion check never ran");
 }
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_a_revert_after_a_suggestion_keeps_the_suggested_work_and_drops_only_hand_edits() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_WIRE.load(Ordering::SeqCst), "the Revert-button check never ran");
 }

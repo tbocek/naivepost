@@ -163,6 +163,7 @@ fn check_one_undo_per_trim_drag(app: &adw::Application) {
 
 #[test]
 fn sec_05_cut_7_rules_s1_one_hold_and_one_undo_through_the_page() {
+    common::pin_private_cwd();
     window_round(|app| {
         check_picking_up_replaces_what_was_held(app);
         RAN_ONE_HOLD.store(true, Ordering::SeqCst);

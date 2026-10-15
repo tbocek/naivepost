@@ -32,6 +32,9 @@ use naivepost::settings::{self, Conf, Paths};
 use naivepost::textfmt::{self, FrameEvent, Line};
 use naivepost::ui;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 /// The two recordings' stamped names, 90 s apart, so §S1's placement has a non-zero offset to report.
 const VIDEO: &str = "2026-05-01 10-00-00_deck.mkv";
 const AUDIO: &str = "2026-05-01 10-01-30_mic.wav";
@@ -220,16 +223,16 @@ fn stubs() -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("the tools folder");
     let probe = dir.join("ffprobe");
-    std::fs::write(&probe, "#!/bin/sh\necho \"20.0\"\n").expect("the probe stub");
+    common::write_script(&probe, "#!/bin/sh\necho \"20.0\"\n").expect("the probe stub");
     let script = dir.join("ffmpeg.sh");
-    std::fs::write(
+    common::write_script(
         &script,
         "#!/bin/sh\ninput=''\nout=''\noutdir=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  if [ \"$prev\" = \"-f\" ]; then out=\"$a\"; fi\n  outdir=\"$a\"\n  prev=\"$a\"\ndone\nif [ -n \"$out\" ]; then\n  case \"$out\" in\n    /*|*/*) mkdir -p \"$(dirname -- \"$out\")\" ;;\n  esac\n  printf pcm > \"$out\"\nelif [ -n \"$input\" ]; then\n  base=$(basename -- \"$input\")\n  case \"$outdir\" in\n    /*|*/*) mkdir -p \"$outdir\" ;;\n  esac\n  printf JPEG > \"$outdir/$base\"\n  [ -f \"$outdir/$base\" ]\nfi\n",
     )
     .expect("the ffmpeg stub");
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");
     let ffmpeg = dir.join("ffmpeg");
-    std::fs::write(&ffmpeg, format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display())).expect("the wrapper");
+    common::write_script(&ffmpeg, format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display())).expect("the wrapper");
     for tool in [&probe, &ffmpeg] {
         std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");
     }

@@ -188,6 +188,7 @@ fn run_round(app: &adw::Application) {
 
 #[test]
 fn f4_5_s1_s6_wire_picture_play_and_stop() {
+    common::pin_private_cwd();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         let app = adw::Application::builder()

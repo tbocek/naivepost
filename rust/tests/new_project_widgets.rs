@@ -36,6 +36,7 @@ static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(f
 
 #[test]
 fn f0_8_s3_the_new_button_asks_before_it_empties_anything() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the ＋ New check never ran");
 }
@@ -82,6 +83,7 @@ fn check_button_and_dialog(app: &adw::Application) {
 
 #[test]
 fn f0_8_s2_an_empty_session_is_not_asked_and_names_the_folder() {
+    common::pin_private_cwd();
     window_round();
 }
 
@@ -119,6 +121,7 @@ fn empty_session_goes_straight_to_naming(app: &adw::Application) {
 
 #[test]
 fn f0_8_s6_an_applied_new_project_moves_the_window() {
+    common::pin_private_cwd();
     window_round();
 }
 
@@ -198,6 +201,7 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
 
 #[test]
 fn f0_8_s5_a_project_already_there_is_not_applied() {
+    common::pin_private_cwd();
     window_round();
 }
 

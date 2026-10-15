@@ -216,6 +216,7 @@ fn checks(app: &adw::Application) {
 
 #[test]
 fn f2_14_s1_the_refusals_come_in_the_flowcharts_order() {
+    common::pin_private_cwd();
     run_once();
     assert!(RAN_ORDER.load(Ordering::SeqCst), "the order check never ran");
     assert!(RAN_PASSES.load(Ordering::SeqCst), "the pass-through check never ran");

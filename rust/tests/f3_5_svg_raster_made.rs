@@ -110,7 +110,7 @@ fn write_stub(root: &Path, argv_out: &Path, log: &Path, count: &Path, succeed: b
         log.file_name().unwrap_or_default().to_string_lossy()
     ));
     std::fs::write(argv_out, "placeholder").unwrap_or(());
-    std::fs::write(&script, body).expect("the stub ffmpeg");
+    common::write_script(&script, body).expect("the stub ffmpeg");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

@@ -123,6 +123,7 @@ fn starts_and_logs_the_order_when_idle(app: &adw::Application) {
 
 #[test]
 fn f0_4_pressing_the_lucky_button_goes_through_the_chain() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN.load(std::sync::atomic::Ordering::SeqCst),

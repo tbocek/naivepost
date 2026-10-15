@@ -107,6 +107,7 @@ fn shown_is_the_card(card_path: &str) -> bool {
 /// goes back to the session's own search. Both halves go through `cut_picture::refresh`, the page's one door.
 #[test]
 fn f2_12_s7_the_preview_shows_the_card_and_holds_the_footage() {
+    common::pin_private_cwd();
     let dir = fixture_dir();
     // A card three seconds long, over a cut that films 0–120 as one take.
     let sting = make_video(&dir, CARD_STEM, 3.0);

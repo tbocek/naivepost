@@ -128,6 +128,7 @@ impl Drop for Session {
 #[test]
 fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_take_that_ends_first_leaves_the_picture_playing(
 ) {
+    common::pin_private_cwd();
     assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
     let session = session("take-ends-first");
     let spawned: Pids = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -205,6 +206,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_ta
 #[test]
 fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_the_running_preview_notices_its_picture_exit(
 ) {
+    common::pin_private_cwd();
     let session = session("running-ends");
     let spawned: Pids = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let entries = vec![entry(0.0, 10.0, "first line")];
@@ -282,6 +284,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_the_
 #[test]
 fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_line_over_no_footage_holds_a_still_frame(
 ) {
+    common::pin_private_cwd();
     let session = session("still-frame");
     // A cut with one clip and nothing on disk to play it: `cue_files` answers empty, which is the case.
     let cut = leg::cut_of(vec![Seg { s: 0.0, e: 10.0, dur: 10.0, ..Default::default() }], vec![]);

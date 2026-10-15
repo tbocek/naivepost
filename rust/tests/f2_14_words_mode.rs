@@ -163,6 +163,7 @@ fn spoken(at: f64) -> (&'static str, f64) {
 
 #[test]
 fn f2_14_s2a_a_run_is_trimmed_to_its_words_never_outside_the_run() {
+    common::pin_private_cwd();
     let p = Project_::fresh("trim").with_words("cam0", &[spoken(3.0), spoken(9.0)]);
     let runs = words_run::runs_of(&p.tree, &cam_cut(0.0, 30.0));
     assert_eq!(runs.len(), 1);
@@ -199,6 +200,7 @@ fn f2_14_s2a_a_run_is_trimmed_to_its_words_never_outside_the_run() {
 
 #[test]
 fn f2_14_s2a_a_mark_over_gone_footage_is_not_counted() {
+    common::pin_private_cwd();
     let p = Project_::fresh("marks")
         .with_words("cam0", &[spoken(2.0), spoken(6.0), spoken(20.0), spoken(26.0)])
         .with_marks(&[retake(4.0, 5.0), retake(100.0, 110.0)]);
@@ -213,6 +215,7 @@ fn f2_14_s2a_a_mark_over_gone_footage_is_not_counted() {
 
 #[test]
 fn f2_14_s2a_an_absent_wave_cache_contributes_no_silences() {
+    common::pin_private_cwd();
     // The §S2a dead-air step reads cached waves; with none on disk the list is empty, which is what
     // lets `remove_dead_air` find nothing long enough rather than guess a cut in a sentence.
     let p = Project_::fresh("nowave");
@@ -222,6 +225,7 @@ fn f2_14_s2a_an_absent_wave_cache_contributes_no_silences() {
 
 #[test]
 fn f2_14_s2a_the_cut_lands_persists_and_keeps_hand_placed_inserts() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_LANDED.load(Ordering::SeqCst), "the landing check never ran");
     assert!(RAN_EMPTY.load(Ordering::SeqCst), "the empty-cut check never ran");

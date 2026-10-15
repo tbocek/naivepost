@@ -32,6 +32,7 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn fresh(tag: &str) -> Self {
+        crate::common::pin_private_cwd();
         let root = temp_dir(tag);
         std::fs::create_dir_all(&root).expect("create the throwaway root");
         let dir = root.join("session.naivepost");
@@ -135,6 +136,7 @@ pub fn point_llm_at(url: &str) {
 /// `session.naivepost` beside the process's working directory (§1's working copy), NOT the folder the
 /// session was opened from — so the tree a test built in a temp folder is not the file to read back.
 pub fn run_tree() -> Tree {
+    crate::common::pin_private_cwd();
     let root = std::env::current_dir().expect("the process has a working directory");
     Tree::new(naivepost::startup::session_dir(&root)).expect("the working copy is a .naivepost folder")
 }

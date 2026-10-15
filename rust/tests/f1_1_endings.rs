@@ -58,6 +58,7 @@ fn project() -> Project {
 /// Outputs row shows, because `ending_of` takes it from `prepare::outputs_count`.
 #[test]
 fn f1_1_s7_a_finished_run_says_prepared_with_the_file_count() {
+    common::pin_private_cwd();
     let (_root, tree) = planted(
         "done",
         &[
@@ -102,6 +103,7 @@ fn f1_1_s7_a_finished_run_says_prepared_with_the_file_count() {
 /// the log is unchanged: what the run wrote does not depend on how much it wrote.
 #[test]
 fn f1_1_s7_a_finished_run_with_nothing_on_disk_says_zero() {
+    common::pin_private_cwd();
     let (_root, tree) = planted("empty", &[]);
     let ending = prepare_run::ending_of(&Drive::Done { ran: 0, skipped: 0 }, &tree);
     assert_eq!(ending, Ending::Prepared { files: 0 });
@@ -112,6 +114,7 @@ fn f1_1_s7_a_finished_run_with_nothing_on_disk_says_zero() {
 /// gets no new line: `run_stages::say_outcome` already wrote where the walk stopped.
 #[test]
 fn f1_1_s7_a_stopped_run_says_finished_work_is_kept() {
+    common::pin_private_cwd();
     let (_root, tree) = planted("stopped", &["prepare/inputs/lecture/meta.env"]);
     let ending = prepare_run::ending_of(&Drive::Stopped { ran: 2, left: 5 }, &tree);
     assert_eq!(ending, Ending::Stopped, "a stopped walk never counts files");
@@ -134,6 +137,7 @@ fn f1_1_s7_a_stopped_run_says_finished_work_is_kept() {
 /// is the walk's own (§Failure-is-specific), so the sentence is `failed_status`'s, not a new one.
 #[test]
 fn f1_1_s7_a_failed_run_names_the_reason_and_points_at_the_log() {
+    common::pin_private_cwd();
     let (_root, tree) = planted("failed", &["prepare/inputs/lecture/meta.env"]);
     let drive = Drive::Failed {
         stage: "speech",
@@ -291,6 +295,7 @@ fn check_stopped_run_on_screen(app: &adw::Application) {
 
 #[test]
 fn f1_1_s7_the_endings_reach_the_status_row_and_the_log() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_DONE.load(std::sync::atomic::Ordering::SeqCst));
     assert!(RAN_STOPPED.load(std::sync::atomic::Ordering::SeqCst));
@@ -362,6 +367,7 @@ fn check_the_close_hands_the_unload_over(app: &adw::Application) {
 
 #[test]
 fn f1_1_s8_the_run_hands_the_audio_unload_over() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_UNLOAD.load(std::sync::atomic::Ordering::SeqCst));
 }

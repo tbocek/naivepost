@@ -192,6 +192,7 @@ fn s2_a_playing_preview_leads_the_paste() {
 
 #[test]
 fn f2_9_s2_the_paste_lands_where_the_page_is_looking() {
+    common::pin_private_cwd();
     s2_a_band_click_moves_where_the_paste_goes_while_the_preview_is_parked();
     s2_a_playing_preview_leads_the_paste();
 }

@@ -208,6 +208,7 @@ fn check_an_unchanged_setting_is_not_rewritten(app: &adw::Application) {
 
 #[test]
 fn sec_03_shell_6_the_settings_file_s6_a_setting_typed_into_the_dialog_is_on_disk_after_the_main_window_closes() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_CLOSE.load(Ordering::SeqCst),
@@ -217,6 +218,7 @@ fn sec_03_shell_6_the_settings_file_s6_a_setting_typed_into_the_dialog_is_on_dis
 
 #[test]
 fn sec_03_shell_6_the_settings_file_s6_an_unchanged_setting_is_not_rewritten() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_IDENTICAL.load(Ordering::SeqCst),
@@ -228,6 +230,7 @@ fn sec_03_shell_6_the_settings_file_s6_an_unchanged_setting_is_not_rewritten() {
 /// This is the precedence layer being CREATED by starting the program, not by a test calling `save`.
 #[test]
 fn sec_03_shell_6_the_settings_file_s7_a_launch_with_no_conf_but_a_legacy_one_writes_the_file() {
+    common::pin_private_cwd();
     let d = Dirs::new("legacy-launch");
     fs::create_dir_all(&d.root).unwrap();
     fs::write(
@@ -273,6 +276,7 @@ fn sec_03_shell_6_the_settings_file_s7_a_launch_with_no_conf_but_a_legacy_one_wr
 /// uses — not through a copy of the chain in this test.
 #[test]
 fn sec_03_shell_6_the_settings_file_s7_the_file_is_the_layer_under_the_dialog_box() {
+    common::pin_private_cwd();
     let d = Dirs::new("precedence");
     let mut conf = settings::Conf::default();
     conf.audio_server = "http://cpp-box:8765".to_string();
