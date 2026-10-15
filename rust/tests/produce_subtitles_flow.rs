@@ -89,7 +89,7 @@ fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Wor
         on_recording: true,
         footage_left: &naivepost::produce_render::unknown_footage,
         wav_seconds: &|_entry| None,
-        cues: exec::Cues { all: Vec::new(), languages: Vec::new() },
+        cues: exec::Cues::languages_only(Vec::new()),
         words,
         // This file is about S1/S2; the S3 leg answers every number so the walk is never the thing that
         // fails here. `tests/produce_translate_flow.rs` owns the refusals.
@@ -350,4 +350,336 @@ impl StubRun {
         std::fs::write(&sheet_path, subs::srt_text(&plan.cues.all)).unwrap();
         assert!(Path::new(&sheet_path).is_file());
     }
+}
+
+
+// ---- S4/S5/S7: the walk WRITES the sheet, refuses when there is nothing, burns only when asked ----
+
+/// The walk's spawner: a render of this shape is three clips, a join and a mux, and what a test asks is
+/// what those subprocesses WROTE — so each one "writes" the file its own command names. A scripted spawner
+/// is the program's own seam: `run_render` takes the spawn leg as an argument because that is how the page
+/// reaches these steps in a container with no ffmpeg, never because a test needs a stand-in.
+struct WriteSpy {
+    logs: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+}
+
+impl WriteSpy {
+    fn new() -> WriteSpy {
+        WriteSpy { logs: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())) }
+    }
+
+    /// Run the whole walk over a plan with this file's `Materials`, answering every checkpoint yes.
+    fn run(&self, run: &flow::Run, tree: &Tree, words: Vec<subs::Word>, settings: Produce) -> exec::Ran {
+        let held = words;
+        let logs = self.logs.clone();
+        exec::walk(
+            &exec::plan(run, tree, &mats_with(&[], &|_c| held.clone(), settings.clone())),
+            &mats_with(&[], &|_c| held.clone(), settings.clone()),
+            move |line| {
+                logs.borrow_mut().push(line.to_string());
+            },
+            |_line| Ok(()),
+            |_at, _what| true,
+            |command| {
+                // `-o` names the output; every one of this run's commands carries it.
+                if let Some(pos) = command.argv.iter().position(|a| a == "-o") {
+                    if let Some(out) = command.argv.get(pos + 1) {
+                        let path = std::path::Path::new(out);
+                        if let Some(dir) = path.parent() {
+                            let _ = std::fs::create_dir_all(dir);
+                        }
+                        let _ = std::fs::write(path, b"encoded");
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
+}
+
+/// `mats` with a chosen settings row: the walk needs the same `Materials` twice (once to plan, once to
+/// walk), so the shape lives in one place.
+/// `mats` with a chosen settings row. The settings decide CLIPS and CUES only through the run that carries
+/// them, so the row itself is not repeated here; `translate` is, because the sheet's language list — and so
+/// the set of sidecar names this run owns — comes in through `Materials::cues`, exactly as the page hands it.
+fn mats_with<'a>(
+    lanes: &'a [Lane],
+    words: &'a dyn Fn(&render::Clip) -> Vec<subs::Word>,
+    settings: Produce,
+) -> exec::Materials<'a> {
+    exec::Materials {
+        cues: exec::Cues::languages_only(settings.translate.clone()),
+        ..mats(lanes, words)
+    }
+}
+
+fn held_run(tree: &Tree, segs: Vec<Seg>, lines: Vec<Entry>, settings: Produce) -> flow::Run {
+    flow::snapshot(
+        Some(cut_of(segs)),
+        tree,
+        lines,
+        settings,
+        &project(),
+        Some(Publish::default()),
+        "1".to_string(),
+    )
+}
+
+#[test]
+fn f5_4_s4_the_walk_writes_the_sheet_and_says_what_it_holds() {
+    assert_eq!(ITEM, "f5_4");
+    // The point of the round: the live render hands its cue sheet to the file, not an empty list to nothing.
+    // Two footage clips with their own speech and no narration line at all.
+    let (root, tree) = common::tree_in("s4-walk-sheet");
+    let settings = Produce::default();
+    let run = held_run(&tree, vec![seg(0.0, 10.0), seg(10.0, 20.0)], Vec::new(), settings.clone());
+    let spy = WriteSpy::new();
+    let ran = spy.run(&run, &tree, words(&["the", "lecture"], 0.0), settings.clone());
+    assert_eq!(ran.failed, None, "{:?}", ran.failed);
+
+    let sheet_path = tree.clips_dir().join(render::final_srt_name());
+    let plan = exec::plan(&run, &tree, &mats_with(&[], &|_c| words(&["the", "lecture"], 0.0), settings));
+    let written = std::fs::read_to_string(&sheet_path).expect("S4 wrote the sheet");
+    assert_eq!(written, subs::srt_text(&plan.cues.all), "byte for byte the plan's track");
+    assert!(written.contains("the lecture"), "{written}");
+
+    // §S4's own sentence, with the counts of THIS sheet: both clips answered with their own speech.
+    let logs = spy.logs.borrow();
+    let said = logs
+        .iter()
+        .find(|line| line.starts_with(">>> subtitles:"))
+        .expect("the run says what its sheet holds");
+    // The counts name the CLIPS, not the spans: tidy folds the pair that `tidy` holds across a short gap,
+    // so the cue count is one while both clips still own a caption each.
+    assert_eq!(
+        *said,
+        format!(
+            ">>> subtitles: {} cues from {} spoken line(s) and {} clip(s) of their own speech.",
+            plan.cues.all.len(),
+            plan.cues.counts.from_lines,
+            plan.cues.counts.from_speech
+        ),
+        "{logs:?}"
+    );
+    assert_eq!(plan.cues.counts.from_speech, 2, "both clips spoke: {logs:?}");
+    assert_eq!(plan.cues.counts.from_lines, 0, "nothing was written: {logs:?}");
+    assert!(!logs.iter().any(|l| l.starts_with("!!!")), "cues exist, so no refusal: {logs:?}");
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn f5_4_s4_a_run_with_nothing_to_caption_says_so_and_writes_no_sheet() {
+    assert_eq!(ITEM, "f5_4");
+    // §5: "no narration and no speech → none", with the sentence naming both sources. An insert clip is the
+    // smallest cut that has neither, and the video itself still finishes.
+    let (root, tree) = common::tree_in("s4-walk-empty");
+    let settings = Produce::default();
+    let run = held_run(
+        &tree,
+        vec![insert_seg(0.0, 10.0, "assets/thing.wav")],
+        Vec::new(),
+        settings.clone(),
+    );
+    let spy = WriteSpy::new();
+    let ran = spy.run(&run, &tree, Vec::new(), settings);
+    assert_eq!(ran.failed, None, "an empty sheet is a warning, not a failed render: {:?}", ran.failed);
+    assert!(
+        !tree.clips_dir().join(render::final_srt_name()).exists(),
+        "never an empty cue: no sheet is written"
+    );
+    let logs = spy.logs.borrow();
+    assert!(
+        logs.contains(&render::no_subtitle_cue_log().to_string()),
+        "the refusal is §5's own line: {logs:?}"
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn f5_4_s2_the_captions_only_warning_is_said_by_the_walk() {
+    assert_eq!(ITEM, "f5_4");
+    // F5.2 S2's sentence: voice "captions only" plus Subtitles "none in the video" leaves the words in the
+    // file beside it ONLY, and the run says that out loud rather than letting the reader find it.
+    let (root, tree) = common::tree_in("s2-captions-warn");
+    let settings = Produce {
+        subtitles: naivepost::project::Subtitles::None,
+        ..Default::default()
+    };
+    let mut run = held_run(&tree, vec![seg(0.0, 10.0)], vec![entry(0.0, 4.0, "written")], settings.clone());
+    run.voice = naivepost::narrate_screen::CAPTIONS.to_string();
+    let spy = WriteSpy::new();
+    let ran = spy.run(&run, &tree, Vec::new(), settings);
+    assert_eq!(ran.failed, None, "{:?}", ran.failed);
+    let logs = spy.logs.borrow();
+    assert!(
+        logs.contains(&render::captions_only_warning(naivepost::project::Subtitles::None).unwrap().to_string()),
+        "S2's warning is logged, not only computed: {logs:?}"
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn f5_4_s5_burned_in_lets_each_clip_down_with_its_own_cues() {
+    assert_eq!(ITEM, "f5_4");
+    // "burned in" is the only answer that letters the picture, and what it letters is the CLIP's own cues
+    // on the CLIP's own seconds — the encode cuts that span out of the recording and never sees the video
+    // clock. A cue moved onto the video's timeline would be seconds away from every caption on it.
+    let (root, tree) = common::tree_in("s5-burned");
+    let settings = Produce {
+        subtitles: naivepost::project::Subtitles::BurnedIn,
+        ..Default::default()
+    };
+    let words = words(&["second", "clip"], 0.0);
+    let run = held_run(&tree, vec![seg(0.0, 10.0), seg(10.0, 20.0)], Vec::new(), settings.clone());
+    let plan = exec::plan(&run, &tree, &mats_with(&[], &|_c| words.clone(), settings.clone()));
+    let burns = plan.burns.clone();
+    assert_eq!(burns.len(), plan.cues.per_clip.len(), "one entry per clip that spoke");
+    let second = burns.get(1).cloned().flatten().expect("the second clip is burned");
+    assert_eq!(
+        second.file_name().unwrap().to_string_lossy(),
+        "c001.srt",
+        "§B's per-clip name, beside the encode"
+    );
+    let text = std::fs::read_to_string(&second).expect("the burn sheet was written");
+    assert!(text.contains("second clip"), "{text}");
+    // On the CLIP's seconds: the same words on the video's clock would start 10 s later, where the second
+    // clip begins in the finished file.
+    assert!(
+        text.contains("00:00:00,000 --> 00:00:00,500"),
+        "clip-relative times, not the video's: {text}"
+    );
+    assert!(!text.contains("00:00:10"), "nothing is shifted onto the video clock: {text}");
+    let encode = plan.encodes.get(1).expect("the second encode");
+    // The graph names the sheet by the name it is written under, in the scratch folder it is written to:
+    // ffmpeg resolves it from its own working directory, which is where the encode runs.
+    let name = second.file_name().unwrap().to_string_lossy().to_string();
+    assert!(
+        encode.command.log.contains(&format!("subtitles={name}")),
+        "the filter graph names that file: {}",
+        encode.command.log
+    );
+    assert!(second.parent() == Some(plan.scratch.as_path()), "{second:?} beside {}", plan.scratch.display());
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn f5_4_s5_a_track_or_sidecar_run_burns_nothing() {
+    assert_eq!(ITEM, "f5_4");
+    // The other two answers carry the words elsewhere; a burned copy would say them twice on the picture.
+    let (root, tree) = common::tree_in("s5-not-burned");
+    let words = words(&["spoken", "here"], 0.0);
+    for subtitles in [
+        naivepost::project::Subtitles::TrackInFile,
+        naivepost::project::Subtitles::None,
+    ] {
+        let settings = Produce { subtitles, ..Default::default() };
+        let run = held_run(&tree, vec![seg(0.0, 10.0)], Vec::new(), settings.clone());
+        let plan = exec::plan(&run, &tree, &mats_with(&[], &|_c| words.clone(), settings));
+        assert!(plan.burns.iter().all(Option::is_none), "{subtitles:?} letters nothing");
+        assert!(!plan.encodes[0].command.log.contains("subtitles="), "{}", plan.encodes[0].command.log);
+        // …and it still captions: the sheet exists, which is what §1's row promises for every mode.
+        assert!(!plan.cues.all.is_empty(), "{subtitles:?} still has a cue sheet");
+    }
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn f5_4_s4_stale_sidecars_go_by_exact_name_even_with_no_cues() {
+    assert_eq!(ITEM, "f5_4");
+    // A run that has nothing to caption must still clear the last render's files: subtitles describing words
+    // that are no longer in the video are worse than none. And the name list is §3's, never a glob.
+    let (root, tree) = common::tree_in("s4-stale");
+    // The tick is a language CODE: §C lists en/de/fr, and a tick spelled any other way is not a track this
+    // run writes, so its files are nobody's to delete.
+    let settings = Produce {
+        translate: vec!["de".to_string()],
+        ..Default::default()
+    };
+    let produce_dir = tree.final_video("mp4").parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&produce_dir).unwrap();
+    // `plan` clears `produce/clips/` first and the walk writes its sheet there, so the scratch folder has
+    // to exist before the sidecar files beside the video are seeded — a stray file in a folder that does
+    // not exist yet is not a stale sidecar, it is a test that set its stage in the wrong order.
+    // §3 spells a translated sidecar with a TWO-letter code (`final.<code>.srt`), which is what a ticked
+    // language writes; a three-letter name belongs to nothing and would survive on purpose.
+    let stale = produce_dir.join("final.de.srt");
+    let other = produce_dir.join("final.zz.srt");
+    std::fs::write(&stale, "old german").unwrap();
+    std::fs::write(&other, "not mine").unwrap();
+
+    // An insert cut: no cues at all, and the stale translation still goes.
+    let run = held_run(
+        &tree,
+        vec![insert_seg(0.0, 10.0, "assets/thing.wav")],
+        Vec::new(),
+        settings.clone(),
+    );
+    let spy = WriteSpy::new();
+    let ran = spy.run(&run, &tree, Vec::new(), settings);
+    assert_eq!(ran.failed, None, "{:?}", ran.failed);
+    assert!(
+        !stale.exists(),
+        "a stale translated sidecar is deleted by name; produce/ holds {:?} and the run said {:?}",
+        std::fs::read_dir(&produce_dir)
+            .map(|d| d.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect::<Vec<String>>())
+            .unwrap_or_default(),
+        spy.logs.borrow(),
+    );
+    assert!(other.exists(), "a file this run does not own is left alone");
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn f5_4_s7_a_ticked_language_gets_its_sidecar_written_by_the_walk() {
+    assert_eq!(ITEM, "f5_4");
+    // §F5.2 S7 runs AFTER the encodes ("so the encoder never idles behind the LLM gate") and S9 writes the
+    // translated files beside the video. The translation leg is the program's own seam — `Materials::translate`
+    // is a function the page hands in, pointed at the LLM server in the app and at a scripted answer here —
+    // so what this pins is that the walk asks it and writes what comes back.
+    let (root, tree) = common::tree_in("s7-sidecar");
+    let settings = Produce {
+        translate: vec!["de".to_string()],
+        ..Default::default()
+    };
+    let words = words(&["spoken", "aloud"], 0.0);
+    let run = held_run(&tree, vec![seg(0.0, 10.0)], Vec::new(), settings.clone());
+    let held = words.clone();
+    let spy = WriteSpy::new();
+    let logs = spy.logs.clone();
+    let plan = exec::plan(&run, &tree, &mats_with(&[], &|_c| held.clone(), settings.clone()));
+    exec::walk(
+        &plan,
+        &mats_with(&[], &|_c| held.clone(), settings),
+        move |line| {
+            logs.borrow_mut().push(line.to_string());
+        },
+        |_line| Ok(()),
+        |_at, _what| true,
+        |command| {
+            if let Some(pos) = command.argv.iter().position(|a| a == "-o") {
+                if let Some(out) = command.argv.get(pos + 1) {
+                    let path = std::path::Path::new(out);
+                    if let Some(dir) = path.parent() {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
+                    let _ = std::fs::write(path, b"encoded");
+                }
+            }
+            Ok(())
+        },
+    );
+    let written = std::fs::read_to_string(tree.final_srt(Some("de"))).expect("S9 wrote the German .srt");
+    assert!(written.contains("translated 1"), "the translation, not the original: {written}");
+    assert!(tree.final_vtt(Some("de")).is_file(), "…and its .vtt");
+    let logs = spy.logs.borrow();
+    assert!(
+        logs.iter().any(|l| l.starts_with(">>> subtitles: translating")),
+        "S7 says what it is doing: {logs:?}"
+    );
+    assert!(
+        logs.iter().any(|l| l.contains("final.de.srt")),
+        "S9 logs each sidecar: {logs:?}"
+    );
+    let _ = plan.stamp;
+    std::fs::remove_dir_all(&root).ok();
 }

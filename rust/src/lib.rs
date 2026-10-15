@@ -157,6 +157,8 @@ pub mod produce_runs;
 pub mod produce_screen;
 pub mod produce_clip_cues;
 pub mod produce_subtitles;
+/// F5.4's write side: which clips are burned, what a cue-less run says, and the sentence naming the sheet.
+pub mod produce_subtitles_run;
 pub mod produce_tag_page;
 pub mod produce_translate;
 pub mod produce_stamp;

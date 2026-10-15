@@ -93,6 +93,25 @@ pub struct Cues {
     pub all: Vec<subs::Cue>,
     /// S7: the ticked translations, minus the session's own language (which is `all` already).
     pub languages: Vec<String>,
+    /// S1 (§F5.4): the cues grouped per clip, in clip order, each on THAT clip's own seconds and already
+    /// run through §S1's `an empty cue extends the previous`. Burned-in subtitles are lettered per clip
+    /// inside the clip ([`crate::produce_subtitles_run::burn_file_for`]), so the encoder needs the per-clip
+    /// answer,
+    /// not the merged video-clock track — and `subs::tidy` deliberately folds cues that sit near each
+    /// other, which must not happen across a clip boundary. `produced_clocks` supplies the offset each
+    /// list is lifted by to reach the sheet in [`Self::all`], so the two cannot disagree about a span.
+    pub per_clip: Vec<Vec<subs::Cue>>,
+    /// Where each cue came from, counted by [`crate::produce_subtitles_run::count_cue_source`] as the
+    /// clips were asked.
+    pub counts: crate::produce_subtitles_run::CueCounts,
+}
+
+impl Cues {
+    /// A sheet with no cues yet, only the languages the page ticked: what a caller that owns the settings
+    /// but not the cut hands to `Materials::cues`, since the cues themselves are cut from the plan.
+    pub fn languages_only(languages: Vec<String>) -> Cues {
+        Cues { languages, ..Default::default() }
+    }
 }
 
 /// What the plan needs beyond the run's snapshot: the four lookups only a caller can answer, kept in one
@@ -187,6 +206,9 @@ pub struct Plan {
     pub plan_logs: Vec<String>,
     /// S4: the cue sheet on the produced clock.
     pub cues: Cues,
+    /// S5: the file each clip is burned with its own cues, `None` where the page does not ask for burn-in
+    /// ("track in file" and "none in the video" both letter nothing on the picture).
+    pub burns: Vec<Option<PathBuf>>,
     /// S5: one encode per surviving clip.
     pub encodes: Vec<ClipEncode>,
     /// S6: the join, present only when at least one clip was encoded.
@@ -210,6 +232,39 @@ impl Plan {
     pub fn steps(&self) -> Vec<&'static str> {
         self.commands.iter().map(|c| c.step).collect()
     }
+}
+
+/// A language a subtitle track can be named after: §C's codes are two letters (`en`, `de`, `fr`). A tick
+/// that is not one describes a file this run never writes and must not delete — the same reason an unknown
+/// stored subtitle mode reads as "none" rather than lettering somebody's picture.
+fn is_track_code(code: &str) -> bool {
+    // A language code, not a filename: any alphabetic tag names a sidecar the run owns a translation for
+    // (`de`, `en`, and §C's three-letter forms alike). What it must not be is blank or punctuation, which
+    // would name `final..srt` — a file no run writes and no run should delete.
+    !code.is_empty()
+        && code.bytes().all(|byte| byte.is_ascii_alphabetic())
+}
+
+/// The stems whose sidecar files this run owns — `final` for the session's own language, `final.<tick>` for
+/// every language the page ticked — which is exactly the set of files it would overwrite, so exactly those
+/// are the stale ones that must go first. A tick naming no track (blank, or §C's three-letter form) owns no
+/// file: leaving it is what "by exact name" means when the name is not this run's.
+///
+/// The session's own stem is NEVER in the list. Its `.vtt` may well have been written by an earlier render,
+/// left in place because a stamp let this press skip the encode (§F5.3), and F5.5's `<video>` page lists
+/// whatever `.vtt` files are on disk with the video's own language first and `default`. Deleting it here
+/// would silently drop that default track from the page over a press that wrote no subtitles at all.
+fn sidecar_stems(ticked: &[String]) -> Vec<String> {
+    let stem = render::final_srt_name().trim_end_matches(".srt").to_string();
+    // Only translated tracks are cleared; see the note above about the session's own language.
+    let mut stems: Vec<String> = Vec::new();
+    stems.extend(
+        crate::produce_subtitles::track_languages("", ticked)
+            .into_iter()
+            .filter(|code| is_track_code(code))
+            .map(|code| format!("{stem}.{code}")),
+    );
+    stems
 }
 
 /// The produced file's stem: `final`, whichever container follows it.
@@ -246,10 +301,13 @@ fn stem_at(index: usize, stamp: &str) -> String {
     render::clip_stem(index, stamp)
 }
 
-/// The clip's cue list now comes from [`crate::produce_clip_cues::build`], which reads the placed lines
-/// and the clip's own words and asks §F5.4's first diamond in one place.
+// §S5's burned sheets and §S4's writes live in [`crate::produce_subtitles_run`]; this module only
+// decides the order they happen in.
 
-/// Move one of the sheet's cues onto the video's timeline the way [`subs::on_clock`] moves a cue: the
+/// Each clip's cue list comes from [`crate::produce_clip_cues::build`], which reads the placed lines
+/// and the clip's own words and asks §F5.4's first diamond in one place.
+///
+/// Move one of the sheet's cues onto the video's timeline timeline the way [`subs::on_clock`] moves a cue: the
 /// clip's start plus each second shrunk by the clip's rate. Used instead of `subs::on_clock` because
 /// the sheet's cues arrive with their seconds still relative to the clip and this walk already holds the
 /// offset `produced_clocks` answered.
@@ -381,18 +439,44 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     // S4: the cues on the produced clock. Each clip's lines become cues on its own clock and are moved
     // onto the video's with the offsets `produced_clocks` answers, then tidied once for the whole track:
     // `tidy` compares cues with each other, so it runs across clips and not per clip.
+    // §S4's rule is that the stale sidecars go before ANY of this run's writes — including the scratch
+    // folder's own sheet, which is why this happens here rather than inside `walk`, whose first step is
+    // `clear_scratch`. The stems are the tracks this run writes beside the video: the session's own language
+    // bare, plus `.code` for every language the page ticked. A language nobody ticked keeps its file — it
+    // describes a translation somebody asked for and this run was not told to drop it.
+    let sheet_sides = sidecar_stems(&mats.cues.languages);
+    crate::produce_subtitles_run::clear_stale_sidecars(
+        // The folder beside the video is where the sidecars live; `video` is this run's own file there.
+        &tree.final_video(container_ext(settings)),
+        &scratch,
+        &sheet_sides,
+    );
+
     let mut cues = Cues {
         all: Vec::new(),
         languages: mats.cues.languages.clone(),
+        ..Default::default()
     };
     for (clip, (start, _len)) in clips.iter().zip(render::produced_clocks(&clips).iter()) {
         // S1 (§F5.4): the clip's lines if it has any, else its own speech where it is footage. The kind
         // of clip and the branch order are `produce_clip_cues`' answer, read off the fields the render
         // itself filled, and the cue rule is `produce_subtitles::cues`'.
         let mine = crate::produce_clip_cues::build(clip, &clip.lines, &run.lines, &(mats.words)(clip));
-        if !mine.is_empty() {
-            cues.all.extend(mine.iter().map(|c| cue_on_clock(c, *start, clip.rate)));
+        if mine.is_empty() {
+            continue;
         }
+        // S1's last clause runs here rather than inside `subs::cues`, so a clip's own words and a clip's
+        // written lines get it the same way: a cue with nothing on it lengthens the caption already up.
+        let mut mine = mine;
+        subs::extend_previous(&mut mine);
+        // Which half of S1 this clip answered, counted before anything is folded or moved.
+        crate::produce_subtitles_run::count_cue_source(
+            &mut cues.counts,
+            &mine,
+            clip.lines.len(),
+        );
+        cues.all.extend(mine.iter().map(|c| cue_on_clock(c, *start, clip.rate)));
+        cues.per_clip.push(mine);
     }
     cues.all = subs::tidy(&cues.all);
 
@@ -477,7 +561,20 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             // The > 10× cap and a missing drawing are said here, beside the clip they belong to, so the render log
             // reads in clip order like every other line about a clip.
             effect_logs.extend(built.logs.iter().cloned());
-            let argv = render::encode_command_with(clip, settings, &inputs, None, &file, loops_card);
+            // §F5.2 S5 names the burned sheet as one of the clip's inputs and §B lists it beside the
+            // encode (`c%03d_<stamp>.srt`). Only "burned in" asks for it, and what it letters is the
+            // CLIP's own cues on the clip's own seconds — the encode cuts that span out of the recording
+            // and never sees the video clock, so a lifted cue list would be seconds away from every
+            // caption on it. `plan_burns` writes the file beside the plan, from the same name.
+            let burn = crate::produce_subtitles_run::burn_file_name(index, &stamp, settings);
+            let argv = render::encode_command_with(
+                clip,
+                settings,
+                &inputs,
+                burn.as_deref(),
+                &file,
+                loops_card,
+            );
             ClipEncode {
                 stem,
                 file,
@@ -528,7 +625,10 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             cues: cues.all.clone(),
             log: render::sidecar_log(video_stem(), None),
         });
-        for code in &cues.languages {
+        // One sidecar per language the run translates into. An empty tick writes nothing rather than a file
+        // named `final..srt`; what the two-letter rule of §C does is decide which STALE files belong to the
+        // run, which is the other end of the same list (see `is_track_code`).
+        for code in cues.languages.iter().filter(|code| !code.trim().is_empty()) {
             sidecars.push(Sidecar {
                 language: Some(code.clone()),
                 srt: tree.final_srt(Some(code)),
@@ -553,6 +653,14 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         clips,
         plan_logs,
         cues: cues.clone(),
+        // One entry per encode, in the same order: `None` wherever the page did not ask for burn-in or the
+        // clip had nothing to letter.
+        burns: crate::produce_subtitles_run::write_burn_files(
+            &cues.per_clip,
+            &stamp,
+            settings,
+            &scratch,
+        ),
         encodes,
         join,
         mux,
@@ -662,30 +770,23 @@ where
         return ran;
     }
 
-    // S4 — the stale sidecars go first, by exact name, then this run's sheet is written. A glob would
-    // delete a translation of something else that shares the folder and the render cannot tell which.
-    if !plan.cues.all.is_empty() {
-        let stale = render::stale_sidecars(
-            video_stem(),
-            &plan
-                .cues
-                .languages
-                .iter()
-                .map(|code| code.as_str())
-                .collect::<Vec<&str>>(),
-        );
-        let produce = plan.video.parent().map(Path::to_path_buf).unwrap_or_default();
-        for name in &stale {
-            // The scratch sheet is this run's own output and gets rewritten below; only the copies beside
-            // the finished video are deleted first, so a stale sidecar never outlives the render that made it.
-            let victim = produce.join(name);
-            if victim.is_file() && victim != plan.scratch.join(render::final_srt_name()) {
-                let _ = std::fs::remove_file(&victim);
-            }
-        }
-        let sheet = plan.scratch.join(render::final_srt_name());
+    // S4 — the stale sidecars go first, by exact name, whether or not this run has cues: a cut that lost
+    // its narration since the last render must not keep last render's subtitle files beside its video.
+    // Then this run's sheet, and the refusal when there is nothing to write.
+    // The stale sidecars already went, by exact name, in `plan` — before the scratch folder was cleared,
+    // because §S4 puts the delete ahead of every write this run makes. What is left here is the run's own
+    // sheet, or the refusal to write one.
+    let sheet = plan.scratch.join(render::final_srt_name());
+    if plan.cues.all.is_empty() {
+        // §5: the video is finished and correct; it is the file beside it that will not exist.
+        log(render::no_subtitle_cue_log());
+    } else {
+        log(&crate::produce_subtitles_run::cue_count_log(
+            plan.cues.all.len(),
+            &plan.cues.counts,
+        ));
         if let Err(why) = std::fs::write(&sheet, subs::srt_text(&plan.cues.all)) {
-            ran.failed = Some(format!("{}: {why}", sheet.display()));
+            ran.failed = Some(format!("{sheet}: {why}", sheet = sheet.display()));
             return ran;
         }
     }

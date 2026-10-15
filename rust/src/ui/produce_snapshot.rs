@@ -206,9 +206,13 @@ pub fn render_half(
             // shrink it, and `frame_box` falls back to this when the cut names no aspect.
             src_shape: snap.src_shape,
             wav_of: &|entry| crate::produce_stamp::wav_of(&snap.tree, entry, Some(&run.voice), 0),
+            // The press hands over only the LANGUAGES: the cues themselves are cut by the render from the
+            // clips it planned (`produce_exec::plan`), because a cue needs the clip's rate, its placed
+            // lines and its own words — none of which exist before the plan. An `all` handed in here would
+            // be a second, worse opinion about the same track.
             cues: crate::produce_exec::Cues {
-                all: Vec::new(),
                 languages: run.settings.translate.clone(),
+                ..Default::default()
             },
             // S1 (§F5.4): the clip's own speech, off the session word list gathered at the press; the
             // narrator's own recordings are excluded there because their words are what the narration

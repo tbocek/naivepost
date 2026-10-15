@@ -332,6 +332,8 @@ fn f5_4_s3_the_placement_tag_goes_stripped_and_comes_back_attached() {
 /// One slot per check, holding that block's failure text if it failed. Written from inside the activate
 /// callback and read after `run_with_args` returns, so a failing assert never unwinds into GTK.
 static SIDECAR_FAIL: Mutex<Option<String>> = Mutex::new(None);
+/// The §S4 press check's own slot, so a failure here is not blamed on the sidecar check above.
+static SHEET_FAIL: Mutex<Option<String>> = Mutex::new(None);
 
 /// Run one check so a panic becomes a recorded message rather than an abort through the C trampoline.
 fn record(slot: &Mutex<Option<String>>, label: &str, body: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe) {
@@ -597,6 +599,88 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     settle();
 }
 
+/// §S4's sentence, built through the rule so this cannot drift from the wording `produce_exec` prints.
+fn cue_count_sentence(counts: naivepost::produce_subtitles_run::CueCounts, cues: usize) -> String {
+    naivepost::produce_subtitles_run::cue_count_log(cues, &counts)
+}
+
+/// The press that letters nothing: voice "captions only" with Subtitles "none in the video", where the words
+/// exist ONLY in the file beside the video and F5.2 S2 says so out loud. The cue sheet is still written —
+/// refusing to burn or to mux a track is not refusing to caption — so this check pins both halves: the
+/// warning line appears, and `clips/final.srt` carries the spoken words.
+fn check_press_writes_the_sheet_and_says_what_it_holds(root: &Path) {
+    let tree = session(root);
+    let cut = naivepost::cut::Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    };
+    let file = tree.cut_json();
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, serde_json::to_string_pretty(&cut).unwrap()).unwrap();
+    write_words(&tree);
+    trans::set_spawn_for_test(scripted_spawn());
+
+    let window = produce_window(&app_in_round());
+    ui::seed_review_cut(&window, &cut);
+    seed_page(&window);
+    // Voice "captions only" (§1's dropdown id) plus Subtitles "none in the video": the one combination where
+    // the words are in the sidecar alone, which is exactly what S2 promises to warn about. Both are rows the
+    // page already draws; this writes them through `set_state` and repaints, the same door every flow uses.
+    let mut page = ui::produce_page::read_state();
+    page.voice = naivepost::narrate_screen::CAPTIONS.to_string();
+    page.subtitles = "none in the video".to_string();
+    ui::produce_page::set_state(page);
+    ui::produce_page::refresh(&window);
+    settle();
+    let button = ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
+    button.emit_by_name::<()>("clicked", &[]);
+    settle();
+
+    let said = ui::find_status(window.upcast_ref())
+        .expect("the window has a status line")
+        .text()
+        .to_string();
+    assert_ne!(said, naivepost::cut::NO_CUT_YET, "the press thought there was no cut: {said:?}");
+
+    // §S4's file, on disk, holding the clip's own speech: the render handed its cue sheet to the encoder's
+    // folder rather than an empty list to nothing.
+    let sheet_path = tree.clips_dir().join(naivepost::produce_render::final_srt_name());
+    let sheet = std::fs::read_to_string(&sheet_path)
+        .unwrap_or_else(|why| panic!("{} was not written: {why}", sheet_path.display()));
+    assert!(
+        sheet.contains("alpha bravo charlie"),
+        "the sheet holds the clip's speech: {sheet}"
+    );
+
+    let logs = ui::window::window_logs();
+    assert!(
+        logs.iter().any(|l| l.starts_with(">>> subtitles:") && l.contains("cues from")),
+        "S4 says what its sheet holds: {:?}",
+        logs.iter().filter(|l| l.contains("subtitles")).collect::<Vec<&String>>()
+    );
+    assert!(
+        logs.contains(
+            &naivepost::produce_render::captions_only_warning(naivepost::project::Subtitles::None)
+                .expect("that pairing has a warning")
+                .to_string()
+        ),
+        "F5.2 S2's captions-only warning is logged, not only computed: {logs:?}"
+    );
+    assert!(
+        !logs.iter().any(|l| l.starts_with("!!! nothing to put in a subtitle")),
+        "there WAS something to caption, so the refusal must not print: {logs:?}"
+    );
+    // The sentence's own shape, pinned against the rule it came from: at least one clip spoke for itself.
+    let counts = naivepost::produce_subtitles_run::CueCounts { from_lines: 0, from_speech: 1 };
+    assert_eq!(
+        cue_count_sentence(counts, 1),
+        ">>> subtitles: 1 cues from 0 spoken line(s) and 1 clip(s) of their own speech."
+    );
+    window.close();
+    settle();
+}
+
 /// The check, on the one thread the application runs on, recorded rather than aborted.
 fn run_round(app: &adw::Application) {
     CURRENT_APP.with(|held| *held.borrow_mut() = Some(app.clone()));
@@ -614,11 +698,43 @@ fn run_round(app: &adw::Application) {
         }),
     );
 
+    // The §S4 check runs in the SAME round: this binary may call `Application::run` exactly once, so a
+    // second window would never be activated. Its own temp folder keeps its files apart from the check
+    // above, and cwd is moved back out afterwards for the same reason.
+    let sheet_root = base.join("sheet");
+    std::fs::create_dir_all(&sheet_root).expect("sheet check root created");
+    std::env::set_current_dir(&sheet_root).expect("cwd into the sheet check root");
+    record(
+        &SHEET_FAIL,
+        "cue-sheet press",
+        std::panic::AssertUnwindSafe(move || {
+            check_press_writes_the_sheet_and_says_what_it_holds(&sheet_root);
+            Ok(())
+        }),
+    );
+    std::env::set_current_dir(&base).expect("cwd back out of the check roots");
+
     let app = app.clone();
     glib::idle_add_local(move || {
         app.quit();
         glib::ControlFlow::Break
     });
+}
+
+#[test]
+fn f5_4_s4_press_on_the_produce_page_writes_the_cue_sheet() {
+    // The wire, not the rule: a real ▶ click on the run bar reaches `produce_exec`'s §S4 step and the cue
+    // sheet lands on disk. The rules themselves are pinned in `tests/produce_subtitles_flow.rs`; what this
+    // pins is that the button's own handler gets there, through the page's snapshot of the cut, the words
+    // and the settings — and that F5.2 S2's captions-only warning is said by the same press.
+    // Its block runs inside the one application round below (this binary may call `Application::run`
+    // exactly once), so its failure text is read out of `SHEET_FAIL` alongside the sidecar check's.
+    let failed = SHEET_FAIL.lock().unwrap().clone();
+    assert!(
+        failed.is_none(),
+        "the cue-sheet press check ran in-round: {}",
+        failed.unwrap_or_default()
+    );
 }
 
 #[test]
@@ -643,6 +759,8 @@ fn f5_4_s3_pressing_produce_with_a_language_ticked_writes_the_translated_sidecar
     });
 
     let failed = SIDECAR_FAIL.lock().unwrap().take();
+    let sheet_fail = SHEET_FAIL.lock().unwrap().take();
     std::fs::remove_dir_all(&root).ok();
     assert!(failed.is_none(), "{}", failed.unwrap_or_default());
+    assert!(sheet_fail.is_none(), "{}", sheet_fail.unwrap_or_default());
 }
