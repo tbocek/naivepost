@@ -487,6 +487,106 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
         "{:?}",
         plan.encodes[0].command.argv
     );
+    // §5 (`to frames at the render fps (default 25)`): ffmpeg has to be told the strip's own rate, and the number it
+    // is told is `P.card.bakeFps`, spelled by `produce_cards` because the bake owns it.
+    let argv = &plan.encodes[0].command.argv;
+    let rate = argv.iter().position(|a| a == "-framerate").expect("the strip carries its rate");
+    assert_eq!(argv[rate + 1], produce_cards::bake_fps_arg(), "{argv:?}");
+    assert_eq!(argv[rate + 1], "25", "P.card.bakeFps: {argv:?}");
+    // §5's `-t` goes on the OUTPUT, so after every input — including the one naming this strip. A `-t` before `-i`
+    // would trim what the filters were built from.
+    let limit = argv.iter().position(|a| a == "-t").expect("the insert is trimmed to its slot");
+    assert_eq!(argv[limit + 1], format!("{:.3}", 4.0), "{argv:?}");
+    assert!(
+        limit > argv.iter().position(|a| a.ends_with("f%05d.svg")).unwrap(),
+        "the limit follows the input it trims: {argv:?}"
+    );
+}
+
+/// §8 (`An indefinitely repeating document has no own length: takes the default insert length, loops for its slot`),
+/// as far as the RUN is concerned. The form half is s15's; this is the encode half, driven through the same
+/// [`exec::plan`] door s15b uses, because `-stream_loop -1` and the `-t` that makes looping safe are decided there
+/// and nowhere else.
+#[test]
+fn sec_06_effects_5_cards_svg_inserts_s15c_the_run_loops_a_card_with_no_own_length() {
+    let doc = canvas(
+        "<text x=\"100\" y=\"200\" opacity=\"0\">Spin<animate attributeName=\"opacity\" values=\"0;1\"\
+         keyTimes=\"0;1\" dur=\"2s\" repeatCount=\"indefinite\"/></text>",
+    );
+    let root = temp_root("plan-loop");
+    let project = root.join("demo.naivepost");
+    std::fs::create_dir_all(&project).unwrap();
+    let tree = Tree::new(&project).unwrap();
+    let card_path = root.join("spin.svg");
+    std::fs::write(&card_path, &doc).unwrap();
+    // The slot the Cut page gave it: nothing of its own to offer, so P.policy.insertDefaultSeconds.
+    assert_eq!(produce_cards::offer_seconds(&card_path.to_string_lossy()), None);
+    let seconds = cut_insert::default_length(produce_cards::offer_seconds(&card_path.to_string_lossy()), true);
+    assert_eq!(seconds, cut_insert::DEFAULT_SECONDS);
+
+    let cut = naivepost::cut::Cut {
+        segs: vec![Seg { s: 0.0, e: 0.0, dur: seconds, cam: 0, ins: card_path.to_string_lossy().to_string(), ..Default::default() }],
+        ..Default::default()
+    };
+    fn always_exists(_: &str) -> bool {
+        true
+    }
+    fn no_wav(_: &naivepost::narration::Entry) -> Option<PathBuf> {
+        None
+    }
+    fn no_words(_: &render::Clip) -> Vec<naivepost::produce_subtitles::Word> {
+        Vec::new()
+    }
+    fn fx_none(_seg: &Seg) -> Vec<naivepost::cut::Fx> {
+        Vec::new()
+    }
+    let exists: &dyn Fn(&str) -> bool = &always_exists;
+    let wav_of: &dyn Fn(&naivepost::narration::Entry) -> Option<PathBuf> = &no_wav;
+    let words: &dyn Fn(&render::Clip) -> Vec<naivepost::produce_subtitles::Word> = &no_words;
+    let fx_for: &dyn Fn(&Seg) -> Vec<naivepost::cut::Fx> = &fx_none;
+    fn sources_none() -> Vec<naivepost::project::Source> {
+        Vec::new()
+    }
+    let sources: &dyn Fn() -> Vec<naivepost::project::Source> = &sources_none;
+    fn translate_pass(
+        _text: &str,
+        numbers: &[usize],
+    ) -> Result<std::collections::BTreeMap<usize, String>, String> {
+        Ok(numbers.iter().map(|n| (*n, format!("t {n}"))).collect())
+    }
+    let translate: &produce_translate::Ask = &translate_pass;
+    let source_file = |_clip: &render::Clip| Some(card_path.to_string_lossy().to_string());
+    let mats = exec::Materials {
+        exists: &exists,
+        fx_for: &fx_for,
+        lanes: &[],
+        src_shape: (1920, 1080),
+        wav_of: &wav_of,
+        source_file: &source_file,
+        on_recording: true,
+        footage_left: &naivepost::produce_render::unknown_footage,
+        wav_seconds: &|_entry| None,
+        cues: exec::Cues::default(),
+        sources: &sources,
+        words: &words,
+        translate,
+        probe: &|_file| None,
+    };
+    let plan = exec::plan(&exec_run(&cut, &tree), &tree, &mats);
+
+    // The card still says how it was arrived at, even though it is the endless kind.
+    assert!(
+        plan.plan_logs.iter().any(|line| line == cards::FILLED_IN),
+        "{:?}",
+        plan.plan_logs
+    );
+    let argv = &plan.encodes[0].command.argv;
+    // Its slot is longer than one pass of it, so the picture runs again: `-stream_loop -1`.
+    let loops = argv.iter().position(|a| a == "-stream_loop").expect("an endless card loops");
+    assert_eq!(argv[loops + 1], "-1", "{argv:?}");
+    // And looping is only safe because `-t` trims the loop back to the seconds the cut asked for.
+    let limit = argv.iter().position(|a| a == "-t").expect("the loop is trimmed to the slot");
+    assert_eq!(argv[limit + 1], format!("{:.3}", seconds), "{argv:?}");
 }
 
 /// A run carrying this cut, with the settings a render would use.

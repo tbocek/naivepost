@@ -214,6 +214,22 @@ fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
         "the typed answer rides on the path the render will read: {:?}",
         placed.ins
     );
+    // §5's other half, through the same press: the seconds in the entry are what the slot got. This call handed 4.0
+    // as the form's opening number on purpose — a card's own length is offered (the check above), and an explicit
+    // answer to the Seconds entry outranks it, which is the fallback chain `cut_insert::default_length` spells.
+    assert_eq!(placed.dur, 4.0, "what the entry held is what the slot got: {:?}", placed.ins);
+    // §8's arrival sentence leads the line: what the typed parameters did, then where the card landed.
+    let said = status_text(&window);
+    assert!(
+        said.starts_with(cards::FILLED_IN),
+        "`{}` starts with §8's `{}`: {said}",
+        cards::FILLED_IN,
+        cards::FILLED_IN
+    );
+    assert!(
+        said.contains("filled in \u{2014}"),
+        "the note is ahead of the placement sentence, not after it: {said}"
+    );
     let doc = std::fs::read_to_string(&plain).expect("the card file");
     let answered: Vec<String> = ins::answered_holes(&doc, &args)
         .into_iter()
