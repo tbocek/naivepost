@@ -42,6 +42,11 @@ pub const TOOLBAR_GROUPS: [&str; 6] = ["transport", "volume", "voice", "takes", 
 /// theme has — the transport's ＋ already did (inventory §A.4).
 pub const ADD_LINE_ICON: &str = "list-add";
 
+/// The take row's −, the other half of §1's Prototype note: U+FF0D is as CJK-only as U+FF0B was. Named with
+/// the `-symbolic` suffix on purpose — `list-remove-symbolic` is a real file in the Adwaita theme this app
+/// ships against, whereas the bare `list-remove` name resolves to nothing there (checked in the container).
+pub const TAKE_REMOVE_ICON: &str = "list-remove-symbolic";
+
 /// ‹‹ and ›› (§1's numbers 3 and 5): three seconds, snapped to the cut by the caller.
 pub const BACK_SECONDS: f64 = 3.0;
 
