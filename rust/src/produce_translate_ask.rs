@@ -85,7 +85,9 @@ pub fn body(model: &str, system: &str, user: &str) -> Result<String, String> {
             parts: vec![Part::Text(user.to_string())],
         },
     ];
-    let body = llm_request::body(model, &messages, Mode::Execute, Some(&tools), false)?;
+    // §4: every chat call is streamed; the answer is read by response content type, so a plain-JSON fake
+    // still works (`llm_request::reply_from`).
+    let body = llm_request::body(model, &messages, Mode::Execute, Some(&tools), true)?;
     Ok(body.to_string())
 }
 

@@ -521,7 +521,11 @@ fn chat_body_with(
     conversation: &[Message],
     offered: Option<&[Tool]>,
 ) -> Result<serde_json::Value, String> {
-    llm_request::body(model, conversation, Mode::Thinking, offered, false)
+    // §4's "every call is streamed": the request ASKS for `stream`, and the reader routes on the RESPONSE's
+    // content type (`llm_request::reply_from` / `is_event_stream`), so a server that answers plain JSON to a
+    // streaming request is still read correctly. That is what lets a one-shot fake keep answering while the
+    // real llama.cpp gets chunks a person can watch arrive.
+    llm_request::body(model, conversation, Mode::Thinking, offered, true)
 }
 
 /// The answer text out of a chat reply: `content`, never the reasoning. Routed by §1's rule — an

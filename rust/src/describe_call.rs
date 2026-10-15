@@ -361,7 +361,7 @@ fn ask(
     let offered: Vec<Tool> = crate::tools::offered(Job::Describe);
     // §2's row says thinking OFF, which is `Mode::Execute` here: the two modes are the whole switch
     // and every non-thinking job in the app takes this one.
-    let body = llm_request::body(model, &messages, Mode::Execute, Some(&offered), false)?.to_string();
+    let body = llm_request::body(model, &messages, Mode::Execute, Some(&offered), true)?.to_string();
     let endpoint = services::llm_endpoint(
         &settings::read(paths).unwrap_or_default(),
     );

@@ -100,10 +100,11 @@ impl Call {
 
     /// The progress the reply allows, placed exactly as §8 requires.
     ///
-    /// The scanner reads the reply text the dial actually handed back — the request is non-streaming today
-    /// (`live_ask` passes `streaming: false` and the delta pump in [`crate::llm_stream_leg`] belongs to
-    /// another item), so these are numbers computed from real reply bytes, never a scripted position. Objects
-    /// closed inside the text's last `"segments": [` is what a partial answer can say, and the last closed
+    /// The scanner reads the reply text the dial actually handed back — the request is streamed
+    /// (`live_ask` passes `streaming: true`) but the delta pump in [`crate::llm_stream_leg`] belongs to
+    /// another item, so a call hands over its whole answer at once — and these are numbers computed from real
+    /// reply bytes, never a scripted position. Objects closed inside the text's last `"segments": [` is what a
+    /// partial answer can say, and the last closed
     /// object's `end` is the only position inside it; with neither, the bar pulses under the thinking sentence
     /// rather than claiming a place it does not have.
     pub fn report(&mut self, text: &str, total: f64) -> Progress {

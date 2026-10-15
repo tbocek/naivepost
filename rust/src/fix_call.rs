@@ -257,7 +257,7 @@ fn ask_once(
         // §2's row says thinking OFF, which is `Mode::Execute` here: the two modes are the whole switch
         // and every non-thinking job in the app takes this one.
         let body =
-            llm_request::body(&conf.model, conversation, Mode::Execute, Some(tools), false)?
+            llm_request::body(&conf.model, conversation, Mode::Execute, Some(tools), true)?
                 .to_string();
         let base = crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "fix");
         let sent = crate::llm_retry_leg::chat(

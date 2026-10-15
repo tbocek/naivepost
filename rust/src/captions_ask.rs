@@ -229,7 +229,9 @@ fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
             parts: vec![Part::Text(user.to_string())],
         },
     ];
-    let body = llm_request::body(model, &messages, Mode::Thinking, Some(&tools), false)?;
+    // §4: every chat call is streamed. The reader routes on the response's content type
+    // (`llm_request::reply_from`), so a fake that answers one JSON envelope is still read correctly.
+    let body = llm_request::body(model, &messages, Mode::Thinking, Some(&tools), true)?;
     Ok(body.to_string())
 }
 

@@ -249,7 +249,7 @@ pub fn ask_run(
     let mut final_body: Option<String> = None;
     let mut named = 0usize;
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
-        let body = llm_request::body(&conf.model, conversation, Mode::Execute, Some(tools), false)?
+        let body = llm_request::body(&conf.model, conversation, Mode::Execute, Some(tools), true)?
             .to_string();
         let base = crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "retakes");
         let sent = crate::llm_retry_leg::chat(
