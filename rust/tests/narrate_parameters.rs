@@ -232,18 +232,21 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_is_a_row_and_is_read()
         "the row must name the constant the solo test reads"
     );
     // Read, not just catalogued: a neighbour 1.9 s away sits inside the pad and costs the stretch its place,
-    // while one at exactly 2.0 s leaves it clean.
+    // while one at exactly 2.0 s leaves it clean. The word source fills each turn edge to edge here, so the
+    // pad is the only rule deciding (§6's narrowing has its own tests).
+    let words = |_, _| Some((0.0, 6.0));
     let crowded = voice_ref::plan_reference(
         &[],
         &[(0.0, 6.0, 1u32), (7.9, 9.0, 2)],
         &|_, _| 30,
+        &words,
         1,
     );
     assert!(
         matches!(crowded, voice_ref::ReferencePlan::Unavailable(_)),
         "1.9 s of clearance is inside P.eng.refPadSeconds: {crowded:?}"
     );
-    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], &|_, _| 30, 1);
+    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], &|_, _| 30, &words, 1);
     assert_eq!(
         clear,
         voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 0.0, end: 6.0 }]),

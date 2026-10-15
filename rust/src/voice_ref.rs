@@ -197,6 +197,9 @@ pub fn plan_reference(
     // `&impl Fn` rather than `impl Fn`: after the plan is made, `recut_for_voice` asks this same counter for
     // the pieces it kept, to put §6's real word count in the build log. Taking it by value would consume it.
     words_in: &impl Fn(f64, f64) -> usize,
+    // §6 (`Automatic ranking`): "narrowed to their words" — the transcript's own span inside a window, so
+    // the diarizer's turn can be cut down to what was actually said. `None` = no words there at all.
+    words_span: &impl Fn(f64, f64) -> Option<(f64, f64)>,
     narrator_speaker: u32,
 ) -> ReferencePlan {
     if !takes.is_empty() {
@@ -209,8 +212,21 @@ pub fn plan_reference(
     }
 
     // Solo stretches first: a window of the narrator's turns with no other speaker inside it, and at
-    // least REF_PAD_SECONDS of clearance on each side.
+    // least REF_PAD_SECONDS of clearance on each side. The clearance is judged on the diarizer's OWN turn —
+    // a neighbour next to the silent head of a turn is still next to that speaker.
+    //
+    // What is then kept is NOT the whole turn: §6 narrows each candidate "to their words", so the floor,
+    // the density check and the piece handed to ffmpeg are the transcript's own first-word..last-word span.
+    // A diarized turn routinely carries the half-second of room tone before the first word and the tail
+    // after the last; cloning from those is what makes a reference waver, and it also inflates the length a
+    // sparse turn is divided by, which would flatter exactly the turns the density floor exists to catch.
+    //
+    // Both lists are collected because §6's drop is conditional: "takes under refMinWordsPerSecond dropped
+    // UNLESS THAT LEAVES NONE". A session whose only solo stretches are sparse gets a reference built from
+    // them anyway — audio the clone can use beats a refusal — while a session with no solo stretch at all
+    // still answers NO_CLEAN_STRETCH (§F4.6 S2's own sentence).
     let mut candidates: Vec<(Piece, usize)> = Vec::new();
+    let mut sparse: Vec<(Piece, usize)> = Vec::new();
     for &(start, end, speaker) in turns {
         if speaker != narrator_speaker {
             continue;
@@ -223,17 +239,26 @@ pub fn plan_reference(
         if turns.iter().any(clear) {
             continue;
         }
-        if end - start < REF_MIN_TAKE_SECONDS {
+        let Some((from, until)) = words_span(start, end) else {
+            continue;
+        };
+        if until - from < REF_MIN_TAKE_SECONDS {
             continue;
         }
-        let words = words_in(start, end);
-        if (words as f64) < (end - start) * REF_MIN_WORDS_PER_SECOND {
+        let piece = Piece { start: from, end: until };
+        let words = words_in(from, until);
+        if (words as f64) < (until - from) * REF_MIN_WORDS_PER_SECOND {
+            sparse.push((piece, words));
             continue;
         }
-        candidates.push((Piece { start, end }, words));
+        candidates.push((piece, words));
     }
     if candidates.is_empty() {
-        return ReferencePlan::Unavailable(NO_CLEAN_STRETCH.to_string());
+        if sparse.is_empty() {
+            return ReferencePlan::Unavailable(NO_CLEAN_STRETCH.to_string());
+        }
+        // §6's exception: every solo stretch is thin, so the thin ones ARE the reference.
+        candidates = sparse;
     }
 
     // §F4.6's ranking: by the WORDS said in each stretch, its length only breaking a tie. Ranking by length
@@ -416,8 +441,8 @@ pub fn recut_notice(file: &str) -> String {
 /// "it is re-cut from the recording on the next line spoken" is made of, and the reason a voice pick
 /// that invalidated `voice_ref.wav` still ends up speaking in the newly chosen voice.
 ///
-/// `turns` and `words_in` come from the caller because they are the session's Prepare output
-/// (see the module doc): `speaker_turns` loads them for the real flow. `ffmpeg` is the Settings
+/// `turns`, `words_in` and `words_span` come from the caller because they are the session's Prepare
+/// output (see the module doc): `speaker_turns` loads them for the real flow. `ffmpeg` is the Settings
 /// seam, so a test points it at a script and no live ffmpeg is needed.
 ///
 /// `Err` carries the spec's own refusal sentence (S2's `nothing_tagged`, `NO_DIARIZATION` or
@@ -428,6 +453,8 @@ pub fn recut_for_voice(
     source: &str,
     turns: &[(f64, f64, u32)],
     words_in: impl Fn(f64, f64) -> usize,
+    // §6's narrowing, asked of the same transcript the counter reads: see `plan_reference`.
+    words_span: impl Fn(f64, f64) -> Option<(f64, f64)>,
 ) -> Result<Built, String> {
     // S3's repair runs BEFORE anything is cut: an older project holds `voice_ref.wav` with no base,
     // and that lone file is the reference's history. Cutting over it would lose it.
@@ -455,6 +482,7 @@ pub fn recut_for_voice(
         &takes_of(tree, source),
         turns,
         &words_in,
+        &words_span,
         ranked_speaker(turns).unwrap_or(FLOW_SLOT as u32),
     );
     let (pieces, hand_picked) = match &plan {

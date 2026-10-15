@@ -18,15 +18,19 @@ use naivepost::separate::{self, CHUNK_MAX_SECONDS};
 use naivepost::separate_media as media;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::temp_dir_created as temp_dir;
 
 /// A stub ffmpeg that behaves like the tool where a rule depends on it AND records every invocation,
 /// one line per call, into `argv.log` next to it. `body` is what the script does after logging.
 ///
 /// The behaviours are chosen by what the argv asks for, exactly as the real tool branches on them;
 /// `exit 0` with no output file is how a leg's "it made nothing" branch gets exercised.
+///
+/// ONE folder per call, never one per tag: this binary runs its tests in threads over the same
+/// `/tmp`, and two stubs sharing a folder both append to one `argv.log` (so `calls()` sees the other
+/// test's command) and both write the same output path — which is how one run got `Text file busy`
+/// and the next got a clean pass.
 fn stub(tag: &str, body: &str) -> PathBuf {
-    let dir = temp_dir(&format!("f12-media-{tag}"));
+    let dir = unique_dir(&format!("f12-media-{tag}"));
     let script = dir.join("ffmpeg");
     std::fs::write(
         &script,
@@ -39,6 +43,14 @@ fn stub(tag: &str, body: &str) -> PathBuf {
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
         .expect("the stub runs");
     dir
+}
+
+/// A temp folder no other test in this binary can be using: the tag says who made it, and the pid plus
+/// a per-call counter say which call made it.
+fn unique_dir(tag: &str) -> PathBuf {
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    common::temp_dir_created(&format!("{tag}-{}-{n}", std::process::id()))
 }
 
 /// The stub's recorded calls, oldest first, one argv per line.
@@ -56,6 +68,11 @@ fn write(path: &Path, bytes: &[u8]) {
 }
 
 /// Copy-the-input stub: creates its output from the first `-i`.
+///
+/// Written beside the target and renamed onto it rather than `cp`'d straight onto it: ETXTBSY (the
+/// "Text file busy" that made this suite flaky) is what writing to an already-existing file returns
+/// while another process still holds it open, and a rename replaces the entry instead of writing
+/// through it, so it cannot meet that error.
 const COPY: &str = r#"last=""
 for a in "$@"; do last="$a"; done
 first=""
@@ -64,7 +81,11 @@ for a in "$@"; do
   if [ "$a" = "-i" ]; then pending=1; continue; fi
   if [ "$pending" = 1 ]; then pending=0; first="$a"; break; fi
 done
-[ -f "$first" ] && cp "$first" "$last"
+if [ -f "$first" ]; then
+  mkdir -p "$(dirname "$last")"
+  tmp="$(dirname "$last")/np-part-$$"
+  cp -- "$first" "$tmp" && mv -f -- "$tmp" "$last"
+fi
 "#;
 
 /// S1: the decode goes to 44.1 kHz stereo pcm — `separate::decode_plan`'s own arguments, in the order
@@ -338,7 +359,7 @@ fn f1_2_s4_a_videos_rest_is_muxed_with_the_picture_copied_and_flac_sound() {
 /// (the parts are what a person can look at, and what the resume rule reads).
 #[test]
 fn f1_2_s4_the_work_dir_sits_beside_the_products_and_clears_on_entry_only() {
-    let root = temp_dir("f12-work").join("talk.naivepost");
+    let root = unique_dir("f12-work").join("talk.naivepost");
     let tree = Tree::new(&root).expect("a .naivepost folder is a project");
     let work = media::work_dir(&tree, "lecture");
     assert_eq!(work, tree.stems_dir().join("lecture.work"), "stems/<base>.work");

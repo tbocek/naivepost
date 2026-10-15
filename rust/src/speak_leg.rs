@@ -335,9 +335,29 @@ fn build_missing_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
     let words = transcript_words(tree, &lane);
     let conf = current_conf();
     let ffmpeg = ffmpeg_program(&conf);
-    voice_ref::recut_for_voice(tree, &ffmpeg, &source, &turns, |from, until| {
-        words_in(&words, from, until)
-    })
+    voice_ref::recut_for_voice(
+        tree,
+        &ffmpeg,
+        &source,
+        &turns,
+        |from, until| words_in(&words, from, until),
+        // §6's narrowing: the transcript lines inside the turn give its spoken span — first line's start
+        // to last line's end. No lines means no candidate at all.
+        |from, until| word_span(&words, from, until),
+    )
+}
+
+/// The span the transcript's own words occupy inside a window: the earliest line start and the latest
+/// line end fully inside it. `None` when nothing falls there — a diarized turn with no words in it is the
+/// diarizer guessing over noise, so there is nothing to narrow to.
+pub fn word_span(lines: &[(f64, f64, usize)], from: f64, until: f64) -> Option<(f64, f64)> {
+    let mut span: Option<(f64, f64)> = None;
+    for (start, end, _) in lines.iter().filter(|(s, e, _)| *s >= from && *e <= until) {
+        let (first, last) = span.get_or_insert((*start, *end));
+        *first = first.min(*start);
+        *last = last.max(*end);
+    }
+    span
 }
 
 /// §6 (`Reference build`): the log names the recording the reference was cut FROM, by file name — a path

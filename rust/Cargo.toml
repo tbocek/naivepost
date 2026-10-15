@@ -1020,6 +1020,10 @@ name = "sec_07_narrate_6_pass"
 path = "tests/sec_07_narrate_6_pass.rs"
 
 [[test]]
+name = "sec_07_narrate_6_preview_end"
+path = "tests/sec_07_narrate_6_preview_end.rs"
+
+[[test]]
 name = "sec_07_narrate_5_rules"
 path = "tests/sec_07_narrate_5_rules.rs"
 

@@ -365,8 +365,11 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_refe
     );
     // No diarization at all is a refusal, never a guess.
     assert_eq!(voice_ref::ranked_speaker(&[]), None);
+    // The word source these cases use: every window is filled edge to edge with words, so the narrowing
+    // cannot change what is being tested here (§6's narrowing has its own tests below).
+    let full = |from: f64, until: f64| Some((from, until));
     assert_eq!(
-        voice_ref::plan_reference(&[], &[], &|_, _| 0, 1),
+        voice_ref::plan_reference(&[], &[], &|_, _| 0, &full, 1),
         voice_ref::ReferencePlan::Unavailable(voice_ref::NO_DIARIZATION.to_string()),
         "no diarization stays a refusal rather than becoming a guess"
     );
@@ -382,7 +385,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_refe
 
     // Hand-picked takes outrank diarization outright — no cap, no diarization needed.
     assert_eq!(
-        voice_ref::plan_reference(&[(2.0, 9.0)], &turns, &|_, _| 0, 2),
+        voice_ref::plan_reference(&[(2.0, 9.0)], &turns, &|_, _| 0, &full, 2),
         voice_ref::ReferencePlan::HandPicked(vec![voice_ref::Piece { start: 2.0, end: 9.0 }])
     );
     // A solo stretch crowded by another speaker inside the pad is not clean, so nothing survives
@@ -392,26 +395,104 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_refe
         (11.5, 21.0, 2),
     ];
     assert_eq!(
-        voice_ref::plan_reference(&[], &crowded, &|_, _| 30, 1),
+        voice_ref::plan_reference(&[], &crowded, &|_, _| 30, &full, 1),
         voice_ref::ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string())
     );
     // The same stretch with the other speaker further away than the pad IS clean; density decides
     // which candidate is kept, which is why the word counter is passed in rather than guessed from
-    // the length. A stretch under the density floor (`refMinWordsPerSecond` × its seconds) is
-    // dropped outright — and when that leaves nothing, the plan says so rather than cutting a
-    // reference it does not trust.
+    // the length. A stretch under the density floor (`refMinWordsPerSecond` × its seconds) is dropped
+    // when anything denser competes — and kept when it is all the diarization offers, because §6 drops a
+    // thin take "unless that leaves none" and audio beats a refusal.
     let clean = [
         (0.0, 10.0, 1_u32),
         (20.0, 30.0, 2),
     ];
     assert_eq!(
-        voice_ref::plan_reference(&[], &clean, &|_, _| 30, 1),
+        voice_ref::plan_reference(&[], &clean, &|_, _| 30, &full, 1),
         voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 0.0, end: 10.0 }])
     );
     assert_eq!(
-        voice_ref::plan_reference(&[], &clean, &|_, _| 4, 1),
+        voice_ref::plan_reference(&[], &clean, &|_, _| 4, &full, 1),
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 0.0, end: 10.0 }]),
+        "the only candidate is thin, so §6's exception keeps it rather than refusing"
+    );
+}
+
+/// §6 (`Automatic ranking`): "solo turns … NARROWED TO THEIR WORDS". A diarized turn carries the room tone
+/// before the first word and the tail after the last; what is cloned is the words, so the piece handed to
+/// ffmpeg is the transcript's own span, and the length the density floor divides by is that span too.
+#[test]
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_a_solo_turn_is_narrowed_to_its_words(
+) {
+    // The diarizer claims 0–20 s; the words actually run 4–14 s.
+    let turns = [(0.0, 20.0, 1_u32), (40.0, 50.0, 2)];
+    let narrowed = voice_ref::plan_reference(&[], &turns, &|_, _| 40, &|_, _| Some((4.0, 14.0)), 1);
+    assert_eq!(
+        narrowed,
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 4.0, end: 14.0 }]),
+        "the cut follows the words, not the diarizer's padded turn"
+    );
+    // The floor is measured on the narrowed span too: the same turn passes at 6 spoken seconds and fails
+    // when its words only fill 4 of them, even though the diarized turn was 20 s long.
+    let short_words = voice_ref::plan_reference(&[], &turns, &|_, _| 40, &|_, _| Some((4.0, 8.0)), 1);
+    assert_eq!(
+        short_words,
         voice_ref::ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
-        "a sparse take is dropped even when it was the only candidate"
+        "a turn whose WORDS are under P.eng.refMinTakeSeconds is not rescued by the diarizer's padding"
+    );
+    // And a turn with no words in it at all is the diarizer guessing over noise: no span, no candidate.
+    let silent = voice_ref::plan_reference(&[], &turns, &|_, _| 0, &|_, _| None, 1);
+    assert_eq!(
+        silent,
+        voice_ref::ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
+        "nothing said means nothing to clone"
+    );
+    // Density is checked against the narrowed span as well: 10 spoken seconds need 15 words.
+    let thin = voice_ref::plan_reference(&[], &turns, &|_, _| 12, &|_, _| Some((4.0, 14.0)), 1);
+    assert_eq!(
+        thin,
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 4.0, end: 14.0 }]),
+        "§6's exception keeps the only candidate even at 1.2 words per second"
+    );
+}
+
+/// §6 (`Automatic ranking`): the drop of a thin take is conditional — "dropped UNLESS THAT LEAVES NONE".
+/// A session whose only solo stretches are sparse still gets a reference; one with no solo stretch at all
+/// still hears §F4.6 S2's refusal.
+#[test]
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_a_thin_take_is_kept_when_nothing_else_remains(
+) {
+    let full = |from: f64, until: f64| Some((from, until));
+    // Two solo stretches: one dense, one thin. The thin one loses and is NOT offered.
+    let turns = [(0.0, 10.0, 1_u32), (20.0, 30.0, 1)];
+    let mixed = voice_ref::plan_reference(&[], &turns, &|from, _| if from < 1.0 { 30 } else { 5 }, &full, 1);
+    let voice_ref::ReferencePlan::Automatic(pieces) = mixed else {
+        panic!("a dense stretch must produce a plan, got {mixed:?}");
+    };
+    assert_eq!(
+        pieces,
+        vec![voice_ref::Piece { start: 0.0, end: 10.0 }],
+        "the dense stretch is taken and the thin one dropped: {pieces:?}"
+    );
+    // Both thin: the drop would leave none, so both stand and the app gets audio instead of a refusal.
+    let both_thin = voice_ref::plan_reference(&[], &turns, &|_, _| 5, &full, 1);
+    let voice_ref::ReferencePlan::Automatic(pieces) = both_thin else {
+        panic!("§6's exception must build a reference from the thin takes, got {both_thin:?}");
+    };
+    assert_eq!(
+        pieces,
+        vec![
+            voice_ref::Piece { start: 0.0, end: 10.0 },
+            voice_ref::Piece { start: 20.0, end: 30.0 }
+        ],
+        "still ranked and still capped, just not dropped: {pieces:?}"
+    );
+    // No solo stretch anywhere: the refusal stands, thin or not.
+    let crowded = [(0.0, 10.0, 1_u32), (11.0, 21.0, 2)];
+    assert_eq!(
+        voice_ref::plan_reference(&[], &crowded, &|_, _| 5, &full, 1),
+        voice_ref::ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
+        "a neighbour inside the pad is not made usable by the exception"
     );
 }
 

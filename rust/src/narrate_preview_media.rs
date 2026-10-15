@@ -141,7 +141,7 @@ fn footage_path(
         // No lane carries this camera's name: only a session that filmed ONE camera can answer, and then its
         // single footage row is this camera whatever it was called. With several rows and no `camN` to read,
         // guessing would play the wrong footage, so nothing is guessed.
-        .or_else(|| (base == "cam0" && footage.len() == 1).then_some(footage[0]));
+        .or_else(|| footage.first().copied().filter(|_| base == "cam0" && footage.len() == 1));
     let Some(written) = named.map(|source| source.path.clone()) else {
         crate::ui::window::log_line(&preview::playback_failure(
             "Narrate",
@@ -285,26 +285,58 @@ pub struct Cue {
     pub pid: u32,
 }
 
+/// A cue's two freezes, spelled instead of passed as a bare `bool` (`f(true, false)` at a call site says
+/// nothing): the preview's own pause, and §6's no-footage still frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Freeze {
+    /// Play on: a running preview's re-cue.
+    Play,
+    /// Freeze the player at once because the PREVIEW is paused — a seek under the thumb shows a new frame,
+    /// not a clip starting.
+    Paused,
+    /// Freeze the player at once because there is NOTHING to play: §6's "a line auditioned from its own ▶
+    /// over a clip with no footage … speaks against a still frame". The held frame is the whole point, so
+    /// this freeze does not depend on the preview's pause state.
+    StillFrame,
+}
+
+impl Freeze {
+    /// Whether the player must be stopped the instant it is spawned.
+    fn hold(self) -> bool {
+        self != Freeze::Play
+    }
+
+    /// Whether a cue with no footage files is allowed at all.
+    fn allows_no_footage(self) -> bool {
+        self == Freeze::StillFrame
+    }
+}
+
 /// Cue the picture over the cut's own footage at `at`, through the same argv as any other cue, and hand back
 /// what the player was asked for — the argv AND the child. Public so the page can move the picture by a second
 /// (a transport button, a wheel notch) without reaching into the leg's preview slot.
 ///
 /// The argv travels with the child on purpose: "the duck reached the player" is only true if the number is in
 /// the command line that was run, and a caller that keeps only the pid cannot show that.
+///
+/// `freeze` says what happens to the player the moment it exists; see [`Freeze`]. A plain cue
+/// ([`Freeze::Play`]) still refuses when there is no footage, because starting a player with nothing to play
+/// would claim a picture that does not exist.
 pub fn cue_picture(
     program: &str,
     tree: &layout::Tree,
     cut: &Cut,
     at: f64,
     gain: f64,
-    hold: bool,
+    freeze: Freeze,
     spawn: &mut crate::narrate_preview_leg::Spawn,
 ) -> Result<(std::process::Child, Cue), String> {
     let files = cue_files(tree, cut, at);
-    if files.is_empty() {
+    if files.is_empty() && !freeze.allows_no_footage() {
         return Err(narrate_preview::NO_RECORDING_AT_START.to_string());
     }
-    // The player is asked for the FOOTAGE second, not the cut's second: see [`footage_second`].
+    // The player is asked for the FOOTAGE second, not the cut's second: see [`footage_second`]. With no
+    // files (§6's still frame) the argv is the bare cue and the freeze below is what makes it a frame.
     let args = bed_argv(&files, footage_second(cut, at), gain);
     said_argv(program, &args);
     let child = spawn(program, &args)?;
@@ -313,8 +345,9 @@ pub fn cue_picture(
         pid: child.id(),
     };
     // A cue made while the preview is paused is a STILL: freeze the process at once so the new frame shows
-    // rather than a clip starting under the person's thumb.
-    if hold {
+    // rather than a clip starting under the person's thumb. §6's no-footage audition asks for the same freeze
+    // unconditionally, because its whole point is a frame that does not move while the line speaks.
+    if freeze.hold() {
         hold_pid(cue.pid, true);
     }
     Ok((child, cue))

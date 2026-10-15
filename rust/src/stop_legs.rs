@@ -60,7 +60,7 @@ fn send(pid: u32, signal: i32) -> bool {
 }
 
 /// Whether this pid still exists, by asking the kernel with signal 0 (which delivers nothing).
-fn alive(pid: u32) -> bool {
+pub fn alive(pid: u32) -> bool {
     // SAFETY: signal 0 performs error checking without sending anything.
     unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }

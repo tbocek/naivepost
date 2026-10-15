@@ -1099,7 +1099,7 @@ architecture behind them.
             // would vanish before the pixels. So the seed writes the file and publishes the same span.
             let seeded = crate::ui::window::narrate_session_tree()
                 .as_ref()
-                .and_then(|tree| crate::ui::narrate_seed::take_recording_key(tree))
+                .and_then(crate::ui::narrate_seed::take_recording_key)
                 .and_then(|key| {
                     let tree = crate::ui::window::narrate_session_tree()?;
                     crate::narrate_data::save_takes(

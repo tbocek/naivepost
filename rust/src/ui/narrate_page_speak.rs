@@ -9,6 +9,7 @@
 //! file and this rule in another; nothing here draws a widget.
 
 use crate::narrate_preview_leg::{self};
+use crate::narrate_preview_media;
 use crate::ui::narrate_page::{self, NarrateState};
 use crate::narration::Entry;
 
@@ -106,9 +107,37 @@ pub(crate) fn speak_and_audition(
         }
     }
     // The take itself, on the voice player at the ducked level: spec/07-narrate.md S3 "whole clip ducked by
-    // the game volume while a line speaks", inventory C.4 "sound equals the render's". With no recording
-    // under the clip this is the whole soundtrack (an audition over a clip with no footage speaks against a
-    // still frame), so the bed above is simply absent.
+    // the game volume while a line speaks", inventory C.4 "sound equals the render's".
+    //
+    // With no recording under the clip the frame is still SHOWN, not skipped: §6 (`Preview`) says this case
+    // "speaks against a still frame", so the picture is cued at the line's second and frozen there (see
+    // [`narrate_preview_leg::still_frame`]) while the take plays beside it. Before this the bed was simply
+    // absent, which left the person watching a page while a line spoke over nothing.
+    if !s.recording_covers_clip {
+        let cut = crate::cut::load(&tree).unwrap_or_default();
+        match narrate_preview_leg::still_frame(
+            &tree,
+            &cut,
+            from,
+            narrate_preview_media::bed_gain(&cut, from, true, game_volume, preview_volume),
+            &mut narrate_preview_leg::spawn_player,
+        ) {
+            Ok((child, cue)) => {
+                narrate_page::mutate(|state| {
+                    // The head names the second the still shows, so the row and the frame agree.
+                    state.session = from;
+                    state.cut_at = from;
+                });
+                crate::ui::window::log_line(&format!(
+                    "audition: still frame held at {} (pid {}, {})",
+                    crate::narrate_screen::time_field(from),
+                    child.id(),
+                    cue.args.join(" ")
+                ));
+            }
+            Err(why) => crate::ui::window::log_line(&format!("!!! audition: {why}")),
+        }
+    }
     match narrate_preview_leg::spawn_player(
         &narrate_preview_leg::voice_program(),
         &narrate_preview_leg::voice_args(&wav.display().to_string(), 0.0, gain),

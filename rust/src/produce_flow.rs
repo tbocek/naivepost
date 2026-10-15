@@ -351,7 +351,23 @@ pub fn stamp_written(encoded: bool, failed: bool) -> bool {
 /// the opening line first, the two halves each once, the tag page only after both, and the closing
 /// sentence last. A failing words half never stops the render — that is the whole reason the two are
 /// separate calls rather than one function that could bail.
-pub fn run_with<FWords, FRender>(run: &Run, mut words: FWords, mut render_half: FRender) -> Ending
+pub fn run_with<FWords, FRender>(run: &Run, words: FWords, render_half: FRender) -> Ending
+where
+    FWords: FnMut(&Run) -> (bool, Option<String>),
+    FRender: FnMut(&Run) -> Rendered,
+{
+    run_with_named(&run.video_file(), run, words, render_half)
+}
+
+/// [`run_with`] with the produced file spelled out instead of taken from the run. The real press never names
+/// it — `run.video_file()` is the answer — but a DONE ending's log line carries a path, and a case that only
+/// wants the two halves' ordering should not have to own a folder for that path to live in.
+pub fn run_with_named<FWords, FRender>(
+    file: &str,
+    run: &Run,
+    mut words: FWords,
+    mut render_half: FRender,
+) -> Ending
 where
     FWords: FnMut(&Run) -> (bool, Option<String>),
     FRender: FnMut(&Run) -> Rendered,
@@ -370,7 +386,7 @@ where
         seconds: made.seconds,
         size: made.size,
     };
-    ending_for(&run.video_file(), &halves)
+    ending_for(file, &halves)
 }
 
 // --- names ------------------------------------------------------------------------------------

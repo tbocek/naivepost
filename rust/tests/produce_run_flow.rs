@@ -260,11 +260,16 @@ fn f5_1_s4_words_failure_is_logged_and_the_render_carries_on() {
     assert!(said.contains("-- the render carries on"), "and the run continues: {said}");
     assert!(said.starts_with("!!! the upload text and thumbnail failed:"), "{said}");
 
-    // And structurally: a words half that fails does not stop the render half from being asked.
+    // Structurally: a words half that fails does not stop the render half from being asked. The file name
+    // is made up rather than read off the run (`ending_for` is `run_with`'s own tail, and only the DONE line
+    // uses the name): a test must not touch the project folder, because several cases here share
+    // `/tmp/np-tree-<pid>-run-over` and a sibling's `tree_in` wipes that folder — which is how this case
+    // used to fail in a full-suite run while passing on its own.
     let run = run_over(cut_two(), true);
     let calls: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(vec![]));
     let log = calls.clone();
-    let ending = flow::run_with(
+    let ending = flow::run_with_named(
+        "produce/final.mp4",
         &run,
         |_| {
             log.borrow_mut().push("words");
@@ -282,6 +287,11 @@ fn f5_1_s4_words_failure_is_logged_and_the_render_carries_on() {
         },
     );
     assert_eq!(ending.status, render::STAGE_DONE, "the render's verdict stands despite the words failure");
+    assert!(
+        ending.log.contains("produce/final.mp4"),
+        "and the DONE line names the produced file: {}",
+        ending.log
+    );
     assert_eq!(*calls.borrow(), vec!["words", "render"], "both halves ran, words first");
 }
 

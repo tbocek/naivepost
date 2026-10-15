@@ -255,6 +255,44 @@ impl Preview {
             .collect()
     }
 
+    /// §6 (`Preview`): "when the picture stops, narration stops too" — has the PICTURE player run to its
+    /// end by itself? `try_wait` reaps it if so, which is also what keeps a finished player from sitting in
+    /// the slot as a zombie that `children()` would still report as killable.
+    ///
+    /// Only the picture answers this: the voice child outliving the picture is the bug, not a condition, so
+    /// asking about it here would stop the preview for a take that simply finished first.
+    pub fn picture_finished(&mut self) -> bool {
+        match self.picture.as_mut() {
+            Some(child) => matches!(child.try_wait(), Ok(Some(_))),
+            // No picture at all is no answer: a preview whose picture never spawned is reported by the press
+            // that tried, not ended by a later beat.
+            None => false,
+        }
+    }
+
+    /// Drop the picture child once it has answered "exited": it is already reaped by `picture_finished`, and
+    /// leaving it in `children()` would have ⏹ report a dead pid as one it killed.
+    pub fn forget_picture(&mut self) {
+        self.picture = None;
+    }
+
+    /// End the narration half only: the take that is still speaking when the picture stops. Reports the pid
+    /// it killed so the log can name it, and clears `speaking` so the next tick does not hold a boundary for
+    /// a line nobody is hearing any more.
+    ///
+    /// A plain `SIGTERM` will not do here: this container's `sleep` accepts the signal and carries on (the
+    /// reason [`crate::stop_legs::signal`] escalates), and escalating on every tick would make the beat wait
+    /// for the grace period. The voice child is OURS and already dead-ended, so it is ended outright and then
+    /// reaped — a killed `Child` left unreaped would still show in `children()` as a pid to kill.
+    pub fn end_voice(&mut self) -> Option<u32> {
+        let mut child = self.voice.take()?;
+        let pid = child.id();
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+        let _ = child.wait();
+        self.speaking = None;
+        Some(pid)
+    }
+
     /// Freeze both players where they stand, or thaw them (`SIGSTOP`/`SIGCONT`). They stay in the slot, so ⏹
     /// still owns them and their position survives. A freeze also ends the take's wait: S2's pause is a
     /// STILL, not a dial to the speech server, so nothing queues behind a line being synthesized.
@@ -449,6 +487,23 @@ pub fn step(
     no_narration: bool,
     spawn: &mut Spawn,
 ) -> Stepped {
+    // §6 (`Preview`) before anything else: a picture that ran to its own end ENDS the narration too. Left
+    // unchecked, the take's player keeps speaking over a frame that stopped moving seconds ago, and the tick
+    // goes on asking about seconds the picture is no longer playing. Answering `Paused` is what makes this
+    // ending identical to walking off the last clip: the caller stops both players and tells the page its
+    // preview is over (§5's `started` half), whether the cut ended or its player simply did.
+    if preview.picture_finished() {
+        preview.forget_picture();
+        if let Some(pid) = preview.end_voice() {
+            crate::ui::window::log_line(&format!(
+                "preview: the picture ended, so the narration stopped with it (killed pid {pid})"
+            ));
+        }
+        // The slot is emptied by the CALLER (`tick_loop` clears RUNNING after this returns): `step` is also
+        // called from `tick_loop`, which already holds the slot borrowed, and re-borrowing it here would
+        // panic. A slot left holding two dead players is what the caller's `Stepped::Paused` branch ends.
+        return Stepped::Paused;
+    }
     let takes = take_states(tree, entries, &preview.failed, no_narration);
     match narrate_preview::tick(now, &cut.segs, entries, &takes, preview.speaking) {
         narrate_preview::Tick::SkipTo(at) => {
@@ -855,7 +910,42 @@ fn player(
     hold: bool,
     spawn: &mut Spawn,
 ) -> Result<(Child, narrate_preview_media::Cue), String> {
-    narrate_preview_media::cue_picture(program, tree, cut, offset, gain, hold, spawn)
+    // A running preview's cue is never the still-frame one: §6 reserves that for an audition over a clip with
+    // no footage, which has no footage to cue at all.
+    narrate_preview_media::cue_picture(
+        program,
+        tree,
+        cut,
+        offset,
+        gain,
+        if hold {
+            narrate_preview_media::Freeze::Paused
+        } else {
+            narrate_preview_media::Freeze::Play
+        },
+        spawn,
+    )
+}
+
+/// Cue a STILL frame at `at` — §6's "a line auditioned from its own ▶ over a clip with no footage … speaks
+/// against a still frame". Public because the row's ▶ owns this leg; see [`narrate_preview_media::cue_picture`].
+pub fn still_frame(
+    tree: &crate::layout::Tree,
+    cut: &Cut,
+    offset: f64,
+    gain: f64,
+    spawn: &mut Spawn,
+) -> Result<(Child, narrate_preview_media::Cue), String> {
+    let program = picture_program();
+    narrate_preview_media::cue_picture(
+        &program,
+        tree,
+        cut,
+        offset,
+        gain,
+        narrate_preview_media::Freeze::StillFrame,
+        spawn,
+    )
 }
 
 /// S1/S6: start the one running preview from `from` (the press's answer) and hand back the sentence.

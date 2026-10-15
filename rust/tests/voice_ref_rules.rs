@@ -130,14 +130,15 @@ fn f4_6_s1_switching_keeps_the_synthesized_audio_of_the_old_voice() {
 #[test]
 fn f4_6_s2_hand_picked_takes_win_without_diarization() {
     // No turns at all: a hand-picked take still builds, because S2 says the takes win outright.
-    let plan = voice_ref::plan_reference(&[(4.0, 12.0)], &[], &|_, _| 0, 1);
+    let (count, span) = (Words::flat(0, None).counter(), Words::flat(0, None).spanner());
+    let plan = voice_ref::plan_reference(&[(4.0, 12.0)], &[], &count, &span, 1);
     assert_eq!(
         plan,
         ReferencePlan::HandPicked(vec![Piece { start: 4.0, end: 12.0 }]),
         "hand-picked takes need no diarization and no cap"
     );
     // Even one far past the wanted length: the cap is the AUTOMATIC pick's, not the person's.
-    let long = voice_ref::plan_reference(&[(0.0, 90.0)], &[], &|_, _| 0, 1);
+    let long = voice_ref::plan_reference(&[(0.0, 90.0)], &[], &count, &span, 1);
     match long {
         ReferencePlan::HandPicked(pieces) => {
             assert_eq!(pieces.iter().map(Piece::seconds).sum::<f64>(), 90.0);
@@ -149,14 +150,16 @@ fn f4_6_s2_hand_picked_takes_win_without_diarization() {
 #[test]
 fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_1_5_words_per_second()
 {
-    // P.eng.refMinTakeSeconds 5.0: a 4 s solo turn is too short, a 6 s one passes.
-    let short = voice_ref::plan_reference(&[], &[(0.0, 4.0, 1)], &|_, _| 40, 1);
+    // P.eng.refMinTakeSeconds 5.0: a 4 s spoken span is too short, a 6 s one passes.
+    let words = Words::flat(40, Some((0.0, 4.0)));
+    let short = voice_ref::plan_reference(&[], &[(0.0, 4.0, 1)], &words.counter(), &words.spanner(), 1);
     assert_eq!(
         short,
         ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
         "P.eng.refMinTakeSeconds: below the floor there is nothing clean to take"
     );
-    let ok = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &|_, _| 30, 1);
+    let dense = Words::flat(30, Some((0.0, 6.0)));
+    let ok = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &dense.counter(), &dense.spanner(), 1);
     assert_eq!(
         ok,
         ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
@@ -167,7 +170,8 @@ fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_
     let crowded = voice_ref::plan_reference(
         &[],
         &[(0.0, 6.0, 1), (7.0, 9.0, 2)],
-        &|_, _| 30,
+        &dense.counter(),
+        &dense.spanner(),
         1,
     );
     assert_eq!(
@@ -176,19 +180,22 @@ fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_
         "1 s of clearance is inside the 2 s the spec asks for, so the stretch is not solo"
     );
     // ...while 2 s exactly clears it.
-    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1), (8.0, 9.0, 2)], &|_, _| 30, 1);
+    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1), (8.0, 9.0, 2)], &dense.counter(), &dense.spanner(), 1);
     assert_eq!(
         clear,
         ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
         "at exactly REF_PAD_SECONDS the neighbour is outside the window's guard"
     );
 
-    // P.eng.refMinWordsPerSecond 1.5: 6 s needs 9 words; 8 is too sparse to clone from.
-    let sparse = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &|_, _| 8, 1);
+    // P.eng.refMinWordsPerSecond 1.5: 6 s needs 9 words; 8 is too sparse to clone from — but §6 drops a
+    // thin take only when that leaves SOME candidate, so with nothing else on offer the thin one is kept.
+    let thin = Words::flat(8, Some((0.0, 6.0)));
+    let sparse = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &thin.counter(), &thin.spanner(), 1);
     assert_eq!(
         sparse,
-        ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
-        "P.eng.refMinWordsPerSecond: a sparse turn is the diarizer guessing over noise"
+        ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
+        "a thin take is dropped when anything denser competes, and kept rather than refused when it is all \
+         the diarization offers"
     );
     assert_eq!(
         voice_ref::REF_MIN_TAKE_SECONDS, 5.0,
@@ -209,7 +216,8 @@ fn f4_6_s2_the_pick_stops_at_fourteen_seconds_and_three_pieces() {
         (40.0, 48.0, 1),
         (60.0, 68.0, 1),
     ];
-    let plan = voice_ref::plan_reference(&[], &turns, &|_, _| 40, 1);
+    let words = Words::flat(40, None);
+    let plan = voice_ref::plan_reference(&[], &turns, &words.counter(), &words.spanner(), 1);
     let ReferencePlan::Automatic(pieces) = plan else {
         panic!("four clean turns must produce an automatic plan, got {plan:?}");
     };
@@ -237,7 +245,8 @@ fn f4_6_s2_the_pick_stops_at_fourteen_seconds_and_three_pieces() {
 
 #[test]
 fn f4_6_s2_no_diarization_is_said_as_run_prepare_or_pick_by_hand() {
-    let plan = voice_ref::plan_reference(&[], &[], &|_, _| 0, 1);
+    let words = Words::flat(0, None);
+    let plan = voice_ref::plan_reference(&[], &[], &words.counter(), &words.spanner(), 1);
     assert_eq!(
         plan,
         ReferencePlan::Unavailable(
@@ -256,7 +265,8 @@ fn f4_6_s2_no_diarization_is_said_as_run_prepare_or_pick_by_hand() {
 fn f4_6_s2_no_clean_solo_stretch_is_said() {
     // Diarization exists; every turn fails a floor.
     let turns = [(0.0, 2.0, 1u32), (3.0, 4.0, 2)];
-    let plan = voice_ref::plan_reference(&[], &turns, &|_, _| 100, 1);
+    let words = Words::flat(100, None);
+    let plan = voice_ref::plan_reference(&[], &turns, &words.counter(), &words.spanner(), 1);
     assert_eq!(
         plan,
         ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
@@ -273,10 +283,12 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window()
 {
     assert_eq!(voice_ref::REF_PAD_SECONDS, 2.0, "P.eng.refPadSeconds spells 2");
     // 1.9 s of clearance: inside the pad, so nobody can say the window is solo.
+    let words = Words::flat(30, Some((0.0, 6.0)));
     let crowded = voice_ref::plan_reference(
         &[],
         &[(0.0, 6.0, 1u32), (7.9, 9.0, 2)],
-        &|_, _| 30,
+        &words.counter(),
+        &words.spanner(),
         1,
     );
     assert_eq!(
@@ -285,7 +297,13 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window()
         "1.9 s is inside P.eng.refPadSeconds, so the take would carry the other speaker's edge"
     );
     // Exactly 2.0 s: outside it, and the same turn is usable.
-    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], &|_, _| 30, 1);
+    let clear = voice_ref::plan_reference(
+        &[],
+        &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)],
+        &words.counter(),
+        &words.spanner(),
+        1,
+    );
     assert_eq!(
         clear,
         ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
@@ -304,12 +322,10 @@ fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie
     // order before it comes back (§F4.6's cut reads forwards), so what proves the ranking here is which of
     // the two a cap of ONE keeps — the same rule, seen where the order cannot hide it.
     let turns = [(0.0, 8.0, 1u32), (20.0, 26.0, 1)];
-    let plan = voice_ref::plan_reference(
-        &[],
-        &turns,
-        &|from: f64, _: f64| if (from - 20.0).abs() < f64::EPSILON { 30 } else { 15 },
-        1,
-    );
+    // The denser turn is the SHORT one: words decide, and each stretch keeps its own span.
+    let words = Words::flat(15, None);
+    let counter = words.per_turn(&[(20.0, 30)]);
+    let plan = voice_ref::plan_reference(&[], &turns, &counter, &words.spanner(), 1);
     let ReferencePlan::Automatic(pieces) = plan else {
         panic!("two clean turns must produce a plan, got {plan:?}");
     };
@@ -321,13 +337,16 @@ fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie
     let wanted = voice_ref::REF_WANT_SECONDS;
     // Both stretches are longer than the wanted length on their own, so whichever ranks FIRST is the only
     // piece the loop takes: the stop happens before a second piece can be offered.
+    let dense_span = |from: f64, until: f64| Some((from, until));
+    let counter = Words::flat(15, None).per_turn(&[(wanted + 20.0, 30)]);
     let capped = voice_ref::plan_reference(
         &[],
         &[
             (0.0, wanted + 4.0, 1u32),
             (wanted + 20.0, wanted + 26.0, 1),
         ],
-        &|from: f64, _: f64| if (from - (wanted + 20.0)).abs() < f64::EPSILON { 30 } else { 15 },
+        &counter,
+        &dense_span,
         1,
     );
     let ReferencePlan::Automatic(capped) = capped else {
@@ -344,10 +363,12 @@ fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie
     // KEEPS: three solo turns all saying 27 words — an 18 s one that alone passes P.machine.refWantSeconds,
     // a 6 s one that would win if length were still the ranking, and a 14 s one. If the short turn ranked
     // first it would be the only piece taken; instead the 18 s turn does.
+    let words = Words::flat(27, None);
     let tied = voice_ref::plan_reference(
         &[],
         &[(0.0, 6.0, 1u32), (20.0, 38.0, 1), (60.0, 74.0, 1)],
-        &|_, _| 27,
+        &words.counter(),
+        &words.spanner(),
         1,
     );
     let ReferencePlan::Automatic(pieces) = tied else {
@@ -675,8 +696,7 @@ fn recut_session(root: &std::path::Path, tagged: bool, with_turns: bool) -> (nai
 }
 
 /// The source the session's project tagged as narrator 1, read back the way the leg reads it.
-/// `None` on the untagged scenario, which is what that test is about, so the call site passes an
-/// empty source and expects the refusal before the path is ever looked at.
+#[allow(dead_code)] // compiled by every test in this binary; the untagged scenario asserts through the call site instead
 fn take_of(tree: &naivepost::layout::Tree) -> String {
     naivepost::project::load(tree.dir())
         .expect("project")
@@ -687,12 +707,56 @@ fn take_of(tree: &naivepost::layout::Tree) -> String {
         .unwrap_or_default()
 }
 
+/// What a word source answers about one window: how many words fall inside it, and what span those words
+/// actually occupy (`None` = the diarizer guessed over silence).
+#[derive(Clone, Copy)]
+struct Words {
+    count: usize,
+    span: Option<(f64, f64)>,
+}
+
+impl Words {
+    /// Every window answers the same pair — enough for a rule test that only cares about one turn.
+    const fn flat(count: usize, span: Option<(f64, f64)>) -> Self {
+        Self { count, span }
+    }
+
+    /// The counter half of the pair `plan_reference` is given.
+    fn counter(self) -> impl Fn(f64, f64) -> usize {
+        move |_, _| self.count
+    }
+
+    /// The narrowing half. See [`Words::counter`].
+    fn spanner(self) -> impl Fn(f64, f64) -> Option<(f64, f64)> {
+        move |from, until| self.span.or(Some((from, until)))
+    }
+
+    /// A source whose answer depends on which window is asked about: `(turn, count)` pairs, matched on the
+    // turn's own start, so a ranking test can say which stretch said more.
+    fn per_turn(self, answers: &[(f64, usize)]) -> impl Fn(f64, f64) -> usize {
+        let answers: Vec<(f64, usize)> = answers.to_vec();
+        move |from, _until| {
+            answers
+                .iter()
+                .find(|(start, _)| (*start - from).abs() < f64::EPSILON)
+                .map(|(_, count)| *count)
+                .unwrap_or(self.count)
+        }
+    }
+}
+
 /// 6 s per line at 10 words clears P.eng.refMinWordsPerSecond (1.5) by a wide margin.
 const WORDS_PER_LINE: usize = 10;
 
 fn words_for_window(from: f64, until: f64) -> usize {
     let seconds = (until - from).max(0.0);
     (seconds * WORDS_PER_LINE as f64) as usize
+}
+
+/// The recut tests' narrowing answer: the diarizer's turn stands as spoken, words filling it edge to
+/// edge. Those tests are about which turns are chosen and how they are cut, not about the narrowing.
+fn full_span(from: f64, until: f64) -> Option<(f64, f64)> {
+    Some((from, until))
 }
 
 #[test]
@@ -711,6 +775,7 @@ fn f4_6_s1_s3_the_missing_reference_is_cut_from_the_recorded_seconds() {
             (12.5, 18.5, 1),
         ],
         words_for_window,
+        full_span,
     )
     .expect("a tagged recording with clean solo turns builds");
     assert!(built.base.exists(), "the base was written at {}", built.base.display());
@@ -770,6 +835,7 @@ fn f4_6_s1_an_untagged_narrator_is_answered_with_s2s_own_sentence_and_no_file_is
         "/media/never-tagged.wav",
         &[(0.0, 6.0, 1u32)],
         words_for_window,
+        full_span,
     )
     .expect_err("a project that tagged no recording cannot have a reference cut");
     assert_eq!(
@@ -798,6 +864,7 @@ fn f4_6_s2_no_diarization_reaches_the_build_as_s2s_run_prepare_sentence() {
         &source,
         &[],
         words_for_window,
+        full_span,
     )
     .expect_err("no turns.json means nothing to cut automatically");
     assert_eq!(
@@ -825,6 +892,7 @@ fn f4_6_s3_a_lone_voice_ref_wav_is_adopted_as_the_base_before_anything_is_cut() 
         &source,
         &[(0.0, 6.0, 1u32)],
         words_for_window,
+        full_span,
     )
     .expect("one clean piece needs no concat and builds straight onto the base");
     assert!(
@@ -853,6 +921,7 @@ fn f4_6_s4_the_build_shifts_the_base_at_the_pitch_the_project_holds() {
         &source,
         &[(0.0, 6.0, 1u32)],
         words_for_window,
+        full_span,
     )
     .expect("build");
     let argv = std::fs::read_to_string(&log).expect("argv recorded");
