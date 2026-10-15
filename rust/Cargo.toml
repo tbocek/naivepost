@@ -1208,6 +1208,10 @@ name = "f5_1_s4_the_render_speak_leg_dials_audio_cpp"
 path = "tests/f5_1_s4_the_render_speak_leg_dials_audio_cpp.rs"
 
 [[test]]
+name = "f5_5_video_tag_live"
+path = "tests/f5_5_video_tag_live.rs"
+
+[[test]]
 name = "produce_run_flow"
 path = "tests/produce_run_flow.rs"
 
