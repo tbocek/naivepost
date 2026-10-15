@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use crate::cut::{Fx, Lane, Seg};
 use crate::layout::Tree;
 use crate::narration::Entry;
+use crate::produce_details as details;
 use crate::produce_flow::Run;
 use crate::produce_render as render;
 use crate::produce_stamp;
@@ -590,7 +591,10 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         let list = scratch.join("concat.txt");
         Some(command(
             render::JOINING,
-            render::join_command(&list, &scratch.join("joined.bin")),
+            // §6 names this file `joined.<container>` — the same container the run writes `final.<ext>`
+            // under, so the scratch join and the finished video agree about their shape. One expression
+            // feeds both the writer here and the mux's input below, so the two cannot disagree.
+            render::join_command(&list, &scratch.join(details::joined(container_ext(settings)))),
         ))
     };
 
@@ -602,7 +606,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     } else {
         vec![("", sheet_path.as_path())]
     };
-    let joined = scratch.join("joined.bin");
+    let joined = scratch.join(details::joined(container_ext(settings)));
     let mux = command(
         "muxing",
         render::mux_command(
@@ -729,9 +733,13 @@ where
 {
     let mut ran = Ran::default();
 
-    // S1 — the scratch folder, before anything can write into it.
+    // S1 — the scratch folder, before anything can write into it. The count of §3 + §6 scratch groups
+    // rides on the line so the log says what kinds the sweep covers, not only how many files were there.
     match render::clear_scratch(&plan.scratch) {
-        Ok(gone) => ran.cleared = gone,
+        Ok(gone) => {
+            ran.cleared = gone;
+            log(&crate::produce_data::scratch_clear_log(crate::produce_data::scratch_groups(), gone));
+        }
         Err(why) => {
             ran.failed = Some(why);
             return ran;

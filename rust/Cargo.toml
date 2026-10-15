@@ -1718,3 +1718,7 @@ path = "tests/produce_cards_bake.rs"
 [[test]]
 name = "cards_length_widget"
 path = "tests/cards_length_widget.rs"
+
+[[test]]
+name = "sec_08_produce_3_data"
+path = "tests/sec_08_produce_3_data.rs"

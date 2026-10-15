@@ -487,9 +487,16 @@ pub fn tree_in(tag: &str) -> (std::path::PathBuf, naivepost::layout::Tree) {
 
 /// A throwaway root for one test's own files, removed before the run rather than at the end of each
 /// test: a case that fails on an assertion never reaches its own cleanup, and a folder left in /tmp is
-/// a folder the next reader has to explain.
+/// a folder the next reader has to explain. The per-call counter after the tag is what makes two
+/// same-tag callers in one binary distinct — without it they remove each other's folder mid-run and
+/// the loser panics with `AlreadyExists`.
 pub fn temp_root(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("np-tree-{}-{tag}", std::process::id()));
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "np-tree-{}-{tag}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
