@@ -169,7 +169,7 @@ pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String
             parts: vec![Part::Text(user.to_string())],
         },
     ];
-    let body = llm_request::body(model, &messages, Mode::Execute, Some(&tools), false)?;
+    let body = llm_request::body(model, &messages, Mode::Execute, Some(&tools), true)?;
     // `prompt_cache_key` is not sent: §1's request contract (the table `tests/f3_9_s3_a_…` reads back on the
     // wire) names model, the two messages, `tools` when the job has them, and the sampling five — no such
     // field, and `llm_request::body` is the one place a chat request is built (§09 §5), so inventing a key

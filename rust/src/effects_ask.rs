@@ -163,7 +163,7 @@ pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String
             parts: vec![Part::Text(user.to_string())],
         },
     ];
-    let body = llm_request::body(model, &messages, Mode::Execute, Some(&tools), false)?;
+    let body = llm_request::body(model, &messages, Mode::Execute, Some(&tools), true)?;
     // No `prompt_cache_key`: §1's request contract names model, the two messages, `tools` when the job has
     // them, and the sampling five — and `llm_request::body` is the one place a chat request is built (§09 §5).
     Ok(body.to_string())

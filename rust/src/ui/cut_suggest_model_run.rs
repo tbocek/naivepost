@@ -530,9 +530,10 @@ where
 
 /// The wrapper that keeps §8's three "the reply that just arrived" rules honest: the attempt loop reads the
 /// text the dial ACTUALLY handed back, so neither the thinking rule nor the progress numbers can be scripted.
-/// The request is non-streaming today (`live_ask` passes `streaming: false`; the delta pump in
-/// [`crate::llm_stream_leg`] belongs to another item), so one call's reply is one snapshot of the answer — and
-/// the loop needs EVERY call of an attempt, not the last one: a model that asked for three segments and then
+/// The request is streamed (`live_ask` passes `streaming: true`), but the reply this loop reads is still one
+/// snapshot per call — the delta pump in [`crate::llm_stream_leg`] belongs to another item, so a call's whole
+/// answer arrives at once — and the loop needs EVERY call of an attempt, not the last one: a model that asked
+/// for three segments and then
 /// called `finish_cut` wrote its answer in the first reply and said nothing in the second. So the running text
 /// is a log of every reply this attempt received, and "wrote nothing" means not one reply wrote anything.
 pub fn watch_reply<'a, F>(
@@ -609,7 +610,7 @@ pub fn live_ask<'a>(
     let endpoint = services::llm_endpoint(conf);
     let model = conf.model.clone();
     move |conversation: &[Message], offered: &[Tool]| {
-        let body = llm_request::body(&model, conversation, Mode::Thinking, Some(offered), false)?
+        let body = llm_request::body(&model, conversation, Mode::Thinking, Some(offered), true)?
             .to_string();
         let (content_type, reply) = dial(tree, &model, &endpoint, &body)?;
         let parsed = llm_request::reply_from(&content_type, &reply).map_err(|why| unreadable(&why))?;

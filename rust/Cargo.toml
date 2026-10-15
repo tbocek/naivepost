@@ -1272,6 +1272,18 @@ name = "produce_translate_wire"
 path = "tests/produce_translate_wire.rs"
 
 [[test]]
+name = "sec_09_llm_and_tools_1_stream_bodies"
+path = "tests/sec_09_llm_and_tools_1_stream_bodies.rs"
+
+[[test]]
+name = "sec_09_llm_and_tools_1_stream_effects"
+path = "tests/sec_09_llm_and_tools_1_stream_effects.rs"
+
+[[test]]
+name = "sec_09_llm_and_tools_1_stream_eof"
+path = "tests/sec_09_llm_and_tools_1_stream_eof.rs"
+
+[[test]]
 name = "produce_upload_draw_wire"
 path = "tests/produce_upload_draw_wire.rs"
 

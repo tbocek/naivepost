@@ -152,7 +152,9 @@ pub fn ask_round(
         let mode = if thinking { Mode::Thinking } else { Mode::Execute };
         // S5: a server that already refused the `tools` field is asked without it and nothing more is said.
         let offered = crate::llm_tools_offer::tools_for(&endpoint.url, tools);
-        let body = llm_request::body(&model, conversation, mode, offered.as_deref(), false)?.to_string();
+        // §4: every chat call is streamed; the reply is read by response content type
+        // (`llm_request::reply_from`), so a plain-JSON fake still answers correctly.
+        let body = llm_request::body(&model, conversation, mode, offered.as_deref(), true)?.to_string();
         let base = base_row(&model, attempt);
         let reply = crate::llm_retry_leg::dial(
             STEP,
@@ -176,7 +178,7 @@ pub fn ask_round(
                 {
                     crate::ui::window::log_line(&tool_loop::refused_log(STEP, &why));
                     requests += 1;
-                    let bare = llm_request::body(&model, conversation, mode, None, false)?.to_string();
+                    let bare = llm_request::body(&model, conversation, mode, None, true)?.to_string();
                     let bare_reply = crate::llm_retry_leg::dial(
                         STEP,
                         tree,
@@ -212,7 +214,7 @@ pub fn ask_round(
             {
                 crate::ui::window::log_line(&tool_loop::refused_log(STEP, &why));
                 requests += 1;
-                let bare = llm_request::body(&model, conversation, mode, None, false)?.to_string();
+                let bare = llm_request::body(&model, conversation, mode, None, true)?.to_string();
                 let bare_reply = crate::llm_retry_leg::dial(
                     STEP,
                     tree,
