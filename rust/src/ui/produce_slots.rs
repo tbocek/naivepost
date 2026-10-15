@@ -33,10 +33,31 @@ pub struct Doors {
 /// name from the current state would hand back what a previous press already put there.
 static CHANGE_STAND_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// The name the stand-in chooser answers with for this press.
+/// The name the stand-in chooser answers with for this press: a frame that EXISTS when the session has
+/// extracted frames (the newest one on disk), so a headless press puts a real picture in the row and every
+/// later step — crop, request, print — has pixels to work on. Only when nothing is extracted does it fall
+/// back to a synthesised name, because then no file could be pointed at.
 pub fn next_stood_in() -> String {
     let pick = CHANGE_STAND_IN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    format!("project:produce/publish/chosen-{pick}.jpg")
+    real_frame_entry().unwrap_or(format!("project:produce/publish/chosen-{pick}.jpg"))
+}
+
+/// The newest extracted frame this session holds, as the `frame:<seconds>` entry a slot or the image row
+/// understands. Empty cut or no prepare folders answer `None` — the honest "nothing to choose from", not a
+/// path invented to keep a button busy.
+pub fn real_frame_entry() -> Option<String> {
+    let stems = crate::ui::produce_press_wiring::frame_source_stems();
+    let tree = crate::ui::produce_languages::session_tree();
+    let mut newest: Option<(f64, std::path::PathBuf)> = None;
+    for stem in stems {
+        for (seconds, path) in crate::produce_upload_media::listed_frames(&tree.frames_dir(&stem)) {
+            if newest.as_ref().is_none_or(|(at, _)| seconds >= *at) {
+                newest = Some((seconds, path));
+            }
+        }
+    }
+    // The entry names the moment; `entry_file` resolves it back to the path through the same listing.
+    newest.map(|(seconds, _)| format!("frame:{seconds:.3}"))
 }
 
 /// The per-slot buttons for however many slots the page holds.

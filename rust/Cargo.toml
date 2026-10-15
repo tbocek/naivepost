@@ -1264,6 +1264,10 @@ name = "produce_upload_draw_wire"
 path = "tests/produce_upload_draw_wire.rs"
 
 [[test]]
+name = "produce_upload_media"
+path = "tests/produce_upload_media.rs"
+
+[[test]]
 name = "produce_upload_flow"
 path = "tests/produce_upload_flow.rs"
 

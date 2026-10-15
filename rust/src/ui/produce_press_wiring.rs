@@ -19,8 +19,35 @@ use adw::prelude::*;
 use crate::produce_runs as runs;
 use crate::ui::produce_page;
 
-/// **3** Set Thumbnail from a slot: record the choice (`own`, so a later ↻ does not paint over it), then
-/// let the shared print pass put the marked words over the picture that now stands.
+/// The frame images the row can point at: every extracted JPEG this session has, as `(seconds in the
+/// recording, path)` pairs across every footage source's prepare folder. Empty when nothing is extracted.
+fn session_frame_files() -> Vec<(f64, std::path::PathBuf)> {
+    let tree = crate::ui::produce_languages::session_tree();
+    let mut out: Vec<(f64, std::path::PathBuf)> = Vec::new();
+    for base in frame_source_stems() {
+        out.extend(crate::produce_upload_media::listed_frames(&tree.frames_dir(&base)));
+    }
+    // One rule for "the same picture twice": two cameras showing the same instant is one image to send, and
+    // the moment is what makes an instant — not the file name a second source happens to write it into.
+    crate::produce_upload_media::frame_files(&out)
+}
+
+/// Which prepare folders hold frames a slot could be set from or added to the row: the footage stems of the
+/// live cut, since those are the recordings whose frames survive into the video (an insert contributes none).
+pub fn frame_source_stems() -> Vec<String> {
+    let Some(window) = produce_page::held_window() else {
+        return Vec::new();
+    };
+    let cut = crate::ui::window::review_cut_of(&window);
+    crate::timeline::kept_footage_recordings(&cut)
+        .into_iter()
+        .map(|rec| rec.base)
+        .collect()
+}
+
+/// **3** Set Thumbnail from a slot: record the choice (`own`, so a later ↻ does not paint over it), put that
+/// picture's cropped pixels where the print pass reads them (§F5.6 S3: the chosen frame IS the thumbnail,
+/// no model, no GPU), then let the shared print pass letter the picture that now stands.
 pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
     let state = produce_page::read_state();
     let Some(path) = state.frames.get(index) else {
@@ -28,14 +55,41 @@ pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
     };
     produce_page::set_own_thumbnail();
     produce_page::refresh(window);
+    // The crop is to the video's own shape at the thumbnail tier (S6's size rule), and the file behind the
+    // entry is looked up the same way the request looks its images up, so a slot press and a draw cannot
+    // disagree about which JPEG a row entry means.
+    let tree = crate::ui::produce_languages::session_tree();
+    let (wide, high) = thumb_size();
+    let record = crate::project::Publish { frames: vec![path.clone()], ..Default::default() };
+    if let Err(why) = crate::produce_upload_media::write_own_picture(
+        &tree,
+        &record,
+        &session_frame_files(),
+        wide,
+        high,
+        crate::ui::window::log_line,
+    ) {
+        crate::ui::window::log_line(&format!("!!! {why}"));
+    }
     let out = crate::produce_presses::press_set_thumbnail(path, &legs(), crate::ui::window::log_line);
     crate::ui::produce_languages::report(&out);
     report(window, out.status)
 }
 
-/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit. The walk picks the rung; the byte
-/// count this press was handed is what gets reported, so the log never prints a guessed size.
-pub fn export_thumbnail(window: &adw::ApplicationWindow, bytes: u64) -> String {
+/// The size a chosen picture is cropped to: the cut's aspect at the thumbnail tier, falling back to the
+/// first footage frame's measured shape when the cut says "source" (§9 makes that frame the video's).
+fn thumb_size() -> (u32, u32) {
+    let tree = crate::ui::produce_languages::session_tree();
+    let (w, h) = crate::ui::produce_snapshot::first_footage_shape(&tree, &crate::ui::cut_folds::page_recordings());
+    let aspect = produce_page::held_window()
+        .map(|window| crate::ui::window::review_cut_of(&window).aspect)
+        .unwrap_or_default();
+    crate::produce_screen::thumb_box(&aspect, w.max(1) as u32, h.max(1) as u32)
+}
+
+/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit. The walk runs the ladder (every rung
+/// really encoded) and reports the weight of the file it wrote, so no byte count is ever assumed.
+pub fn export_thumbnail(window: &adw::ApplicationWindow) -> String {
     let pressed = legs();
     if !(pressed.has_picture)() {
         return report(window, runs::EXPORT_NO_PICTURE.to_string());
@@ -44,7 +98,7 @@ pub fn export_thumbnail(window: &adw::ApplicationWindow, bytes: u64) -> String {
     if out.refused {
         return report(window, out.status);
     }
-    report(window, runs::exported_log(&runs::export_name("final"), bytes))
+    report(window, out.status)
 }
 
 /// **6** ↻ redraw: one sd.cpp call, nothing rewritten when the words are left alone.

@@ -31,6 +31,8 @@ pub type RunArgv = Box<dyn Fn(&[String]) -> Result<(), String>>;
 /// A file operation with no encoder in it — ⤓ Save video's copy, kept apart from `RunArgv` so a test cannot
 /// read a copy as a transcode.
 pub type CopyOut = Box<dyn Fn(&str) -> Result<(), String>>;
+/// The export ladder: given where the JPEG is to be written, the weight of each rung's encode, best first.
+pub type JpegLadder = dyn Fn(&str) -> Vec<u64>;
 
 pub struct Legs {
     /// Is there a cut to draw from? The first question every press asks.
@@ -67,9 +69,10 @@ pub struct Legs {
     /// Copy the rendered video out to a chosen path — a file operation with no encoder in it, kept apart
     /// from `encode` so a test cannot read a copy as a transcode.
     pub copy: CopyOut,
-    /// The ladder's weight at each rung of [`runs::JPEG_QUALITIES`], best first. Data rather than a codec
-    /// call, so the rung choice is a pure decision a test can pin without an encoder.
-    pub jpeg_sizes: Box<dyn Fn() -> Vec<u64>>,
+    /// The ladder's weight at each rung of [`runs::JPEG_QUALITIES`] for the picture that stands, best first,
+    /// given where the exported JPEG is to be written: the leg ENCODES each rung and measures the file, so
+    /// the rung choice rests on bytes an encoder produced rather than on the size of the PNG already there.
+    pub jpeg_sizes: Box<JpegLadder>,
     /// Was the run stopped (⊘ Cancel) rather than did a leg fail? Decides *"stopped"* vs *"failed — see log"*.
     pub was_stopped: Box<dyn Fn() -> bool>,
     /// Whether this press counts its reprint passes onto [`Outcome::prints`]. The page sets it true; the
@@ -232,18 +235,30 @@ pub fn press_set_thumbnail(file: &str, legs: &Legs, mut log: impl FnMut(&str)) -
 // ---- ⤓ export ---------------------------------------------------------------------
 
 /// S6: ⤓ export — the JPEG an uploader takes. The rung comes from [`runs::jpeg_rung`]: the first of
-/// 92/85/75/60/40 whose weight fits 2 MiB, or the last attempt when none does ("never rescaled").
+/// 92/85/75/60/40 whose weight fits 2 MiB, or the last attempt when none does ("never rescaled"). The
+/// ladder's numbers are MEASURED by the leg (each rung really encoded), and the file the chosen rung wrote is
+/// what the status line reports the weight of — a printed size is always a byte count off disk.
 pub fn press_export(path: &str, legs: &Legs) -> Outcome {
     if !(legs.has_picture)() {
         return Outcome::refusal(runs::EXPORT_NO_PICTURE);
     }
-    let sizes = (legs.jpeg_sizes)();
+    let sizes = (legs.jpeg_sizes)(path);
     let Some(rung) = runs::jpeg_rung(&sizes) else {
         return Outcome::refusal(runs::EXPORT_NO_PICTURE);
     };
+    // Read back what the encoder left: the rung's own number and the file's length must be one fact, so the
+    // line quotes the file. A missing file is a failed export, not a zero-byte success.
+    let measured = match std::fs::metadata(path) {
+        Ok(meta) => meta.len(),
+        Err(why) => {
+            let mut refused = Outcome::refusal(runs::EXPORT_NO_PICTURE);
+            refused.error = Some(format!("{path}: {why}"));
+            return refused;
+        }
+    };
     Outcome {
         calls: vec![format!("export-rung{}", runs::JPEG_QUALITIES[rung])],
-        status: runs::exported_log(path, sizes[rung]),
+        status: runs::exported_log(path, measured),
         ..Default::default()
     }
 }

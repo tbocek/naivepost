@@ -704,9 +704,10 @@ pub fn press_set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> Str
     crate::ui::produce_press_wiring::set_thumbnail(window, index)
 }
 
-/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit.
-pub fn press_export_thumbnail(window: &adw::ApplicationWindow, bytes: u64) -> String {
-    crate::ui::produce_press_wiring::export_thumbnail(window, bytes)
+/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit. The weight it reports is measured off
+/// the file the ladder wrote, so the widget hands over nothing but the press itself.
+pub fn press_export_thumbnail(window: &adw::ApplicationWindow) -> String {
+    crate::ui::produce_press_wiring::export_thumbnail(window)
 }
 
 /// **6** ↻ redraw: one sd.cpp call, nothing rewritten when the words are left alone.
@@ -1105,14 +1106,18 @@ pub fn wire(window: &adw::ApplicationWindow) {
             let owned = name.to_string();
             button.connect_clicked(move |_| match owned.as_str() {
                 "add-image-button" => {
-                    let next = format!("project:produce/publish/frame-{}.jpg", read_state().frames.len() + 1);
+                    // The stand-in for the file chooser: a real extracted frame when the session has one, so
+                    // the row gains a picture the crop and the request can open (`produce_slots::real_frame_entry`).
+                    let next = crate::ui::produce_slots::real_frame_entry().unwrap_or_else(|| {
+                        format!("project:produce/publish/frame-{}.jpg", read_state().frames.len() + 1)
+                    });
                     press_add_image(&w, &next);
                 }
                 "title-suggest" => {
                     press_suggest(&w);
                 }
                 "thumbnail-export" => {
-                    press_export_thumbnail(&w, 1024 * 1024);
+                    press_export_thumbnail(&w);
                 }
                 "thumbnail-redraw" => {
                     press_redraw_thumbnail(&w, true);

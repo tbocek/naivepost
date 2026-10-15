@@ -166,6 +166,7 @@ pub mod produce_upload;
 pub mod produce_upload_call;
 pub mod produce_upload_draw;
 pub mod produce_upload_frames;
+pub mod produce_upload_media;
 pub mod produce_upload_print;
 pub mod produce_presses;
 pub mod publish;

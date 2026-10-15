@@ -372,8 +372,8 @@ fn fixture_sources() -> Vec<project::Source> {
         .sources
 }
 
-/// The app handle the checks build their windows under, published by `run_round` so each check can use
-/// it without taking an argument through the `catch_unwind` boundary.
+// The app handle the checks build their windows under, published by `run_round` so each check can use
+// it without taking an argument through the `catch_unwind` boundary.
 thread_local! {
     static CURRENT_APP: std::cell::RefCell<Option<adw::Application>> =
         const { std::cell::RefCell::new(None) };

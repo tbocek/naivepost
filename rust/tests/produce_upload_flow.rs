@@ -13,9 +13,9 @@
 use std::cell::RefCell;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use adw::prelude::*;
 use naivepost::cut::Seg;
@@ -25,7 +25,6 @@ use naivepost::produce_upload as up;
 use naivepost::project::{Publish, TitleBox};
 use naivepost::roles::Job;
 use naivepost::shell::Page;
-use naivepost::tools::Tool;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
@@ -213,6 +212,28 @@ fn walk_with(
         stored_stamp: stored.map(|s| s.to_string()),
         write_stamp: &write_stamp,
         edited_by_hand,
+        // S3/S6's media legs. This file proves the walk's ORDER, so the legs answer with URLs of their own
+        // making rather than running ffmpeg: what matters here is that the request asks for images at all and
+        // that a chosen frame reaches the picture door, which these closures do let a test see.
+        request_images: &|publish: &Publish| {
+            let urls = if !publish.frames.is_empty() {
+                vec!["data:image/png;base64,AAAA".to_string()]
+            } else {
+                Default::default()
+            };
+            up::Sent {
+                base: urls.first().cloned(),
+                urls,
+                base_name: "frame.jpg".to_string(),
+                crop_percent: 100,
+                centre: (0.5, 0.5),
+                skipped: Vec::new(),
+            }
+        },
+        own_picture: &|_publish: &Publish| {
+            rec.mark("own-picture");
+            Ok(())
+        },
     };
     let no_draw = |_b: &serde_json::Value| -> Result<up::DrawnJob, String> {
         rec.mark("draw-refused");
@@ -559,18 +580,34 @@ fn f5_6_s6_a_stamp_that_matches_skips_the_draw() {
     assert!(!naivepost::produce_details::already_drawn(true, false), "a differing stamp draws");
 
     let base = up::thumbnail_stamp(&["a.jpg".into()], "brighten", "no blur", "16:9", false);
-    let cases: [(&str, Vec<String>, &str, &str, &str, bool); 5] = [
-        ("instruction", vec!["a.jpg".into()], "darken", "no blur", "16:9", false),
-        ("images", vec!["b.jpg".into()], "brighten", "no blur", "16:9", false),
-        ("negative", vec!["a.jpg".into()], "brighten", "very blurry", "16:9", false),
-        ("aspect", vec!["a.jpg".into()], "brighten", "no blur", "9:16", false),
-        ("own", vec!["a.jpg".into()], "brighten", "no blur", "16:9", true),
+    // One row per stamp input: what changed, and whether the stamp therefore differs from `base`.
+    struct StampCase {
+        what: &'static str,
+        images: Vec<String>,
+        instruction: &'static str,
+        negative: &'static str,
+        aspect: &'static str,
+        own: bool,
+    }
+    let cases: [StampCase; 5] = [
+        StampCase { what: "instruction", images: vec!["a.jpg".into()], instruction: "darken", negative: "no blur", aspect: "16:9", own: false },
+        StampCase { what: "images", images: vec!["b.jpg".into()], instruction: "brighten", negative: "no blur", aspect: "16:9", own: false },
+        StampCase { what: "negative", images: vec!["a.jpg".into()], instruction: "brighten", negative: "very blurry", aspect: "16:9", own: false },
+        StampCase { what: "aspect", images: vec!["a.jpg".into()], instruction: "brighten", negative: "no blur", aspect: "9:16", own: false },
+        StampCase { what: "own", images: vec!["a.jpg".into()], instruction: "brighten", negative: "no blur", aspect: "16:9", own: true },
     ];
-    for (what, images, instr, neg, aspect, own) in cases {
+    for case in cases {
         assert_ne!(
             base,
-            up::thumbnail_stamp(&images, instr, neg, aspect, own),
-            "changing the {what} moves the picture's stamp"
+            up::thumbnail_stamp(
+                &case.images,
+                case.instruction,
+                case.negative,
+                case.aspect,
+                case.own
+            ),
+            "changing the {} moves the picture's stamp",
+            case.what
         );
     }
     // The same images in another order are the same reference set.
@@ -694,12 +731,8 @@ fn session(root: &Path) -> Tree {
 }
 
 fn two_segs() -> Vec<Seg> {
-    let mut first = Seg::default();
-    first.s = 0.0;
-    first.e = 9.5;
-    let mut second = Seg::default();
-    second.s = 10.0;
-    second.e = 30.0;
+    let first = Seg { s: 0.0, e: 9.5, ..Default::default() };
+    let second = Seg { s: 10.0, e: 30.0, ..Default::default() };
     vec![first, second]
 }
 
