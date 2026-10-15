@@ -436,8 +436,27 @@ pub fn load_report(dir: &Path) -> Result<(Project, Vec<String>), String> {
         }
         Err(err) => return Err(format!("{}: {err}", file.display())),
     };
-    let raw: Raw = serde_json::from_str(&text).map_err(|err| format!("{}: {err}", file.display()))?;
+    let raw: Raw = serde_json::from_value(alias_produce(
+        serde_json::from_str::<serde_json::Value>(&text).map_err(|err| format!("{}: {err}", file.display()))?,
+    ))
+    .map_err(|err| format!("{}: {err}", file.display()))?;
     Ok(migrate(raw, dir))
+}
+
+/// The alias key [`Raw::produce_legacy`] reads the `produce` object under. Not a key any file has: it is put
+/// there by [`alias_produce`] before `Raw` is deserialized, so both readers see the same object.
+pub(crate) const PRODUCE_ALIAS: &str = "$produce_alias";
+
+/// Copy the stored `produce` object to [`PRODUCE_ALIAS`] so two fields can read it: serde gives one key to one
+/// field, and the legacy half of this block would otherwise be dropped as an unknown key while `Produce` took the
+/// rest. A file with no `produce` block (or a non-object one) is left exactly as it was.
+fn alias_produce(mut value: serde_json::Value) -> serde_json::Value {
+    if let Some(map) = value.as_object_mut() {
+        if let Some(block) = map.get("produce").cloned() {
+            map.insert(PRODUCE_ALIAS.to_string(), block);
+        }
+    }
+    value
 }
 
 /// The file as written, current and legacy keys together. The current keys default
@@ -457,6 +476,12 @@ struct Raw {
     context: String,
     policy: Option<Policy>,
     produce: Produce,
+    // The stored `produce` block read a SECOND time, under its own alias key (see [`alias_produce`], which
+    // copies the object there before `Raw` is deserialized). It keeps only the four legacy names (`subs`,
+    // `subs_from`, `game_vol`, `bare`): serde drops them with every other unknown key otherwise, and one field
+    // cannot be read twice, so `Produce` takes the current names and this one the legacy ones.
+    #[serde(rename = "$produce_alias", default, deserialize_with = "crate::project_produce::from_object")]
+    produce_legacy: crate::project_produce::RawProduce,
     publish: Option<RawPublish>,
 
     // Legacy, read and migrated once, never written again.
@@ -488,6 +513,7 @@ impl Default for Raw {
             context: empty.context,
             policy: None,
             produce: empty.produce,
+            produce_legacy: crate::project_produce::RawProduce::default(),
             publish: None,
             videos: None,
             audios: None,
@@ -616,11 +642,24 @@ fn migrate(mut raw: Raw, dir: &Path) -> (Project, Vec<String>) {
     migrate_dirs(&mut project, &raw, dir, &mut report);
     migrate_style(&mut project, has_policy, &raw, &mut report);
     migrate_hints(&raw, &mut report);
+    // §08 §6's legacy `produce` keys, folded into the settings the current model holds and reported there.
+    report.extend(migrate_produce(&mut project.produce, &raw.produce_legacy));
     migrate_prompts(&raw, &mut report);
     if raw.pitch.is_some() {
         report.push("pitch: ignored, the field is gone".to_string());
     }
     (project, report)
+}
+
+/// The stored `produce` block's legacy keys, read through a raw view of the same object `Produce` was
+/// deserialized from and folded by [`crate::project_produce::fold_legacy`]. A block that is absent or carries
+/// none of them adds no note, so a current project loads exactly as it did before this fold existed.
+fn migrate_produce(settings: &mut Produce, legacy: &crate::project_produce::RawProduce) -> Vec<String> {
+    // A file whose `produce` block carried none of the four keys: nothing to fold and nothing to say.
+    if legacy.is_empty() {
+        return Vec::new();
+    }
+    crate::project_produce::fold_legacy(settings, legacy)
 }
 
 /// `videos` and `audios` become sources; the first recording is narrator 1.
