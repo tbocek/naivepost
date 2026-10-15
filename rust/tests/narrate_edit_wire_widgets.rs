@@ -49,7 +49,7 @@ fn session_tree() -> Tree {
 /// Whether `narration.json` holds a line `matches` accepts. A file mid-write reads as "not yet".
 fn on_disk_has(tree: &Tree, matches: impl Fn(&Entry) -> bool) -> bool {
     naivepost::narration::load(tree)
-        .map(|narration| narration.entries.iter().any(|entry| matches(entry)))
+        .map(|narration| narration.entries.iter().any(matches))
         .unwrap_or(false)
 }
 
