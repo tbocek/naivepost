@@ -22,6 +22,9 @@ use std::time::{Duration, Instant};
 use naivepost::{cut, cut_play_leg, cut_screen, preview};
 use naivepost::cut_play_leg::CutPreviewPage;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 /// How long a stopped process stays a process: `SIGSTOP` is not immediate relative to a script's own lines,
 /// and a signal to a pid that has already exited is no longer a signal to it. Poll a short wait rather than
 /// trusting one `ps`.
@@ -43,9 +46,9 @@ fn wait_until(what: impl Fn() -> bool) -> bool {
 /// process it just replaced as still there.
 fn fake_player(root: &Path) -> PathBuf {
     let script = root.join("spare-player.sh");
-    std::fs::write(
+    common::write_script(
         &script,
-        "#!/bin/sh\ntrap 'kill -0 $$; exit 0' TERM INT\nwhile :; do sleep 0.05; done\n",
+        "#!/bin/sh\ntrap 'kill -0 $$; exit 0' TERM INT\ni=0; while [ $i -lt 1200 ]; do sleep 0.05; i=$((i+1)); done\n",
     )
     .expect("the player stub");
     std::fs::set_permissions(&script, PermissionsExt::from_mode(0o755)).expect("it runs");

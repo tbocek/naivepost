@@ -92,6 +92,7 @@ fn read(path: &Path) -> String {
 /// S1: the launch persists what the legacy `settings.json` remembered, and asks about it only once.
 #[test]
 fn sec_01_project_and_files_7_machine_files_s1_the_launch_stores_the_recovered_projects_in_the_conf() {
+    common::pin_private_cwd();
     let d = Dirs::new("recover");
     // Only the legacy file exists: this is the launch right after the merge into llm.conf.
     fs::create_dir_all(&d.paths.config_dir).unwrap();
@@ -137,6 +138,7 @@ fn sec_01_project_and_files_7_machine_files_s1_the_launch_stores_the_recovered_p
 #[test]
 fn sec_01_project_and_files_7_machine_files_s2_opening_a_project_writes_the_pair_and_an_unchanged_save_is_byte_identical(
 ) {
+    common::pin_private_cwd();
     let d = Dirs::new("persist");
     let mut projects = std::collections::BTreeMap::new();
     let root_b = Path::new("/sessions/bbb");
@@ -167,6 +169,7 @@ fn sec_01_project_and_files_7_machine_files_s2_opening_a_project_writes_the_pair
 /// halves of S3 cannot disagree about when a write is owed.
 #[test]
 fn sec_01_project_and_files_7_machine_files_s3_the_beat_lands_only_once_it_has_elapsed() {
+    common::pin_private_cwd();
     let d = Dirs::new("dialog");
     fs::create_dir_all(&d.paths.config_dir).unwrap();
     settings::save(&d.paths, &settings::Conf::default()).unwrap();
@@ -203,6 +206,7 @@ fn sec_01_project_and_files_7_machine_files_s3_the_beat_lands_only_once_it_has_e
 #[test]
 fn sec_01_project_and_files_7_machine_files_s3_the_settings_dialog_saves_what_was_typed_600_ms_after_the_last_keystroke_and_again_on_close(
 ) {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_DIALOG_SAVED.load(Ordering::SeqCst), "the dialog-save check never ran");
 }
@@ -291,6 +295,7 @@ fn check_dialog_saves(app: &adw::Application) {
 /// to put it costs nothing (principle 8).
 #[test]
 fn sec_01_project_and_files_7_machine_files_s4_a_give_up_writes_a_watchdog_dump_naming_the_component() {
+    common::pin_private_cwd();
     let d = Dirs::new("hang");
     fs::create_dir_all(&d.paths.config_dir).unwrap();
     // The door reads the environment the way every leg does, so pin it at this temp folder.
@@ -342,6 +347,7 @@ fn sec_01_project_and_files_7_machine_files_s4_a_give_up_writes_a_watchdog_dump_
 #[test]
 fn sec_01_project_and_files_7_machine_files_s5_the_desktop_entry_and_mime_package_are_installed_and_the_databases_told(
 ) {
+    common::pin_private_cwd();
     let d = Dirs::new("desktop");
     // An installed launcher is any executable NOT under a `target/` folder (this test's own binary is,
     // which §7 counts as a build cache), and /usr/bin is read-only here, so the copy lives in this
@@ -414,6 +420,7 @@ fn sec_01_project_and_files_7_machine_files_s5_the_desktop_entry_and_mime_packag
 /// S6: a missing refresh tool is one log line, not a failed launch.
 #[test]
 fn sec_01_project_and_files_7_machine_files_s6_running_the_refresh_survives_a_missing_database_tool() {
+    common::pin_private_cwd();
     // This container has update-mime-database and NOT update-desktop-database, so both branches are
     // live here: one command starts, the other cannot be found.
     let log = machine_store::run_refresh(&[

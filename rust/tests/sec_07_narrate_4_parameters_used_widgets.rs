@@ -60,6 +60,7 @@ fn state_at(session: f64) -> ui::NarrateState {
 /// (the same folder and the same reason as `f4_5_transport_widgets`).
 fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::ApplicationWindow {
     release_last_window();
+    common::pin_private_cwd();
     let session = naivepost::startup::session_dir(&std::env::current_dir().expect("a cwd to file the cut in"));
     std::fs::create_dir_all(&session).expect("the session folder exists");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder");

@@ -26,6 +26,7 @@ fn head_px(scene: &Scene) -> i32 {
 
 #[test]
 fn sec_05_cut_1_screen_the_rows_stack_in_the_order_the_inventory_lists_them() {
+    common::pin_private_cwd();
     // §A's Tracks paragraph, top to bottom: ruler (18 px), selection band (22 px), effects lane (26 px per
     // row), picture rows (thumbHt+4), then that row's wave strip (30 px). The painter's own height function
     // is what sizes the surface every other check samples, so the §A numbers are only the row order if
@@ -70,6 +71,7 @@ fn sec_05_cut_1_screen_the_rows_stack_in_the_order_the_inventory_lists_them() {
 
 #[test]
 fn sec_05_cut_1_screen_the_gutter_is_the_first_30_px_of_timeline_space() {
+    common::pin_private_cwd();
     // §A: "gutter (first 30 px of timeline space; fold-all badge, lane sound switches, row switches,
     // empty-row ✕)" — the gutter is measured IN the tape, not bolted in front of it, so a pixel of the
     // window is a pixel of the timeline minus 30. `cut_view` is what turns a window width into the view the
@@ -89,6 +91,7 @@ fn sec_05_cut_1_screen_the_gutter_is_the_first_30_px_of_timeline_space() {
 
 #[test]
 fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_position() {
+    common::pin_private_cwd();
     // §1's Pictures paragraph ("the band has a picture at every zoom") only holds if the band can NAME the
     // frame it wants: the same rule the draw uses must be a function of the zoom and the scroll origin, or
     // zooming and scrolling would repaint from the same fixed list of files. `frame_near` picks the nearest
@@ -242,6 +245,7 @@ static LINE_RAN: AtomicBool = AtomicBool::new(false);
 /// against the real page, so the two cannot drift apart.
 #[test]
 fn sec_05_cut_1_screen_s30_the_page_redraw_moves_the_red_line_layer_too() {
+    common::pin_private_cwd();
     let targets = naivepost::ui::cut_view::repaint_targets();
     assert!(
         targets.contains(&"track-band"),
@@ -347,6 +351,7 @@ fn page_band_spans_the_page(app: &adw::Application) {
 /// is now wider than the session at the open zoom).
 #[test]
 fn sec_05_cut_1_screen_s1_a_bar_at_the_tape_edge_is_cut_there() {
+    common::pin_private_cwd();
     // The fixture-like scene: a recording 0..50 s at PPS 2 lays the tape out to 30 + 50*2 = 130 px, while the
     // painted strip is 300 px wide. A kept scene 0..20 s ends well inside the tape; a kept scene reaching to
     // the very last filmed second ends AT it, so its bar stops there and the ground past it stays ground.
@@ -385,18 +390,21 @@ fn sec_05_cut_1_screen_s1_a_bar_at_the_tape_edge_is_cut_there() {
 
 #[test]
 fn sec_05_cut_1_screen_s16_the_band_spans_the_page_width() {
+    common::pin_private_cwd();
     run_widget_round();
     assert!(SPAN_RAN.load(Ordering::SeqCst), "the page-width check never ran");
 }
 
 #[test]
 fn sec_05_cut_1_screen_an_added_lane_grows_the_drawn_band() {
+    common::pin_private_cwd();
     run_widget_round();
     assert!(GROWTH_RAN.load(Ordering::SeqCst), "the band-growth check never ran");
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_scrollbar_gears_one_screenful_at_40_px() {
+    common::pin_private_cwd();
     run_widget_round();
     assert!(SCROLLBAR_RAN.load(Ordering::SeqCst), "the round ran");
 }
@@ -406,6 +414,7 @@ fn sec_05_cut_1_screen_the_scrollbar_gears_one_screenful_at_40_px() {
 /// being grabbable. Driven through a real Cut-page window, not a hand-built box.
 #[test]
 fn sec_05_cut_1_screen_the_page_hangs_the_band_and_the_red_line_on_two_layers() {
+    common::pin_private_cwd();
     run_widget_round();
     assert!(LAYERS_RAN.load(Ordering::SeqCst), "the round ran");
 }
@@ -536,6 +545,7 @@ fn page_band_grows_for_a_lane(app: &adw::Application) {
 
 #[test]
 fn sec_05_cut_1_screen_band_lays_ruler_selection_effects_and_rows_in_order() {
+    common::pin_private_cwd();
     let scene = scene();
     let painted = painted(&scene);
     let ground = rgb(&painted.0, painted.1, 0, painted.2 - 1);
@@ -560,6 +570,7 @@ fn sec_05_cut_1_screen_band_lays_ruler_selection_effects_and_rows_in_order() {
 
 #[test]
 fn sec_05_cut_1_screen_a_folded_gap_is_greyer_than_the_kept_bar_beside_it() {
+    common::pin_private_cwd();
     let mut scene = scene();
     // Keep 0..10 and 20..50: 10..20 is dropped inside filmed material, so it must show as a gap.
     scene.segs = vec![
@@ -586,6 +597,7 @@ fn sec_05_cut_1_screen_a_folded_gap_is_greyer_than_the_kept_bar_beside_it() {
 
 #[test]
 fn sec_05_cut_1_screen_a_selection_is_blue_and_only_where_it_is() {
+    common::pin_private_cwd();
     let mut scene = scene();
     scene.selection = Some((20.0, 60.0));
     let painted = painted(&scene);
@@ -598,6 +610,7 @@ fn sec_05_cut_1_screen_a_selection_is_blue_and_only_where_it_is() {
 
 #[test]
 fn sec_05_cut_1_screen_an_insert_bands_violet_across_the_picture_rows() {
+    common::pin_private_cwd();
     let mut scene = scene();
     scene.segs.push(Seg { s: 60.0, e: 60.0, dur: 3.0, ins: "/cards/ending.png".into(), ..Default::default() });
     let painted = painted(&scene);
@@ -608,6 +621,7 @@ fn sec_05_cut_1_screen_an_insert_bands_violet_across_the_picture_rows() {
 
 #[test]
 fn sec_05_cut_1_screen_the_in_and_out_marks_are_green_then_red() {
+    common::pin_private_cwd();
     let mut scene = scene();
     scene.selection = Some((20.0, 60.0));
     let painted = painted(&scene);
@@ -621,6 +635,7 @@ fn sec_05_cut_1_screen_the_in_and_out_marks_are_green_then_red() {
 
 #[test]
 fn sec_05_cut_1_screen_a_speed_effect_washes_the_picture_rose() {
+    common::pin_private_cwd();
     let mut scene = scene();
     scene.fx = vec![Fx {
         kind: "speed".into(),
@@ -643,6 +658,7 @@ fn sec_05_cut_1_screen_a_speed_effect_washes_the_picture_rose() {
 
 #[test]
 fn sec_05_cut_1_screen_the_watched_row_wears_a_dashed_outline() {
+    common::pin_private_cwd();
     let mut scene = scene();
     let bare = painted(&scene);
     scene.watched_row = Some(0);
@@ -659,6 +675,7 @@ fn sec_05_cut_1_screen_the_watched_row_wears_a_dashed_outline() {
 
 #[test]
 fn sec_05_cut_1_screen_the_playhead_is_a_two_px_red_line_on_its_own_layer() {
+    common::pin_private_cwd();
     let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, WIDTH, 120).expect("surface");
     {
         let cr = cairo::Context::new(&surface).expect("a context");
@@ -682,6 +699,7 @@ fn sec_05_cut_1_screen_the_playhead_is_a_two_px_red_line_on_its_own_layer() {
 /// numbers, so a plate can never disagree with the lane it names.
 #[test]
 fn sec_05_cut_1_screen_a_name_plate_names_the_row_its_window_and_its_correction() {
+    common::pin_private_cwd();
     let mut scene = scene();
     scene.lanes = vec![naivepost::cut::Lane {
         name: "take-a".into(),
@@ -705,6 +723,7 @@ fn sec_05_cut_1_screen_a_name_plate_names_the_row_its_window_and_its_correction(
 /// over the recording's own start), so the test asks for the stamp of a real second rather than inventing one.
 #[test]
 fn sec_05_cut_1_screen_the_band_lists_prepare_frames_and_shows_the_one_it_picks() {
+    common::pin_private_cwd();
     let dir = common::temp_dir_created("sec05frames.naivepost");
     let frames = dir.join("prepare/inputs/frames/take-a");
     std::fs::create_dir_all(&frames).expect("frames folder");

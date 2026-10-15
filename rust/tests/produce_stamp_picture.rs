@@ -119,11 +119,7 @@ impl FakeSd {
                 let sender = sender.clone();
                 // One thread per connection: the leg reads to EOF, so a serial accept loop lets a request
                 // whose answer was already taken hold its socket and stall every check behind it.
-                std::thread::spawn(move || {
-                    if let Some(seen) = serve(stream, &serving) {
-                        let _ = sender.send(seen);
-                    }
-                });
+                std::thread::spawn(move || serve(stream, &serving, &sender));
             }
         });
         FakeSd { port, received, script }
@@ -148,13 +144,15 @@ impl FakeSd {
     }
 }
 
-fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>) -> Option<Seen> {
-    let seen = serve_inner(&mut stream, script);
+fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) {
+    serve_inner(&mut stream, script, seen);
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    seen
 }
 
-fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Seen> {
+/// Records the request before it answers: the program's next call follows the answer at once, and a
+/// record sent after the reply let that call's thread report first, so the checks saw the poll before
+/// the submit.
+fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) -> Option<()> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -180,6 +178,10 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Se
     if length > 0 {
         reader.read_exact(&mut payload).ok()?;
     }
+    let _ = seen.send(Seen {
+        method: parts.first().cloned().unwrap_or_default(),
+        path: parts.get(1).cloned().unwrap_or_default(),
+    });
     let reply = script.lock().expect("script lock").take();
     let framed = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -188,10 +190,7 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Se
     );
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
-    Some(Seen {
-        method: parts.first().cloned().unwrap_or_default(),
-        path: parts.get(1).cloned().unwrap_or_default(),
-    })
+    Some(())
 }
 
 /// `POST /sdcpp/v1/img_gen` answer: a job id, no picture yet.

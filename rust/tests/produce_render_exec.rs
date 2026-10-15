@@ -522,7 +522,7 @@ fn fake_ffprobe(tag: &str, sizes: &[(&str, (i32, i32))], base: (i32, i32)) -> Pa
         .iter()
         .map(|(prefix, (w, h))| format!("  {prefix}*) echo \"{w},{h}\";;"))
         .collect();
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
             "#!/bin/sh\nlast=\"\"\nfor a in \"$@\"; do last=\"$a\"; done\necho \"$last\" >> {}\ncase \"$(basename \"$last\")\" in\n{}\n  *) echo \"{},{}\";;\nesac\n",
@@ -610,7 +610,7 @@ fn f5_2_s5_a_clip_that_cannot_be_probed_claims_nothing() {
     // A ffprobe that answers nothing and fails: the real leg reads that as "no claim" for every clip.
     use std::os::unix::fs::PermissionsExt;
     let dead = std::env::temp_dir().join("np-f52-dead-ffprobe.sh");
-    std::fs::write(&dead, "#!/bin/sh\nexit 1\n").expect("the failing stub");
+    common::write_script(&dead, "#!/bin/sh\nexit 1\n").expect("the failing stub");
     std::fs::set_permissions(&dead, PermissionsExt::from_mode(0o755)).expect("it runs");
     std::env::set_var("NAIVEPOST_FFPROBE", &dead);
     let spy = Spy::new();

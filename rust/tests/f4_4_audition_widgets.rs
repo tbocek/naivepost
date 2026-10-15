@@ -124,7 +124,7 @@ fn session_tree() -> Tree {
 /// exits, so no player outlives the test.
 fn write_recorder(root: &Path, tag: &str, log: &Path) -> PathBuf {
     let script = root.join(tag);
-    std::fs::write(
+    common::write_script(
         &script,
         format!("#!/bin/sh\necho \"{tag} $*\" >> {}\nexit 0\n", log.display()),
     )

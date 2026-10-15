@@ -193,6 +193,7 @@ fn lucky_opens_the_bookkeeping_the_same_way(app: &adw::Application) {
 
 #[test]
 fn f0_5_the_run_bookkeeping_reaches_the_widgets() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN.load(std::sync::atomic::Ordering::SeqCst),

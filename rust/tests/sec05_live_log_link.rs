@@ -68,6 +68,7 @@ fn tagged(view: &gtk::TextView) -> Vec<i32> {
 /// second one is a bug no amount of correct wording would catch.
 #[test]
 fn sec_03_shell_7_the_model_exchange_log_llm_s7_the_run_page_line_is_the_log_s_only_clickable_one() {
+    common::pin_private_cwd();
     static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     GTK.call_once(|| {
         let app = adw::Application::builder()

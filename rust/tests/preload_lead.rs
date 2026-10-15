@@ -9,12 +9,16 @@
 use naivepost::params::{self, Family};
 use naivepost::preview;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 const RUNS: &[(f64, f64)] = &[(0.0, 10.0), (12.0, 20.0)];
 
 // --- S1: the value, and whose table it is ------------------------------------------------------
 
 #[test]
 fn p_eng_preloadleadseconds_s1_three_seconds_a_hundredth_of_slack() {
+    common::pin_private_cwd();
     // P.eng.preloadLeadSeconds = 3, with §10's stated tolerance of 0.01 s.
     assert_eq!(preview::PRELOAD_LEAD_SECONDS, 3.0);
     assert_eq!(preview::PRELOAD_TOLERANCE_SECONDS, 0.01);
@@ -25,6 +29,7 @@ fn p_eng_preloadleadseconds_s1_three_seconds_a_hundredth_of_slack() {
 
 #[test]
 fn p_eng_preloadleadseconds_s2_inside_the_lead_it_opens() {
+    common::pin_private_cwd();
     // One second left on the current run, the next starts at 12: three seconds ahead, exactly the lead.
     assert_eq!(preview::preload_target(RUNS, 9.0), Some(12.0));
     // Inclusive at the boundary — three seconds is the amount asked for, so three is enough.
@@ -38,6 +43,7 @@ fn p_eng_preloadleadseconds_s2_inside_the_lead_it_opens() {
 
 #[test]
 fn p_eng_preloadleadseconds_s3_past_the_lead_it_waits() {
+    common::pin_private_cwd();
     // Four seconds to the next start: too far. Opening now would idle the spare while the playhead is
     // still three-plus seconds away from the cut.
     assert_eq!(preview::preload_target(RUNS, 8.0), None);
@@ -58,6 +64,7 @@ fn p_eng_preloadleadseconds_s3_past_the_lead_it_waits() {
 
 #[test]
 fn p_eng_preloadleadseconds_s4_the_tolerance_marks_now() {
+    common::pin_private_cwd();
     let t = 10.0;
     let tol = preview::PRELOAD_TOLERANCE_SECONDS;
     // A start inside the tolerance is the second we are already in — not a jump to prepare for.
@@ -76,6 +83,7 @@ fn p_eng_preloadleadseconds_s4_the_tolerance_marks_now() {
 
 #[test]
 fn p_eng_preloadleadseconds_s5_remaining_time_on_this_clip() {
+    common::pin_private_cwd();
     // The jump is happening now, or soon enough to matter.
     assert!(preview::opens_ahead(0.0));
     assert!(preview::opens_ahead(2.0));
@@ -90,6 +98,7 @@ fn p_eng_preloadleadseconds_s5_remaining_time_on_this_clip() {
 
 #[test]
 fn p_eng_preloadleadseconds_s6_catalogued_once_in_the_cut_page() {
+    common::pin_private_cwd();
     const ID: &str = "P.eng.preloadLeadSeconds";
     let rows = params::cut();
     let matching: Vec<&params::Param> = rows.iter().filter(|row| row.id == ID).collect();

@@ -13,6 +13,9 @@ use naivepost::cut::{Cut, Seg};
 use naivepost::shell::Page;
 use naivepost::{cut_play, ui};
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 static RAN_SWITCH: AtomicBool = AtomicBool::new(false);
 static RAN_GREYED: AtomicBool = AtomicBool::new(false);
 static RAN_OTHER_WAYS: AtomicBool = AtomicBool::new(false);
@@ -25,6 +28,14 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         "the fixture must carry a footage row or the Cut tab is locked (shell::lock) and this would \
          test the wrong page"
     );
+    // The page opens the cut of the working copy beside the cwd, so the fixture's cut goes there first:
+    // the clips ▶✂ needs must not depend on what another test left in a shared folder.
+    let session = naivepost::startup::session_dir(&std::env::current_dir().expect("a cwd"));
+    std::fs::create_dir_all(&session).expect("the session folder");
+    let fixture_cut = naivepost::cut::load(&naivepost::layout::Tree::new(fixture_dir()).expect("the fixture is a project"))
+        .expect("the fixture's cut reads");
+    naivepost::cut::save(&fixture_cut, &naivepost::layout::Tree::new(&session).expect("a .naivepost folder"))
+        .expect("the cut written beside the cwd");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     ui::tab_button(&window, Page::Cut)
@@ -274,6 +285,7 @@ fn window_round() {
 
 #[test]
 fn f2_2_s2_play_cut_button_switches_through_the_widget() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_SWITCH.load(Ordering::SeqCst),

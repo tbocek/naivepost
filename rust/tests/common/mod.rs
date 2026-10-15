@@ -102,6 +102,64 @@ pub fn settle() {
     }
 }
 
+/// How long [`wait_until`] waits before it fails. Generous on purpose: on a busy machine, or with test
+/// programs running side by side, a timer, a thread or a child process takes longer than on a quiet one.
+pub const WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Runs the main loop until `done` holds, and fails after [`WAIT_LIMIT`] naming `what` never happened.
+/// The wait for anything that happens later (a timer, a thread, a child process, a file another part
+/// writes): a fixed number of turns or [`settle`]'s "until nothing is pending" runs out before such work
+/// is done on a busy machine.
+pub fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let context = glib::MainContext::default();
+    let deadline = std::time::Instant::now() + WAIT_LIMIT;
+    while !done() {
+        assert!(std::time::Instant::now() < deadline, "waited {WAIT_LIMIT:?}, and {what} never happened");
+        if !context.iteration(false) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+}
+
+/// The window log's last line other than the two background savers': the autosave's "saved — autosave"
+/// on its 2 s beat and the settings dialog's "settings saved to …" 600 ms after a keystroke. Both land on
+/// real time, so on a busy machine they sit after the line a check is about.
+pub fn last_log() -> Option<String> {
+    ui::window_logs().into_iter().rev().find(|line| {
+        line != naivepost::project_autosave::SAVED_STATUS && !line.contains("settings saved to ")
+    })
+}
+
+/// Writes an executable script (a fake player, a fake ffmpeg) by way of a child process, so this process
+/// never holds a write handle on it. Tests run on parallel threads: a fork on another thread inherits an
+/// open handle for a moment, and running the script then fails with "Text file busy".
+pub fn write_script(path: impl AsRef<std::path::Path>, body: impl AsRef<[u8]>) -> std::io::Result<()> {
+    use std::io::Write;
+    let path = path.as_ref();
+    let mut child = std::process::Command::new("sh")
+        .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+        .arg(path)
+        .stdin(std::process::Stdio::piped())
+        .spawn()?;
+    child.stdin.take().expect("a piped stdin").write_all(body.as_ref())?;
+    let status = child.wait()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!("writing {} failed: {status}", path.display())))
+    }
+}
+
+/// Moves this test program into a working directory of its own, once. The program keeps its working
+/// copy in `session.naivepost` beside the working directory, and every test program starts in `rust/`:
+/// running side by side, they would read and overwrite one shared `cut.json`.
+pub fn pin_private_cwd() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        std::env::set_current_dir(temp_dir_created("cwd")).expect("a private working directory");
+    });
+}
+
 thread_local! {
     /// Strong handle on the window last built, so the next check drops it first: a closed GTK window is not
     /// destroyed and its names stay parented, which would send a lookup to the wrong tree.
@@ -476,8 +534,7 @@ pub fn fake_audio_server() -> String {
     format!("http://127.0.0.1:{port}")
 }
 
-/// A project folder under a throwaway root: (root, tree). The root is removed on the NEXT call with
-/// the same tag, so a case that fails on an assertion never leaves it behind.
+/// A project folder under a throwaway root of its own: (root, tree).
 pub fn tree_in(tag: &str) -> (std::path::PathBuf, naivepost::layout::Tree) {
     let root = temp_root(tag);
     let dir = root.join("demo.naivepost");
@@ -485,11 +542,12 @@ pub fn tree_in(tag: &str) -> (std::path::PathBuf, naivepost::layout::Tree) {
     (root, naivepost::layout::Tree::new(&dir).unwrap())
 }
 
-/// A throwaway root for one test's own files, removed before the run rather than at the end of each
-/// test: a case that fails on an assertion never reaches its own cleanup, and a folder left in /tmp is
-/// a folder the next reader has to explain.
+/// A throwaway root for one test's own files, distinct per call: tests of one program run on parallel
+/// threads, and a root shared by tag was wiped by a sibling while a test still wrote into it.
 pub fn temp_root(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("np-tree-{}-{tag}", std::process::id()));
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("np-tree-{}-{tag}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir

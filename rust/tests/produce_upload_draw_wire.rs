@@ -107,11 +107,7 @@ impl FakeSd {
                 let sender = sender.clone();
                 // One thread per connection: the leg reads until EOF, so a serial accept loop lets a request
                 // whose reply was already taken hold its socket open and stalls every later check behind it.
-                std::thread::spawn(move || {
-                    if let Some(seen) = serve(stream, &serving) {
-                        let _ = sender.send(seen);
-                    }
-                });
+                std::thread::spawn(move || serve(stream, &serving, &sender));
             }
         });
         FakeSd { port, received, script }
@@ -128,15 +124,16 @@ impl FakeSd {
     }
 }
 
-fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>) -> Option<Seen> {
+fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) {
     // Close the socket on every exit: the client reads to EOF, so a kept-open connection makes each round
     // pay a timeout (this binary stalled 3+ min before).
-    let seen = serve_inner(&mut stream, script);
+    serve_inner(&mut stream, script, seen);
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    seen
 }
 
-fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Seen> {
+/// Records the request before it answers: the program's next call follows the answer at once, and a
+/// record sent after the reply let that call's thread report first, out of order.
+fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) -> Option<()> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -160,6 +157,7 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Se
     }
     let path = request_line.split_whitespace().nth(1).unwrap_or_default().to_string();
     let body = String::from_utf8_lossy(&payload).to_string();
+    let _ = seen.send(Seen { path, body });
     let reply = script.lock().expect("script lock").take();
     let framed = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -168,7 +166,7 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Se
     );
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
-    Some(Seen { path, body })
+    Some(())
 }
 
 fn silent(_line: &str) {}

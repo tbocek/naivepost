@@ -368,7 +368,7 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
     // have the next scene's `remove_dir_all` delete the stubs a previous scene's conf still names.
     let dir = temp_dir_tagged(&format!("np-f13-tools-{tag}"));
     let probe = dir.join("ffprobe");
-    std::fs::write(&probe, format!("#!/bin/sh\necho \"{duration}\"\n")).expect("the probe stub");
+    common::write_script(&probe, format!("#!/bin/sh\necho \"{duration}\"\n")).expect("the probe stub");
     let report: String = silences
         .iter()
         .map(|(start, end)| format!("echo \"silence_start: {start}\" >&2\necho \"silence_end: {end}\" >&2\n"))
@@ -378,7 +378,7 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
     // audio to decode, and §F1.11's envelope reader parses `voice16k.wav` for real, so placeholder bytes
     // would stop the row with "not a RIFF/WAVE file" instead of reaching the models.
     std::fs::write(dir.join("silence.wav"), silent_wav_bytes(20.0)).expect("the stub's silence");
-    std::fs::write(
+    common::write_script(
         &ffmpeg,
         format!(
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{dir}/argv.log\"\ncase \"$*\" in\n  *silencedetect*)\n{report}  exit 0\n    ;;\nesac\nlast=''\nfor a in \"$@\"; do last=\"$a\"; done\nfirst=''\nseen=0\npending=0\nfor a in \"$@\"; do\n  if [ \"$a\" = \"-i\" ]; then pending=1; continue; fi\n  if [ \"$pending\" = 1 ]; then pending=0; seen=$((seen+1)); [ \"$seen\" = 1 ] && first=\"$a\"; fi\ndone\nif [ -f \"{dir}/silence.wav\" ]; then cp \"{dir}/silence.wav\" \"$last\"; elif [ -f \"$first\" ]; then cp \"$first\" \"$last\"; else printf 'STUB-AUDIO' > \"$last\"; fi\n[ -f \"$last\" ]\n",

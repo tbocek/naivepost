@@ -345,6 +345,7 @@ fn window_round() {
 
 #[test]
 fn f2_8_s2_a_right_drag_on_the_track_strip_moves_and_never_touches_the_line() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_MOVE.load(Ordering::SeqCst),

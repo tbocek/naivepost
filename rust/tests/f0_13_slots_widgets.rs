@@ -323,36 +323,42 @@ fn close_dialog(_window: &adw::ApplicationWindow) {    let Some(dialog) = ui::se
 
 #[test]
 fn f0_13_s14_a_slots_spin_sits_beside_every_model_box_and_only_there() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_SPINS.load(Ordering::SeqCst), "{ITEM} S14: the spin check never ran");
 }
 
 #[test]
 fn f0_13_s15_a_spin_defaults_to_one_and_stops_at_sixteen_on_disk() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_RANGE.load(Ordering::SeqCst), "{ITEM} S15: the range check never ran");
 }
 
 #[test]
 fn f0_13_s16_a_spin_written_by_the_dialog_lands_in_llm_conf() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_SAVE.load(Ordering::SeqCst), "{ITEM} S16: the save check never ran");
 }
 
 #[test]
 fn f0_13_s17_the_written_slot_is_the_number_the_request_doors_hold() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_GATE.load(Ordering::SeqCst), "{ITEM} S17: the gate check never ran");
 }
 
 #[test]
 fn f0_13_s18_the_audio_row_says_how_long_health_took() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_HEALTH.load(Ordering::SeqCst), "{ITEM} S18: the health-line check never ran");
 }
 
 #[test]
 fn f0_13_s19_the_id_box_keeps_its_id_while_its_spin_holds_the_count() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_ID.load(Ordering::SeqCst), "{ITEM} S19: the id-box check never ran");
 }

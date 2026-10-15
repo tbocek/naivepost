@@ -166,13 +166,14 @@ fn check_s1_refuses_with_one_clip(app: &adw::Application) {
 
 /// The media seam: a stub player the leg can start, so the review's press has a process to cue. Asserted
 /// only through the slot the leg owns (`cut_play_back::playing_pid()`), never through whether this script
-/// dies — this container's `sh` does not act on a trapped `SIGTERM` at all.
+/// dies — this container's `sh` does not act on a trapped `SIGTERM` at all. So it ends on its own after
+/// 60 s, or every suite run would leave one behind.
 fn fake_player(root: &std::path::Path) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let script = root.join("review-player.sh");
-    std::fs::write(
+    common::write_script(
         &script,
-        "#!/bin/sh\ntrap 'kill -0 $$; exit 0' TERM INT\nwhile :; do sleep 0.05; done\n",
+        "#!/bin/sh\ntrap 'kill -0 $$; exit 0' TERM INT\ni=0; while [ $i -lt 1200 ]; do sleep 0.05; i=$((i+1)); done\n",
     )
     .expect("the player stub");
     std::fs::set_permissions(&script, PermissionsExt::from_mode(0o755)).expect("it runs");

@@ -23,6 +23,9 @@ use naivepost::tools;
 use naivepost::web_browser;
 use naivepost::web_tools::{self, Hit};
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 /// A page wide enough to clear `web_tools::MIN_PAGE_CHARS`, so an emptiness refusal can only come from the stub
 /// printing nothing at all and not from the floor being high.
 fn long_page(body: &str) -> String {
@@ -45,7 +48,7 @@ fn write_stub(dir: &Path, dom: &str, sleep_seconds: u64) -> PathBuf {
         dom = dom_path.display(),
         sleep_seconds = sleep_seconds,
     );
-    std::fs::write(&path, script).expect("stub written");
+    common::write_script(&path, script).expect("stub written");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

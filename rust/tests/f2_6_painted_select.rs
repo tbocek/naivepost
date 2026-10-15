@@ -478,6 +478,7 @@ fn s3_the_marks_are_painted_from_the_band_they_stand_for() {
 
 #[test]
 fn f2_6_s1_s2_and_s3_the_painted_band_owns_the_selection_geometry() {
+    common::pin_private_cwd();
     s1_the_band_geometry_reads_the_zoom_it_is_painted_at();
     RAN_GEOMETRY.store(true, Ordering::SeqCst);
     s1_a_lane_press_names_the_recording_stacked_there();

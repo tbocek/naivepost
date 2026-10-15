@@ -219,6 +219,7 @@ fn check_nothing_filmed_refuses_through_the_click(app: &adw::Application) {
 
 #[test]
 fn f2_1_s2_the_recording_button_plays_through_the_widget() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_WIDGET.load(Ordering::SeqCst), "the widget-exists check never ran");
     assert!(

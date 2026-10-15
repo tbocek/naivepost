@@ -242,13 +242,13 @@ fn stubs(tag: &str, duration: &str) -> PathBuf {
     // stubs a previous scene's conf still names.
     let dir = temp_dir_tagged(&format!("np-f16-tools-{tag}"));
     let probe = dir.join("ffprobe");
-    std::fs::write(&probe, format!("#!/bin/sh\necho \"{duration}\"\n")).expect("the probe stub");
+    common::write_script(&probe, format!("#!/bin/sh\necho \"{duration}\"\n")).expect("the probe stub");
     // Base64 keeps the score report (quotes, tabs, newlines) out of the shell quoting entirely.
     let report = base64_line(&scene_log());
     // The frame's path is the argument BEFORE `-progress` (`extract_plan` ends with the output and the
     // door appends its progress flag), so `out` is reset at the flag rather than left holding it.
     let script = dir.join("ffmpeg.sh");
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{dir}/argv.log\"\ncase \"$*\" in\n  *scdet*)\n  printf '%s' \"$(printf '{report}' | base64 -d)\"\n  exit 0\n    ;;\nesac\nout=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$a\" = \"-progress\" ]; then break; fi\n  out=\"$a\"\ndone\nprintf 'out_time_us=250000\\n'\nmkdir -p \"$(dirname -- \"$out\")\"\nprintf JPEG > \"$out\"\n[ -f \"$out\" ]\n",
@@ -259,7 +259,7 @@ fn stubs(tag: &str, duration: &str) -> PathBuf {
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the script runs");
     // The path Settings holds: short, no spaces, execs the script with every argument quoted.
     let ffmpeg = dir.join("ffmpeg");
-    std::fs::write(
+    common::write_script(
         &ffmpeg,
         format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display()),
     )

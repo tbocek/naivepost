@@ -219,6 +219,7 @@ fn check_a_failing_pipeline_says_so(app: &adw::Application) {
 
 #[test]
 fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_the_preview_says_its_own_sound() {
+    common::pin_private_cwd();
     let app = adw::Application::builder()
         .application_id(ui::APP_ID)
         .flags(gio::ApplicationFlags::NON_UNIQUE)
@@ -243,6 +244,7 @@ fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_the_prev
 /// `lane_hear::apply_with` calls is the spec's own, naming the recording.
 #[test]
 fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_a_lane_that_drops_is_named() {
+    common::pin_private_cwd();
     let base = "2026-09-16 17-26-20";
     let said = preview::mix_lane_failure(base, "no such file");
     assert_eq!(

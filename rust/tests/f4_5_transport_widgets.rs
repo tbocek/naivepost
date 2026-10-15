@@ -64,6 +64,7 @@ fn state_at(session: f64) -> ui::NarrateState {
 
 fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::ApplicationWindow {
     release_last_window();
+    common::pin_private_cwd(); // the working session sits beside the cwd, which no other test program may share
     // The seek seams snap against the SESSION's cut (`cut::load`), which is what a preview actually runs, so
     // the scenario files the cut its clips describe. The fixture stays untouched: this is the working session
     // beside the cwd, the same folder every flow saves into.

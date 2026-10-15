@@ -21,7 +21,7 @@ use common::temp_dir_created as temp_dir;
 fn stub(tag: &str) -> PathBuf {
     let dir = temp_dir(&format!("f13-decode-{tag}"));
     let script = dir.join("ffmpeg");
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
             "#!/bin/sh\ncd \"{dir}\" || exit 70\nprintf '%s\\n' \"$*\" >> argv.log\n{body}\n",

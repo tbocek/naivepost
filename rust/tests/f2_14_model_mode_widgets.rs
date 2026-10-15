@@ -204,6 +204,7 @@ fn checks(app: &adw::Application) {
 
 #[test]
 fn f2_14_s2b_the_model_press_refuses_the_way_the_page_says() {
+    common::pin_private_cwd();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         let app = adw::Application::builder()

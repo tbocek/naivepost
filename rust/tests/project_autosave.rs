@@ -184,6 +184,12 @@ fn check_close_writes_the_session(app: &adw::Application) {
     model.language = "en".to_string();
 
     let window = ui::build_window(app, &model, "Prepare");
+    // Read before the loop turns: the 2 s autosave writes on its own beat, so only this moment shows
+    // that the build itself saved nothing.
+    assert!(
+        json_of(&dir).is_none(),
+        "nothing has written the working copy yet: the flush, not the build, is what saves"
+    );
     window.present();
     settle();
     assert!(
@@ -200,10 +206,6 @@ fn check_close_writes_the_session(app: &adw::Application) {
         ui::bench_language(&window).as_deref(),
         Some("de"),
         "typing reached the live session, which is what the flush must write"
-    );
-    assert!(
-        json_of(&dir).is_none(),
-        "nothing has written the working copy yet: the flush, not the build, is what saves"
     );
 
     window.close();

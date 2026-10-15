@@ -46,19 +46,12 @@ fn session_tree() -> Tree {
     Tree::new(&dir).expect("the seeded session folder ends in .naivepost")
 }
 
-/// Pump the main context until `ms` has passed, so a deferred write (the 400 ms autosave) is what gets
-/// checked rather than a hand-called flush. Same shape `tests/narrate_surface_widgets.rs` block (13)
-/// uses for the pitch slider's debounce.
-fn wait_ms(ms: u64) {
-    let context = glib::MainContext::default();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(ms);
-    while std::time::Instant::now() < deadline {
-        context.iteration(true);
-    }
+/// Whether `narration.json` holds a line `matches` accepts. A file mid-write reads as "not yet".
+fn on_disk_has(tree: &Tree, matches: impl Fn(&Entry) -> bool) -> bool {
+    naivepost::narration::load(tree)
+        .map(|narration| narration.entries.iter().any(|entry| matches(entry)))
+        .unwrap_or(false)
 }
-
-/// The beat the row box waits out before it writes, plus slack for a slow machine.
-const AUTOSAVE_WAIT_MS: u64 = 900;
 
 /// Read one entry out of the record on disk by its words, so the assertion is about the FILE and not
 /// about the page's memory.
@@ -146,6 +139,12 @@ fn text_block(app: &adw::Application) {
 
     // --- (f) typing a placement tag: the line changes NOW, the file changes after the beat -------
     type_in_box(&window, 0, "[top] a caption typed in the box");
+    // Nothing was written yet, read before the loop turns: the beat is real time, and on a busy machine
+    // it is over by the time a `settle` returns.
+    assert!(
+        saved_line_with(&tree, "a caption typed in the box").is_none(),
+        "typing does not write per character"
+    );
     settle();
     let edited = ui::read_state()
         .entries
@@ -155,12 +154,9 @@ fn text_block(app: &adw::Application) {
         .expect("the typed words reached the held entry on the keystroke itself");
     assert_eq!(edited.pos, "top", "the placement landed");
     assert!(edited.emotion.is_empty(), "a placement CLEARS the emotion -- a caption is read, not spoken");
-    // ...but nothing was written yet: the beat has not even started to run.
-    assert!(
-        saved_line_with(&tree, "a caption typed in the box").is_none(),
-        "typing does not write per character"
-    );
-    wait_ms(AUTOSAVE_WAIT_MS);
+    common::wait_until("the autosave writing the typed caption", || {
+        on_disk_has(&tree, |entry| entry.text == "a caption typed in the box")
+    });
     let on_disk = saved_line_with(&tree, "a caption typed in the box")
         .expect("after the beat the autosave wrote the line");
     assert_eq!((on_disk.pos.as_str(), on_disk.emotion.as_str()), ("top", ""), "the file agrees with the row");
@@ -174,13 +170,14 @@ fn text_block(app: &adw::Application) {
     // Back to a spoken line first, so there is an old emotion to keep.
     type_in_box(&window, 0, "[angry] words with a delivery");
     settle();
-    wait_ms(AUTOSAVE_WAIT_MS);
+    common::wait_until("the autosave writing the delivery line", || {
+        on_disk_has(&tree, |entry| entry.text == "words with a delivery")
+    });
     let angry = saved_line_with(&tree, "words with a delivery").expect("the delivery line is on disk");
     assert_eq!(angry.emotion, "angry");
     let count_before = ui::read_state().entries.len();
     type_in_box(&window, 0, "");
     settle();
-    wait_ms(AUTOSAVE_WAIT_MS);
     assert_eq!(
         ui::read_state().entries.len(),
         count_before,
@@ -234,11 +231,11 @@ fn text_block(app: &adw::Application) {
 
     // --- (i) leaving the tab flushes what was typed, without any test poking the flag ------------
     type_in_box(&window, 0, "half-typed when the tab changed");
-    settle();
     assert!(
         saved_line_with(&tree, "half-typed when the tab changed").is_none(),
         "not written before the beat"
     );
+    settle();
     ui::tab_button(&window, Page::Prepare)
         .expect("the shell has a Prepare tab")
         .emit_by_name::<()>("clicked", &[]);
@@ -255,11 +252,11 @@ fn text_block(app: &adw::Application) {
         .emit_by_name::<()>("clicked", &[]);
     settle();
     type_in_box(&window, 0, "typed just before the close");
-    settle();
     assert!(
         saved_line_with(&tree, "typed just before the close").is_none(),
         "still inside the beat when the window goes"
     );
+    settle();
     window.close();
     settle();
     assert!(
@@ -468,7 +465,9 @@ fn run_round(app: &adw::Application) {
     // audio end 2.0 + the worded gap 0.5 = 2.5 into the clip (§F4.7).
     assert_eq!(added.entries[1].at, 2.5, "the new row starts half a second after its audio");
     // §F4.7: the row is part of the narration record, so the click writes it — nobody had to type.
-    wait_ms(AUTOSAVE_WAIT_MS);
+    common::wait_until("the added row reaching narration.json", || {
+        naivepost::narration::load(&tree).map(|narration| narration.entries.len() == 3).unwrap_or(false)
+    });
     let below = naivepost::narration::load(&tree)
         .expect("narration.json reads back")
         .entries;
@@ -519,7 +518,9 @@ fn run_round(app: &adw::Application) {
         "the new row sits at the playhead second, not the clip's head: {:?}",
         landed.iter().map(|e| (e.s, e.at)).collect::<Vec<_>>()
     );
-    wait_ms(AUTOSAVE_WAIT_MS);
+    common::wait_until("the add reaching narration.json", || {
+        on_disk_has(&tree, |entry| (entry.s, entry.e, entry.at) == (0.0, 10.0, 8.0))
+    });
     let on_disk = naivepost::narration::load(&tree)
         .expect("narration.json reads back")
         .entries;

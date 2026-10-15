@@ -148,12 +148,14 @@ fn round() {
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_the_zoom_floor_is_the_film_length_fit_not_a_constant() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_FLOOR.load(Ordering::SeqCst), "the filmed-length-fit check never ran");
 }
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_stored_zoom_moves_the_band_layout() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_LAYOUT.load(Ordering::SeqCst), "the stored-zoom-drives-the-layout check never ran");
 }

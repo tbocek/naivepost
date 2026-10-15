@@ -61,10 +61,10 @@ fn wait_until(what: impl Fn() -> bool) -> bool {
 /// until the foreground command returns, so without it a replacement would read as still there).
 fn fake_player(root: &Path, log: &Path) -> PathBuf {
     let script = root.join("volume-player.sh");
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '{}'\ntrap 'kill -0 $$; exit 0' TERM INT\nwhile :; do sleep 0.05; done\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '{}'\ntrap 'kill -0 $$; exit 0' TERM INT\ni=0; while [ $i -lt 1200 ]; do sleep 0.05; i=$((i+1)); done\n",
             log.display()
         ),
     )

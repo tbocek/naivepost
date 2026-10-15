@@ -205,6 +205,7 @@ fn window_round() {
 
 #[test]
 fn f2_6_s1_and_s2_a_drag_selects_and_the_cross_clears_through_real_widgets() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_DRAG.load(Ordering::SeqCst), "the drag-and-cross check never ran");
     assert!(RAN_SOUND.load(Ordering::SeqCst), "the sound-scope verb check never ran");

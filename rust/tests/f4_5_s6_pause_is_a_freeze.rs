@@ -12,6 +12,9 @@ use naivepost::cut::Seg;
 use naivepost::narrate_preview_leg::{self as leg, Spawn};
 use naivepost::narration::Entry;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
 fn entry(s: f64, e: f64, text: &str) -> Entry {
     Entry {
         s,
@@ -98,6 +101,7 @@ fn reap(pids: &Pids) {
 
 #[test]
 fn f4_5_s6_pause_freezes_both_players_and_a_thaw_walks_them_on() {
+    common::pin_private_cwd();
     let session = session("freeze");
     let cut = leg::cut_of(
         vec![

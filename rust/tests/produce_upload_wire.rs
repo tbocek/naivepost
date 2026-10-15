@@ -69,11 +69,7 @@ impl FakeLlm {
                 let Ok(stream) = stream else { continue };
                 let serving = serving.clone();
                 let sender = sender.clone();
-                std::thread::spawn(move || {
-                    if let Some(seen) = serve(stream, &serving) {
-                        let _ = sender.send(seen);
-                    }
-                });
+                std::thread::spawn(move || serve(stream, &serving, &sender));
             }
         });
         FakeLlm { port, received, script }
@@ -105,15 +101,16 @@ impl FakeLlm {
     }
 }
 
-fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>) -> Option<Seen> {
+fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) {
     // Every exit closes the socket: a client that reads to EOF must never be left waiting for a peer that
     // already answered.
-    let seen = serve_inner(&mut stream, script);
+    serve_inner(&mut stream, script, seen);
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    seen
 }
 
-fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Seen> {
+/// Records the request before it answers: the program's next call follows the answer at once, and a
+/// record sent after the reply let that call's thread report first, out of order.
+fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) -> Option<()> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -136,6 +133,7 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Se
         reader.read_exact(&mut payload).ok()?;
     }
     let body = String::from_utf8_lossy(&payload).to_string();
+    let _ = seen.send(Seen { body });
     let reply = script.lock().expect("script lock").take();
     // Already a chat envelope (a tool-call reply) goes out as it stands; anything else is content.
     let framed_reply =
@@ -147,7 +145,7 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>) -> Option<Se
     );
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
-    Some(Seen { body })
+    Some(())
 }
 
 /// Wrap one answer's content in the chat envelope.

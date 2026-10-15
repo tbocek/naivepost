@@ -35,6 +35,9 @@ struct Slot {
     /// The conf rendered before and after, so "remembering changed nothing" can be pinned.
     conf_before: String,
     conf_after: String,
+    /// What the launch folder held right after the launch call, before the loop turned again: the
+    /// session's autosave writes it on its first beat, so only this moment shows what the launch wrote.
+    root_after_launch: Vec<String>,
 }
 
 static SLOTS: std::sync::Mutex<[Slot; 4]> = std::sync::Mutex::new([
@@ -44,6 +47,7 @@ static SLOTS: std::sync::Mutex<[Slot; 4]> = std::sync::Mutex::new([
         projects: BTreeMap::new(),
         conf_before: String::new(),
         conf_after: String::new(),
+        root_after_launch: Vec::new(),
     },
     Slot {
         sources: Vec::new(),
@@ -51,6 +55,7 @@ static SLOTS: std::sync::Mutex<[Slot; 4]> = std::sync::Mutex::new([
         projects: BTreeMap::new(),
         conf_before: String::new(),
         conf_after: String::new(),
+        root_after_launch: Vec::new(),
     },
     Slot {
         sources: Vec::new(),
@@ -58,6 +63,7 @@ static SLOTS: std::sync::Mutex<[Slot; 4]> = std::sync::Mutex::new([
         projects: BTreeMap::new(),
         conf_before: String::new(),
         conf_after: String::new(),
+        root_after_launch: Vec::new(),
     },
     Slot {
         sources: Vec::new(),
@@ -65,6 +71,7 @@ static SLOTS: std::sync::Mutex<[Slot; 4]> = std::sync::Mutex::new([
         projects: BTreeMap::new(),
         conf_before: String::new(),
         conf_after: String::new(),
+        root_after_launch: Vec::new(),
     },
 ]);
 
@@ -300,6 +307,11 @@ fn scenario_blank(app: &adw::Application) {
     settings::save(&paths, &Conf::default()).expect("conf with no pairs");
     ui::window::clear_logs_for_test();
     naivepost::ui::launch::open_at_start(app, &[]);
+    let left: Vec<String> = std::fs::read_dir(&root)
+        .expect("root readable")
+        .map(|entry| entry.expect("an entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    record(4, |slot| slot.root_after_launch = left);
     remember_sources(4, app, &paths);
     record(4, |slot| slot.conf_before = slot.conf_after.clone());
     // Left for the check: S4 must not have created the session folder or touched the root.
@@ -407,14 +419,12 @@ fn f0_6_s4_nothing_to_open_is_a_blank_session_and_writes_nothing() {
     );
     assert!(got.projects.is_empty(), "nothing was remembered for a path that does not exist: {:?}", got.projects);
     assert_eq!(got.conf_before, got.conf_after, "and the conf kept its bytes");
-    let root = root_of(4);
+    // S4 is a decision, not a file: the launch itself writes nothing, neither the session folder nor
+    // anything else in the folder it happened to start from. The session appears when it is first
+    // saved, which the autosave does on its beat, so the folder is read right after the launch.
     assert!(
-        !naivepost::startup::session_dir(&root).exists(),
-        "S4 is a decision, not a file: the session appears when the session is first saved"
-    );
-    assert_eq!(
-        std::fs::read_dir(&root).expect("root readable").count(),
-        0,
-        "a launch that is abandoned leaves nothing behind in the folder it happened to start from"
+        got.root_after_launch.is_empty(),
+        "the launch wrote into the folder it started from: {:?}",
+        got.root_after_launch
     );
 }

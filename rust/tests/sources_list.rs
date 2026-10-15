@@ -40,6 +40,7 @@ fn session() -> Project {
 /// audio streams to pick between, and always a narrator slot, a name and a way off the list.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_rows_show_footage_and_tracks_by_file_kind() {
+    common::pin_private_cwd();
     let cam = &session().sources[0];
     assert_eq!(
         sources::row_controls(cam, 3),
@@ -71,6 +72,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// no menu, so `controls` drops it rather than offering a dead click.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_track_button_is_off_while_audio_is_out() {
+    common::pin_private_cwd();
     let cam = &session().sources[0];
     assert!(sources::controls(cam, 3, false).contains(&Control::Tracks));
     assert!(!sources::controls(cam, 3, true).contains(&Control::Tracks), "{ITEM}: dimmed means not offered");
@@ -80,6 +82,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// §4's badge **5** is the file name: what the row is called, without turning into a path.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_row_is_named_by_its_file() {
+    common::pin_private_cwd();
     // The name is the file, whole: a stamp is what §4 places the file by, and two files differing only
     // by extension are two files, so neither part is dropped.
     for (path, want) in [
@@ -98,6 +101,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// §4's 🎥 toggle refuses a file with no frames: only a video may be footage.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_footage_is_a_videos_to_give() {
+    common::pin_private_cwd();
     let mut project = session();
     assert!(sources::toggle_footage(&mut project, 2, true));
     assert!(project.sources[2].footage);
@@ -112,6 +116,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// §4's 🎤 button cycles free slots 1..N then none, and nobody is moved to make room.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_narrator_button_walks_the_free_slots() {
+    common::pin_private_cwd();
     let mut project = session();
     let mut seen = vec![];
     for _ in 0..5 {
@@ -134,6 +139,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// whenever nothing holds it — recordings before footage.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_slot_one_is_never_left_unheld() {
+    common::pin_private_cwd();
     let mut project = session();
     assert_eq!(sources::slot_holder(&project, 1), Some(0));
     // The camera's press vacates slot 1; the mic is next and it is a recording.
@@ -156,6 +162,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// file itself is left alone — which is why no assertion here needs a filesystem.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_removing_a_row_moves_the_others_up() {
+    common::pin_private_cwd();
     let mut project = session();
     assert_eq!(sources::remove(&mut project, 0).map(|gone| gone.path), Some("project:sources/cam_2026-08-08_19-55-15.mkv".into()));
     assert_eq!(project.sources[0].path, "card/mic.wav", "{ITEM}: the rows below moved up");
@@ -169,6 +176,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// until one is renamed. The status line is short, the log names both paths.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_two_rows_of_one_name_refuse_the_run() {
+    common::pin_private_cwd();
     let clashing = Project {
         sources: vec![row("project:sources/clip.mkv", true, 0), row("/media/clip.mkv", false, 0)],
         ..Default::default()
@@ -202,6 +210,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// becomes a lane of its own.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_tracks_are_ticked_and_united_into_lanes() {
+    common::pin_private_cwd();
     let mut project = Project {
         sources: vec![{
             let mut cam = row("cam.mkv", true, 1);
@@ -232,6 +241,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// §4's ⚠ is a file whose name carries no timestamp: such a file starts where the session does.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_name_without_a_timestamp_is_warned_about() {
+    common::pin_private_cwd();
     assert_eq!(sources::warning(&row("mic.wav", false, 0)), Some(sources::WARN_TIP));
     assert_eq!(sources::warning(&row("cam_2026-08-08_19-55-15.mkv", true, 1)), None);
 }
@@ -239,6 +249,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// §4's scissors are dead on a split product — that voice has already been taken off.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_split_product_has_no_voice_left_to_split() {
+    common::pin_private_cwd();
     for path in ["mic.split-voice.wav", "mic.split-novoice.mkv", "old.voice.wav", "old.novoice.wav"] {
         assert!(!sources::separable(&row(path, false, 0)), "{ITEM}: `{path}` is already split");
     }
@@ -253,6 +264,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// reads it. A list that loads clean keeps whatever the user left in slot 1.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_loaded_list_is_cleaned_and_says_what_it_changed() {
+    common::pin_private_cwd();
     let mut project = Project {
         sources: vec![
             row("a.wav", false, 2),
@@ -299,6 +311,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// §4's strings in the words the spec gives them (spec/03-shell.md §4).
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_strings_are_the_specs() {
+    common::pin_private_cwd();
     assert_eq!(
         sources::LIST_TIP,
         "Every file here is transcribed, and placed on the session clock by the timestamp in its name"
@@ -400,12 +413,14 @@ fn check_a_press(app: &adw::Application) {
 
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_page_draws_one_row_per_source() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_ROW.load(Ordering::SeqCst), "{ITEM}: the row check never ran");
 }
 
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_press_on_a_row_is_reported() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_PRESS.load(Ordering::SeqCst), "{ITEM}: the press check never ran");
 }
@@ -416,6 +431,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// starting a binary.
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_probe_reads_the_audio_streams_the_tool_reports() {
+    common::pin_private_cwd();
     let file = Path::new("/tmp/cam.mkv");
     // Two streams: ffprobe numbers them from 0, one carries a title tag, the other has none; the second
     // names no channel count at all, which means mono.

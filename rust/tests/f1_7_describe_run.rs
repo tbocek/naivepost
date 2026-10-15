@@ -331,11 +331,11 @@ fn walk(scene: &Scene) -> (run_stages::Drive, Vec<String>) {
 fn stubs(tag: &str) -> PathBuf {
     let dir = temp_dir_tagged(&format!("np-f17-tools-{tag}"));
     let probe = dir.join("ffprobe");
-    std::fs::write(&probe, "#!/bin/sh\necho \"20.0\"\n").expect("the probe stub");
+    common::write_script(&probe, "#!/bin/sh\necho \"20.0\"\n").expect("the probe stub");
     let script = dir.join("ffmpeg.sh");
     // Log the argv, then write `<last arg>/<basename of the -i arg>`: that is where the scaling leg
     // expects its copy, and `[ -f ... ]` makes the stub fail loudly if the path is nonsense.
-    std::fs::write(
+    common::write_script(
         &script,
         format!(
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{dir}/argv.log\"\ninput=''\nout=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  out=\"$a\"\n  prev=\"$a\"\ndone\nbase=$(basename -- \"$input\")\nmkdir -p \"$out\"\nprintf JPEG > \"$out/$base\"\n[ -f \"$out/$base\" ]\n",
@@ -345,7 +345,7 @@ fn stubs(tag: &str) -> PathBuf {
     .expect("the ffmpeg stub");
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the script runs");
     let ffmpeg = dir.join("ffmpeg");
-    std::fs::write(&ffmpeg, format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display())).expect("the wrapper");
+    common::write_script(&ffmpeg, format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display())).expect("the wrapper");
     for tool in [&probe, &ffmpeg] {
         std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
     }

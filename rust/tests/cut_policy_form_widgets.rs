@@ -368,6 +368,7 @@ fn check_the_four_columns_and_the_two_buttons(app: &adw::Application) {
 
 #[test]
 fn f0_7_s5_policy_form_reopens_from_the_menu_through_a_real_click() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_GEAR.load(Ordering::SeqCst), "the ⚙ check never ran");
     assert!(RAN_ROWS.load(Ordering::SeqCst), "the row-by-row check never ran");

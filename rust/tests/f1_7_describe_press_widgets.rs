@@ -188,16 +188,16 @@ fn stubs() -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("the tools folder");
     let probe = dir.join("ffprobe");
-    std::fs::write(&probe, "#!/bin/sh\necho \"20.0\"\n").expect("the probe stub");
+    common::write_script(&probe, "#!/bin/sh\necho \"20.0\"\n").expect("the probe stub");
     let script = dir.join("ffmpeg.sh");
-    std::fs::write(
+    common::write_script(
         &script,
         "#!/bin/sh\ninput=''\nout=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  out=\"$a\"\n  prev=\"$a\"\ndone\nbase=$(basename -- \"$input\")\nmkdir -p \"$out\"\nprintf JPEG > \"$out/$base\"\n[ -f \"$out/$base\" ]\n",
     )
     .expect("the ffmpeg stub");
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");
     let ffmpeg = dir.join("ffmpeg");
-    std::fs::write(&ffmpeg, format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display())).expect("the wrapper");
+    common::write_script(&ffmpeg, format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display())).expect("the wrapper");
     for tool in [&probe, &ffmpeg] {
         std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");
     }

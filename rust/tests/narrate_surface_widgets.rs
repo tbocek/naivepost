@@ -696,12 +696,7 @@ fn narrate_round(app: &adw::Application) {
         .and_then(|w| w.downcast::<gtk::Scale>().ok())
         .expect("the Narrate page carries the pitch slider");
     scale.set_value(narrate_screen::PITCH_MAX_SEMITONES + 4.0);
-    let context = glib::MainContext::default();
-    let deadline = std::time::Instant::now()
-        + std::time::Duration::from_millis(narrate_screen::PITCH_APPLY_MS + 400);
-    while ui::read_state().pitch.abs() < 1e-9 && std::time::Instant::now() < deadline {
-        context.iteration(true);
-    }
+    common::wait_until("the pitch slider's debounced write", || ui::read_state().pitch.abs() >= 1e-9);
     assert!(
         (ui::read_state().pitch - narrate_screen::PITCH_MAX_SEMITONES).abs() < 1e-9,
         "a value past the top lands clamped at +6.0 after the {} ms debounce",

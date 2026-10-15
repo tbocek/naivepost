@@ -172,11 +172,9 @@ fn press_folds_the_file(app: &adw::Application) {
     // is left to silence — the migration's job here is that the KEY went through the press's own write.
     assert!(after.sound.is_none(), "the loaded file holds no legacy key");
     assert!(
-        naivepost::ui::window_logs()
-            .last()
-            .is_some_and(|line| line.contains("this cut was heard on mic")),
+        common::last_log().is_some_and(|line| line.contains("this cut was heard on mic")),
         "and the log said it: {:?}",
-        naivepost::ui::window_logs().last()
+        common::last_log()
     );
     window.close();
 }

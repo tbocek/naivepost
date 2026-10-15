@@ -11,6 +11,7 @@ use common::{fixture_dir,temp_dir};
 
 #[test]
 fn project_round_trip() {
+    common::pin_private_cwd();
     let dir = temp_dir("roundtrip");
     let want = Project {
         sources: vec![Source {
@@ -37,6 +38,7 @@ fn project_round_trip() {
 
 #[test]
 fn empty_project_file_holds_the_spec_defaults() {
+    common::pin_private_cwd();
     let dir = temp_dir("defaults");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join(project::PROJECT_FILE), "{}").unwrap();
@@ -54,6 +56,7 @@ fn empty_project_file_holds_the_spec_defaults() {
 
 #[test]
 fn fixture_project_loads() {
+    common::pin_private_cwd();
     let loaded = project::load(&fixture_dir()).expect("fixture loads");
     assert_eq!(loaded.sources.len(), 1);
     assert!(!loaded.context.is_empty());
@@ -101,6 +104,7 @@ fn ran(flag: &std::sync::atomic::AtomicBool, what: &str) {
 
 #[test]
 fn window_shows_the_four_pages() {
+    common::pin_private_cwd();
     ran(&RAN_FOUR_PAGES, "the four-page check");
 }
 
@@ -108,12 +112,14 @@ fn window_shows_the_four_pages() {
 /// status line says why.
 #[test]
 fn clicking_a_locked_tab_bounces_and_says_why() {
+    common::pin_private_cwd();
     ran(&RAN_LOCKED, "the locked-tab check");
 }
 
 /// And an unlocked tab does move, with the status line left saying nothing.
 #[test]
 fn clicking_an_unlocked_tab_shows_its_page() {
+    common::pin_private_cwd();
     ran(&RAN_UNLOCKED, "the unlocked-tab check");
 }
 

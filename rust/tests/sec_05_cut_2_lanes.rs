@@ -214,18 +214,21 @@ fn round() {
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_lane_window_is_built_from_the_source_metadata() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_BUILT.load(Ordering::SeqCst), "the lane-from-metadata check never ran");
 }
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_probe_answers_a_real_duration_or_refuses_loudly() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_PROBED.load(Ordering::SeqCst), "the ffprobe check never ran");
 }
 
 #[test]
 fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s3_the_lane_button_places_a_lane_for_a_footage_file() {
+    common::pin_private_cwd();
     round();
     assert!(RAN_WIRE.load(Ordering::SeqCst), "the lane-button check never ran");
 }

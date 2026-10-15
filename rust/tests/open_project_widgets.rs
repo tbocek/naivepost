@@ -210,10 +210,7 @@ fn a_folder_that_will_not_open_refuses_through_the_window(app: &adw::Application
 /// The most recent line the window logged. Shared thread-local, so callers take the tail rather than
 /// scanning everything earlier checks put there.
 fn last_log() -> String {
-    ui::window_logs()
-        .last()
-        .cloned()
-        .expect("something was logged")
+    common::last_log().expect("something was logged")
 }
 
 /// S3 + S4 through the window: a valid project switches the session in place, drops the source
@@ -274,6 +271,7 @@ fn a_valid_project_switches_the_session(app: &adw::Application) {
 
 #[test]
 fn f0_9_s1_to_s4_through_the_real_open_button() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN.load(std::sync::atomic::Ordering::SeqCst),
