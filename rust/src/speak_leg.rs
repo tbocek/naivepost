@@ -289,10 +289,9 @@ pub fn speak(
                 for line in &built.said {
                     crate::ui::window::log_line(line);
                 }
-                crate::ui::window::log_line(&format!(
-                    "voice reference rebuilt: {} and {}",
-                    built.base.display(),
-                    built.served.display()
+                crate::ui::window::log_line(&voice_ref::built_log(
+                    &built,
+                    &source_file_name(tree),
                 ));
             }
             Err(why) => {
@@ -339,6 +338,19 @@ fn build_missing_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
     voice_ref::recut_for_voice(tree, &ffmpeg, &source, &turns, |from, until| {
         words_in(&words, from, until)
     })
+}
+
+/// §6 (`Reference build`): the log names the recording the reference was cut FROM, by file name — a path
+/// would bury the one fact that says whether this is the right speaker.
+fn source_file_name(tree: &Tree) -> String {
+    narrator_source(tree)
+        .map(|path| {
+            std::path::Path::new(&path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or(path)
+        })
+        .unwrap_or_else(|| "the tagged recording".to_string())
 }
 
 /// The recording the narration is cut from: the project's narrator 1. Only slot 1 is ever cloned from

@@ -67,6 +67,16 @@ pub fn speak(
         crate::narrate_tts::Outcome::Refused(why) => Err(why),
         crate::narrate_tts::Outcome::Take(take) => {
             let bytes = std::fs::read(&take).map_err(|err| format!("{}: {err}", take.display()))?;
+            // §6 (`an under-sized answer`): name the file and its byte count where it failed and store
+            // NOTHING — a header-only reply would otherwise be cached as this voice's take for these words
+            // and every later press would "succeed" in silence.
+            if (bytes.len() as u64) < MIN_REPLY_BYTES {
+                let file = voice_ref::sample_file(tree, voice, text);
+                let said =
+                    narrate_details::sample_too_small_log(&file_name(&file), bytes.len() as u64);
+                crate::ui::window::log_line(&said);
+                return Err(said);
+            }
             voice_ref::store_sample(tree, voice, text, &bytes)?;
             let file = voice_ref::sample_file(tree, voice, text);
             crate::ui::window::log_line(&narrate_details::sample_file_log(
@@ -78,6 +88,12 @@ pub fn speak(
         }
     }
 }
+
+/// A reply smaller than this carries no audio at all: a wav header is 44 bytes and one 16-bit mono frame
+/// is another 2, so anything at or under that bound is a server that answered with a header (or an empty
+/// body) and nothing spoken. Storing such a file would cache the mistake under a key that suppresses the
+/// line forever, so `speak` refuses it and logs [`crate::narrate_details::sample_too_small_log`] instead.
+pub const MIN_REPLY_BYTES: u64 = 46;
 
 /// Hand the sample to the player. The player program is the same seam the preview uses, so a test
 /// points it at a stub and the program is unchanged. The child is held so ⏹ can reach it through
@@ -111,6 +127,56 @@ pub fn play_file(file: &std::path::Path) -> Result<String, String> {
 /// The sample players still alive. Held so ⏹ can reach them; each entry leaves when the player exits.
 static PLAYERS: std::sync::LazyLock<std::sync::Mutex<Vec<std::process::Child>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+
+/// Freeze or thaw every sample player still running — §6's "sample paused — ▶ resumes, ⏹ starts over".
+/// Mirrors [`crate::narrate_preview_leg::hold_paused`]: `SIGSTOP`/`SIGCONT` on pids this module spawned,
+/// and `Option` because there is nothing to hold when no sample is playing (a `None` answer tells the page
+/// the press was not a pause at all, so it can start a sample instead of reporting a pause over nothing).
+pub fn hold_paused(hold: bool) -> Option<bool> {
+    let mut held = false;
+    PLAYERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain_mut(|child| {
+            if child.try_wait().ok().flatten().is_some() {
+                return false; // finished on its own (`-autoexit`): nothing to signal
+            }
+            let pid = child.id();
+            if hold {
+                crate::narrate_preview_media::pause_pids(&[pid]);
+            } else {
+                crate::narrate_preview_media::resume_pids(&[pid]);
+            }
+            held = true;
+            true
+        });
+    held.then_some(hold)
+}
+
+/// The players not yet reaped, each slot holding its exit status once the process is gone. A finished
+/// child keeps its status instead of being dropped: that record is what tells "takes played" (the walk ran
+/// out) apart from "stopped playing the takes" (a hand ended it), and ⏹ still reaches a running one.
+fn alive() -> Vec<Option<std::process::ExitStatus>> {
+    PLAYERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter_mut()
+        .map(|child| child.try_wait().ok().flatten())
+        .collect()
+}
+
+/// Whether any sample player is still going: what makes a second ▶ a pause rather than a new sample.
+pub fn is_playing() -> bool {
+    self::alive().iter().any(|status| status.is_none())
+}
+
+/// Whether every player this module spawned has run to the end: "takes played" (the walk finished by
+/// itself) against "stopped playing the takes" (⏹ ended it). Empty answers `false` — nothing was ever
+/// played, so neither sentence applies.
+pub fn all_finished() -> bool {
+    let statuses = self::alive();
+    !statuses.is_empty() && statuses.iter().all(|status| status.is_some())
+}
 
 /// ⏹'s side of the sample: kill every sample player still running, and say how many. Kept separate
 /// from the preview's `stop_running` because the sample spawns its own players and is not a

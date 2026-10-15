@@ -251,15 +251,20 @@ pub struct Written {
 /// than a promise.
 ///
 /// A line replaces only the entry on the SAME clip `(s,e)`; entries standing on clips this run did not
-/// write are carried over byte-identical. The `silent` list is copied through UNTOUCHED — silence is
-/// the user's own "this clip plays its own audio", not the model's to drop, and the fold cannot lose it
-/// because nothing here writes that field ([`crate::audit_gaps::silent_survives_entry_rewrite`]).
+/// write are carried over byte-identical. Silence is the user's own "this clip plays its own audio", so a
+/// clip this run did NOT touch keeps its marker whatever else changed ([`crate::audit_gaps::silent_survives_entry_rewrite`])
+/// — but the clip a line lands ON loses its marker with the replacement (§6 `Details confirmed`: "silent list
+/// cleared with the replacement"). A clip that now has a spoken line cannot also be silent: the two answers
+/// to "does this clip get narration?" would disagree in one file.
 pub fn fold_written(record: &Narration, written: &[Written]) -> Narration {
     let mut folded = record.clone();
     for line in written {
         folded
             .entries
             .retain(|entry| !(entry.s == line.start && entry.e == line.end));
+        folded
+            .silent
+            .retain(|sil| !(sil.s == line.start && sil.e == line.end));
         folded.entries.push(Entry {
             s: line.start,
             e: line.end,

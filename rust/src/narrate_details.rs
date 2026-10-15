@@ -263,6 +263,10 @@ pub fn sample_too_small_log(file: &str, bytes: u64) -> String {
 /// an automatic reference that sounds wrong is a ranking to overrule by hand, a hand-picked one is seconds
 /// to re-pick — so `hand_picked` nought means the automatic wording, whose own tail is the word count.
 pub fn reference_build_log(seconds: f64, words: usize, hand_picked: usize, base: &str) -> String {
+    // §6 (`Reference build`): the one line a built reference leaves. It names which of the two ways the
+    // seconds were chosen this was, because telling an automatic reference that sounds wrong is a ranking
+    // to overrule by hand, and a hand-picked one is a band to re-pick — so `hand_picked` nought means the
+    // automatic wording, whose own tail says "words" rather than takes.
     let how = if hand_picked > 0 {
         format!("{hand_picked} hand-picked take(s)")
     } else {

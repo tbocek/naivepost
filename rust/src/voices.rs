@@ -39,22 +39,16 @@ pub fn sanitised_base(path: &Path) -> String {
 /// The name that does NOT overwrite anything already in the folder: `base`, else `base-2`, `base-3`, …
 /// (§S1's "never overwriting (`name-2`, …)"). Comparison is on the bare base, since every candidate
 /// gets the same suffix.
+/// The name that does NOT overwrite anything already in the folder: `base`, else `base-2`, `base-3` …
+/// (§S1's "never overwriting (`name-2`, …)"). Comparison is on the bare base, since every listing entry
+/// gets the same suffix. §6's sequence is owned by [`crate::narrate_details::added_file_name`], so this
+/// delegates: two places deciding when an index appears is how a copied voice ends up re-keyed.
 pub fn unique_name(taken: &[String], base: &str) -> String {
     let held: Vec<String> = taken
         .iter()
         .map(|name| name.trim_end_matches(VOICE_SUFFIX).to_string())
         .collect();
-    if !held.iter().any(|name| name == base) {
-        return base.to_string();
-    }
-    let mut n = 2usize;
-    loop {
-        let candidate = format!("{base}-{n}");
-        if !held.contains(&candidate) {
-            return candidate;
-        }
-        n += 1;
-    }
+    crate::narrate_details::added_file_name(base, &held)
 }
 
 /// The folder's `.wav` names, sorted — the order the picker lists them in, and the list a copy is

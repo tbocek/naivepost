@@ -428,6 +428,17 @@ pub fn refresh(window: &adw::ApplicationWindow) {
             s.has_timeline,
             s.has_cut,
         ));
+        // §6 (`Inputs tooltip`): the row's per-file breakdown, rebuilt with the text so a refresh that
+        // moved a clip or a line moves the tooltip too. Empty means no folder is open — no files to name.
+        let tip = crate::ui::narrate_inputs::tooltip(
+            crate::ui::window::narrate_session_tree().as_ref(),
+            &s,
+        );
+        if tip.is_empty() {
+            inputs.set_tooltip_text(None::<&str>);
+        } else {
+            inputs.set_tooltip_text(Some(&tip));
+        }
     }
     if let Some(outputs) = label(window, "narrate-outputs") {
         outputs.set_text(narrate_screen::outputs_readout());
@@ -890,6 +901,12 @@ fn speak_this_line(
 /// **17** ↻ re-roll: refused when there is nothing to draw again of.
 pub fn press_line_reroll(window: &adw::ApplicationWindow, index: usize) -> String {
     let s = read_state();
+    // §6 (`Re-roll / sample refusals`): with the captions voice nothing has a take, so ↻ has nothing to
+    // draw again. This comes FIRST, before any roll bump or dial: re-rolling a caption would otherwise put
+    // a request on the speech server for a voice that does not exist.
+    if crate::narrate_run::voice_is_captions_only(&s.voice) {
+        return say(window, narrate_details::re_roll_captions_refusal());
+    }
     let has_line = s
         .entries
         .get(index)
@@ -909,6 +926,9 @@ pub fn press_line_reroll(window: &adw::ApplicationWindow, index: usize) -> Strin
             return say(window, narrate_details::nothing_picked());
         };
         refresh(window);
+        // §6: the accepted answer names the row and says why it is speaking — the person is about to hear a
+        // different take from the one they had.
+        say(window, &narrate_details::new_take_status(index));
         // A re-roll speaks the NEW take in place (§C.3), so the audition starts at the line's own offset
         // rather than 3 s ahead: those seconds belong to the take the person just heard.
         return speak_this_line(window, &after, entry, entry.at);
@@ -922,6 +942,14 @@ pub fn press_line_reroll(window: &adw::ApplicationWindow, index: usize) -> Strin
 /// 1 take(s), 2.6 s of reference (14 s is plenty)"), because the seconds someone just dragged are the
 /// fact the status has to confirm; the totals after the dash are [`narrate_details::commit_status`]'s.
 pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) -> String {
+    // §6 (`Take band messages`): with no drag on the band there is nothing to make a take OF, and that is a
+    // different sentence from "the selection was too short" — it names the button to use. A zero-width or
+    // negative selection is exactly "nothing was dragged", so it is answered before the floor rule.
+    if selection.1 <= selection.0 {
+        // Nothing has been picked in this session at all: §6 keeps that its own sentence (`no_takes_yet`),
+        // distinct from "no takes left", which is what － says after emptying a band that had some.
+        return say(window, narrate_details::no_takes_yet());
+    }
     if !narrate_screen::can_make_take(selection) {
         let seconds = selection.1 - selection.0;
         return say(window, &narrate_screen::take_too_short(seconds));
@@ -988,6 +1016,19 @@ pub fn press_take_remove(window: &adw::ApplicationWindow, selection: (f64, f64))
 /// in order), so what is heard is what gets cloned; with none it is the uncut base. The seconds named
 /// are the band's own red bar, which is where §1 says playback starts.
 pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
+    // §6 ("takes played" / "stopped playing the takes"): a ▶ over a take walk still running is a
+    // STOP, not a second copy — and asking whether one is running is the question the button answers,
+    // so ask it before reaching for the players. The band has no ⏹ of its own, so this press is the
+    // only hand that can end the walk.
+    if narrate_sample::is_playing() {
+        narrate_sample::stop();
+        return say(window, narrate_details::takes_stopped());
+    }
+    // The walk ran to the end on its own (`-autoexit` leaves the finished player behind): §6's other
+    // sentence, because "playing N take(s)" followed by silence reads as a hang without it.
+    if narrate_sample::all_finished() {
+        return say(window, narrate_details::takes_played());
+    }
     let s = read_state();
     let total: f64 = s.takes.iter().map(|(a, b)| b - a).sum();
     let said = narrate_details::playing_takes(
@@ -1018,6 +1059,12 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
 /// request on the wire; past the ladder the sample is really synthesised over the same TTS leg a line
 /// uses, then heard from `narrate/samples/` on every later press of the same voice and words (S5).
 pub fn press_sample_play(window: &adw::ApplicationWindow) -> String {
+    // §6 (`Re-roll / sample refusals`, the three states of a playing sample): a ▶ over a sample that is
+    // HOLDING freezes it and says so — "sample paused — ▶ resumes, ⏹ starts over". The next ▶ thaws the same
+    // player rather than synthesizing the words again, which is what "resumes" has to mean.
+    if narrate_sample::hold_paused(false).is_some() {
+        return say(window, narrate_details::sample_playing_status());
+    }
     let text = widget_in(window, "sample-sentence")
         .and_then(|w| w.downcast::<gtk::Entry>().ok())
         .map(|e| e.text().to_string())
@@ -1029,13 +1076,16 @@ pub fn press_sample_play(window: &adw::ApplicationWindow) -> String {
     if said != narrate_details::sample_status() {
         return say(window, said);
     }
+    // A sample is already PLAYING (nothing was held, so the thaw above did not fire): §6's three states make
+    // this press a pause, not a second synthesis of the same words.
+    if narrate_sample::hold_paused(true).is_some() {
+        return say(window, narrate_details::sample_paused_status());
+    }
     // Past the ladder: a take already on disk answers at once, and hearing what exists is not a
-    // synthesis, so it must not set `busy` — that flag is what makes a later press read as work in
-    // flight, and a cache hit leaves nothing running.
+    // synthesis, so it must not set `busy` — that flag is what makes a later press read as work in    // flight, and a cache hit leaves nothing running.
     if let Some(heard) = sample_heard_if_any(&text) {
         return say(window, &heard);
-    }
-    // Said BEFORE the leg starts: §6 names this sentence precisely so the bar never reads as done while
+    }    // Said BEFORE the leg starts: §6 names this sentence precisely so the bar never reads as done while
     // the synthesis is out on the wire. The flag goes with it, for the next press.
     say(window, said);
     mutate(|s| s.busy = true);

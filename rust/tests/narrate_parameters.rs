@@ -236,14 +236,14 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_is_a_row_and_is_read()
     let crowded = voice_ref::plan_reference(
         &[],
         &[(0.0, 6.0, 1u32), (7.9, 9.0, 2)],
-        |_, _| 30,
+        &|_, _| 30,
         1,
     );
     assert!(
         matches!(crowded, voice_ref::ReferencePlan::Unavailable(_)),
         "1.9 s of clearance is inside P.eng.refPadSeconds: {crowded:?}"
     );
-    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], |_, _| 30, 1);
+    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], &|_, _| 30, 1);
     assert_eq!(
         clear,
         voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 0.0, end: 6.0 }]),

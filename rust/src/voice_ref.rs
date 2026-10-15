@@ -194,7 +194,9 @@ pub enum ReferencePlan {
 pub fn plan_reference(
     takes: &[(f64, f64)],
     turns: &[(f64, f64, u32)],
-    words_in: impl Fn(f64, f64) -> usize,
+    // `&impl Fn` rather than `impl Fn`: after the plan is made, `recut_for_voice` asks this same counter for
+    // the pieces it kept, to put §6's real word count in the build log. Taking it by value would consume it.
+    words_in: &impl Fn(f64, f64) -> usize,
     narrator_speaker: u32,
 ) -> ReferencePlan {
     if !takes.is_empty() {
@@ -259,6 +261,31 @@ pub fn plan_reference(
     ReferencePlan::Automatic(chosen)
 }
 
+/// The turn's own seconds: the span a speaker holds in the diarization.
+pub fn turn_seconds(turns: &[(f64, f64, u32)], speaker: u32) -> f64 {
+    turns
+        .iter()
+        .filter(|(_, _, who)| *who == speaker)
+        .map(|(start, end, _)| (end - start).max(0.0))
+        .sum()
+}
+
+/// §6 (`Automatic ranking`): whose voice the reference is cut from when nobody picked takes — the speaker
+/// holding the MOST TURN TIME on the recording. Ties break to the lower speaker id: the diarizer numbers
+/// speakers as it meets them, so the earlier id is the person who spoke first, which is the same order the
+/// picker lists narrators in. Returns `None` with no turns at all, which is S2's "no diarization" case and
+/// stays that refusal rather than becoming a guess.
+pub fn ranked_speaker(turns: &[(f64, f64, u32)]) -> Option<u32> {
+    let mut best: Option<(f64, u32)> = None;
+    for speaker in turns.iter().map(|(_, _, who)| *who).collect::<std::collections::BTreeSet<u32>>() {
+        let held = turn_seconds(turns, speaker);
+        if best.is_none_or(|(seconds, _)| held > seconds) {
+            best = Some((held, speaker));
+        }
+    }
+    best.map(|(_, speaker)| speaker)
+}
+
 /// S2's refusal when there is no diarization to choose from at all.
 pub const NO_DIARIZATION: &str = "no diarization for X -- run Prepare, or pick the seconds by hand under the video";
 
@@ -273,12 +300,20 @@ pub fn nothing_tagged(slot: usize) -> String {
 // --- S3: the real level-and-shift leg -------------------------------------------------------
 
 /// Where the two reference files landed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Built {
     pub base: PathBuf,
     pub served: PathBuf,
     /// The sentences worth printing while building (a re-cut notice, a rename).
     pub said: Vec<String>,
+    /// §6 (`Reference build`): how much audio the build cut, and whether a hand or the ranking chose it.
+    /// Carried out of `recut_for_voice` so the flow that ran ffmpeg can log the real numbers rather than a
+    /// guess read back off the file.
+    pub seconds: f64,
+    /// Words in the chosen pieces; 0 when a hand picked them (§6 names takes instead of words then).
+    pub words: usize,
+    /// How many pieces came from the take band; 0 means the automatic wording.
+    pub hand_picked: usize,
 }
 
 /// The ffmpeg argument vector that levels the reference: mono, 48 kHz pcm, `REF_LOUDNESS`. Built as a
@@ -413,11 +448,30 @@ pub fn recut_for_voice(
     if nothing_is_tagged(tree, source) {
         return Err(nothing_tagged(FLOW_SLOT));
     }
-    let plan = plan_reference(&takes_of(tree, source), turns, words_in, FLOW_SLOT as u32);
-    let pieces = match plan {
-        ReferencePlan::HandPicked(pieces) | ReferencePlan::Automatic(pieces) => pieces,
-        ReferencePlan::Unavailable(why) => return Err(why),
+    // §6 (`Automatic ranking`): the reference is cut from whoever holds the most turn time. The flow's slot
+    // is the fallback when there is no diarization to rank at all, so S2 answers "no diarization" rather
+    // than inventing a speaker.
+    let plan = plan_reference(
+        &takes_of(tree, source),
+        turns,
+        &words_in,
+        ranked_speaker(turns).unwrap_or(FLOW_SLOT as u32),
+    );
+    let (pieces, hand_picked) = match &plan {
+        ReferencePlan::HandPicked(pieces) => (pieces.clone(), pieces.len()),
+        ReferencePlan::Automatic(pieces) => (pieces.clone(), 0usize),
+        ReferencePlan::Unavailable(why) => return Err(why.clone()),
     };
+    // §6 (`Reference build`) counts the reference in WORDS when it was picked automatically and in TAKES
+    // when a hand picked them — the same distinction `reference_build_log` spells. The count is the chosen
+    // pieces' own, re-asked of the caller's counter here rather than carried out of the plan, so
+    // `ReferencePlan` keeps its shape (tests compare it against plain piece lists).
+    let words: usize = if hand_picked == 0 {
+        pieces.iter().map(|piece| words_in(piece.start, piece.end)).sum()
+    } else {
+        0
+    };
+    let seconds: f64 = pieces.iter().map(|piece| piece.seconds()).sum();
 
     if pieces.len() == 1 {
         // One stretch needs no stitching: level it straight onto the base.
@@ -454,7 +508,25 @@ pub fn recut_for_voice(
         let shift = shift_args(&base.display().to_string(), &served.display().to_string(), semitones);
         run_ffmpeg(ffmpeg, &shift)?;
     }
-    Ok(Built { base, served, said })
+    Ok(Built {
+        base,
+        served,
+        said,
+        seconds,
+        words,
+        hand_picked,
+    })
+}
+
+/// §6 (`Reference build`): the line a finished build leaves. The flow that ran ffmpeg prints it, because
+/// only that flow knows which recording was cut from — `base_name` is that file's name, not a path.
+pub fn built_log(built: &Built, base_name: &str) -> String {
+    crate::narrate_details::reference_build_log(
+        built.seconds,
+        built.words,
+        built.hand_picked,
+        base_name,
+    )
 }
 
 /// The one thing `recut_for_voice` needs from the project that the diarization cannot say: whether a
@@ -582,7 +654,16 @@ pub fn build(
         let shift = shift_args(&base.display().to_string(), &served.display().to_string(), semitones);
         run_ffmpeg(ffmpeg, &shift)?;
     }
-    Ok(Built { base, served, said })
+    Ok(Built {
+        // `build` levels a whole recording rather than chosen stretches, so the build's own length is what
+        // it cut and no hand picked anything: §6's wording takes the seconds from the file that was made.
+        seconds: wav_seconds(&base).unwrap_or(0.0),
+        words: 0,
+        hand_picked: 0,
+        base,
+        served,
+        said,
+    })
 }
 
 /// S3's last sentence: a project holding `voice_ref.wav` with no base renames the former to the base.

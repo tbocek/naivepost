@@ -476,6 +476,15 @@ impl Shell {
                 Some(tree) => prepare::inputs_tip(tree, project),
                 None => prepare::NO_INPUTS_TIP.to_string(),
             }),
+            // §6 (`Inputs tooltip`): the Narrate row's per-file breakdown — which cut file, why the
+            // narration is stale and what fixes it, how many transcript lines with what window, the
+            // session context, and who speaks. The numbers come from the same files the run reads, so the
+            // shell stays out of the arithmetic: `ui::narrate_inputs` owns it beside the page.
+            Page::Narrate => {
+                let state = crate::ui::narrate_page::read_state();
+                let tip = crate::ui::narrate_inputs::tooltip(tree, &state);
+                (!tip.is_empty()).then_some(tip)
+            }
             _ => None,
         }
     }

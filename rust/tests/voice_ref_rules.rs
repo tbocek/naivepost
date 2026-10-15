@@ -130,14 +130,14 @@ fn f4_6_s1_switching_keeps_the_synthesized_audio_of_the_old_voice() {
 #[test]
 fn f4_6_s2_hand_picked_takes_win_without_diarization() {
     // No turns at all: a hand-picked take still builds, because S2 says the takes win outright.
-    let plan = voice_ref::plan_reference(&[(4.0, 12.0)], &[], |_, _| 0, 1);
+    let plan = voice_ref::plan_reference(&[(4.0, 12.0)], &[], &|_, _| 0, 1);
     assert_eq!(
         plan,
         ReferencePlan::HandPicked(vec![Piece { start: 4.0, end: 12.0 }]),
         "hand-picked takes need no diarization and no cap"
     );
     // Even one far past the wanted length: the cap is the AUTOMATIC pick's, not the person's.
-    let long = voice_ref::plan_reference(&[(0.0, 90.0)], &[], |_, _| 0, 1);
+    let long = voice_ref::plan_reference(&[(0.0, 90.0)], &[], &|_, _| 0, 1);
     match long {
         ReferencePlan::HandPicked(pieces) => {
             assert_eq!(pieces.iter().map(Piece::seconds).sum::<f64>(), 90.0);
@@ -150,13 +150,13 @@ fn f4_6_s2_hand_picked_takes_win_without_diarization() {
 fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_1_5_words_per_second()
 {
     // P.eng.refMinTakeSeconds 5.0: a 4 s solo turn is too short, a 6 s one passes.
-    let short = voice_ref::plan_reference(&[], &[(0.0, 4.0, 1)], |_, _| 40, 1);
+    let short = voice_ref::plan_reference(&[], &[(0.0, 4.0, 1)], &|_, _| 40, 1);
     assert_eq!(
         short,
         ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
         "P.eng.refMinTakeSeconds: below the floor there is nothing clean to take"
     );
-    let ok = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], |_, _| 30, 1);
+    let ok = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &|_, _| 30, 1);
     assert_eq!(
         ok,
         ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
@@ -167,7 +167,7 @@ fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_
     let crowded = voice_ref::plan_reference(
         &[],
         &[(0.0, 6.0, 1), (7.0, 9.0, 2)],
-        |_, _| 30,
+        &|_, _| 30,
         1,
     );
     assert_eq!(
@@ -176,7 +176,7 @@ fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_
         "1 s of clearance is inside the 2 s the spec asks for, so the stretch is not solo"
     );
     // ...while 2 s exactly clears it.
-    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1), (8.0, 9.0, 2)], |_, _| 30, 1);
+    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1), (8.0, 9.0, 2)], &|_, _| 30, 1);
     assert_eq!(
         clear,
         ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
@@ -184,7 +184,7 @@ fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_
     );
 
     // P.eng.refMinWordsPerSecond 1.5: 6 s needs 9 words; 8 is too sparse to clone from.
-    let sparse = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], |_, _| 8, 1);
+    let sparse = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &|_, _| 8, 1);
     assert_eq!(
         sparse,
         ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
@@ -209,7 +209,7 @@ fn f4_6_s2_the_pick_stops_at_fourteen_seconds_and_three_pieces() {
         (40.0, 48.0, 1),
         (60.0, 68.0, 1),
     ];
-    let plan = voice_ref::plan_reference(&[], &turns, |_, _| 40, 1);
+    let plan = voice_ref::plan_reference(&[], &turns, &|_, _| 40, 1);
     let ReferencePlan::Automatic(pieces) = plan else {
         panic!("four clean turns must produce an automatic plan, got {plan:?}");
     };
@@ -237,7 +237,7 @@ fn f4_6_s2_the_pick_stops_at_fourteen_seconds_and_three_pieces() {
 
 #[test]
 fn f4_6_s2_no_diarization_is_said_as_run_prepare_or_pick_by_hand() {
-    let plan = voice_ref::plan_reference(&[], &[], |_, _| 0, 1);
+    let plan = voice_ref::plan_reference(&[], &[], &|_, _| 0, 1);
     assert_eq!(
         plan,
         ReferencePlan::Unavailable(
@@ -256,7 +256,7 @@ fn f4_6_s2_no_diarization_is_said_as_run_prepare_or_pick_by_hand() {
 fn f4_6_s2_no_clean_solo_stretch_is_said() {
     // Diarization exists; every turn fails a floor.
     let turns = [(0.0, 2.0, 1u32), (3.0, 4.0, 2)];
-    let plan = voice_ref::plan_reference(&[], &turns, |_, _| 100, 1);
+    let plan = voice_ref::plan_reference(&[], &turns, &|_, _| 100, 1);
     assert_eq!(
         plan,
         ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
@@ -276,7 +276,7 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window()
     let crowded = voice_ref::plan_reference(
         &[],
         &[(0.0, 6.0, 1u32), (7.9, 9.0, 2)],
-        |_, _| 30,
+        &|_, _| 30,
         1,
     );
     assert_eq!(
@@ -285,7 +285,7 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window()
         "1.9 s is inside P.eng.refPadSeconds, so the take would carry the other speaker's edge"
     );
     // Exactly 2.0 s: outside it, and the same turn is usable.
-    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], |_, _| 30, 1);
+    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], &|_, _| 30, 1);
     assert_eq!(
         clear,
         ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
@@ -307,7 +307,7 @@ fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie
     let plan = voice_ref::plan_reference(
         &[],
         &turns,
-        |from, _| if (from - 20.0).abs() < f64::EPSILON { 30 } else { 15 },
+        &|from: f64, _: f64| if (from - 20.0).abs() < f64::EPSILON { 30 } else { 15 },
         1,
     );
     let ReferencePlan::Automatic(pieces) = plan else {
@@ -327,7 +327,7 @@ fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie
             (0.0, wanted + 4.0, 1u32),
             (wanted + 20.0, wanted + 26.0, 1),
         ],
-        |from, _| if (from - (wanted + 20.0)).abs() < f64::EPSILON { 30 } else { 15 },
+        &|from: f64, _: f64| if (from - (wanted + 20.0)).abs() < f64::EPSILON { 30 } else { 15 },
         1,
     );
     let ReferencePlan::Automatic(capped) = capped else {
@@ -347,7 +347,7 @@ fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie
     let tied = voice_ref::plan_reference(
         &[],
         &[(0.0, 6.0, 1u32), (20.0, 38.0, 1), (60.0, 74.0, 1)],
-        |_, _| 27,
+        &|_, _| 27,
         1,
     );
     let ReferencePlan::Automatic(pieces) = tied else {

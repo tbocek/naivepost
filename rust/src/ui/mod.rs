@@ -64,6 +64,7 @@ pub mod narrate_page;
 /// wire and plays it at the render's level, so the page above keeps only surface and wires.
 pub mod narrate_page_speak;
 pub mod narrate_page_seek;
+pub mod narrate_inputs;
 pub mod narrate_page_transport;
 pub mod narrate_seed;
 pub mod narrate_band;

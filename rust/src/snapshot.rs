@@ -1094,6 +1094,22 @@ architecture behind them.
                 .and_then(|tree| cut::load(&tree).ok())
                 .map(|loaded| loaded.segs.iter().map(|seg| seg.e - seg.s).sum())
                 .unwrap_or(0.0);
+            // The 2.6 s take this shot is captioned with is ALSO written to `narrate/takes.json`, because
+            // `refresh` re-seeds the page's take list from that file on every repaint — a state-only take
+            // would vanish before the pixels. So the seed writes the file and publishes the same span.
+            let seeded = crate::ui::window::narrate_session_tree()
+                .as_ref()
+                .and_then(|tree| crate::ui::narrate_seed::take_recording_key(tree))
+                .and_then(|key| {
+                    let tree = crate::ui::window::narrate_session_tree()?;
+                    crate::narrate_data::save_takes(
+                        &tree,
+                        &key,
+                        &[crate::narrate_data::Take { s: 0.0, e: 2.6 }],
+                    )
+                    .ok()
+                })
+                .is_some();
             let state = ui::NarrateState {
                 voice: "narrator1".into(),
                 pitch: 0.0,
@@ -1102,6 +1118,7 @@ architecture behind them.
                 has_timeline: true,
                 clips,
                 length: footage,
+                takes: if seeded { vec![(0.0, 2.6)] } else { vec![] },
                 ..Default::default()
             };
             ui::set_state(state);

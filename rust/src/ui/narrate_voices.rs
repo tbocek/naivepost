@@ -76,8 +76,14 @@ pub fn add_voice_file(window: &adw::ApplicationWindow, source: &std::path::Path)
     let folder = voices_folder();
     crate::settings::ensure_voices_folder(&folder)?;
     let taken = crate::voices::list_wavs(&folder);
+    // One rule for the never-overwriting name: `narrate_details::added_file_name` owns §6's `name-2`,
+    // `name-3` sequence, and [`crate::voices::target_name`] delegates to it so a second copy of the same
+    // recording can never overwrite (or silently re-key) the first.
     let name = crate::voices::target_name(&taken, source);
     let target = folder.join(&name);
+    // §6 (`"Add file…"`): say what is about to happen before the conversion runs — a pasted recording is
+    // made mono PCM by ffmpeg, and that is the step a slow copy is waiting on.
+    crate::ui::window::log_line(&crate::narrate_details::reference_convert_log(&name));
     let ffmpeg = ffmpeg_program();
     let args: Vec<String> = vec![
         "-hide_banner".into(),

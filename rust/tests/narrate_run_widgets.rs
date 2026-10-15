@@ -328,7 +328,10 @@ fn run_round(app: &adw::Application) {
             !text.contains(&"the OLD first line"),
             "rewriting replaced clip 1's old line: {text:?}"
         );
-        assert!(after.is_silent(10.0, 20.0), "the silent list survived the run");
+        assert!(
+            !after.is_silent(10.0, 20.0),
+            "clip 2 got a spoken line from this run, so the marker on THAT clip goes with the replacement (§6: silent list cleared with the replacement)"
+        );
 
         // S3/S4: the log carries the reason line and the written count.
         let logs = ui::window_logs().join("\n");

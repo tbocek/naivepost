@@ -430,6 +430,13 @@ where
 
     // S5: a captions-only voice stops here — the lines exist and nothing is spoken.
     if plan.captions_only {
+        // §6 (`a captions-only voice still opens and closes the "speaking 2/2" job so the bar finishes`):
+        // the job was opened above with `job(1, JOB_SPEAKING, …)`, so it has to be CLOSED here even though
+        // no line will ever be synthesized. Left open, the bar sits on `speaking 2/2` forever after a run
+        // that finished perfectly well. Track 1 owns the second half of the phase (`phase(0.0, 0.5)`), so
+        // closing it at full share is what fills the bar.
+        stage_queue.borrow_mut().done(1, 1.0);
+        NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
         let said = narrate_run::captions_only_done(written.len());
         say_on_status(window, &said);
         return said;
@@ -465,6 +472,9 @@ where
             ui::log_line(&format!("!!! narrate: {line}"));
         }
         ui::log_line(&narrate_speak::stopped_speaking_log(&run));
+        // Same close as the finished pass: a stopped speaking job is still a closed one, or the bar keeps
+        // counting `speaking 2/2` after ⏹ ended it.
+        live_stage_queue(window).borrow_mut().done(1, 1.0);
         let said = narrate_run::stopped_status(JOB_SPEAKING);
         say_on_status(window, &said);
         return said;
@@ -476,6 +486,10 @@ where
         ui::log_line(&format!("!!! narrate: {line}"));
     }
     ui::log_line(&narrate_run::spoken_log(spoken, cached));
+    // The speaking job closes the bar: `job(1, JOB_SPEAKING, 2, JOBS)` opened it at the start of the run,
+    // and every ending below (spoken, stopped) must find the queue finished or the bar keeps counting a
+    // job that is over. Track 1 owns the second half of the phase, so closing at full share fills the bar.
+    live_stage_queue(window).borrow_mut().done(1, 1.0);
 
     // S7: the ending goes on the STATUS LINE, which is where the prototype never put it.
     let said = narrate_run::Outcome::Spoken {
