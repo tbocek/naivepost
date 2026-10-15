@@ -1317,16 +1317,21 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
     };
     // S2: up to date is the stamp's question, and it is asked over the narration too — §F5.3 lists the
     // lines (bounds, text, wav size and mtime) among what the hash covers, so `gate_stamp` reads
-    // `narrate/narration.json` itself rather than hashing an empty list and calling that cheap.
+    // `narrate/narration.json` itself rather than hashing an empty list and calling that cheap. It also
+    // takes the whole cut and the footage frame, because those are what the encoder is handed beside the
+    // segments; the shape is measured by the same helper the snapshot below uses, so gate and run agree.
     let voice = if s.voice.is_empty() { None } else { Some(s.voice.as_str()) };
     let current = crate::produce_stamp::gate_stamp(
         tree,
         &settings,
-        &cut.segs,
+        &cut,
         &project.sources,
-        &cut.aspect,
         voice,
         project.no_narration,
+        crate::ui::produce_snapshot::first_footage_shape(
+            tree,
+            &crate::ui::cut_folds::page_recordings(),
+        ),
     );
     let gate = crate::produce_flow::gate(
         crate::produce_stamp::skip_encode(

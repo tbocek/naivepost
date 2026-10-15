@@ -496,11 +496,11 @@ fn check_skipped_encode_still_rewrites_the_page(root: &Path) {
     let current = naivepost::produce_stamp::gate_stamp(
         &tree,
         &settings,
-        &two_segs(),
+        &naivepost::cut::Cut { segs: two_segs(), aspect: "16:9".to_string(), ..Default::default() },
         &project.sources,
-        "16:9",
         Some("1"),
         project.no_narration,
+        (1920, 1080),
     );
     naivepost::produce_stamp::write_stamp(&tree, &current).expect("stamp written");
     // A sentinel page: if S5 does not run on the skip path, this survives.

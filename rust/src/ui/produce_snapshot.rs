@@ -275,7 +275,10 @@ pub fn render_half(
 /// With no tape or no frames there is nothing to measure, and the fallback is the encoder's own default
 /// 1080p frame — what `frame_box` needs to be given when a session has not told it anything, not a guess
 /// about this session's cameras.
-fn first_footage_shape(tree: &Tree, recordings: &[crate::timeline::Recording]) -> (i32, i32) {
+///
+/// `pub` because §F5.3's stamp weighs this very number (the `"frame"` group): the gate asks it BEFORE the
+/// snapshot below is gathered, and both halves must hash one answer or every press would look stale.
+pub fn first_footage_shape(tree: &Tree, recordings: &[crate::timeline::Recording]) -> (i32, i32) {
     const NO_TAPE: (i32, i32) = (1920, 1080);
     let Some(first) = recordings.first() else {
         return NO_TAPE;

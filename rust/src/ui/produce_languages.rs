@@ -109,6 +109,9 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
         ask_model: &|_| Ok(String::new()),
         ask_draw: &draw_leg(),
         poll: &poll_leg(),
+        // S6's hand-off: the bytes the finished job handed back land as the plain picture, which is the only
+        // thing the print leg can print from and the only reason the picture's stamp can be written at all.
+        save_picture: &save_drawn,
         print: &print_leg(),
         nearest_frame: &|at| nearest_frame(&tree, run, at),
         // S4: the three moments spread over the kept footage. Moments on the produced clock, rendered as
@@ -359,8 +362,6 @@ pub fn set_draw_for_test(draw: DrawSlot) {
     DRAW.with(|cell| cell.replace(Some(draw)));
 }
 
-/// The scripted draw leg: the script when one is loaded, otherwise an honest refusal that leaves the
-/// already-saved text standing (S5) and gets logged by `produce_flow::words_failed`.
 /// The scripted draw leg: the script when one is loaded, otherwise the REAL submit at the address the
 /// settings name (§F5.6 S6). A server that is down answers `Err` naming it, which the walk turns into the
 /// failed-draw branch — publish.json already written, so the thinking survives (S5).
@@ -374,11 +375,10 @@ fn draw_leg() -> Box<crate::produce_upload::AskDraw> {
     }
 }
 
-/// The poll leg: the drawing server asked about at the address the settings name. The one-per-second
-/// cadence (§F5.6 S6) lives inside [`crate::produce_upload_draw::wait_until_done`], which logs each status
-/// line as it goes and answers only once the job reports done — so `walk`'s loop sees a finished state on its
-/// first ask. With a scripted draw the job is reported done at once: a test asserts the status line, not the
-/// waiting.
+/// The poll leg's cadence (§F5.6 S6) lives inside [`crate::produce_upload_draw::wait_until_done`], which logs
+/// each status line as it goes and answers only once the job reports done, so `walk`'s loop sees a finished
+/// state on its first ask. With a scripted draw the job is reported done at once and the scripted bytes are
+/// the picture: a test asserts what landed rather than dialling a GPU.
 fn poll_leg() -> Box<crate::produce_upload::Poll> {
     match DRAW.with(|cell| cell.borrow().clone()) {
         Some(_) => Box::new(|job| {
@@ -386,6 +386,9 @@ fn poll_leg() -> Box<crate::produce_upload::Poll> {
                 status: format!("done {}", job.id),
                 ahead: 0,
                 done: true,
+                // The scripted draw lays its own picture down, so the answer carries those bytes rather than
+                // an empty payload: `save_drawn` writes what it is given, and the print leg letters that file.
+                png: std::fs::read(session_tree().thumbnail_plain_png()).unwrap_or_default(),
             })
         }),
         None => {
@@ -400,6 +403,27 @@ fn poll_leg() -> Box<crate::produce_upload::Poll> {
             })
         }
     }
+}
+
+/// Put a finished draw's bytes on disk as the plain picture (§F5.6 S6). When a scripted draw already laid its
+/// picture down, this is the step that reads those bytes back and re-writes them, so the scripted path stays
+/// the one the print leg prints from rather than a side door around it.
+fn save_drawn(job: &crate::produce_upload::DrawnJob, png: &[u8]) -> Result<(), String> {
+    let path = session_tree().thumbnail_plain_png();
+    let bytes: Vec<u8> = if png.is_empty() {
+        std::fs::read(&path).map_err(|why| format!("{}: {why}", path.display()))?
+    } else {
+        png.to_vec()
+    };
+    write_plain(&path, &bytes).map_err(|why| format!("job {}: {why}", job.id))
+}
+
+/// The write itself, split out so the folder is created for a project that has never drawn before.
+fn write_plain(path: &std::path::Path, png: &[u8]) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
+    }
+    std::fs::write(path, png).map_err(|why| format!("{}: {why}", path.display()))
 }
 
 /// The print leg: one pass of words onto the picture, drawn for real (§F5.6 S7). It starts from

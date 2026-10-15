@@ -1224,6 +1224,10 @@ name = "produce_stamp"
 path = "tests/produce_stamp.rs"
 
 [[test]]
+name = "produce_stamp_picture"
+path = "tests/produce_stamp_picture.rs"
+
+[[test]]
 name = "produce_stamp_widgets"
 path = "tests/produce_stamp_widgets.rs"
 

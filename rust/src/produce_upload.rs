@@ -380,14 +380,20 @@ pub struct PollState {
     pub status: String,
     pub ahead: usize,
     pub done: bool,
+    /// The picture the job handed back, already decoded from the reply's base64. `submit`'s reply has none —
+    /// the bytes arrive with the poll that reports the job done, which is what §F5.6's S6→S7 hand-off needs.
+    pub png: Vec<u8>,
 }
 
 /// The model leg: the brief in, the raw reply out (`Err` = the call did not happen).
 pub type AskModel = dyn Fn(&str) -> Result<String, String>;
 /// The sd.cpp submit leg: the request body in, the job id out.
 pub type AskDraw = dyn Fn(&serde_json::Value) -> Result<DrawnJob, String>;
-/// One poll of a draw job.
+/// One ask of a draw job, the finished picture's bytes included.
 pub type Poll = dyn Fn(&DrawnJob) -> Result<PollState, String>;
+/// Write the drawn picture's bytes to `produce/publish/thumbnail-plain.png`, the file every re-print starts
+/// from. The walk calls it the moment the job reports done, before any words are printed (§F5.6 S6→S7).
+pub type SavePicture = dyn Fn(&DrawnJob, &[u8]) -> Result<(), String>;
 /// Print the marked texts, then the title, onto the picture.
 /// Print one pass of words onto the picture: which kind is printing first (`"texts"` or `"title"`, the two
 /// entries of [`print_order`]), then the words of that kind. The kind comes first because S7 orders the
@@ -405,6 +411,9 @@ pub struct Materials<'a> {
     pub ask_draw: &'a AskDraw,
     /// One `GET /sdcpp/v1/jobs/{id}`, once per second while the job runs.
     pub poll: &'a Poll,
+    /// Put the drawn picture's bytes on disk as the plain picture. Without this leg nothing has words printed
+    /// onto it, so the picture's own stamp is neither written nor read (§F5.6 S6, S7).
+    pub save_picture: &'a SavePicture,
     /// Print the marked texts, then the title, onto `thumbnail.png`.
     pub print: &'a PrintWords,
     /// The nearest extracted frame to a moment on the produced clock (S3).
@@ -586,21 +595,40 @@ pub fn walk(
             }
         };
         out.calls.push("draw".to_string());
-        // One poll per second until the job reports done; each poll prints its own status line.
-        loop {
+        // One poll per second until the job reports done; each poll prints its own status line. The reply that
+        // says "done" also carries the picture (sd.cpp returns `result.images[0].b64_json` on the job), so the
+        // hand-off happens INSIDE this arm: a `png` set here and read below could never be reached by a job that
+        // answered done with no image, and clippy rightly says the first assignment is dead.
+        let mut png: Vec<u8> = Vec::new();
+        let ended: Result<(), String> = loop {
             match (mats.poll)(&job) {
                 Ok(state) => {
                     log(&poll_line(&state.status, state.ahead));
                     if state.done {
-                        break;
+                        png = state.png;
+                        break Ok(());
                     }
                 }
-                Err(why) => {
-                    out.error = Some(why);
-                    return out;
-                }
+                Err(why) => break Err(why),
             }
+        };
+        if let Err(why) = ended {
+            out.error = Some(why);
+            return out;
         }
+        // S6's last step: the drawn bytes land as the plain picture. Everything after this prints onto it, and
+        // a run that never wrote it could never print, never stamp and never skip a redraw.
+        if png.is_empty() {
+            // The job said done and sent no picture: say which, rather than let the print leg refuse for a
+            // reason one step and one file away from the truth.
+            out.error = Some(format!("the drawing server finished job {} with no image", job.id));
+            return out;
+        }
+        if let Err(why) = (mats.save_picture)(&job, &png) {
+            out.error = Some(why);
+            return out;
+        }
+        out.calls.push("picture".to_string());
     }
 
     // S7: print the marked texts, then the title, onto thumbnail.png; then the picture's stamp. The passes

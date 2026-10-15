@@ -408,6 +408,12 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         aspect: &run.aspect,
         voice: &run.voice,
         no_narration: run.no_narration,
+        // The three the encoder reads beside the segments, taken from the same hands that feed it: `mats.fx_for`
+        // is answered from `run.cut.fx` and the bed list from `run.cut.lanes`, and `plan_clips` builds every
+        // frame box on `mats.src_shape`. A stamp that missed them could skip a render that had never seen them.
+        fx: &run.cut.fx,
+        lanes: &run.cut.lanes,
+        shape: mats.src_shape,
     };
     let stamp = stamp_input.stamp_with(tree, Some(&run.voice), 0);
 

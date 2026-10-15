@@ -323,6 +323,9 @@ fn sec_08_produce_5_rules_s3_a_run_leaves_an_up_to_date_video_alone() {
         aspect: "16:9",
         voice: "1",
         no_narration: false,
+        fx: &[],
+        lanes: &[],
+        shape: (1920, 1080),
     };
     let current = stamp::stamp(&input, |_| None, |_| (0, 0));
     assert!(!stamp::skip_encode(stamp::read_stamp(&tree).as_deref(), &current), "never produced");

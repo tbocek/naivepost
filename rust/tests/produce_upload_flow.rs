@@ -82,6 +82,9 @@ thread_local! {
 
     /// The record the `save_publish` leg was handed, i.e. what publish.json would have held.
     static PUBLISHED: RefCell<Option<Publish>> = const { RefCell::new(None) };
+
+    /// The bytes the `save_picture` leg was handed — the plain picture the draw produced, as the walk saw it.
+    static PLAIN_BYTES: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
 }
 
 /// What the last walk's publish leg received.
@@ -120,6 +123,7 @@ fn walk_with(
     draw_fails: bool,
 ) -> up::Outcome {
     PUBLISHED.with(|cell| cell.replace(None));
+    PLAIN_BYTES.with(|cell| cell.replace(None));
     let ask_model = {
         let rec = rec.clone();
         move |_b: &str| {
@@ -155,7 +159,26 @@ fn walk_with(
                 status: "done".into(),
                 ahead: 0,
                 done: true,
+                // The scripted server's picture, carried on the answer that says done exactly as a real job's
+                // reply carries it: the `save_picture` leg then writes those bytes, and S7's words print onto
+                // the file they landed in.
+                png: page_drawn_png(),
             })
+        }
+    };
+    let save_picture = {
+        let rec = rec.clone();
+        move |_j: &up::DrawnJob, png: &[u8]| {
+            rec.mark("picture");
+            // The walk hands the draw's bytes to the leg that writes them; here they are recorded AND written
+            // where the page's own print leg will read them back, which is the step S7 letters from.
+            PLAIN_BYTES.with(|held| held.borrow_mut().replace(png.to_vec()));
+            let path = session_picture_path();
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
+            }
+            std::fs::write(&path, png).map_err(|why| format!("{}: {why}", path.display()))?;
+            Ok(())
         }
     };
     let print = {
@@ -181,6 +204,7 @@ fn walk_with(
         ask_model: &ask_model,
         ask_draw: &ask_draw,
         poll: &poll,
+        save_picture: &save_picture,
         print: &print,
         nearest_frame: &nearest,
         // S4: the three moments that fill an empty row. A test says what the cut yields; `walk` only puts
@@ -589,13 +613,16 @@ fn f5_6_s7_texts_print_before_the_title_then_the_stamp_lands() {
         text: "a marked line".to_string(),
     }];
     let out = walk_with(&rec, &publish, &answers, None, false, false);
-    // publish → draw → poll → the two print passes in `print_order`'s order → stamp.
+    // publish → draw → poll → the plain picture written → the two print passes in `print_order`'s order →
+    // stamp. The `picture` step is S6's last act and the only thing S7's words can print onto: without it the
+    // walk would print onto a file it never made and write a stamp for a picture that is not there.
     let order = rec.calls.borrow();
     let want = [
         "model",
         "publish",
         "draw",
         "poll",
+        "picture",
         "print-leg",
         "print-leg",
         "stamp",
@@ -721,13 +748,49 @@ fn scripted_spawn() -> naivepost::produce_translate::SpawnSlot {
     })
 }
 
-/// The scripted sd.cpp leg: writes `thumbnail-plain.png` where the real server's bytes would land, so
-/// the print leg has something to letter and copy.
+/// Where the scripted `save_picture` leg writes: the session folder the page resolves, so the print leg and
+/// the assertions below find the picture where the program would have put it.
+fn session_picture_path() -> std::path::PathBuf {
+    naivepost::layout::Tree::new(naivepost::startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ))
+    .map(|tree| tree.thumbnail_plain_png())
+    .unwrap_or_else(|_| std::path::PathBuf::from("thumbnail-plain.png"))
+}
+
+/// A real picture's bytes for the scripted draw to hand back: the print leg reads this PNG back and letters
+/// it (S7), so a placeholder would make the print pass fail for the wrong reason. Built in a scratch file and
+/// read back, because the flat-PNG encoder writes to a path; cached, because a page's press asks for it once
+/// per poll and two checks share the process.
+fn page_drawn_png() -> Vec<u8> {
+    let scratch = scratch_png_path();
+    let png = match naivepost::produce_upload_print::flat_png_for_test(&scratch, 640, 360, 0.25) {
+        Ok(()) => std::fs::read(&scratch).unwrap_or_default(),
+        Err(why) => {
+            eprintln!("the scripted picture could not be built: {why}");
+            Vec::new()
+        }
+    };
+    let _ = std::fs::remove_file(&scratch);
+    png
+}
+
+/// Where a scripted picture is built before being read back: one file per thread, since the tests share a
+/// process and two of them may be drawing at the same moment.
+fn scratch_png_path() -> std::path::PathBuf {
+    let id = std::thread::current()
+        .name()
+        .map(|name| name.replace([':', '/'], "_"))
+        .unwrap_or_else(|| format!("{}", std::process::id()));
+    std::env::temp_dir().join(format!("np-f56-payload-{id}.png"))
+}
+
+/// The scripted draw leg for the PAGE's door: it produces the picture the way a finished job's reply does,
+/// writing the plain PNG where the server's bytes would land (so the print leg has a real picture to letter),
+/// and hands back the job id exactly as the real submit leg answers.
 fn scripted_draw(tree: Tree) -> ui::produce_languages::DrawSlot {
     Rc::new(move |_body: &serde_json::Value| {
         let plain = tree.thumbnail_plain_png();
-        // A REAL picture, not a token string: the print leg reads this PNG back and letters it (S7), so a
-        // placeholder would make the print pass fail for the wrong reason.
         naivepost::produce_upload_print::flat_png_for_test(&plain, 640, 360, 0.25)
             .map_err(|why| why.to_string())?;
         Ok(up::DrawnJob { id: "scripted-1".into() })

@@ -89,6 +89,9 @@ struct Case {
     aspect: String,
     voice: String,
     no_narration: bool,
+    fx: Vec<naivepost::cut::Fx>,
+    lanes: Vec<naivepost::cut::Lane>,
+    shape: (i32, i32),
     facts: Vec<(String, u64, u64)>,
 }
 
@@ -102,6 +105,9 @@ impl Case {
             aspect: "16:9".to_string(),
             voice: "1".to_string(),
             no_narration: false,
+            fx: Vec::new(),
+            lanes: Vec::new(),
+            shape: (1920, 1080),
             facts: vec![
                 (FIRST_WAV.into(), 40_000, 1_700_000_000),
                 (SECOND_WAV.into(), 30_000, 1_700_000_000),
@@ -119,6 +125,9 @@ impl Case {
             aspect: &self.aspect,
             voice: &self.voice,
             no_narration: self.no_narration,
+            fx: &self.fx,
+            lanes: &self.lanes,
+            shape: self.shape,
         }
     }
 
@@ -150,6 +159,19 @@ impl Case {
         let mut next = self;
         change(&mut next.settings);
         next
+    }
+
+    /// The same state with one effect added — the shape §F5.3's "the segments" must stretch to cover, since
+    /// the render is handed `cut.fx` beside them.
+    fn with_fx(mut self, effect: naivepost::cut::Fx) -> Self {
+        self.fx.push(effect);
+        self
+    }
+
+    /// …and with one bed lane added.
+    fn with_lane(mut self, lane: naivepost::cut::Lane) -> Self {
+        self.lanes.push(lane);
+        self
     }
 }
 
@@ -511,16 +533,17 @@ fn f5_3_s10_the_upload_text_is_not_in_the_stamp() {
 }
 
 #[test]
-fn f5_3_s11_the_stamp_is_seven_named_parts_not_one_blob() {
+fn f5_3_s11_the_stamp_is_ten_named_parts_not_one_blob() {
     assert_eq!(ITEM, "F5.3");
     let base = Case::new();
     let parts = base.parts();
     let names: Vec<&str> = parts.iter().map(|(name, _)| *name).collect();
-    // The flowchart's order, spelled out so a reader can check it against the diagram.
+    // The flowchart's seven in the diagram's order, then the three the render reads beside the segments.
     assert_eq!(
         names,
         vec![
-            "settings", "segments", "lines", "sources", "aspect", "voice", "narration"
+            "settings", "segments", "lines", "sources", "aspect", "voice", "narration",
+            "effects", "beds", "frame"
         ]
     );
     assert!(parts.iter().all(|(_, hash)| hash.len() == 16), "{parts:?}");
@@ -549,4 +572,138 @@ fn f5_3_s11_the_stamp_is_seven_named_parts_not_one_blob() {
         .join("\n");
     assert_eq!(base.input().parts_of(one_wav, Fake { facts: base.facts.clone() }.facts()).join("\n"), joined);
     assert_eq!(stamp::stamp(&base.input(), one_wav, fake.facts()), base.stamp());
+}
+
+// ---- what the RENDER reads beside the segments -----------------------------------
+//
+// §F5.3's wording folds these into "the segments", but the encoder is handed them as their own lists: the
+// cut's effects (`Materials::fx_for`, answered from `cut.fx`), the bed lanes mixed under each clip and the
+// footage frame every frame box is built on. A hash that counted only `segs` could call a video up to date
+// when an effect was added beside it, so each of the three gets its own named group and its own test.
+
+/// One zoom, the shape the Cut page's ✩ button records: a kind, a time, a length and a box.
+fn zoom_at(t: f64) -> naivepost::cut::Fx {
+    naivepost::cut::Fx {
+        kind: "zoom".to_string(),
+        t,
+        dur: 3.0,
+        ..Default::default()
+    }
+}
+
+/// One bed lane over a music file the fake file system knows about.
+fn bed(name: &str, src: &str) -> naivepost::cut::Lane {
+    naivepost::cut::Lane { name: name.to_string(), src: src.to_string(), at: 0.0, off: 0.0, dur: 60.0 }
+}
+
+/// A volume effect at gain 0.3 — the record whose gain two tests compare against each other.
+fn gain_fx() -> naivepost::cut::Fx {
+    naivepost::cut::Fx {
+        kind: "volume".to_string(),
+        t: 2.0,
+        dur: 2.0,
+        gain: 0.3,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn f5_3_s12_adding_a_zoom_moves_the_hash_and_names_effects() {
+    assert_eq!(ITEM, "F5.3");
+    let base = Case::new();
+    // Nothing on the lane is a change: the unchanged state still claims nothing about effects.
+    assert!(base.fx.is_empty());
+
+    let with_zoom = base.clone().with_fx(zoom_at(4.0));
+    assert_eq!(changed(&base, &with_zoom), vec!["effects"], "a zoom is a different file");
+    assert_ne!(base.stamp(), with_zoom.stamp());
+
+    // Moving the SAME zoom is the same group moving again — the time is in the line, not just the kind.
+    let moved = base.clone().with_fx(zoom_at(9.0));
+    assert_eq!(changed(&base, &moved), vec!["effects"]);
+    assert_ne!(with_zoom.stamp(), moved.stamp(), "a re-timed zoom is not the same render");
+
+    // Every field the filter graph reads moves it too: a re-worded text and a re-gained volume are files.
+    let words = base.clone().with_fx(naivepost::cut::Fx {
+        kind: "text".to_string(),
+        t: 2.0,
+        dur: 2.0,
+        text: "one lecture at a time".to_string(),
+        ..Default::default()
+    });
+    assert_eq!(changed(&base, &words), vec!["effects"]);
+    let gain = base.clone().with_fx(gain_fx());
+    assert_eq!(changed(&base, &gain), vec!["effects"]);
+    let mut louder = naivepost::cut::Fx { gain: 0.6, ..gain_fx() };
+    louder.gain = 0.6;
+    let louder = base.clone().with_fx(louder);
+    assert_eq!(changed(&base, &louder), vec!["effects"]);
+    assert_ne!(gain.stamp(), louder.stamp(), "the gain itself, not only its presence");
+
+    // An effect plus a setting names both groups, in the parts' order.
+    let both = base.clone().with_settings(|s| s.crf = 30).with_fx(zoom_at(4.0));
+    assert_eq!(changed(&base, &both), vec!["settings", "effects"]);
+}
+
+#[test]
+fn f5_3_s13_a_lane_bed_moves_the_hash_and_names_beds() {
+    assert_eq!(ITEM, "F5.3");
+    let base = Case::new();
+    let with_bed = base.clone().with_lane(bed("music", "media/synth.wav"));
+    assert_eq!(changed(&base, &with_bed), vec!["beds"], "a bed mixed under the clips is a different file");
+    assert_ne!(base.stamp(), with_bed.stamp());
+
+    // The bed's OWN file weighs here, not only its name: a replaced recording under the same name is heard
+    // differently, which is the same rule §F5.3 states for the sources.
+    let base_bed = base.clone().with_lane(bed("music", "media/synth.wav"));
+    let swapped = base.clone().with_lane(bed("music", "media/other.wav"));
+    assert_eq!(changed(&base_bed, &swapped), vec!["beds"]);
+    // The bed file's facts weigh only once it is on the lane: with no bed there is nothing to read, so the
+    // same touch moves no group at all.
+    assert!(changed(&base, &base.clone().with_facts("media/synth.wav", 99, 2_000_000_000)).is_empty());
+    let touched = base_bed.clone().with_facts("media/synth.wav", 99, 2_000_000_000);
+    assert_eq!(
+        changed(&base_bed, &touched),
+        vec!["beds"],
+        "a re-recorded bed file moves the hash through the bed's own facts"
+    );
+
+    // Where it sits and how long it runs are in the line too.
+    let later = base.clone().with_lane(naivepost::cut::Lane { at: 12.0, ..bed("music", "media/synth.wav") });
+    assert_eq!(changed(&base, &later), vec!["beds"]);
+    assert_ne!(with_bed.stamp(), later.stamp());
+}
+
+#[test]
+fn f5_3_s14_a_different_footage_shape_moves_the_hash_and_names_frame() {
+    assert_eq!(ITEM, "F5.3");
+    let base = Case::new();
+    assert_eq!(base.shape, (1920, 1080));
+
+    // A portrait camera is a different picture even with the same aspect string: the frame box is built on
+    // this shape whenever the cut names no aspect, so the file differs.
+    let portrait = Case { shape: (1080, 1920), ..base.clone() };
+    assert_eq!(changed(&base, &portrait), vec!["frame"]);
+    assert_ne!(base.stamp(), portrait.stamp());
+
+    // A smaller sensor at the same orientation moves it too — the hash spells both edges.
+    let smaller = Case { shape: (1280, 720), ..base.clone() };
+    assert_eq!(changed(&base, &smaller), vec!["frame"]);
+    assert_ne!(portrait.stamp(), smaller.stamp());
+
+    // And the same shape measured twice claims nothing changed.
+    assert!(changed(&base, &Case { shape: (1920, 1080), ..base.clone() }).is_empty());
+}
+
+#[test]
+fn f5_3_s12_an_unchanged_state_still_skips_the_encode() {
+    assert_eq!(ITEM, "F5.3");
+    // The three new groups must not make every press look stale: two identical states hash alike, so the
+    // gate's skip path survives them.
+    let before = Case::new();
+    let after = Case::new();
+    assert!(changed(&before, &after).is_empty());
+    let current = after.stamp();
+    assert!(stamp::skip_encode(Some(&current), &before.stamp()));
+    assert!(!stamp::skip_encode(Some(&current), &after.clone().with_fx(zoom_at(1.0)).stamp()));
 }

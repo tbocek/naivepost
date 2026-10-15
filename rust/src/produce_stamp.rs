@@ -79,6 +79,16 @@ pub struct Input<'a> {
     pub voice: &'a str,
     /// §1's narration flag (`Project::no_narration`): with it on, no line is spoken at all.
     pub no_narration: bool,
+    /// The cut's effects — every zoom, text, svg, volume, speed and stop. The render is handed this very
+    /// list (`Materials::fx_for`, answered from `cut.fx`) and builds its filter graph from each record, so a
+    /// stamp that counted only the segments could call a video up to date when an effect was added beside it.
+    pub fx: &'a [crate::cut::Fx],
+    /// The bed lanes the render mixes into its clips (§F5.2 S3), files included: a replaced bed file changes
+    /// what is heard without touching a single segment.
+    pub lanes: &'a [crate::cut::Lane],
+    /// The footage frame the encoder is given (`Materials::src_shape`), which decides the frame box of every
+    /// clip when the cut names no aspect. A different camera shape is a different picture.
+    pub shape: (i32, i32),
 }
 
 impl<'a> Input<'a> {
@@ -130,11 +140,20 @@ impl<'a> Input<'a> {
             // The flag alone: with narration off no line is spoken, and the lines themselves must not be
             // able to hold the video up-to-date behind the tick.
             ("narration", hash_text(if self.no_narration { "off" } else { "on" })),
+            // Appended after the flowchart's seven: the three things the render reads that the diagram's
+            // wording folds into "the segments" — the effects drawn over them, the beds mixed under them and
+            // the frame they are drawn onto. Order is fixed here, like the seven above.
+            ("effects", hash_text(&effects_text(self.fx))),
+            ("beds", hash_text(&beds_text(self.lanes, &file_facts))),
+            // Only the shape, not `cut.shift`: a row shift says which camera a segment is SHOWN on, and
+            // `segments_text` already leaves `cam` out for the same reason — moving a recording between rows
+            // must not force the whole video to re-encode.
+            ("frame", hash_text(&format!("{}x{}", self.shape.0, self.shape.1))),
         ]
     }
 }
 
-/// The seven groups in the flowchart's order, hashed one by one. `stamp` is the hash of these joined, so a
+/// The seven groups in the flowchart's order plus the render's own three, hashed one by one. `stamp` is the hash of these joined, so a
 /// group that changes alone still moves it and still names itself.
 pub fn parts(
     input: &Input,
@@ -225,6 +244,37 @@ fn lines_text(
     text
 }
 
+/// Every field of every effect, one effect per line. The filter graph is built from the whole record — a
+/// re-timed, re-boxed, re-eased, re-worded or re-gained effect is a different file — so nothing here is left
+/// out, not even the fields only one kind reads: `Fx` is one record for six kinds and guessing which fields
+//  "matter" for which kind is how an effect change would slip past the hash.
+fn effects_text(fx: &[crate::cut::Fx]) -> String {
+    let mut text = String::new();
+    for effect in fx {
+        text.push_str(&format!(
+            "{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{}\t{}\t{:?}\t{:?}\t{:?}\t{:?}\t{:.6}\t{}\t{:.6}\t{}\t{}\t{}\t{}\n",
+            effect.kind, effect.t, effect.dur, effect.trans, effect.tout, effect.ease, effect.stay,
+            effect.cx, effect.cy, effect.hf, effect.wf, effect.rate, effect.snd, effect.gain,
+            effect.text, effect.src, effect.cam, effect.lane
+        ));
+    }
+    text
+}
+
+/// The bed lanes: name, the file it plays plus that file's `(size, mtime)`, where it starts, where in the
+/// file it starts and how long it runs. A bed is read by the render, so its bytes weigh here as a source's do.
+fn beds_text(lanes: &[crate::cut::Lane], file_facts: &impl Fn(&Path) -> (u64, u64)) -> String {
+    let mut text = String::new();
+    for lane in lanes {
+        let (size, mtime) = file_facts(Path::new(&lane.src));
+        text.push_str(&format!(
+            "{}\t{}\t{}+{}\t{:.6}\t{:.6}\t{:.6}\n",
+            lane.name, lane.src, size, mtime, lane.at, lane.off, lane.dur
+        ));
+    }
+    text
+}
+
 /// The footage sources: the path as §1 spells it, plus `(size, mtime)`. A re-recorded or replaced recording
 /// moves the hash even when every segment still points at the same second of it. Non-footage sources are
 /// left out — a narration reference is read by the Narrate page's voice sample, not by the encoder, and the
@@ -280,29 +330,34 @@ pub fn stamp_path(tree: &Tree) -> PathBuf {
     tree.final_stamp()
 }
 
-/// The stamp the ▶ gate compares against: the same seven groups [`Input`] hashes, with the two things a
-/// take depends on read from the project rather than passed in. The lines come from `narrate/narration.json`
+/// The stamp the ▶ gate compares against: the same groups [`Input`] hashes, with the two things a
+/// take depends on read from the project rather than passed in. It takes the WHOLE cut, not its segments:
+/// the render is handed the cut's effects and beds too, and hashing less than it reads lets an added zoom
+/// look up to date. The lines come from `narrate/narration.json`
 /// and each line's own `roll` salts its wav lookup, so an edited line, a re-rolled take or a redrawn wav
 /// all move this hash — which is what §F5.3 requires of the comparison a press makes. A caller that already
 /// holds the lines (the render half) builds an [`Input`] itself; this is the door that only has the tree.
 pub fn gate_stamp(
     tree: &Tree,
     settings: &Produce,
-    segs: &[Seg],
+    cut: &crate::cut::Cut,
     sources: &[project::Source],
-    aspect: &str,
     voice: Option<&str>,
     no_narration: bool,
+    shape: (i32, i32),
 ) -> String {
     let entries = crate::narration::load(tree).unwrap_or_default().entries;
     let input = Input {
         settings,
-        segs,
+        segs: &cut.segs,
         lines: &entries,
         sources,
-        aspect,
+        aspect: &cut.aspect,
         voice: voice.unwrap_or(""),
         no_narration,
+        fx: &cut.fx,
+        lanes: &cut.lanes,
+        shape,
     };
     // Each line's take salt is its own `Entry.roll`: one rule for both halves of the render, so the stamp
     // the gate asks about and the stamp the run writes are built the same way over the same lines.

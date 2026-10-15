@@ -271,6 +271,9 @@ fn sec_08_produce_4_parameters_used_s6_the_encoder_settings_are_stored_state() {
         aspect: &aspect,
         voice: &voice,
         no_narration: false,
+        fx: &[],
+        lanes: &[],
+        shape: (1920, 1080),
     };
     let mut slower = settings.clone();
     slower.crf = 23;
@@ -282,6 +285,9 @@ fn sec_08_produce_4_parameters_used_s6_the_encoder_settings_are_stored_state() {
         aspect: &aspect,
         voice: &voice,
         no_narration: false,
+        fx: &[],
+        lanes: &[],
+        shape: (1920, 1080),
     };
     fn facts(_: &std::path::Path) -> (u64, u64) {
         (10, 20)

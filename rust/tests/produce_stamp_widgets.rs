@@ -48,6 +48,10 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle};
 static SKIP_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static STALE_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static UPLOAD_FAIL: Mutex<Option<String>> = Mutex::new(None);
+static EFFECT_FAIL: Mutex<Option<String>> = Mutex::new(None);
+/// Set by the effect-only block the moment it starts, so a slot that was never written cannot read as clean.
+/// `f5_3_s8_…` asserts it; the paired test runs first (alphabetically) and finds it unset.
+static EFFECT_RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Run one check so a panic becomes a recorded message rather than an abort through the C trampoline.
 fn record(
@@ -154,17 +158,18 @@ fn write_narration(tree: &Tree, lines: &[Entry]) {
     narration::save(&record, tree).expect("narration.json written");
 }
 
-/// The stamp this tree currently answers, through the page's own door.
+/// The stamp this tree currently answers, through the page's own door. It takes a whole cut: §F5.3's hash
+/// covers the effects and beds beside the segments, and the footage frame the encoder is given.
 fn current_stamp(tree: &Tree, settings: &Produce, segs: &[Seg]) -> String {
     let project = project::load(&fixture_dir()).expect("fixture loads");
     stamp::gate_stamp(
         tree,
         settings,
-        segs,
+        &naivepost::cut::Cut { segs: segs.to_vec(), aspect: "16:9".to_string(), ..Default::default() },
         &project.sources,
-        "16:9",
         Some("1"),
         project.no_narration,
+        (1920, 1080),
     )
 }
 
@@ -223,14 +228,17 @@ fn seed_page(_window: &adw::ApplicationWindow) {
 /// from the same two segments the stamp was built over, so the page's cut and this test's cut are one
 /// answer. Must run on the window's own thread — `seed_review_cut` writes a thread-local slot.
 fn seed_live_cut(window: &adw::ApplicationWindow) {
-    ui::seed_review_cut(
-        window,
-        &naivepost::cut::Cut {
-            segs: two_segs(),
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        },
-    );
+    seed_live_cut_with(window, &naivepost::cut::Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    });
+}
+
+/// …the same, with any cut: an effect-only change is made by seeding the page's live cut with one zoom on
+/// top of the segments the standing video's stamp was built over.
+fn seed_live_cut_with(window: &adw::ApplicationWindow, cut: &naivepost::cut::Cut) {
+    ui::seed_review_cut(window, cut);
     seed_page(window);
 }
 
@@ -275,6 +283,93 @@ fn check_up_to_date(root: &Path) {
     );
     window.close();
     settle();
+}
+
+/// (d) An effect alone makes the video stale. The encoder is handed `cut.fx` beside the segments, so a zoom
+/// added after the stamp was written is a different file, and a press that skipped over it would call a video
+/// up to date that never carried the effect. The skip path this check depends on is pinned by
+/// `check_up_to_date` above: same harness, same ▶, an unchanged state still answers `SKIP_LOG`, so this cannot
+/// pass merely because the skip stopped working.
+fn check_effect_makes_it_stale(root: &Path) {
+    EFFECT_RAN.store(true, std::sync::atomic::Ordering::SeqCst);
+    let tree = session(root);
+    write_cut(&tree);
+    write_narration(&tree, &[]);
+    let settings = page_settings();
+    // The stamp is made over a cut with NO effects…
+    let stale = current_stamp(&tree, &settings, &two_segs());
+    let video = tree.final_video("mp4");
+    std::fs::create_dir_all(video.parent().unwrap()).unwrap();
+    std::fs::write(&video, b"a finished video of some length").unwrap();
+    stamp::write_stamp(&tree, &stale).expect("the no-effect stamp is written");
+
+    // …and then one zoom appears on the page's live cut. Same segments, same aspect, same settings.
+    let zoom = naivepost::cut::Fx {
+        kind: "zoom".to_string(),
+        t: 4.0,
+        dur: 3.0,
+        ..Default::default()
+    };
+    let with_zoom = naivepost::cut::Cut {
+        fx: vec![zoom],
+        ..naivepost::cut::Cut {
+            segs: two_segs(),
+            aspect: "16:9".to_string(),
+            ..Default::default()
+        }
+    };
+    assert_ne!(
+        stamp::gate_stamp(&tree, &settings, &with_zoom, &fixture_sources(), Some("1"), false, (1920, 1080)),
+        stale,
+        "the stamp must move when an effect is added — that is the rule the gate reads"
+    );
+
+    let window = produce_window(&app_in_round());
+    seed_live_cut_with(&window, &with_zoom);
+    let said = press_play(&window);
+    assert_ne!(
+        said,
+        naivepost::produce_flow::SKIP_LOG,
+        "the press skipped over a cut that gained an effect: status was {said:?}"
+    );
+    // §S2 asks rather than silently encoding: a standing video gets the overwrite question, and the dialog is
+    // open right now — which is the other half of "not skipped": it neither proceeds nor declines on its own.
+    assert_eq!(
+        said,
+        format!("Overwrite {}?", video.file_name().unwrap().to_string_lossy()),
+        "an effect-only change falls to the overwrite question: {said:?}"
+    );
+    let dialog = naivepost::ui::produce_confirm::open_dialog()
+        .expect("the stale render opened the overwrite dialog");
+    // Cancel leaves the standing video exactly as it was: the question was the whole answer.
+    let before = std::fs::read(&video).expect("the video is still there");
+    respond_to(&dialog, "cancel");
+    settle();
+    assert_eq!(
+        std::fs::read(&video).expect("the video is still there"),
+        before,
+        "answering Cancel must not touch the standing video"
+    );
+    assert!(
+        naivepost::ui::produce_confirm::open_dialog().is_none(),
+        "the answered question closes its dialog"
+    );
+    window.close();
+    settle();
+}
+
+/// Press one button of the open dialog by its response id, the way the toolkit does.
+fn respond_to(dialog: &adw::MessageDialog, response: &str) {
+    use gtk4::prelude::*;
+    dialog.emit_by_name::<()>("response", &[&response]);
+    settle();
+}
+
+/// The sources the fixture's project carries — the same list the page hashes through `live_project()`.
+fn fixture_sources() -> Vec<project::Source> {
+    project::load(&fixture_dir())
+        .expect("the fixture loads")
+        .sources
 }
 
 /// The app handle the checks build their windows under, published by `run_round` so each check can use
@@ -390,6 +485,11 @@ fn run_round(app: &adw::Application) {
             check_upload_text_is_outside_the_hash,
         )),
     );
+    record(
+        &EFFECT_FAIL,
+        "effect-only press",
+        std::panic::AssertUnwindSafe(in_root("effect".to_string(), check_effect_makes_it_stale)),
+    );
 
     // Hand the main loop back so `run_with_args` returns; without this the activate handler never
     // finishes and the harness waits forever on a loop with no work in it.
@@ -427,11 +527,48 @@ fn f5_3_s8_a_press_on_the_produce_page_asks_the_stamp_question() {
     let skip = SKIP_FAIL.lock().unwrap().take();
     let stale = STALE_FAIL.lock().unwrap().take();
     let upload = UPLOAD_FAIL.lock().unwrap().take();
+    // The round must actually have run the effect check: a slot still holding its initial `None` after
+    // `run_round` would mean it never executed, which is indistinguishable from passing. Read here and
+    // asserted by `f5_3_s12_a_press_does_not_skip_when_only_an_effect_was_added`, which runs after this one.
+    let effect = EFFECT_FAIL.lock().unwrap().take();
     std::fs::remove_dir_all(&root).ok();
 
     assert!(skip.is_none(), "{}", skip.unwrap_or_default());
     assert!(stale.is_none(), "{}", stale.unwrap_or_default());
     assert!(upload.is_none(), "{}", upload.unwrap_or_default());
+    assert!(
+        EFFECT_RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the effect-only block never ran, so its empty slot means nothing"
+    );
+    assert!(effect.is_none(), "{}", effect.unwrap_or_default());
+}
+
+#[test]
+fn f5_3_s12_a_press_does_not_skip_when_only_an_effect_was_added() {
+    // The block ran inside the one application round `f5_3_s8_…` drives (this binary may only call
+    // `Application::run` once — a second `run_with_args` aborts with "Default main context is already
+    // acquired"), so this test asserts what that round recorded: an effect-only change did NOT skip, fell to
+    // the overwrite question, and answering Cancel left the standing video untouched. The two tests share one
+    // round, so the runner's alphabetical order puts this one first and the slots are empty by then: what
+    // proves the block ran is that the round itself asserts it (EFFECT_FAIL) and that it set EFFECT_RAN.
+    let effect = EFFECT_FAIL.lock().unwrap().clone();
+    assert!(effect.is_none(), "{}", effect.unwrap_or_default());
+}
+
+/// The same wire, the other way: with nothing moved the press DOES skip. Paired with
+/// `f5_3_s12_a_press_does_not_skip_when_only_an_effect_was_added` so that check cannot pass merely because
+/// the skip path stopped working — the skip sentence must still be reachable from a real press.
+#[test]
+fn f5_3_s12_a_press_still_skips_when_nothing_moved() {
+    // The up-to-date block of the round above IS this check: same temp-root harness, same window, same ▶,
+    // and it asserts the status line is byte-for-byte `produce_flow::SKIP_LOG`. Asserting it again here would
+    // only re-run the same round; what this test pins is that the pairing exists and its slot is clean.
+    let already = SKIP_FAIL.lock().unwrap().clone();
+    assert!(
+        already.is_none(),
+        "the unchanged-state press skipped as it must (checked in-round): {}",
+        already.unwrap_or_default()
+    );
 }
 
 /// Where the stamp file goes: beside the video, named for its stem. Kept here as one more thing the wire

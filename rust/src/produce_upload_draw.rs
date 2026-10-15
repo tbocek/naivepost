@@ -110,7 +110,8 @@ pub fn poll(tree: &Tree, job: &DrawnJob) -> Result<PollState, String> {
 }
 
 /// Ask once per second until the job reports done, logging each answer's line (§F5.6's cadence). Returns
-/// the last state seen; `Err` when a poll failed or the run was stopped between two asks.
+/// the last state seen, whose `png` is the drawn picture; `Err` when a poll failed or the run was stopped
+/// between two asks.
 ///
 /// A stop cancels the job before returning: §1 puts the sd.cpp submit and poll on the run's cancel context
 /// "so ⏹ aborts them", and the poll leg is where the stop is first noticed while a job id is still known.
@@ -187,9 +188,14 @@ pub fn job_id(parsed: &serde_json::Value) -> Option<String> {
         .filter(|id| !id.is_empty())
 }
 
-/// One job answer as the walk needs it: the status word, the queue position, and whether the picture is
-/// ready. `done` covers the words a healthy server uses for "finished" (`done`, `completed`, `success`)
-/// and counts a job that already handed back its image as done too.
+/// One job answer as the walk needs it: the status word, the queue position, whether the picture is ready,
+/// and the picture itself. `done` covers the words a healthy server uses for "finished" (`done`, `completed`,
+/// `success`) and counts a job that already handed back its image as done too.
+///
+/// The bytes ride in the REPLY, not on their own endpoint: the prototype's working draw reads them off the job
+/// answer as `result.images[0].b64_json` (`gui/sdcpp.go:137-150`, `sdGenerate` at :222-230), and
+/// `spec/02-services.md` §1 lists only the four sd.cpp paths — capabilities, `POST /sdcpp/v1/img_gen`,
+/// `GET /sdcpp/v1/jobs/{id}`, `POST /sdcpp/v1/jobs/{id}/cancel` — so there is no picture URL to fetch.
 pub fn state_of(parsed: &serde_json::Value) -> PollState {
     let status = ["status", "state", "phase"]
         .iter()
@@ -202,9 +208,60 @@ pub fn state_of(parsed: &serde_json::Value) -> PollState {
         .map(|n| n as usize)
         .unwrap_or(0);
     let lowered = status.to_ascii_lowercase();
+    let picture = picture_of(parsed);
     let done = matches!(
         lowered.as_str(),
         "done" | "completed" | "complete" | "success" | "finished" | "failed" | "error" | "canceled" | "cancelled"
-    ) || parsed.get("images").and_then(|v| v.as_array()).is_some_and(|list| !list.is_empty());
-    PollState { status, ahead, done }
+    ) || parsed.get("images").and_then(|v| v.as_array()).is_some_and(|list| !list.is_empty())
+        || !picture.is_empty();
+    PollState { status, ahead, done, png: picture }
+}
+
+/// The drawn picture inside one job answer, decoded: `result.images[0].b64_json`, with the bare
+/// `images[0].b64_json` a proxy in front of the server has been seen to answer with. Base64 is read
+/// leniently and every non-alphabet byte skipped, so a server that wraps its blob at 76 columns decodes the
+/// same as one that does not; a payload that decodes to nothing reads as "no picture", which the walk says.
+pub fn picture_of(parsed: &serde_json::Value) -> Vec<u8> {
+    let found = ["b64_json", "b64", "base64", "image", "data"]
+        .iter()
+        .find_map(|key| parsed.get("result").and_then(|r| first_image(r)).and_then(|img| img.get(*key)))
+        .or_else(|| {
+            ["b64_json", "b64", "base64", "image", "data"]
+                .iter()
+                .find_map(|key| parsed.get("images").and_then(|l| l.as_array()?.first()).and_then(|img| img.get(*key)))
+        });
+    let encoded = match found {
+        Some(value) if value.is_string() => value.as_str().unwrap_or_default().to_string(),
+        // A server that answers the bytes as a plain string under `result.image` rather than an object.
+        Some(_) => String::new(),
+        None => return Vec::new(),
+    };
+    decode_base64(&encoded)
+}
+
+/// The first entry of a job answer's image list, whether the server spelled it `result.images` or `images`.
+fn first_image(parsed: &serde_json::Value) -> Option<&serde_json::Value> {
+    parsed.get("images").and_then(|list| list.as_array()?.first())
+}
+
+/// Standard-alphabet base64, the inverse of [`crate::checks::base64`]: padding and any byte outside the
+/// alphabet (a newline from a server that wraps its blob) are ignored rather than refused, because the only
+/// reader here is a picture the server just drew.
+fn decode_base64(text: &str) -> Vec<u8> {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut bits: u32 = 0;
+    let mut held = 0u32;
+    let mut out = Vec::with_capacity(text.len() / 4 * 3);
+    for byte in text.as_bytes() {
+        let Some(value) = ALPHABET.iter().position(|letter| letter == byte) else {
+            continue; // padding, line breaks, whitespace: nothing here is a byte of the picture
+        };
+        bits = (bits << 6) | value as u32;
+        held += 6;
+        if held >= 8 {
+            held -= 8;
+            out.push((bits >> held) as u8);
+        }
+    }
+    out
 }

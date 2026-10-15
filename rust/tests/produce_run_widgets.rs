@@ -237,6 +237,9 @@ fn stale_stamp(tree: &Tree) {
         aspect: "",
         voice: "",
         no_narration: project.no_narration,
+        fx: &[],
+        lanes: &[],
+        shape: (1920, 1080),
     };
     produce_stamp::write_stamp(tree, &input.stamp_with(tree, None, 0)).expect("stale stamp written");
 }
@@ -343,6 +346,11 @@ fn run_round(app: &adw::Application) {
             aspect: &cut.aspect,
             voice: "",
             no_narration: project.no_narration,
+            // The page's own gate hashes the cut's effects and beds too; a seed that left them out would
+            // never match and the press would ask to overwrite instead of skipping.
+            fx: &cut.fx,
+            lanes: &cut.lanes,
+            shape: (1920, 1080),
         };
         let hash = input.stamp_with(&tree, None, 0);
         produce_stamp::write_stamp(&tree, &hash).expect("stamp written");
