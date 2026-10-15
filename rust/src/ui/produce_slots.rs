@@ -27,21 +27,16 @@ pub struct Doors {
     pub remove: Door,
 }
 
-/// Stand in for the file chooser Change… opens. A headless run has no chooser, so the picture name is
-/// synthesised here, exactly as ＋ Add image synthesises `frame-{n}.jpg`. It counts presses rather than
-/// reading the row, because the whole point of the door is that the slot's picture MOVES; deriving the
-/// name from the current state would hand back what a previous press already put there.
-static CHANGE_STAND_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-/// The name the stand-in chooser answers with for this press: a frame that EXISTS when the session has
-/// extracted frames (the newest one on disk), so a headless press puts a real picture in the row and every
-/// later step — crop, request, print — has pixels to work on. Only when nothing is extracted does it fall
-/// back to a synthesised name, because then no file could be pointed at.
+/// The picture Change…'s stand-in chooser answers with. A headless run has no chooser, so with nothing
+/// extracted the name is synthesised — counting presses rather than reading the row, because the whole point of
+/// the door is that the slot's picture MOVES, and deriving a name from the current state would hand back what a
+/// previous press already put there. When the session DOES hold frames the newest one answers, so every later
+/// step (crop, request, print) gets pixels it can open.
 pub fn next_stood_in() -> String {
+    static CHANGE_STAND_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let pick = CHANGE_STAND_IN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     real_frame_entry().unwrap_or(format!("project:produce/publish/chosen-{pick}.jpg"))
 }
-
 /// The newest extracted frame this session holds, as the `frame:<seconds>` entry a slot or the image row
 /// understands. Empty cut or no prepare folders answer `None` — the honest "nothing to choose from", not a
 /// path invented to keep a button busy.

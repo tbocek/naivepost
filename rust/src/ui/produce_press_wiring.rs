@@ -78,7 +78,8 @@ pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
 
 /// The size a chosen picture is cropped to: the cut's aspect at the thumbnail tier, falling back to the
 /// first footage frame's measured shape when the cut says "source" (§9 makes that frame the video's).
-fn thumb_size() -> (u32, u32) {
+/// `pub` because a test measures the crop against the SAME number rather than restating 1280x720 by hand.
+pub fn thumb_size() -> (u32, u32) {
     let tree = crate::ui::produce_languages::session_tree();
     let (w, h) = crate::ui::produce_snapshot::first_footage_shape(&tree, &crate::ui::cut_folds::page_recordings());
     let aspect = produce_page::held_window()
@@ -179,6 +180,22 @@ fn legs() -> crate::produce_presses::Legs {
     );
     // This page reports its own reprint passes; the F5.6 words half counts its own elsewhere.
     pressed.count_prints = true;
+    // §F5.7: ↻ over the thumbnail clears `own` — in the page's held state and in `publish.json`, so the
+    // picture is the app's again after the press rather than only on screen.
+    pressed.clear_own = Box::new(|| {
+        produce_page::clear_own_thumbnail();
+        let tree = crate::ui::produce_languages::session_tree();
+        // The held state merged over the file, then the flag cleared: the file also carries what no page row
+        // holds (the crop, the title box), and writing the rows alone would drop them.
+        let mut publish = crate::ui::produce_snapshot::merge_publish(
+            Some(crate::ui::produce_snapshot::publish_of_state(
+                &produce_page::read_state(),
+            )),
+            &crate::publish::load(&tree).unwrap_or_default(),
+        );
+        publish.own = false;
+        crate::ui::produce_languages::save_publish(&tree, &publish)
+    });
     pressed
 }
 

@@ -294,9 +294,16 @@ fn check_test_all_reports_every_kind(app: &adw::Application) {
 /// The most recent line the window logged. Shared thread-local, so callers take the tail rather than
 /// scanning everything earlier checks put there.
 fn last_log() -> String {
+    // The dialog's own deferred save can land a `settings: settings saved to …` line on the same beat as a
+    // press (a box whose text was set programmatically still counts as a keystroke under §5's no-Save rule),
+    // and which of the two arrives last is a timing question, not what a check is about. The verdict this file
+    // is testing is the probe's line, so read the last line that CARRIES one: `checks::log_line` is the only
+    // writer of the `✓` / `--` shape, so a saved-settings line can never satisfy a check by accident.
     ui::window_logs()
-        .last()
-        .cloned()
+        .into_iter()
+        .rev()
+        .find(|line| line.contains('\u{2713}') || line.contains('\u{2717}'))
+        .or_else(|| ui::window_logs().last().cloned())
         .expect("something was logged")
 }
 

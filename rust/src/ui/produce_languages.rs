@@ -5,8 +5,6 @@
 //! F5.7 lives here too: [`legs`] builds the six presses' injected legs from the page's held state and the
 //! scripted seams this module already owns, so a redraw and the run's own words half draw with the SAME legs
 //! and cannot disagree about what was sent.
-//! and the render's spawner seam. Split out of `produce_page` because that file is at its size budget;
-//! `wire_settings` calls [`wire_ticks`] and `finish_produce` passes [`spawn`] to the render.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -482,7 +480,7 @@ fn nearest_frame(tree: &crate::layout::Tree, run: &crate::produce_flow::Run, at:
 
 /// publish.json + description.txt, both through the existing writer so one spelling of each path backs
 /// them. Called BEFORE any draw (S5), which is why a failed draw keeps the thinking.
-fn save_publish(tree: &crate::layout::Tree, publish: &crate::project::Publish) -> Result<(), String> {
+pub fn save_publish(tree: &crate::layout::Tree, publish: &crate::project::Publish) -> Result<(), String> {
     crate::publish::save(publish, tree)
 }
 
@@ -768,6 +766,10 @@ pub fn legs(
         // `cancel_leg::cancel_now` and `runqueue::end_run` clears it once the run has unwound, so "stopped"
         // and "failed — see log" are told apart by what the person actually pressed.
         was_stopped: Box::new(crate::cancel_leg::cancelled),
+        // §F5.7's "clears `own`", gathered by the page that owns the flag (`produce_press_wiring::legs`
+        // overrides this default with the real door). A door with no page to clear answers `Ok`: there is no
+        // held state and nothing on disk to contradict.
+        clear_own: Box::new(|| Ok(())),
         // The F5.6 words half does not count reprint passes here; it reports its own order elsewhere. The
         // page's presses turn this on in `produce_page::press_legs`.
         count_prints: false,

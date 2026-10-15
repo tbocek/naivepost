@@ -181,6 +181,13 @@ pub const EMPTY_IMAGES: &str = "No image — the thumbnail will be drawn from th
 /// §A: its second sentence, the action that clears the empty state.
 pub const EMPTY_IMAGES_HINT: &str = "Add image… to edit one of your own frames instead.";
 
+/// What ＋ Add image and Change… say when there is nothing to choose from. The spec spells what a chooser's
+/// answer does (§1 items 1/3: a real path appends, an empty cancel adds nothing) but says nothing about the
+/// wording of a cancel, so this names the button that fixes it — the same principle as everywhere else here:
+/// say which thing failed where, and leave everything else alone.
+pub const NO_FRAME_TO_ADD: &str =
+    "no extracted frame to add \u{2014} Prepare takes frames before a picture can be chosen";
+
 /// The heading's sentence (§A): what the row is for, in the order that decides what is base.
 pub const IMAGES_HEADING_TIP: &str = "What the image model is given, in order. The FIRST is the base — the picture being edited — and the others are references the instruction can name.";
 

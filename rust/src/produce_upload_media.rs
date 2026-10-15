@@ -299,16 +299,16 @@ pub fn write_own_picture(
         .ok_or("no frame to take as the thumbnail")?;
     let file = entry_file(tree, &entry, frames)
         .ok_or_else(|| format!("{entry} is not a picture this session has"))?;
-    let plain = tree.thumbnail_plain_png();
-    let owned = crop_args(
+    // One crop rule for the whole file: `crop_to_shape` makes the output folder before it runs ffmpeg, which
+    // this leg used to skip — and a session whose `publish/` does not exist yet cannot receive a picture.
+    crop_to_shape(
         &file,
-        &plain,
+        &tree.thumbnail_plain_png(),
         (publish.crop.x, publish.crop.y),
         wide,
         high,
-    );
-    let args: Vec<&str> = owned.iter().map(String::as_str).collect();
-    crate::subprocess::run(&ffmpeg_program(), &args, log).map(|_| ())
+        log,
+    )
 }
 
 /// The JPEG quality ladder's rung as ffmpeg's `-q:v`. The mjpeg encoder takes a 2..31 scale where LOWER is

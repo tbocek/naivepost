@@ -1188,6 +1188,10 @@ name = "produce_parameters"
 path = "tests/produce_parameters.rs"
 
 [[test]]
+name = "produce_presses_clear_own"
+path = "tests/produce_presses_clear_own.rs"
+
+[[test]]
 name = "produce_presses_widgets"
 path = "tests/produce_presses_widgets.rs"
 

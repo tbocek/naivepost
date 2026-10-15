@@ -24,6 +24,8 @@ use crate::produce_upload::{self as upload, DrawnJob};
 
 /// A leg that answers with words: which kind is being asked (`"texts"`/`"title"`), the words of that kind.
 pub type WordsOf = Box<dyn Fn(&str) -> Vec<String>>;
+/// A leg that changes something on the page and on disk and may refuse: §F5.7's "clears `own`" is the one.
+pub type ClearOwn = Box<dyn Fn() -> Result<(), String>>;
 /// sd.cpp submit: the request body in, the accepted job out.
 pub type AskDraw = Box<dyn Fn(&serde_json::Value) -> Result<DrawnJob, String>>;
 /// An argv-shaped subprocess: what [`crate::produce_tag_page::MakePoster`] takes, so one spawner serves both.
@@ -75,6 +77,11 @@ pub struct Legs {
     pub jpeg_sizes: Box<JpegLadder>,
     /// Was the run stopped (⊘ Cancel) rather than did a leg fail? Decides *"stopped"* vs *"failed — see log"*.
     pub was_stopped: Box<dyn Fn() -> bool>,
+    /// §F5.7's "clears `own`": ↻ over the thumbnail hands the picture back to the model, so the record must
+    /// stop saying it is the user's own — otherwise the draw paints a new picture and decision 34 still
+    /// refuses to reprint the title onto it. The page's leg clears its held state AND writes `publish.json`,
+    /// because a flag only repainted would be set again by the next opening of the project.
+    pub clear_own: ClearOwn,
     /// Whether this press counts its reprint passes onto [`Outcome::prints`]. The page sets it true; the
     /// F5.6 words half leaves it false, because that walk already reports its own passes and double-counting
     /// one print across two owners would make neither number mean anything.
@@ -134,6 +141,15 @@ pub fn press_redraw_thumbnail(
     }
     // Open before doing: the announcement lands even if the very first leg fails.
     log(runs::DRAW_AGAIN_LOG);
+
+    // §F5.7: "redraw from current images and instruction (clears `own`; always draws)". Cleared here, after
+    // the refusal (a press that did nothing must change nothing) and before the draw, so the picture the model
+    // is about to paint is already the app's rather than the user's — which is what lets the reprint below,
+    // and every later title change, reach it (decision 34 stops re-printing on a hand-edited picture).
+    if let Err(why) = (legs.clear_own)() {
+        return fail(out, "the thumbnail", &why, legs);
+    }
+    out.calls.push("clear-own".to_string());
 
     // Unticked: the words are asked for again — one LLM call, and BEFORE the draw so the new instruction
     // is what gets painted. Ticked skips it entirely (`runs::redraw(true).rewrites == 0`).
