@@ -295,6 +295,25 @@ fn f5_1_s4_the_words_half_works_from_the_page_s_publish_state() {
     // run falls back to the file rather than pretending nothing was ever written.
     let none = naivepost::ui::produce_snapshot::merge_publish(None, &stale);
     assert_eq!(none.title, stale.title, "no page state means the file answers");
+
+    // And through the door the PROGRAM calls: `encode_and_finish` hands the run
+    // `publish_of(&snap)`, so the same answer must come out of a real snapshot rather than only of the
+    // pure two-record helper above. Asserting here is what makes un-wiring that merge fail a test.
+    let snap = naivepost::ui::produce_snapshot::gather(
+        &tree,
+        &cut_two(),
+        &Default::default(),
+        &project_with_footage(),
+        &[],
+        held.clone(),
+    );
+    let reached = naivepost::ui::produce_snapshot::publish_of(&snap);
+    assert_eq!(reached.title, held.title, "{ITEM}: the snapshot's own rows win over the file's");
+    assert_eq!(reached.prompt, held.prompt, "and so does its edit instruction");
+    assert_eq!(
+        reached.frames, stale.frames,
+        "while the field no page row spells (the image row an earlier redraw left) survives into the run"
+    );
     // The brief is built from the run's lines and cut; a run whose lines are empty says so out loud rather
     // than silently describing nothing.
     let brief = flow::opening_line(&run_over(cut_two(), true), false);

@@ -1370,7 +1370,10 @@ fn encode_and_finish(
         // ask whether the result is something a browser plays.
         settings: settings.clone(),
         sources: crate::run::snapshot_sources(project),
-        publish: Some(crate::ui::produce_snapshot::publish_of_state(s)),
+        // The page's rows merged with what `publish.json` already recorded: the crop, the title box and the
+        // image row have no page row to spell them, so a run that carried the rows alone would redraw a
+        // thumbnail from a record missing its own crop.
+        publish: Some(crate::ui::produce_snapshot::publish_of(&snap)),
         aspect: String::new(),
         clips: s.clips,
         publish_written: s.publish_written,
