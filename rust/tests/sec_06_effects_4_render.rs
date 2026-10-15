@@ -513,6 +513,8 @@ fn materials_with<'a>(fx: Vec<Fx>) -> exec::Materials<'a> {
         source_file,
         on_recording: true,
         footage_left: &naivepost::produce_render::unknown_footage,
+        filmed_runs: naivepost::produce_plan_logs::NO_TAPE,
+        base_of: &|_seg| String::new(),
         wav_seconds: &|_entry| None,
         cues: common::produce_cues_for_test(Vec::new()),
         words,

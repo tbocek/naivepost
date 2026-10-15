@@ -1256,6 +1256,10 @@ name = "produce_rules_translation"
 path = "tests/produce_rules_translation.rs"
 
 [[test]]
+name = "sec_08_produce_6_details_confirmed"
+path = "tests/sec_08_produce_6_details_confirmed.rs"
+
+[[test]]
 name = "produce_tag_page"
 path = "tests/produce_tag_page.rs"
 

@@ -88,6 +88,8 @@ fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Wor
         source_file: &any_source,
         on_recording: true,
         footage_left: &naivepost::produce_render::unknown_footage,
+        filmed_runs: naivepost::produce_plan_logs::NO_TAPE,
+        base_of: &|_seg| String::new(),
         wav_seconds: &|_entry| None,
         cues: common::produce_cues_for_test(Vec::new()),
         words,

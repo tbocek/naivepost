@@ -151,6 +151,7 @@ pub mod produce_data;
 pub mod produce_exec;
 pub mod produce_probe;
 pub mod produce_fx_chain;
+pub mod produce_plan_logs;
 pub mod produce_cards;
 pub mod produce_details;
 pub mod produce_render;

@@ -164,7 +164,16 @@ pub struct Materials<'a> {
     /// The join is a stream copy and cannot mix sizes, so this is the only honest way to answer "does the
     /// video break at this clip" — bytes cannot say it. `None` means NO CLAIM about that clip (no ffprobe,
     /// a file the probe could not read), which contributes no mismatch rather than a false all-clear.
-    pub probe: &'a dyn Fn(&Path) -> Option<(i32, i32)>
+    pub probe: &'a dyn Fn(&Path) -> Option<(i32, i32)>,
+    /// §6 bullet 1's planning refusals need two answers `plan_clips` does not carry: which filmed spans the
+    /// session has (a `copy:` stretch and a stop are placed on SECONDS, not on "is there tape at all"), and
+    /// what base a clip copies or reads its picture from, which §6's two "past the end of <base>" sentences
+    /// name out loud. Empty spans mean no tape anywhere.
+    pub filmed_runs: &'a [(f64, f64)],
+    /// The name §6's "past the end of <base>" says: the footage row for footage and a `copy:` stretch, the
+    /// asset's own file name for an insert. `Default` answers the empty name, which a test that never places
+    /// a paste or a stop never reads.
+    pub base_of: &'a dyn Fn(&Seg) -> String,
 }
 
 /// One clip's encode: its stem, the file it writes, the command that writes it.
@@ -429,6 +438,22 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         mats.footage_left,
     );
 
+    // §6 bullet 1: the clip-planning refusals §6 spells but `plan_clips` never said. Same sped list, same
+    // clip numbers, so "clip 7" means clip 7 here as in every other line of this run.
+    let refusal_logs = crate::produce_plan_logs::refusals(
+        &sped,
+        mats.fx_for,
+        &run.lines,
+        &crate::produce_plan_logs::Doors {
+            lanes: mats.lanes,
+            runs: mats.filmed_runs,
+            base_of: mats.base_of,
+            wav_of: mats.wav_of,
+            exists: mats.exists,
+            footage_left: mats.footage_left,
+        },
+    );
+
     // Speech lengths before the cues are cut, so a cue spans what will actually be heard on it.
     let mut clips = clips;
     fill_speech(&mut clips, &run.lines, mats.wav_seconds);
@@ -620,7 +645,11 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         })
         .collect();
     // §4's cap-and-log line joins the plan's own lines so a reader sees it with the clip's other news.
-    let plan_logs: Vec<String> = plan_logs.into_iter().chain(effect_logs).collect();
+    let plan_logs: Vec<String> = plan_logs
+        .into_iter()
+        .chain(refusal_logs)
+        .chain(effect_logs)
+        .collect();
     let join = if encodes.is_empty() {
         None
     } else {

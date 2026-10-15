@@ -96,6 +96,8 @@ impl<'a> Mats<'a> {
             source_file: &any_source,
             on_recording: true,
             footage_left: &render::unknown_footage,
+            filmed_runs: naivepost::produce_plan_logs::NO_TAPE,
+            base_of: &|_seg| String::new(),
             wav_seconds: &|_entry| None,
             cues: exec::Cues {
                 languages: self.settings.translate.clone(),
