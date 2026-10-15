@@ -90,7 +90,11 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     // A test that loaded a script answers through it; otherwise the real `youtube` call goes out (§3.9):
     // thinking on, its tools offered, each answered by the rule that owns it. A refusal names the model and
     // stops `walk` before anything is written, which `finish_produce` logs as `words_failed`.
-    let publish = crate::publish::load(&tree).unwrap_or_default();
+    // The publish state is the RUN's, not the file's: §S3 snapshots it at the press, and the page is what
+    // holds it. Reading `publish.json` here would describe what an earlier run left — on a fresh session,
+    // an empty image row, no edit instruction and no title — instead of what the person has on screen now,
+    // and would then write that emptiness back over their typing.
+    let publish = run.publish.clone().unwrap_or_default();
     let ask = upload_ask(
         &tree,
         &publish,

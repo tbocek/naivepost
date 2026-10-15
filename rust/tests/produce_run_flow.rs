@@ -103,6 +103,205 @@ fn f5_1_s1_refuses_no_cut() {
 // ---- S2: up to date, overwrite, or just encode --------------------------------------------------
 
 #[test]
+fn f5_1_s2_the_overwrite_answer_decides_whether_the_encode_runs() {
+    // The question is only half of S2; the other half is that an ANSWER runs the encode. The response ids
+    // are the flow's constants, so a dialog and this rule cannot drift apart.
+    assert!(
+        flow::overwrite_proceeds(flow::ANSWER_OVERWRITE),
+        "{ITEM} S2: Overwrite means encode anyway"
+    );
+    assert!(
+        !flow::overwrite_proceeds(flow::ANSWER_CANCEL),
+        "Cancel leaves the standing video alone"
+    );
+    assert!(
+        !flow::overwrite_proceeds("close"),
+        "and so does any answer that was not the deliberate word: \u{a7}S2 asks precisely so an accidental \
+         press cannot destroy an encode"
+    );
+
+    // And the pair the dialog shows, built over a REAL file so the size and the age in the body are facts
+    // about that file rather than strings handed in by the caller.
+    let root = common::temp_root("s2-ask");
+    let video = root.join("final.mp4");
+    std::fs::write(&video, vec![7u8; 4096]).expect("a video to ask about");
+    let (title, body) = flow::overwrite_asked(&video);
+    assert_eq!(title, "Overwrite final.mp4?", "the title names the base: {title}");
+    let lines: Vec<&str> = body.split('\n').collect();
+    assert!(
+        lines[0].starts_with(&format!("{} \u{2014} ", video.display())),
+        "first paragraph opens with the path: {}", lines[0]
+    );
+    assert!(
+        lines[0].contains("MiB"),
+        "and carries the file's weight in the units the render's own lines use: {}", lines[0]
+    );
+    assert!(
+        lines[0].ends_with("old"),
+        "and its age, said as an age: {}", lines[0]
+    );
+    assert_eq!(lines[1], "", "two paragraphs, spelled apart as §S2 writes them");
+    assert_eq!(lines[2], SPEC_NO_UNDO, "then the cost, verbatim");
+    // A missing file still answers: the gate asked because a video was there, but nothing here may panic
+    // on one that vanished between the check and the dialog.
+    let (gone_title, gone_body) = flow::overwrite_asked(&root.join("nope.mp4"));
+    assert_eq!(gone_title, "Overwrite nope.mp4?");
+    assert!(gone_body.contains(SPEC_NO_UNDO), "{gone_body}");
+}
+
+#[test]
+fn f5_1_s3_the_snapshot_carries_the_page_s_effect_list_and_frame_shape() {
+    // S3 says the press snapshots "the cut, lines, settings, sources, publish state, aspect". Two of those
+    // were being dropped on the floor on the way to the encoder: the cut's own effect list (the render was
+    // handed an empty one, so a zoom or a volume rode nothing) and the footage's frame shape (a hardcoded
+    // 1920x1080 stood in for whatever this session actually filmed). Both are checked over real files.
+    let (root, tree) = common::tree_in("s3-snapshot");
+    let _ = root;
+    let cut = Cut {
+        segs: two_clips(),
+        aspect: "9:16".into(),
+        fx: vec![naivepost::cut::Fx {
+            kind: "zoom".into(),
+            t: 4.0,
+            dur: 3.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    cut::save(&cut, &tree).expect("cut written");
+    // A frame Prepare would have extracted for the first footage recording, at a shape that is NOT the
+    // fallback: a portrait camera, matching the cut's 9:16.
+    let frames = tree.frames_dir("take");
+    std::fs::create_dir_all(&frames).expect("frames folder");
+    let surface = cairo::ImageSurface::create(cairo::Format::Rgb24, 1080, 1920).expect("surface");
+    {
+        let cr = cairo::Context::new(&surface).expect("context");
+        cr.set_source_rgb(0.2, 0.3, 0.4);
+        let _ = cr.paint();
+    }
+    let png = frames.join("2026-01-02_00-00-04.jpg");
+    surface
+        .write_to_png(&mut std::io::BufWriter::new(
+            std::fs::File::create(&png).expect("frame file"),
+        ))
+        .expect("a frame the snapshot can measure");
+    let recordings = vec![naivepost::timeline::Recording {
+        base: "take".into(),
+        start: 0.0,
+        end: 20.0,
+    }];
+    let snap = naivepost::ui::produce_snapshot::gather(
+        &tree,
+        &cut,
+        &Default::default(),
+        &project_with_footage(),
+        &recordings,
+        Default::default(),
+    );
+    // The effects reach the render through `fx_for`; ask it the way `plan_clips` does.
+    let asked = snap.cut.fx.clone();
+    assert_eq!(asked.len(), 1, "{ITEM} S3: the cut's effect list travels with the snapshot");
+    assert_eq!(asked[0].kind, "zoom", "and is the cut's own effect: {asked:?}");
+    assert_eq!(snap.aspect(), "9:16", "and so is its aspect");
+    assert_eq!(
+        snap.src_shape,
+        (1080, 1920),
+        "\u{a7}9: the frame is the first footage clip's own shape, read off its extracted frame \u{2014} not the encoder's default 1920x1080"
+    );
+    assert!(snap.on_recording, "a session with tape says it has tape");
+    assert_eq!(snap.filmed_runs, vec![(0.0, 20.0)], "and hands over the filmed spans");
+    // F4.3's bound comes off the same spans: a clip ending 5 s into a 20 s run has 15 s of footage left.
+    let mid = Seg { s: 0.0, e: 5.0, ..Default::default() };
+    assert_eq!(snap.footage_left(&mid), 15.0, "footage left past the clip's end");
+    // With no tape at all the answer is unknown, not zero: §10's ceiling still applies.
+    let bare = naivepost::ui::produce_snapshot::gather(
+        &tree,
+        &cut,
+        &Default::default(),
+        &project_with_footage(),
+        &[],
+        Default::default(),
+    );
+    assert_eq!(bare.footage_left(&mid), 0.0, "no tape answers through `unknown_footage`");
+    assert_eq!(bare.src_shape, (1920, 1080), "and keeps the encoder's fallback shape");
+}
+
+#[test]
+fn f5_1_s3_the_run_carries_the_session_s_narration_lines() {
+    // S3's "lines": without them the words half has nothing to caption and §F5.2 S2's speaking step is
+    // vacuous, which is exactly what `lines: vec![]` used to mean.
+    let (root, tree) = common::tree_in("s3-lines");
+    let _ = root;
+    let cut = cut_two();
+    let gather = |tree: &naivepost::layout::Tree| {
+        naivepost::ui::produce_snapshot::gather(
+            tree,
+            &cut,
+            &Default::default(),
+            &project_with_footage(),
+            &[],
+            Default::default(),
+        )
+    };
+    // Nothing written yet: zero lines, and NOT an error — a session that was never narrated is a normal one.
+    assert!(gather(&tree).lines.is_empty(), "no narration file means no lines, not a failure");
+    // Write two through the real writer (which sorts them, so the order asserted below is the file's).
+    let narration = naivepost::narration::Narration {
+        entries: vec![
+            naivepost::narration::Entry { s: 10.0, e: 20.0, text: "second line".into(), ..Default::default() },
+            naivepost::narration::Entry { s: 0.0, e: 10.0, text: "first line".into(), ..Default::default() },
+        ],
+        silent: vec![],
+    };
+    naivepost::narration::save(&narration, &tree).expect("narration written");
+    let snap = gather(&tree);
+    assert_eq!(snap.lines.len(), 2, "{ITEM} S3: both lines travel with the run");
+    assert_eq!(
+        snap.lines.iter().map(|e| e.text.as_str()).collect::<Vec<_>>(),
+        vec!["first line", "second line"],
+        "and in the record's playing order, which is the order the render speaks them"
+    );
+}
+
+#[test]
+fn f5_1_s4_the_words_half_works_from_the_page_s_publish_state() {
+    // S4 turns on whether `publish.json` exists, and S3 snapshots the publish STATE. Reading the file where
+    // the page's rows should be is how a fresh session ended up asking the model to draw a thumbnail from no
+    // instruction and no title, and then writing that emptiness back over whatever the person had typed.
+    let (root, tree) = common::tree_in("s4-publish");
+    let _ = root;
+    // The file holds an OLD record: a title and an instruction from some earlier run.
+    let stale = naivepost::project::Publish {
+        title: "an old title".into(),
+        prompt: "the instruction that drew the last one".into(),
+        frames: vec!["project:produce/publish/frame-1.jpg".into()],
+        ..Default::default()
+    };
+    naivepost::publish::save(&stale, &tree).expect("publish.json written");
+    // The page now describes something else entirely (and on a fresh session, describes nothing).
+    let held = naivepost::project::Publish {
+        title: "what the person typed now".into(),
+        prompt: "draw the slide, not the speaker".into(),
+        ..Default::default()
+    };
+    let merged = naivepost::ui::produce_snapshot::merge_publish(Some(held.clone()), &stale);
+    assert_eq!(merged.title, held.title, "{ITEM}: the page's title wins over the file's");
+    assert_eq!(merged.prompt, held.prompt, "and so does its edit instruction");
+    assert_eq!(
+        merged.frames, stale.frames,
+        "while a field no page row spells (the image row a redraw left behind) survives the merge"
+    );
+    // And the distinction S4's three shapes turn on survives: with NO publish state at all (no page), the
+    // run falls back to the file rather than pretending nothing was ever written.
+    let none = naivepost::ui::produce_snapshot::merge_publish(None, &stale);
+    assert_eq!(none.title, stale.title, "no page state means the file answers");
+    // The brief is built from the run's lines and cut; a run whose lines are empty says so out loud rather
+    // than silently describing nothing.
+    let brief = flow::opening_line(&run_over(cut_two(), true), false);
+    assert!(brief.starts_with(">>> producing "), "S4's shape when publish.json exists: {brief}");
+}
+
+#[test]
 fn f5_1_s2_up_to_date_skips_with_the_said_line() {
     assert_eq!(flow::gate(true, true), flow::Gate::Skip, "matching stamp + a video = skip");
     assert!(

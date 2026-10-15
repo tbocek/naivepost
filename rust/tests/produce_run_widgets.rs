@@ -33,6 +33,7 @@ const ITEM: &str = "F5.1";
 static RAN_NO_CUT: AtomicBool = AtomicBool::new(false);
 static RAN_RAN_THE_FLOW: AtomicBool = AtomicBool::new(false);
 static RAN_SKIP: AtomicBool = AtomicBool::new(false);
+static RAN_OVERWRITE: AtomicBool = AtomicBool::new(false);
 
 /// The project folder this round resolves: `startup::session_dir(current_dir())`. cwd is pinned to the
 /// test's own temp root, so this never points into `rust/`.
@@ -51,6 +52,18 @@ fn base_project() -> Project {
         ..Default::default()
     });
     project
+}
+
+/// A project with one footage source and a publish record standing, so §F5.1 S4's `publish.json exists`
+/// branch is the one being taken (and the render has a video to be stale about).
+fn published_project() -> Project {
+    Project {
+        publish: Some(naivepost::project::Publish {
+            title: "a title from an earlier run".into(),
+            ..Default::default()
+        }),
+        ..base_project()
+    }
 }
 
 /// Two clips, so the opening line reads "2 clips at mp4/h264 crf 24".
@@ -93,6 +106,41 @@ fn click_play(window: &adw::ApplicationWindow) -> String {
 /// Whether the run bar currently shows a run under way.
 fn bar_running(window: &adw::ApplicationWindow) -> bool {
     naivepost::ui::run_close::last_run_step_for_test().is_some()
+}
+
+/// A stamp that does NOT match what the page will compute, so §F5.1 S2's gate falls to `ConfirmOverwrite`
+/// rather than `Skip`: written over an empty cut, which no page holding two clips can reproduce.
+fn stale_stamp(tree: &Tree) {
+    let project = base_project();
+    let settings = naivepost::project::Produce::default();
+    let input = produce_stamp::Input {
+        settings: &settings,
+        segs: &[],
+        lines: &[],
+        sources: &project.sources,
+        aspect: "",
+        voice: "",
+        no_narration: project.no_narration,
+    };
+    produce_stamp::write_stamp(tree, &input.stamp_with(tree, None, 0)).expect("stale stamp written");
+}
+
+/// The video the overwrite question is about, on disk with known bytes so a later check can see whether it
+/// was touched.
+fn standing_video(tree: &Tree) -> std::path::PathBuf {
+    let video = tree.final_video("mp4");
+    if let Some(dir) = video.parent() {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    std::fs::write(&video, b"a finished video worth asking about").unwrap();
+    video
+}
+
+/// Did any encode open after `from` — the S4 opening line is what an actual encode writes first.
+fn opened_encode_after(from: usize) -> bool {
+    ui::window_logs()[from..]
+        .iter()
+        .any(|l| l.starts_with(">>> transcoding ") || l.starts_with(">>> producing "))
 }
 
 fn run_round(app: &adw::Application) {
@@ -214,6 +262,81 @@ fn run_round(app: &adw::Application) {
         window.close();
         settle();
     }
+
+    // --- (4) a stale video: the question is ASKED, and an answer runs the encode ----------------
+    {
+        let tree = session_tree();
+        stale_stamp(&tree);
+        let video = standing_video(&tree);
+        let before = std::fs::read(&video).expect("the standing video");
+        let cut = Cut { segs: two_clips(), aspect: "16:9".into(), ..Default::default() };
+        // A publish record stands (§S4's `publish.json exists` shape), so the encode that follows opens with
+        // the "producing … thumbnail written beside them" line rather than the "left as they are" one.
+        let window = produce_window(app, &published_project(), &cut);
+
+        // (a) Cancel leaves the video alone and opens no encode.
+        let logs_before = ui::window_logs().len();
+        let said = click_play(&window);
+        assert_eq!(said, "Overwrite final.mp4?", "{ITEM} S2 on the status line: {said}");
+        let dialog = naivepost::ui::produce_confirm::open_dialog()
+            .expect("S2 opens a real dialog: the press must not stop at the question");
+        assert!(
+            dialog
+                .body()
+                .to_string()
+                .contains("The encode takes minutes and there is no undo for it."),
+            "and its body says what the overwrite costs: {}",
+            dialog.body()
+        );
+        dialog.response("cancel");
+        settle();
+        assert!(
+            naivepost::ui::produce_confirm::open_dialog().is_none(),
+            "answering closes the dialog"
+        );
+        assert_eq!(
+            status_text(&window),
+            "Overwrite final.mp4?",
+            "Cancel leaves the question standing \u{2014} nothing was destroyed"
+        );
+        assert!(
+            !opened_encode_after(logs_before),
+            "and no encode opened: {:?}",
+            &ui::window_logs()[logs_before..]
+        );
+        assert_eq!(std::fs::read(&video).expect("still there"), before, "the video is untouched");
+
+        // (b) Overwrite answers the same question by running the encode.
+        let logs_before = ui::window_logs().len();
+        let _ = click_play(&window);
+        let dialog = naivepost::ui::produce_confirm::open_dialog().expect("asked again");
+        dialog.response("overwrite");
+        settle();
+        assert!(
+            opened_encode_after(logs_before),
+            "{ITEM} S2: answering Overwrite runs the encode \u{2014} nothing logged after the answer: {:?}",
+            &ui::window_logs()[logs_before..]
+        );
+        let logs = ui::window_logs();
+        let opening = logs
+            .iter()
+            .rev()
+            .find(|l| l.starts_with(">>> transcoding ") || l.starts_with(">>> producing "))
+            .expect("the run's own opening line");
+        assert!(opening.contains("2 clips at mp4/h264 crf 24"), "from this cut: {opening}");
+        let done = status_text(&window);
+        assert!(
+            done == render::STAGE_DONE || done == render::failure_log() || done == render::stopped_log(),
+            "and the run ended with one of S6's three words, got {done}"
+        );
+        ui::stop_button(&window)
+            .expect("the run bar has a stop-button")
+            .emit_by_name::<()>("clicked", &[]);
+        settle();
+        RAN_OVERWRITE.store(true, Ordering::SeqCst);
+        window.close();
+        settle();
+    }
 }
 
 #[test]
@@ -236,4 +359,8 @@ fn f5_1_play_on_produce_page_reaches_the_flow() {
     assert!(RAN_NO_CUT.load(Ordering::SeqCst), "the no-cut refusal check never ran");
     assert!(RAN_RAN_THE_FLOW.load(Ordering::SeqCst), "the run-through-the-flow check never ran");
     assert!(RAN_SKIP.load(Ordering::SeqCst), "the up-to-date skip check never ran");
+    assert!(
+        RAN_OVERWRITE.load(Ordering::SeqCst),
+        "the overwrite-question-and-answer check never ran"
+    );
 }

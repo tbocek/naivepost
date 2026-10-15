@@ -15,9 +15,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::produce_screen as screen;
-use crate::ui::produce_page_rows::{
-    render_asked, render_failure_note, session_tree, speak_a_line, translate_leg, words_half,
-};
+use crate::ui::produce_page_rows::{session_tree, words_half};
 use crate::project::{Codec, Container, Subtitles};
 
 /// What the page shows. Published by the flows, read by every handler.
@@ -919,6 +917,7 @@ pub fn row_settings() -> crate::project::Produce {
     produce_settings(&read_state())
 }
 
+/// The page's row as the settings struct the transcode log reads. Public for `produce_press_wiring`;
 fn produce_settings(s: &ProduceState) -> crate::project::Produce {
     crate::project::Produce {
         container: parse_container(&s.container),
@@ -1303,6 +1302,11 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
 }
 
 /// The S2 answer acted on and S4–S6 run. Split out only so the `Tree` borrow above ends before the run.
+///
+/// A `ConfirmOverwrite` gate does NOT stop at the question: §S2 asks in order to be answered, so the
+/// dialog opens here and the encode runs from its response handler when the answer is Overwrite (and
+/// stops, with the question left said, when it is Cancel or ×). The rest of the press therefore lives in
+/// `encode_and_finish`, which both the straight-through path and the answered path call.
 fn finish_produce(
     window: &adw::ApplicationWindow,
     s: &ProduceState,
@@ -1311,42 +1315,62 @@ fn finish_produce(
     settings: crate::project::Produce,
     gate: crate::produce_flow::Gate,
 ) -> String {
-    // S2: a stale video standing here gets the overwrite question, in §S2's own two paragraphs. Nothing
-    // is written by asking; the answer's own door is what runs the encode.
+    // S2: a stale video standing here gets the overwrite question, in §S2's own two paragraphs. Asking
+    // writes nothing; only the answer's Overwrite runs the encode.
     if gate == crate::produce_flow::Gate::ConfirmOverwrite {
         let root = std::env::current_dir().unwrap_or_default();
         let video = crate::layout::Tree::new(crate::startup::session_dir(&root))
-        .map(|t| t.final_video(container_name(parse_container(&s.container))))
-        .unwrap_or_default();
-        let base = video
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "final".to_string());
-        let (bytes, mtime) = crate::produce_stamp::disk_facts(&video);
-        // The title rides the status line and the two-paragraph body goes to the log: the dialog this
-        // answer opens belongs to the confirmation round, and the page's own door prints both halves.
-        let asked = crate::produce_flow::overwrite_title(&base);
-        let body = crate::produce_flow::overwrite_detail(
-            &video.to_string_lossy(),
-            &format!("{bytes} bytes"),
-            &format!("modified {mtime}"),
+            .map(|t| t.final_video(container_name(parse_container(&s.container))))
+            .unwrap_or_default();
+        let (win, st, prj, ct, set) = (
+            window.clone(),
+            s.clone(),
+            project.clone(),
+            cut.clone(),
+            settings.clone(),
         );
-        crate::ui::window::log_line(&body);
-        return say(window, &asked);
+        return crate::ui::produce_confirm::confirm_then(window, &video, move || {
+            encode_and_finish(&win, &st, &prj, &ct, &set, crate::produce_flow::Gate::Encode);
+        });
     }
+    encode_and_finish(window, s, project, &cut, &settings, gate)
+}
+
+/// S3's snapshot and S4–S6, reached by the straight-through paths and by an answered confirmation.
+fn encode_and_finish(
+    window: &adw::ApplicationWindow,
+    s: &ProduceState,
+    project: &crate::project::Project,
+    cut: &crate::cut::Cut,
+    settings: &crate::project::Produce,
+    gate: crate::produce_flow::Gate,
+) -> String {
     if gate == crate::produce_flow::Gate::Skip {
         // F5.5 S5 runs on the skip path too: the page is rewritten even when the encode was skipped.
-        crate::ui::produce_languages::tag_page(&settings);
+        crate::ui::produce_languages::tag_page(settings);
         return say(window, crate::produce_flow::SKIP_LOG);
     }
-    let run = crate::produce_flow::Run {
+    // S3: EVERYTHING the two halves read is gathered here, once, on the GUI thread. From this line on the
+    // run asks `snap` and never the page: a render walks subprocesses for minutes, and a leg that re-read
+    // the window inside the run would describe whatever had been moved in the meantime.
+    let snap = crate::ui::produce_snapshot::gather(
+        &session_tree(),
         cut,
-        lines: vec![],
+        settings,
+        project,
+        &crate::ui::cut_folds::page_recordings(),
+        crate::ui::produce_snapshot::publish_of_state(s),
+    );
+    let run = crate::produce_flow::Run {
+        cut: cut.clone(),
+        // S3: the run is built from the snapshot, so the narration the session holds travels with it. With
+        // nothing in `lines` the words half has no clip to caption and §F5.2 S2's "speaking" step is vacuous.
+        lines: snap.lines.clone(),
         // Cloned rather than moved: F5.5 S5 runs after the render and needs the container and codec to
         // ask whether the result is something a browser plays.
         settings: settings.clone(),
         sources: crate::run::snapshot_sources(project),
-        publish: project.publish.clone(),
+        publish: Some(crate::ui::produce_snapshot::publish_of_state(s)),
         aspect: String::new(),
         clips: s.clips,
         publish_written: s.publish_written,
@@ -1369,110 +1393,11 @@ fn finish_produce(
                 (false, Some(why))
             }
         },
-        |run| {
-            let tree = session_tree();
-            // Cloned twice: the two closures that need the source list each own a copy, because a `move`
-            // closure takes what it captures and both of these run inside one call.
-            let sources_for_stamp = project.sources.clone();
-            let sources_for_clips = project.clone();
-            // S1 (§F5.4): the clip's own speech, read off the session word list F1.13 saved once for
-            // exactly this purpose ("the list then carries ... over the recogniser's bare words", and it is
-            // shared by retakes, joins, `final.txt` and subtitles). The narrator's own recordings are
-            // excluded — §F5.4 says so outright — because their words are what the narration replaced; the
-            // `written` field is the fixed transcript's spelling, not the recogniser's.
-            let session_words: Vec<crate::word_list::Word> =
-                crate::word_list::load(&tree).ok().flatten().unwrap_or_default();
-            let narrator_sources: Vec<String> = project
-                .sources
-                .iter()
-                .filter(|src| src.narrator != 0)
-                .map(|src| src.path.clone())
-                .collect();
-            let render = crate::produce_exec::run_render(
-                run,
-                &tree,
-                &crate::produce_exec::Materials {
-                    exists: &|file| std::path::Path::new(file).exists(),
-                    fx_for: &|_| Vec::new(),
-                    lanes: &run.cut.lanes,
-                    src_shape: (1920, 1080),
-                    wav_of: &|entry| crate::produce_stamp::wav_of(&tree, entry, Some(&run.voice), 0),
-                    cues: crate::produce_exec::Cues {
-                        all: Vec::new(),
-                        languages: run.settings.translate.clone(),
-                    },
-                    words: &move |clip| crate::produce_clip_cues::words_for(
-                        clip,
-                        &session_words,
-                        &narrator_sources,
-                    ),
-                    translate: &translate_leg(),
-                    sources: &move || sources_for_stamp.clone(),
-                    // §8 bullet 4: tape question, answered the way the Cut page answers
-                    // it — the filmed stretches of this page's own recordings.
-                    on_recording: !crate::ui::cut_folds::page_recordings().is_empty(),
-                    // F4.3 step 1's bound: "grow the clip, ≤ 4 s, NEVER PAST THE FOOTAGE". The tape
-                    // this session has is the filmed runs off the page's own recordings (§F2.11 owns the
-                    // rows until then), so a clip's footage left is the end of the filmed run covering it
-                    // minus the clip's own end. A clip in no filmed run — or a session with no tape at all
-                    // — answers through [`crate::produce_render::unknown_footage`], which leaves the grow
-                    // at §10's own ceiling rather than forbidding it: unknown is not the same as zero.
-                    footage_left: &|seg: &crate::cut::Seg| {
-                        let covering = crate::timeline::filmed_runs(&crate::ui::cut_folds::page_recordings())
-                            .into_iter()
-                            .filter(|(start, _end)| *start <= seg.s)
-                            .map(|(_start, end)| end)
-                            .max_by(f64::total_cmp);
-                        match covering {
-                            Some(run_end) => (run_end - seg.e).max(0.0),
-                            None => crate::produce_render::unknown_footage(seg),
-                        }
-                    },
-                    // F4.3: speech length is the wav's duration. Measured here, where the path rule lives;
-                    // `produce_exec` only asks the question it was handed the answer to.
-                    wav_seconds: &|entry| {
-                        crate::produce_stamp::wav_of(&tree, entry, Some(&run.voice), 0)
-                            .as_ref()
-                            .and_then(|wav| crate::voice_ref::wav_seconds(std::path::Path::new(wav)))
-                    },
-                    // S5's picture input: an insert reads its own asset, footage and a `copy:` stretch read
-                    // the first footage recording. Resolved here, where the project is held, by the same
-                    // rule `Seg::insert_asset` uses.
-                    source_file: &move |clip| {
-                        if clip.source.is_empty() || clip.source.starts_with("copy:") {
-                            return sources_for_clips
-                                .sources
-                                .iter()
-                                .find(|src| src.footage)
-                                .map(|src| src.path.clone());
-                        }
-                        let root = std::env::current_dir().unwrap_or_default();
-                        // `Seg::insert_asset` is the one path rule of §1; the clip carries the same spelling.
-                        Some(
-                            crate::cut::Seg { ins: clip.source.clone(), ..Default::default() }
-                                .insert_asset(&root, &root)
-                                .map(|p| p.to_string_lossy().to_string())
-                                .unwrap_or_else(|| clip.source.clone()),
-                        )
-                    },
-                },
-                crate::ui::window::log_line,
-                speak_a_line,
-                render_asked,
-                crate::ui::produce_languages::spawn,
-            );
-            // A render that stopped or failed says so in the log with the spec's own line, on top of the
-            // ending's word on the status line: `run_with` turns the report into "production stopped" or
-            // "production failed — see log", and the reason belongs where a person can read it.
-            if let Some(why) = render_failure_note(&render) {
-                crate::ui::window::log_line(&crate::produce_flow::failed_log(&why));
-            }
-            render
-        },
+        |run| crate::ui::produce_snapshot::render_half(run, &snap),
     );
     // F5.5 S5: after both halves; the page's own outcome is an input to nothing (S6 keeps the render's
     // error as the run's verdict).
-    crate::ui::produce_languages::tag_page(&settings);
+    crate::ui::produce_languages::tag_page(settings);
     crate::ui::window::log_line(&ending.log);
     if !ending.progress.is_empty() {
         crate::ui::window::log_line(&ending.progress);

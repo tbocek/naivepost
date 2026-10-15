@@ -25,7 +25,9 @@ pub mod run_close;
 pub mod log_link;
 pub mod log_paint;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
+pub mod produce_confirm;
 pub mod produce_page;
+pub mod produce_snapshot;
 /// §08-produce#1-screen — the render legs the Produce page hands to `produce_exec`. Split out of
 /// `produce_page.rs`, which is past its size budget.
 mod produce_page_rows;

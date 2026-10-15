@@ -18,6 +18,7 @@ use crate::cut::{self, Cut, NO_CUT_YET};
 use crate::layout::Tree;
 use crate::narration::Entry;
 use crate::produce_embed;
+use crate::produce_stamp;
 use crate::produce_render as render;
 use crate::project::{Codec, Container, Produce, Publish};
 use crate::run::{self, Snapshot};
@@ -68,6 +69,75 @@ pub fn overwrite_title(base: &str) -> String {
 /// Two paragraphs because §S2 spells them apart and a dialog that runs them together reads as one clause.
 pub fn overwrite_detail(path: &str, size: &str, age: &str) -> String {
     format!("{path} \u{2014} {size}, {age}\n\nThe encode takes minutes and there is no undo for it.")
+}
+
+/// S2's confirmation, both halves of it in one call: the title that goes on the status line and the
+/// two-paragraph body that goes in the dialog (and into the log, where a person can re-read it).
+///
+/// The size is spelled the way the render's own lines spell a weight (`MiB`, never a raw byte count), and
+/// the age is said as an AGE rather than a timestamp: "modified 1730000000" is a number to decode, while
+/// "3 minutes old" / "2 hours old" answers the question the person is asking — how stale is this video.
+pub fn overwrite_asked(video: &std::path::Path) -> (String, String) {
+    let base = video
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "final".to_string());
+    let (bytes, mtime) = produce_stamp::disk_facts(video);
+    (
+        overwrite_title(&base),
+        overwrite_detail(
+            &video.to_string_lossy(),
+            &human_weight(bytes),
+            &age_of(mtime),
+        ),
+    )
+}
+
+/// A file's weight as the produce log spells it — whole MiB where there are whole MiB, one decimal below,
+/// so a short encode never reports as "0 MiB". Same rule [`crate::produce_exec`] uses for its done line.
+fn human_weight(bytes: u64) -> String {
+    const MIB: f64 = 1024.0 * 1024.0;
+    let mib = bytes as f64 / MIB;
+    if mib >= 10.0 || bytes.is_multiple_of(1024 * 1024) {
+        format!("{} MiB", mib as u64)
+    } else {
+        format!("{mib:.1} MiB")
+    }
+}
+
+/// How long ago an epoch second was, coarsely: seconds under a minute, then minutes, then hours, then
+/// days. Coarse because the question is "is this the video I made yesterday", not a stopwatch.
+fn age_of(mtime: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|span| span.as_secs())
+        .unwrap_or(0);
+    let ago = now.saturating_sub(mtime);
+    let unit = |count: u64, name: &str| format!("{count} {name} old");
+    if ago < 60 {
+        unit(ago.max(1), if ago == 1 { "second" } else { "seconds" })
+    } else if ago < 3600 {
+        let m = ago / 60;
+        unit(m, if m == 1 { "minute" } else { "minutes" })
+    } else if ago < 86_400 {
+        let h = ago / 3600;
+        unit(h, if h == 1 { "hour" } else { "hours" })
+    } else {
+        let d = ago / 86_400;
+        unit(d, if d == 1 { "day" } else { "days" })
+    }
+}
+
+/// The response ids §S2's confirmation offers. Named here because the dialog builds them and this module
+/// decides what they mean; a third spelling would be a silent new answer nobody handles.
+pub const ANSWER_OVERWRITE: &str = "overwrite";
+pub const ANSWER_CANCEL: &str = "cancel";
+
+/// Does this answer from the overwrite dialog mean "encode anyway"? Only the deliberate word does:
+/// Cancel, × (which the dialog maps to `cancel`) and any unknown id all leave the standing video alone,
+/// because §S2 asks precisely so that an accidental press cannot destroy an encode.
+pub fn overwrite_proceeds(answer: &str) -> bool {
+    answer == ANSWER_OVERWRITE
 }
 
 /// S2: which way the gate falls. Up-to-date means the stamp on disk equals the stamp of what this page
