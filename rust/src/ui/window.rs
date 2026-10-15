@@ -1194,9 +1194,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // because nothing inside the realized window is the object the test fires. Registering after
     // `set_content` puts the wired button in the tree and makes the newest slot the live one.
     if let Some(play_) = play_recording_button(&window) {
-        PREVIEW_PLAYERS.with(|slots| {
-            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(Player::default())))
-        });
+        register_preview_player_slot();
         wire_play_recording(&play_, &window);
     }
     // F2.5 S6: this window's one preview volume, pushed the way the player slot is — after
@@ -2258,6 +2256,24 @@ pub fn preview_player(window: &adw::ApplicationWindow) -> Player {
 pub(crate) fn live_player(window: &adw::ApplicationWindow) -> Option<Rc<RefCell<Player>>> {
     let _ = window;
     PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned())
+}
+
+/// Give this window its own preview slot. The Cut page gets one with its ▶ (F2.1); the Narrate page
+/// registers the same slot from `narrate_page::wire`, because §5 makes the run bar read THAT page's
+/// transport once its preview has started, and a bar can only paint a slot that exists.
+pub fn register_preview_player_slot() {
+    PREVIEW_PLAYERS.with(|slots| {
+        slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(Player::default())))
+    });
+}
+
+/// Publish what the run bar should draw for this window's preview: [`crate::run::controls`] reads the
+/// transport off the player, so the page that owns the playing state writes it here rather than the
+/// bar guessing. Silently does nothing with no slot — a page that never registered one has no preview.
+pub fn publish_preview_transport(window: &adw::ApplicationWindow, transport: run::Transport) {
+    if let Some(player) = live_player(window) {
+        player.borrow_mut().transport = transport;
+    }
 }
 
 /// Put the red line somewhere before a press, which is what placing the cursor on the timeline does in

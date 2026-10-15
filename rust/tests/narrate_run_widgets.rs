@@ -151,6 +151,7 @@ fn narrate_window(
         voice_files: vec![],
         recording_covers_clip: true,
         playing: false,
+        started: false,
         busy: false,
         narration_off: project.no_narration,
         // F4.4's inputs, left at "nothing checked": this file drives the F4.1 run, not the speak flow.

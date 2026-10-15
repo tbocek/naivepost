@@ -215,6 +215,7 @@ fn base_state() -> ui::NarrateState {
         voice_files: vec!["warm.wav".into()],
         recording_covers_clip: true,
         playing: false,
+        started: false,
         busy: false,
         narration_off: false,
         // F4.4's three inputs, published by the flow that reads the project. Left at "nothing checked":

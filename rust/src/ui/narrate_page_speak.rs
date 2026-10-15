@@ -91,12 +91,16 @@ pub(crate) fn speak_and_audition(
             Ok(started) => {
                 narrate_page::mutate(|state| {
                     state.playing = true;
+                    // §5: an audition that cued players starts the preview for the bar's sake too.
+                    state.started = true;
                     // The head has to agree with what the picture was cued at, or the next beat describes a
                     // different second than the player is playing.
                     state.session = from;
                     state.cut_at = from;
                 });
                 crate::ui::window::log_line(&format!("audition: {started}"));
+                // §5: the bar reads this page's transport, so an audition that cued players says so.
+                crate::ui::narrate_page_transport::publish_transport();
             }
             Err(why) => crate::ui::window::log_line(&format!("!!! audition: {why}")),
         }

@@ -48,6 +48,7 @@ fn state_at(session: f64) -> ui::NarrateState {
         voice_files: vec![],
         recording_covers_clip: true,
         playing: false,
+        started: false,
         busy: false,
         narration_off: false,
         language: String::new(),

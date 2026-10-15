@@ -283,6 +283,36 @@ impl Preview {
         }
         changed
     }
+
+    /// S3: the bed's level lives in its command line (`--volume=`), so a new answer needs a new process.
+    /// Kill this preview's own bed and cue it again at `gain` over `at`, keeping whatever hold the
+    /// preview is under. Answers the argv before and after so the log can name the number that changed;
+    /// `None` when there is no picture to re-cue or the new one would not spawn.
+    pub fn recue_bed(
+        &mut self,
+        gain: f64,
+        at: f64,
+        tree: &crate::layout::Tree,
+        cut: &Cut,
+        spawn: &mut Spawn,
+    ) -> Option<(Vec<String>, Vec<String>)> {
+        self.picture.as_ref()?;
+        // The player clamps its own `--volume=`, so the log has to show what it was really handed rather
+        // than the unclamped product of duck × mix.
+        let before = narrate_preview_media::bed_argv(
+            &narrate_preview_media::cue_files(tree, cut, at),
+            narrate_preview_media::footage_second(cut, at),
+            gain.clamp(0.0, 1.0),
+        );
+        // The dying child goes first: two beds over one second is double sound, and §F4.5 S6 counts ONE
+        // picture pid for ⏹.
+        self.picture = None;
+        self.bed_gain = Some(gain);
+        let program = PICTURE_PROGRAM.with(|name| name.borrow().clone());
+        let (child, cue) = player(&program, tree, cut, at, gain, self.paused, spawn).ok()?;
+        self.picture = Some(child);
+        Some((before, cue.args))
+    }
 }
 
 thread_local! {
@@ -416,9 +446,10 @@ pub fn step(
     cut: &Cut,
     entries: &[Entry],
     now: f64,
+    no_narration: bool,
     spawn: &mut Spawn,
 ) -> Stepped {
-    let takes = take_states(tree, entries, &preview.failed);
+    let takes = take_states(tree, entries, &preview.failed, no_narration);
     match narrate_preview::tick(now, &cut.segs, entries, &takes, preview.speaking) {
         narrate_preview::Tick::SkipTo(at) => {
             let rate = narrate_preview::seek_rate(&cut.fx, at);
@@ -463,6 +494,9 @@ pub fn step(
 /// Starts the preview if none is running (the picture click's S1 answer), otherwise advances it, and
 /// gives the page the sentence to print. Present so `ui/narrate_page.rs` holds one call per tick and
 /// no rule of its own.
+// The tick's whole argument list is what one beat needs: the page's facts, the mix for this second and
+// the seam that spawns. Splitting it would move a rule into the caller.
+#[allow(clippy::too_many_arguments)] // one beat of the preview reads all eight
 pub fn tick_loop(
     tree: &crate::layout::Tree,
     cut: &Cut,
@@ -470,6 +504,7 @@ pub fn tick_loop(
     at: f64,
     game_volume: f64,
     volume: f64,
+    no_narration: bool,
     spawn: &mut Spawn,
 ) -> Stepped {
     RUNNING.with(|slot| {
@@ -482,7 +517,7 @@ pub fn tick_loop(
             });
         }
         let preview = held.as_mut().expect("just filled");
-        step(preview, tree, cut, entries, at, spawn)
+        step(preview, tree, cut, entries, at, no_narration, spawn)
     })
 }
 
@@ -507,8 +542,16 @@ pub trait PreviewPage {
     fn game_volume(&self) -> f64;
     /// The shared preview volume (the `narrate-volume` slider).
     fn volume(&self) -> f64;
+    /// Whether this project's narration is switched off (§F4.8). The tick asks it of the page rather
+    /// than re-reading `naivepost.json` every beat; the page already keeps the tick's own state.
+    fn no_narration(&self) -> bool {
+        false
+    }
     /// Print one sentence on the status line.
     fn say(&self, said: &str);
+    /// The preview ended on its own (the tick walked off the last clip) rather than through a press:
+    /// the page clears its own flags so §5's `started` half does not outlive the players.
+    fn stopped(&self) {}
 }
 
 /// F4.5 S2: run the Narrate preview's own 100 ms tick (§A.3 "100 ms tick follows playback"),
@@ -527,6 +570,7 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
             if !page.running() {
                 return glib::ControlFlow::Continue;
             }
+            let was_running = running();
             let Some(tree) = page.tree() else {
                 return glib::ControlFlow::Continue;
             };
@@ -544,6 +588,27 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                     .is_some()
             });
             let heard = heard_at(&cut, from, speaking, game_volume);
+            // S3 (`sound equals the render's`): the mix this second is owed has to REACH the bed. The
+            // level lives in the player's `--volume=`, so a new answer is a new process; `bed_gain_ask`
+            // is the stamp that says whether this beat changed anything, and nothing is re-cued when it
+            // did not — otherwise every 100 ms beat would seek the middle of every clip.
+            let bed_gain = narrate_preview_media::bed_gain(&cut, heard.at, speaking, game_volume, volume);
+            let recued = RUNNING.with(|slot| {
+                slot.borrow_mut().as_mut().and_then(|preview| {
+                    if !preview.bed_gain_ask(bed_gain) {
+                        return None;
+                    }
+                    preview.recue_bed(bed_gain, from, &tree, &cut, &mut spawn_player)
+                })
+            });
+            if let Some((before, after)) = recued {
+                crate::ui::window::log_line(&format!(
+                    "s3 bed at {}: {} -> {}",
+                    crate::narrate_screen::time_field(heard.at),
+                    argv_volume(&before),
+                    argv_volume(&after)
+                ));
+            }
             // S2: the picture's own second moves here, one tick at a time and at the cut's rate — without it
             // `tick` is asked the same second forever and only a gap skip ever moves the head.
             let at = narrate_preview::advance(from, crate::preview::TICK_SECONDS, heard.rate, &cut.segs);
@@ -577,7 +642,16 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                     },
                     None => {
                         let stepped =
-                            tick_loop(&tree, &cut, &entries, at, game_volume, volume, &mut spawn_player);
+                            tick_loop(
+                                &tree,
+                                &cut,
+                                &entries,
+                                at,
+                                game_volume,
+                                volume,
+                                page.no_narration(),
+                                &mut spawn_player,
+                            );
                         if let Stepped::Moved { at, rate: _ } = stepped {
                             page.set_head(at);
                         }
@@ -601,10 +675,25 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
             }
             if matches!(stepped, Stepped::Paused) {
                 let _ = stop_running();
+                // No ⏹ was pressed, so nothing else would tell the page its preview is over (§5).
+                // Only do it when a preview was actually going: a page whose `playing` was a staged or
+                // stale value has no players here to end, and answering `Paused` for it would
+                // contradict the page it just told the leg to trust.
+                if was_running {
+                    page.stopped();
+                }
             }
             glib::ControlFlow::Continue
         },
     );
+}
+
+/// The `--volume=` an argv carries, for the log line that names what the bed was really handed.
+fn argv_volume(argv: &[String]) -> String {
+    argv.iter()
+        .find(|arg| arg.starts_with("--volume="))
+        .cloned()
+        .unwrap_or_else(|| "--volume=?".to_string())
 }
 
 /// Drop the picture's wait on a take without moving the picture: the row disappeared mid-synthesis.
@@ -621,12 +710,23 @@ fn clear_waiting() {
 /// ([`narrate_tts::take_path`]), with the refused set winning over a file that exists: a take the
 /// server refused and then some older run left on disk must still read as refused for this session, or
 /// S2's sticky branch is unreachable.
-pub fn take_states(tree: &crate::layout::Tree, entries: &[Entry], failed: &Failed) -> Vec<Take> {
+///
+/// `no_narration` is the project's flag, and the question "may this line be spoken" goes through
+/// [`crate::narrate_off::lines_to_speak`] rather than a local test of its own: §5's captions-only clause
+/// and F4.8 name that seam as the ONE answer, so a preview over a narration that is switched off offers
+/// no line at all instead of pausing to synthesize wavs nobody will hear.
+pub fn take_states(
+    tree: &crate::layout::Tree,
+    entries: &[Entry],
+    failed: &Failed,
+    no_narration: bool,
+) -> Vec<Take> {
+    let speakable = crate::narrate_off::lines_to_speak(no_narration, entries);
     entries
         .iter()
         .map(|entry| {
-            if entry.text.trim().is_empty() {
-                // A silent line has no take to look for: `line_at` never offers it, and a file check
+            if !speakable.iter().any(|spoken| spoken == entry) {
+                // Nothing to look for: `line_at` never offers a line the seam excluded, and a file check
                 // here would be a disk read for a line that is never spoken.
                 return Take::Missing;
             }

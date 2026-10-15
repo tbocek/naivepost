@@ -36,23 +36,21 @@ fn seeding() -> bool {
     PICKER_SEEDING.with(|seeding| seeding.get())
 }
 
-/// The picker at rest: two placeholder rows so the widget has a face before the first refresh, seeded
-/// to the chosen voice's row when the published state already names one.
+/// The picker at rest: no rows yet — `follow` fills them from the published voice on the first refresh,
+/// so an untouched dropdown shows nothing rather than a speaker nobody chose.
 pub(crate) fn build() -> gtk::DropDown {
-    let picker = gtk::DropDown::from_strings(&[
-        "No audio \u{2014} captions only",
-        "Narrator 1 \u{2014} cut from the recording",
-    ]);
+    let picker = gtk::DropDown::from_strings(&[]);
     picker.set_widget_name("voice-picker");
     picker.set_tooltip_text(Some(&narrate_screen::sample_tip()));
     // The row shown is the chosen voice's, spelled by `voice_options` rather than hardcoded: the spec's
-    // shot has the picker carrying `Narrator 1 — 2026-09-16 18-43-01.mkv` as its own face. A number
-    // outside the list leaves the dropdown on its first row, so this cannot crash on an empty state.
-    if let Some(row) = options(1, &[])
+    // shot has the picker carrying `Narrator 1 — 2026-09-16 18-43-01.mkv` as its own face. A voice that is
+    // not on the list is not shown at all: the dropdown carries no row (§5's "leaves the picker empty").
+    match options(1, &[])
         .iter()
         .position(|option| option.id == crate::ui::narrate_page::read_state().voice)
     {
-        seed(&picker, row as u32);
+        Some(row) => seed(&picker, row as u32),
+        None => picker.set_selected(gtk::INVALID_LIST_POSITION),
     }
     picker
 }
@@ -98,14 +96,14 @@ pub(crate) fn follow(
         // Swapping the model moves the dropdown's row by itself, and that emission lands after this
         // call returns — too late for a flag set around it. So the flag stays up while the model is
         // replaced and is lowered only once the shown row has been re-seeded to the published voice.
+        // Replacing the model re-selects row 0 by itself (§F4.6 S1 already had to re-seed over that,
+        // and `INVALID_LIST_POSITION` does not hold: GTK clamps the position to the new model's rows).
+        // So "no row at all" is done the only way a GtkDropDown can show it: the list is empty until the
+        // published voice really is on offer, and the button then reads the placeholder.
         PICKER_SEEDING.with(|seeding| seeding.set(true));
         picker.set_model(Some(&strings));
-        match chosen {
-            Some(row) => picker.set_selected(row as u32),
-            // Nothing on the list matches: show an empty row rather than a wrong voice. A dropdown
-            // has no "no selection", so the first row is shown only when the voice really is the
-            // first row; otherwise the page's own refusal is what tells the person.
-            None => picker.set_selected(0),
+        if let Some(row) = chosen {
+            picker.set_selected(row as u32);
         }
         PICKER_SEEDING.with(|seeding| seeding.set(false));
     } else if let Some(row) = chosen {
@@ -132,6 +130,12 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             return;
         }
         let s = crate::ui::narrate_page::read_state();
+        // A dropdown with no row selected IS the answer §5 wants for a voice that is not on offer, so a
+        // negative selection is nobody picked anything: pressing the seam with the captions row would
+        // silently switch the page to "no audio" the moment the picker was cleared.
+        if picker.selected() == gtk::INVALID_LIST_POSITION {
+            return;
+        }
         let row = picker.selected() as usize;
         if let Some(option) = options(s.narrators, &s.voice_files).get(row) {
             let id = option.id.clone();

@@ -18,7 +18,6 @@ use crate::cut::Seg;
 use crate::narrate_details;
 use crate::narrate_off;
 use crate::narrate_data;
-use crate::narrate_preview;
 use crate::narrate_preview_leg::{self, PreviewPage};
 use crate::narrate_edit;
 use crate::narrate_screen::{self, Audition, Fit};
@@ -61,6 +60,11 @@ pub struct NarrateState {
     /// Whether the clip under the row has a recording covering it at all (§1's speaks-alone cases).
     pub recording_covers_clip: bool,
     pub playing: bool,
+    /// §5 (`the run bar is the preview's transport only once the preview started`): has this preview
+    /// been cued at all and not ⏹-ed since. `playing` says whether it is going now; `started` is what
+    /// makes the bar serve the preview rather than the step, so a page nobody has pressed ▶ on keeps ▶
+    /// as "write and speak".
+    pub started: bool,
     /// A synthesis is running: it outranks the other refusals on the row's ▶.
     pub busy: bool,
     pub narration_off: bool,
@@ -91,6 +95,7 @@ thread_local! {
             voice_files: Vec::new(),
             recording_covers_clip: true,
             playing: false,
+            started: false,
             busy: false,
             narration_off: false,
             covered_spans: Vec::new(),
@@ -647,6 +652,14 @@ fn label(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Label> {
 /// loudness numbers are.
 pub struct PageDriver(adw::ApplicationWindow);
 
+impl PageDriver {
+    /// The same driver, for the transport doors in `narrate_page_transport`, which need the page's two
+    /// loudness numbers but must not reach into this file's private field.
+    pub(crate) fn for_window(window: &adw::ApplicationWindow) -> Self {
+        PageDriver(window.clone())
+    }
+}
+
 impl narrate_preview_leg::PreviewPage for PageDriver {
     fn running(&self) -> bool {
         read_state().playing
@@ -699,6 +712,22 @@ impl narrate_preview_leg::PreviewPage for PageDriver {
     fn say(&self, said: &str) {
         say(&self.0, said);
     }
+
+    /// The page's own copy of the project flag (§F4.8): published by `set_narration_off` and seeded from
+    /// the project at build, so the tick never opens `naivepost.json` on a beat.
+    fn no_narration(&self) -> bool {
+        read_state().narration_off
+    }
+
+    /// §5: the tick ended the preview itself (the picture walked past the last clip), with no ⏹ press to
+    /// clear the page's flags. Left alone, `started` would keep the bar answering for a dead preview.
+    fn stopped(&self) {
+        mutate(|state| {
+            state.playing = false;
+            state.started = false;
+        });
+        super::narrate_page_transport::publish_transport();
+    }
 }
 
 /// Add one name to the page's voice list, sorted, without repeating it. Public because "Add file…"
@@ -728,112 +757,11 @@ pub use crate::ui::narrate_page_seek::{
     note_scrub_drag, pending_scrub_for_test, press_back, press_forward, seek_preview,
 };
 
-/// The session spans the preview may cue against. An unpublished state (empty) is read as full coverage of
-/// the cut: the refusal exists for a recording that does not reach the cue, not for a flow that never said.
-fn preview_covered(s: &NarrateState) -> Vec<(f64, f64)> {
-    if s.covered_spans.is_empty() {
-        return s.segs.iter().map(|seg| (seg.s, seg.e)).collect();
-    }
-    s.covered_spans.clone()
-}
-
-/// F4.5 S1: one click on the picture, or the transport's ▶ — the same door, so the two cannot drift.
-/// Asks `narrate_preview::press_picture` with what this page knows: the kept clips, the line under the
-/// playhead (if any) at its own start second, and the covered spans. Stores the answer in `playing` and says
-/// the refusal verbatim, or names the second playback starts from.
-pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
-    let s = read_state();
-    let line_start = narrate_preview::line_at(s.session, &s.entries)
-        .map(|index| s.entries[index].s + s.entries[index].at);
-    let pressed = narrate_preview::press_picture(s.playing, &s.segs, line_start, &preview_covered(&s));
-    let next_playing = pressed.playing();
-    mutate(|state| state.playing = next_playing);
-    match pressed {
-        narrate_preview::Pressed::Refused(why) => say(window, &why),
-        narrate_preview::Pressed::Playing { from } => {
-            // F4.5 S6: a press over a HELD preview thaws the same players rather than rebuilding them — a
-            // re-cue is a black frame where a still belongs, so the freeze is what ▶ walks on.
-            if narrate_preview_leg::hold_paused(false) == Some(true) {
-                return say(
-                    window,
-                    &format!(
-                        "playing on from {} \u{2014} \u{23f9} stops both players",
-                        narrate_screen::time_field(from)
-                    ),
-                );
-            }
-            // F4.5 S1: the decision above is only half the press — the players have to actually run.
-            // A picture that will not spawn is said, not swallowed: claiming a preview with no process
-            // behind it is worse than naming the program that failed.
-            if let Some(tree) = crate::ui::window::narrate_session_tree() {
-                let cut = crate::cut::load(&tree).unwrap_or_default();
-                if let Err(why) = narrate_preview_leg::start_running(
-                    &tree,
-                    &cut,
-                    &s.entries,
-                    from,
-                    PageDriver(window.clone()).game_volume(),
-                    PageDriver(window.clone()).volume(),
-                    &mut narrate_preview_leg::spawn_player,
-                ) {
-                    return say(window, &why);
-                }
-            }
-            say(
-                window,
-                &format!(
-                    "playing the cut from {} \u{2014} \u{23f9} stops both players",
-                    narrate_screen::time_field(from)
-                ),
-            )
-        }
-        narrate_preview::Pressed::Paused => {
-            // S6's pause is a HOLD, not a kill: `SIGSTOP` leaves each player built and sitting on its own
-            // second, which is exactly what the next ▶ thaws. With nothing in the slot there is no player to
-            // freeze, and whatever was running is still owed to ⏹'s door.
-            if narrate_preview_leg::hold_paused(true).is_none() {
-                let _ = narrate_preview_leg::stop_running();
-            }
-            say(window, "paused \u{2014} \u{25b6} plays on from here")
-        }
-    }
-}
-
-/// The preview's play/pause. Routes through the picture's door: inventory §A.3/§A.4 are one toggle wearing
-/// two faces, and two implementations would disagree about what "play" means after an edit.
-pub fn press_narrate_play(window: &adw::ApplicationWindow) -> String {
-    press_preview_picture(window)
-}
-
-/// Whether the preview is running right now. Exported so the run bar can ask before reading a ⏹ press as the
-/// end of a run: while a preview runs, ⏹ belongs to the preview (F4.5 S6).
-pub fn narrate_preview_playing() -> bool {
-    read_state().playing
-}
-
-/// F4.5 S6: ⏹ over the preview. Stops the picture and the voice riding along with it and hands ▶ back to
-/// the step; the sentence comes from `narrate_preview::hand_play_back`, so the bar cannot claim ▶ back while
-/// a player is still going.
-pub fn press_preview_stop(window: &adw::ApplicationWindow) -> String {
-    // Read the pids BEFORE the stop: after `stop_running` the slot is empty and F0.3's drain would
-    // have nothing to name. The log line is what makes the ownership visible — these are the ids ⏹
-    // is responsible for killing (§F4.5 S6, §F0.3).
-    let pids = narrate_preview_leg::running_children();
-    let (stopped, killed) = narrate_preview_leg::stop_running();
-    mutate(|state| state.playing = false);
-    let said = narrate_preview::hand_play_back(stopped)
-        .unwrap_or("the preview did not stop \u{2014} see log")
-        .to_string();
-    crate::ui::window::log_line(&format!(
-        "stopped the preview players {} -> {} killed",
-        pids.iter()
-            .map(|pid| pid.to_string())
-            .collect::<Vec<_>>()
-            .join(" "),
-        killed.len()
-    ));
-    say(window, &said)
-}
+/// The preview transport lives in `narrate_page_transport` (this file is at its size budget and ▶/⏸/⏹ are
+/// rules of their own, not part of the drawing); these are the names the shell and the tests already call.
+pub use crate::ui::narrate_page_transport::{
+    narrate_preview_playing, press_narrate_play, press_preview_picture, press_preview_stop,
+};
 
 /// **4** ＋ a line at this second. Ok pushes the entry where the rule put it.
 pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
@@ -1461,6 +1389,12 @@ pub fn wire(window: &adw::ApplicationWindow) {
 
     // F4.5 S2: the 100 ms tick that follows the picture, once per window.
     narrate_preview_leg::start_tick(std::rc::Rc::new(PageDriver(win.clone())));
+    // §5: this page's transport is what the run bar reads once the preview starts, and `paint_run_bar`
+    // can only read a slot this window registered — the Cut page pushes its own with its ▶ (F2.1).
+    crate::ui::window::register_preview_player_slot();
+    // And it starts out telling the truth: the slots default to `started: true`, which on the Narrate
+    // page would hand the bar to a preview this window has never cued (§5's only-once-started clause).
+    crate::ui::narrate_page_transport::publish_transport();
 }
 
 /// The per-row buttons, wired for however many rows the page currently holds. Called after every refresh

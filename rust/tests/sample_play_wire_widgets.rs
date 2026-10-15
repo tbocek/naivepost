@@ -126,6 +126,7 @@ fn run_round(app: &adw::Application) {
         voice_files: vec![],
         recording_covers_clip: true,
         playing: false,
+        started: false,
         busy: false,
         narration_off: false,
         covered_spans: vec![],
