@@ -489,12 +489,13 @@ fn f5_2_s5_one_encode_command_per_clip() {
 fn f5_2_s6_the_join_is_a_stream_copy() {
     assert_eq!(ITEM, "f5_2");
     // The join copies streams, so it cannot mix sizes: a clip whose ffprobe size differs from clip 0's gets
-    // §F5.2's sentence, and identical sizes stay silent.
+    // §F5.2's sentence, and identical sizes stay silent. Sizes are the PROBED frame pair (§F5.2 S5), not
+    // byte counts — two clips at one size differ in bytes every time.
     assert_eq!(
-        r::join_mismatch(1920, 1280),
+        r::join_mismatch((1920, 1080), (1280, 720)),
         Some("!!! the join is a stream copy and cannot mix sizes, so the video breaks at this clip".to_string())
     );
-    assert_eq!(r::join_mismatch(1920, 1920), None);
+    assert_eq!(r::join_mismatch((1920, 1080), (1920, 1080)), None);
 
     // The list is the demuxer's own quoting, one line per clip in the order they play.
     let list = r::concat_list(&["produce/clips/c001_ab.mp4".into(), "produce/clips/c002_ab.mp4".into()]);

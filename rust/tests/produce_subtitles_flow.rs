@@ -97,6 +97,8 @@ fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Wor
             Ok(numbers.iter().map(|n| (*n, format!("translated {n}"))).collect::<std::collections::BTreeMap<usize, String>>())
         },
         sources: &project_sources,
+        // No ffprobe claim: this file is about the cue sheet, not the join's size check.
+        probe: &|_file| None,
     }
 }
 

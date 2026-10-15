@@ -144,6 +144,11 @@ pub struct Materials<'a> {
     /// supplies both of its network legs, so no test dials a socket. Its answers are what each `.code`
     /// sidecar carries; a refusal ships the original text with the merge's warning.
     pub translate: &'a crate::produce_translate::Ask,
+    /// §F5.2 S5: what frame size an encoded clip's file came out at, read back off the file (ffprobe).
+    /// The join is a stream copy and cannot mix sizes, so this is the only honest way to answer "does the
+    /// video break at this clip" — bytes cannot say it. `None` means NO CLAIM about that clip (no ffprobe,
+    /// a file the probe could not read), which contributes no mismatch rather than a false all-clear.
+    pub probe: &'a dyn Fn(&Path) -> Option<(i32, i32)>
 }
 
 /// One clip's encode: its stem, the file it writes, the command that writes it.
@@ -208,7 +213,7 @@ impl Plan {
 }
 
 /// The produced file's stem: `final`, whichever container follows it.
-fn video_stem() -> &'static str {
+pub fn video_stem() -> &'static str {
     "final"
 }
 
@@ -715,14 +720,20 @@ where
             return ran;
         }
         ran.joined = true;
-        // S5's other rule, measured here because only the encoder knows what it wrote: the join is a
-        // copy and cannot mix sizes, so a clip that came out at a different size breaks the video at
-        // exactly that clip.
-        if let Some(first) = plan.encodes.first() {
-            let base = file_size(&first.file);
-            for encode in plan.encodes.iter().skip(1) {
-                if let Some(warning) = render::join_mismatch(base, file_size(&encode.file)) {
-                    log(&format!("{}: {warning}", encode.stem));
+        // S5's other rule, measured AFTER the encodes because only the encoder knows what it wrote: the
+        // join is a copy and cannot mix sizes, so a clip that came out at another FRAME SIZE breaks the
+        // video at exactly that clip. Sizes are probed off the files (`Materials::probe`, ffprobe behind
+        // the program's own door), never guessed from byte counts — two clips at one size differ in bytes
+        // every time. The base is the first clip that yields a size, so a session with no ffprobe probes
+        // everything to `None`, claims nothing, and says nothing: absence is not an all-clear.
+        let sizes: Vec<Option<(i32, i32)>> =
+            plan.encodes.iter().map(|encode| (mats.probe)(&encode.file)).collect();
+        if let Some(base) = sizes.iter().flatten().next().copied() {
+            for (encode, size) in plan.encodes.iter().zip(sizes.iter()).skip(1) {
+                // A clip the probe could not read contributes no claim; a clip that disagrees with the
+                // first readable size is the one the copy join breaks at.
+                if size.is_some() && *size != Some(base) {
+                    log(&format!("{}: {}", encode.stem, render::JOIN_MISMATCH));
                 }
             }
         }

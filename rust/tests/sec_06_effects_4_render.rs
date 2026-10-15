@@ -518,6 +518,8 @@ fn materials_with<'a>(fx: Vec<Fx>) -> exec::Materials<'a> {
         words,
         translate,
         sources,
+        // No ffprobe claim: these files are about the filter graph, not the join's size check.
+        probe: &|_file| None,
     }
 }
 

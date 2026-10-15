@@ -949,12 +949,18 @@ pub fn command_log(no: usize, argv: &[String]) -> String {
 
 /// S5 (`size mismatch vs clip 0 logged`): the join is a stream copy and cannot mix sizes, so a clip that
 /// ffprobe reports at a different size than clip 0 breaks the video at exactly that clip. Detected after
-/// the encode because only the encoder knows what it actually wrote.
-pub fn join_mismatch(first: u64, size: u64) -> Option<String> {
-    (size != first).then(|| {
-        "!!! the join is a stream copy and cannot mix sizes, so the video breaks at this clip".to_string()
-    })
+/// the encode because only the encoder knows what it actually wrote — which is why the live comparison
+/// compares PROBED frame sizes ([`crate::produce_probe::probe`], asked by `produce_exec::walk`) and never
+/// byte counts: two clips at one size differ in bytes every time.
+pub fn join_mismatch(first: (i32, i32), size: (i32, i32)) -> Option<String> {
+    (size != first).then(|| JOIN_MISMATCH.to_string())
 }
+
+/// The sentence [`join_mismatch`] says, spelled once so the walk's probed-size loop and the rule test quote
+/// the same spec line (§B: "…the join is a stream copy and cannot mix sizes, so the video breaks at this
+/// clip").
+pub const JOIN_MISMATCH: &str = "!!! the join is a stream copy and cannot mix sizes, so the video breaks \
+at this clip";
 
 // ---- S6: join by stream copy -----------------------------------------------------
 

@@ -217,6 +217,10 @@ pub fn render_half(
                 crate::produce_clip_cues::words_for(clip, &snap.session_words, &snap.narrator_sources)
             },
             translate: &crate::ui::produce_page_rows::translate_leg(),
+            // §F5.2 S5's size question, over the real wire: ffprobe beside the configured ffmpeg, read
+            // back off each encoded clip's file. A session with no ffprobe gets `None` everywhere and the
+            // run says nothing about sizes.
+            probe: &crate::produce_probe::probe,
             sources: &|| snap.sources.clone(),
             // §8 bullet 4: does this session have tape at all.
             on_recording: snap.on_recording,

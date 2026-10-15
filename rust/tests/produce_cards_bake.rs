@@ -463,6 +463,8 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
         sources: &sources,
         words: &words,
         translate,
+        // No ffprobe claim here: this file is about the bake, not the size check.
+        probe: &|_file| None,
     };
     let run = exec_run(&cut, &tree);
     let plan = exec::plan(&run, &tree, &mats);
