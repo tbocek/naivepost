@@ -148,25 +148,38 @@ pub fn user_message_over(
 /// Only the name travels, as every chat ask sends it: §1 keeps each tool's parameter schema in §3, and a copy
 /// written here would be a second answer to §3.7's question about `clip`, `kind`, `start`, `end` and `gain`.
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
-    let offered = crate::tools::offered(Job::ClipRules);
-    let tools: Vec<Tool> = offered
-        .into_iter()
-        .filter(|tool| matches!(tool, Tool::AddEffect | Tool::Finish))
-        .collect();
-    let messages = vec![
-        Message {
-            role: "system".to_string(),
-            parts: vec![Part::Text(system.to_string())],
-        },
-        Message {
-            role: "user".to_string(),
-            parts: vec![Part::Text(user.to_string())],
-        },
-    ];
+    let tools: Vec<Tool> = this_pass_tools();
+    let messages = two_messages(system, user);
     let body = llm_request::body(model, &messages, Mode::Execute, Some(&tools), true)?;
     // No `prompt_cache_key`: §1's request contract names model, the two messages, `tools` when the job has
     // them, and the sampling five — and `llm_request::body` is the one place a chat request is built (§09 §5).
     Ok(body.to_string())
+}
+
+/// The two messages every decoration ask carries.
+fn two_messages(system: &str, user: &str) -> Vec<Message> {
+    vec![
+        Message { role: "system".to_string(), parts: vec![Part::Text(system.to_string())] },
+        Message { role: "user".to_string(), parts: vec![Part::Text(user.to_string())] },
+    ]
+}
+
+/// This pass's own tools, from §3.7's job row: `add_effect` for the work and `finish` as the model's own signal.
+/// A call of another kind (a caption, a rate) is not offered because this ask cannot place it (§2 S4), and
+/// `get_frames` stays out too — §F3.11 names exactly these two on the wire (`tests/f3_11_s1_…` counts them), and a
+/// zoom is aimed at the clip's centre by the app's own default rather than by a frame the model asked to see.
+/// One list, used for the body AND for any later round, so the wire can never disagree with itself.
+fn this_pass_tools() -> Vec<Tool> {
+    crate::tools::offered(Job::ClipRules)
+        .into_iter()
+        .filter(|tool| matches!(tool, Tool::AddEffect | Tool::Finish))
+        .collect()
+}
+
+/// An `add_effect` call's arguments read as a decoration: the same `{clip, kind, start, end, gain?}` shape the
+/// prose document's entries have, so [`call_of`] decides both spellings one way.
+pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
+    call_of(args)
 }
 
 /// Read an EFFECTS reply into the calls this pass places. Two spellings are accepted, because a model offered
@@ -355,27 +368,76 @@ pub fn ask_at_over(
         // not happen (§09 §10).
         return Asked { calls: parse_effects(&cached), failed: false, reason: String::new() };
     }
-    let body = match chat_body(&model, &system, &user) {
-        Ok(body) => body,
-        Err(reason) => return failed(reason),
-    };
     let base = base_row(&model);
     let endpoint = services::llm_endpoint(conf);
-    let reply = crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, &body, cancel, &crate::ui::window::log_line);
-    match reply {
-        Ok(sent) => {
-            let text = answer_of(&sent.content_type, &sent.body);
+    let offered = this_pass_tools();
+    // How to build the body for one offer; `None` means no `tools` key, which is what §2 S5 resends to a server
+    // that refused the field. The cache slot and the timed row belong to whichever body goes out first.
+    let build = |offer: Option<&[Tool]>| {
+        Ok(llm_request::body(
+            &model,
+            &two_messages(&system, &user),
+            Mode::Execute,
+            offer,
+            true,
+        )?
+        .to_string())
+    };
+    // One live ask is ONE request on the wire. This dial IS §2's first round and honours S5 itself: a refusal of
+    // the `tools` FIELD gets the identical body again without it, said once, remembered so no later ask re-offers.
+    let sent = match crate::llm_tool_refusal_leg::dial_honouring_refusal(
+        STEP,
+        &endpoint.url,
+        Some(&offered),
+        &build,
+        &|body: &str| {
+            crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, body, cancel, &crate::ui::window::log_line)
+        },
+        &crate::ui::window::log_line,
+    ) {
+        Ok(sent) => sent,
+        // The ask itself failed. §F3.11's two rounds count rejections of ANSWERS, so a wire failure spends none of
+        // them: a server that is not there answers the same way however often it is called.
+        Err(reason) => return failed(reason),
+    };
+    let reply = match llm_request::reply_from(&sent.content_type, &sent.body) {
+        Ok(reply) => reply,
+        Err(_) => {
+            // Neither JSON nor a stream: nothing to place, read as "the model proposed nothing" — the same ending
+            // an empty EFFECTS document has (§F3.11 does not fail a cut over an unreadable decoration list).
+            return Asked { calls: Vec::new(), failed: false, reason: String::new() };
+        }
+    };
+    if reply.tool_calls.is_empty() {
+        // Round 1 answered in prose, which is the whole ask: one request, one timed row.
+        let text = reply.answer().to_string();
+        if !text.trim().is_empty() {
             // Only an answer with words in it is cached: an empty one would make every later ask replay the
             // nothing, and a step that could still be answered later would never be asked again.
-            if !text.trim().is_empty() {
-                llm_cache::store(tree, STEP, &parts, &stored_form(&text));
-            }
-            Asked { calls: parse_effects(&text), failed: false, reason: String::new() }
+            llm_cache::store(tree, STEP, &parts, &stored_form(&text));
         }
-        // The ask itself failed. §F3.11's two rounds count rejections of ANSWERS, so a wire failure spends
-        // none of them: a server that is not there answers the same way however often it is called.
-        Err(reason) => failed(reason),
+        return Asked { calls: parse_effects(&text), failed: false, reason: String::new() };
     }
+    // §2's loop from here, over the CLIP state the tools write into: `get_frames` is answered from it (a zoom has
+    // to be aimed), `add_effect` lands in it, and each call is RUN before another request goes out — the same door
+    // the loop uses, so an unknown kind or an empty span comes back as the tool's own sentence and is SAID here
+    // (§F3.11 S3). Membership stays `cut_effects_pass::place`'s judgement (§F3.11 S2).
+    let mut batch = clips.clone();
+    for line in crate::clip_rules_tools_leg::answer_calls(&reply.tool_calls, &mut batch) {
+        crate::ui::window::log_line(&line);
+    }
+    let calls_out: Vec<Call> = reply
+        .tool_calls
+        .iter()
+        .filter(|call| call.name == Tool::AddEffect.name())
+        .filter_map(|call| {
+            let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
+            call_of_args(&args)
+        })
+        .collect();
+    // A call this pass can already answer ENDS the ask: the model has its result, so no second request goes out
+    // (§F3.11 counts batches by rows in `requests.tsv`).
+    Asked { calls: calls_out, failed: false, reason: String::new() }
 }
 
 /// The shape an answer is kept in: the call list for a tool answer, the plain document otherwise. See
@@ -389,23 +451,6 @@ fn stored_form(answer: &str) -> String {
         return parsed.content.trim().to_string();
     }
     answer.trim().to_string()
-}
-
-/// The answer text out of a chat reply: `content`, never the reasoning — EXCEPT a tool answer, whose
-/// `content` is null and whose whole payload is the `tool_calls` array, so there the body itself is what the
-/// reply parser must see. Routed by §1's rule: an event-stream body is read as chunks (a stream has no
-/// framing to keep, so its reassembled `content` is what remains), anything else as one JSON envelope.
-fn answer_of(content_type: &str, reply: &str) -> String {
-    match llm_request::reply_from(content_type, reply) {
-        Ok(parsed)
-            if !parsed.tool_calls.is_empty() && !llm_request::is_event_stream(content_type) =>
-        {
-            reply.trim().to_string()
-        }
-        Ok(parsed) => parsed.answer().to_string(),
-        // Neither JSON nor a stream: nothing to place.
-        Err(_) => String::new(),
-    }
 }
 
 /// One ask's two messages, so the file its answer is cached in (`cache_file_for_test`) is named from the very

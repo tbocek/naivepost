@@ -880,6 +880,14 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             let refused = ui::cut_suggest_land::refuse_suggest_run(&window, true)
                 .unwrap_or_else(|| crate::suggest::BUSY.to_string());
             ui::window::set_status_line(&window, &refused);
+            // And the press's own refusal, through the same door ▶ fires it: `busy: true` is the state a
+            // And the press's own first refusal, through the door ▶ fires it. This shot's session folder is a
+            // fresh scratch one with no transcript, so §S1's word gate answers before any ask is built and no
+            // socket is dialled -- which is the honest thing a snapshot can show. The web-offer half of this
+            // flow (no browser means no `web_search`/`web_read`, §2's reason line said once) is pinned where the
+            // bytes are visible, in `tests/sec_05_cut_8_suggest_wired.rs`.
+            let pressed = crate::snapshot_suggest::press_through_page(&window, false);
+            println!("snapshot: 05-suggest press said: {pressed}");
             // Then the walk-back's landing: literal seconds in, app-chosen edges out, no socket dialled.
             let landed = crate::snapshot_suggest::press_landed(&window);
             let segs = ui::review_cut_segs_count(&window);

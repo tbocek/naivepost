@@ -1583,6 +1583,22 @@ path = "tests/tool_protocol_f6_1.rs"
 name = "tool_protocol_f6_1_wire"
 path = "tests/tool_protocol_f6_1_wire.rs"
 
+# §2's "whether tools are offered" line: said once per step, with the reason. The memory is process-wide, so the
+# cases share this binary by naming different steps.
+[[test]]
+name = "tool_protocol_f6_1_offer"
+path = "tests/tool_protocol_f6_1_offer.rs"
+
+# §2 S5 for the three steps that did not honour it (fix, retakes, cut): a refusing server, asserted on the
+# request bodies the fake actually received.
+[[test]]
+name = "tool_protocol_f6_1_refusal"
+path = "tests/tool_protocol_f6_1_refusal.rs"
+
+[[test]]
+name = "tool_protocol_f6_1_clip_rounds"
+path = "tests/tool_protocol_f6_1_clip_rounds.rs"
+
 [[test]]
 name = "transcribe"
 path = "tests/transcribe.rs"

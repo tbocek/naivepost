@@ -119,15 +119,9 @@ pub fn ask_round(
     let endpoint = services::llm_endpoint(&conf);
     // §2: whether this step gets the web at all, said once with the reason. A machine with no browser is told
     // WHY its job has two fewer tools, and the offer drops them rather than promising a tool nothing answers.
-    let (web_found, web_reason) = crate::web_browser::availability(&conf.firefox);
-    let offered = crate::web_tools::filter(&offered_tools(), web_found);
-    if let Some(line) = crate::web_tools::unavailable_log(
-        STEP,
-        &conf.firefox,
-        false,
-        web_found,
-        &web_reason,
-    ) {
+    let offered = crate::llm_web_offer::offer(STEP, &conf.firefox, &offered_tools());
+    let (offered, line) = offered;
+    if let Some(line) = line {
         crate::ui::window::log_line(&line);
     }
 

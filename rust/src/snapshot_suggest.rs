@@ -24,17 +24,34 @@ pub fn stage() -> Option<crate::layout::Tree> {
     crate::layout::Tree::new(dir).ok()
 }
 
+/// Press ▶ in the MODEL mode through the window's own door and answer what the status row shows.
+///
+/// `press` is the door `suggest_press`'s model arm uses — settings, ask, walk-back, land, log — so the shot
+/// shows what a real click leaves on screen rather than a state poke.
+///
+/// A snapshot never dials a socket and this arm does dial one (the LLM endpoint defaults to loopback), so the
+/// press ENDS here on §S1's own gate before any ask is built — with no transcript staged the page answers
+/// "run Describe first" and no wire is touched, which is the honest refusal a picture can show. The web-offer
+/// question this flow also touches (no browser → no `web_search`/`web_read`, §2's line said once) is pinned
+/// where the request bytes are visible, `tests/sec_05_cut_8_suggest_wired.rs`, not in a picture.
+pub fn press_through_page(window: &adw::ApplicationWindow, busy: bool) -> String {
+    let landed = crate::ui::cut_suggest_model_run::press(window, busy);
+    crate::ui::window::set_status_line(window, &landed.said);
+    landed.said
+}
+
 /// Land a suggestion through the page's own doors and answer the sentence the status row shows.
+///
 /// `land_spans` is what `press_model` uses: recorder first, base second, `cut.json` third, so the shot
 /// shows a cut that one ↶ takes back whole.
 ///
 /// The walk is literals because the shot's subject IS §S3's arithmetic: staging a real transcript and a
-/// real wave cache to reach the same function would make a picture depend on files it has no claim on,
-/// and every rule they exercise is already pinned in `tests/f2_14_*`. What matters about the numbers is
-/// their shape, not their values: three scenes the model stamped mid-word (so `snap_edge` moves an edge),
-/// gaps wider than `suggest::SEAM_MAX_SECONDS` (so §S3 does NOT close them and three bands stay on the
-/// lane), word edges within `cutpass::SNAP_TOLERANCE_SECONDS` 5.0 of a stamp, and one retake mark inside
-/// the middle scene, which splits it and so proves the marks went through.
+/// real wave cache to reach the same function would make a picture depend on files it has no claim on, and
+/// every rule they exercise is already pinned in `tests/f2_14_*`. What matters about the numbers is their
+/// shape, not their values: three scenes the model stamped mid-word (so `snap_edge` moves an edge), gaps
+/// wider than `suggest::SEAM_MAX_SECONDS` (so §S3 does NOT close them and three bands stay on the lane),
+/// word edges within `cutpass::SNAP_TOLERANCE_SECONDS` 5.0 of a stamp, and one retake mark inside the
+/// middle scene, which splits it and so proves the marks went through.
 pub fn press_landed(window: &adw::ApplicationWindow) -> String {
     let words: Vec<f64> = vec![3.0, 17.0, 24.6, 38.4, 45.6, 57.4];
     let walk = suggest::Walk {

@@ -192,9 +192,8 @@ where
         .and_then(|paths| settings::read(paths).ok())
         .map(|conf| conf.firefox)
         .unwrap_or_default();
-    let (web_found, web_reason) = crate::web_browser::availability(&web_firefox);
-    let offered = crate::web_tools::filter(&offered, web_found);
-    if let Some(line) = crate::web_tools::unavailable_log(STEP, &web_firefox, false, web_found, &web_reason) {
+    let (offered, web_line) = crate::llm_web_offer::offer(STEP, &web_firefox, &offered);
+    if let Some(line) = web_line {
         log(&line);
     }
     // The first dial error, kept so a call that never got an answer can name the model and the reason

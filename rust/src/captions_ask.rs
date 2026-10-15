@@ -112,39 +112,133 @@ pub fn ask_at(
             Err(reason) => failed(reason),
         };
     }
-    let body = match chat_body(&model, &system, &user) {
-        Ok(body) => body,
-        Err(reason) => return failed(reason),
-    };
     let base = base_row(&model);
     let endpoint = services::llm_endpoint(conf);
-    let reply = crate::llm_retry_leg::chat(
+    // Only what this pass answers: `add_caption` for the work and `finish` as its own signal (§2 S3's end). The
+    // SAME list goes into the request body and into the loop, so the model is never handed a tool whose result
+    // this ask cannot place (speeds and decorations are their own passes).
+    let offered: Vec<Tool> = crate::tools::offered(Job::ClipRules)
+        .into_iter()
+        .filter(|tool| matches!(tool, Tool::AddCaption | Tool::Finish))
+        .collect();
+    // How to build the body for one offer. `None` means "no `tools` key at all", which is what §2 S5 resends to a
+    // server that refused the field; the cache slot and the timed row belong to whichever body goes out first.
+    let build = |offer: Option<&[Tool]>| {
+        let messages = vec![
+            Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
+            Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },
+        ];
+        Ok(llm_request::body(&model, &messages, Mode::Thinking, offer, true)?.to_string())
+    };
+    // One live ask is ONE request on the wire (§F3.9 counts batches by rows in `requests.tsv`). This dial IS §2's
+    // first round, and it honours S5 itself: a refusal of the `tools` FIELD gets the identical body again without
+    // the field, said once, and [`crate::llm_tools_offer`] remembers it so no later ask re-offers.
+    let sent = match crate::llm_tool_refusal_leg::dial_honouring_refusal(
         STEP,
-        tree,
-        &base,
-        &endpoint,
-        &body,
-        cancelled,
+        &endpoint.url,
+        Some(&offered),
+        &build,
+        &|body: &str| {
+            crate::llm_retry_leg::chat(
+                STEP,
+                tree,
+                &base,
+                &endpoint,
+                body,
+                cancelled,
+                &crate::ui::window::log_line,
+            )
+        },
         &crate::ui::window::log_line,
-    );
-    match reply {
-        Ok(sent) => {
-            let text = answer_of(&sent.content_type, &sent.body);
-            match parse_captions(&text) {
-                Ok(calls) => {
-                    // Only a readable answer is cached. A reply we could not read must go out again
-                    // on the retry rather than being replayed from the slot it failed in.
-                    llm_cache::store(tree, STEP, &parts, &text);
-                    Asked { calls, failed: false, reason: String::new() }
-                }
-                Err(reason) => failed(reason),
-            }
+    ) {
+        Ok(sent) => sent,
+        // The ask itself failed. `cut_captions::retries` counts refusals of ANSWERS, so a wire failure spends
+        // none of them: a server that is not there answers the same way however often it is called.
+        Err(reason) => return failed(reason),
+    };
+    let reply = match llm_request::reply_from(&sent.content_type, &sent.body) {
+        Ok(reply) => reply,
+        Err(reason) => return failed(format!("{STEP}: {reason}")),
+    };
+    if reply.tool_calls.is_empty() {
+        // Round 1 answered in prose, which is the whole ask: read the document BEFORE anything is kept, so an
+        // unreadable reply leaves nothing in the cache and the retry goes to the wire rather than being served
+        // the answer that was just refused (§6).
+        let answer = reply.answer().to_string();
+        let calls = match parse_captions(&answer) {
+            Ok(calls) => calls,
+            Err(reason) => return failed(reason),
+        };
+        if !answer.trim().is_empty() {
+            llm_cache::store(tree, STEP, &parts, &answer);
         }
-        // The ask itself failed. `cut_captions::retries` counts refusals of ANSWERS, so a wire
-        // failure spends none of them: a server that is not there answers the same way however
-        // often it is called.
-        Err(reason) => failed(reason),
+        return Asked { calls, failed: false, reason: String::new() };
     }
+    // §2's loop from here: the clip batch is the state the tools write into, so a model that asks `get_frames`
+    // gets frames and a caption call lands in the same batch the prose document would have filled. The grown
+    // conversation rides on every later round (§2 S2), each with its own timed row -- rounds only happen because
+    // the model asked, so a plain answer still costs the one request above.
+    let mut batch = crate::clip_rules_tools_leg::batch_of(clips);
+    let messages = vec![
+        Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
+        Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },
+    ];
+    let mut calls_out: Vec<Call> = reply
+        .tool_calls
+        .iter()
+        .filter_map(|call| {
+            let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
+            call_of_args(&args)
+        })
+        .collect();
+    let looped = crate::clip_rules_tools_leg::run_over_batch(
+        STEP,
+        messages,
+        &offered,
+        &mut batch,
+        &mut |conversation, tools| {
+            let body = chat_body_conversation(&model, conversation, tools)?;
+            let sent = crate::llm_retry_leg::chat(
+                STEP,
+                tree,
+                &base,
+                &endpoint,
+                &body,
+                cancelled,
+                &crate::ui::window::log_line,
+            )?;
+            let round = llm_request::reply_from(&sent.content_type, &sent.body)
+                .map_err(|reason| format!("{STEP}: {reason}"))?;
+            // A round's own calls are part of the answer, not only of the conversation: F3.9 places every caption
+            // the model asked for, wherever in the rounds it asked.
+            calls_out.extend(round.tool_calls.iter().filter_map(|call| {
+                let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
+                call_of_args(&args)
+            }));
+            Ok(crate::tool_loop::Turn {
+                content: round.content.clone(),
+                calls: round.tool_calls.clone(),
+                finish: round
+                    .tool_calls
+                    .iter()
+                    .any(|call| call.name == Tool::Finish.name()),
+            })
+        },
+    );
+    for line in &looped.run.logs {
+        crate::ui::window::log_line(line);
+    }
+    if looped.run.outcome == crate::tool_loop::Outcome::Exhausted {
+        // §2 S4: the step gets no answer from this call. The wording is §2's own, not a paraphrase.
+        crate::ui::window::log_line(&crate::tools::exhausted_log(STEP));
+        return failed(crate::tools::exhausted_log(STEP));
+    }
+    // The answer is the call list. Prose beside it is the model talking, not asking: a round with calls is not an
+    // answer (§2), and an empty list after the rounds simply means the model asked for nothing.
+    if calls_out.is_empty() {
+        return Asked { calls: Vec::new(), failed: false, reason: String::new() };
+    }
+    Asked { calls: calls_out, failed: false, reason: String::new() }
 }
 
 /// The batch's word lines as clip-relative offsets: each word whose session second falls inside kept
@@ -205,43 +299,61 @@ fn wording(paths: Option<&Paths>, key: &str) -> String {
     }
 }
 
-/// The chat body: thinking on, and §3.7's two tools offered — `add_caption` for the work and
-/// `finish` to close the reply. Offering them is not decoration: §1 asks that a tool conversation
-/// sends the offer when the job has tools, and a model that is not told `add_caption` exists answers
-/// in prose about captions instead of asking for them.
-///
-/// `Job::ClipRules` is §3.7's job row (captions, speed and decorations share one state), so the
-/// offer is taken from the catalogue rather than written out here; the two this item names are then
-/// asserted present rather than assumed.
-fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
-    let offered = crate::tools::offered(Job::ClipRules);
-    let tools: Vec<Tool> = offered
-        .into_iter()
-        .filter(|tool| matches!(tool, Tool::AddCaption | Tool::Finish))
-        .collect();
-    let messages = vec![
-        Message {
-            role: "system".to_string(),
-            parts: vec![Part::Text(system.to_string())],
-        },
-        Message {
-            role: "user".to_string(),
-            parts: vec![Part::Text(user.to_string())],
-        },
-    ];
-    // §4: every chat call is streamed. The reader routes on the response's content type
-    // (`llm_request::reply_from`), so a fake that answers one JSON envelope is still read correctly.
-    let body = llm_request::body(model, &messages, Mode::Thinking, Some(&tools), true)?;
-    Ok(body.to_string())
+/// A `add_caption` call's arguments read as a caption: the same `{clip,start,end,text}` entry the prose document
+/// carries, so one rule decides both spellings.
+pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
+    let text = args.get("text").and_then(|text| text.as_str())?.to_string();
+    let number = |key: &str| {
+        args.get(key)
+            .and_then(|value| value.as_f64().or_else(|| value.as_str().and_then(|t| t.trim().parse::<f64>().ok())))
+    };
+    Some(Call {
+        clip: number("clip")?.max(1.0) as u32,
+        start: number("start")?,
+        end: number("end")?,
+        text,
+    })
 }
 
-/// The answer text out of a chat reply: `content`, never the reasoning. Routed by §1's rule — an
-/// event-stream body is read as chunks, anything else as one JSON envelope.
-fn answer_of(content_type: &str, reply: &str) -> String {
-    llm_request::reply_from(content_type, reply)
-        .map(|parsed| parsed.answer().to_string())
-        // Neither JSON nor a stream: nothing to place, which the caller reads as the batch failing.
-        .unwrap_or_default()
+/// The chat body for one round of a tool conversation: the grown message list beside the offer the loop was
+/// given (§2 S2's "append the assistant turn · one `tool` message per call"). The body carries `"stream": true`
+/// (§1), which `llm_request::body` sets for every mode.
+fn chat_body_conversation(
+    model: &str,
+    conversation: &[Message],
+    tools: &[Tool],
+) -> Result<String, String> {
+    Ok(llm_request::body(model, conversation, Mode::Thinking, Some(tools), true)?.to_string())
+}
+
+/// The timed row shape this ask's rounds write: `started` and `run` belong to whoever owns the run, and a step
+/// that stands alone leaves them blank (the same shape `llm_retry_leg::chat` fills in).
+fn base_row(model: &str) -> Request {
+    Request {
+        started: String::new(),
+        run: String::new(),
+        step: "cut".to_string(),
+        job: STEP.to_string(),
+        service: Service::Llm,
+        model: model.to_string(),
+        kind: "chat".to_string(),
+        ..Default::default()
+    }
+}
+
+/// The cache slot parts: the exact request, so an unchanged batch costs nothing and an edited prompt misses (§09 §10).
+fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
+    vec![
+        serde_json::Value::String(system.to_string()),
+        serde_json::Value::String(user.to_string()),
+        serde_json::Value::String(model.to_string()),
+        serde_json::Value::from(attempt),
+    ]
+}
+
+/// An ask that did not answer: F3.9's pass keeps its stumble and says why, rather than failing the cut.
+fn failed(reason: String) -> Asked {
+    Asked { calls: Vec::new(), failed: true, reason }
 }
 
 /// Read the CAPTIONS document the prompt specifies into the calls this pass places:
@@ -295,51 +407,4 @@ fn number(value: &serde_json::Value, key: &str) -> Option<f64> {
         serde_json::Value::String(text) => text.trim().parse::<f64>().ok(),
         _ => None,
     }
-}
-
-/// The deciding parts for one captions ask. The retry's slot rides in `state` — the texts, model and
-/// thinking flag are otherwise identical, and the slot is what keeps the two asks apart (§6).
-fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
-    let state = ask_slot(system, attempt);
-    let request = llm_cache::Request {
-        system,
-        user,
-        state: &state,
-        speech: "",
-        context: "",
-        images: Vec::new(),
-        run_index: None,
-        model,
-        thinking: true,
-    };
-    llm_cache::parts(&request)
-}
-
-/// A distinct cache slot per attempt of the same batch. The first ask uses the plain hash of the
-/// system text; each retry appends its number, so a retry keys elsewhere than the refusal it is
-/// retrying rather than reading that reply back out of the cache.
-fn ask_slot(system: &str, attempt: u32) -> String {
-    if attempt == 0 {
-        return system.to_string();
-    }
-    format!("{system}\u{21bb}{attempt}")
-}
-
-/// A `Request` carrying what only the caller knows, for the timed row `server_leg::call` writes.
-fn base_row(model: &str) -> Request {
-    Request {
-        started: String::new(),
-        run: String::new(),
-        step: "cut".to_string(),
-        job: STEP.to_string(),
-        service: Service::Llm,
-        model: model.to_string(),
-        kind: "chat".to_string(),
-        ..Default::default()
-    }
-}
-
-/// One failure answer, with the reason kept beside it for the log.
-fn failed(reason: String) -> Asked {
-    Asked { calls: Vec::new(), failed: true, reason }
 }
