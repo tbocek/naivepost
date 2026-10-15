@@ -444,6 +444,16 @@ where
     // §8's attempt state — thinking, web tools, and where the progress line last stood — carried as one thing
     // so no branch can update part of it and forget the rest.
     let mut call = crate::ui::cut_suggest_watch::Call::new();
+    // §2's firefox setting, read once for the whole run: it decides whether the web pair is offered at all, and
+    // the reason is said once per step however many attempts and rounds follow. An unset box means "find one on
+    // PATH", which is `web_browser::firefox_path`'s rule — so a machine with a browser still gets both tools.
+    let firefox = paths
+        .and_then(|paths| settings::read(paths).ok())
+        .map(|conf| conf.firefox)
+        .unwrap_or_default();
+    if !crate::llm_web_offer::availability(&firefox).0 {
+        call.with_web(false);
+    }
     // The replies this attempt received, refreshed by [`watch_reply`] on every dial. §8's progress and thinking
     // rules are both about the reply that just arrived, so they read this and nothing else.
     let last_reply = std::cell::RefCell::new(Vec::new());
@@ -472,6 +482,10 @@ where
         // §8: the web tools come off after the FIRST rejection, and the page is told they did.
         let (offered, withdrawn) = call.offer();
         logs.extend(withdrawn);
+        // §2: and a machine with no browser was told why, once, in §2's own words.
+        if let Some(line) = crate::llm_web_offer::unavailable_log(STEP, &firefox) {
+            logs.push(line);
+        }
         let mut plan = new_plan(&inputs, &walk, end, target);
         last_reply.borrow_mut().clear();
         let (_finished, ok, round_logs) =
@@ -610,9 +624,18 @@ pub fn live_ask<'a>(
     let endpoint = services::llm_endpoint(conf);
     let model = conf.model.clone();
     move |conversation: &[Message], offered: &[Tool]| {
-        let body = llm_request::body(&model, conversation, Mode::Thinking, Some(offered), true)?
-            .to_string();
-        let (content_type, reply) = dial(tree, &model, &endpoint, &body)?;
+        // §2 S5: the cut's own ask honours a refusal of the `tools` field like every other tool flow, so one
+        // refusing server costs a log line and a bare resend rather than the whole step.
+        let (content_type, reply) = crate::llm_tool_refusal_leg::dial_honouring_refusal(
+            STEP,
+            &endpoint.url,
+            Some(offered),
+            &|offer| {
+                Ok(llm_request::body(&model, conversation, Mode::Thinking, offer, true)?.to_string())
+            },
+            &|body| dial(tree, &model, &endpoint, body),
+            &crate::ui::window::log_line,
+        )?;
         let parsed = llm_request::reply_from(&content_type, &reply).map_err(|why| unreadable(&why))?;
         let finishing = parsed
             .tool_calls

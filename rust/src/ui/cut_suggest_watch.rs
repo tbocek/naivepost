@@ -53,11 +53,23 @@ impl Call {
         self.thinking
     }
 
-    /// The tools this attempt is offered: the job's set with the web pair removed once something has been
-    /// rejected. Removing rather than re-deriving matters — the five cut tools stay offered whatever happens,
-    /// because the model cannot build a cut without them.
+    /// Start the run with the web tools absent, because this machine has no browser to drive (§2). `offer` keeps
+    /// them out of every attempt after that and says nothing: they were never offered, so there is nothing for
+    /// §8's withdrawal line to report. The filesystem question belongs to the flow that reads the settings
+    /// ([`crate::llm_web_offer`]), not to this per-attempt state.
+    pub fn with_web(&mut self, web: bool) {
+        self.web = web;
+    }
+
+    /// The tools this attempt is asked with: the job's set, minus the web pair once something has been rejected
+    /// (§8). Removing rather than re-deriving matters — the five cut tools stay offered whatever happens, because
+    /// the model cannot build a cut without them.
     pub fn offer(&mut self) -> (Vec<Tool>, Option<String>) {
         let mut offered = crate::tools::offered(crate::roles::Job::ModelCut);
+        if !self.web {
+            // No browser on this machine (§2, via [`Call::with_web`]): keep the web rows out silently.
+            offered.retain(|tool| !crate::tools::is_web_tool(*tool));
+        }
         if self.web && !cut_suggest::offers_web(self.rejections) {
             self.web = false;
             offered.retain(|tool| !crate::tools::is_web_tool(*tool));

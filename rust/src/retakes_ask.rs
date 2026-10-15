@@ -249,16 +249,27 @@ pub fn ask_run(
     let mut final_body: Option<String> = None;
     let mut named = 0usize;
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
-        let body = llm_request::body(&conf.model, conversation, Mode::Execute, Some(tools), true)?
-            .to_string();
         let base = crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "retakes");
-        let sent = crate::llm_retry_leg::chat(
+        // §2 S5: a server that refuses the `tools` field is asked again without it, once, and never offered the
+        // field again — the same door the fixer and the cut use, so no step re-logs the refusal per attempt.
+        let sent = crate::llm_tool_refusal_leg::dial_honouring_refusal(
             STEP,
-            tree,
-            &base,
-            &endpoint,
-            &body,
-            &crate::cancel_leg::cancel_check_now(),
+            &endpoint.url,
+            Some(tools),
+            &|offer| {
+                Ok(llm_request::body(&conf.model, conversation, Mode::Execute, offer, true)?.to_string())
+            },
+            &|body| {
+                crate::llm_retry_leg::chat(
+                    STEP,
+                    tree,
+                    &base,
+                    &endpoint,
+                    body,
+                    &crate::cancel_leg::cancel_check_now(),
+                    &crate::ui::window::log_line,
+                )
+            },
             &crate::ui::window::log_line,
         )?;
         let reply = llm_request::reply_from(&sent.content_type, &sent.body)
