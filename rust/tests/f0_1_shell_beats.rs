@@ -80,14 +80,28 @@ fn check_autosave_beat(app: &adw::Application) {
     let entry = line_entry(&window, 0);
     assert_eq!(entry.text(), BEFORE, "the box starts from the file");
     entry.set_text(typed);
-    step_past_beat();
+    step_past_beat(&tree);
     assert!(typed_written(&tree, "half-typed"), "the timer wrote on the beat; the box says {:?}", entry.text());
     let _ = std::fs::remove_dir_all(&dir);
 }
-/// Past the beat in short steps, running the loop: the standing timer's `writable` answer decides the write.
-fn step_past_beat() {
+/// Past the beat, running the loop: the standing timer's `writable` answer decides the write.
+///
+/// The clock jumps in ONE step to well past the deadline rather than in 32 exact-sized steps: a glib timeout
+/// fires on REAL elapsed time, so with thirty-two `AUTOSAVE / 32` hops the deadline can sit just ahead of the
+/// real clock at every hop and `writable` answers "not yet" each time — which is how this test came to fail
+/// sometimes. One overshoot makes the due check true the first time the timer runs, whatever the wall clock did.
+/// Then the loop is driven until the file says so, bounded so a broken writer fails the assert below instead of
+/// parking the test thread forever (`iteration(true)` blocks when nothing is ready).
+fn step_past_beat(tree: &Tree) {
     let ctx = glib::MainContext::default();
-    for _ in 0..32 { ui::shell_beats::advance_clock_for_test(NARRATION_AUTOSAVE / 32); ctx.iteration(true); }
+    ui::shell_beats::advance_clock_for_test(NARRATION_AUTOSAVE * 2);
+    for _ in 0..64 {
+        ctx.iteration(false);
+        if typed_written(tree, "half-typed") {
+            return;
+        }
+        ctx.iteration(true);
+    }
 }
 /// The row's live box; setting its text is what makes `changed` run, as a keystroke does.
 fn line_entry(window: &adw::ApplicationWindow, index: usize) -> gtk::Entry {
