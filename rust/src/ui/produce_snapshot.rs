@@ -55,8 +55,7 @@ impl Snapshot {
         self.cut.aspect.clone()
     }
 
-    /// Seconds of footage still there past the end of `seg` — F4.3's "grow the clip, ≤ 4 s, NEVER PAST
-    /// THE FOOTAGE" bound. A clip in no filmed run, or a session with no tape, answers through
+    /// Seconds of footage still there past the end of `seg` — F4.3's "grow the clip, ≤ 4 s, NEVER PAST    /// THE FOOTAGE" bound. A clip in no filmed run, or a session with no tape, answers through
     /// [`crate::produce_render::unknown_footage`]: unknown is not the same as zero.
     pub fn footage_left(&self, seg: &crate::cut::Seg) -> f64 {
         let covering = self
@@ -212,6 +211,9 @@ pub fn render_half(
             // be a second, worse opinion about the same track.
             cues: crate::produce_exec::Cues {
                 languages: run.settings.translate.clone(),
+                // §1's "own language never translated" needs the name to be knowable here: the page has hidden
+                // its tick, so only the render can catch a setting that still carries it.
+                session_language: crate::ui::window::live_project().language,
                 ..Default::default()
             },
             // S1 (§F5.4): the clip's own speech, off the session word list gathered at the press; the
@@ -253,6 +255,24 @@ pub fn render_half(
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_else(|| clip.source.clone()),
                 )
+            },
+            // §6 bullet 1's doors: the filmed spans this snapshot already gathered (the same list
+            // `footage_left` reads), and the name a clip's base goes by — the footage row's for footage and a
+            // `copy:` stretch, the asset's own for an insert, since §6's "<base>" is a name a person reads.
+            filmed_runs: &snap.filmed_runs,
+            base_of: &|seg: &crate::cut::Seg| {
+                let path = if seg.ins.is_empty() || seg.ins.starts_with("copy:") {
+                    snap.sources
+                        .iter()
+                        .find(|src| src.footage)
+                        .map(|src| src.path.clone())
+                        .unwrap_or_default()
+                } else {
+                    seg.insert_asset(&root, &root)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| seg.ins.clone())
+                };
+                crate::cut_insert::base_name(&path)
             },
         },
         crate::ui::window::log_line,

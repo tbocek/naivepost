@@ -115,3 +115,11 @@ pub fn flat_png_for_test(path: &Path, wide: u32, high: u32, shade: f64) -> Resul
     }
     write_png(&surface, path)
 }
+
+/// The shape a PNG on disk actually has, read back through the same decoder the print pass uses. A test that
+/// asks "did the crop land on the video's shape?" needs the file's own edges, not what was asked of ffmpeg.
+/// TEST seam only: every program path that needs a picture's shape goes through cairo or ffprobe itself.
+pub fn png_shape_for_test(path: &Path) -> Option<(u32, u32)> {
+    let surface = read_png(path).ok()?;
+    Some((surface.width().max(0) as u32, surface.height().max(0) as u32))
+}

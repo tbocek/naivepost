@@ -219,3 +219,107 @@ fn sec_06_effects_6_parameters_used_s5_each_row_names_the_module_that_reads_it()
     assert_eq!(naivepost::fx_svg::PREVIEW_RASTER_PX, 512.0);
     assert_eq!(params::effects().len().cmp(&0), std::cmp::Ordering::Greater);
 }
+
+/// §6's minRate / maxRate / rampStepSeconds / minClipSeconds on the path a RENDER walks: the clip list ffmpeg is
+/// given comes from `cut_speed_split::sped_segs`, which `produce_exec::plan` calls before it plans a single clip,
+/// so these four numbers decide how many clips there are and what each one runs at.
+#[test]
+fn sec_06_effects_6_parameters_used_s6_the_speed_bounds_reach_the_clip_list_the_encoder_gets() {
+    use naivepost::cut_speed_split as split;
+    let seg = naivepost::cut::Seg { s: 0.0, e: 40.0, ..Default::default() };
+
+    // (a) A rate past P.eng.maxRate reaches the clip list INSIDE the bound: `steps_of` clamps before any stair is
+    // counted, so no piece can carry the absurd ask onward to `setpts`.
+    let wild = split::sped_segs(
+        std::slice::from_ref(&seg),
+        &[speed(0.0, 20.0, 500.0, 0.0)],
+    );
+    assert!(!wild.is_empty(), "a sped scene still yields clips");
+    for piece in &wild {
+        if piece.rate > 0.0 {
+            assert!(
+                (cut_speed::MIN_RATE..=cut_speed::MAX_RATE).contains(&piece.rate),
+                "piece rate {} escaped P.eng.minRate..=maxRate", piece.rate
+            );
+        }
+    }
+    // The clamp really did move this ask, rather than the number being harmless anyway.
+    assert!(
+        wild.iter().any(|p| p.rate > 0.0 && p.rate <= cut_speed::MAX_RATE),
+        "the sped pieces carry a clamped rate: {:?}", wild.iter().map(|p| p.rate).collect::<Vec<_>>()
+    );
+
+    // (b) P.eng.rampStepSeconds decides how many constant-rate stretches a ramp becomes: every stair must hold on
+    // screen for that long, so a long ramp cuts the scene into more clips than the same rate with no ramps.
+    let ramped = split::sped_segs(std::slice::from_ref(&seg), &[speed(0.0, 30.0, 8.0, 9.0)]);
+    let flat = split::sped_segs(std::slice::from_ref(&seg), &[speed(0.0, 30.0, 8.0, 0.0)]);
+    assert!(
+        ramped.len() > flat.len(),
+        "a ramped speed cuts more clips than a flat one: {} vs {}", ramped.len(), flat.len()
+    );
+    // Each stair is at least RAMP_STEP_SECONDS on screen — that is the rule the count obeys.
+    for piece in &ramped {
+        let seconds = (piece.e - piece.s) / cut_speed::applied_rate(piece.rate).max(cut_speed::MIN_RATE);
+        assert!(
+            seconds + 1e-9 >= cut_speed::RAMP_STEP_SECONDS || piece.rate == 0.0,
+            "a stair shorter than P.eng.rampStepSeconds reached the clip list: {piece:?}"
+        );
+    }
+
+    // (c) P.eng.minClipSeconds owns the drop of a sliver: a span thinner than the floor where it meets a scene
+    // border is not encoded, and the number that said so is the render's own shortest-clip constant.
+    assert_eq!(naivepost::tools::cutpass::MIN_CLIP_SECONDS, 0.5);
+    let sliver = split::sped_segs(
+        std::slice::from_ref(&naivepost::cut::Seg { s: 0.0, e: 10.0, ..Default::default() }),
+        &[speed(9.8, 0.1, 4.0, 0.0)],
+    );
+    for piece in &sliver {
+        let on_screen = (piece.e - piece.s) / cut_speed::applied_rate(piece.rate).max(cut_speed::MIN_RATE);
+        assert!(
+            on_screen + 1e-9 >= naivepost::tools::cutpass::MIN_CLIP_SECONDS,
+            "a piece under P.eng.minClipSeconds survived the split: {piece:?} ({on_screen} s)"
+        );
+    }
+    // And the same door leaves an un-sped cut alone, piece for piece: the splits are the speed effects' doing.
+    let untouched = split::sped_segs(std::slice::from_ref(&seg), &[]);
+    assert_eq!(untouched.len(), 1, "no speed effect, no split");
+    assert_eq!(untouched[0].rate, 0.0, "unstamped means plain footage");
+}
+
+/// §6's maxGain (10) on the encode path: `produce_fx_chain::for_clip` is what builds one clip's filter text, and
+/// its audio chain is spliced straight into the command (`produce_render.rs` extends the chain with `built.audio`).
+/// So the ceiling has to be inside THAT text, not only inside the preview's mix.
+#[test]
+fn sec_06_effects_6_parameters_used_s7_max_gain_reaches_the_encode_filter() {
+    let scratch = std::env::temp_dir().join(format!("np-06e6-gain-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).unwrap();
+    let fx = vec![volume(0.0, 4.0, 99.0)];
+    let clip = naivepost::produce_render::Clip {
+        no: 1,
+        seg_s: 0.0,
+        on_screen: 4.0,
+        rate: 1.0,
+        frame: (1920, 1080),
+        src: (1920, 1080),
+        fx: fx.clone(),
+        scratch: scratch.clone(),
+        ..Default::default()
+    };
+    let built = naivepost::produce_fx_chain::for_clip(&clip, &fx, clip.src, &scratch);
+    let audio = built.audio.join(",");
+    assert!(audio.contains("volume="), "the clip's audio chain carries the volume filter: {audio}");
+    assert!(
+        audio.contains(&format!("{:.4}", fx_record::gain_ceiling() - 1.0)),
+        "the multiplier ffmpeg is asked for is the ceiling minus unity: {audio}"
+    );
+    assert!(!audio.contains("98.0000"), "an ask over the ceiling must not reach the filter: {audio}");
+    // Silence stays silence through the same door: 0 is 0, not the floor of a clamp.
+    let quiet_fx = vec![volume(0.0, 4.0, 0.0)];
+    let quiet_clip = naivepost::produce_render::Clip { fx: quiet_fx.clone(), ..clip.clone() };
+    let quiet = naivepost::produce_fx_chain::for_clip(&quiet_clip, &quiet_fx, clip.src, &scratch);
+    let cues = render_fx::all_gain_cues(&quiet_fx, 0.0, 1.0, 4.0);
+    assert_eq!(cues.len(), 1, "a hush is still a cue");
+    assert_eq!(cues[0].gain, 0.0, "P.eng.maxGain clamps the top, never the bottom");
+    assert!(!quiet.audio.is_empty(), "the hush reaches the audio chain too");
+    let _ = std::fs::remove_dir_all(&scratch);
+}

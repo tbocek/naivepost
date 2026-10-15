@@ -25,6 +25,12 @@ use naivepost::produce_stamp as stamp;
 use naivepost::produce_subtitles as subs;
 use naivepost::cut::Seg;
 use naivepost::project::{self, Container, Produce, Resolution, TitleBox};
+use adw::prelude::*;
+use gtk4 as gtk;
+use naivepost::shell::Page;
+use naivepost::ui;
+#[allow(dead_code)]
+mod common;
 
 const ITEM: &str = "§08-produce#4-parameters-used";
 
@@ -433,6 +439,13 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
             "P.eng.publishMaxFrames",
         // F5.6 S1's upload-brief bound, catalogued where the brief reads it.
         "P.machine.briefMaxChars",
+            // §4's engineering sentence: values §10 keeps in prose, so each takes the bare `produce.` prefix
+            // AGENT.md gives a value with no `P.` id, and spells itself out of its rule's own constant.
+            "produce.exportLadder",
+            "produce.posterJPEGQuality",
+            "produce.sdWaitSeconds",
+            "produce.seekBeforeInput",
+            "produce.mp4StreamFlags",
         ]
     );
     // §10's spelling won: the F5.7 round's invented id is gone rather than kept beside it.
@@ -446,18 +459,337 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
         ("produce_runs", include_str!("../src/produce_runs.rs")),
         ("produce_render", include_str!("../src/produce_render.rs")),
         ("produce_screen", include_str!("../src/produce_screen.rs")),
+        // The engineering rows name the module their rule lives in, not `params_produce`, which only spells.
+        ("produce_embed", include_str!("../src/produce_embed.rs")),
+        ("bodies", include_str!("../src/bodies.rs")),
     ];
     for param in params::produce() {
         assert!(!param.spelled.is_empty(), "{} catalogued with no value", param.id);
-        let Some((module, name)) = param.from.split_once("::") else {
+        // A row may name several homes of one rule (`mod::A + mod2::B`), so every `+`-separated half is
+        // checked on its own; the split here only decides whether the row names a home at all.
+        if !param.from.contains("::") {
             // A row built from a default's field (`project::Produce::default — game_volume`) is allowed to
             // name the field rather than a constant; it still has to say which field.
             assert!(param.from.contains(' '), "{} names no home", param.id);
             continue;
-        };
-        let Some((_, text)) = files.iter().find(|(file, _)| *file == module) else {
-            continue; // project:: and tools:: live outside this section's own files
-        };
-        assert!(text.contains(name), "{} names {} which {} does not hold", param.id, name, module);
+        }
+        // Each `+`-separated half names its own module and constant, and both must be real.
+        let mut homes: Vec<(String, String)> = Vec::new();
+        for half in param.from.split('+') {
+            let half = half.trim();
+            let Some((module, name)) = half.split_once("::") else { continue };
+            homes.push((module.to_string(), name.trim().to_string()));
+        }
+        for (module, name) in homes {
+            let Some((_, text)) = files.iter().find(|(file, _)| *file == module) else {
+                continue; // project:: and tools:: live outside this section's own files
+            };
+            assert!(text.contains(&name), "{} names {}::{} which {module} does not hold", param.id, module, name);
+        }
     }
+}
+
+// ---- S10/S11: §4's engineering sentence, each row backed by the rule it spells ---------------------
+
+/// A stamp input over `settings` with everything else empty: enough for the settings group to be the only
+/// thing two stamps differ on.
+fn stamp_input<'a>(settings: &'a Produce, segs: &'a [Seg], sources: &'a [project::Source]) -> stamp::Input<'a> {
+    stamp::Input {
+        settings,
+        segs,
+        lines: &[],
+        sources,
+        aspect: "",
+        voice: "",
+        no_narration: false,
+        fx: &[],
+        lanes: &[],
+        shape: (1920, 1080),
+    }
+}
+
+fn no_facts(_: &std::path::Path) -> (u64, u64) {
+    (10, 20)
+}
+fn no_wav(_: &naivepost::narration::Entry) -> Option<std::path::PathBuf> {
+    None
+}
+
+#[test]
+fn sec_08_produce_4_parameters_used_s10_the_export_ladder_and_the_poster_quality_have_rows() {
+    assert_eq!(ITEM, "§08-produce#4-parameters-used");
+    // The export ladder: every rung is what `produce_runs::JPEG_QUALITIES` holds, joined best first, so a rung
+    // added or reordered moves the row instead of hiding from it.
+    let ladder = row("produce.exportLadder");
+    // Every rung appears, best first, and the ones whose failure the export reports are the ones
+    // `jpeg_target` would name — so a reordered or added rung moves this row instead of hiding from it.
+    for rung in runs::JPEG_QUALITIES {
+        assert!(ladder.spelled.contains(&rung.to_string()), "{} omits {rung}", ladder.spelled);
+    }
+    let order = runs::JPEG_QUALITIES;
+    let mut at = 0usize;
+    for rung in &order {
+        let found = ladder
+            .spelled
+            .find(&rung.to_string())
+            .unwrap_or_else(|| panic!("{} lacks {rung}", ladder.spelled));
+        assert!(found >= at, "the ladder must read best first: {}", ladder.spelled);
+        at = found;
+    }
+    assert_eq!(ladder.from, "produce_runs::JPEG_QUALITIES + JPEG_RETRY_LIMIT");
+    // And the poster: the requirement and the `-q:v` rung ffmpeg is sent, both named constants.
+    let poster = row("produce.posterJPEGQuality");
+    assert_eq!(
+        poster.spelled,
+        format!("{} (-q:v {})", embed::POSTER_JPEG_QUALITY, embed::POSTER_QSCALE)
+    );
+    assert_eq!(poster.from, "produce_embed::POSTER_JPEG_QUALITY + POSTER_QSCALE");
+    // Exactly one row each: a second spelling would be a second opinion about one number.
+    for id in ["produce.exportLadder", "produce.posterJPEGQuality"] {
+        assert_eq!(params::produce().into_iter().filter(|p| p.id == id).count(), 1, "{id} twice");
+    }
+}
+
+#[test]
+fn sec_08_produce_4_parameters_used_s11_the_sd_wait_and_the_command_rules_have_rows() {
+    assert_eq!(ITEM, "§08-produce#4-parameters-used");
+    use naivepost::bodies::sd_waits;
+    use naivepost::services::Kind;
+    // sd.cpp's waits are read back out of the function the drawing legs call — never retyped here — so the row
+    // cannot quote a deadline the code stopped setting. Each kind's seconds must appear in the spelling.
+    let waits = row("produce.sdWaitSeconds");
+    assert_eq!(waits.from, "bodies::sd_waits");
+    for kind in [Kind::Capabilities, Kind::SubmitImage, Kind::PollImage, Kind::CancelImage] {
+        let wait = sd_waits(kind).unwrap_or_else(|| panic!("{kind:?} has no sd.cpp wait"));
+        assert!(
+            waits.spelled.contains(&format!("{}s", wait.timeout.as_secs())),
+            "{} omits {kind:?}'s {}s timeout",
+            waits.spelled,
+            wait.timeout.as_secs()
+        );
+        if let Some(gap) = wait.interval {
+            assert!(waits.spelled.contains(&format!("every {}s", gap.as_secs())), "{}", waits.spelled);
+        }
+    }
+    // Input ordering: the row says `-ss before -i`, and a real encode command obeys it.
+    let seek = row("produce.seekBeforeInput");
+    assert_eq!(seek.spelled, "-ss before -i");
+    let clip = render::Clip { no: 2, seg_s: 40.5, on_screen: 5.0, rate: 1.0, ..Default::default() };
+    let argv = render::encode_command(&clip, &settings(), &[("picture", Some("media/take.mkv"))], None, std::path::Path::new("produce/final.mp4"));
+    let ss = argv.iter().position(|a| a == "-ss").expect("a clip starting at 40.5 s carries -ss");
+    let input = argv.iter().position(|a| a == "-i").expect("and an input");
+    assert!(ss < input, "{argv:?}");
+    // The faststart flags: mp4's only, and the row lists exactly what the mux appends.
+    let flags = row("produce.mp4StreamFlags");
+    assert_eq!(flags.from, "produce_render::MP4_STREAM_FLAGS + MP4_START_FLAGS");
+    let (video, audio, out) = (
+        std::path::Path::new("produce/video.mp4"),
+        std::path::Path::new("produce/audio.m4a"),
+        std::path::Path::new("produce/final.mp4"),
+    );
+    let mp4 = render::mux_command(video, audio, &[], &settings(), out).join(" ");
+    for flag in flags.spelled.split(' ') {
+        assert!(mp4.contains(flag), "{flag} from the row is missing from {mp4}");
+    }
+    for container in [Container::Mkv, Container::Webm] {
+        let mut other = settings();
+        other.container = container;
+        let line = render::mux_command(video, audio, &[], &other, out).join(" ");
+        assert!(!line.contains("faststart"), "{container:?} carries none: {line}");
+        assert!(!line.contains("use_editlist"), "{line}");
+    }
+}
+
+// ---- S12: §6's legacy `produce` keys, folded into the settings the catalogue spells -----------------
+
+/// Write a project file whose `produce` block is exactly `block`, and load it back through the program's door.
+fn load_with(dir: &std::path::Path, block: &str) -> (project::Project, Vec<String>) {
+    std::fs::create_dir_all(dir).expect("the project folder can be made");
+    std::fs::write(
+        dir.join(project::PROJECT_FILE),
+        format!(r#"{{"sources": [], "produce": {block}}}"#),
+    )
+    .expect("the project file is written");
+    project::load_report(dir).expect("a legacy key must never fail a load")
+}
+
+#[test]
+fn sec_08_produce_4_parameters_used_s12_the_project_encoder_settings_survive_a_legacy_load() {
+    assert_eq!(ITEM, "§08-produce#4-parameters-used");
+    let root = std::env::temp_dir().join(format!("np-sec084-legacy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+
+    // All four legacy spellings at once (§08 §6): sidecar subs become "none in the video", `subs_from` is
+    // dropped, a stored 0 means silence rather than the default, and `bare` is the negation of blurred edges.
+    let (loaded, notes) = load_with(
+        &root,
+        r#"{"subs": "sidecar", "subs_from": "narration", "game_vol": 0.0, "bare": true}"#,
+    );
+    assert_eq!(loaded.produce.subtitles, project::Subtitles::None, "\"sidecar\" is \"none in the video\"");
+    assert_eq!(loaded.produce.game_volume, 0.0, "a stored 0 is silence, not the 0.22 default");
+    assert!(!loaded.produce.blurred_edges, "`bare: true` means the edges are left bare");
+    // Nothing was folded in silently: each key says what it became.
+    for said in ["sidecar", "subs_from", "game_vol", "bare"] {
+        assert!(notes.iter().any(|note| note.contains(said)), "{said} folded without a note: {notes:?}");
+    }
+
+    // Absent `game_vol` keeps §4's default — the same number `P.policy.gameVolume` spells — which is the
+    // distinction serde alone could not make.
+    let (plain, plain_notes) = load_with(&root, r#"{"crf": 20}"#);
+    let default_volume = number("P.policy.gameVolume");
+    assert_eq!(plain.produce.game_volume, default_volume, "absent means the default {default_volume}");
+    assert_eq!(plain.produce.crf, 20, "and the current keys still arrive");
+    assert!(plain_notes.is_empty(), "a project with no legacy key says nothing: {plain_notes:?}");
+
+    // A stored value that is not zero arrives as itself, and the fold is reported.
+    let (stored, stored_notes) = load_with(&root, r#"{"game_vol": 0.4}"#);
+    assert_eq!(stored.produce.game_volume, 0.4);
+    assert!(stored_notes.iter().any(|note| note.contains("game_vol")), "{stored_notes:?}");
+
+    // An unknown `subs` spelling is refused in words rather than guessed at, and the load still succeeds.
+    let (_, odd_notes) = load_with(&root, r#"{"subs": "burned"}"#);
+    assert!(odd_notes.iter().any(|note| note.contains("ignored")), "{odd_notes:?}");
+
+    // And the fold is stable: re-saving what loaded and loading again changes nothing — silence stays silence
+    // rather than drifting back to the default behind the person's back.
+    let saved = root.join("again.naivepost");
+    project::save(&loaded, &saved).expect("the loaded project saves");
+    let (again, again_notes) = project::load_report(&saved).expect("and reloads");
+    assert_eq!(again.produce, loaded.produce, "a round trip is byte-for-byte the same settings");
+    assert_eq!(again.produce.game_volume, 0.0, "silence survived the save");
+    assert!(again_notes.is_empty(), "the second load had nothing left to fold: {again_notes:?}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+// ---- S13: the widget leg -- a press on a settings control reaches the state the rows spell ----------
+
+thread_local! {
+    static WIDGET_APP: std::cell::RefCell<Option<adw::Application>> = const { std::cell::RefCell::new(None) };
+}
+static WIDGET_FAIL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn produce_page(app: &adw::Application) -> adw::ApplicationWindow {
+    common::release_last_window();
+    let model = project::load(&common::fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, Page::Produce.label());
+    common::hold_last_window(window.clone());
+    window.present();
+    common::settle();
+    window
+}
+
+/// Move the CRF scale and tick a tick the way the toolkit does, then check what the page holds and what the
+/// render hashes: the row's numbers are only worth cataloguing if a change to them makes a different video.
+fn check_settings_wire(root: &std::path::Path) {
+    std::env::set_current_dir(root).expect("cwd pinned for the session lookup");
+    let app = WIDGET_APP.with(|held| held.borrow().clone()).expect("the round published the application");
+    let window = produce_page(&app);
+    // Seed the rows so the page starts where §A's defaults say it does.
+    let mut state = ui::produce_page::read_state();
+    for (name, value) in screen::defaults() {
+        match name {
+            "Quality (CRF)" => state.crf = value.parse().expect("crf parses"),
+            "Game audio" => state.game_volume = value.parse().expect("volume parses"),
+            _ => (),
+        }
+    }
+    state.mono = false;
+    ui::produce_page::set_state(state);
+    ui::produce_page::refresh(&window);
+    common::settle();
+
+    let before = ui::produce_page::read_state();
+    assert_eq!(before.crf, 24.0, "the row starts at §A's default");
+    assert!(!before.mono, "and mono starts unticked");
+
+    // The CRF scale: set its value and fire the signal a drag fires.
+    let scale = common::widget_in(&window, &ui::produce_page::row_widget("Quality (CRF)"))
+        .expect("the page drew the CRF scale")
+        .downcast::<gtk::Scale>()
+        .expect("the CRF row is a scale");
+    scale.set_value(19.0);
+    scale.emit_by_name::<()>("value-changed", &[]);
+    common::settle();
+
+    // The Channels tick: toggled, not poked.
+    let tick = common::widget_in(&window, "tick-mono")
+        .expect("the page drew the mono tick")
+        .downcast::<gtk::CheckButton>()
+        .expect("Channels is a tick");
+    tick.set_active(true);
+    tick.emit_by_name::<()>("toggled", &[]);
+    common::settle();
+
+    let after = ui::produce_page::read_state();
+    assert_eq!(after.crf, 19.0, "the scale's value reached the page's state");
+    assert!(after.mono, "and so did the tick");
+    assert_eq!(after.game_volume, before.game_volume, "untouched rows keep their value");
+
+    // The point of cataloguing them: these settings are what the render hashes, so the video goes stale.
+    let segs = vec![Seg::default()];
+    let sources = vec![project::Source::default()];
+    let held = |state: &ui::produce_page::ProduceState| Produce {
+        crf: state.crf as u32,
+        mono: state.mono,
+        game_volume: state.game_volume,
+        ..Produce::default()
+    };
+    let facts = no_facts;
+    let wav = no_wav;
+    let held_before = held(&before);
+    let held_after = held(&after);
+    let old = stamp_input(&held_before, &segs, &sources);
+    let new = stamp_input(&held_after, &segs, &sources);
+    assert_ne!(
+        old.stamp_of(wav, facts),
+        new.stamp_of(wav, facts),
+        "a CRF and a tick changed, yet the render would still call the video up to date"
+    );
+    let named = old
+        .parts_named(wav, facts)
+        .into_iter()
+        .map(|(part, _)| part)
+        .collect::<Vec<_>>();
+    assert!(named.contains(&"settings"), "{named:?}");
+    window.close();
+    common::settle();
+}
+
+fn widget_round(app: &adw::Application) {
+    WIDGET_APP.with(|held| *held.borrow_mut() = Some(app.clone()));
+    let root = std::env::current_dir().expect("cwd pinned before the run").join("wire");
+    std::fs::create_dir_all(&root).unwrap();
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check_settings_wire(&root)));
+    if outcome.is_err() {
+        *WIDGET_FAIL.lock().unwrap() =
+            Some("the settings controls did not reach the page's state and the render's stamp".to_string());
+    }
+    let app = app.clone();
+    glib::idle_add_local(move || {
+        app.quit();
+        glib::ControlFlow::Break
+    });
+}
+
+#[test]
+fn sec_08_produce_4_parameters_used_s13_the_page_holds_the_settings_the_catalogue_spells() {
+    assert_eq!(ITEM, "§08-produce#4-parameters-used");
+    let root = std::env::temp_dir().join(format!("np-sec084-wire-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp root created");
+    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
+
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let app = adw::Application::builder()
+            .application_id(ui::APP_ID)
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.connect_activate(widget_round);
+        app.run_with_args(&["naivepost"]);
+    });
+
+    let failure = WIDGET_FAIL.lock().unwrap().take();
+    std::fs::remove_dir_all(&root).ok();
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
 }

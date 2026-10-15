@@ -5,14 +5,13 @@
 //! F5.7 lives here too: [`legs`] builds the six presses' injected legs from the page's held state and the
 //! scripted seams this module already owns, so a redraw and the run's own words half draw with the SAME legs
 //! and cannot disagree about what was sent.
-//! and the render's spawner seam. Split out of `produce_page` because that file is at its size budget;
-//! `wire_settings` calls [`wire_ticks`] and `finish_produce` passes [`spawn`] to the render.
 
 use adw::prelude::*;
 use gtk4 as gtk;
 use std::rc::Rc;
 
 use crate::produce_screen as screen;
+use crate::project::TitleBox;
 use crate::ui::produce_page::ProduceState;
 
 /// What a tick hands back to the page: `guarded` reads the repaint guard, `changed` records the tick.
@@ -78,15 +77,186 @@ pub fn spawn(command: &crate::produce_exec::Command) -> Result<(), String> {
 ///
 /// Every rule lives in [`crate::produce_upload`]; this gathers what the session folder holds and hands the
 /// walk its legs. Nothing here decides an order, prints a spec sentence or spawns anything itself.
+/// A source's prepare folder is filed under its base name without the extension; the inverse of
+/// `produce_languages::source_stem`'s rule, kept here so a page leg can list frames from a source path.
+fn stem_of(path: &str) -> String {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    base.rsplit_once('.').map_or(base, |(stem, _)| stem).to_string()
+}
+
+/// The legs the words half drives, built from the run's own snapshot: `tree` for the folders, `run` for the
+/// cut the frames are mapped through. Lives in `produce_languages` because every piece it reads is already
+/// this module's (`extracted_frames`, `starts_of`, the seams below). The legs are OWNED here and moved into
+/// an [`Owned`] so the walk can be handed one borrowing them, rather than this function returning references
+/// to values that die with it.
+pub fn upload_legs(
+    tree: &crate::layout::Tree,
+    run: &crate::produce_flow::Run,
+) -> Owned {
+    // S6's size question has one answer in the app: the cut's aspect at long side 1280.
+    let (wide, high) = crate::produce_upload::frame_size_from_aspect(&run.aspect);
+    let publish = publish_of_run(run);
+    // Each media leg carries its own copy of the folder and the frame list: two closures cannot share one
+    // moved value, and both must read the same snapshot taken at the press.
+    let tree_draw = tree.clone();
+    let tree_own = tree.clone();
+    let frames = std::rc::Rc::new(frame_images(tree, run));
+    let frames_own = std::rc::Rc::clone(&frames);
+    Owned {
+        save_publish: Box::new({
+            let tree = tree.clone();
+            move |next: &crate::project::Publish| save_publish(&tree, next)
+        }),
+        ask_model: Box::new(|_| Ok(String::new())),
+        ask_draw: draw_leg(),
+        poll: poll_leg(),
+        save_picture: Box::new(save_drawn),
+        print: print_leg(title_band_of(&publish)),
+        nearest_frame: Box::new({
+            let tree = tree.clone();
+            let run = run.clone();
+            move |at: f64| nearest_frame(&tree, &run, at)
+        }),
+        spread_frames: Box::new({
+            let segs = run.cut.segs.clone();
+            move || crate::produce_upload_frames::spread_rows(&segs)
+        }),
+        stored_stamp: read_picture_stamp(tree),
+        write_stamp: Box::new({
+            let tree = tree.clone();
+            move |hash: &str| write_picture_stamp(&tree, hash)
+        }),
+        // The picture is the user's own once they hold a frame or have written an edit instruction of their
+        // own; until then a title change reprints (S5).
+        edited_by_hand: publish.own || !publish.prompt.trim().is_empty(),
+        // S3/S6: the row's entries rendered as the pictures they name. The crop size travels with the leg,
+        // because the size is decided once per press (S6: the video's aspect at long side 1280) and must not
+        // be recomputed differently by the two doors that ask.
+        request_images: Box::new(move |publish: &crate::project::Publish| {
+            crate::produce_upload_media::request_images(
+                &tree_draw,
+                publish,
+                &frames,
+                wide,
+                high,
+                crate::ui::window::log_line,
+            )
+        }),
+        own_picture: Box::new(move |publish: &crate::project::Publish| {
+            crate::produce_upload_media::write_own_picture(
+                &tree_own,
+                publish,
+                &frames_own,
+                wide,
+                high,
+                crate::ui::window::log_line,
+            )
+        }),
+    }
+}
+
+/// A [`crate::produce_upload::Materials`] borrowing the legs this call built. The one door the words half
+/// uses: `upload_half` builds the legs, hands the walk this view of them, and drops them when the walk ends.
+#[allow(clippy::needless_pass_by_value)] // `run` is read for the cut its legs already copied
+pub fn upload_mats<'a>(legs: &'a Owned, _run: &crate::produce_flow::Run) -> crate::produce_upload::Materials<'a> {
+    crate::produce_upload::Materials {
+        save_publish: &legs.save_publish,
+        ask_model: &legs.ask_model,
+        ask_draw: &legs.ask_draw,
+        poll: &legs.poll,
+        save_picture: &legs.save_picture,
+        print: &legs.print,
+        nearest_frame: &legs.nearest_frame,
+        spread_frames: &legs.spread_frames,
+        stored_stamp: legs.stored_stamp.clone(),
+        write_stamp: &legs.write_stamp,
+        edited_by_hand: legs.edited_by_hand,
+        request_images: &legs.request_images,
+        own_picture: &legs.own_picture,
+    }
+}
+
+/// The legs a words half owns for the length of one walk. Every field is one of [`crate::produce_upload`]'s
+/// leg types, held by value so a `Materials` over `&Owned` has something to point at.
+pub struct Owned {
+    pub save_publish: Box<PublishSaver>,
+    pub ask_model: Box<crate::produce_upload::AskModel>,
+    pub ask_draw: Box<crate::produce_upload::AskDraw>,
+    pub poll: Box<crate::produce_upload::Poll>,
+    pub save_picture: Box<crate::produce_upload::SavePicture>,
+    pub print: Box<crate::produce_upload::PrintWords>,
+    pub nearest_frame: Box<Nearest>,
+    pub spread_frames: Box<Spread>,
+    pub stored_stamp: Option<String>,
+    pub write_stamp: Box<StampWriter>,
+    pub edited_by_hand: bool,
+    /// S6: the row as the images the request carries. The frames are the session's, not the record's, so the
+    /// leg closes over the list `upload_legs` built at the press rather than taking it as an argument.
+    pub request_images: Box<Sender>,
+    /// S3: the chosen frame's cropped bytes onto the plain picture.
+    pub own_picture: Box<Taker>,
+}
+
+// The leg shapes `Owned` holds. Named once each so the struct reads as a list of doors, not as six lines of
+// `Box<dyn Fn …>` (clippy's `type_complexity` rightly objects to the inline spelling).
+type PublishSaver = dyn Fn(&crate::project::Publish) -> Result<(), String>;
+type Nearest = dyn Fn(f64) -> Option<f64>;
+type Spread = dyn Fn() -> Vec<String>;
+type StampWriter = dyn Fn(&str) -> Result<(), String>;
+type Sender = dyn Fn(&crate::project::Publish) -> crate::produce_upload_media::Sent;
+type Taker = dyn Fn(&crate::project::Publish) -> Result<(), String>;
+
+/// The record the words half works from: the run's publish state. A run built without one has nothing
+/// written, which is the same state as an empty record (§5's reading of a missing `publish.json`).
+pub fn publish_of_run(run: &crate::produce_flow::Run) -> crate::project::Publish {
+    run.publish.clone().unwrap_or_default()
+}
+
+/// The S1 brief for one run: the two sides of every clip, read once over the whole cut.
+/// `seen` comes from Describe's events.tsv for the recording the clip reads, `said` from the session
+/// transcript; both are read once over the whole cut rather than per clip, so a long session costs three
+/// file reads and not one per clip.
+fn upload_brief_for(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -> String {
+    let rows = crate::textfmt::read_session(&tree.session_tsv()).unwrap_or_default();
+    let events = read_all_events(tree, run);
+    let clips = brief_clips(run, &rows, &events);
+    crate::produce_upload::brief(&clips, &run.lines, crate::produce_upload::BRIEF_MAX_CHARS)
+}
+
+/// Every extracted JPEG this session has, as `(produced-clock moment, file)` pairs. [`extracted_frames`
+/// already maps the moments; this pairs each with the file behind it, which is what
+/// [`crate::produce_upload_media::entry_file`] resolves a `frame:` entry against.
+pub fn frame_images(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -> Vec<(f64, std::path::PathBuf)> {
+    let mut out: Vec<(f64, std::path::PathBuf)> = Vec::new();
+    let mut at = 0.0;
+    for seg in &run.cut.segs {
+        let kept = output_length(seg);
+        if !seg.ins.is_empty() {
+            at += kept;
+            continue;
+        }
+        for source in run.sources.footage.iter() {
+            let dir = tree.frames_dir(&stem_of(source));
+            for (seconds, path) in crate::produce_upload_media::listed_frames(&dir) {
+                if seconds >= seg.s && seconds < seg.e {
+                    out.push((at + (seconds - seg.s), path));
+                }
+            }
+        }
+        at += kept;
+    }
+    out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    out
+}
+
+/// F5.6: the run's WORDS half, driven from the page. Split out of `produce_page` because that file is at
+/// its size budget; `finish_produce` calls this where its words closure used to report a hardcoded failure.
+///
+/// Every rule lives in [`crate::produce_upload`]; this gathers what the session folder holds and hands the
+/// walk its legs. Nothing here decides an order, prints a spec sentence or spawns anything itself.
 pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     let tree = session_tree();
-    // S1: the brief's two sides. `seen` comes from Describe's events.tsv for the recording the clip reads,
-    // `said` from the session transcript; both are read once over the whole cut rather than per clip, so a
-    // long session costs three file reads and not one per clip.
-    let rows = crate::textfmt::read_session(&tree.session_tsv()).unwrap_or_default();
-    let events = read_all_events(&tree, run);
-    let clips = brief_clips(run, &rows, &events);
-    let brief = crate::produce_upload::brief(&clips, &run.lines, crate::produce_upload::BRIEF_MAX_CHARS);
+    let brief = upload_brief_for(&tree, run);
     // A test that loaded a script answers through it; otherwise the real `youtube` call goes out (§3.9):
     // thinking on, its tools offered, each answered by the rule that owns it. A refusal names the model and
     // stops `walk` before anything is written, which `finish_produce` logs as `words_failed`.
@@ -94,7 +264,7 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     // holds it. Reading `publish.json` here would describe what an earlier run left — on a fresh session,
     // an empty image row, no edit instruction and no title — instead of what the person has on screen now,
     // and would then write that emptiness back over their typing.
-    let publish = run.publish.clone().unwrap_or_default();
+    let publish = publish_of_run(run);
     let ask = upload_ask(
         &tree,
         &publish,
@@ -104,27 +274,8 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     );
     let reply = ask(&brief)?;
     let answers = answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at));
-    let mats = crate::produce_upload::Materials {
-        save_publish: &|next| save_publish(&tree, next),
-        ask_model: &|_| Ok(String::new()),
-        ask_draw: &draw_leg(),
-        poll: &poll_leg(),
-        // S6's hand-off: the bytes the finished job handed back land as the plain picture, which is the only
-        // thing the print leg can print from and the only reason the picture's stamp can be written at all.
-        save_picture: &save_drawn,
-        print: &print_leg(),
-        nearest_frame: &|at| nearest_frame(&tree, run, at),
-        // S4: the three moments spread over the kept footage. Moments on the produced clock, rendered as
-        // `frame:<seconds>` row entries — the page holds the cut, so it decides what is in the video.
-        spread_frames: &|| {
-            crate::produce_upload_frames::spread_rows(&run.cut.segs)
-        },
-        stored_stamp: read_picture_stamp(&tree),
-        write_stamp: &|hash| write_picture_stamp(&tree, hash),
-        // The picture is the user's own once they hold a frame or have written an edit instruction of their
-        // own; until then a title change reprints (S5).
-        edited_by_hand: publish.own || !publish.prompt.trim().is_empty(),
-    };
+    let legs = upload_legs(&tree, run);
+    let mats = upload_mats(&legs, run);
     let outcome = crate::produce_upload::walk(&brief, &publish, &answers, &mats, crate::ui::window::log_line);
     outcome.error.map_or(Ok(()), Err)
 }
@@ -329,7 +480,7 @@ fn nearest_frame(tree: &crate::layout::Tree, run: &crate::produce_flow::Run, at:
 
 /// publish.json + description.txt, both through the existing writer so one spelling of each path backs
 /// them. Called BEFORE any draw (S5), which is why a failed draw keeps the thinking.
-fn save_publish(tree: &crate::layout::Tree, publish: &crate::project::Publish) -> Result<(), String> {
+pub fn save_publish(tree: &crate::layout::Tree, publish: &crate::project::Publish) -> Result<(), String> {
     crate::publish::save(publish, tree)
 }
 
@@ -351,23 +502,35 @@ fn write_picture_stamp(tree: &crate::layout::Tree, hash: &str) -> Result<(), Str
 thread_local! {
     /// A scripted sd.cpp answer, loaded by a test in place of the drawing server. Same shape as
     /// `produce_translate::SPAWN`: the page cannot tell the two apart, and no test dials a socket.
-    static DRAW: std::cell::RefCell<Option<DrawSlot>> = const { std::cell::RefCell::new(None) };
+    static DRAW: std::cell::RefCell<Option<(DrawSlot, Vec<u8>)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Load a scripted draw for the next words half on this thread, with no picture: the walk then reports the
+/// job finished with no image, exactly as it does for a live server that answers `done` without one.
+pub fn set_draw_for_test(draw: DrawSlot) {
+    set_draw_picture_for_test(draw, Vec::new());
+}
+
+/// Load a scripted draw AND the PNG its job hands back. Only the submit answer is scripted; the bytes ride
+/// into the poll answer, so `save_drawn`, the print leg and the stamp all run for real over them.
+pub fn set_draw_picture_for_test(draw: DrawSlot, png: Vec<u8>) {
+    DRAW.with(|cell| cell.replace(Some((draw, png))));
+}
+
+/// The scripted draw's picture, or `None` when no script is loaded and the real legs stand.
+fn scripted_png() -> Option<Vec<u8>> {
+    DRAW.with(|cell| cell.borrow().as_ref().map(|(_, png)| png.clone()))
 }
 
 /// The scripted sd.cpp submit leg.
 pub type DrawSlot = std::rc::Rc<dyn Fn(&serde_json::Value) -> Result<crate::produce_upload::DrawnJob, String>>;
-
-/// Load a scripted draw for the next words half on this thread.
-pub fn set_draw_for_test(draw: DrawSlot) {
-    DRAW.with(|cell| cell.replace(Some(draw)));
-}
 
 /// The scripted draw leg: the script when one is loaded, otherwise the REAL submit at the address the
 /// settings name (§F5.6 S6). A server that is down answers `Err` naming it, which the walk turns into the
 /// failed-draw branch — publish.json already written, so the thinking survives (S5).
 fn draw_leg() -> Box<crate::produce_upload::AskDraw> {
     match DRAW.with(|cell| cell.borrow().clone()) {
-        Some(script) => Box::new(move |body| script(body)),
+        Some((script, _)) => Box::new(move |body| script(body)),
         None => {
             let tree = session_tree();
             Box::new(move |body| crate::produce_upload_draw::submit(&tree, body))
@@ -380,15 +543,22 @@ fn draw_leg() -> Box<crate::produce_upload::AskDraw> {
 /// state on its first ask. With a scripted draw the job is reported done at once and the scripted bytes are
 /// the picture: a test asserts what landed rather than dialling a GPU.
 fn poll_leg() -> Box<crate::produce_upload::Poll> {
-    match DRAW.with(|cell| cell.borrow().clone()) {
-        Some(_) => Box::new(|job| {
+    match scripted_png() {
+        Some(png) => Box::new(move |job| {
             Ok(crate::produce_upload::PollState {
                 status: format!("done {}", job.id),
                 ahead: 0,
                 done: true,
-                // The scripted draw lays its own picture down, so the answer carries those bytes rather than
-                // an empty payload: `save_drawn` writes what it is given, and the print leg letters that file.
-                png: std::fs::read(session_tree().thumbnail_plain_png()).unwrap_or_default(),
+                // The scripted draw's own picture rides on the answer, so `save_drawn` writes those bytes
+                // through the program's real write path. A script that laid its picture down instead of handing
+                // it on has the file read back here, so no scripted shape skips the write path; a script with
+                // neither leaves them empty and the walk says the job finished with no image — the same
+                // sentence a live server earns for that.
+                png: if png.is_empty() {
+                    std::fs::read(session_tree().thumbnail_plain_png()).unwrap_or_default()
+                } else {
+                    png.clone()
+                },
             })
         }),
         None => {
@@ -431,24 +601,40 @@ fn write_plain(path: &std::path::Path, png: &[u8]) -> Result<(), String> {
 /// the first's letters) and writes `thumbnail.png` through [`crate::produce_upload_print::print_words`],
 /// which sizes the words with the repo's ONE fitter. Refuses when nothing has been drawn, which reads as the
 /// same honest refusal as the draw leg's absence.
-fn print_leg() -> Box<crate::produce_upload::PrintWords> {
-    Box::new(|_kind: &str, words: &[String]| {
+///
+/// The band comes from the record the press started from, not from `publish.json`: §S3 snapshots the page's
+/// state at the press, so a title box dragged since the last write prints where the person sees it, and only
+/// a door with no run to ask (a bare `Run`) falls back to the file.
+pub fn print_leg(band: TitleBox) -> Box<crate::produce_upload::PrintWords> {
+    Box::new(move |_kind: &str, words: &[String]| {
         let tree = session_tree();
         let plain = tree.thumbnail_plain_png();
         if !plain.is_file() {
             return Err("nothing has been drawn to print onto".to_string());
         }
         let out = tree.thumbnail_png();
-        let band = crate::publish::load(&tree)
-            .ok()
-            .and_then(|record| record.title_box)
-            .unwrap_or_default();
         crate::produce_upload_print::print_words(&plain, &out, words, &band)
     })
 }
 
+/// The title band to print across: the record's own box when its publish state carries one, else the app
+/// default `{0.5, 0.25, 1, 0.4}` that `TitleBox::default()` spells. §S3 snapshots the page at the press, so a
+/// box dragged since the last write prints where the person sees it rather than where an earlier run left it.
+pub fn title_band_of(publish: &crate::project::Publish) -> TitleBox {
+    publish.title_box.unwrap_or_default()
+}
+
+/// The band the title prints across, for a door that holds no run: the record on disk when it has one, else
+/// the app default. The words half never asks this — `upload_legs` hands its print leg the run's own box.
+fn stored_title_band() -> TitleBox {
+    crate::publish::load(&session_tree())
+        .ok()
+        .and_then(|record| record.title_box)
+        .unwrap_or_default()
+}
+
 /// The session's folder, resolved the way the page resolves everything else on this path.
-fn session_tree() -> crate::layout::Tree {
+pub fn session_tree() -> crate::layout::Tree {
     crate::layout::Tree::new(crate::startup::session_dir(
         &std::env::current_dir().unwrap_or_default(),
     ))
@@ -559,16 +745,13 @@ pub fn legs(
         references: Box::new(move || crate::ui::produce_page::read_state().frames.iter().skip(1).cloned().collect()),
         // The band the title prints across comes from the record's own box when it has one; 0.25 (the upper
         // third) is the app's default, matching `details::thumbnail_box_without_aspect`.
-        title_band: Box::new(|| {
-            crate::publish::load(&session_tree())
-                .ok()
-                .and_then(|record| record.title_box)
-                .map_or(0.25, |band| band.cy)
-        }),
+        title_band: Box::new(|| stored_title_band().cy),
         brief: Box::new(move || upload_brief((*clip_spans)())),
         ask_draw: draw_leg(),
         poll: poll_leg(),
-        print: print_leg(),
+        // §S3: a press with no run in front of it still reads the record on disk, which is what "the page left
+        // it" means for a door that snapshots nothing (↻ redraw and ↻ suggest build their own legs).
+        print: print_leg(stored_title_band()),
         ask_model: upload_ask(
             &session_tree(),
             &crate::publish::load(&session_tree()).unwrap_or_default(),
@@ -578,11 +761,15 @@ pub fn legs(
         ),
         encode: Box::new(spawn_argv),
         copy: Box::new(move |file: &str| copy_video_out(file, &for_copy())),
-        jpeg_sizes: Box::new(jpeg_ladder_sizes),
+        jpeg_sizes: Box::new(|path: &str| crate::ui::produce_languages::jpeg_export(path).0),
         // Was the run stopped (⏹) rather than did a leg fail? The shell's own switch answers: ⏹ writes
         // `cancel_leg::cancel_now` and `runqueue::end_run` clears it once the run has unwound, so "stopped"
         // and "failed — see log" are told apart by what the person actually pressed.
         was_stopped: Box::new(crate::cancel_leg::cancelled),
+        // §F5.7's "clears `own`", gathered by the page that owns the flag (`produce_press_wiring::legs`
+        // overrides this default with the real door). A door with no page to clear answers `Ok`: there is no
+        // held state and nothing on disk to contradict.
+        clear_own: Box::new(|| Ok(())),
         // The F5.6 words half does not count reprint passes here; it reports its own order elsewhere. The
         // page's presses turn this on in `produce_page::press_legs`.
         count_prints: false,
@@ -628,17 +815,19 @@ fn spawn_argv(argv: &[String]) -> Result<(), String> {
     spawn(&command)
 }
 
-/// The export ladder's weight at each rung of [`crate::produce_runs::JPEG_QUALITIES`]. No encoder runs in
-/// this container, so every rung is measured as the picture that exists: the first fitting rung is then the
-/// current file whenever it fits, and the LAST rung otherwise — §F5.7's "last attempt written even if it
-/// still doesn't", reached without an encoder. A real ladder fills these with one measurement per rung.
-fn jpeg_ladder_sizes() -> Vec<u64> {
-    let bytes = session_tree()
-        .thumbnail_png()
-        .metadata()
-        .map(|meta| meta.len())
-        .unwrap_or(0);
-    crate::produce_runs::JPEG_QUALITIES.iter().map(|_| bytes).collect()
+/// ⤓ export's written JPEG: the ladder runs into the file the uploader will be pointed at, and the weight
+/// reported is that file's own size. Returns `(sizes, exported_path)`; the chosen rung's size and the path
+/// come from one call, so the sentence and the bytes on disk cannot disagree.
+pub fn jpeg_export(to: &str) -> (Vec<u64>, std::path::PathBuf) {
+    let tree = session_tree();
+    let out = std::path::PathBuf::from(to);
+    let sizes = crate::produce_upload_media::jpeg_ladder(
+        &tree.thumbnail_png(),
+        &out,
+        &crate::produce_runs::JPEG_QUALITIES,
+        crate::ui::window::log_line,
+    );
+    (sizes, out)
 }
 
 /// ⤓ Save video's copy: the render's own output out to the chosen path. The stamp stays where ▶ wrote it,
