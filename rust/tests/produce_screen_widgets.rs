@@ -32,6 +32,7 @@ static RAN_SETTINGS_WIRE: AtomicBool = AtomicBool::new(false);
 static RAN_WORDS: AtomicBool = AtomicBool::new(false);
 static RAN_SLOTS: AtomicBool = AtomicBool::new(false);
 static RAN_TEXT: AtomicBool = AtomicBool::new(false);
+static RAN_INPUTS: AtomicBool = AtomicBool::new(false);
 
 /// §A's fifteen, by the name a test finds each one by. The item id is spelled in every entry's comment
 /// so the gate log shows which of the fifteen each check was about.
@@ -535,6 +536,115 @@ fn produce_round(_app: &adw::Application) {
     RAN_TEXT.store(true, Ordering::SeqCst);
     window.close();
     settle();
+
+    // --- (j) §15's Inputs readout counts the session's own files -------------------
+    check_inputs_read_the_session(_app);
+}
+
+/// The session folder beside the pinned cwd, left as its neighbours left it. Nothing in this file's
+/// checks reads it now that §15 brings its own empty folder; kept because it names where the page looks.
+#[allow(dead_code)]
+fn session_tree() -> naivepost::layout::Tree {
+    let dir = naivepost::startup::session_dir(&std::env::current_dir().expect("cwd pinned before the run"));
+    std::fs::create_dir_all(&dir).expect("session folder created");
+    naivepost::layout::Tree::new(dir).expect("the session folder is a project tree")
+}
+
+/// A session folder with NOTHING in it but itself: the shape §15's own check needs, because its publish
+/// half is `held || publish.json` and a record left by a neighbour check would make "written" true no
+/// matter what the page held.
+fn empty_session_tree() -> naivepost::layout::Tree {
+    let dir = naivepost::startup::session_dir(&std::env::current_dir().expect("cwd pinned before the run"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("session folder created");
+    naivepost::layout::Tree::new(dir).expect("the session folder is a project tree")
+}
+
+/// The Inputs readout's own text, as the label shows it.
+fn inputs_text(window: &adw::ApplicationWindow) -> String {
+    widget_in(window, "produce-inputs")
+        .and_then(|w| w.downcast::<gtk::Label>().ok())
+        .expect("§A's Inputs readout is on the page")
+        .text()
+        .to_string()
+}
+
+/// §15's Inputs readout, read off the SESSION rather than off a flow's memory. §A wants the row to say
+/// "N to speak" for the lines with no take and "no upload text" when `publish.json` is missing — both of
+/// which are facts about files, and a page that took them from a published state kept saying "0 to speak"
+/// after a redraw even with three unwritten wavs in the folder.
+fn check_inputs_read_the_session(_app: &adw::Application) {
+    let tree = empty_session_tree();
+    // Three lines with words and no take anywhere near them: the prototype counts exactly these.
+    let line = |s: f64, e: f64, text: &str| naivepost::narration::Entry {
+        s,
+        e,
+        text: text.to_string(),
+        ..Default::default()
+    };
+    let lines = vec![
+        line(1.0, 4.0, "the first thing said"),
+        line(5.0, 8.0, "the second thing said"),
+        line(9.0, 12.0, "the third thing said"),
+    ];
+    naivepost::narration::save(
+        &naivepost::narration::Narration { entries: lines.clone(), silent: Vec::new() },
+        &tree,
+    )
+    .expect("narration.json written");
+    // One of the three HAS a take, written where `wav_of` says it lives, so the count is a count of what
+    // is missing rather than of everything the narration holds.
+    let spoken = naivepost::produce_stamp::wav_of(&tree, &lines[1], None, 0).expect("a spoken line has a path");
+    std::fs::create_dir_all(spoken.parent().unwrap()).unwrap();
+    std::fs::write(&spoken, vec![3u8; 64]).unwrap();
+    // No `publish.json`, so the third clause is the missing-upload-text one. Asserted rather than assumed:
+    // an earlier check that ran a ▶ shares this cwd, and a written record would move the clause.
+    assert!(!naivepost::publish::is_written(&tree), "this session has no upload text yet");
+    let mut state = published();
+    state.publish_written = false;
+    let window = produce_page(_app);
+    // The state is deliberately WRONG about both counts, so what the label says can only have come from
+    // the session's files: `to_speak = 9` and `publish_written = true` are what the readout must OVERRIDE,
+    // because a flow published them minutes ago and the folder has since moved.
+    state.to_speak = 9;
+    ui::produce_page::set_state(state);
+    ui::produce_page::refresh(&window);
+    let said = inputs_text(&window);
+    assert_eq!(
+        said,
+        "7 clip(s) \u{b7} 04:14 \u{b7} 2 to speak \u{b7} no upload text",
+        "\u{a7}15 counts the session's files, not the state it was handed: {said}"
+    );
+
+    // The other side: the remaining two lines get takes and `publish.json` appears, so the SAME page and
+    // the SAME wrong state now reads neither clause. Only the files moved. `refresh` re-reads the HELD state,
+    // so the override has to be written back with `set_state` for the publish half to be tested at all: the
+    // rule is `held || file_exists`, and `false || true` is the only pair that proves the file was read.
+    for entry in [&lines[0], &lines[2]] {
+        let wav = naivepost::produce_stamp::wav_of(&tree, entry, None, 0).expect("a line with words has a path");
+        std::fs::create_dir_all(wav.parent().unwrap()).unwrap();
+        std::fs::write(&wav, vec![3u8; 64]).unwrap();
+    }
+    naivepost::publish::save(
+        &naivepost::project::Publish { title: "a talk about pipes".into(), ..Default::default() },
+        &tree,
+    )
+    .expect("publish.json written");
+    let settled_state = ui::produce_page::read_state();
+    assert!(
+        !settled_state.publish_written && settled_state.to_speak == 9,
+        "the held state still claims the run never wrote anything and 9 lines are owed: it is the files that move"
+    );
+    ui::produce_page::refresh(&window);
+    let settled = inputs_text(&window);
+    assert_eq!(
+        settled,
+        "7 clip(s) \u{b7} 04:14",
+        "nothing owed and a record written: neither clause is a lie \u{2014} the state still says 9: {settled}"
+    );
+    RAN_INPUTS.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
 }
 
 /// The setting rows the page actually drew, by their widget names.
@@ -595,6 +705,10 @@ fn sec_08_produce_1_screen_s1_s4_plate_rows_forcing_and_images_wire_the_named_wi
     assert!(
         RAN_SLOTS.load(Ordering::SeqCst),
         "the slot picture / base tag / crop box check never ran"
+    );
+    assert!(
+        RAN_INPUTS.load(Ordering::SeqCst),
+        "the Inputs-readout read-the-session check never ran"
     );
 }
 

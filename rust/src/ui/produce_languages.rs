@@ -555,9 +555,10 @@ pub fn legs(
         encode: Box::new(spawn_argv),
         copy: Box::new(move |file: &str| copy_video_out(file, &for_copy())),
         jpeg_sizes: Box::new(jpeg_ladder_sizes),
-        // Each press runs inside one click and this page owns no cancel flag of its own, so nothing reports
-        // a stop; wiring the shell's flag replaces this closure and nothing else.
-        was_stopped: Box::new(|| false),
+        // Was the run stopped (⏹) rather than did a leg fail? The shell's own switch answers: ⏹ writes
+        // `cancel_leg::cancel_now` and `runqueue::end_run` clears it once the run has unwound, so "stopped"
+        // and "failed — see log" are told apart by what the person actually pressed.
+        was_stopped: Box::new(crate::cancel_leg::cancelled),
         // The F5.6 words half does not count reprint passes here; it reports its own order elsewhere. The
         // page's presses turn this on in `produce_page::press_legs`.
         count_prints: false,

@@ -28,12 +28,112 @@ use naivepost::ui;
 mod common;
 use common::{hold_last_window, release_last_window, settle, status_text};
 
+/// A stand-in audio.cpp on a loopback port: `/health`, `/v1/models` and `/v1/ui/upload` are served at
+/// once, and the speech POST is where the STOP comes from — answering it, this server raises the shell's
+/// cancel switch (`cancel_leg::cancel_now`) before refusing the synthesis. That single call is the only
+/// write `RunBar::press_stop` makes (`src/run.rs:347`), so the stop this test applies is the program's own
+/// door rather than a poke at private state, and it lands while the run sits inside the request — which is
+/// exactly where a real ⏹ finds a speaking run (§02-services#1 puts every request on the cancel context
+/// precisely so a stop ends the wait). Timing it with a sleeping thread would race the walk; having the
+/// server the run is waiting on raise the switch cannot.
+struct StoppingAudio {
+    url: String,
+}
+
+impl StoppingAudio {
+    fn start() -> StoppingAudio {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
+        let port = listener.local_addr().expect("a local address").port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, Read, Write};
+                    let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+                    let mut request_line = String::new();
+                    if reader.read_line(&mut request_line).unwrap_or(0) == 0 {
+                        return;
+                    }
+                    let mut length = 0usize;
+                    loop {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                            return;
+                        }
+                        if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                            length = rest.trim().parse().unwrap_or(0);
+                        }
+                        if line.trim().is_empty() {
+                            break;
+                        }
+                    }
+                    let mut payload = vec![0u8; length];
+                    if length > 0 && reader.read_exact(&mut payload).is_err() {
+                        return;
+                    }
+                    let path = request_line
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("")
+                        .to_string();
+                    let (status, body) = match path.as_str() {
+                        "/health" => (200u16, r#"{"status":"ok"}"#.to_string()),
+                        "/v1/models" => (
+                            200,
+                            r#"{"data":[{"id":"index-tts2","family":"index_tts2","task":"clon"}]}"#
+                                .to_string(),
+                        ),
+                        "/v1/ui/upload" => (
+                            200,
+                            r#"{"path":"/tmp/uploaded/voice_ref.wav"}"#.to_string(),
+                        ),
+                        // The speech POST: raise the stop, then refuse the synthesis. The render logs the
+                        // failed line and carries on to its NEXT checkpoint (§F5.2 S2 says a line that will
+                        // not synthesize costs one silent sentence, not a video) — and that next checkpoint
+                        // is the one the stop has just refused.
+                        _ => {
+                            naivepost::cancel_leg::cancel_now();
+                            (500, "the server stopped answering".to_string())
+                        }
+                    };
+                    let framed = format!(
+                        "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.write_all(framed.as_bytes());
+                    let _ = stream.flush();
+                });
+            }
+        });
+        StoppingAudio { url: format!("http://127.0.0.1:{port}") }
+    }
+
+    fn url(&self) -> String {
+        self.url.clone()
+    }
+}
+
+/// One narration line: bounds and emotion take the neutral form, only the words matter to the render's
+/// speaking half.
+fn spoken(text: &str) -> naivepost::narration::Entry {
+    naivepost::narration::Entry {
+        s: 0.0,
+        e: 10.0,
+        at: 1.0,
+        text: text.into(),
+        emotion: String::new(),
+        pos: String::new(),
+        roll: 0,
+    }
+}
+
 const ITEM: &str = "F5.1";
 
 static RAN_NO_CUT: AtomicBool = AtomicBool::new(false);
 static RAN_RAN_THE_FLOW: AtomicBool = AtomicBool::new(false);
 static RAN_SKIP: AtomicBool = AtomicBool::new(false);
 static RAN_OVERWRITE: AtomicBool = AtomicBool::new(false);
+static RAN_STOPPED: AtomicBool = AtomicBool::new(false);
 
 /// The project folder this round resolves: `startup::session_dir(current_dir())`. cwd is pinned to the
 /// test's own temp root, so this never points into `rust/`.
@@ -94,6 +194,22 @@ fn produce_window(app: &adw::Application, project: &Project, cut: &Cut) -> adw::
     window
 }
 
+/// Answer the overwrite dialog §S2 opens by firing its REAL button, then drain the idle queue until the
+/// answer's callback has run: `adw::MessageDialog::response(id)` is what a click on that button fires (the
+/// route `produce_words::dialog_answer` takes in `tests/produce_screen_widgets.rs`), so an answering block
+/// proves the widget a person presses rather than only reaching for the box. Closing is part of the answer:
+/// `connect_response` clears the held dialog and closes the window, and a test that left it standing would
+/// find the NEXT press refused by `ask_overwrite`'s one-question guard rather than by its own gate.
+fn answer_produce_dialog(response: &str) {
+    let dialog = naivepost::ui::produce_confirm::open_dialog().expect("S2 opened the overwrite dialog");
+    dialog.response(response);
+    settle();
+    assert!(
+        naivepost::ui::produce_confirm::open_dialog().is_none(),
+        "and answering closes the dialog"
+    );
+}
+
 /// Fire the shell's ▶ through the toolkit and report what it left on the status line.
 fn click_play(window: &adw::ApplicationWindow) -> String {
     ui::play_button(window)
@@ -104,7 +220,7 @@ fn click_play(window: &adw::ApplicationWindow) -> String {
 }
 
 /// Whether the run bar currently shows a run under way.
-fn bar_running(window: &adw::ApplicationWindow) -> bool {
+fn bar_running() -> bool {
     naivepost::ui::run_close::last_run_step_for_test().is_some()
 }
 
@@ -154,7 +270,7 @@ fn run_round(app: &adw::Application) {
             "{ITEM} S1 through the widget: the refusal is the spec's sentence on the status line"
         );
         assert!(
-            !bar_running(&window),
+            !bar_running(),
             "and no run started for work that was refused before it began"
         );
         RAN_NO_CUT.store(true, Ordering::SeqCst);
@@ -288,12 +404,7 @@ fn run_round(app: &adw::Application) {
             "and its body says what the overwrite costs: {}",
             dialog.body()
         );
-        dialog.response("cancel");
-        settle();
-        assert!(
-            naivepost::ui::produce_confirm::open_dialog().is_none(),
-            "answering closes the dialog"
-        );
+        answer_produce_dialog(naivepost::produce_flow::ANSWER_CANCEL);
         assert_eq!(
             status_text(&window),
             "Overwrite final.mp4?",
@@ -309,9 +420,7 @@ fn run_round(app: &adw::Application) {
         // (b) Overwrite answers the same question by running the encode.
         let logs_before = ui::window_logs().len();
         let _ = click_play(&window);
-        let dialog = naivepost::ui::produce_confirm::open_dialog().expect("asked again");
-        dialog.response("overwrite");
-        settle();
+        answer_produce_dialog(naivepost::produce_flow::ANSWER_OVERWRITE);
         assert!(
             opened_encode_after(logs_before),
             "{ITEM} S2: answering Overwrite runs the encode \u{2014} nothing logged after the answer: {:?}",
@@ -337,10 +446,88 @@ fn run_round(app: &adw::Application) {
         window.close();
         settle();
     }
+    // --- (5) a run stopped at a checkpoint: §F5.1 S6's "production stopped" -------------------
+    {
+        // The person presses ⏹ while the render is walking its subprocesses. That press writes the
+        // shell's cancel switch (`RunBar::press_stop` → `cancel_leg::cancel_now`, `src/run.rs:347`), and
+        // §F5.2 S10's checkpoints are asked of exactly that switch, so the walk halts at the next one and
+        // the run ends with S6's stopped word rather than "done".
+        let tree = session_tree();
+        let stamp = produce_stamp::stamp_path(&tree);
+        let _ = std::fs::remove_file(&stamp);
+        // No video standing: the gate goes straight to Encode, so the press reaches the walk instead of
+        // stopping at §S2's overwrite question (which would leave the encode, and its checkpoints, unasked).
+        let _ = std::fs::remove_file(tree.final_video("mp4"));
+        // A cut the render CAN plan (well over `P.eng.minClipSeconds`), so S3's "no clip could be placed"
+        // failure — which comes before any checkpoint is asked — never competes with the stop.
+        let cut = Cut {
+            segs: vec![Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() }],
+            aspect: "16:9".into(),
+            ..Default::default()
+        };
+        // TWO lines to speak: `produce_exec::walk` asks its checkpoint once per line (`if !ask(..)` before
+        // each synthesis), so the first line pays the checkpoint and dials the server, and it is the
+        // SECOND line's checkpoint that the stop refuses. With one line there is no next checkpoint to ask.
+        naivepost::narration::save(
+            &naivepost::narration::Narration {
+                entries: vec![
+                    spoken("The chain moved to proof of stake."),
+                    spoken("Now the layer two story, in one breath."),
+                ],
+                silent: vec![],
+            },
+            &tree,
+        )
+        .expect("two lines for the run to speak");
+        // F4.6's reference on disk, so the speak door gets past its own S1 and really dials; with none it
+        // refuses before reaching the wire and the server never sees a request to answer.
+        let reference = tree.voice_ref_wav();
+        std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent")).unwrap();
+        std::fs::write(&reference, b"RIFF fake reference, forty-odd bytes long, not empty").unwrap();
+        // The stand-in audio.cpp whose speech POST raises the stop, named by the Settings file the program
+        // re-reads per call — the address is the seam, nothing about the work is scripted.
+        let audio = StoppingAudio::start();
+        let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+        let mut conf = naivepost::settings::read(&paths).unwrap_or_default();
+        conf.audio_server = audio.url();
+        conf.tts_model = "index-tts2".to_string();
+        naivepost::settings::save(&paths, &conf).expect("the fake address is what the Settings now say");
+        let window = produce_window(app, &base_project(), &cut);
+        // Blocks (2) and (4) end on a ⏹, so clear the switch first: `runqueue::start_run` does the same for
+        // a fresh generation (`bump_cancel_context`), and this press must not inherit an earlier block's stop.
+        naivepost::cancel_leg::clear();
+        let said = click_play(&window);
+        assert_eq!(
+            said,
+            render::stopped_log(),
+            "{ITEM} S6: a run whose checkpoint was refused says \"{}\", got {said}",
+            render::stopped_log()
+        );
+        assert!(
+            produce_stamp::read_stamp(&tree).is_none_or(|hash| hash.is_empty()),
+            "and a stopped run writes no stamp, whatever the previous press left: {}",
+            stamp.display()
+        );
+        // The bar closes the way every ending closes it: nothing is under way after the press.
+        ui::stop_button(&window)
+            .expect("the run bar has a stop-button")
+            .emit_by_name::<()>("clicked", &[]);
+        settle();
+        RAN_STOPPED.store(true, Ordering::SeqCst);
+        window.close();
+        settle();
+    }
 }
 
+/// §F5.1 through the real widget: the shell's ▶ on a real Produce page reaches `produce_flow`, and a run
+/// stopped at one of §F5.2 S10's checkpoints ends with §F5.1 S6's "production stopped".
+///
+/// One application, one `connect_activate`, ONE `#[test]`: `g_application_run` will not claim the default
+/// main context twice, and a second test asserting the round's flags would read them from another thread
+/// before `run_round` had finished. Each block names its own step where it runs (S1 refusal, S4 opening
+/// line + S6 ending, S2 skip, S2 overwrite answer, §F5.2 S10 checkpoint stop).
 #[test]
-fn f5_1_play_on_produce_page_reaches_the_flow() {
+fn f5_1_s6_a_stopped_run_ends_stopped_through_the_press() {
     // Pin cwd to our own temp root BEFORE anything builds.
     let root = std::env::temp_dir().join(format!("np-f51-wire-{}", std::process::id()));
     std::fs::create_dir_all(&root).expect("temp root created");
@@ -362,5 +549,9 @@ fn f5_1_play_on_produce_page_reaches_the_flow() {
     assert!(
         RAN_OVERWRITE.load(Ordering::SeqCst),
         "the overwrite-question-and-answer check never ran"
+    );
+    assert!(
+        RAN_STOPPED.load(Ordering::SeqCst),
+        "the stopped-at-a-checkpoint check never ran"
     );
 }

@@ -485,6 +485,21 @@ pub fn inputs_tooltip(
     rows.join("\n\n")
 }
 
+/// The page's `publish_written`, answered the way §A asks the question: does `publish.json` exist.
+///
+/// The page cannot answer this from its own rows. The Go prototype asks the file (`publishRecorded` is
+/// `exists(publish/publish.json)`, read both for the Inputs readout and for ▶'s opening line), because the
+/// page only knows what is on screen NOW: a session whose first ▶ already ran holds a written upload text
+/// in the folder, and a page reload would not see it in any row. Deriving the answer from the rows alone
+/// prints "no upload text" beside a `publish.json` the next ▶ is about to rewrite.
+///
+/// `held` is what a flow published to the page (or the empty `Publish::default()` on a page with no
+/// session); either side saying "written" makes the row say it, because both are true statements about the
+/// folder and neither can be read without the other.
+pub fn publish_written(held: bool, file_exists: bool) -> bool {
+    held || file_exists
+}
+
 /// The Outputs row counts, and only counts (§1): the page owns a folder of files whose sizes mean nothing
 /// until one of them is opened. MB above 1, KB below — a folder of 200 kB should not read as "0 MB".
 pub fn outputs_summary(files: usize, bytes: u64) -> String {

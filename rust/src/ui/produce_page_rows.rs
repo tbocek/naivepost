@@ -1,5 +1,5 @@
-//! §08-produce#1-screen — the render legs this page hands to `produce_exec`: the session folder, the speak
-//! refusal, the translation ask, the checkpoint answer, and the two failure notes. Split out of
+//! §08-produce#1-screen — the render legs this page hands to `produce_exec`: the session folder, the
+//! speak call, the translation ask, the checkpoint answer, and the two failure notes. Split out of
 //! `produce_page.rs`, which is past its size budget; the page keeps every call site.
 
 /// The session's folder, resolved the way the page resolves everything else on this path.
@@ -9,14 +9,21 @@ pub(crate) fn session_tree() -> crate::layout::Tree {
     .unwrap_or_else(|_| crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap())
 }
 
-/// S2's speak: no audio.cpp here, so every line reports why. A synthesis that fails is logged by the
-/// render's own rule (`synthesis_failure_log`) and the encoder carries on — the same shape as the words
-/// half's failure above, and for the same reason: one silent sentence is not a reason to lose a video.
-pub(crate) fn speak_a_line(line: &crate::produce_exec::ToSpeak) -> Result<(), String> {
-    Err(format!(
-        "no speech server here: {} was not synthesized",
-        line.text.chars().take(24).collect::<String>()
-    ))
+/// S2's speak, over the real wire: [`crate::ui::produce_speak_leg`]'s door, which is the Narrate page's
+/// own (`narrate_run_speak::dial_line` → `speak_leg::speak`), so a ▶ run dials the same audio.cpp address
+/// a row's ▶ dials and files the take where `produce_stamp::wav_of` looks for it. A synthesis that fails
+/// is logged by the render's own rule (`synthesis_failure_log`) and the encoder carries on — the same
+/// shape as the words half's failure below, and for the same reason: one silent sentence is not a reason
+/// to lose a video.
+///
+/// The voice travels from the run, so a take spoken by a ▶ run is the take its stamp weighs: with nothing
+/// in `voice` both doors key the line as the session's own voice.
+pub(crate) fn speak_a_line(
+    line: &crate::produce_exec::ToSpeak,
+    voice: &str,
+) -> Result<(), String> {
+    crate::ui::produce_speak_leg::speak_one(&session_tree(), line, voice)
+        .map(|take| crate::ui::window::log_line(&format!("spoken \u{2014} {}", take.display())))
 }
 
 /// The render's translation leg (§F5.4 S3): the real leg — each batch re-reads the settings and dials
@@ -29,11 +36,23 @@ pub(crate) fn translate_leg() -> Box<crate::produce_translate::Ask> {
     crate::produce_translate_ask::ask(&tree, &stop)
 }
 
-/// S10's checkpoint question. This page runs the whole render inside one press and the shell's cancel
-/// flag is F0.x's, so the answer is always "go on": the seam is here because `produce_exec` is where a
-/// stop is *placed* between the subprocesses, and wiring the real flag replaces one closure, not the walk.
+/// S10's checkpoint question, answered by the shell's own stop switch.
+///
+/// ⏹ writes [`crate::cancel_leg`] (`run::RunBar::press_stop` → `cancel_now`) and nothing else can: so a
+/// run that is still walking its subprocesses stops at the next checkpoint exactly as §F5.2 S10 asks,
+/// and §F5.1 S6's "production stopped" becomes reachable from a real press instead of only from an
+/// injected stub. A leg that belongs to no run never sees a stop, because `start_run` clears the switch
+/// for each new generation (`runqueue::bump_cancel_context`) — a ⏹ aimed at the run before cannot stop
+/// this one.
 pub(crate) fn render_asked(_at: crate::produce_exec::At, _which: &str) -> bool {
-    true
+    !crate::cancel_leg::cancelled()
+}
+
+/// The same answer in the shape `produce_exec::run_render` takes as its `ask` argument: false once ⏹ has
+/// been pressed, so the walk halts between subprocesses and reports where it stopped. Split out only so
+/// `produce_snapshot::render_half` can hand the closure without naming this module's private items.
+pub fn render_checkpoint(_at: crate::produce_exec::At, _which: &str) -> bool {
+    render_asked(_at, _which)
 }
 
 /// The render's own failure, if it had one, for §B's `produce FAILED: …` line. A stop is not a failure

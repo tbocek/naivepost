@@ -248,8 +248,9 @@ pub fn render_half(
             },
         },
         crate::ui::window::log_line,
-        crate::ui::produce_page_rows::speak_a_line,
-        crate::ui::produce_page_rows::render_asked,
+        // §F5.2 S2's voice: the run's, so a take spoken by the render is the take its stamp weighs.
+        move |line| crate::ui::produce_page_rows::speak_a_line(line, &run.voice),
+        crate::ui::produce_page_rows::render_checkpoint,
         crate::ui::produce_languages::spawn,
     );
     // A render that stopped or failed says so in the log with the spec's own line, on top of the ending's

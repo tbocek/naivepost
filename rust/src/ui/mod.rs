@@ -30,7 +30,10 @@ pub mod produce_page;
 pub mod produce_snapshot;
 /// §08-produce#1-screen — the render legs the Produce page hands to `produce_exec`. Split out of
 /// `produce_page.rs`, which is past its size budget.
-mod produce_page_rows;
+pub mod produce_page_rows;
+/// §F5.1 S4 / §F5.2 S2 — the render's speak leg, over the real audio.cpp address. Reuses the Narrate
+/// page's own speak door rather than a second copy of it.
+pub mod produce_speak_leg;
 /// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
 /// render's spawner seam. Split out of `produce_page`, which is at its size budget.
 pub mod produce_languages;

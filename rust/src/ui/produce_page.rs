@@ -572,6 +572,16 @@ pub fn refresh(window: &adw::ApplicationWindow) {
         }
     }
     SETTINGS_GUARD.with(|guard| guard.set(false));
+    // §15's two counts come off the session, not off a flow's memory: how many lines still need a take
+    // (`to_speak`, §A's "N to speak") and whether `publish.json` is there (`publish_written`, §A's
+    // "no upload text"). Both were held numbers a flow had to remember to publish, which meant a reload
+    // showed "0 to speak" beside a folder of unwritten wavs. `None` = no session to count over, which
+    // leaves whatever a flow published in place rather than claiming the folder is empty.
+    let mut s = s;
+    if let Some(counts) = session_readouts(s.narration_off) {
+        s.to_speak = counts.0;
+        s.publish_written = screen::publish_written(s.publish_written, counts.1);
+    }
     if let Some(inputs) = label(window, "produce-inputs") {
         inputs.set_text(&screen::inputs_line(
             s.clips,
@@ -581,7 +591,7 @@ pub fn refresh(window: &adw::ApplicationWindow) {
             s.publish_written,
         ));
         // The tooltip answers "what exactly is behind that count": the clip range, the first line to
-        // be spoken, the voice in use, and whether text leaves the machine. Only what THIS session has
+        // // be spoken, the voice in use, and whether text leaves the machine. Only what THIS session has
         // is stated; a thing the flows have not published yet contributes no row rather than a guess.
         let first_line = if s.first_spoken.is_empty() { None } else { Some(s.first_spoken.as_str()) };
         let voice = if s.voice.is_empty() { None } else { Some(s.voice.as_str()) };
@@ -596,6 +606,33 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     if let Some(outputs) = label(window, "produce-outputs") {
         outputs.set_text(&screen::outputs_summary(s.out_files, s.out_bytes));
     }
+}
+
+/// §15's two session counts: how many narration lines still need to be spoken, and whether `publish.json`
+/// exists. `None` when this working directory is no session at all — a page opened over a folder without a
+/// `session.naivepost` has nothing to count, and keeps what a flow published rather than inventing zeros.
+///
+/// "Still needs to be spoken" is the prototype's own question (`updateInputs` counts `entries` whose
+/// `ttsWav` is missing, and says "no narration" when there are no lines at all), asked here through the
+/// stamp's seam: `wav_of` is where a take lives, so the count and the stamp can never disagree about which
+/// lines are owed. Narration off is answered by the caller's own flag, not read here: the page holds it
+/// (§A hides Game audio behind it) and `lines_to_speak` already returns nothing for it.
+fn session_readouts(narration_off: bool) -> Option<(usize, bool)> {
+    let tree = crate::layout::Tree::new(crate::startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ))
+    .ok()?;
+    let lines = crate::narration::load(&tree).map(|n| n.entries).unwrap_or_default();
+    let owed = crate::narrate_off::lines_to_speak(narration_off, &lines)
+        .iter()
+        .filter(|line| {
+            crate::produce_stamp::wav_of(&tree, line, None, 0)
+                .is_none_or(|wav| !wav.exists())
+        })
+        .count();
+    // §A's "no upload text" is the file's existence, and `publish::is_written` is that question already
+    // asked (a present-but-unparseable record is still one the next ▶ overwrites).
+    Some((owed, crate::publish::is_written(&tree)))
 }
 
 // --- the seams: one widget press, one rules call, one printed sentence -------------------------------

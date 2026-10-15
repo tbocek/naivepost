@@ -41,8 +41,10 @@ pub fn confirm_then(
     video: &std::path::Path,
     on_yes: impl Fn() + 'static,
 ) -> String {
-    let (asked, body) = produce_flow::overwrite_asked(video);
-    crate::ui::window::log_line(&body);
+    // `ask_overwrite` computes the same pair and puts both halves on screen: the body inside the dialog,
+    // the question on the status line, and the body also in the log — the dialog closes on its answer and
+    // the size-and-age line is the one thing a person wants back when they read the run afterwards.
+    let (asked, _) = produce_flow::overwrite_asked(video);
     say(parent, &asked);
     ask_overwrite(parent, video, move |answer| {
         if produce_flow::overwrite_proceeds(answer) {
@@ -53,14 +55,13 @@ pub fn confirm_then(
     asked
 }
 
-/// Put `said` on the window's status line and in the log — the same route every page's answer takes
-/// (`produce_page::say`'s shape; it is private there, so the confirmation says it this way rather than
-/// reaching into another module's helper).
+/// §S2's question on the window's status line. `ask_overwrite` shows the body in the dialog and logs it;
+/// this is the short half, the one that stays up after the answer so a glance at the bar says where the
+/// press stopped (the same route every page's answer takes — `produce_page::say`'s shape, private there).
 fn say(window: &adw::ApplicationWindow, said: &str) {
     if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
         status.set_text(said);
     }
-    crate::ui::window::log_line(said);
 }
 
 /// Ask §S2's question about `video` and hand the answer to `on_answer`: the response id arrives there, and
