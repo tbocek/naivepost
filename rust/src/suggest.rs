@@ -271,15 +271,33 @@ pub fn target_block(target: f64) -> String {
     )
 }
 
-/// The cut request's own MATERIAL: how long the session is, what the finished length must be, then the
-/// timeline it has to read. §8 puts the User Context block and the speech rule in front of this, and that
-/// part belongs to [`crate::prompt_assembly::user_message`], not here — so this function no longer takes a
-/// context, because anything it put first would be a second copy of the block the assembly door writes.
-pub fn message(session_len: f64, target: f64, session_txt: &str) -> String {
+/// The dead-air line of the cut message: §12's entry 13 says the number has to be STATED, because the
+/// app cuts long silences out of kept clips after the model has answered and the prompt otherwise asks
+/// for a cut that silently eats a deliberate pause. Naming it is what lets the model keep such a beat by
+/// saying so in its WHY — the rule itself stays in [`remove_dead_air`], which this only reports.
+///
+/// `max` is `P.policy.deadAirMaxSeconds`. There is no policy FIELD for it (§10 catalogues the value, and
+/// `params.rs` names `suggest::DEAD_AIR_MAX_SECONDS` as its home), so the const is the single home and
+/// the caller passes it rather than writing a second number.
+pub fn dead_air_block(max: f64) -> String {
     format!(
-        "SESSION LENGTH: {} seconds\n\n{}\n\nSESSION TIMELINE:\n{}",
+        "SILENCES longer than {} seconds inside a kept clip are cut out afterwards, leaving a short \
+         beat: if a longer pause is deliberate, say so in your WHY and it stays.",
+        max as i64
+    )
+}
+
+/// The cut request's own MATERIAL: how long the session is, what the finished length must be, how long a
+/// silence may survive inside a kept clip, then the timeline it has to read. §8 puts the User Context block
+/// and the speech rule in front of this, and that part belongs to [`crate::prompt_assembly::user_message`],
+/// not here — so this function no longer takes a context, because anything it put first would be a second
+/// copy of the block the assembly door writes.
+pub fn message(session_len: f64, target: f64, dead_air_max: f64, session_txt: &str) -> String {
+    format!(
+        "SESSION LENGTH: {} seconds\n\n{}\n\n{}\n\nSESSION TIMELINE:\n{}",
         session_len as i64,
         target_block(target),
+        dead_air_block(dead_air_max),
         session_txt
     )
 }

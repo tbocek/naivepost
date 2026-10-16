@@ -523,6 +523,9 @@ fn current_value(policy: &Policy, row: &CatalogueRow) -> String {
         "captionsPass" => on_off(policy.captions_pass.value),
         "speedPass" => on_off(policy.speed_pass.value),
         "decorationsPass" => on_off(policy.decorations_pass.value),
+        // P.policy.targetLengthSeconds — a number row, so the model gets the seconds as digits; `0` is §10's
+        // "none" and stays 0 rather than an empty string, which would read as a field with no value.
+        "targetLengthSeconds" => format!("{}", policy.target_length_seconds.value),
         _ => String::new(),
     }
 }

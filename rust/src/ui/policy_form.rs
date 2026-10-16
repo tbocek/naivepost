@@ -70,6 +70,10 @@ pub fn value_word(policy: &Policy, field: &str) -> String {
         "captionsPass" => pass_word(policy.captions_pass.value), // P.policy.captionsPass
         "speedPass" => pass_word(policy.speed_pass.value), // P.policy.speedPass
         "decorationsPass" => pass_word(policy.decorations_pass.value), // P.policy.decorationsPass
+        // P.policy.targetLengthSeconds — a number row, so the seconds are the value. `0` is §10's "none" and
+        // reads as the word rather than a bare 0, because a person comparing this with the cut brief should
+        // see the same answer both places give ("NO TARGET LENGTH").
+        "targetLengthSeconds" => length_word(policy.target_length_seconds.value),
         // Unreachable through `derived_fields`; a hand-built name would show an empty cell rather than
         // panic, because a blank row on a form is a visible bug, not a crash.
         _ => String::new(),
@@ -78,6 +82,23 @@ pub fn value_word(policy: &Policy, field: &str) -> String {
 
 fn pass_word(on: bool) -> String {
     if on { "on".to_string() } else { "off".to_string() }
+}
+
+/// A target length as the form prints it: `45 min` style for a real target — the shortest unit that spells
+/// it without a fraction — and "none" for §10's 0, so the row never shows a bare `0` that reads like a bug.
+pub fn length_word(seconds: f64) -> String {
+    if seconds <= crate::tools::cutpass::NO_TARGET {
+        return "none".to_string();
+    }
+    let units: [(&str, f64); 3] = [("h", 3600.0), ("min", 60.0), ("s", 1.0)];
+    for (name, each) in units {
+        let count = seconds / each;
+        if count >= 1.0 && (count - count.round()).abs() < f64::EPSILON {
+            return format!("{} {name}", count.round() as i64);
+        }
+    }
+    // Nothing divides it evenly (90.5 s): seconds with the fraction kept.
+    format!("{} s", seconds.round() as i64)
 }
 
 /// The reason column's width, in characters. §10 spells the longest shipped `because` in about thirty
@@ -160,10 +181,8 @@ pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
         row += 1;
     }
 
-    // The picture's footer: this page is the whole §2 catalogue, of which F0.7 derives the five above.
-    let footer = gtk::Label::new(Some(
-        "... every field of 10-parameters.md \u{a7}2",
-    ));
+    // The picture's footer: this page is the whole §2 catalogue, of which F0.7 derives the rows above.
+    let footer = gtk::Label::new(Some("... every field of 10-parameters.md \u{a7}2"));
     footer.set_widget_name(&format!("{NAME_PREFIX}-footer"));
     footer.add_css_class("dim-label");
     footer.set_halign(gtk::Align::Start);
@@ -282,6 +301,7 @@ fn reason_of(policy: &Policy, field: &str) -> Option<String> {
         "captionsPass" => policy.captions_pass.because.clone(),
         "speedPass" => policy.speed_pass.because.clone(),
         "decorationsPass" => policy.decorations_pass.because.clone(),
+        "targetLengthSeconds" => policy.target_length_seconds.because.clone(),
         _ => None,
     };
     because.filter(|text| !text.trim().is_empty())
@@ -306,6 +326,7 @@ pub fn field_origin(policy: &Policy, field: &str) -> Origin {
         "captionsPass" => policy.captions_pass.origin,
         "speedPass" => policy.speed_pass.origin,
         "decorationsPass" => policy.decorations_pass.origin,
+        "targetLengthSeconds" => policy.target_length_seconds.origin,
         _ => Origin::Default,
     }
 }

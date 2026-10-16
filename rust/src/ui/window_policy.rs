@@ -161,6 +161,7 @@ fn stamp_origin(policy: &mut crate::project::Policy, field: &str, origin: Origin
         "captionsPass" => policy.captions_pass.origin = origin,
         "speedPass" => policy.speed_pass.origin = origin,
         "decorationsPass" => policy.decorations_pass.origin = origin,
+        "targetLengthSeconds" => policy.target_length_seconds.origin = origin,
         _ => {}
     }
 }
@@ -329,6 +330,11 @@ pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
         session.borrow_mut().policy = policy;
         out
     };
+    // §12 entry 21: the target-length read happened inside `policy::derive` (the one door every caller uses),
+    // and its outcome is said here — a length that was mentioned and not understood is a line, not a silent 0.
+    if let Some(line) = policy::target_length_log(&derived) {
+        crate::ui::window::log_line(&line);
+    }
     // Record even a defaults-only derivation: an empty context IS an answer, and remembering it is
     // what stops every ▶ from re-asking about a context nobody intends to fill.
     if let Some(tracker) = POLICY_TRACKERS.with(|trackers| trackers.borrow().last().cloned()) {

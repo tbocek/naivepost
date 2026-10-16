@@ -39,8 +39,13 @@ pub struct Clamped {
     /// The effects that are kept, in their original order, with the trimmed ones already trimmed.
     pub kept: Vec<Fx>,
     /// How many were dropped — point effect without a footage scene under it, band under the floor, label over an
-    /// insert only. S5 logs the count and nothing else; which effect went is not said (§12's decision 19).
+    /// insert only. S5 logs the count and, through [`crate::cut_clamp_line::dropped_log`], names which
+    /// (§12 entry 19: a bare count is not something the user can act on).
     pub dropped: usize,
+    /// One note per dropped effect, in cut order, spelled by [`crate::cut_clamp_line::note`] — the kind word
+    /// and the second it was at. Filled where the drop is decided, so the sentence cannot disagree with the
+    /// arithmetic.
+    pub dropped_lines: Vec<String>,
     /// The stops this pass left with no frame to hold: counted in `dropped`, and named here
     /// because §9 wants a stop refused, not silently trimmed like the rest.
     pub(crate) dropped_stops: Vec<Fx>,
@@ -54,6 +59,7 @@ pub fn clamp_to_cut(cut: &Cut) -> Clamped {
     for fx in &cut.fx {
         let Some(kept) = clamp_one(fx, &cut.segs) else {
             out.dropped += 1;
+            out.dropped_lines.push(crate::cut_clamp_line::note(fx));
             if crate::effect_overlap::is_a_stop(fx) {
                 out.dropped_stops.push(fx.clone());
             }

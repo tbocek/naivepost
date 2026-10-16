@@ -28,6 +28,7 @@ static RAN_USER_STICKS: AtomicBool = AtomicBool::new(false);
 static RAN_INFO: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMNS: AtomicBool = AtomicBool::new(false);
 static RAN_DERIVE: AtomicBool = AtomicBool::new(false);
+static RAN_TARGET: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run whatever the emissions queued.
 
@@ -139,7 +140,7 @@ fn check_every_field_has_a_row_with_value_source_and_reason(app: &adw::Applicati
     settle();
 
     let rows = policy::derived_fields();
-    assert_eq!(rows.len(), 5, "five settable fields");
+    assert_eq!(rows.len(), 6, "six settable fields (five switches + the target length)");
     for entry in rows {
         assert!(
             form_widget(&format!("policy-row-{}", entry.field)).is_some(),
@@ -276,6 +277,8 @@ fn window_round() {
             RAN_COLUMNS.store(true, Ordering::SeqCst);
             check_the_gear_derives_before_it_paints(app);
             RAN_DERIVE.store(true, Ordering::SeqCst);
+            check_the_target_length_row_shows_the_derived_number(app);
+            RAN_TARGET.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -385,6 +388,10 @@ fn f0_7_s5_policy_form_reopens_from_the_menu_through_a_real_click() {
         RAN_DERIVE.load(Ordering::SeqCst),
         "the derive-before-paint check never ran"
     );
+    assert!(
+        RAN_TARGET.load(Ordering::SeqCst),
+        "the target-length row check never ran"
+    );
 }
 
 /// F0.7 S2-S4 through the wire: pressing ⚙ on a session whose User Context has never been derived
@@ -436,4 +443,43 @@ fn check_the_gear_derives_before_it_paints(app: &adw::Application) {
         ui::policy_is_current(&window, "cut on the words, not the model"),
         "the tracker now agrees the policy answers this context"
     );
+}
+
+/// §12 entry 21 on screen: a target length written in plain words is DERIVED by F0.7 and SHOWN in the form,
+/// instead of the prototype's regex that silently left `0 = none`. Driven through the same door as the check
+/// above — a real ⚙ press, which runs `derive_policy` before painting — with no model stub needed, because a
+/// spelled length is arithmetic, not interpretation.
+fn check_the_target_length_row_shows_the_derived_number(app: &adw::Application) {
+    ui::close_policy_forms();
+    let window = fresh_window(app);
+    // The §12 example itself, in a person's words. No sender stub: nothing here asks a model.
+    ui::set_session_context(&window, "keep it to half an hour");
+    button(&window, "policy-button").emit_clicked();
+    settle();
+
+    // P.policy.targetLengthSeconds — 1800 s prints as `30 min`, credited to the derivation.
+    assert_eq!(
+        label_text("policy-value-targetLengthSeconds"),
+        "30 min",
+        "// P.policy.targetLengthSeconds — the derived length is on the form"
+    );
+    assert_eq!(label_text("policy-source-targetLengthSeconds"), "model");
+    assert!(
+        !label_text("policy-reason-targetLengthSeconds").is_empty(),
+        "a derived row says why"
+    );
+    window.close();
+
+    // And the other half of §10's row: with no context there is no target, and the row SAYS "none" rather
+    // than printing a blank cell or a bare 0 that reads like a bug.
+    ui::close_policy_forms();
+    let bare = fresh_window(app);
+    button(&bare, "policy-button").emit_clicked();
+    settle();
+    assert_eq!(
+        label_text("policy-value-targetLengthSeconds"),
+        "none",
+        "no target must be visible as the word, not as emptiness"
+    );
+    assert_eq!(label_text("policy-source-targetLengthSeconds"), "default");
 }

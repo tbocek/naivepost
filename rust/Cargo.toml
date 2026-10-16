@@ -1457,6 +1457,10 @@ name = "sec_12_decisions_narrate_and_produce"
 path = "tests/sec_12_decisions_narrate_and_produce.rs"
 
 [[test]]
+name = "sec_12_decisions_cut_and_effects"
+path = "tests/sec_12_decisions_cut_and_effects.rs"
+
+[[test]]
 name = "sep_lopsided"
 path = "tests/sep_lopsided.rs"
 
