@@ -232,9 +232,11 @@ pub fn ask_run(
     draw: usize,
     marks: &mut Marks,
 ) -> RunOutcome {
-    let system = system_wording(paths);
+    let system = system_message(paths, &user_context(tree));
     // §6's slot for this draw, named by the one door that spells it. `ask_run` files its answer under
-    // exactly this digest — the store below hands `llm_cache` the same parts this key came from.
+    // exactly this digest — the store below hands `llm_cache` the same parts this key came from. The text
+    // handed over is the ASSEMBLED system message, because §6 keys a slot on what actually went out: an
+    // edited house prompt has to miss, and it would not if the slot were keyed on the job wording alone.
     let slot = run_key(&system, brief, &conf.model, draw).expect("a brief and a model always key");
     let parts = cache_parts(&system, brief, &conf.model, draw);
     if let Some(cached) = crate::llm_cache::read(tree, STEP, &parts) {
@@ -596,11 +598,43 @@ fn briefing_log(lines: &[Line]) -> String {
 /// The wording to ask with: the shipped `retake` prompt, overridable through the settings folder so an
 /// edit there wins (§04-prepare#6) and an edited prompt misses the cache (§6).
 ///
-/// This is also §6's naming door: [`ask_run`] reads its slot from this same text before it dials, so
-/// the wording that went out and the digest filed under it cannot drift.
+/// This is the JOB's own wording only. What goes on the wire is [`system_message`], which wraps it in the
+/// house rules §8 cuts per job; this stays public because that door and §6's naming both read through it.
 pub fn system_wording(paths: &Paths) -> String {
     let shipped = crate::prompts::shipped_text("retake").unwrap_or_default();
     settings::prompt_text(paths, "retake", &shipped).unwrap_or(shipped)
+}
+
+/// The system message §8 asks for: the house rules cut to this job's sections, this job's own wording,
+/// and the precedence rule when there is a User Context to outrank anything.
+///
+/// Until now retakes sent the bare `retake` prompt as its system message, so none of §8 reached it: no
+/// heading table, no jobs list cut to this job's line, no preamble rule, no precedence rule. This is the
+/// door [`crate::prompt_assembly`] exists to be the only one of.
+pub fn system_message(paths: &Paths, context: &str) -> String {
+    crate::prompt_assembly::system_message(
+        &wording(paths, "system"),
+        "retake",
+        &system_wording(paths),
+        context,
+        false,
+        false,
+    )
+}
+
+/// The wording reader every ask uses: the shipped file, or the settings copy of it (§04#6).
+fn wording(paths: &Paths, key: &str) -> String {
+    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
+}
+
+/// Where the User Context comes from: the session's own note in `naivepost.json`. Absent means no
+/// context rather than an invented one — a made-up context is a claim about the recording nobody wrote.
+/// Retakes runs inside a project folder, so the tree `ask_run` already holds answers this.
+fn user_context(tree: &Tree) -> String {
+    crate::project::load(tree.dir())
+        .map(|project| project.context.clone())
+        .unwrap_or_default()
 }
 
 /// The deciding parts for one pooled run. `run_index` is the whole point: three identical questions

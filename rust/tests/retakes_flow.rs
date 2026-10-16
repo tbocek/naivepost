@@ -114,9 +114,10 @@ fn f1_9_s2_a_source_change_inserts_the_separator() {
 
 /// The slot name `retakes_ask::ask_run` spells for one draw — the door the program itself uses
 /// (rust/src/retakes_ask.rs names its cache file with this before it dials), so what is pinned is the
-/// digest the pool really files under and not a look-alike.
+/// digest the pool really files under and not a look-alike. The system half is §8's assembled message,
+/// because that is the text the pool sends and §6 keys a slot on what went out.
 fn slot_for(paths: &naivepost::settings::Paths, brief: &str, model: &str, run: usize) -> String {
-    retakes_ask::run_key(&retakes_ask::system_wording(paths), brief, model, run).expect("a brief always keys")
+    retakes_ask::run_key(&retakes_ask::system_message(paths, ""), brief, model, run).expect("a brief always keys")
 }
 
 /// S3: each pooled run gets its own cache slot -- the run index is in the key, or the pool collapses

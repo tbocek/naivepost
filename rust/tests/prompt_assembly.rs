@@ -11,6 +11,81 @@
 use naivepost::narrate_pass;
 use naivepost::prompt_assembly as asm;
 
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+
+/// The env guard the live tests use: `XDG_*` and the retry scale belong to the process, and cargo runs
+/// these cases as threads of one process.
+static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// A fake LLM on a loopback port that records every body it was asked with and answers each the same.
+struct Fake {
+    url: String,
+    asks: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl Fake {
+    fn start(answer: String) -> Fake {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let port = listener.local_addr().expect("an address").port();
+        let asks = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorder = asks.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let recorder = recorder.clone();
+                let answer = answer.clone();
+                std::thread::spawn(move || {
+                    let mut reader = BufReader::new(stream.try_clone().expect("a socket clone"));
+                    let mut line = String::new();
+                    let _ = reader.read_line(&mut line);
+                    let mut length = 0usize;
+                    loop {
+                        let mut header = String::new();
+                        if reader.read_line(&mut header).ok().filter(|n| *n > 0).is_none()
+                            || header.trim().is_empty()
+                        {
+                            break;
+                        }
+                        if header.to_ascii_lowercase().starts_with("content-length:") {
+                            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+                        }
+                    }
+                    let mut body = vec![0u8; length];
+                    if length > 0 {
+                        let _ = reader.read_exact(&mut body);
+                    }
+                    let payload = answer;
+                    let framed = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                        payload.len()
+                    );
+                    let _ = stream.write_all(framed.as_bytes());
+                    let _ = stream.flush();
+                    if let Ok(mut row) = recorder.lock() {
+                        row.push(String::from_utf8_lossy(&body).into_owned());
+                    }
+                });
+            }
+        });
+        Fake { url: format!("http://127.0.0.1:{port}"), asks }
+    }
+
+    /// Wait until `count` asks have been recorded — recording happens on the connection's own thread.
+    fn waited(&self, count: usize) -> Vec<String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let seen = self.asks.lock().expect("the record lock").clone();
+            if seen.len() >= count || std::time::Instant::now() > deadline {
+                return seen;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+}
+
 const ITEM: &str = "§09-llm-and-tools#8-prompt-assembly";
 
 /// The eight sections, spelled as the headings spell them.
@@ -378,4 +453,292 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s9_shipped_wording_has_every_head_the_
     assert!(speed.contains("speed:") && !speed.contains(NEVER), "real speed cut wrong");
     // And the real system prompt's preamble reaches a minimal row.
     assert!(speed.contains("automated video editor"), "preamble dropped: {speed}");
+}
+
+// ---- the jobs §8 reached only from their own side ----------------------------------------------------
+//
+// The tests above prove what `prompt_assembly` does. These prove the program ASKS through it: retakes,
+// describe, the cut's user turn and the policy ask each used to build their message at home, so none of
+// the table, the jobs-list cut, the preamble rule or the precedence rule reached them. Each test below
+// calls the job's own door and asserts §8's clauses on the text that goes out.
+
+/// A settings folder with no edited wording in it, so every read falls back to the shipped file — which is
+/// what makes these assertions about §8 rather than about somebody's edits.
+fn plain_paths(tag: &str) -> naivepost::settings::Paths {
+    let root = std::env::temp_dir().join(format!("naivepost-pa8-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    naivepost::settings::Paths {
+        config_dir: root.join("cfg/naivepost"),
+        data_dir: root.join("data/naivepost"),
+    }
+}
+
+/// One shipped job prompt's text, through the same reader the program uses.
+fn shipped_job(key: &str) -> String {
+    naivepost::prompts::shipped_text(key).unwrap_or_else(|| panic!("spec/prompts/{key}.md ships"))
+}
+
+/// Every head `sections_for(key)` names, checked present; every other known head, checked absent. A body
+/// of prose could otherwise smuggle a heading's words in, so the check is on the heading lines themselves.
+fn assert_heads(cut: &str, key: &str) {
+    let want = asm::sections_for(key).expect("this job has a row in the table");
+    for head in asm::KNOWN_HEADS {
+        let wanted = want.contains(&head);
+        // A heading line is the head at the start of a line, not the phrase somewhere in prose.
+        let present = cut.lines().any(|line| line.starts_with(head));
+        assert_eq!(
+            present, wanted,
+            "{key}: {head} {}",
+            if wanted { "must be on the wire" } else { "must not reach this job" }
+        );
+    }
+}
+
+#[test]
+fn sec_09_llm_and_tools_8_prompt_assembly_s10_retakes_system_goes_through_the_table() {
+    let paths = plain_paths("retake");
+    let got = naivepost::retakes_ask::system_message(&paths, "");
+    assert_heads(&got, "retake");
+    // The job's own wording rides after the house rules, which is §8's "+" order.
+    let job = shipped_job("retake");
+    let opener = job.lines().next().expect("the retake prompt opens with a line");
+    assert!(got.contains(opener), "the retake wording is missing:\n{got}");
+    // The order is decided by where the JOB's own text starts: everything before it is the cut house
+    // prompt, which is why §8 says the job prompt is appended rather than interleaved.
+    let house = asm::cut_system(&shipped_job("system"), "retake");
+    assert!(got.starts_with(house.trim()), "the cut house prompt leads:\n{got}");
+    assert!(got.contains(opener), "and the job prompt follows it");
+    // The jobs list keeps ONLY this job's line: its own label survives, another job's does not.
+    assert!(got.contains("retake:"), "own line missing:\n{got}");
+    for (_, label) in asm::JOB_LABEL {
+        if label == "retake:" {
+            continue;
+        }
+        assert!(!got.contains(label), "another job's line survived ({label}):\n{got}");
+    }
+    // And §8's preamble (anything before the first heading) reaches it too.
+    assert!(got.contains("automated video editor"), "preamble dropped:\n{got}");
+}
+
+#[test]
+fn sec_09_llm_and_tools_8_prompt_assembly_s11_describe_system_goes_through_the_table() {
+    let paths = plain_paths("describe");
+    let got = naivepost::describe_call::system_message(&paths, "");
+    assert_heads(&got, "describe");
+    let job = shipped_job("describe");
+    let opener = job.lines().next().expect("the describe prompt opens with a line");
+    assert!(got.contains(opener), "the describe wording is missing:\n{got}");
+    assert!(got.contains("describe:"), "own jobs-list line missing:\n{got}");
+    for (_, label) in asm::JOB_LABEL {
+        if label == "describe:" {
+            continue;
+        }
+        assert!(!got.contains(label), "another job's line survived ({label}):\n{got}");
+    }
+    // Describe reads frames, not the downstream steps: THE FOUR STEPS and TOOLS stay out (§8's row).
+    assert!(!got.lines().any(|line| line.starts_with(STEPS)), "describe must not read THE FOUR STEPS");
+    assert!(!got.lines().any(|line| line.starts_with(CUT)), "describe must not read THE CUT");
+}
+
+#[test]
+fn sec_09_llm_and_tools_8_prompt_assembly_s12_cut_user_message_carries_the_context_and_the_speech_rule() {
+    let material_tail = "[0.0s-5.0s] A: the timeline";
+    let with = naivepost::ui::cut_suggest_model_run::user_turn("make it shorter", 1200.0, 300.0, material_tail);
+    let ctx = with
+        .find(narrate_pass::CTX_INTRO)
+        .expect("the User Context block opens the user turn");
+    let speech = with
+        .find(narrate_pass::CTX_SPEECH)
+        .expect("the cut carries the speech rule");
+    let length = with.find("SESSION LENGTH").expect("then the material");
+    let tail = with.find(material_tail).expect("and the timeline last");
+    assert!(ctx < speech, "context before the speech rule:\n{with}");
+    assert!(speech < length, "the speech rule precedes the material:\n{with}");
+    assert!(length < tail, "the material keeps its own order:\n{with}");
+    assert!(with.contains("make it shorter"), "the context text itself is there:\n{with}");
+
+    // No context: neither the block nor the rule appears — nothing is said about a block the model will not get.
+    let without = naivepost::ui::cut_suggest_model_run::user_turn("   ", 1200.0, 300.0, material_tail);
+    assert!(!without.contains("USER CONTEXT"), "empty context leaked the block:\n{without}");
+    assert!(!without.contains(narrate_pass::CTX_SPEECH), "empty context leaked the speech rule:\n{without}");
+    assert!(without.starts_with("SESSION LENGTH"), "the material stands alone:\n{without}");
+}
+
+#[test]
+fn sec_09_llm_and_tools_8_prompt_assembly_s13_policy_user_message_keeps_the_refusal_tail() {
+    let req = naivepost::policy::request("cut the boring parts");
+    let first = naivepost::policy_call::user_turn(&req, &[]);
+    assert!(first.starts_with(narrate_pass::CTX_INTRO), "§8's door writes the context block:\n{first}");
+    assert!(first.contains("cut the boring parts"), "the context text itself:\n{first}");
+    // policy decides nothing about what is spoken, so the speech rule is not its line to carry.
+    assert!(!asm::carries_speech_rule(req.prompt), "policy must not carry the speech rule");
+    assert!(!first.contains(narrate_pass::CTX_SPEECH), "policy carried a speech rule:\n{first}");
+    assert!(first.contains("Set only the fields it settles"), "the setter instruction is part of the material");
+
+    let again = naivepost::policy_call::user_turn(&req, &["target_length is not a field the list allows".into()]);
+    assert!(again.starts_with(narrate_pass::CTX_INTRO), "the retry still leads with the context block");
+    assert!(again.contains("Your previous answer was refused"), "the refusal note is appended:\n{again}");
+    assert!(again.contains("target_length is not a field the list allows"), "and says what was refused");
+    assert!(
+        again.trim_end().ends_with("Send set_policy again with the field names and values the list allows."),
+        "and closes with the correction ask:\n{again}"
+    );
+}
+
+#[test]
+fn sec_09_llm_and_tools_8_prompt_assembly_s14_precedence_rule_reaches_the_new_jobs_only_with_a_context() {
+    let paths = plain_paths("precedence");
+    for (name, built_with, built_without) in [
+        (
+            "retakes",
+            naivepost::retakes_ask::system_message(&paths, "keep the demos"),
+            naivepost::retakes_ask::system_message(&paths, ""),
+        ),
+        (
+            "describe",
+            naivepost::describe_call::system_message(&paths, "keep the demos"),
+            naivepost::describe_call::system_message(&paths, ""),
+        ),
+    ] {
+        assert!(
+            built_with.ends_with(&asm::precedence_rule()),
+            "{name}: the precedence rule closes the system message"
+        );
+        // §8 names the second half specifically: another step's instruction is that step's to act on.
+        assert!(built_with.contains(asm::PRECEDENCE_OTHER_JOBS), "{name}: second half missing");
+        assert!(!built_without.contains("USER CONTEXT"), "{name}: empty context invented a rule");
+        assert!(!built_without.contains(asm::PRECEDENCE_OTHER_JOBS), "{name}: empty context leaked the rule");
+    }
+
+    // And the jobs read that context from their OWN project folder, not from a caller who happens to carry
+    // it: retakes and describe both resolve it through `naivepost.json`, so §8's branch is decided by the
+    // session — which is where a person actually writes the note.
+    let (_root, tree, paths) = session_with_context("pa8-ctx", "keep the demos, cut the setup");
+    assert_eq!(
+        project_context(&tree),
+        "keep the demos, cut the setup",
+        "the session's own note is what a job reads"
+    );
+    let from_project = naivepost::retakes_ask::system_message(&paths, &project_context(&tree));
+    assert!(from_project.ends_with(&asm::precedence_rule()), "the project's context earned the rule");
+    let bare = naivepost::retakes_ask::system_message(&paths, &project_context(&empty_session("pa8-noctx")));
+    assert!(!bare.contains("USER CONTEXT"), "a session with no note invents nothing");
+}
+
+/// The User Context exactly as the program reads it: the session's own note in `naivepost.json`, which is
+/// what `retakes_ask::ask_run` resolves through its private `user_context` before building the system turn.
+fn project_context(tree: &naivepost::layout::Tree) -> String {
+    naivepost::project::load(tree.dir())
+        .map(|project| project.context.clone())
+        .unwrap_or_default()
+}
+
+/// A session folder whose project has no User Context at all.
+fn empty_session(tag: &str) -> naivepost::layout::Tree {
+    let (_root, tree, _paths) = session_with_context(tag, "");
+    tree
+}
+
+/// A session folder whose `naivepost.json` carries a User Context, plus its settings paths. Needed by any
+/// door that reads the context from the project rather than being handed it.
+fn session_with_context(tag: &str, context: &str) -> (std::path::PathBuf, naivepost::layout::Tree, naivepost::settings::Paths) {
+    let root = common::temp_dir_tagged(tag);
+    let session = naivepost::startup::session_dir(&root);
+    std::fs::create_dir_all(&session).expect("the session folder");
+    let paths = naivepost::settings::Paths {
+        config_dir: root.join("cfg/naivepost"),
+        data_dir: root.join("data/naivepost"),
+    };
+    let tree = naivepost::layout::Tree::new(session).expect("the session is a project");
+    let project = naivepost::project::Project {
+        context: context.to_string(),
+        ..Default::default()
+    };
+    naivepost::project::save(&project, tree.dir()).expect("the project is written");
+    (root, tree, paths)
+}
+
+/// §8 names describe among the jobs that must assemble their system message through the table. It now does:
+/// house rules cut to `describe`'s sections, then the `describe` wording whole — and nothing else on the
+/// system turn, because the frames ride on the user turn (§06#4), not here.
+#[test]
+fn sec_09_llm_and_tools_8_prompt_assembly_s11b_describe_system_goes_through_the_table() {
+    let built = naivepost::describe_call::system_message(&plain_paths("pa8-desc"), "keep the demos, cut the setup");
+    assert_heads(&built, "describe");
+    assert!(
+        built.contains(shipped_job("describe").lines().next().expect("job opener")),
+        "the describe wording is missing"
+    );
+    assert!(built.ends_with(&asm::precedence_rule()), "a context earned the rule");
+    // The frames never appear in the system message (§06#4): this module's share of the request is the
+    // system turn plus the clip list, and the list belongs to the caller that owns the clips.
+    assert!(!built.contains("data:image"), "no frame belongs on the system turn");
+}
+
+/// The wire half: the retakes pool really sends what its door assembles. `ask_run` takes the settings
+/// row, so pointing `conf.server` at a loopback fake is the program's own seam — nothing in the program
+/// knows a test exists.
+#[test]
+fn sec_09_llm_and_tools_8_prompt_assembly_s15_retakes_wire_carries_the_assembled_system() {
+    let _turn: std::sync::MutexGuard<'_, ()> = ENV
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // `finish` with no marks is a whole answer, so the run ends after one round and exactly one body
+    // reaches the fake — the request whose system message this check reads.
+    let fake = Fake::start(
+        serde_json::json!({"choices": [{"message": {"content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "finish", "arguments": "{}"}}
+        ]}}]})
+        .to_string(),
+    );
+    // A User Context in the project file: §8 says it decides whether the precedence rule rides along, and
+    // the wire has to show that decision rather than only a builder.
+    let (root, tree, paths) = session_with_context("pa8-wire", "keep the demos, cut the setup");
+    let mut conf = naivepost::settings::Conf::default();
+    conf.server = fake.url.clone();
+    conf.model = "retakes-model".into();
+    naivepost::settings::save(&paths, &conf).expect("the conf is written");
+    // The env and cwd are process-wide; hold them for this dial only, exactly as the live cache tests do.
+    std::env::set_var("NAIVEPOST_RETRY_SCALE", "1000");
+    std::env::set_var("XDG_CONFIG_HOME", root.join("cfg"));
+    std::env::set_var("XDG_DATA_HOME", root.join("data"));
+
+    use naivepost::tools::retakes::{Line, Marks};
+    let lines: Vec<Line> = (1..=6u32)
+        .map(|n| Line { n, start: f64::from(n) - 1.0, end: f64::from(n) - 0.5 })
+        .collect();
+    let speech = naivepost::retakes::speech_seconds(&lines);
+    let brief = naivepost::retakes::brief(&lines, &[]);
+    let mut marks = Marks::new(lines, speech);
+    // `ask_run` builds its system turn from the project's own note (see `user_context` there), which is what
+    // puts the precedence rule on this request at all.
+    let outcome = naivepost::retakes_ask::ask_run(&tree, &paths, &conf, &brief, 0, &mut marks);
+    std::env::remove_var("XDG_CONFIG_HOME");
+    std::env::remove_var("XDG_DATA_HOME");
+    std::env::remove_var("NAIVEPOST_RETRY_SCALE");
+    assert!(
+        matches!(outcome, naivepost::retakes_ask::RunOutcome::Answered { .. }),
+        "the fake answered: {outcome:?}"
+    );
+    let asks = fake.waited(1);
+    assert_eq!(asks.len(), 1, "one request went out");
+    let sent: serde_json::Value = serde_json::from_str(&asks[0]).expect("a JSON chat body");
+    let messages = sent["messages"].as_array().expect("the chat messages");
+    assert_eq!(messages[0]["role"].as_str(), Some("system"), "the system message leads:\n{sent}");
+    // `llm_request::body` writes every turn's content as the typed part array, so the text is the first part.
+    let system = messages[0]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the system turn carries a text part: {sent}"))
+        .to_string();
+    // What the door assembles is what the socket carried — headings, own jobs-list line, job wording,
+    // and the precedence rule the project's context earned.
+    assert_heads(&system, "retake");
+    assert!(system.contains("retake:"), "own jobs-list line missing:\n{system}");
+    assert!(
+        system.contains(shipped_job("retake").lines().next().expect("job opener")),
+        "the retake wording is missing:\n{system}"
+    );
+    // §8's last clause reaches the wire too, because the job read its context from the session it was asked about.
+    assert!(system.contains(narrate_pass::CTX_INTRO), "no precedence rule on the wire:\n{system}");
+    assert!(system.ends_with(&asm::precedence_rule()), "and the rule closes the system turn");
 }

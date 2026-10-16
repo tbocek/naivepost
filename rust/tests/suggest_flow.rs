@@ -178,7 +178,15 @@ fn f2_14_s2b_the_target_block_spells_both_forms() {
 
 #[test]
 fn f2_14_s2b_the_message_orders_context_length_target_timeline() {
-    let msg = suggest::message("a lecture about routers", 1200.0, 300.0, "[0.0s-5.0s] A: hi");
+    // §S2b's order is now assembled in two doors: `prompt_assembly::user_message` writes the person's
+    // context (and the cut's speech rule), and `suggest::message` writes everything after it. The wire
+    // message is what this pins, because that is what the model reads.
+    let msg = naivepost::ui::cut_suggest_model_run::user_turn(
+        "a lecture about routers",
+        1200.0,
+        300.0,
+        "[0.0s-5.0s] A: hi",
+    );
     let ctx = msg.find("a lecture about routers").expect("context present");
     let len = msg.find("SESSION LENGTH: 1200 seconds").expect("length present");
     let tgt = msg.find("KEEP between").expect("target present");
@@ -194,6 +202,7 @@ fn f2_14_s2b_the_message_orders_context_length_target_timeline() {
         "the length is said once: {msg}"
     );
 }
+
 
 #[test]
 fn f2_14_s2b_a_context_ruling_out_all_three_passes_asks_for_none() {

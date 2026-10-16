@@ -178,11 +178,15 @@ pub fn gaps_of(inputs: &cut_suggest_words_run::Inputs, end: f64) -> Vec<(f64, f6
     holes
 }
 
-/// The request's user turn: §S2b's order — the person's context, the session length, the target block,
-/// the timeline — delegated to [`suggest::message`] so the SESSION LENGTH line and the target block are
-/// that module's wording and cannot drift from the words path's or from the spec's.
+/// The request's user turn, assembled the §8 way: the User Context block and the cut's speech rule first
+/// ([`crate::prompt_assembly::user_message`] — only `cut` and `narrate` carry that rule), then the material
+/// [`suggest::message`] spells (SESSION LENGTH, the target block, the timeline).
 pub fn user_turn(user_context: &str, session_len: f64, target: f64, session_txt: &str) -> String {
-    suggest::message(user_context, session_len, target, session_txt)
+    crate::prompt_assembly::user_message(
+        user_context,
+        "cut",
+        &suggest::message(session_len, target, session_txt),
+    )
 }
 
 /// The system message, assembled the way every other ask does it: the shipped `system` and `cut`
