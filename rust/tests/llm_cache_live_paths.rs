@@ -83,6 +83,12 @@ impl Fake {
     fn count(&self) -> usize {
         self.asks.lock().expect("the record lock").len()
     }
+
+    /// Change what the fake answers with, mid-run: a scenario whose second call must differ from its
+    /// first (the walk's gap-filling re-ask, §6) needs this and nothing else.
+    fn set_answer(&self, answer: String) {
+        *self.answer.lock().expect("the reply lock") = answer;
+    }
 }
 
 fn serve(mut stream: TcpStream, answer: &str) -> Option<String> {
@@ -434,4 +440,168 @@ fn sec_09_llm_and_tools_6_cache_s7_the_three_non_users_never_cache() {
     assert!(!upload.cached, "the upload text is never cached");
     let translate = produce.of("translate").expect("produce names translate");
     assert!(translate.cached, "and translate is one of the five");
+}
+
+/// §6's first irregularity, the OTHER half of it: what sits in the file is the reconstructed numbered
+/// text, not the chat reply. A replay then answers `merge` directly and never re-parses prose, so a
+/// model that worded its answer oddly cannot break a resumed run. Pinned on the live leg: bytes read
+/// back off disk, then the same batch asked again with no socket and no row.
+#[test]
+fn sec_09_llm_and_tools_6_cache_s7_translate_files_the_numbered_text_not_the_reply() {
+    let _turn = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let answer = json!({"choices": [{"message": {"content": null, "tool_calls": [
+        {"id": "c1", "type": "function", "function": {"name": "translate_line",
+            "arguments": json!({"n": 1, "text": "eins"}).to_string()}},
+        {"id": "c2", "type": "function", "function": {"name": "translate_line",
+            "arguments": json!({"n": 2, "text": "zwei"}).to_string()}},
+        {"id": "c3", "type": "function", "function": {"name": "translate_line",
+            "arguments": json!({"n": 3, "text": "drei"}).to_string()}},
+        {"id": "cf", "type": "function", "function": {"name": "finish", "arguments": "{}"}}
+    ]}}]})
+    .to_string();
+    let fake = Fake::start(answer.clone());
+    let scene = Scene::new("numbered", &fake.url);
+    scene.enter();
+    let numbers = [1usize, 2, 3];
+    let part: Vec<(usize, String)> =
+        [(1, "one"), (2, "two"), (3, "three")].map(|(n, t)| (n, t.to_string())).into();
+    let message = format!(
+        "{}\n{}",
+        naivepost::produce_subtitles::message(3, "de"),
+        naivepost::produce_subtitles::numbered(&part)
+    );
+    let want: BTreeMap<usize, String> = [(1, "eins"), (2, "zwei"), (3, "drei")]
+        .into_iter()
+        .map(|(n, text)| (n, text.to_string()))
+        .collect();
+
+    let first = naivepost::produce_translate_ask::ask_at(
+        &scene.tree,
+        &scene.conf,
+        &message,
+        &numbers,
+        &|| false,
+    )
+    .expect("the batch translated");
+    assert_eq!(first, want, "the answer came off the wire");
+    assert_eq!(fake.waited(1).len(), 1, "one request went out");
+    let rows_after_first = requests::read(&scene.tree).expect("requests.tsv").len();
+
+    // One slot, and its BYTES are the numbered text rather than the envelope §3.10 answered with.
+    let slot = assert_one_hex_slot(&scene.cached_names(naivepost::produce_translate_ask::STEP), "translate");
+    let filed = std::fs::read_to_string(
+        scene.tree.dir().join("cache/llm").join(naivepost::produce_translate_ask::STEP).join(&slot),
+    )
+    .expect("the slot reads back");
+    assert_eq!(filed, "1\teins\n2\tzwei\n3\tdrei", "one numbered line per number, in the order asked");
+    for folded in ["1\teins", "2\tzwei", "3\tdrei"] {
+        assert!(filed.contains(folded), "{folded} is in the filed text: {filed}");
+    }
+    assert!(!filed.contains("choices") && !filed.contains("tool_calls"),
+        "the reply envelope is NOT what was filed: {filed}");
+    assert!(!answer.contains(&filed), "and the filed text is not a copy of the reply either");
+
+    // The numbered slot replays: same map, no socket, no new row.
+    let second = naivepost::produce_translate_ask::ask_at(
+        &scene.tree,
+        &scene.conf,
+        &message,
+        &numbers,
+        &|| false,
+    )
+    .expect("the cached batch still translates");
+    assert_eq!(second, want, "the replay says the same thing");
+    assert_eq!(fake.count(), 1, "the second ask opened no socket: {}", fake.count());
+    assert_eq!(
+        requests::read(&scene.tree).expect("requests.tsv").len(),
+        rows_after_first,
+        "a cache hit writes no row"
+    );
+    scene.leave();
+}
+
+/// §6's other translate half, on the live leg: the gap-filling second call never earns a place in the
+/// cache. The leg sees only a message and its numbers, so the walk's own repair wording is what has to
+/// decide it — which is why the marker is checked against THAT text and not against a copy of it here.
+#[test]
+fn sec_09_llm_and_tools_6_cache_s7_the_gap_filling_call_is_never_filed() {
+    let _turn = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Two lines answered, one held back, so the walk's re-ask path is the one under test.
+    let answer = json!({"choices": [{"message": {"content": null, "tool_calls": [
+        {"id": "c1", "type": "function", "function": {"name": "translate_line",
+            "arguments": json!({"n": 1, "text": "eins"}).to_string()}},
+        {"id": "cf", "type": "function", "function": {"name": "finish", "arguments": "{}"}}
+    ]}}]})
+    .to_string();
+    let fake = Fake::start(answer);
+    let scene = Scene::new("gapfill", &fake.url);
+    scene.enter();
+    let step = naivepost::produce_translate_ask::STEP;
+    let part: Vec<(usize, String)> =
+        [(1, "one"), (2, "two"), (3, "three")].map(|(n, t)| (n, t.to_string())).into();
+    let first_message = format!(
+        "{}\n{}",
+        naivepost::produce_subtitles::message(3, "de"),
+        naivepost::produce_subtitles::numbered(&part)
+    );
+
+    // The marker against the two wordings the walk actually sends.
+    assert!(
+        !naivepost::produce_subtitles::is_repair_request(&first_message),
+        "the first call is not a repair: {first_message}"
+    );
+    // The batch as the walk builds it: line 2 never came back, so 2 and 3 are what it asks again for.
+    let mut batch = naivepost::produce_subtitles::Batch::new((0, 3));
+    batch.translate_line(1, "eins").expect("line 1 is inside this batch");
+    assert_eq!(batch.missing(), vec![2, 3], "the walk's own bookkeeping decides the re-ask");
+    let repair_message = batch.ask_again_text(&part);
+    assert!(
+        naivepost::produce_subtitles::is_repair_request(&repair_message),
+        "the walk's repair text carries the marker: {repair_message}"
+    );
+
+    // First round: complete enough to be filed? No — a PARTIAL answer is refused a slot (§S3), so this
+    // scene starts with nothing filed, which is what makes the repair half below readable.
+    let got = naivepost::produce_translate_ask::ask_at(
+        &scene.tree,
+        &scene.conf,
+        &first_message,
+        &[1usize, 2, 3],
+        &|| false,
+    )
+    .expect("the batch answered what it could");
+    assert_eq!(got.len(), 1, "only line 1 came back: {got:?}");
+    assert!(scene.cached_names(step).is_empty(), "a partial answer is never filed: {:?}", scene.cached_names(step));
+
+    // The repair call: correct answer, and STILL no slot for it (§6's "never caches its gap-filling
+    // second call"), even though every number it asked for comes back this time.
+    let repaired = json!({"choices": [{"message": {"content": null, "tool_calls": [
+        {"id": "r2", "type": "function", "function": {"name": "translate_line",
+            "arguments": json!({"n": 2, "text": "zwei"}).to_string()}},
+        {"id": "r3", "type": "function", "function": {"name": "translate_line",
+            "arguments": json!({"n": 3, "text": "drei"}).to_string()}},
+        {"id": "rf", "type": "function", "function": {"name": "finish", "arguments": "{}"}}
+    ]}}]})
+    .to_string();
+    fake.set_answer(repaired);
+    let again = naivepost::produce_translate_ask::ask_at(
+        &scene.tree,
+        &scene.conf,
+        &repair_message,
+        &[2usize, 3],
+        &|| false,
+    )
+    .expect("the repair call answered");
+    let want: BTreeMap<usize, String> = [(2, "zwei"), (3, "drei")]
+        .into_iter()
+        .map(|(n, text)| (n, text.to_string()))
+        .collect();
+    assert_eq!(again, want, "the repair did its job: {again:?}");
+    assert_eq!(fake.count(), 2, "both calls went out: {}", fake.count());
+    assert!(
+        scene.cached_names(step).is_empty(),
+        "§6: the gap-filling call is never filed -- {:?}",
+        scene.cached_names(step)
+    );
+    scene.leave();
 }

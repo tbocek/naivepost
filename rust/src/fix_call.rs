@@ -170,9 +170,15 @@ pub fn stage_chunk(
         };
         if !outcome.valid {
             log(&fix_transcripts::give_up_log(lane, index, total));
-        } else if let Err(err) = fix_transcripts::store_block(tree, &block, &outcome.lines) {
-            // A cache that will not write is not a reason to lose the fix.
-            log(&format!("!!! could not keep the fix: {err}"));
+        } else if fix_transcripts::caches_attempt(outcome.attempt) {
+            // §6's second irregularity: only the FIRST attempt's answer is filed. A repaired one is
+            // only right given the refusal it was shown, so replaying it from disk would skip the
+            // validation that made it right — the fix still lands in `transcript.fixed.tsv` below,
+            // it simply costs the same ask again on the next run.
+            if let Err(err) = fix_transcripts::store_block(tree, &block, &outcome.lines) {
+                // A cache that will not write is not a reason to lose the fix.
+                log(&format!("!!! could not keep the fix: {err}"));
+            }
         }
         for (n, why) in &outcome.flags {
             log(&format!(">>> {lane} line {n}: {why}"));
@@ -267,6 +273,10 @@ fn ask_once(
     // body of the FIRST readable reply — the pair this block's cache entry stands for.
     let mut fixes: Vec<Reply> = Vec::new();
     let mut first_body: Option<String> = None;
+    // Whether any round of this ask was refused, which is what §6's "only its FIRST attempt is cached"
+    // turns on. `fix_transcripts::fix_block` puts the refusal in front of the next question, so a second
+    // round exists exactly when the first answer was not usable -- and this leg sees every round.
+    let mut refused = false;
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
         // §2's row says thinking OFF, which is `Mode::Execute` here: the two modes are the whole switch
         // and every non-thinking job in the app takes this one.
@@ -299,6 +309,9 @@ fn ask_once(
         if reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name()) {
             first_body = Some(sent.body.clone());
         }
+        // A round that asked for a tool result instead of finishing is the fixer's refusal path: the
+        // answer came back unusable and another question is about to be dialled with the refusal in it.
+        refused |= !reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
         // `finish` closes the flow and the loop reads that off the TURN, not off the call list.
         let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
         Ok(tool_loop::Turn {
@@ -347,7 +360,11 @@ fn ask_once(
     // Stored under the ORIGINAL two-message key, never the grown conversation: the next run asks the
     // same opening question and must find this answer. The rows kept are the ones whose text differs
     // from what ASR heard, which is exactly what `fix_transcripts::cached_block` replays.
-    if let Some(body) = first_body {
+    //
+    // §6's second irregularity decides WHICH ask may be filed, and this leg can decide it itself: a round
+    // that did not finish means the answer was refused and re-asked, so a repaired block costs the same
+    // ask again on the next run rather than replaying a reply that was only right given its refusal.
+    if let Some(body) = first_body.filter(|_| !refused) {
         crate::llm_cache::store(tree, STEP, &parts, &body);
     }
     Ok(fixes)
