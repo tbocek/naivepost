@@ -65,6 +65,27 @@ pub fn thinking(key: &str) -> bool {
     THINKING_ON.contains(&key)
 }
 
+/// The non-thinking switch, spelled once: §4 lists twelve keys and every ask that is told not to think
+/// (§3's `thinkAgain` retry, and any key outside the four) gets exactly the mode this unnamed key maps
+/// to. Public so an ask module can take its execute mode from the table instead of naming a `Mode`.
+pub const NOT_THINKING: &str = "__execute__";
+
+/// §4's flag as the one switch a request body actually carries.
+///
+/// Every live ask builds its body through [`crate::llm_request::body`], whose `Mode` argument IS the
+/// thinking switch (§09 §1: the two modes are the whole of it). Reading the flag here instead of naming
+/// a `Mode` at each call site is what makes §4's "off elsewhere" true on the wire rather than only in
+/// this catalogue: a prompt retuned in [`THINKING_ON`] changes what goes out, and a call site cannot
+/// quietly disagree with the table the way `captions_ask` used to (it sent `Mode::Thinking` for a job
+/// §4 lists as thinking-off).
+pub fn mode_of(key: &str) -> crate::exchanges::Mode {
+    if thinking(key) {
+        crate::exchanges::Mode::Thinking
+    } else {
+        crate::exchanges::Mode::Execute
+    }
+}
+
 /// Which job this prompt belongs to, `None` for the two that have none (`system`, `policy`).
 ///
 /// Three prompts share one job: captions, speed and effects are the same `ClipRules` call shape

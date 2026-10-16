@@ -20,6 +20,11 @@ path = "src/main.rs"
 
 autotests = false
 
+# Nobody attaches a debugger here: line tables keep file:line in backtraces, and without the full debug
+# info every test binary is a fraction of the size and links faster after each change.
+[profile.dev]
+debug = "line-tables-only"
+
 # --- test targets (see `autotests = false` in [package]) ---------------------------------------
 
 [[test]]
@@ -1809,3 +1814,23 @@ path = "tests/llm_repair_live_f6_2.rs"
 [[test]]
 name = "model_list_and_tests_f9"
 path = "tests/model_list_and_tests_f9.rs"
+
+[[test]]
+name = "sec_10_parameters_4_prompts_s9_captions_ask_is_thinking_off"
+path = "tests/sec_10_parameters_4_prompts_s9_captions_ask_is_thinking_off.rs"
+
+[[test]]
+name = "sec_10_parameters_4_prompts_s9_the_captions_repair_stays_thinking_off"
+path = "tests/sec_10_parameters_4_prompts_s9_the_captions_repair_stays_thinking_off.rs"
+
+[[test]]
+name = "sec_10_parameters_4_prompts_s9_speeds_ask_is_thinking_off"
+path = "tests/sec_10_parameters_4_prompts_s9_speeds_ask_is_thinking_off.rs"
+
+[[test]]
+name = "sec_10_parameters_4_prompts_s9_effects_ask_is_thinking_off"
+path = "tests/sec_10_parameters_4_prompts_s9_effects_ask_is_thinking_off.rs"
+
+[[test]]
+name = "sec_10_parameters_4_prompts_s10_policy_derives_over_the_wire"
+path = "tests/sec_10_parameters_4_prompts_s10_policy_derives_over_the_wire.rs"

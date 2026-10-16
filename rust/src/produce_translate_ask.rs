@@ -21,7 +21,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::exchanges::{Message, Mode, Part};
+use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
@@ -87,7 +87,16 @@ pub fn body(model: &str, system: &str, user: &str) -> Result<String, String> {
     ];
     // §4: every chat call is streamed; the answer is read by response content type, so a plain-JSON fake
     // still works (`llm_request::reply_from`).
-    let body = llm_request::body(STEP, model, &messages, Mode::Execute, Some(&tools), true)?;
+    // §4 gives the translation thinking OFF; the switch is read from the prompt table
+    // ([`crate::prompts::mode_of`]) so this cannot drift from the catalogue.
+    let body = llm_request::body(
+        STEP,
+        model,
+        &messages,
+        crate::prompts::mode_of(STEP),
+        Some(&tools),
+        true,
+    )?;
     Ok(body.to_string())
 }
 

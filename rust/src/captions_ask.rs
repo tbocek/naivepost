@@ -20,7 +20,7 @@
 //! none; a caption answer is a JSON document, a join answer is words.
 
 use crate::cut_captions::{self, Call};
-use crate::exchanges::{self, Message, Mode, Part};
+use crate::exchanges::{self, Message, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
@@ -128,7 +128,11 @@ pub fn ask_at(
             Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
             Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },
         ];
-        Ok(llm_request::body(STEP, &model, &messages, Mode::Thinking, offer, true)?.to_string())
+        // §4 lists captions as thinking-OFF, so the mode comes from the prompt table rather than a named
+        // `Mode` here: this call used to send `Mode::Thinking` for a job §4 says does not think.
+        Ok(llm_request::
+            body(STEP, &model, &messages, crate::prompts::mode_of(STEP), offer, true)?
+            .to_string())
     };
     // One live ask is ONE request on the wire (§F3.9 counts batches by rows in `requests.tsv`). This dial IS §2's
     // first round, and it honours S5 itself: a refusal of the `tools` FIELD gets the identical body again without
@@ -206,7 +210,11 @@ pub fn ask_at(
                     STEP,
                     &crate::ui::window::log_line,
                     repair_messages(&system, &user),
-                    true,
+                    // The patience the FIRST round went out with is §4's flag for this key, read from the table
+                    // rather than named here: `thinkAgain` can only turn thinking OFF, so a prompt §4 leaves off
+                    // must not be handed a first round that thinks (that is what makes the retry identical to
+                    // the ask instead of cheaper).
+                    crate::prompts::thinking(STEP),
                     // The offer went out on this request, so §3's "with tools these become tool results".
                     !offered.is_empty(),
                     &verdict,
@@ -430,7 +438,11 @@ fn chat_body_mode(
     messages: &[Message],
     thinking: bool,
 ) -> Result<String, String> {
-    let mode = if thinking { Mode::Thinking } else { Mode::Execute };
+    // §3's retry patience is a question about THIS prompt, so the switch it picks is still §4's own:
+    // a thinking-on key may be asked to think again, and the non-thinking case is what
+    // [`crate::prompts::mode_of`] returns for any key §4 leaves off.
+    // A flow that never thought cannot be repaired into thinking either, so the flag is ANDed, not chosen.
+    let mode = crate::prompts::mode_of(if thinking && crate::prompts::thinking(STEP) { STEP } else { crate::prompts::NOT_THINKING });
     Ok(llm_request::body(STEP, model, messages, mode, None, true)?.to_string())
 }
 
@@ -442,7 +454,16 @@ fn chat_body_conversation(
     conversation: &[Message],
     tools: &[Tool],
 ) -> Result<String, String> {
-    Ok(llm_request::body(STEP, model, conversation, Mode::Thinking, Some(tools), true)?.to_string())
+    // The mode is §4's flag for this prompt (see [`crate::prompts::mode_of`]), not a hard-coded `Mode`.
+    Ok(llm_request::body(
+        STEP,
+        model,
+        conversation,
+        crate::prompts::mode_of(STEP),
+        Some(tools),
+        true,
+    )?
+    .to_string())
 }
 
 /// The timed row shape this ask's rounds write: `started` and `run` belong to whoever owns the run, and a step

@@ -259,3 +259,105 @@ fn sec_10_parameters_4_prompts_s6_the_bench_rows_are_the_twelve_in_order_and_pol
     );
     assert_eq!(bench::ROWS.len(), 13, "User Context + twelve prompts");
 }
+
+// ---- S7: the flag reaches the wire, not just the catalogue ----------------------------------
+
+/// The twelve keys that are actually sent (every one but the `system` preamble), with what §4 says
+/// about thinking for each. `policy` is included: F0.7 sends it, and §4 leaves it off.
+const LIVE_KEYS: [(&str, bool); 12] = [
+    ("describe", false),
+    ("fix", false),
+    ("retake", false),
+    ("textedit", true),
+    ("cut", true),
+    ("captions", false),
+    ("speed", false),
+    ("effects", false),
+    ("narrate", true),
+    ("translate", false),
+    ("youtube", true),
+    ("policy", false),
+];
+
+/// S7: for every live prompt key, the chat body built through the app's one body door carries the
+/// thinking flag §4 gives that key — in BOTH spellings a server reads (`enable_thinking` at the top
+/// level and inside `chat_template_kwargs`), which is what `llm_request::body` merges in.
+#[test]
+fn sec_10_parameters_4_prompts_s7_the_wire_carries_the_thinking_flag_4_gives_each_prompt() {
+    assert_eq!(ITEM, "§10-parameters#4-prompts");
+    let messages = [naivepost::exchanges::Message {
+        role: "user".to_string(),
+        parts: vec![naivepost::exchanges::Part::Text("hello".to_string())],
+    }];
+    for (key, thinks) in LIVE_KEYS {
+        let body = naivepost::llm_request::body(
+            key,
+            "test-model",
+            &messages,
+            prompts::mode_of(key),
+            None,
+            false,
+        )
+        .expect("a body for a configured model");
+        assert_eq!(
+            body["enable_thinking"],
+            serde_json::json!(thinks),
+            "{key}: §4 says thinking {}",
+            if thinks { "ON" } else { "OFF" }
+        );
+        assert_eq!(
+            body["chat_template_kwargs"]["enable_thinking"],
+            serde_json::json!(thinks),
+            "{key}: the template spelling must agree with the top-level one"
+        );
+        assert_eq!(
+            prompts::thinking(key),
+            thinks,
+            "{key}: the catalogue and §4 must say the same thing"
+        );
+    }
+    // And exactly the four §4 names are on: nothing crept in beside them.
+    let on: Vec<&str> = LIVE_KEYS.iter().filter(|(_, t)| *t).map(|(k, _)| *k).collect();
+    assert_eq!(on, vec!["textedit", "cut", "narrate", "youtube"]);
+}
+
+/// S8: no ask module names a `Mode` for its own request any more — every one reads the table. A
+/// hard-coded mode is how the captions ask ended up thinking for a job §4 lists as thinking-off, so
+/// this pins the absence of the mistake rather than its one instance.
+#[test]
+fn sec_10_parameters_4_prompts_s8_no_live_ask_module_names_a_mode_of_its_own() {
+    assert_eq!(ITEM, "§10-parameters#4-prompts");
+    // Each file and the prompt key it asks with. A file may still mention `Mode` in prose (a doc
+    // comment explaining §1's two modes) but must not build a body from a named variant.
+    let ask_modules: [(&str, &str); 9] = [
+        ("src/captions_ask.rs", "captions"),
+        ("src/speeds_ask.rs", "speed"),
+        ("src/effects_ask.rs", "effects"),
+        ("src/join_ask.rs", "textedit"),
+        ("src/describe_call.rs", "describe"),
+        ("src/fix_call.rs", "fix"),
+        ("src/retakes_ask.rs", "retake"),
+        ("src/produce_translate_ask.rs", "translate"),
+        ("src/produce_upload_call.rs", "youtube"),
+    ];
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for (file, key) in ask_modules {
+        let text = std::fs::read_to_string(root.join(file))
+            .unwrap_or_else(|why| panic!("{file} should be readable: {why}"));
+        let offending: Vec<&str> = text
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .filter(|line| line.contains("Mode::Thinking") || line.contains("Mode::Execute"))
+            .collect();
+        assert!(
+            offending.is_empty(),
+            "{file} ({key}) still names a thinking mode in code; it must call \
+             `prompts::mode_of({key:?})` so §4's split is the only source: {offending:?}",
+        );
+        assert!(
+            text.contains("prompts::mode_of"),
+            "{file} ({key}) must read §4's flag through `prompts::mode_of`",
+        );
+    }
+}
+

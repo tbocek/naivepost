@@ -15,7 +15,7 @@
 //! of three runs into one set of marks, and reading the words S4 checks a mark against.
 
 use crate::edges::AlignedWord;
-use crate::exchanges::{Message, Mode, Part};
+use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_request;
 use crate::project::Project;
@@ -262,7 +262,17 @@ pub fn ask_run(
             &endpoint.url,
             Some(tools),
             &|offer| {
-                Ok(llm_request::body(STEP, &conf.model, conversation, Mode::Execute, offer, true)?.to_string())
+                // §4 gives the retake hunt thinking OFF; read from the prompt table so this cannot drift
+                // from the catalogue (§10 §4).
+                Ok(llm_request::body(
+                    STEP,
+                    &conf.model,
+                    conversation,
+                    crate::prompts::mode_of(STEP),
+                    offer,
+                    true,
+                )?
+                .to_string())
             },
             &|body| {
                 crate::llm_retry_leg::chat(

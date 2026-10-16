@@ -143,7 +143,9 @@ pub fn body(model: &str, system: &str, brief: &str) -> Result<String, String> {
         STEP,
         model,
         &messages(system, brief),
-        Mode::Thinking,
+        // §4 gives the upload text thinking ON; read from the prompt table so this and the retry path
+        // below cannot drift apart (§10 §4).
+        crate::prompts::mode_of(STEP),
         Some(&tools),
         // §4: every chat call is streamed; the reply is read by response content type
         // (`llm_request::reply_from`), so a plain-JSON fake still answers correctly.
@@ -225,7 +227,7 @@ where
             None => Conf::default(),
         };
         let model = conf.model.clone();
-        let mode = if crate::prompts::thinking("youtube") { Mode::Thinking } else { Mode::Execute };
+        let mode = crate::prompts::mode_of(STEP);
         rounds += 1;
         // S5: this server has already refused the field -> ask without it and say nothing more.
         let offered = crate::llm_tools_offer::tools_for(&services::llm_endpoint(&conf).url, tools);
