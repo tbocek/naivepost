@@ -45,6 +45,8 @@ pub mod produce_words;
 /// §08-produce#1-screen items **4**, **5**, **8**, **9** — the four boxes a person TYPES into: their
 /// `changed` wires. Split out of `produce_page`, which is at its size budget.
 pub mod produce_text;
+/// §4's bill: what a step is about to ask, printed to the log when a run starts.
+pub mod run_bill;
 /// §08-produce#1-screen items **2**/**3** — the Images row's slots: each slot's picture, which one is
 /// the base, the crop box the base wears, and its four buttons. Split out of `produce_page`, at its budget.
 pub mod produce_slots;

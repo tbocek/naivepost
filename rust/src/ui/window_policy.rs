@@ -353,6 +353,10 @@ pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
     // Nothing refused and nothing landed but the model was reached: say so, rather than reporting a
     // derivation of zero fields as if it were news.
     let _ = &mut derived;
+    // §4's Setup row: the derivation IS a model call (`policy ×1`), and this is the one door that makes
+    // it, so the bill is printed here rather than on a page. Printed after the derivation, so the log
+    // says what was asked rather than what is about to be.
+    crate::ui::window::log_line(&crate::ui::run_bill::setup_line());
     derived
 }
 
