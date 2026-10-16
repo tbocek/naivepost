@@ -117,7 +117,12 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         | "05-insert"
         // §F2.14's own screen: ▶ in the MODEL mode — §S1's refusal beside a landed suggestion whose every
         // edge came from the app's snap points. No `spec/img/05-suggest.png` exists either.
-        | "05-suggest" => Some("Cut"),
+        | "05-suggest"
+        // §F2.14 S2a's own screen: ▶ in the WORDS mode, no model asked, so this is the page after the words
+        // cut AND after §12 §4's walk-back ran on it — the hole between two trimmed runs closed because
+        // somebody talked in it. No `spec/img/05-words.png`; `spec/inventory/cut.md`'s words line
+        // ("cut by the words: N segments") is the widget reference for what the status row must read.
+        | "05-words" => Some("Cut"),
         "06-preview" | "06-zoom" | "06-speed" | "06-text" | "06-volume" | "06-label"
         // §F3.10's pass screen: no `spec/img` counterpart, so it names itself after the flow.
         | "06-speeds"
@@ -914,6 +919,73 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // `Segments: 0` / `Cut: 00:00` beside four landed scenes, because the form column is built once
             // for an empty cut and only a verb repaints it.
             crate::ui::window::refresh_cut_readouts(&window);
+        }
+        // §F2.14 S2a's own picture: the Cut page after ▶ in the WORDS mode. Nothing here is poked — the
+        // session folder is staged through the program's own writers (`snapshot_words`), the cut is seeded
+        // through `seed_review_cut`, and the press goes through `cut_suggest_words_run::press_words`, the door
+        // ▶ fires. What the shot therefore shows is §S2a's sentence on the status row beside the scenes the
+        // WALK landed, i.e. with the spoken hole between two trimmed runs closed (§12 §4's fourth bullet).
+        if screen == "05-words" {
+            let staged = crate::snapshot_words::stage();
+            let project = staged.as_ref().and_then(crate::snapshot_words::stage_session);
+            // The words arm reads its footage rows off the project the WINDOW holds (`session_handle`), so the
+            // staged project replaces the `--project` fixture's after the window was built: `session_handle`
+            // hands back this window's own handle, and overwriting it is how a snapshot hands the page another
+            // session without a click on Open.
+            // The tape the landed scenes sit on. Declared through the page's OWN rescan door (`refresh_page_spans`)
+            // after this window's project has been swapped for the staged one: that door asks the OPEN project for
+            // its footage rows and probes each, which is how a real Open puts a tape on the strip — a hand-listed
+            // span would name seconds the painter has no probed recording for.
+            if let Some(project) = project {
+                // The words arm reads its footage rows off the project the WINDOW holds (`session_handle`), so
+                // the staged project replaces the `--project` fixture's before the rescan below is asked.
+                ui::session_handle(&window).replace(project);
+                ui::cut_session::refresh_page_spans(&crate::snapshot_words::base_cut());
+                ui::set_session_policy_field(&window, "cutMode", "words", "this shot", project::Origin::User);
+                // Point the door at the staged folder, the same seam `land_spans` writes through. The page's cut
+                // must be re-seeded HERE rather than left to `run`'s early seed, which reads the `--project`
+                // fixture's own `cut.json` (three clips of another session) — the words arm cuts from the cut on
+                // screen, so the two-scene base from the staged folder has to be what the page holds.
+                ui::cut_suggest_land::set_session_for_test(staged.clone());
+                // Publish the two-scene base through the PAGE'S OWN writer, not a state poke: `write_cut_at` is
+                // §7's one writer for `cut.json` (and refuses mid-gesture, like every real edit), so a snapshot
+                // that wants the page to open on this cut writes it the way an edit would and re-seeds the page
+                // from what is now on disk. The early seed above cannot do it: it reads the `--project` fixture's
+                // own `cut.json`, which is a different session's three clips.
+                if let Some(tree) = staged.as_ref() {
+                    crate::cut_save::write_cut_at(&crate::snapshot_words::base_cut(), tree)
+                        .expect("snapshot: the staged cut.json is writable");
+                }
+                ui::seed_review_cut(&window, &crate::snapshot_words::base_cut());
+                // The row list and the fold badges come from the cut the page now holds, so both are rebuilt
+                // after the re-seed and before the press: a snapshot that skips this paints the pre-seed rows.
+                ui::refresh_camera_rows(&window);
+                ui::refresh_fold_badges(&window);
+                let said = crate::snapshot_words::press_through_page(&window);
+                println!(
+                    "snapshot: 05-words | {said} | {} segs",
+                    ui::review_cut_segs_count(&window)
+                );
+                // Proof the landing reached a file, not only the widget.
+                let written = staged
+                    .as_ref()
+                    .map(|tree| tree.cut_json().is_file())
+                    .unwrap_or(false);
+                println!("snapshot: 05-words cut.json written: {written}");
+                // The same tail a mutating verb does after it publishes (see `05-suggest`'s note): without
+                // these the readouts say `Segments: 0` beside the landed scenes.
+                ui::refresh_fold_badges(&window);
+                ui::refresh_camera_rows(&window);
+                ui::refresh_effects_lane(&window);
+                crate::ui::window::refresh_cut_readouts(&window);
+                // The strip's zoom is the floor the DECLARED tape gives (§A: "− stops where all of it is on
+                // screen"), and the band has to be grown and repainted at the width the layout settled on — the
+                // same two doors every Cut-page screen goes through before its pixels are taken (`repaint_page`
+                // fits the band to the scene; a fresh window sized the band for no cut at all).
+                let view = ui::cut_view::surface_width(&window);
+                ui::cut_view::set_pps(ui::cut_view::floor_pps(view));
+                ui::cut_view::repaint_page(&window);
+            }
         }
         // §07-narrate's own picture (`spec/img/07-narrate.png`) is FOUR written lines with the app's own
         // times, estimates and one red fit warning. The fixture cannot show them: `fixtures/demo.naivepost`

@@ -174,7 +174,14 @@ pub fn run_words(
     let cut = crate::ui::window::newest_review_cut();
     let read = inputs(tree, project, &cut);
     let made = crate::suggest::words_cut(&read.runs, &read.marks, &read.silences);
-    if made.segs.is_empty() {
+    // §12 §4's fourth bullet: the walk-back runs after EVERY reply, "model- or hand-made", not only after
+    // a model's. `words_cut` trims to words, takes marks and dead air out and coalesces — it does NOT close
+    // holes or snap edges, because on this path there is no stamped answer to walk back. So the spans it
+    // settled on go through the same walk here that `suggest::apply` runs for the model arm, which is the
+    // only way hole closing and edge snapping ever happen on a words-mode press.
+    let walked = crate::suggest::walk_back_spans(&made.segs, &crate::ui::cut_suggest_model_run::walk_of(&read));
+    let changed = walked.segs != made.segs;
+    if walked.segs.is_empty() {
         // Nothing was kept. `suggest` has no sentence for this and inventing one is not this module's
         // job, so the page hears the same status it would have heard and the cut on screen stands.
         return Landed {
@@ -184,10 +191,21 @@ pub fn run_words(
             cut,
         };
     }
-    let landed = crate::ui::cut_suggest_land::land_spans(window, &made.segs);
+    let landed = crate::ui::cut_suggest_land::land_spans(window, &walked.segs);
+    let mut log = made.log;
+    if changed {
+        // "The page shows what it did": the walk says its own account, appended to the words cut's line so
+        // one log entry tells both halves of what the machine did to these seconds.
+        log.push_str(&format!(
+            "\n>>> {} ({} mark(s), {} of silence taken out)",
+            crate::suggest::walk_report(walked.closed_len, walked.moved),
+            walked.marks_out,
+            crate::tools::mm_ss(walked.silence_out)
+        ));
+    }
     Landed {
         status: made.status,
-        log: made.log,
+        log,
         wrote: true,
         cut: landed,
     }

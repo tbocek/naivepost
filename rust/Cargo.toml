@@ -681,6 +681,14 @@ name = "f2_14_s2b_progress_on_the_bar"
 path = "tests/f2_14_s2b_progress_on_the_bar.rs"
 
 [[test]]
+name = "sec_12_decisions_4_walk_back_live"
+path = "tests/sec_12_decisions_4_walk_back_live.rs"
+
+[[test]]
+name = "sec_12_decisions_4_walk_back_live_b"
+path = "tests/sec_12_decisions_4_walk_back_live_b.rs"
+
+[[test]]
 name = "f2_14_press_words"
 path = "tests/f2_14_press_words.rs"
 
