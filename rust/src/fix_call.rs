@@ -129,10 +129,10 @@ pub fn stage_chunk(
         log(&format!(">>> [{lane}] nothing to fix -- the transcript is empty"));
         return Ok(0);
     }
-    // §F1.8 S2's grounding is ±5 s from EVERY other recording plus this source's own events. One
-    // source per row of this door means the cross-source half is assembled by `fix_transcripts::run`
-    // over a whole session; here the list carries this lane's own rows, tagged with its name, so the
-    // window still includes the events that explain a sudden change in the words.
+    // §F1.8 S2's grounding is ±5 s from EVERY other recording plus this source's own events. This door
+    // fixes ONE source per row, so the list carries this lane's own rows tagged with its name; the
+    // cross-source half of the window is `crate::fix_session::session_fix`, which runs
+    // `fix_transcripts::run` over a whole session and sees every lane at once.
     let every_line: Vec<(String, Line)> =
         lines.iter().cloned().map(|line| (lane.to_string(), line)).collect();
     let every_event: Vec<(String, FrameEvent)> = fix_transcripts::load_events(tree, lane)
@@ -215,6 +215,20 @@ pub fn ask_for<'a>(
     }
 }
 
+/// One block's ask for the SESSION walk: `ask_once` with no per-source read context in hand.
+///
+/// `run` walks every recording, so no single lane's rows and events can be handed to §3.1's shared reads
+/// here; the tool rounds still run (a read with nothing behind it comes back as §3's error sentence, not
+/// silence) and the cache, the timed row and §09 §5's bound all still apply.
+pub fn ask_block(
+    tree: &Tree,
+    paths: &Paths,
+    conf: &settings::Conf,
+    message: &str,
+) -> Result<Vec<Reply>, String> {
+    ask_once(tree, paths, conf, message, None)
+}
+
 /// One block's ask: the two messages, §3.1's tool rounds, and the answer read back into §3.3's calls.
 ///
 /// `fix_block` supplies the message, which already carries the previous refusal when there was one — so a
@@ -262,7 +276,7 @@ fn ask_once(
             &endpoint.url,
             Some(tools),
             &|offer| {
-                Ok(llm_request::body(&conf.model, conversation, Mode::Execute, offer, true)?.to_string())
+                Ok(llm_request::body(STEP, &conf.model, conversation, Mode::Execute, offer, true)?.to_string())
             },
             &|body| {
                 crate::llm_retry_leg::chat(

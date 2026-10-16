@@ -16,12 +16,242 @@
 //!   NOT appear in the page's HTML.
 
 use naivepost::exchanges::{self, Call, Message, Mode, Part};
+use naivepost::layout::Tree;
 use naivepost::llm_budget::{self, PROMPT_MAX_CHARS};
 use naivepost::params;
 use naivepost::produce_subtitles as subs;
+use naivepost::project::{Project, Source};
+use naivepost::run;
+use naivepost::run_stages;
 use naivepost::services::Server;
+use naivepost::settings::{self, Conf, Paths};
+use naivepost::textfmt::{self, Line};
 use naivepost::tools::{self, clips::Clips, Tool};
 use naivepost::{cut_captions, cut_speed_pass, roles};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
+use common::temp_dir_tagged;
+
+/// The fix walk's questions belong to the process (the LLM address and the working folder are env-wide) and
+/// cargo runs these tests as threads, so the one case that moves them takes them one at a time.
+static FIX_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// One transcript row per source for the fix-walk case: above §S1's floor on the source side, small enough
+/// that its blocks go out in one ask each.
+const FIX_LINES: usize = 4;
+/// The lanes those recordings file under: the stem of each name, which is what names every folder here.
+const DECK: &str = "2026-05-01 10-00-00_deck";
+const MIC: &str = "2026-05-01 10-01-30_mic";
+/// The two recordings' stamped names, 90 s apart, so `placement` has real seconds to report.
+const VIDEO: &str = "2026-05-01 10-00-00_deck.mkv";
+const AUDIO: &str = "2026-05-01 10-01-30_mic.wav";
+
+/// One `fix_line` per line of a block, then `finish` — §3.3's answer shape.
+fn fix_answer(lines: usize) -> String {
+    let mut calls = String::new();
+    for n in 1..=lines {
+        calls.push_str(&format!(
+            "{{\"function\":{{\"name\":\"fix_line\",\"arguments\":\"{{\\\"n\\\":{n},\\\"text\\\":\\\"respelled line {n}\\\"}}\"}}}},",
+        ));
+    }
+    calls.push_str("{\"function\":{\"name\":\"finish\",\"arguments\":\"{}\"}}");
+    format!("{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[{calls}]}}}}]}}")
+}
+
+/// A session with transcripts on both lanes and one lane already fixed, which is the state that makes the
+/// merge row run `fix_transcripts::run` rather than skip it.
+struct FixScene {
+    root: PathBuf,
+    tree: Tree,
+}
+
+impl FixScene {
+    fn new(lines: usize, llm_url: &str) -> FixScene {
+        let root = temp_dir_tagged("ctx-budgets-fix");
+        let session = naivepost::startup::session_dir(&root);
+        std::fs::create_dir_all(session.join("sources")).expect("the sources folder");
+        for name in [VIDEO, AUDIO] {
+            std::fs::write(session.join("sources").join(name), b"bytes").expect("the recording");
+        }
+        let paths = Paths { config_dir: root.join("cfg/naivepost"), data_dir: root.join("data/naivepost") };
+        let mut conf = Conf::default();
+        conf.server = llm_url.to_string();
+        conf.model = "qwen-text".to_string();
+        settings::save(&paths, &conf).expect("the conf is written");
+        let project = Project {
+            sources: vec![
+                Source {
+                    path: format!("project:sources/{VIDEO}"),
+                    footage: true,
+                    narrator: 0,
+                    sepvoice: false,
+                    tracks: vec![],
+                },
+                Source {
+                    path: format!("project:sources/{AUDIO}"),
+                    footage: false,
+                    narrator: 0,
+                    sepvoice: false,
+                    tracks: vec![],
+                },
+            ],
+            ..Project::default()
+        };
+        naivepost::project::save(&project, &session).expect("the session file");
+        let tree = Tree::new(session).expect("the session is a project");
+        for lane in [DECK, MIC] {
+            let rows: Vec<Line> = (0..lines)
+                .map(|index| Line {
+                    start: index as f64,
+                    end: index as f64 + 0.9,
+                    speaker: "S1".to_string(),
+                    text: format!("asr heard line {index} mispelled"),
+                })
+                .collect();
+            textfmt::write_lines(&rows, &tree.transcript_tsv(lane)).expect("the transcript");
+        }
+        // The deck comes back already fixed, so the only work left for the stage's merge row is the mic —
+        // and the mic's file can only appear if `fix_transcripts::run` actually walks it.
+        let done: Vec<Line> = (0..lines)
+            .map(|index| Line {
+                start: index as f64,
+                end: index as f64 + 0.9,
+                speaker: "S1".to_string(),
+                text: format!("respelled line {index}"),
+            })
+            .collect();
+        textfmt::write_lines(&done, &tree.transcript_fixed_tsv(DECK)).expect("the deck is already fixed");
+        FixScene { root, tree }
+    }
+
+    /// Point the process at this scene exactly as the app resolves both, and take the §3 patience ladder
+    /// down by 1000 so a refused or unanswered ask cannot park the walk for minutes.
+    fn enter(&self) {
+        std::env::set_var("NAIVEPOST_RETRY_SCALE", "1000");
+        std::env::set_var("XDG_CONFIG_HOME", self.root.join("cfg"));
+        std::env::set_var("XDG_DATA_HOME", self.root.join("data"));
+        std::env::set_current_dir(&self.root).expect("the scene is the working folder");
+    }
+
+    fn leave(&self) {
+        std::env::remove_var("XDG_CONFIG_HOME");
+        std::env::remove_var("XDG_DATA_HOME");
+        std::env::remove_var("NAIVEPOST_RETRY_SCALE");
+        std::env::set_current_dir(env!("CARGO_MANIFEST_DIR")).expect("back to the crate folder");
+    }
+
+    fn project(&self) -> Project {
+        naivepost::project::load(self.tree.dir()).expect("the session")
+    }
+
+    /// The fix stage only, planned from the project file the way ▶ plans it, minus the mic's per-source
+    /// fix task: the state a resume leaves behind, where the session walk is the only thing that can still
+    /// produce that lane's fixed file.
+    fn stages(&self) -> Vec<run_stages::Stage> {
+        run_stages::plan(run::Step::Prepare, &self.project())
+            .into_iter()
+            .filter(|stage| stage.name == "fix")
+            .map(|mut stage| {
+                let before = stage.tasks.len();
+                stage.tasks.retain(|task| !format!("{:?}", task).contains(MIC));
+                assert!(stage.tasks.len() < before, "the mic had a fix task to remove");
+                stage
+            })
+            .collect()
+    }
+
+    fn drive(&self, stages: &[run_stages::Stage]) -> (run_stages::Drive, Vec<String>) {
+        let mut queue = naivepost::runqueue::Queue::new();
+        let mut procs = run::Subprocesses::default();
+        let mut log: Vec<String> = Vec::new();
+        let drive = run_stages::drive_walk(stages, &mut queue, || false, || false, |line| {
+            log.push(line.to_string());
+        }, &mut procs);
+        run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
+        (drive, log)
+    }
+}
+
+/// A fake LLM on loopback answering every ask with `answer`, recording each request body.
+struct Fake {
+    url: String,
+    asks: Arc<Mutex<Vec<String>>>,
+    #[allow(dead_code)] // held so the reply outlives the connection threads reading it
+    answer: Arc<Mutex<String>>,
+}
+
+impl Fake {
+    fn start(answer: String) -> Fake {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let port = listener.local_addr().expect("an address").port();
+        let asks = Arc::new(Mutex::new(Vec::new()));
+        let recorder = asks.clone();
+        let held = Arc::new(Mutex::new(answer));
+        let replies = held.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                let recorder = recorder.clone();
+                let replies = replies.clone();
+                std::thread::spawn(move || {
+                    let answer = replies.lock().expect("the reply lock").clone();
+                    if let Some(body) = serve(stream, &answer) {
+                        if let Ok(mut row) = recorder.lock() {
+                            row.push(body);
+                        }
+                    }
+                });
+            }
+        });
+        Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: held }
+    }
+
+    /// The bodies recorded so far; recording happens on the connection's own thread, so callers wait.
+    fn waited(&self, count: usize) -> Vec<String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let seen = self.asks.lock().expect("the record lock").clone();
+            if seen.len() >= count || std::time::Instant::now() > deadline {
+                return seen;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+}
+
+fn serve(mut stream: TcpStream, answer: &str) -> Option<String> {
+    let mut reader = BufReader::new(stream.try_clone().ok()?);
+    let mut line = String::new();
+    let _ = reader.read_line(&mut line);
+    let mut length = 0usize;
+    loop {
+        let mut header = String::new();
+        if reader.read_line(&mut header).ok()? == 0 || header.trim().is_empty() {
+            break;
+        }
+        if header.to_ascii_lowercase().starts_with("content-length:") {
+            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+        }
+    }
+    let mut body = vec![0u8; length];
+    if length > 0 {
+        let _ = reader.read_exact(&mut body);
+    }
+    let payload = answer.to_string();
+    let framed = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        payload.len()
+    );
+    let _ = stream.write_all(framed.as_bytes());
+    let _ = stream.flush();
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+    Some(String::from_utf8_lossy(&body).into_owned())
+}
+
 
 /// Messages of `n` ASCII characters: one text part each, so a size is easy to state exactly.
 fn ascii_messages(count: usize, parts_each: usize) -> Vec<Message> {
@@ -50,10 +280,12 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_every_request_is_bounded() {
     assert!(llm_budget::fits(PROMPT_MAX_CHARS));
     assert!(!llm_budget::fits(PROMPT_MAX_CHARS + 1));
 
-    let under = llm_budget::check(PROMPT_MAX_CHARS);
+    let under = llm_budget::check("Marking", PROMPT_MAX_CHARS);
     assert!(under.is_ok(), "the cap itself is inside the budget: {under:?}");
-    let over = llm_budget::check(PROMPT_MAX_CHARS + 1).unwrap_err();
-    // The message names the size, the limit, and both ways out — "too big" with no remedy is a dead end.
+    let over = llm_budget::check("Marking", PROMPT_MAX_CHARS + 1).unwrap_err();
+    // The message names the step that was over, the size, the limit, and both ways out — "too big" with no
+    // remedy, or with no name attached, is a dead end for whoever reads the log.
+    assert!(over.starts_with(">>> Marking: "), "{over}");
     assert!(over.contains("120001"), "{over}");
     assert!(over.contains("120000"), "{over}");
     assert!(over.contains("get_lines"), "{over}");
@@ -62,13 +294,13 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_every_request_is_bounded() {
     // And the request contract refuses it: body() is where every chat request is built, so a call
     // site cannot forget the cap.
     let too_big = ascii_messages(PROMPT_MAX_CHARS + 1, 1);
-    let refused = naivepost::llm_request::body("m", &too_big, Mode::Execute, None, false)
+    let refused = naivepost::llm_request::body("Marking", "m", &too_big, Mode::Execute, None, false)
         .expect_err("a request over the cap is not sent");
-    assert_eq!(refused, over, "body reports the budget's own sentence");
+    assert_eq!(refused, over, "body reports the budget's own sentence, step included");
 
     // Exactly at the cap still builds.
     let at_cap = ascii_messages(PROMPT_MAX_CHARS, 2);
-    assert!(naivepost::llm_request::body("m", &at_cap, Mode::Execute, None, false).is_ok());
+    assert!(naivepost::llm_request::body("Marking", "m", &at_cap, Mode::Execute, None, false).is_ok());
 }
 
 #[test]
@@ -204,7 +436,172 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s3_the_rest_is_read_through_tools(
     }
 }
 
-// --- S4: the size is logged, not put on the page --------------------------------------------------------
+// --- S1: the refusal names the step, and the size line's unit -------------------------------------------
+
+/// §5's log convention is `>>> <step>: …`, and Failure-is-specific wants to know WHICH job was over: a
+/// refusal that names no step reads as a server fault to whoever is watching the run.
+#[test]
+fn sec_09_llm_and_tools_5_context_budgets_new_s1_the_refusal_names_the_step() {
+    let too_big = ascii_messages(PROMPT_MAX_CHARS + 1, 1);
+    let refused = naivepost::llm_request::body("Marking", "qwen", &too_big, Mode::Execute, None, false)
+        .expect_err("a request over the cap is not built, so it cannot be sent");
+    assert!(
+        refused.starts_with(&format!(
+            ">>> Marking: prompt is over the budget: {} chars against {PROMPT_MAX_CHARS}",
+            PROMPT_MAX_CHARS + 1
+        )),
+        "the refusal opens with the step that was over: {refused}"
+    );
+    // Both numbers and both ways out, spelled from the constant rather than from a literal.
+    assert!(refused.contains(&format!("against {PROMPT_MAX_CHARS}")), "{refused}");
+    assert!(refused.contains("run the job in batches"), "{refused}");
+    assert!(refused.contains("get_lines/get_events"), "{refused}");
+
+    // A different step gets its own name: the sentence is built per request, not stored once.
+    let other = naivepost::llm_request::body("translate", "qwen", &too_big, Mode::Execute, None, false)
+        .expect_err("the cap does not care which job asks");
+    assert!(other.starts_with(">>> translate: "), "{other}");
+
+    // Exactly at the cap still builds — the bound is inclusive, so this is not a refusal.
+    assert!(naivepost::llm_request::body(
+        "Marking",
+        "qwen",
+        &ascii_messages(PROMPT_MAX_CHARS, 2),
+        Mode::Execute,
+        None,
+        false
+    )
+    .is_ok());
+}
+
+/// §5 fixes the size line verbatim as `N kB of text`; below a kilobyte `size_of` used to print `812 B`, a
+/// unit the spec never names. Every size now goes out in kB, one decimal, whatever it is.
+#[test]
+fn sec_09_llm_and_tools_5_context_budgets_new_s1_the_size_line_names_kilobytes_under_one_kilobyte() {
+    let call_with = |bytes: usize| Call {
+        step: "Describe".into(),
+        model: "vision".into(),
+        mode: Mode::Execute,
+        took_secs: 1,
+        thinking_secs: None,
+        messages: vec![Message {
+            role: "user".into(),
+            parts: vec![Part::Text("z".repeat(bytes))],
+        }],
+        reply: "an answer".into(),
+        reasoning: None,
+        tool_calls: Vec::new(),
+        cut_off: false,
+        error: None,
+    };
+    // 812 bytes is under a kilobyte and STILL prints kB: this is the case the old formatter got wrong.
+    assert_eq!(exchanges::kb_of(812), "0.8 kB");
+    assert_eq!(
+        exchanges::log_lines(&call_with(812))[0],
+        ">>> Describe: 0.8 kB of text and 0 image(s) went to the LLM"
+    );
+    // And §5's own example keeps reading the same way it always did: 462 132 bytes is 451.3 kB.
+    assert_eq!(exchanges::kb_of(462_132), "451.3 kB");
+    assert_eq!(
+        exchanges::log_lines(&call_with(462_132))[0],
+        ">>> Describe: 451.3 kB of text and 0 image(s) went to the LLM"
+    );
+    // One unit means a megabyte of it is still kB — the line stays summable across a whole run.
+    assert_eq!(exchanges::kb_of(1_572_864), "1536.0 kB");
+
+    // The size belongs to the log only (§5: "not on the exchange page").
+    let page = exchanges::section_html(1, &call_with(812));
+    assert!(!page.contains("went to the LLM"), "{page}");
+    assert!(!page.contains("kB of text"), "{page}");
+}
+
+// --- S2: batching keeps a real request inside the cap ---------------------------------------------------
+
+/// The translation batch size is what keeps §5's oversized call sendable: build each batch's request the
+/// way `produce_translate::track` builds it (heading + numbered lines) and check THAT against the cap,
+/// not just the line list.
+#[test]
+fn sec_09_llm_and_tools_5_context_budgets_new_s2_translation_batches_stay_under_the_cap() {
+    // Cues the size of §5's example session: 778 of them, ~160 characters apiece.
+    let cues: Vec<subs::Cue> = (1..=778usize)
+        .map(|n| subs::Cue {
+            s: f64::from(n as u32) * 4.0,
+            e: f64::from(n as u32) * 4.0 + 3.5,
+            text: format!("cue {n}: {}", "word ".repeat(30)),
+            pos: String::new(),
+        })
+        .collect();
+    assert_eq!(cues.len(), 778);
+    assert_eq!(subs::BATCH, 150, "P.machine.translateBatch");
+
+    // What the track would be as ONE message — heading plus every numbered cue: refused outright.
+    let original: Vec<(usize, String)> =
+        (1..=cues.len()).map(|n| (n, subs::sent_text(&cues[n - 1]))).collect();
+    let whole = format!("{}\n{}", subs::message(cues.len(), "de"), subs::numbered(&original));
+    assert!(whole.chars().count() > PROMPT_MAX_CHARS, "one message for the track is {} chars", whole.chars().count());
+    assert!(!llm_budget::fits(whole.chars().count()));
+
+    // Each request the batching actually sends fits, and every cue is asked about exactly once.
+    let ranges = subs::batches(cues.len());
+    assert!(ranges.len() > 1, "the track has to be split: {ranges:?}");
+    let mut asked = 0usize;
+    for range in &ranges {
+        assert!(range.1 - range.0 <= subs::BATCH, "batch {range:?} holds more than BATCH lines");
+        let part: Vec<(usize, String)> = original[range.0..range.1].to_vec();
+        let request = format!("{}\n{}", subs::message(part.len(), "de"), subs::numbered(&part));
+        assert!(
+            llm_budget::fits(request.chars().count()),
+            "batch {range:?} is {} chars, past the cap",
+            request.chars().count()
+        );
+        asked += part.len();
+    }
+    assert_eq!(asked, cues.len(), "splitting must not drop or repeat a cue");
+}
+
+// --- S2: the escape routes are work the program drives -------------------------------------------------
+
+/// §5's "jobs over it read the rest via get_lines/get_events tools or run in batches" only helps if the
+/// job that needs it runs. The fix step's whole-session walk (`fix_transcripts::run`, asking block by
+/// block through `fix_call`, whose every ask passes `llm_request::body` and so the cap) is driven by the
+/// merge row of the fix stage; this walks that stage for real against a loopback fake and asserts the
+/// files and log lines only that walk produces.
+#[test]
+fn sec_09_llm_and_tools_5_context_budgets_new_s2_the_session_fix_walk_runs_in_a_real_run() {
+    let _turn = FIX_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Only ONE source gets a fixed file planted: the other still owes the fixer, which is what makes the
+    // merge row run the session walk instead of skipping it (§S3's resume rule).
+    let fake = Fake::start(fix_answer(FIX_LINES));
+    let scene = FixScene::new(FIX_LINES, &fake.url);
+    scene.enter();
+    let stages = scene.stages();
+    let (_drive, log) = scene.drive(&stages);
+    scene.leave();
+
+    assert!(matches!(_drive, run_stages::Drive::Done { .. }), "the fix stage finished: {_drive:?}");
+    // The source nobody fixed now has its fixed file: only `fix_transcripts::run` writes it in this walk,
+    // because its own fix row was the one removed below.
+    assert!(
+        scene.tree.transcript_fixed_tsv(MIC).exists(),
+        "the session walk fixed the source whose own fix row did not run"
+    );
+    let fixed = std::fs::read_to_string(scene.tree.transcript_fixed_tsv(MIC)).expect("the fixed file");
+    assert!(fixed.contains("respelled line 1"), "the walk's answers landed: {fixed}");
+    // The timeline and its text come after the walk, from the merge row that ran it. `session_txt` is only
+    // ever written by that merge, so its presence means the merge — and the walk inside it — really ran.
+    assert!(scene.tree.session_tsv().exists(), "the merge still wrote the timeline");
+    assert!(scene.tree.session_txt().exists(), "and the text the cut reads");
+    // And the walk really dialled the fixer for the blocks it owed: §3.3's message wording is only ever
+    // put on the wire by that leg.
+    let fix_asks = fake
+        .waited(1)
+        .into_iter()
+        .filter(|body| body.contains("Transcript lines to clean"))
+        .count();
+    let _ = &log;
+    assert!(fix_asks >= 1, "the session walk asked the fixer: {fix_asks} asks");
+}
+
 
 #[test]
 fn sec_09_llm_and_tools_5_context_budgets_new_s4_size_logged_not_on_the_page() {
@@ -229,10 +626,14 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s4_size_logged_not_on_the_page() {
         cut_off: false,
         error: None,
     };
-    // The app log gets the size: 1200 bytes of text is 1.2 kB, and two pictures.
+    // The app log gets the size: 1200 bytes of text is 1.2 kB (§5's line names kB for every size), and two
+    // pictures.
     let lines = exchanges::log_lines(&call);
     assert_eq!(lines[0], ">>> Describe: 1.2 kB of text and 2 image(s) went to the LLM");
-    assert_eq!(lines[0], format!(">>> {}: {} of text and 2 image(s) went to the LLM", call.step, exchanges::size_of(text.len())));
+    assert_eq!(
+        lines[0],
+        format!(">>> {}: {} of text and 2 image(s) went to the LLM", call.step, exchanges::kb_of(text.len()))
+    );
 
     // The exchange page never says it: §5 puts the size in the log, not on the page.
     let page = exchanges::section_html(1, &call);

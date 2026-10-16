@@ -47,15 +47,16 @@ pub fn fits(text_chars: usize) -> bool {
     text_chars <= PROMPT_MAX_CHARS
 }
 
-/// The bound as a decision. Step-agnostic wording on purpose: [`crate::llm_request::body`] has no
-/// step name to put in front of the line, and every caller prefixes its own. The sentence says both
-/// ways out, because "too big" with no remedy is a dead end for whoever reads the log.
-pub fn check(text_chars: usize) -> Result<(), String> {
+/// The bound as a decision, naming the STEP whose request was over it. §5's log lines and the rule that a
+/// failure is specific both want to know WHICH job was too big — "prompt is over the budget" without a step
+/// reads as a server fault to whoever is watching the run. The sentence says both ways out, because "too big"
+/// with no remedy is a dead end for whoever reads the log.
+pub fn check(step: &str, text_chars: usize) -> Result<(), String> {
     if fits(text_chars) {
         return Ok(());
     }
     Err(format!(
-        "prompt is over the budget: {text_chars} chars against {PROMPT_MAX_CHARS} -- \
+        ">>> {step}: prompt is over the budget: {text_chars} chars against {PROMPT_MAX_CHARS} -- \
          run the job in batches or let the model read the rest with get_lines/get_events"
     ))
 }

@@ -228,7 +228,7 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_real_call_leaves_its_page_and_
 
     let said = log.borrow();
     assert!(
-        said.iter().any(|l| l == ">>> Describe: 192 B of text and 0 image(s) went to the LLM")
+        said.iter().any(|l| l == ">>> Describe: 0.2 kB of text and 0 image(s) went to the LLM")
             || said.iter().any(|l| l.ends_with("of text and 0 image(s) went to the LLM")),
         "the send line: {said:?}"
     );

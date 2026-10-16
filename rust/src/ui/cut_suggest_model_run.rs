@@ -631,7 +631,7 @@ pub fn live_ask<'a>(
             &endpoint.url,
             Some(offered),
             &|offer| {
-                Ok(llm_request::body(&model, conversation, Mode::Thinking, offer, true)?.to_string())
+                Ok(llm_request::body(STEP, &model, conversation, Mode::Thinking, offer, true)?.to_string())
             },
             &|body| dial(tree, &model, &endpoint, body),
             &crate::ui::window::log_line,

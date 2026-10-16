@@ -139,6 +139,14 @@ pub fn size_of(bytes: usize) -> String {
     }
 }
 
+/// A byte count the way §5's size line wants it: ALWAYS kilobytes, one decimal, whatever the size — `0.8 kB`,
+/// `451.3 kB`, and even a megabyte of it as `1536.0 kB`. One unit for every call is what lets a log be summed
+/// or two runs compared without parsing three shapes; [`size_of`] stays for the human-sized "…came back in…"
+/// line, where "812 B" is the honest reading.
+pub fn kb_of(bytes: usize) -> String {
+    format!("{:.1} kB", bytes as f64 / 1024.0)
+}
+
 /// A duration in the fewest units that still say how long it was.
 pub fn duration_of(secs: u64) -> String {
     let (hours, rest) = (secs / 3600, secs % 3600);
@@ -197,7 +205,7 @@ pub fn log_lines(call: &Call) -> Vec<String> {
     let mut lines = vec![format!(
         ">>> {}: {} of text and {images} image(s) went to the LLM",
         call.step,
-        size_of(text)
+        kb_of(text)
     )];
 
     if let Some(err) = &call.error {
@@ -417,7 +425,7 @@ impl Page {
         let mut lines = vec![format!(
             ">>> {}: {} of text and {images} image(s) went to the LLM",
             call.step,
-            size_of(text)
+            kb_of(text)
         )];
         if self.seq == 1 {
             lines.push(link_line(&self.rel()));

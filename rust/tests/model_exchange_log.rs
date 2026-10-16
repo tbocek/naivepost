@@ -202,7 +202,7 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s11_the_send_line_counts_the_images
     assert_eq!(plain.sent(), (512, 0));
     assert_eq!(
         exchanges::log_lines(&plain)[0],
-        ">>> Describe: 512 B of text and 0 image(s) went to the LLM"
+        ">>> Describe: 0.5 kB of text and 0 image(s) went to the LLM"
     );
 
     // The page half of the same rule: one <img> per picture, in the section for THAT call.
@@ -381,7 +381,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_pa
     call.took_secs = 5;
     let lines = page.begin(&call);
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert_eq!(lines[0], ">>> Describe: 64 B of text and 0 image(s) went to the LLM");
+    assert_eq!(lines[0], ">>> Describe: 0.1 kB of text and 0 image(s) went to the LLM");
     assert_eq!(
         lines[1],
         ">>>   this run's exchanges, images included: llm/0307-142201-Describe.html"
@@ -436,7 +436,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_ve
     assert_eq!(
         exchanges::log_lines(&nothing),
         vec![
-            ">>> Narrate: 128 B of text and 0 image(s) went to the LLM",
+            ">>> Narrate: 0.1 kB of text and 0 image(s) went to the LLM",
             ">>> Narrate: 3 B came back in 0s",
             ">>> Narrate: the model answered nothing at all",
         ]
@@ -450,7 +450,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_ve
     assert_eq!(
         exchanges::log_lines(&failed),
         vec![
-            ">>> Narrate: 128 B of text and 0 image(s) went to the LLM",
+            ">>> Narrate: 0.1 kB of text and 0 image(s) went to the LLM",
             ">>> Narrate: the call failed after 1m30s: connection refused",
         ]
     );

@@ -129,8 +129,10 @@ pub fn message_parts(parts: &[Part]) -> Vec<Value> {
 ///
 /// `tools` is omitted rather than sent empty: an empty array makes some servers advertise no tools at all in
 /// their reply, which reads as "the model declined" rather than "nothing was offered". An empty `model` is
-/// [`NO_MODEL`], checked here rather than at every call site.
+/// [`NO_MODEL`], checked here rather than at every call site. `step` goes into the over-budget refusal, so the
+/// line names the job that was too big (§09 §5).
 pub fn body(
+    step: &str,
     model: &str,
     messages: &[Message],
     mode: Mode,
@@ -143,7 +145,7 @@ pub fn body(
     // each individual tool result is already bounded (`tools::WEB_READ_MAX_BYTES` for a page read,
     // a window for get_lines/get_events), so refusing here is the right answer rather than a
     // surprise partway through a run that has already cost minutes.
-    llm_budget::check(llm_budget::chars(messages))?;
+    llm_budget::check(step, llm_budget::chars(messages))?;
     let (temperature, max_tokens) = match mode {
         Mode::Thinking => (THINKING_TEMPERATURE, THINKING_MAX_TOKENS),
         Mode::Execute => (EXECUTE_TEMPERATURE, EXECUTE_MAX_TOKENS),

@@ -31,7 +31,7 @@ fn message(role: &str, parts: Vec<Part>) -> Message {
 
 /// The whole body of one call, with nothing offered and no stream — what every test below reads a field out of.
 fn body(mode: Mode) -> serde_json::Value {
-    llm::body("qwen3", &[], mode, None, false).expect("a model is set")
+    llm::body("contract", "qwen3", &[], mode, None, false).expect("a model is set")
 }
 
 // ---- S1: where it goes, the key, and the model id -----------------------------------
@@ -131,7 +131,7 @@ fn sec_09_llm_and_tools_1_request_contract_s2_messages_tools_stream() {
     assert_eq!(parts[1]["image_url"]["url"], json!(url));
 
     let messages = vec![message("user", vec![Part::Text("look".into()), Part::Image(url)])];
-    let sent = llm::body("qwen3", &messages, Mode::Execute, None, false).expect("a model is set");
+    let sent = llm::body("contract", "qwen3", &messages, Mode::Execute, None, false).expect("a model is set");
     assert_eq!(sent["messages"].as_array().expect("an array").len(), 1);
     let content = &sent["messages"][0]["content"];
     assert_eq!(content.as_array().expect("parts").len(), 2);
@@ -142,20 +142,20 @@ fn sec_09_llm_and_tools_1_request_contract_s2_messages_tools_stream() {
     // advertise no tools at all, which reads as a refusal rather than as nothing on offer.
     let empty_offer: Vec<tools::Tool> = vec![];
     assert!(body(Mode::Execute).get("tools").is_none(), "None offers no key");
-    assert!(llm::body("qwen3", &[], Mode::Execute, Some(&empty_offer), false).expect("ok").get("tools").is_none());
+    assert!(llm::body("contract", "qwen3", &[], Mode::Execute, Some(&empty_offer), false).expect("ok").get("tools").is_none());
     let offered = tools::offered(Job::ModelCut);
-    let with = llm::body("qwen3", &[], Mode::Execute, Some(&offered), false).expect("ok");
+    let with = llm::body("contract", "qwen3", &[], Mode::Execute, Some(&offered), false).expect("ok");
     let list = with["tools"].as_array().expect("a tools array");
     assert_eq!(list.len(), offered.len());
     assert_eq!(list[0]["function"]["name"], json!(offered[0].name()));
 
     // `stream true` when the caller streams; absent otherwise (absent is false to every server in §1's table).
-    let streamed = llm::body("qwen3", &[], Mode::Execute, None, true).expect("ok");
+    let streamed = llm::body("contract", "qwen3", &[], Mode::Execute, None, true).expect("ok");
     assert_eq!(streamed["stream"], json!(true));
     assert!(body(Mode::Execute).get("stream").is_none(), "not streaming sends no key at all");
 
     // The model id is checked where the body is built, so no call site can forget it.
-    assert_eq!(llm::body("", &[], Mode::Execute, None, false).unwrap_err(), llm::NO_MODEL);
+    assert_eq!(llm::body("contract", "", &[], Mode::Execute, None, false).unwrap_err(), llm::NO_MODEL);
 }
 
 // ---- S3: the response ---------------------------------------------------------------
