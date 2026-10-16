@@ -22,6 +22,7 @@
 use crate::cut::{Cut, Seg, Fx};
 use crate::cut_clamp;
 use crate::cut_effect_decisions::{self as decisions, Candidate};
+use crate::decision_audit;
 use crate::policy::{self, Pass};
 use crate::project::{MarkingPass, Policy};
 use crate::roles::{self, Job};
@@ -461,6 +462,56 @@ pub struct Applied {
     pub log: Vec<String>,
 }
 
+/// The walk-back's own words, as one sentence: the line [`apply`] puts first in its log — §S3's account of
+/// what the walk made of the model's answer, and the same sentence `cut_suggest_land` prints on the status
+/// row. §1 asks whether an unseen change can be explained in one sentence; this is that sentence, so
+/// [`walk_back_audit`] measures it instead of assuming it exists.
+fn walk_account(segs: usize, inserts: usize, total: f64) -> String {
+    format!("suggested {} segments, {} total", segs + inserts, tools::mm_ss(total))
+}
+
+/// Whether the walk-back this [`Walk`] would perform is allowed to happen unseen.
+///
+/// The three properties come from §1's fourth row. Two are read off the rule that does the placing rather
+/// than asserted here: **mechanical** because every edge move is bounded by the snap tolerance
+/// [`snap_edge`] scores with ([`decisions::SNAP_TOLERANCE_SECONDS`], `P.policy.snapToleranceSeconds`) — an
+/// unbounded move would be a judgement about content, and the bound is what keeps it mechanical; and
+/// **explainable in one sentence** because the walk-back has wording of its own: [`walk_account`] is the
+/// single line §S3 spells, the one `cut_suggest_land` puts on the status row. **Visible afterwards** is
+/// measured off the walk: the materialisation it places from — word edges and silence midpoints to snap
+/// to, or marks to take out — must be present, or nothing of the result can be pointed at on the lane.
+///
+/// Nothing here is fed back to the model: [`decision_audit::Home::WalkBack`] is the one home that answers
+/// false for `model_sees_it()`, which is why the three questions have to be asked in code.
+pub fn walk_back_audit(walk: &Walk) -> Result<&'static str, String> {
+    // The bound IS the tolerance: an edge may travel no further than this to reach a word edge, so no move
+    // the walk makes can exceed it. Read from the rule's own constant, never restated as a number here.
+    let mechanical = decisions::SNAP_TOLERANCE_SECONDS > 0.0;
+    // The sentence exists: `apply`'s first log line is §S3's one-sentence account of the walk, built
+    // unconditionally — even a walk with neither silences nor marks moved edges, and says so.
+    let explainable = !walk_account(0, 0, 0.0).is_empty();
+    // Nothing to snap to and nothing to remove means nothing was placed by the machine at all, and a cut
+    // nobody can point at on the lane is not visible afterwards.
+    let visible = !walk.snap_points.is_empty() || !walk.marks.is_empty();
+    if decision_audit::walk_back_admits(mechanical, explainable, visible) {
+        return Ok(decision_audit::Home::WalkBack.label());
+    }
+    let mut failed: Vec<&str> = Vec::new();
+    if !mechanical {
+        failed.push("not bounded by the snap tolerance");
+    }
+    if !explainable {
+        failed.push("has no one-sentence account of itself");
+    }
+    if !visible {
+        failed.push("leaves nothing on screen afterwards");
+    }
+    Err(format!(
+        "the walk-back cannot run: {} \u{2014} a change like that belongs at `finish`, where the model hears about it",
+        failed.join(", ")
+    ))
+}
+
 /// S3: the walk-back — close the talked-in holes, snap both edges of every segment, take the marks out,
 /// take the dead air out, coalesce, and clamp the effects against what is now kept.
 ///
@@ -468,7 +519,20 @@ pub struct Applied {
 /// the walk has a claim on them. Effects are replaced as a LIST via [`cut_clamp::clamp_to_cut`], against
 /// the cut as it will actually play — F3.12's reason for existing, since every step above moved the
 /// seconds an effect was chosen for.
+///
+/// §1's rule of thumb is enforced at this door by [`walk_back_audit`]: a change the model never sees may
+/// only be made when it is mechanical, explainable in one sentence, and visible on screen afterwards.
 pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk) -> Applied {
+    // The three properties, measured before anything moves. Refused, NOTHING is placed — the empty answer
+    // below says "no cut", so a caller cannot land a half-walked cut by mistake.
+    if let Err(why) = walk_back_audit(walk) {
+        return Applied {
+            segs: Vec::new(),
+            kept_inserts: Vec::new(),
+            effects: Vec::new(),
+            log: vec![format!("!!! {why}")],
+        };
+    }
     let closed = close_holes(model_segs, &walk.talked, SEAM_MAX_SECONDS);
     let snapped: Vec<(f64, f64)> = closed
         .iter()
@@ -512,9 +576,12 @@ pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk)
         + kept_inserts.iter().map(|seg| seg.dur).sum::<f64>();
     let log = vec![
         format!(
-            ">>> suggested {} segments, {} total",
-            segs.len() + kept_inserts.len(),
-            tools::mm_ss(total)
+            ">>> {}",
+            walk_account(
+                segs.len(),
+                kept_inserts.len(),
+                total
+            )
         ),
         effects_line(effects.len()),
     ];

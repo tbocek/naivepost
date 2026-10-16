@@ -20,6 +20,7 @@ use std::collections::BTreeSet;
 use serde_json::{json, Value};
 
 use crate::degraded::{self, ToolsFallback};
+use crate::decision_audit;
 use crate::exchanges::{Message, Part, ToolCall};
 use crate::roles;
 use crate::tools::{self, Tool};
@@ -285,6 +286,29 @@ pub struct Run {
     pub messages: Vec<Message>,
     pub logs: Vec<String>,
     pub outcome: Outcome,
+    /// Which of §1's homes actually carried an announcement during this run, in the order they first did.
+    /// [`crate::decision_audit`] sorts decisions by what the model is told; this says what THIS run told it,
+    /// so the two hearing homes are observable on a live run rather than only in the classifier.
+    pub announced: Vec<&'static str>,
+}
+
+/// The line saying a round's calls went unanswered because the budget was spent (§2 S4's consequence).
+///
+/// It names the home the news should have travelled in — [`crate::decision_audit::Home::ToolResult`], the
+/// row that exists because *"if the app changes what the model said, the model hears about it"*. The wording
+/// is only honest while that home announces, so the sentence is built from the predicate rather than
+/// assumed: if the audit ever stopped treating a tool result as heard, this line would say nothing had been
+/// withheld instead of promising a report that never arrives.
+pub fn unannounced_calls_log(step: &str, unrun: usize) -> String {
+    let home = decision_audit::Home::ToolResult;
+    if !decision_audit::change_is_announced(home) {
+        return format!(">>> {step}: {unrun} call(s) not run");
+    }
+    format!(
+        ">>> {step}: {unrun} call(s) not run \u{2014} their {} ({}) was never sent back to the model",
+        home.label(),
+        home.scope()
+    )
 }
 
 impl Run {
@@ -311,7 +335,12 @@ pub fn run(
     mut ask: impl FnMut(&[Message], &[Tool]) -> Result<Turn, String>,
     mut call: impl FnMut(&ToolCall) -> String,
 ) -> Run {
-    let mut run = Run { messages, logs: Vec::new(), outcome: Outcome::Exhausted };
+    let mut run = Run {
+        messages,
+        logs: Vec::new(),
+        outcome: Outcome::Exhausted,
+        announced: Vec::new(),
+    };
     let mut silent_rounds = 0u32;
     // Whether the flow ended only because the nudge round passed without a `finish` call.
     let mut asked_finish = false;
@@ -346,8 +375,18 @@ pub fn run(
                     // round's `after_round` reads, and a second quiet round must fall through to Finished.
                     silent_rounds += 1;
                     asked_finish = true;
-                    run.messages.push(Message { role: "user".to_string(), parts: vec![Part::Text(FINISH_NUDGE.to_string())] });
-                    run.logs.push(format!(">>> {step}: {FINISH_NUDGE}"));
+                    // The nudge exists only because §1's `finish` home may act in the same conversation: the
+                    // model is told what is still wrong with the WHOLE and answers it here. Gate on that
+                    // predicate rather than assuming it — if the audit ever stopped letting this home act, the
+                    // nudge would be asking for a fix the model is no longer allowed to make.
+                    let finish_home = decision_audit::Home::FinishAnswer;
+                    if decision_audit::change_is_announced(finish_home)
+                        && finish_home.may_act_in_same_conversation()
+                    {
+                        run.messages.push(Message { role: "user".to_string(), parts: vec![Part::Text(FINISH_NUDGE.to_string())] });
+                        run.logs.push(format!(">>> {step}: {FINISH_NUDGE}"));
+                        note_home(&mut run.announced, finish_home);
+                    }
                 }
                 Next::RunTools => unreachable_run(&mut run.logs, "a round with no calls"),
             }
@@ -357,6 +396,13 @@ pub fn run(
         // S4 before S2: the budget is spent before this round's work, so nothing runs that cannot be delivered.
         if !runs_tools(round) {
             run.logs.push(exhausted(step));
+            // §1's rule of thumb says the model must not be left holding calls it never heard about: the news
+            // those calls would have carried (their tool result, per item) was never sent. The audit decides
+            // whether that sentence is true — see [`unannounced_calls_log`] — and when it is not, §2's line
+            // above stands alone, because then nothing was withheld.
+            if decision_audit::change_is_announced(decision_audit::Home::ToolResult) {
+                run.logs.push(unannounced_calls_log(step, turn.calls.len()));
+            }
             run.outcome = Outcome::Exhausted;
             return run;
         }
@@ -370,12 +416,17 @@ pub fn run(
             // S7: the note goes on the reply as well as into the next request's `tool` message.
             run.logs.push(call_note(&done));
             run.messages.push(tool_message(&done));
+            // The result text just fed back IS §1's second home: what the app made of the model's answer,
+            // sent to it per item so it can act on it in this same conversation.
+            note_home(&mut run.announced, decision_audit::Home::ToolResult);
         }
         previous = turn.calls;
         silent_rounds = 0;
         if turn.finish {
             // A `finish` that arrived with calls still ends the flow — the tool ran and was answered, and the
-            // model has said it is done.
+            // model has said it is done. Its verdict on the WHOLE travelled in that result, so this run did
+            // use §1's third home as well as the per-item one.
+            note_home(&mut run.announced, decision_audit::Home::FinishAnswer);
             run.outcome = Outcome::Finished { asked_finish: false };
             return run;
         }
@@ -386,6 +437,14 @@ pub fn run(
     run.logs.push(exhausted(step));
     run.outcome = Outcome::Exhausted;
     run
+}
+
+/// Record that one of §1's hearing homes carried news to the model during this run, once per home.
+pub fn note_home(announced: &mut Vec<&'static str>, home: decision_audit::Home) {
+    let label = home.label();
+    if !announced.contains(&label) {
+        announced.push(label);
+    }
 }
 
 /// A branch the spec does not have. Logged rather than panicked on: a tool loop that dies takes a person's whole

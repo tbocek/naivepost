@@ -10,6 +10,11 @@
 //! Every row comes from [`policy::derived_fields`], read at build time off the live [`Policy`]. That is
 //! deliberate: the same list drives validation in `policy::apply`, so a field cannot exist in the form
 //! without being settable, or be settable without appearing here.
+//!
+//! Nothing on it is editable, and that is §1's fifth home working as specified: a policy value reaches the
+//! project through F0.7's `set_policy` tool and [`policy::apply`] (the one door that writes a field, its
+//! source and its reason), which is where the app already routes every change — including a person's own,
+//! which arrives with `source: user` and outranks the model's thereafter.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -80,6 +85,15 @@ fn pass_word(on: bool) -> String {
 /// keeps the form's height near the picture's.
 const BECAUSE_MAX_CHARS: i32 = 36;
 
+/// Whether this catalogue id really belongs to §1's fifth home — a number or a wording, never a per-item
+/// judgement. The routing is `decision_homes`' (prompt key, `llm.conf` key, then the `P.*` prefix tables),
+/// and the home test is `decision_audit`'s, so the form cannot quietly grow a row that is really a machine
+/// setting or an engineering constant.
+pub fn policy_home(id: &str) -> bool {
+    crate::decision_homes::home_of(id)
+        .is_some_and(crate::decision_audit::is_number_or_wording)
+}
+
 /// Build the form for this policy. `parent` is the main window, so the form rides with it and closes
 /// when dismissed.
 pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
@@ -130,6 +144,17 @@ pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
 
     let mut row = 1i32;
     for entry in policy::derived_fields() {
+        // §1's fifth home, checked rather than assumed: a policy field is "a number or wording, not a
+        // per-item judgement", and `decision_homes` is what says which home an id belongs to. A row whose id
+        // routes elsewhere is not this form's to show — it is named in the log instead of being drawn as if
+        // F0.7 could set it.
+        if !policy_home(entry.id) {
+            crate::ui::window::log_line(&format!(
+                "!!! policy form: {field} is not the editing-policy home \u{2014} not shown",
+                field = entry.field
+            ));
+            continue;
+        }
         add_row(&grid, policy, entry, row);
         wrap_row(&grid, entry.field, row);
         row += 1;
