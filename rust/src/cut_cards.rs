@@ -188,6 +188,50 @@ pub fn xml_escape(value: &str) -> String {
     out
 }
 
+/// The words a card's picture actually shows: every `<text>` element's content, in document order, XML-
+/// unescaped and whitespace-collapsed. §12 #28 asks what is ON the card, and the only honest answer is the one
+/// read out of the finished document — not the file name, whose query is a *request* for text (a hole nobody
+/// answered keeps its fallback, an unanswered `?title=` shows the card's own placeholder, not a title).
+///
+/// Self-closing tags are skipped by counting angle brackets, so `<text/>` contributes nothing; a comment is
+/// dropped because a card documents its holes in comments and those braces are not on screen.
+pub fn card_words(doc: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = doc;
+    while let Some(open) = rest.find("<text") {
+        let Some(tag_end) = rest[open..].find('>') else { break };
+        let tag = &rest[open..open + tag_end];
+        let body_from = open + tag_end + 1;
+        // A self-closing `<text .../>` has no content to read.
+        if !tag.trim_end().ends_with('/') {
+            let Some(close) = rest[body_from..].find("</text>") else { break };
+            let words: String = rest[body_from..body_from + close]
+                .chars()
+                .map(|c| match c {
+                    '\n' | '\t' => ' ',
+                    other => other,
+                })
+                .collect();
+            let collapsed = words.split_whitespace().collect::<Vec<_>>().join(" ");
+            let said = unesc(&xml_unescape(&collapsed));
+            if !said.is_empty() {
+                out.push(said);
+            }
+        }
+        rest = &rest[body_from..];
+    }
+    out
+}
+
+/// Undo [`xml_escape`] for text read back out of a document. `unesc` handles the path's `%XX`; this handles the
+/// three markup characters a filled value was escaped through.
+fn xml_unescape(value: &str) -> String {
+    value
+        .replace("&gt;", ">")
+        .replace("&lt;", "<")
+        .replace("&amp;", "&")
+}
+
 /// S3: write the scope into the document. A value is XML-escaped on the way in — a title with an ampersand is a text
 /// node, not markup, and a card that stops parsing loses its picture along with its words. No answer and no fallback
 /// writes nothing: a card without a caption stays uncaptioned rather than printing its own hole name on the video.

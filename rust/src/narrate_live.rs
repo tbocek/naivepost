@@ -54,6 +54,10 @@ fn current_paths() -> Option<Paths> {
 pub struct Round {
     /// The answer text: either the entries document itself, or the entries built from the tool calls.
     pub answer: String,
+    /// Every `write_line`/`leave_silent` this round's tool loop collected, clip-numbered. §12 #22/#27:
+    /// when a round answered through tools these ARE the answer — the driver matches them by CLIP NUMBER
+    /// and takes any order, instead of re-matching prose bounds forward-only.
+    pub picks: Vec<Picked>,
     /// Whether this round asked for tools rather than answering outright. Recorded so a test can pin
     /// that the tool path really was taken over the wire, not only that an answer came back.
     pub used_tools: bool,
@@ -279,6 +283,7 @@ pub fn ask_round(
     if !used_tools {
         return Ok(Round {
             answer: last_answer,
+            picks: Vec::new(),
             used_tools: false,
             requests,
         });
@@ -291,7 +296,12 @@ pub fn ask_round(
             "{STEP}: the reply used tools but wrote no line and left no clip silent"
         ));
     }
-    Ok(Round { answer: entries_of(&collected, clips)?, used_tools: true, requests })
+    Ok(Round {
+        answer: entries_of(&collected, clips)?,
+        picks: collected.clone(),
+        used_tools: true,
+        requests,
+    })
 }
 
 /// The tools this job is offered: §3.8's six plus the web tools the spec says ride on this call
@@ -314,12 +324,12 @@ pub fn offered_tools() -> Vec<Tool> {
 }
 
 /// One line the writer asked for, before its clip's bounds are echoed back into it.
-#[derive(Debug, Clone)]
-struct Picked {
-    clip: u32,
-    at: f64,
-    text: String,
-    emotion: String,
+#[derive(Debug, Clone, PartialEq)]
+pub struct Picked {
+    pub clip: u32,
+    pub at: f64,
+    pub text: String,
+    pub emotion: String,
 }
 
 /// Run one tool call through the §3.8 answers that already exist in [`narrate_pass`]. Args are read

@@ -224,6 +224,110 @@ where
     Err(last_problem)
 }
 
+/// §12 #22 / #27: the SAME attempt loop, but a round that answered through tools is matched by CLIP
+/// NUMBER and in ANY ORDER. `drive` above walks clips forward and refuses a reply that revisits one,
+/// because its entries carry echoed bounds; a tool call names its clip outright, so there is nothing to
+/// re-sort and no reason to demand the writer work top-to-bottom (§12 #27's one policy). One clip skipped
+/// fails the whole attempt (#22) and says which, through `finish`'s own sentence; a clip number outside
+/// this edit's clips fails it too, naming the number.
+pub fn drive_by_clips<FReply, FProgress, FUnfitted, FReject>(
+    clips: &[Seg],
+    mut round: FReply,
+    mut progress: FProgress,
+    mut unfitted: FUnfitted,
+    mut on_reject: FReject,
+) -> Result<Vec<narrate_run::Written>, String>
+where
+    FReply: FnMut(u32 /*attempt*/, bool /*thinking*/) -> Result<crate::narrate_live::Round, String>,
+    FProgress: FnMut(u32, u32),
+    FUnfitted: FnMut(&[narrate_run::Written]) -> Vec<u32>,
+    FReject: FnMut(&str),
+{
+    let total = clips.len() as u32;
+    let mut thinking = true;
+    let mut best = 0u32;
+    let mut last_problem = String::new();
+
+    for attempt in 1..=narrate_pass::attempts() {
+        let said = round(attempt, thinking)?;
+        // A round that answered with prose instead of tool calls has no clip numbers to trust: hand the
+        // whole thing to `drive`, whose bound match is what that shape carries information in.
+        if !said.used_tools {
+            return drive(
+                clips,
+                |_attempt, _thinking| Ok(said.answer.clone()),
+                progress,
+                unfitted,
+                on_reject,
+            );
+        }
+        let mut problem = String::new();
+        // Any order, one line per clip: a second call for a clip already written is the mistake §12 #22
+        // describes as thirty-nine good clips lost for the fortieth, so it is refused by name rather than
+        // silently keeping the first or the last.
+        let mut slots: Vec<Option<&crate::narrate_live::Picked>> = vec![None; clips.len()];
+        for pick in &said.picks {
+            let Some(index) = (1..=total).find(|n| *n == pick.clip) else {
+                problem = crate::cut_captions::clip_outside(pick.clip, 1, total)
+                    .unwrap_or_else(|| format!("clip {} is not one of this edit's clips", pick.clip));
+                break;
+            };
+            let slot = &mut slots[index as usize - 1];
+            if slot.is_some() {
+                problem = format!(
+                    "clip {n} was written twice — one line per clip, rewrite it once",
+                    n = index
+                );
+                break;
+            }
+            *slot = Some(pick);
+        }
+        if !problem.is_empty() {
+            last_problem = problem;
+            reject(&mut on_reject, attempt, &last_problem, false, &mut thinking);
+            continue;
+        }
+        // Ordered by clip, whatever order they arrived in: the render lays lines out by position.
+        let written: Vec<narrate_run::Written> = slots
+            .iter()
+            .enumerate()
+            .filter_map(|(index, slot)| {
+                let pick = (*slot)?;
+                Some(narrate_run::Written {
+                    start: clips[index].s,
+                    end: clips[index].e,
+                    at: pick.at,
+                    text: pick.text.clone(),
+                    emotion: pick.emotion.clone(),
+                })
+            })
+            .collect();
+        if written.iter().all(|line| line.text.trim().is_empty()) {
+            last_problem = narrate_reply::all_silent_fault();
+            reject(&mut on_reject, attempt, &last_problem, false, &mut thinking);
+            continue;
+        }
+        // Silence must be SAID: a clip with neither a line nor `leave_silent` fails the attempt, named.
+        let missing: Vec<u32> = (1..=total).filter(|n| slots[(*n - 1) as usize].is_none()).collect();
+        if let Some(first) = missing.first() {
+            last_problem = narrate_reply::clip_without_entry(*first - 1, clips);
+            reject(&mut on_reject, attempt, &last_problem, true, &mut thinking);
+            continue;
+        }
+        let answered: Vec<u32> = (1..=total).collect();
+        best = narrate_pass::progress_forward(best, written.len() as u32);
+        progress(best, total);
+        let verdict = narrate_pass::finish(&answered, &unfitted(&written));
+        if !is_ok(&verdict) {
+            last_problem = verdict;
+            reject(&mut on_reject, attempt, &last_problem, true, &mut thinking);
+            continue;
+        }
+        return Ok(written);
+    }
+    Err(last_problem)
+}
+
 /// Report one rejected attempt and apply the thinking rule to the next one. `wrote_anything` is whether
 /// this attempt placed any line at all: a call spent entirely thinking gets no reasoning budget again
 /// ([`narrate_pass::thinking_after`]), and the second log line says so only when that switch happened.

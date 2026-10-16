@@ -598,14 +598,31 @@ fn strip_tag(text: &str) -> String {
 /// §3.10's first must-fix, the other half: the ORIGINAL cue decides where its caption sits, whatever came
 /// back. Returns the text with the placement put back and `true` when the model returned a tag as a word —
 /// which is stripped rather than trusted, because a model told to translate is not a model told to lay out.
+/// §3.10's first must-fix, other half: the ORIGINAL cue decides where its caption sits, whatever came back.
+/// A tag can arrive flush against the text, after a space or a tab, or not at all, and `strip_tag` only
+/// recognises the flush case — so every leading tag is peeled off here before this cue's own goes back on.
+/// Returns the text with the placement put back and `true` when the model returned a tag as a word —
+/// which is stripped rather than trusted, because a model told to translate is not a model told to lay out.
 pub fn keep_placement(original: &Cue, translated: &str) -> (String, bool) {
     let carried = translated.trim_start() != strip_tag(translated).trim_start();
-    let mut text = strip_tag(translated);
-    if let Some(tag) = placement(&original.pos) {
-        if !text.starts_with(tag) {
-            text = format!("{tag}{text}");
+    // Peel until nothing more comes off: one pass left ` {\an8}` standing inside the caption, because the
+    // space hid the tag from `strip_tag` and the app then put ITS tag in front of both.
+    let mut rest = strip_tag(translated);
+    loop {
+        let trimmed = rest.trim_start();
+        if trimmed == rest {
+            break;
         }
+        let stripped = strip_tag(trimmed);
+        if stripped == rest {
+            break;
+        }
+        rest = stripped;
     }
+    let text = match placement(&original.pos) {
+        Some(tag) => format!("{tag}{rest}"),
+        None => rest,
+    };
     (text, carried)
 }
 

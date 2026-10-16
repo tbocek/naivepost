@@ -50,13 +50,16 @@ pub fn run(
         &read_prompt("system"),
     );
     let cancelled = crate::cancel_leg::cancel_check_now();
-    crate::narrate_call::drive(
+    // §12 #22/#27: the driver is chosen by what the round ACTUALLY was. A round that answered through tools
+    // named its clips, so `drive_by_clips` matches those numbers in any order and one-clip-at-a-time;
+    // `narrate_call::drive`'s forward-only ±0.5 s bound match is left for a prose answer, which carries no
+    // clip numbers at all. Both drivers keep the same attempt loop, thinking rule and `finish` check.
+    crate::narrate_call::drive_by_clips(
         &segs,
         |attempt, thinking| {
             crate::narrate_live::ask_round(
                 tree, &request, &segs, &rows, narrator, attempt, thinking, &cancelled,
             )
-            .map(|round| round.answer)
         },
         // §F4.2's streaming progress = written clips / clips, handed straight to the caller so the
         // run bar moves per clip instead of arriving in one jump at the end.

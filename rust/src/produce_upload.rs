@@ -477,6 +477,20 @@ pub fn picked_row(at: f64, nearest: impl Fn(f64) -> Option<f64>) -> Result<Vec<S
     Ok(vec![format!("frame:{frame:.1}")])
 }
 
+/// §12 #32's answer text, spelled ONCE because two doors write the row: the model's `pick_frame` (which
+/// knows the clip it was named on) and the walk's own S3 leg (which is handed a moment on the produced
+/// clock and no clip). Each supplies its own words for the asked moment; the rule — the frame actually
+/// taken, and how far it sits from what was asked — is this one function, so neither door can print the
+/// frame's time while leaving the request's distance out (the prototype printed one and not the other).
+pub fn picked_frame_answer(asked: f64, taken: f64, named: &str) -> String {
+    let distance = (taken - asked).abs();
+    format!(
+        "frame taken at {} \u{2014} {} from the moment asked for ({named}); a picked frame means nothing is drawn",
+        crate::tools::mm_ss(taken),
+        crate::tools::tenths(distance),
+    )
+}
+
 /// S5–S7: the whole words half, in the spec's order.
 ///
 /// brief → model → **publish.json + description.txt** → (own frame | 3 frames off the cut) → draw unless
@@ -594,7 +608,19 @@ pub fn walk(
         // S3: the picked frame IS the picture, so it has to land on disk here — the row alone is a promise,
         // and every later step (printing, stamping, the next run's "already drawn") reads a file.
         match (mats.own_picture)(&next) {
-            Ok(()) => out.calls.push("own-frame".to_string()),
+            Ok(()) => {
+                // §12 #32 through the door that has no clip number: the walk was handed a MOMENT, so it says
+                // both that moment and the frame it got, in the same words the model's own `pick_frame` gets.
+                // Nothing was asked of the person here, so it is the log that must not print only the frame.
+                if let Some(entry) = next.frames.first() {
+                    if let Some(taken) = entry.strip_prefix("frame:").and_then(|t| t.parse::<f64>().ok()) {
+                        if let Some(asked) = answers.picked_frame {
+                            log(&picked_frame_answer(asked, taken, "the moment the answer named"));
+                        }
+                    }
+                }
+                out.calls.push("own-frame".to_string())
+            }
             Err(why) => {
                 // A frame named but not present is the chosen-frame failure the spec names, not a drawn
                 // thumbnail decided silently: say why, then let the draw branch do what it can.
@@ -765,6 +791,9 @@ fn body_refs(body: &serde_json::Value) -> usize {
 pub struct TitleAnswer {
     /// The type size that fills the band ([`crate::produce_runs::reprint`]'s own answer).
     pub size: f64,
+    /// Whether the size is one the band FORCED rather than one that simply had room: the letters were fitted
+    // down to stand inside the band, which is §12 #35's other half (a title can fit at all only by shrinking).
+    pub shrunk: bool,
     /// Word count, the thing "four to seven words" is about.
     pub words: usize,
     /// Over [`OVERFLOW_WORDS`]: the title keeps its words and warns (decision 35), never refused.
@@ -786,18 +815,34 @@ pub const OVERFLOW_WORDS: usize = 7;
 pub fn set_title(publish: &Publish, text: &str, box_: &TitleBox, edited_by_hand: bool) -> TitleAnswer {
     let printed = crate::produce_runs::reprint(text, *box_);
     let words = text.split_whitespace().count();
+    // §12 #35 has TWO ways a title fails to fit, and the answer must tell them apart: "four to seven words" is
+    // advice about WORDS, while the band itself is a box of pixels. The word count is what the prompt was given,
+    // so that is what gets the warning; `fit`'s own size is printed alongside because a seven-word title can
+    // still be shrunk into the band, and a three-word one can overflow it. A title is never refused (decision
+    // 35: "overflows rather than being refused" → keep the words, SAY it), but silence is also not the answer.
     let overflows = words > OVERFLOW_WORDS;
+    // "fitted down" means the band made the letters smaller than one line as tall as the band. The box is a
+    // fraction of the picture, so the ceiling is that fraction of the picture's height divided by the line
+    // height — `fx_text::fit`'s own first try, from the same numbers, never a second guess at it.
+    let band_px = box_.hf * f64::from(crate::produce_runs::HEIGHT);
+    let full_height = band_px > 0.0
+        && printed.size >= band_px / crate::fx_text::LINE_HEIGHT_EM - f64::EPSILON;
+    let shrunk = printed.size > 0.0 && !full_height;
     let changed = crate::audit_gaps::reprint_title_on_change(&publish.title, text, edited_by_hand);
-    let answer = if overflows {
-        format!(
+    let answer = match (overflows, shrunk) {
+        (true, _) => format!(
             "{words} words at {:.0}px \u{2014} that overflows the band (over {OVERFLOW_WORDS})",
             printed.size
-        )
-    } else {
-        format!("{words} words at {:.0}px", printed.size)
+        ),
+        (false, true) => format!(
+            "{words} words at {:.0}px \u{2014} fitted down to stand inside the band",
+            printed.size
+        ),
+        (false, false) => format!("{words} words at {:.0}px", printed.size),
     };
     TitleAnswer {
         size: printed.size,
+        shrunk,
         words,
         overflows,
         changed,
@@ -842,10 +887,10 @@ pub fn pick_frame(clip: usize, offset: f64, starts: &[f64], frames: &[f64]) -> R
         taken,
         distance,
         own: true,
-        answer: format!(
-            "frame taken at {} \u{2014} {} from the moment asked for; a picked frame means nothing is drawn",
-            crate::tools::mm_ss(taken),
-            crate::tools::tenths(distance)
+        answer: crate::produce_upload::picked_frame_answer(
+            asked,
+            taken,
+            &format!("clip {clip} +{}", crate::tools::tenths(offset)),
         ),
     })
 }
