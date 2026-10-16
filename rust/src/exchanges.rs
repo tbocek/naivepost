@@ -233,6 +233,31 @@ pub fn link_line(page_rel: &str) -> String {
     format!(">>>   this run's exchanges, images included: {page_rel}")
 }
 
+/// What a tool result says about itself.
+///
+/// [`crate::tools::error`] spells a refusal as `{"error":"…"}` and every successful answer is other JSON,
+/// so the page can name which of the two a result was from the text alone — no second record of the
+/// outcome, which is what §7 asks for ("tool results: the `tool` messages of the next round's request":
+/// the message carries the answer and nothing else). `None` is a plain answer; a body that is not JSON at
+/// all is a plain answer too, because inventing a failure the tool never reported would be worse than
+/// showing its words. Pure: the renderer decides how to show what comes back.
+pub fn result_outcome(result: &str) -> Option<&'static str> {
+    if result.trim().is_empty() {
+        return Some("answered nothing");
+    }
+    let refused = serde_json::from_str::<serde_json::Value>(result)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(serde_json::Value::as_str)
+                .filter(|reason| !reason.trim().is_empty())
+                .map(|_| ())
+        })
+        .is_some();
+    refused.then_some("refused")
+}
+
 fn esc(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -286,6 +311,20 @@ pub fn meta_line(call: &Call, answered: bool) -> String {
     )
 }
 
+/// The word the page puts in front of one tool block.
+///
+/// A call read off the REPLY knows its tool's name. A result arriving as the next round's `tool` message
+/// does not: §7 spells tool results as exactly those messages, and this app's request body serialises a
+/// message as `{role, content}` with no name field (`llm_request::body`), so the wire carries no name to
+/// show. Rather than invent one, the page numbers it — `result #2` reads as the second thing the model was
+/// answered, which is what the order actually says.
+fn tool_word(tool: &ToolCall, index: usize) -> String {
+    if tool.name.is_empty() {
+        return esc(&format!("result #{}", index + 1));
+    }
+    esc(&tool.name)
+}
+
 /// One call as a numbered section of the page, in its finished form.
 pub fn section_html(seq: usize, call: &Call) -> String {
     section_in_state(seq, call, true)
@@ -327,12 +366,18 @@ fn section_in_state(seq: usize, call: &Call, answered: bool) -> String {
         ));
     }
 
-    for tool in &call.tool_calls {
+    for (index, tool) in call.tool_calls.iter().enumerate() {
         html.push_str(&format!(
-            "<div class=\"tool\"><span class=\"role\">{}</span>(<pre>{}</pre>)\n<pre>{}</pre></div>\n",
-            esc(&tool.name),
+            "<div class=\"tool\"><span class=\"role\">{}</span>(<pre>{}</pre>)\n<pre>{}</pre>{}</div>\n",
+            tool_word(tool, index),
             esc(&tool.args),
-            esc(&tool.result)
+            esc(&tool.result),
+            // §7's notes cover cut-off and empty answers; this is the same idea one level down, where a
+            // tool refused. A plain answer gets nothing extra, so today's page for good tools is unchanged.
+            match result_outcome(&tool.result) {
+                Some(outcome) => format!("<span class=\"note\">{outcome}</span>"),
+                None => String::new(),
+            }
         ));
     }
 
@@ -351,7 +396,9 @@ fn section_in_state(seq: usize, call: &Call, answered: bool) -> String {
     // below are where the arguments and the result are readable, the result also travelling onward as
     // the next round's `tool` message via `tool_loop::tool_message`.
     for tool in &call.tool_calls {
-        html.push_str(&format!("<p>{}</p>\n", esc(&crate::tool_loop::call_note(tool))));
+        // [tool name(args) → outcome] — the same verdict the block itself carries, so the two can never disagree.
+        let line = crate::exchange_leg::call_line(tool);
+        html.push_str(&format!("<p>{}</p>\n", esc(&line)));
     }
     if call.cut_off {
         // The dash belongs to the log line's prose; here it reads as a note.

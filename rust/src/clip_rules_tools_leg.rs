@@ -16,7 +16,7 @@
 //! `{"speeds": […]}` in content rather than calling a tool still gets the F3.9/F3.10/F3.11 treatment, because
 //! those passes' tests pin that shape. [`Run::job_calls` / `Run::prose`] is where a caller reads the answer back.
 
-use crate::exchanges::{Message, ToolCall};
+use crate::exchanges::{Message, Part, ToolCall};
 use crate::tool_loop;
 use crate::tools::clips::Clips;
 use crate::tools::Tool;
@@ -45,6 +45,13 @@ pub fn run_over_batch(
     run_over_batch_from(step, &tool_loop::Turn::default(), messages, offered, batch, ask)
 }
 
+/// One answered round: what the model was shown, and its calls with each result already written on them.
+#[derive(Clone)]
+pub struct Round {
+    pub messages: Vec<Message>,
+    pub turn: tool_loop::Turn,
+}
+
 /// [`run_over_batch`] with the FIRST round's answer already in hand — which is how all three cut passes work:
 /// their first request went out before the loop existed (§2 S5's plain-call shape), so feeding that turn back is
 /// what keeps a live ask at one request when the model answers in prose, and at two when it asked for something.
@@ -65,6 +72,7 @@ pub fn run_over_batch_from(
                 outcome: tool_loop::Outcome::Finished { asked_finish: false },
             },
             calls: Vec::new(),
+            rounds: Vec::new(),
         };
     }
     // Every call the model made, in the order it made them. The assistant turns in `tool_loop::Run::messages`
@@ -73,6 +81,10 @@ pub fn run_over_batch_from(
     // could not read them back afterwards. Holding them here is the honest place: the loop asked, this saw the
     // answer, so the list is the program's own and not a test's guess.
     let mut asked: Vec<ToolCall> = Vec::new();
+    // Every round as it ran: the conversation at that moment plus the answered calls. §7 files one section per
+    // request, so a step that asked three times owes three sections, and each one can only be drawn from the state
+    // THIS round had — reading it back off the finished conversation would show every round the last one's messages.
+    let mut rounds: Vec<Round> = Vec::new();
     // Whether the round now being asked is the one whose answer the caller already dialled. An EMPTY first turn is
     // no turn at all: a pass that dials its first round inside the loop (`captions_ask` before any tool call) has
     // nothing to hand back, and feeding an empty turn would end the run before the wire was ever tried.
@@ -87,10 +99,67 @@ pub fn run_over_batch_from(
             ask(conversation, tools)?
         };
         asked.extend(turn.calls.iter().cloned());
+        // Remember what this round was SHOWN and what it ANSWERED. §7 files one section per request, and only the
+        // round itself can say which conversation it was looking at: reading it back off the finished conversation
+        // would show every round the last one's messages. The calls travel unanswered because the loop answers
+        // them next, through [`answer`]; writing their results back afterwards (see below) is what keeps a call's
+        // verdict identical everywhere it is read — the log line, the next request's `tool` message, and the page.
+        rounds.push(Round { messages: conversation.to_vec(), turn: turn.clone() });
         Ok(turn)
     };
     let run = tool_loop::run(step, messages, offered, &mut probe, |call| answer(call, batch));
-    Run { run, calls: asked }
+    // Write each round's ANSWERED calls back into the round that made them. This happens after the loop rather than
+    // inside the ask because answering there would need the batch twice over at once (the loop answers the same
+    // calls itself), and re-running `answer` afterwards could report a different verdict for a call whose effect
+    // the first run already consumed — e.g. a stretch merged or a clip count that moved. So the results are taken
+    // from the conversation the loop grew: §2 S2 put one `tool` message per call there, in ask order, which is
+    // exactly where the wire carries them too.
+    //
+    // The rounds are matched to their turns by what each was SHOWN rather than by counting assistant turns: the
+    // loop sometimes inserts a user turn of its own (§2's `finish` nudge) and a quiet round adds no assistant turn
+    // at all, so position-in-the-list is not a reliable identity. What IS reliable is that the loop grows the
+    // conversation strictly, so the messages recorded for round k+1 always contain everything round k was shown,
+    // plus that round's answer.
+    let assistants: Vec<usize> = run
+        .messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| message.role == "assistant")
+        .map(|(at, _)| at)
+        .collect();
+    let last = rounds.len();
+    for (index, round) in rounds.iter_mut().enumerate() {
+        let shown = round.messages.len();
+        // This round's own turn: the last assistant turn that arrived after it was asked.
+        let mine = assistants.iter().copied().filter(|at| *at >= shown).min().unwrap_or(usize::MAX);
+        let end = assistants
+            .iter()
+            .copied()
+            .filter(|at| *at > mine)
+            .min()
+            .unwrap_or(run.messages.len());
+        if mine == usize::MAX || mine >= run.messages.len() {
+            continue;
+        }
+        let window = &run.messages[mine..end.min(run.messages.len())];
+        if let Some(Part::Text(spoken)) = window.first().and_then(|turn| turn.parts.first()) {
+            round.turn.content = spoken.clone();
+        }
+        let mut answers = window
+            .iter()
+            .filter(|message| message.role == "tool")
+            .filter_map(|message| match message.parts.first() {
+                Some(Part::Text(text)) => Some(text.clone()),
+                _ => None,
+            });
+        for call in &mut round.turn.calls {
+            if let Some(result) = answers.next() {
+                call.result = result;
+            }
+        }
+        round.turn.finish = round.turn.calls.is_empty() && index + 1 == last;
+    }
+    Run { run, calls: asked, rounds }
 }
 
 /// Answer a whole round's calls against the batch and return the §7 notes for them, in order — the lines a step
@@ -98,21 +167,25 @@ pub fn run_over_batch_from(
 /// loop uses for its own rounds; a caller that dialled its first round outside the loop needs it to reach the same
 /// sentence.
 pub fn answer_calls(calls: &[ToolCall], batch: &mut Clips) -> Vec<String> {
-    calls
-        .iter()
-        .map(|call| {
-            let mut done = call.clone();
-            done.result = answer(call, batch);
-            tool_loop::call_note(&done)
-        })
-        .collect()
+    calls.iter().map(|call| call_note_of(call, batch)).collect()
 }
 
-/// A finished §3.7 conversation: the loop's own record, plus the calls it saw.
+/// One answered call as §7 shows it. [`tool_loop::call_note`] is the log's wording — a bare
+/// `[tool call name(args)]`, which is right in a scrolling log and says nothing about the outcome there.
+fn call_note_of(call: &ToolCall, batch: &mut Clips) -> String {
+    let mut done = call.clone();
+    done.result = answer(call, batch);
+    tool_loop::call_note(&done)
+}
+
+/// A finished §3.7 conversation: the loop's own record, plus the calls it saw and the rounds it ran.
 pub struct Run {
     pub run: tool_loop::Run,
     /// Every call the model made, reads included, in the order it made them.
     pub calls: Vec<ToolCall>,
+    /// One entry per request the loop made, each holding the conversation that round was shown and its ANSWERED
+    /// calls. This is what lets a step file §7's page honestly: one section per round, results and all.
+    pub rounds: Vec<Round>,
 }
 
 impl Run {

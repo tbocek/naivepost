@@ -336,3 +336,196 @@ fn sec_09_llm_and_tools_7_exchange_log_s6_written_at_send_streamed_into_an_open_
     assert_eq!(page.stream("late"), None);
     assert_eq!(page.flush(), None);
 }
+
+// --- S7: what a tool result says about itself ---------------------------------------------------------
+
+/// §7's page shows each tool call and its result; the gap this pins is the OUTCOME of a result. A refusal
+/// reaches the next round as `{"error":"…"}` (`crate::tools::error`) and an answer as any other text, so
+/// the page can say which it was without a second record — and a reader scanning the page sees which of
+/// the model's calls the app refused.
+#[test]
+fn sec_09_llm_and_tools_7_exchange_log_s7_a_refused_tool_result_says_so_on_the_page() {
+    let refused = ToolCall {
+        name: "fix_line".into(),
+        args: "{\"n\":9}".into(),
+        result: naivepost::tools::error("line 9 is not in this block"),
+    };
+    let good = ToolCall {
+        name: "finish".into(),
+        args: "{}".into(),
+        result: naivepost::tools::ok(&serde_json::json!({ "done": true })),
+    };
+    // The rule first: a refusal names itself, a plain answer does not.
+    assert_eq!(exchanges::result_outcome(&refused.result), Some("refused"));
+    assert_eq!(exchanges::result_outcome(&good.result), None);
+    // A body that is not JSON at all is shown as the tool's own words, not called a failure.
+    assert_eq!(exchanges::result_outcome("plain prose back from a web read"), None);
+
+    let mut c = call("Fix", 40, "the block is fixed");
+    c.tool_calls = vec![refused.clone(), good.clone()];
+    let html = exchanges::section_html(1, &c);
+
+    // The refusal is named beside ITS result, and only there.
+    assert!(html.contains("<span class=\"note\">refused</span>"), "{html}");
+    assert_eq!(
+        html.matches("<span class=\"note\">refused</span>").count(),
+        1,
+        "one refusal, one note: {html}"
+    );
+    assert!(html.contains("line 9 is not in this block"), "the reason stays readable: {html}");
+    assert!(!html.contains("\"done\":true\""), "the good result carries no note of its own: {html}");
+    // Both results still sit under their own tool's word, and both notes are still on the reply (§7).
+    for name in ["fix_line", "finish"] {
+        assert!(html.contains(name), "{name} names its block: {html}");
+    }
+    for tool in [&refused, &good] {
+        let note = tool_loop::call_note(tool)
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;");
+        assert!(html.contains(&note), "the [tool call …] note survives: {html}");
+    }
+}
+
+/// An empty result is the third case §7 cares about: nothing came back, and the page must not look like a
+/// successful answer. `tool_loop::tool_result` already turns an empty result into `tools::error`, so this
+/// covers both the raw empty text and what the wire then carries.
+#[test]
+fn sec_09_llm_and_tools_7_exchange_log_s7_an_empty_tool_result_is_recorded_as_nothing() {
+    assert_eq!(exchanges::result_outcome(""), Some("answered nothing"));
+    assert_eq!(exchanges::result_outcome("   \n "), Some("answered nothing"));
+    // What actually travels to the next round when a tool answers nothing.
+    let empty = ToolCall { name: "get_events".into(), args: "{}".into(), result: String::new() };
+    assert_eq!(
+        exchanges::result_outcome(&tool_loop::tool_result(&empty)),
+        Some("refused"),
+        "the wire says why, and the page reads that"
+    );
+
+    let mut c = call("Describe", 24, "events recorded");
+    c.tool_calls = vec![empty];
+    let html = exchanges::section_html(1, &c);
+    assert!(html.contains("<span class=\"note\">answered nothing</span>"), "{html}");
+    assert_eq!(html.matches("<span class=\"note\">").count(), 1, "{html}");
+}
+
+/// A result arriving as the NEXT round's `tool` message — which is how §7 spells tool results — carries no
+/// tool name in this app's request body (`llm_request::body` writes `{role, content}`), so the page numbers
+/// it instead of inventing a name. That attribution is what this pins end to end through `exchange_leg`.
+#[test]
+fn sec_09_llm_and_tools_7_exchange_log_s7_a_result_from_the_next_round_is_attributed_by_order() {
+    // The next round's request: the system prompt, the assistant's ask, and two tool answers.
+    let next_round = serde_json::json!({
+        "model": "qwen3-32b",
+        "messages": [
+            {"role": "system", "content": [{"type": "text", "text": "house rules"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": ""}]},
+            {"role": "tool", "content": [{"type": "text", "text": "{\"done\":true}"}]},
+            {"role": "tool", "content": [{"type": "text", "text": "{\"error\":\"no such line number in this batch: 9\"}"}]}
+        ]
+    })
+    .to_string();
+    let answered = naivepost::exchange_leg::call_of(
+        "Fix",
+        "qwen3-32b",
+        &next_round,
+        "",
+        "",
+        0,
+        Some("the call failed after 1s: stopped".into()),
+    );
+    assert_eq!(answered.tool_calls.len(), 2, "both answers reached the page");
+    assert!(
+        answered.tool_calls.iter().all(|tool| tool.name.is_empty()),
+        "the wire gave no names to show: {:?}",
+        answered.tool_calls
+    );
+    // An errored call ends its section at the failure line (§7 shows the failure), so the tool blocks are
+    // what this page holds; read them from there rather than expecting a reply block that cannot exist.
+    let page = exchanges::section_html(2, &answered);
+    // The note span lives inside its own `<div class="tool">`, so count per block rather than per page:
+    // the section's failure note is a `<p>` and belongs to neither tool.
+    let tool_blocks: Vec<&str> = page
+        .split("<div class=\"tool\">")
+        .skip(1)
+        .map(|block| block.split("</div>").next().unwrap_or(block))
+        .collect();
+    assert_eq!(tool_blocks.len(), 2, "one block per result: {page}");
+    let refused_blocks = tool_blocks
+        .iter()
+        .filter(|block| block.contains("<span class=\"note\">refused</span>"))
+        .count();
+    assert_eq!(refused_blocks, 1, "only the refusing result is marked: {tool_blocks:?}");
+    let tools = page.as_str();
+    assert!(tools.contains("result #1"), "the first answer is numbered: {tools}");
+    assert!(tools.contains("result #2"), "and the second: {tools}");
+    // And the failure itself is still the section's own note, unchanged by any of this.
+    assert!(page.contains("the call failed after 1s: stopped"), "{page}");
+}
+
+/// S7's live-half claim about the page: a tool round is showable WHILE IT RUNS, results and all. Before this
+/// door existed a tool round could only be filed through `call_of`, which reads a reply's calls with blank
+/// results — so every ask on a live page read "answered nothing" and §2's loop was invisible on it.
+#[test]
+fn sec_09_llm_and_tools_7_exchange_log_s7_a_round_with_results_shows_which_call_answered_what() {
+    // The program's own door for this: a captions ask whose model answers by CALLING tools runs §2's loop, and the
+    // loop hands back one Round per request, each holding what that round was shown plus its answered calls.
+    let clips = vec![(1u32, 0.0f64, 20.0), (2, 20.0, 20.0)];
+    let messages = vec![
+        Message { role: "system".into(), parts: text("house rules") },
+        Message { role: "user".into(), parts: text("caption these clips") },
+    ];
+    // One scripted round: two `add_caption` calls, the second for a clip outside the batch, then a finish round.
+    let mut owed: Vec<tool_loop::Turn> = vec![
+        tool_loop::Turn {
+            content: String::new(),
+            calls: vec![
+                ToolCall { name: "add_caption".into(), args: "{\"clip\":1,\"start\":1.0,\"end\":2.0,\"text\":\"one\"}".into(), result: String::new() },
+                ToolCall { name: "add_caption".into(), args: "{\"clip\":9,\"start\":1.0,\"end\":2.0,\"text\":\"nine\"}".into(), result: String::new() },
+            ],
+            finish: false,
+        },
+        tool_loop::Turn { content: String::new(), calls: Vec::new(), finish: true },
+    ];
+    let mut batch = naivepost::tools::clips::Clips::new(&clips);
+    // The same two-tool offer a captions ask puts on the wire (§2's per-job filter), so this drives the real flow
+    // rather than a catalogue the step never sends.
+    let offered: Vec<naivepost::tools::Tool> = naivepost::tools::offered(naivepost::roles::Job::ClipRules)
+        .into_iter()
+        .filter(|tool| matches!(tool, naivepost::tools::Tool::AddCaption | naivepost::tools::Tool::Finish))
+        .collect();
+    let run = naivepost::clip_rules_tools_leg::run_over_batch(
+        "Captions",
+        messages.clone(),
+        &offered,
+        &mut batch,
+        &mut |conversation, _tools| {
+            // The scripted rounds only make sense as a conversation that grows: hand back the next turn and let the
+            // loop do the growing, exactly as it does against a live server.
+            assert!(!owed.is_empty(), "the model was asked more times than the script answers");
+            let _ = conversation;
+            Ok(owed.remove(0))
+        },
+    );
+    assert_eq!(run.rounds.len(), 2, "one round per request the loop made");
+    // Round one asked twice; round two asked nothing and ended the flow.
+    assert_eq!(run.rounds[0].turn.calls.len(), 2);
+    assert!(run.rounds[1].turn.calls.is_empty(), "the finish round asked no tool");
+
+    // The page is built from those rounds through the crate's own door.
+    let first = naivepost::exchange_leg::round_of("Captions", "qwen", &run.rounds[0].messages, &run.rounds[0].turn);
+    assert_eq!(first.tool_calls.len(), 2, "both asks are on the page");
+    assert!(first.tool_calls[0].result.contains("done") || !first.tool_calls[0].result.is_empty(), "the good call has an answer: {:?}", first.tool_calls[0]);
+    assert!(first.tool_calls[1].result.contains("error"), "the out-of-batch call refused: {:?}", first.tool_calls[1]);
+    let html = exchanges::section_html(1, &first);
+    assert!(html.contains("add_caption"), "{html}");
+    assert_eq!(
+        html.matches("<span class=\"note\">refused</span>").count(),
+        1,
+        "only the refusing call is marked: {html}"
+    );
+    // And the round shows what THAT round was shown — not the finished conversation.
+    assert!(first.messages.iter().any(|m| m.role == "user"), "the ask is there: {:?}", first.messages);
+    assert!(!first.messages.iter().any(|m| m.role == "tool"), "its own results were not yet sent to the model: {:?}", first.messages);
+}

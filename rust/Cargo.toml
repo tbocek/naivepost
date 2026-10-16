@@ -484,6 +484,10 @@ name = "exchange_log_page"
 path = "tests/exchange_log_page.rs"
 
 [[test]]
+name = "exchange_log_streams_live_f7"
+path = "tests/exchange_log_streams_live_f7.rs"
+
+[[test]]
 name = "exchange_page_live_in_log"
 path = "tests/exchange_page_live_in_log.rs"
 
