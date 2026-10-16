@@ -165,9 +165,86 @@ pub fn ask_at(
         // unreadable reply leaves nothing in the cache and the retry goes to the wire rather than being served
         // the answer that was just refused (§6).
         let answer = reply.answer().to_string();
+        // §3's content repair, once: an answer with no JSON in it at all (the whole reply was reasoning) or one
+        // that stopped mid-document is UNUSABLE, not merely refused — sending the identical request again would
+        // earn the identical reply. `llm_repair_leg::ask_repair_after` puts the correction back into the
+        // conversation (`retryTurn`) and turns thinking off when the answer was empty (`thinkAgain`). This is
+        // NOT `cut_captions::retries`, which counts out-of-batch answers a model can correct itself from (§F3.9
+        // S4) and stays exactly as it was: different failure, different counter, one round each.
+        let (answer, retried) = match parse_captions(&answer) {
+            // A readable document is the ordinary answer: it is KEPT first (§6: an unchanged step costs nothing),
+            // then returned. Returning before the store was written made a second identical ask open a socket.
+            Ok(calls) => {
+                if !answer.trim().is_empty() {
+                    llm_cache::store(tree, STEP, &parts, &answer);
+                }
+                return Asked { calls, failed: false, reason: String::new() };
+            }
+            Err(problem) => {
+                // §3 names the repairs worth a second ask: `noAnswer` (the whole reply was reasoning) and
+                // `cutOff` (stopped mid-JSON). Anything else — valid JSON in the wrong shape — is this pass's
+                // own complaint about the ANSWER, not the answer being unusable, so it costs no extra request:
+                // a server that answers `{"not":"..."}` forever still spends one per attempt, exactly as §F3.9
+                // S4 counts it and its sibling test pins.
+                let repairable = crate::llm_retry::repair(&answer, &problem)
+                    .is_some_and(|(kind, _)| kind != crate::llm_retry::Repair::Other);
+                if !repairable {
+                    return failed(problem);
+                }
+                // The verdict §3's repair needs, computed the SAME way as the gate above: this step's read of the
+                // answer is what makes it unusable, and the sentence sent to the model is `llm_retry::repair`'s
+                // wording rather than the parser's. Handing the repair door a `None` here would make it treat the
+                // answer as fine and resend the identical request — the very thing §3 forbids.
+                let verdict = |again: &llm_request::Reply| {
+                    parse_captions(again.answer()).err().and_then(|why| {
+                        crate::llm_retry::repair(again.answer(), &why)
+                            .filter(|(kind, _)| *kind != crate::llm_retry::Repair::Other)
+                            .map(|(_, correction)| correction)
+                    })
+                };
+                let repaired = crate::llm_repair_leg::ask_repair_after(
+                    STEP,
+                    &crate::ui::window::log_line,
+                    repair_messages(&system, &user),
+                    true,
+                    // The offer went out on this request, so §3's "with tools these become tool results".
+                    !offered.is_empty(),
+                    &verdict,
+                    &reply,
+                    &|body| {
+                        let sent = crate::llm_retry_leg::chat(
+                            STEP,
+                            tree,
+                            &base,
+                            &endpoint,
+                            body,
+                            cancelled,
+                            &crate::ui::window::log_line,
+                        )?;
+                        Ok((sent.content_type, sent.body))
+                    },
+                    &|messages, thinking| {
+                        chat_body_mode(&model, messages, thinking).map(|text| text.to_string())
+                    },
+                );
+                match repaired {
+                    // The caller reads back the ANSWER, not the envelope: `body` is what the server sent, and
+                    // every other path in this file parses the answer field of a reply, so a repair that left
+                    // the raw JSON envelope here would be parsed as if it were the model's document.
+                    Ok(repaired) => match repaired.reply() {
+                        Ok(second) => (second.answer().to_string(), true),
+                        // The second reply was not readable as a chat answer at all: keep the FIRST verdict,
+                        // which is the honest reason a person can act on.
+                        Err(_) => return failed(problem),
+                    },
+                    // No second ask happened (the repair dial failed): keep the FIRST verdict, unchanged.
+                    Err(_) => return failed(problem),
+                }
+            }
+        };
         let calls = match parse_captions(&answer) {
             Ok(calls) => calls,
-            Err(reason) => return failed(reason),
+            Err(reason) => return failed(if retried { format!("{reason} (asked twice)") } else { reason }),
         };
         if !answer.trim().is_empty() {
             llm_cache::store(tree, STEP, &parts, &answer);
@@ -313,6 +390,27 @@ pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
         end: number("end")?,
         text,
     })
+}
+
+/// The two messages of one captions ask, rebuilt for §3's repair path: the SAME system and user the first
+/// request carried, because a repair adds to the conversation rather than replacing it.
+fn repair_messages(system: &str, user: &str) -> Vec<Message> {
+    vec![
+        Message { role: "system".to_string(), parts: vec![Part::Text(system.to_string())] },
+        Message { role: "user".to_string(), parts: vec![Part::Text(user.to_string())] },
+    ]
+}
+
+/// The chat body for one message list at a chosen patience. `thinking == false` is §3's `thinkAgain`: the
+/// retry asks without reasoning, which is [`Mode::Execute`] (§1's table — temperature, ceiling and the
+/// `enable_thinking` switch all follow the mode, so nothing here re-spells them).
+fn chat_body_mode(
+    model: &str,
+    messages: &[Message],
+    thinking: bool,
+) -> Result<String, String> {
+    let mode = if thinking { Mode::Thinking } else { Mode::Execute };
+    Ok(llm_request::body(model, messages, mode, None, true)?.to_string())
 }
 
 /// The chat body for one round of a tool conversation: the grown message list beside the offer the loop was
