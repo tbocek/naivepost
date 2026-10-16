@@ -257,7 +257,7 @@ pub fn ask_run(
             &endpoint.url,
             Some(tools),
             &|offer| {
-                Ok(llm_request::body(&conf.model, conversation, Mode::Execute, offer, true)?.to_string())
+                Ok(llm_request::body(STEP, &conf.model, conversation, Mode::Execute, offer, true)?.to_string())
             },
             &|body| {
                 crate::llm_retry_leg::chat(

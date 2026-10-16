@@ -49,7 +49,7 @@ fn resend_without_tools(
     dial_error: &std::rc::Rc<std::cell::RefCell<Option<String>>>,
     spoken: &std::rc::Rc<std::cell::RefCell<String>>,
 ) -> Result<tool_loop::Turn, String> {
-    let bare = llm_request::body(model, conversation, mode, None, true)?.to_string();
+    let bare = llm_request::body(STEP, model, conversation, mode, None, true)?.to_string();
     // §3's patience is for a transient. A 4xx that refuses the `tools` FIELD is not one: F6.1's own rule is to
     // resend the identical messages WITHOUT the field, which only the caller can do, so those are handed back
     // unretried (see [`crate::llm_retry_leg::answered`]). Everything else, including a plain 500, gets its retry.
@@ -140,6 +140,7 @@ pub fn messages(system: &str, brief: &str) -> Vec<Message> {
 pub fn body(model: &str, system: &str, brief: &str) -> Result<String, String> {
     let tools = crate::tools::offered(Job::UploadText);
     let body = llm_request::body(
+        STEP,
         model,
         &messages(system, brief),
         Mode::Thinking,
@@ -228,7 +229,7 @@ where
         rounds += 1;
         // S5: this server has already refused the field -> ask without it and say nothing more.
         let offered = crate::llm_tools_offer::tools_for(&services::llm_endpoint(&conf).url, tools);
-        let sent_body = match llm_request::body(&model, conversation, mode, offered.as_deref(), true) {
+        let sent_body = match llm_request::body(STEP, &model, conversation, mode, offered.as_deref(), true) {
             Ok(sent_body) => sent_body.to_string(),
             Err(why) => {
                 dial_error.borrow_mut().get_or_insert(format!("{STEP} call to {model}: {why}"));

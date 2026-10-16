@@ -732,6 +732,21 @@ pub struct Outcome {
     pub files: Vec<PathBuf>,
 }
 
+/// Does this source still owe the fixer anything? Its fixed file is what the per-source fix rows leave
+/// behind, so a source that has one was walked by them this run and owes nothing more; a source without one
+/// (a resumed run, a fix row that failed or was skipped) still owes its blocks.
+///
+/// Counted on the FILE rather than on `cache/llm/fix` on purpose: an incomplete answer is deliberately not
+/// cached (§S3, so a failed block is re-asked next run), and a source whose blocks all failed is exactly
+/// the case the session walk exists to try again with every recording's grounding around it.
+pub fn owes_the_fixer(tree: &Tree, source: &Source) -> bool {
+    let path = match source.is_commentary {
+        true => tree.commentary_fixed_tsv(&source.base),
+        false => tree.transcript_fixed_tsv(&source.base),
+    };
+    !path.exists()
+}
+
 /// S1-S7 for one session.
 ///
 /// `ask` is the fixer: handed [`ask_text`]'s message, it answers with the `fix_line` calls the model

@@ -156,7 +156,7 @@ pub fn user_message_over(
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
     let messages = two_messages(system, user);
     let tools: Vec<Tool> = this_pass_tools();
-    Ok(llm_request::body(model, &messages, Mode::Execute, Some(&tools), true)?.to_string())
+    Ok(llm_request::body(STEP, model, &messages, Mode::Execute, Some(&tools), true)?.to_string())
 }
 
 /// The two messages every speed ask carries: the SYSTEM rules and the USER clips/rows.
@@ -362,6 +362,7 @@ pub fn ask_at_over(
     // that refused the field. The cache slot and the timed row belong to whichever body goes out first.
     let build = |offer: Option<&[Tool]>| {
         Ok(llm_request::body(
+            STEP,
             &model,
             &two_messages(&system, &user),
             Mode::Execute,

@@ -408,7 +408,7 @@ fn chat_body(
     mode: Mode,
     tools: Option<&[Tool]>,
 ) -> Result<String, String> {
-    Ok(llm_request::body(model, messages, mode, tools, true)?.to_string())
+    Ok(llm_request::body(STEP, model, messages, mode, tools, true)?.to_string())
 }
 
 /// Whether a round's calls mean the derivation is over: every one of them was a `set_policy`, which is

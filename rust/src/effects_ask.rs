@@ -150,7 +150,7 @@ pub fn user_message_over(
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
     let tools: Vec<Tool> = this_pass_tools();
     let messages = two_messages(system, user);
-    let body = llm_request::body(model, &messages, Mode::Execute, Some(&tools), true)?;
+    let body = llm_request::body(STEP, model, &messages, Mode::Execute, Some(&tools), true)?;
     // No `prompt_cache_key`: §1's request contract names model, the two messages, `tools` when the job has
     // them, and the sampling five — and `llm_request::body` is the one place a chat request is built (§09 §5).
     Ok(body.to_string())
@@ -375,6 +375,7 @@ pub fn ask_at_over(
     // that refused the field. The cache slot and the timed row belong to whichever body goes out first.
     let build = |offer: Option<&[Tool]>| {
         Ok(llm_request::body(
+            STEP,
             &model,
             &two_messages(&system, &user),
             Mode::Execute,

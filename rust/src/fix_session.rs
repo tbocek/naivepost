@@ -61,10 +61,51 @@ pub fn run_placement(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)
 }
 
 /// The walk's door for the merge row: S5, S6 and S7.
+///
+/// The session fix step (§F1.8 S1-S4 over every recording) is what runs FIRST here — [`session_fix`],
+/// i.e. [`crate::fix_transcripts::run`] asking through the same leg the per-source fix rows use — and only
+/// if it found no answers on disk: every block that read its reply back from `cache/llm/fix` costs no ask,
+/// which is §S3's resume rule, and a run that already fixed this session re-asks nothing. A session with
+/// no settings folder (nothing to dial: no server, no model) skips the step and keeps the honest timeline
+/// out of whatever transcripts are on disk.
 pub fn run_session(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let tree = session_tree()?;
     let project = crate::project::load(tree.dir()).unwrap_or_default();
+    // §S3's resume rule decides whether anything is left to ask. A source whose FIXED file is already on
+    // disk was walked by the per-source fix rows of this run — nothing is owed for it. Anything else (a
+    // resumed run, a fix row that failed or was skipped) still owes the fixer its blocks, and a session with
+    // any such source gets the whole-session walk, over EVERY recording at once.
+    let placed = placed_sources(&project);
+    if placed.iter().any(|source| fix_transcripts::owes_the_fixer(&tree, source)) {
+        session_fix(&tree, &project, log)?;
+    }
     merge_mark_write(&tree, &project, log)
+}
+
+/// §F1.8 S1–S4 for the whole session in one walk: place, block by block over EVERY recording, write the
+/// fixed files. Its `ask` is [`crate::fix_call::ask_block`], the one door the clean-transcript job dials
+/// through, so §3.1's `get_lines`/`get_events` reads stay answerable and §09 §5's bound is applied by
+/// `llm_request::body` to each block. S5–S7 are [`merge_mark_write`]'s, on the files this walk wrote.
+pub fn session_fix(tree: &Tree, project: &Project, log: &mut impl FnMut(&str)) -> Result<(), String> {
+    let Some(paths) = crate::settings::from_environment() else {
+        // No settings folder means nothing to dial. The merge still owes a timeline from whatever
+        // transcripts are on disk, so this is a silent skip rather than a failure.
+        return Ok(());
+    };
+    let conf = crate::settings::read(&paths).unwrap_or_default();
+    let pass = crate::policy::marking_pass_of(&project.policy);
+    let outcome = fix_transcripts::run(
+        tree,
+        &placed_sources(project),
+        &narrator_of(project),
+        pass,
+        |message| crate::fix_call::ask_block(tree, &paths, &conf, message),
+        || run_marking_pass(tree, project, pass, log),
+    )?;
+    for line in &outcome.logs {
+        log(line);
+    }
+    Ok(())
 }
 
 /// Resolve the session folder the way every other dial does (§1's re-read-per-request seams).
@@ -224,7 +265,7 @@ pub fn narrator_of(project: &Project) -> String {
 /// S6: run whichever marking pass the policy names, through the doors those items own, and read back the
 /// stretches they wrote. A pass that produced nothing but ran is NOT an error: an empty mark list is a
 /// real answer, and the timeline simply goes unmarked.
-fn run_marking_pass(
+pub fn run_marking_pass(
     tree: &Tree,
     project: &Project,
     pass: MarkingPass,

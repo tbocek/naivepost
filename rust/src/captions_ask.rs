@@ -128,7 +128,7 @@ pub fn ask_at(
             Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
             Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },
         ];
-        Ok(llm_request::body(&model, &messages, Mode::Thinking, offer, true)?.to_string())
+        Ok(llm_request::body(STEP, &model, &messages, Mode::Thinking, offer, true)?.to_string())
     };
     // One live ask is ONE request on the wire (§F3.9 counts batches by rows in `requests.tsv`). This dial IS §2's
     // first round, and it honours S5 itself: a refusal of the `tools` FIELD gets the identical body again without
@@ -410,7 +410,7 @@ fn chat_body_mode(
     thinking: bool,
 ) -> Result<String, String> {
     let mode = if thinking { Mode::Thinking } else { Mode::Execute };
-    Ok(llm_request::body(model, messages, mode, None, true)?.to_string())
+    Ok(llm_request::body(STEP, model, messages, mode, None, true)?.to_string())
 }
 
 /// The chat body for one round of a tool conversation: the grown message list beside the offer the loop was
@@ -421,7 +421,7 @@ fn chat_body_conversation(
     conversation: &[Message],
     tools: &[Tool],
 ) -> Result<String, String> {
-    Ok(llm_request::body(model, conversation, Mode::Thinking, Some(tools), true)?.to_string())
+    Ok(llm_request::body(STEP, model, conversation, Mode::Thinking, Some(tools), true)?.to_string())
 }
 
 /// The timed row shape this ask's rounds write: `started` and `run` belong to whoever owns the run, and a step
