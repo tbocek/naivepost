@@ -25,6 +25,14 @@ use crate::shell::Shell;
 use crate::ui::window::{paint_progress, paint_run_bar};
 use crate::ui::window as ui;
 
+/// The transport every run-bar paint and the ▶ press read: this window's live preview, never a
+/// default. `run::RunBar::press`'s S2 ("playback beats the page's action") can only fire from what
+/// the player actually holds — a paint site handing it `Transport::default()` would keep ▶ running the
+/// page's step while a preview plays or waits parked (§11 §2: "then the preview's transport until ⏹").
+pub(crate) fn live_transport() -> run::Transport {
+    ui::preview_player(&ui::main_window()).transport
+}
+
 /// Where a press of ▶ is decided: [`run::RunBar::press`] on the held player's own transport (§F0.2 S2,
 /// which ⏹ reads the same way), then redraw and put the bar's sentence on the status line. A refusal
 /// outlives this handler: `press` leaves its status empty when a run starts, so refusals are remembered.
@@ -78,6 +86,35 @@ pub(crate) fn wire_play(
                 .map(|held| held.borrow().clone())
                 .unwrap_or_else(|| project.clone())
         });
+        // §11 §2 is the table this press asks first: what ▶ means on THIS page right now. Its transport
+        // answer ("Suggest, until the preview started; then the preview's transport until ⏹") therefore
+        // lands BEFORE any page step is asked — a playing or parked preview cannot be interrupted by
+        // Suggest, write-and-speak or render starting underneath it. `Play::Step` falls through to the
+        // per-page refusals and the bar below, which stay as they were.
+        let has_cut = !ui::review_cut_of(&ui::main_window()).segs.is_empty();
+        let tab_play = crate::tab_states::play(shell.borrow().page, &live, has_cut, transport);
+        match tab_play.0 {
+            crate::tab_states::Play::Transport { resume } => {
+                // The face answers the transport this press LEFT, not the one it found: parking a
+                // playing preview paints ▶ (it owes a resume).
+                let held = ui::preview_player(&ui::main_window());
+                let toggled = run::Transport { playing: resume, started: true };
+                ui::set_preview_state(&ui::main_window(), held.cut_only, held.reviewing, toggled);
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, toggled);
+                return;
+            }
+            // "▶ refuses without a cut", and narration off before it (§2 lists both for Narrate). The
+            // refusal is said here rather than opened, so no ⏸ shows for work that never began; the
+            // pages' own gates (busy, no session timeline) still run in the block below.
+            crate::tab_states::Play::Refused => {
+                if let Some(reason) = tab_play.1 {
+                    status.set_text(reason);
+                    paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                    return;
+                }
+            }
+            crate::tab_states::Play::Step(_) => {}
+        }
         if prepare_asked {
             if let Some((log, sentence)) = prepare_run::refuse(&live) {
                 ui::log_line(&log);
@@ -404,7 +441,7 @@ pub(crate) fn wire_stop(
                 stop_,
                 &bar.borrow(),
                 shell.borrow().page,
-                run::Transport::default(),
+                live_transport(),
             );
             status.set_text(&said);
             return;
@@ -436,7 +473,7 @@ pub(crate) fn wire_stop(
             stop_,
             &bar.borrow(),
             shell.borrow().page,
-            run::Transport::default(),
+            live_transport(),
         );
         // §F4.1 S7: on the Narrate page the stage's own ending outranks `stopping…`. The door that ran
         // is `run_narrate_on`, and it ends with `narration stopped` / `speaking stopped` for the stage ⏹

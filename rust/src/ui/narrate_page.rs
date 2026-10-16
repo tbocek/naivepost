@@ -617,7 +617,16 @@ fn session_no_narration() -> bool {
 /// greyed by the fields of [`narrate_off::Greyed`] rather than by a local bool, so the page cannot
 /// grey something the rule did not name or miss one it did.
 fn apply_greys(window: &adw::ApplicationWindow, off: bool) {
-    let greyed = narrate_off::greyed(off);
+    // §2 lists the greying as a TAB state, so which page greys what is `tab_states`'s answer, not this
+    // page's guess: it routes to [`crate::narrate_off::greyed`] for Narrate and answers "nothing greys"
+    // for the other three, so a second rule cannot appear here.
+    let greyed = crate::tab_states::greyed(
+        crate::shell::Page::Narrate,
+        &crate::project::Project {
+            no_narration: off,
+            ..Default::default()
+        },
+    );
     let targets = [
         ("lines", greyed.lines, "narrate-lines"),
         ("preview", greyed.preview, "narrate-preview"),

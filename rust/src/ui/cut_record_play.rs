@@ -92,11 +92,18 @@ pub fn after_press(window: &adw::ApplicationWindow, pressed: &Press, runs: &[(f6
 }
 
 /// The button's face follows the preview's state, never its own memory: ⏸ only while OUR preview runs.
+///
+/// Which mode is ours comes from [`crate::tab_states::preview_lits`] — §2's "one lit" decided once for all
+/// three buttons — and the ⏸ itself additionally needs the transport to be actually playing: a parked
+/// recording is still the recording's turn but owes a ▶, not a ⏸.
 pub fn paint_button(window: &adw::ApplicationWindow) {
     let Some(button) = ui::play_recording_button(window) else { return };
     let player = ui::preview_player(window);
-    let ours_running = player.transport.playing && !player.cut_only && !player.reviewing;
-    button.set_label(if ours_running { PAUSE_LABEL } else { PLAY_LABEL });
+    let [ours_lit, _cut_lit, _review_lit] = crate::tab_states::preview_lits(&crate::cut_screen::Preview {
+        cut_only: player.cut_only,
+        reviewing: player.reviewing,
+    });
+    button.set_label(if ours_lit && player.transport.playing { PAUSE_LABEL } else { PLAY_LABEL });
 }
 
 fn startup_session_dir() -> std::path::PathBuf {

@@ -21,7 +21,7 @@ use crate::run;
 use crate::runqueue;
 use crate::narration::{self, Narration};
 use crate::project::Project;
-use crate::shell::{self, Page, Shell};
+use crate::shell::{Page, Shell};
 use crate::ui::window as ui;
 
 /// §1's two readouts as the row draws them: each label is the word plus what `shell` computed, so
@@ -309,7 +309,7 @@ fn paint_bench(
 ///
 /// A locked page's tab is greyed and carries the lock reason as its tooltip; an unlocked one carries
 /// its own description (§03-shell.md §1: "Locked tab: greyed, not disabled; tooltip = the reason").
-/// Nothing here decides which of those two applies — [`shell::lock`] does.
+/// Nothing here decides which of those two applies — [`crate::shell::lock`] does.
 ///
 /// `adw::ViewSwitcher` builds its buttons itself and offers no handle to them (its API is
 /// `stack`/`policy` alone), so they are found by walking the switcher's descendants for the label
@@ -390,7 +390,9 @@ pub(crate) fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Proj
 pub(crate) fn paint_tabs(switcher: &adw::ViewSwitcher, shell: &Shell, project: &Project) {
     let buttons = tab_buttons(switcher.upcast_ref());
     for page in Page::all() {
-        let reason = shell::lock(page, project);
+        // §2's "when it opens" column. `tab_states::opens` IS [`crate::shell::lock`] — asking it here is
+        // what keeps the table and the tab row one rule instead of two that could drift.
+        let reason = crate::tab_states::opens(page, project);
         // The page shown is never greyed, even where it is locked: §1's "prerequisites vanish while
         // open" case leaves a locked page on screen for the moment before it is sent back.
         let dimmed = reason.is_some() && shell.page != page;
