@@ -139,6 +139,14 @@ impl Fake {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
     }
+
+    /// Whether any request reached this fake since the last `waited`. A walk that fails at the wire never
+    /// returns, so "did it dial anything at all" cannot be read from its `Result`; this can, and the
+    /// chunk-size test below is where it matters: a walk that asked nothing would otherwise be told apart
+    /// from one that asked the wrong number only by an empty list.
+    fn saw_any_ask(&self) -> bool {
+        !self.asks.lock().expect("the record lock").bodies.is_empty()
+    }
 }
 
 fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
@@ -195,6 +203,11 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
 /// dead address the one "no server" scene plants for itself.
 const UNUSED: &str = "http://unused.invalid";
 
+/// The User Context every scene writes into its project file, and the one its request is asserted to
+/// carry. Named once because `Scene::enter` re-saves the project on every entry (see its note) and the
+/// two copies must never drift.
+const SCENE_CONTEXT: &str = "a lecture on linear algebra";
+
 /// The describe interval the scenes space their frames on: `Project::default()`'s own, so the project
 /// file a scene writes and the frames folder it plants cannot disagree about the spacing (see `Scene::new`).
 const SCENE_INTERVAL: f64 = 1.0;
@@ -215,6 +228,8 @@ struct Scene {
     /// `Scene::new` alone -- never by another thread's env -- so `leg_conf` below answers what THIS scene
     /// points at however the process's `XDG_CONFIG_HOME` is moving underneath it.
     server: String,
+    /// Set when a test writes its own project file, so `enter` stops restoring the default one.
+    project_locked: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Scene {
@@ -227,8 +242,13 @@ impl Scene {
         // outright as an every-frame extraction. Both rules are about the interval, so this is the one
         // spacing that lets the stage reach the wire.
         let interval = SCENE_INTERVAL;
+        // The folder is named for THIS process, not just for the test: cargo runs every test binary
+        // concurrently (`just test`), and a sibling binary that reuses this prefix would `remove_dir_all`
+        // a scene out from under a walk in flight -- which reaches the stage as "no scaled frame ... to
+        // describe", because the `.llmframes/` copies are gone mid-request.
         let root = std::env::temp_dir().join(format!(
-            "np-desc-{label}-{}",
+            "np-desc-{label}-{}-{}",
+            std::process::id(),
             COUNTER.fetch_add(1, Ordering::SeqCst)
         ));
         let _ = std::fs::remove_dir_all(&root);
@@ -247,7 +267,7 @@ impl Scene {
                 sepvoice: false,
                 tracks: vec![],
             }],
-            context: "a lecture on linear algebra".to_string(),
+            context: SCENE_CONTEXT.to_string(),
             ..Default::default()
         };
         naivepost::project::save(&project, &session).expect("the session file");
@@ -284,7 +304,12 @@ impl Scene {
             .expect("the scaled copy");
         }
         settings::save(&paths, &conf_at(llm_url)).expect("the conf");
-        Scene { root, paths, server: llm_url.to_string() }
+        Scene {
+            root,
+            paths,
+            server: llm_url.to_string(),
+            project_locked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
 
     /// Take the process into this scene for the walk's own resolution: the settings folder through
@@ -292,16 +317,60 @@ impl Scene {
     /// the session by cwd. Every walk test takes it now, not just the `plan` one: `ask` re-reads the conf
     /// from `settings::from_environment()` mid-request, so a second thread's `leave()` between the
     /// stage's own read and the leg's sends the ask to `llm_default()` and the fake is never asked.
+    ///
+    /// The conf is written AGAIN here, not only in `Scene::new`. `Scene::new` writes it BEFORE the scene
+    /// owns the env, and every other binary cargo runs at the same time moves this same process-wide
+    /// `XDG_CONFIG_HOME` (`just test` runs the test programs concurrently): a sibling's write can land on
+    /// this scene's path while its walk is in flight, and the leg's send-time re-read then dials whatever
+    /// that sibling pointed at — which shows up as an ask count that does not match the chunk plan, or as
+    /// `unused.invalid` on a scene whose fake is alive. Re-saving costs nothing when the bytes already
+    /// match (`settings::save` compares before writing) and makes the file say THIS scene's server again,
+    /// including for the scene that deliberately points at an address nothing resolves.
     fn enter(&self) {
         std::env::set_var("XDG_CONFIG_HOME", self.root.join("cfg"));
         std::env::set_var("XDG_DATA_HOME", self.root.join("data"));
         std::env::set_current_dir(&self.root).expect("the scene is the working folder");
+        settings::save(&self.paths, &conf_at(&self.server)).expect("the scene's conf stands for its walk");
+        // The project file too, and only if this scene never changed it: `stage_chunk` reads the session
+        // through the CWD (`run_task`'s `session_dir()`), so a sibling binary that leaves these variables
+        // pointing at its own root makes this walk load a stranger's project — which answers "0 rows
+        // walked" or an empty plan instead of an error, and the ask count comes back short of the chunk
+        // plan. A test that added a source of its own (the `speech_around` one lists a second recording)
+        // set `project_locked`, and re-saving here would erase exactly what that test wrote.
+        if !self.project_locked.load(Ordering::SeqCst) {
+            let project = naivepost::project::Project {
+                sources: vec![naivepost::project::Source {
+                    path: "project:sources/lecture.mkv".to_string(),
+                    footage: true,
+                    narrator: 0,
+                    sepvoice: false,
+                    tracks: vec![],
+                }],
+                context: SCENE_CONTEXT.to_string(),
+                ..Default::default()
+            };
+            naivepost::project::save(&project, &self.session())
+                .expect("the session still holds its footage row");
+        }
+    }
+
+    /// Write a project file of the test's own and stop `enter` from rewriting it. Every scene starts
+    /// unlocked; a test that needs more than the one footage row calls this before it saves.
+    fn lock_project(&self) {
+        self.project_locked.store(true, Ordering::SeqCst);
     }
 
     fn leave() {
         std::env::remove_var("XDG_CONFIG_HOME");
         std::env::remove_var("XDG_DATA_HOME");
         std::env::set_current_dir(env!("CARGO_MANIFEST_DIR")).expect("back to the crate folder");
+    }
+
+    /// Move this scene onto another server after it was made, and remember it so `enter` keeps the file
+    /// saying that address however many other scenes pass through the same env afterwards.
+    fn point_at(&mut self, url: &str) {
+        self.server = url.to_string();
+        settings::save(&self.paths, &conf_at(url)).expect("the conf points at the fake");
     }
 
     fn tree(&self) -> naivepost::layout::Tree {
@@ -318,8 +387,13 @@ impl Scene {
     /// the test, so the conf on disk and the conf the leg dials are one fact and a fake that has not been
     /// written yet reads as "no conf to dial" instead of a silent ask to the shipped default port. A scene
     /// whose folder was rewritten after it was made answers the rewrite: that is what the leg will dial.
+    ///
+    /// A MISSING file answers with this scene's own address rather than failing: `settings::read` gives
+    /// `Conf::default()` for one, which is exactly what the leg would dial, and `unused.invalid` in the
+    /// message below only pointed at the last server named — the real question is "does the file say my
+    /// fake", and `leg_conf` asserts that against `dial_to`.
     fn server(&self) -> Result<String, String> {
-        let on_disk = settings::read(&self.paths).map_err(|why| format!("{}: {why}", self.server))?;
+        let on_disk = settings::read(&self.paths).map_err(|why| format!("{why} -- no conf to dial"))?;
         Ok(services::server_url(&on_disk.server).unwrap_or_else(|| self.server.clone()))
     }
 
@@ -336,16 +410,26 @@ impl Scene {
     /// mistake rather than letting a walk dial `services::llm_default()`, answer `Ok(0)` and leave a test
     /// asserting a bare `[]`.
     fn leg_conf(&self) -> Conf {
+        // THIS scene's own folder, always: `ask` re-reads the conf at send time (§1's re-read-per-request
+        // seam), and the assert below is what proves the env still points here. Reading through
+        // `from_environment()` instead would hand the stage whatever server another binary's settings file
+        // names whenever a sibling moved `XDG_CONFIG_HOME` between this thread's `enter()` and here — the
+        // walk then dials a stranger (or the shipped default port) and records asks that match no chunk.
         let mut conf = conf_at(&self.dial_to());
-        if let Some(paths) = settings::from_environment() {
-            if let Ok(read) = settings::read(&paths) {
-                conf = read;
-            }
+        if let Ok(read) = settings::read(&self.paths) {
+            conf = read;
         }
+        let from_env = settings::from_environment()
+            .and_then(|paths| services::server_url(&settings::read(&paths).unwrap_or_default().server));
         assert_eq!(
             services::server_url(&conf.server).as_deref().unwrap_or_default(),
             self.dial_to(),
             "the leg would dial a different server than this scene's fake -- the env is not this scene's"
+        );
+        assert_eq!(
+            from_env.as_deref(),
+            Some(self.dial_to().as_str()),
+            "the process's settings folder is not this scene's -- a sibling binary moved XDG_CONFIG_HOME"
         );
         conf
     }
@@ -660,9 +744,11 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     // fake answers each request with a `record_event` for exactly the pictures THAT request carried (see
     // `BY_SIZE`), which is more than any one batch needs only if the stage chose smaller batches than the
     // bound allows -- so the size question stays with the request, as it must.
-    let scene = Scene::new("batch", 9, UNUSED);
+    let mut scene = Scene::new("batch", 9, UNUSED);
     let fake = Fake::start(String::new());
-    settings::save(&scene.paths, &conf_at(&fake.url)).expect("the conf points at the fake");
+    // The scene was made pointing at the dead address; this test then moves it onto its own fake, which
+    // is what `Scene::enter` re-asserts on every entry (see its note).
+    scene.point_at(&fake.url);
     assert_eq!(scene.frame_count(), 9, "the scene planted nine frames");
     let project = naivepost::project::load(&scene.session()).expect("the session");
     let frames: Vec<f64> = (0..9).map(|index| index as f64 * project.interval).collect();
@@ -672,6 +758,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     fake.answer_batch_sizes();
     walk(&scene, &mut |_line| {}).expect("the stage describes the row");
     let asks = fake.waited(3);
+    assert!(fake.saw_any_ask(), "the walk reached the fake at all");
     assert_eq!(chunks.len(), 3, "nine frames at four a call: {chunks:?}");
     assert_eq!(asks.len(), 3, "one call per chunk: {asks:?}");
     let third: serde_json::Value = serde_json::from_str(&asks[2].body).expect("a JSON body");
@@ -724,6 +811,7 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers
     // The scene's project names one source; the tool walks EVERY source the project lists, which is what
     // the request's own per-side-capped speech block cannot carry. So the second recording has to be in the
     // project file for its words to be reachable.
+    scene.lock_project();
     let project = naivepost::project::Project {
         sources: vec![
             naivepost::project::Source {

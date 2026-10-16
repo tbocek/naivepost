@@ -180,12 +180,17 @@ pub fn gaps_of(inputs: &cut_suggest_words_run::Inputs, end: f64) -> Vec<(f64, f6
 
 /// The request's user turn, assembled the §8 way: the User Context block and the cut's speech rule first
 /// ([`crate::prompt_assembly::user_message`] — only `cut` and `narrate` carry that rule), then the material
-/// [`suggest::message`] spells (SESSION LENGTH, the target block, the timeline).
+/// [`suggest::message`] spells (SESSION LENGTH, the target block, the dead-air number, the timeline).
 pub fn user_turn(user_context: &str, session_len: f64, target: f64, session_txt: &str) -> String {
     crate::prompt_assembly::user_message(
         user_context,
         "cut",
-        &suggest::message(session_len, target, session_txt),
+        &suggest::message(
+            session_len,
+            target,
+            suggest::DEAD_AIR_MAX_SECONDS,
+            session_txt,
+        ),
     )
 }
 
@@ -329,7 +334,7 @@ pub fn past_end_claim(problems: &[String], footage_end: f64) -> Option<u32> {
 /// caption batches: a retry must never be served the reply it was just refused for, so the cache is
 /// kept out of this call entirely (`llm_cache::uses_cache(Job::ModelCut)` answers false). Spelled
 /// separately so a test pins what the model is told, in order, with no socket in the way.
-pub fn opening(system: &str, user: &str, complaint: Option<&str>) -> Vec<Message> {
+pub fn opening(system: &str, user: &str, complaint: Option<&str>, note: Option<&str>) -> Vec<Message> {
     let mut messages = vec![
         Message {
             role: "system".to_string(),
@@ -340,6 +345,14 @@ pub fn opening(system: &str, user: &str, complaint: Option<&str>) -> Vec<Message
             parts: vec![Part::Text(user.to_string())],
         },
     ];
+    // §12's SHOULD for a rewrite: say what changed about the call before asking for the answer again. It goes
+    // FIRST of the two so the model reads the terms of this attempt before reading its complaint.
+    if let Some(note) = note {
+        messages.push(Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(note.to_string())],
+        });
+    }
     if let Some(complaint) = complaint {
         messages.push(Message {
             role: "user".to_string(),
@@ -354,6 +367,7 @@ pub fn attempt_with<F>(
     system: &str,
     user: &str,
     complaint: Option<&str>,
+    note: Option<&str>,
     plan: &mut cutpass::Plan,
     target: f64,
     ask: &mut F,
@@ -361,16 +375,18 @@ pub fn attempt_with<F>(
 where
     F: FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String>,
 {
-    attempt_with_tools(system, user, complaint, plan, target, &tools::offered(Job::ModelCut), ask)
+    attempt_with_tools(system, user, complaint, note, plan, target, &tools::offered(Job::ModelCut), ask)
 }
 
 /// The same attempt with the tool list handed in. §8's web-tool rule decides per attempt which tools go out,
 /// so the list is the caller's to own — reading `tools::offered` inside would put the decision in two places
 /// and let the loop log a withdrawal the request then ignored.
+#[allow(clippy::too_many_arguments)] // one argument per thing an attempt is asked with; folding them hides it
 pub fn attempt_with_tools<F>(
     system: &str,
     user: &str,
     complaint: Option<&str>,
+    note: Option<&str>,
     plan: &mut cutpass::Plan,
     target: f64,
     offered: &[Tool],
@@ -379,7 +395,7 @@ pub fn attempt_with_tools<F>(
 where
     F: FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String>,
 {
-    let messages = opening(system, user, complaint);
+    let messages = opening(system, user, complaint, note);
     let run = tool_loop::run(
         STEP,
         messages,
@@ -402,7 +418,7 @@ pub fn attempt<F>(
 where
     F: FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String>,
 {
-    attempt_with(system, user, None, plan, target, ask)
+    attempt_with(system, user, None, None, plan, target, ask)
 }
 
 /// §S2b then §S3, over everything the page holds: the attempts, then the walk-back of the one answer
@@ -492,8 +508,11 @@ where
         }
         let mut plan = new_plan(&inputs, &walk, end, target);
         last_reply.borrow_mut().clear();
+        // §12: and the model is TOLD which of the two changed, beside the complaint about its last answer.
+        // Read AFTER `offer`, which owns the withdrawal and marks the sentence as owed.
+        let note = call.note_to_model();
         let (_finished, ok, round_logs) =
-            attempt_with_tools(&system, &user, complaint, &mut plan, target, &offered, &mut watch);
+            attempt_with_tools(&system, &user, complaint, note.as_deref(), &mut plan, target, &offered, &mut watch);
         // The progress this attempt's replies earned, reported now that the loop owns `call` again.
         // `Call::report` answers the bar's sentence, its fraction and whether it still pulses; `watch` is the
         // page's door, and no door means no page to tell (a logic test), which is the same answer.

@@ -33,6 +33,22 @@ pub struct Call {
     thinking: bool,
     /// Whether the web tools are still being offered.
     web: bool,
+    /// Whether the web pair was TAKEN away this run, as opposed to never offered (§2's no-browser case).
+    /// [`Self::note_to_model`] tells the model only about a real withdrawal.
+    withdrawn: bool,
+    /// Whether an earlier attempt of this run was asked WITH thinking: that is what makes switching it off a
+    /// change worth announcing rather than a fact the model never had a chance to notice.
+    asked_thinking_before: bool,
+    /// Whether the change has been announced yet. `offer` clears it at the moment the web pair is taken away, so
+    /// the round that FIRST loses the tools says so and a later refusal round inside the same attempt stays
+    /// silent (repeating the sentence buries the correction it accompanies); the thinking switch clears it too,
+    /// because that one lands at the END of an attempt and belongs to the next one.
+    ///
+    /// The flag is not set by [`Self::note_reply_text`] on a reply that answered: §8 withdraws the web tools on
+    /// the FIRST rejection, and that rejection is counted when the loop reads the reply — before any ask whose
+    /// note could be taken. Without this, the withdrawal would be logged and silently skipped for one whole
+    /// attempt, because `note_to_model` had already spent its one announcement on the thinking sentence.
+    announced: bool,
     /// Where the progress line last stood, in session seconds. §8: it never moves backwards.
     shown: f64,
 }
@@ -44,6 +60,9 @@ impl Call {
             rejections: 0,
             thinking: cut_suggest::thinking_after_empty_reply(false, 1),
             web: cut_suggest::offers_web(0),
+            withdrawn: false,
+            announced: false,
+            asked_thinking_before: cut_suggest::thinking_after_empty_reply(false, 1),
             shown: 0.0,
         }
     }
@@ -72,6 +91,9 @@ impl Call {
         }
         if self.web && !cut_suggest::offers_web(self.rejections) {
             self.web = false;
+            self.withdrawn = true;
+            // The model is owed the sentence in whichever round goes out next.
+            self.announced = false;
             offered.retain(|tool| !crate::tools::is_web_tool(*tool));
             return (offered, Some(cut_suggest::WEB_TOOLS_WITHDRAWN_LOG.to_string()));
         }
@@ -95,6 +117,11 @@ impl Call {
     let attempt = FIRST_ATTEMPT + self.rejections;
         let was = self.thinking;
         self.thinking = cut_suggest::thinking_after_empty_reply(all_reasoning, attempt);
+        if self.thinking {
+            self.asked_thinking_before = true;
+        }
+        // The switch lands at the end of THIS attempt, so the NEXT one owes the model the sentence.
+        self.announced = false;
         (was && !self.thinking).then(|| cut_suggest::THINKING_RETRY_LOG.to_string())
     }
 
@@ -108,6 +135,31 @@ impl Call {
     /// Whether the last reply answered at all, which is what the loop tests before charging a rejection.
     pub fn answered(&self, text: &str) -> bool {
         !text.trim().is_empty()
+    }
+
+    /// What THIS attempt has to tell the model about how it is being asked, or `None` on a first attempt where
+    /// nothing changed. §05-cut#8 withdraws the web tools after the first rejection and switches thinking off
+    /// after an all-reasoning reply; both were logged but never said to the model, which left it looking for a
+    /// tool it no longer had. §12's SHOULD is that a rewrite announces the change.
+    ///
+    /// Second person, because the model reads it as instructions: naming the tools it has lost stops it calling
+    /// them again, and naming the missing thinking block tells it the answer field is the only one to write in.
+    /// Said once per change — see [`Call::announced`] — so the sentence sits beside the correction instead of
+    /// repeating above every round of the attempt.
+    pub fn note_to_model(&mut self) -> Option<String> {
+        let mut notes: Vec<&str> = Vec::new();
+        // Only a real withdrawal counts: tools never offered (no browser, §2) were nothing the model had.
+        if self.withdrawn && !self.announced {
+            notes.push("the web browsing tools are no longer available to you");
+        }
+        if self.asked_thinking_before && !self.thinking {
+            notes.push("this call has no thinking -- write the answer itself in the content of your reply");
+        }
+        if notes.is_empty() {
+            return None;
+        }
+        self.announced = true;
+        Some(notes.join("; "))
     }
 
     /// The progress the reply allows, placed exactly as §8 requires.

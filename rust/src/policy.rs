@@ -87,6 +87,10 @@ pub fn is_empty(context: &str) -> bool {
 
 /// One row of the catalogue the form lists and `tool:set_policy` validates against: the field's name as
 /// the spec spells it, the `P.policy.*` id it answers to, and the values it accepts.
+///
+/// A row with an empty `values` list is a NUMBER rather than a choice: `policy::apply` reads its value as
+/// seconds and the form prints the seconds instead of offering a dropdown. That is what makes
+/// `P.policy.targetLengthSeconds` a row of this catalogue without pretending to be a pick-one list.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CatalogueRow {
     pub field: &'static str,
@@ -94,13 +98,13 @@ pub struct CatalogueRow {
     pub values: &'static [&'static str],
 }
 
-/// The five fields F0.7 derives, in the order the form shows them.
+/// The six fields F0.7 derives, in the order the form shows them.
 ///
 /// This is the list S3 validates against and S5 renders, so "known field" and "shown in the form" are
 /// one fact: a field cannot be settable-but-hidden or shown-but-unsettable. `hands_off::pipeline_fields`
 /// describes the same three-way choice from the other side (what the model must not decide per request);
 /// this is the writable face of it, spelled per field because validation needs each field's range.
-pub fn derived_fields() -> [CatalogueRow; 5] {
+pub fn derived_fields() -> [CatalogueRow; 6] {
     [
         // P.policy.markingPass — picks F1.9 / F1.10 / no marking pass in Prepare.
         CatalogueRow {
@@ -132,6 +136,10 @@ pub fn derived_fields() -> [CatalogueRow; 5] {
             id: "P.policy.decorationsPass",
             values: ON_OFF,
         },
+        // P.policy.targetLengthSeconds — §12 entry 21. A number, so no `values`: the form prints the seconds
+        // and the derivation writes what the User Context's own words say (or a model's proposal), instead of
+        // the prototype's regex that silently left 0 = none.
+        CatalogueRow { field: "targetLengthSeconds", id: "P.policy.targetLengthSeconds", values: &[] },
     ]
 }
 
@@ -168,7 +176,7 @@ pub fn apply(policy: &mut Policy, proposal: &Proposal) -> Applied {
                 .join(", ")
         ));
     };
-    if !row.values.contains(&proposal.value.as_str()) {
+    if !row.values.is_empty() && !row.values.contains(&proposal.value.as_str()) {
         return Applied::Refused(format!(
             "{} is out of range for {} \u{2014} it takes {}",
             proposal.value,
@@ -194,6 +202,21 @@ pub fn apply(policy: &mut Policy, proposal: &Proposal) -> Applied {
         "captionsPass" => policy.captions_pass = bool_field(&proposal.value, because),
         "speedPass" => policy.speed_pass = bool_field(&proposal.value, because),
         "decorationsPass" => policy.decorations_pass = bool_field(&proposal.value, because),
+        // A number row: the value is seconds, written as text over the wire. A value that is not a number is
+        // the one refusal this row can earn, and it names the field and the bad value like every other does.
+        "targetLengthSeconds" => match proposal.value.parse::<f64>() {
+            Ok(seconds) if seconds >= 0.0 => policy.target_length_seconds = Field {
+                value: seconds,
+                origin: Origin::Model,
+                because,
+            },
+            _ => {
+                return Applied::Refused(format!(
+                    "{} is not a length in seconds for {} \u{2014} send a number of seconds, or 0 for no target",
+                    proposal.value, row.field
+                ))
+            }
+        },
         // Unreachable: `lookup` returned this row from the same five arms. Reaching it would mean the
         // catalogue and this match drifted apart, which is a bug in this file, not a user error.
         _ => unreachable!("catalogue row {} has no writer", row.field),
@@ -209,6 +232,9 @@ fn current_origin(policy: &Policy, field: &str) -> Origin {
         "captionsPass" => policy.captions_pass.origin,
         "speedPass" => policy.speed_pass.origin,
         "decorationsPass" => policy.decorations_pass.origin,
+        // Without this arm a hand-set target length reads as `Default` here, S4 lets the derivation over it,
+        // and the person's number is silently replaced — the exact failure §12 entry 21 says must be visible.
+        "targetLengthSeconds" => policy.target_length_seconds.origin,
         _ => Origin::Default,
     }
 }
@@ -374,6 +400,9 @@ impl Tracker {
 pub struct Derived {
     /// S1: the context was empty, so the defaults stand and the model was never asked.
     pub used_defaults: bool,
+    /// §12 entry 21: whether a target length was READ from the User Context's words and stored. A read that
+    /// understood nothing leaves this false, so "no target" stays a said fact rather than a silent 0.
+    pub target_read: bool,
     /// Each accepted or kept proposal, by field name, with what became of it (S3 / S4).
     pub applied: Vec<(&'static str, Applied)>,
     /// Every refusal the loop collected, oldest first — the sentences the model was handed back.
@@ -425,8 +454,11 @@ pub fn derive(
             ..Derived::default()
         };
     }
+    // §12 entry 21 first, before any model is asked: a length written in plain words is arithmetic, and the
+    // prototype got it wrong by reading it with a regex that had no fallback. Read here rather than in the
+    // window so every door (debounce, ▶, the form's Re-derive) derives the same number.
+    let mut out = read_target_length(policy, context);
     let req = request(context);
-    let mut out = Derived::default();
     for _ in 0..DERIVE_ROUNDS {
         let proposals = answer(&req, &out.refusals);
         // A round that could not be dialled at all says so itself (§failure is specific and local): the
@@ -463,6 +495,52 @@ pub fn derive(
         }
     }
     out
+}
+
+/// §12 entry 21: read `P.policy.targetLengthSeconds` out of the User Context's own words and store it.
+///
+/// This runs through [`apply`], so S4 holds exactly as it does for a model's proposal: a length a person set
+/// by hand is kept (`KeptUser`) and nothing is written. The log line says which of the three happened —
+/// understood, already the person's, or nothing mentioned — because the whole point of the entry is that a
+/// missed reading must not be silent.
+pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
+    let reading = crate::policy_length::target_length_of(context);
+    let mut out = Derived::default();
+    // A length that was mentioned but cannot be spelled in seconds is still a fact worth logging ("the length
+    // of a train journey": §12's complaint was silence), so `mentioned` proceeds even with 0 seconds. Only a
+    // context that never mentions a duration stops here, because most contexts do not and that is normal.
+    if !reading.mentioned {
+        return out;
+    }
+    // The seconds go through the same door a model's answer goes through, so the hand-set rule cannot be
+    // bypassed by the cheaper reader.
+    let proposal = Proposal {
+        field: "targetLengthSeconds".to_string(),
+        value: format!("{}", reading.seconds),
+        because: "the User Context's own words".to_string(),
+    };
+    match apply(policy, &proposal) {
+        Applied::Refused(say) => out.refusals.push(say),
+        other => {
+            out.applied.push(("targetLengthSeconds", other));
+            out.target_read = reading.seconds > crate::tools::cutpass::NO_TARGET;
+        }
+    }
+    out
+}
+
+/// The log line for one target-length read: what the User Context said, in the same words the form uses.
+pub fn target_length_log(derived: &Derived) -> Option<String> {
+    let landed = derived
+        .applied
+        .iter()
+        .find(|(field, _)| *field == "targetLengthSeconds")
+        .map(|(_, outcome)| outcome.clone())?;
+    Some(match landed {
+        Applied::KeptUser => ">>> policy: target length left as you set it".to_string(),
+        Applied::Refused(say) => format!("!!! policy: {say}"),
+        Applied::Set => ">>> policy: target length read from the User Context".to_string(),
+    })
 }
 
 /// Which marks a changed `markingPass` throws away (§03's closing paragraph): the retake marks and

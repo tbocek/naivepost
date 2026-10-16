@@ -2507,8 +2507,16 @@ pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
     refresh_effects_lane(window);
     let said = if clamped.dropped > 0 {
         // S5's line goes to the log, where the count is read with the rest of the run; the status line says
-        // the same thing shorter. Which effect went is NOT said (§12 decision 19).
-        log_line(&crate::cut_clamp::log_line(clamped.dropped));
+        // the same thing shorter. §12 entry 19: the count alone was not something the user could act on, so
+        // `dropped_log` names which effects went after it (capped, so a caption run cannot bury the log).
+        if let Some(line) = crate::cut_clamp_line::dropped_log(&clamped) {
+            log_line(&line);
+        }
+        // §12 entry 19's half: the count says how many; this row says WHICH, in the words the effect
+        // dropdown uses, so a person can find them on the lane and move them inside the cut.
+        if let Some(names) = crate::cut_clamp_line::dropped_names(&clamped) {
+            log_line(&names);
+        }
         // §9 (`A stop at a dropped second SHOULD be refused when placed`): the count says how
         // many went; a stop among them also owes its own reason, because "dropped" is not what
         // happened to it — there was no frame to hold, so it could not be placed at all.

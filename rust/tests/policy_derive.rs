@@ -272,10 +272,10 @@ fn project_field_joins_user() -> naivepost::project::Field<MarkingPass> {
     }
 }
 
-// ---- S5: the form reads exactly the five settable fields --------------------------------------
+// ---- S5: the form reads exactly the six settable fields ---------------------------------------
 
 #[test]
-fn f0_7_s5_the_form_reads_exactly_the_five_fields_that_can_be_set() {
+fn f0_7_s5_the_form_reads_exactly_the_six_fields_that_can_be_set() {
     let rows = policy::derived_fields();
     let names: Vec<&str> = rows.iter().map(|row| row.field).collect();
     assert_eq!(
@@ -285,7 +285,9 @@ fn f0_7_s5_the_form_reads_exactly_the_five_fields_that_can_be_set() {
             "cutMode",
             "captionsPass",
             "speedPass",
-            "decorationsPass"
+            "decorationsPass",
+            // §12 entry 21: a number row, settable and shown like the rest.
+            "targetLengthSeconds"
         ],
         "one list drives both validation and the form, so nothing is settable-but-hidden or shown-but-\
          unsettable"
@@ -299,7 +301,8 @@ fn f0_7_s5_the_form_reads_exactly_the_five_fields_that_can_be_set() {
             "P.policy.cutMode",
             "P.policy.captionsPass",
             "P.policy.speedPass",
-            "P.policy.decorationsPass"
+            "P.policy.decorationsPass",
+            "P.policy.targetLengthSeconds"
         ]
     );
     // And every row's value list matches what `apply` accepts — re-checking through apply, not by eye.

@@ -44,8 +44,12 @@ pub mod cut_wave_edges;
 pub mod policy;
 /// F0.7 S2's live half: the derivation's own HTTP leg, so a non-empty User Context reaches a model.
 pub mod policy_call;
+/// §12 entry 21: reading a plain target length (`45 min`, `half an hour`, `1h20`) out of the User Context's
+/// own words, so the number lands in `P.policy.targetLengthSeconds` instead of silently staying 0.
+pub mod policy_length;
 pub mod cut_cam;
 pub mod cut_clamp;
+pub mod cut_clamp_line;
 pub mod cut_speed_split;
 pub mod cut_speed_play;
 pub mod cut_fold;

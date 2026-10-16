@@ -1186,7 +1186,11 @@ architecture behind them.
             // as the confirmation above — the run ends when the last window closes.
             "03-policy-form" => {
                 let shown = ui::policy_form::build(None, &model.policy);
-                shown.set_default_size(720, 420);
+                // Six rows now (the five switches plus §12 entry 21's target length). The height is MEASURED
+                // rather than guessed: an `adw::Window` that is not yet mapped answers its own minimum, and a
+                // fixed 420 px clipped the last row once the sixth arrived.
+                let wanted = shown.measure(gtk::Orientation::Vertical, -1).1;
+                shown.set_default_size(720, wanted.max(500));
                 shown.present();
                 Some(shown.upcast())
             }
@@ -1364,6 +1368,30 @@ architecture behind them.
                 ui::set_playhead(&window, 24.0);
             }
             crate::ui::cut_view::repaint_page(&window);
+        }
+        // A dialog sized for its content needs the same drain the Cut tape needs: `present()` only queues the
+        // map, so headless the window is still at its requested size when the shot is taken and GTK warns that
+        // the content exceeds it. `03-policy-form` grew a sixth row (§12 entry 21) and started clipping.
+        if screen == "03-policy-form" {
+            // The form is a separate top level; `subject` holds it. Ask for the height its content needs,
+            // measured after the map: an unmapped `adw::Window` answers 412 for any request, so a fixed default
+            // size silently cut off the last row when §12 entry 21's sixth arrived.
+            let form = subject.clone().expect("this screen paints the form itself");
+            let context = glib::MainContext::default();
+            for _ in 0..64 {
+                while context.pending() {
+                    context.iteration(false);
+                }
+            }
+            let wanted = form.measure(gtk::Orientation::Vertical, -1).1;
+            if let Some(top) = form.root().and_downcast::<gtk::Window>() {
+                top.set_default_size(720, wanted.max(500));
+            }
+            for _ in 0..8 {
+                while context.pending() {
+                    context.iteration(false);
+                }
+            }
         }
         let painted = subject.clone().unwrap_or_else(|| window.clone().upcast());
         // `03-runbar-busy` records a GLYPH, and a glyph is not legible in a 1334 px window shot, so this
