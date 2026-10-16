@@ -239,7 +239,17 @@ pub fn dial(
     // the row's own wait column instead of inflating its time on the wire.
     let conf = crate::settings::read(paths).unwrap_or_default();
     let slots = crate::slot_gate::slots_for_task(&conf, ask.task);
-    let (_slot, waited) = crate::slot_gate::hold(&endpoint.url, model, slots, ask.step);
+    let (slot, waited) = match crate::slot_gate::hold(&endpoint.url, model, slots, ask.step, &cancelled) {
+        Ok(got) => got,
+        // ⏹ landed while every slot was busy: nothing went out, so this is the same refusal as the check
+        // above rather than a server problem.
+        Err(crate::slot_gate::Wait::Cancelled) => {
+            return Err(format!("{}: cancelled while waiting for a {model} slot", ask.step))
+        }
+    };
+    // §4 holds the slot across the HTTP call only. `call_dialed` reads the reply inside its own call, so the
+    // guard lives until it returns; dropping it here is the release.
+    let _slot_hold = slot;
     let base = server_leg::base_row(Server::Audio, model, Kind::RunTask.method(), "", ask.step, ask.job);
     // The wait goes in as milliseconds beside the request, not on `base`: `call_dialed` builds every timing
     // column itself and would drop a field it did not measure (see its `waited_ms`).
@@ -264,6 +274,8 @@ pub fn dial(
         .1,
         None => server_leg::send(Server::Audio, &endpoint, Kind::RunTask, None, Some(&envelope), &cancelled),
     }?;
+    // Given back before the answer is read through: §4's hold covers the call, not the caller's thinking.
+    drop(_slot_hold);
     if reply.ok() {
         return Ok(reply.body);
     }

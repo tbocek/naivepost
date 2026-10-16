@@ -1484,6 +1484,10 @@ name = "shell_details_verification"
 path = "tests/shell_details_verification.rs"
 
 [[test]]
+name = "slot_gate_f6_3"
+path = "tests/slot_gate_f6_3.rs"
+
+[[test]]
 name = "slot_gate_leg"
 path = "tests/slot_gate_leg.rs"
 

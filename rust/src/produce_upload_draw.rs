@@ -47,25 +47,93 @@ fn endpoint() -> Result<(Conf, services::Endpoint), String> {
     Ok((conf, endpoint))
 }
 
+/// One draw request, held to the drawing model's slot count and timed with the wait it spent waiting for one.
+///
+/// §4 lists the image model among the models that get a slot count, and sd.cpp is the one server this app
+/// asks repeatedly (a job every second while a picture draws), so an ungated draw is exactly the queue-in-the-
+/// server case §4 exists to prevent. The guard lives until `call_dialed` returns: the hold covers the call,
+/// not the caller's thinking. The measured wait goes into the row's `wait_s` (§10), which is how a slot count
+/// gets chosen from the log rather than guessed.
+#[allow(clippy::too_many_arguments)]
+fn dialed(
+    tree: &Tree,
+    base: &crate::requests::Request,
+    endpoint: &services::Endpoint,
+    kind: Kind,
+    job: Option<&str>,
+    body: Option<&str>,
+    conf: &Conf,
+    cancelled: &dyn Fn() -> bool,
+) -> (crate::requests::Request, Result<server_leg::Sent, String>) {
+    let step = base.step.as_str();
+    let held = crate::slot_gate::hold(
+        &endpoint.url,
+        "sd.cpp",
+        services::image_slots(conf),
+        step,
+        cancelled,
+    );
+    let (slot, waited) = match held {
+        Ok(got) => got,
+        // ⏹ landed while every drawing slot was busy. Nothing went out; the caller reports its own failure
+        // wording around whatever `Err` comes back here.
+        Err(crate::slot_gate::Wait::Cancelled) => {
+            return (
+                base.clone(),
+                Err(format!("{step}: cancelled while waiting for a drawing slot")),
+            )
+        }
+    };
+    let out = server_leg::call_dialed(
+        tree,
+        base,
+        &server_leg::Dial {
+            server: Server::Image,
+            endpoint,
+            kind,
+            job,
+            body,
+            filename: None,
+            cancelled,
+            // An image job has no silence bound of its own (§1 bounds it by kind); §4's watch is a chat rule.
+            liveness: None,
+            waited_ms: (waited * 1000.0).round() as i64,
+            delta: None,
+        },
+    );
+    drop(slot);
+    out
+}
+
 /// Queue one draw: `POST /sdcpp/v1/img_gen` with the body `upload::request_body` built. `Err` names the
 /// server and the reason when nothing answered (§Failure is specific); `Ok` carries the job id the two job
-/// kinds act on.
+/// kinds act on. The address comes from [`endpoint`] — §1's precedence, settings box then `SD_SERVER` then the
+/// loopback — re-read here, so a settings edit lands on the next request.
 pub fn submit(tree: &Tree, body: &serde_json::Value) -> Result<DrawnJob, String> {
     let (conf, endpoint) = endpoint()?;
+    submit_with(tree, &endpoint, body, &conf)
+}
+
+/// The submit itself: the slot hold, the row, the POST, the job id out of the answer.
+fn submit_with(
+    tree: &Tree,
+    endpoint: &services::Endpoint,
+    body: &serde_json::Value,
+    conf: &Conf,
+) -> Result<DrawnJob, String> {
     // sd.cpp has no model row of its own in the settings (§7 gives it a server and a key only), so the row
     // names the SERVER it went to rather than leaving the column blank.
     let model = "sd.cpp".to_string();
-    let _ = conf;
     let sent_body = body.to_string();
     let base = server_leg::base_row(Server::Image, &model, "img_gen", "", STEP, "draw");
-    let (_row, reply) = server_leg::call(
+    let (_row, reply) = dialed(
         tree,
         &base,
-        Server::Image,
-        &endpoint,
+        endpoint,
         Kind::SubmitImage,
         None,
         Some(&sent_body),
+        conf,
         &|| false,
     );
     let sent = reply.map_err(|why| format!("the drawing server at {}: {why}", endpoint.url))?;
@@ -85,16 +153,15 @@ pub fn submit(tree: &Tree, body: &serde_json::Value) -> Result<DrawnJob, String>
 /// line prints, and `done` is what stops the loop.
 pub fn poll(tree: &Tree, job: &DrawnJob) -> Result<PollState, String> {
     let (conf, endpoint) = endpoint()?;
-    let _ = conf;
     let base = server_leg::base_row(Server::Image, "sd.cpp", "job", "", STEP, "poll");
-    let (_row, reply) = server_leg::call(
+    let (_row, reply) = dialed(
         tree,
         &base,
-        Server::Image,
         &endpoint,
         Kind::PollImage,
         Some(&job.id),
         None,
+        &conf,
         &|| false,
     );
     let sent = reply.map_err(|why| format!("the drawing server at {}: {why}", endpoint.url))?;
@@ -156,16 +223,16 @@ where
 /// The cancel is sent on an always-false cancel check on purpose: it exists BECAUSE the run stopped, so
 /// gating it on the same flag would refuse the one request whose job is to serve that stop.
 pub fn cancel(tree: &Tree, job: &DrawnJob) -> Result<(), String> {
-    let (_conf, endpoint) = endpoint()?;
+    let (conf, endpoint) = endpoint()?;
     let base = server_leg::base_row(Server::Image, "sd.cpp", "job", "", STEP, "cancel");
-    let (_row, reply) = server_leg::call(
+    let (_row, reply) = dialed(
         tree,
         &base,
-        Server::Image,
         &endpoint,
         Kind::CancelImage,
         Some(&job.id),
         None,
+        &conf,
         &|| false,
     );
     let sent = reply.map_err(|why| format!("the drawing server at {}: {why}", endpoint.url))?;
