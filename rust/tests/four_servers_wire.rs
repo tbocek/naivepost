@@ -81,12 +81,17 @@ impl FakeServer {
         }
     }
 
-    /// An address nothing listens on: bind a port, learn it, close it.
-    fn dead_port() -> u16 {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind then release");
+    /// An address nothing listens on, held for as long as the caller keeps the returned listener.
+    ///
+    /// Binding a port and dropping it is NOT a dead address: the kernel hands the freed number to the
+    /// next `bind(0)` in the suite, so another test binary's fake can come up behind this one mid-call
+    /// and answer 200 (that race made S16 fail intermittently). Holding our own listener on the port
+    /// number makes it unbindable for everyone else, and dialling the NEXT loopback address at that
+    /// number is a real refusal: every fake here binds `127.0.0.1` explicitly, so none can take `127.0.0.2`.
+    fn dead_port() -> (u16, TcpListener) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind and hold");
         let port = listener.local_addr().expect("a local address").port();
-        drop(listener);
-        port
+        (port, listener)
     }
 
     fn url(&self) -> String {
@@ -252,8 +257,10 @@ fn sec_02_services_1_the_four_servers_s15_a_real_request_over_the_wire_is_timed_
 /// S16: nothing listening gives an error naming the server and the address — and still leaves its row.
 #[test]
 fn sec_02_services_1_the_four_servers_s16_a_down_server_gives_an_error_and_still_leaves_its_row() {
-    let dead = FakeServer::dead_port();
-    let url = format!("http://127.0.0.1:{dead}");
+    let (dead, _held) = FakeServer::dead_port();
+    // `_held` keeps this port number off the market for the whole test; the address dialled is the loopback
+    // beside it, which nothing in the suite can bind while it is held.
+    let url = format!("http://127.0.0.2:{dead}");
     let tree = Tree::new(project_dir("s16")).expect("a project folder");
     let endpoint = endpoint_at(&url, "");
     let base = server_leg::base_row(Server::Audio, "nemotron-asr", "health", "", "settings", "");
@@ -281,6 +288,10 @@ fn sec_02_services_1_the_four_servers_s16_a_down_server_gives_an_error_and_still
     assert!(
         reason.contains(&dead.to_string()),
         "and the address it tried: {reason}"
+    );
+    assert!(
+        reason.contains("127.0.0.2"),
+        "the reason quotes the URL that was actually dialled: {reason}"
     );
 
     // §09 §10: the line is written before the reply is used, so a step that fails still leaves

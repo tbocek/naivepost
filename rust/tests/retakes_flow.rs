@@ -9,6 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use naivepost::retakes;
+use naivepost::retakes_ask;
 use naivepost::layout::Tree;
 use naivepost::tools::retakes::{Line, Mark, Marks, Trim};
 
@@ -111,24 +112,51 @@ fn f1_9_s2_a_source_change_inserts_the_separator() {
 
 // ---- S3 ---------------------------------------------------------------------
 
+/// The slot name `retakes_ask::ask_run` spells for one draw — the door the program itself uses
+/// (rust/src/retakes_ask.rs names its cache file with this before it dials), so what is pinned is the
+/// digest the pool really files under and not a look-alike.
+fn slot_for(paths: &naivepost::settings::Paths, brief: &str, model: &str, run: usize) -> String {
+    retakes_ask::run_key(&retakes_ask::system_wording(paths), brief, model, run).expect("a brief always keys")
+}
+
 /// S3: each pooled run gets its own cache slot -- the run index is in the key, or the pool collapses
 /// to one draw read back three times. P.machine.retakeRuns
 #[test]
 fn f1_9_s3_each_pooled_run_gets_its_own_cache_slot() {
-    let keys = retakes::run_keys("the brief", retakes::RUNS);
-    assert_eq!(keys.len(), 3, "P.machine.retakeRuns = 3");
+    // The live door: `retakes_ask::ask_run` asks for this name before it dials and files under it, so
+    // what is pinned here is the digest the pool actually uses — system wording, brief, model, draw.
+    let paths = naivepost::settings::Paths {
+        config_dir: std::env::temp_dir().join("naivepost-retake-slot-cfg"),
+        data_dir: std::env::temp_dir().join("naivepost-retake-slot-data"),
+    };
+    let slots: Vec<String> =
+        (0..retakes::RUNS).map(|run| slot_for(&paths, "the brief", "qwen3", run)).collect();
+    assert_eq!(slots.len(), 3, "P.machine.retakeRuns = 3");
     assert_eq!(retakes::RUNS, naivepost::roles::RETAKE_RUNS_POOLED as usize);
-    let distinct: std::collections::HashSet<&String> = keys.iter().collect();
-    assert_eq!(distinct.len(), 3, "no two runs share a slot: {keys:?}");
+    let distinct: std::collections::HashSet<&String> = slots.iter().collect();
+    assert_eq!(distinct.len(), 3, "no two runs share a slot: {slots:?}");
     assert_ne!(
-        retakes::run_key("the brief", 0),
-        retakes::run_key("the brief", 1),
+        slot_for(&paths, "the brief", "qwen3", 0),
+        slot_for(&paths, "the brief", "qwen3", 1),
         "identical briefs still differ by run index"
     );
     assert_ne!(
-        retakes::run_key("brief a", 0),
-        retakes::run_key("brief b", 0),
+        slot_for(&paths, "brief a", "qwen3", 0),
+        slot_for(&paths, "brief b", "qwen3", 0),
         "a different brief is a different question"
+    );
+    // §6's format: sha256 hex over the deciding parts, the same digest every caching job gets.
+    let first = slot_for(&paths, "the brief", "qwen3", 0);
+    assert_eq!(first.len(), 64, "a sha256 hex digest names the file");
+    assert!(
+        first.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "lowercase hex: {first}"
+    );
+    // And the model that answered is part of it (§6's rewrite addition): another model draws again.
+    assert_ne!(
+        slot_for(&paths, "the brief", "qwen3", 0),
+        slot_for(&paths, "the brief", "gemma3", 0),
+        "a model swap does not replay the previous model's draw"
     );
 }
 

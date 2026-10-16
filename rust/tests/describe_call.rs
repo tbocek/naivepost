@@ -846,3 +846,55 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_reads_describe_is
     assert!(events.contains("frame 4 of the take"), "{events}");
     assert_eq!(written.len(), frames + 2, "four new rows plus the two that stood: {events}");
 }
+
+/// §6 on this job's live path: the chunk's answer is filed under `cache/llm/describe/<sha256 hex>` and
+/// the next identical walk reads it back — no socket, and no new row in `requests.tsv`, which is what
+/// "a cache hit is answered before the gate and the exchange log" means for the timed log. The s5 test
+/// beside this one pins the resume wording; what is pinned here is the FILE and the row count.
+#[test]
+fn sec_09_llm_and_tools_6_cache_s7_describe_files_its_answer_and_replays_it_without_a_socket() {
+    let fake = Fake::start(FOUR_EVENTS.to_string());
+    let scene = Scene::new("s7-cache", 4, &fake.url);
+    let mut first = Vec::new();
+    let mut second = Vec::new();
+    let (one, two) = walk_twice(
+        &scene,
+        &mut |line| first.push(line.to_string()),
+        &mut |line| second.push(line.to_string()),
+    );
+    one.expect("the first walk describes the row");
+    two.expect("the second walk describes the row");
+    assert_eq!(fake.waited(1).len(), 1, "the first pass made one ask");
+
+    let tree = scene.tree();
+    // One file, named by §6's digest: sha256 hex over the deciding parts, model id included.
+    let dir = tree.dir().join("cache/llm").join(describe::STEP);
+    let slots: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|why| panic!("{} exists after an answered chunk: {why}", dir.display()))
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    assert_eq!(slots.len(), 1, "one chunk, one slot: {slots:?}");
+    let slot = &slots[0];
+    assert_eq!(slot.len(), 64, "the file is named by a sha256 hex digest: {slot}");
+    assert!(
+        slot.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "lowercase hex, §6's shape: {slot}"
+    );
+    assert!(tree.cache_llm(describe::STEP, slot).exists(), "under cache/llm/describe/");
+
+    // The replay cost nothing on the wire AND nothing in the timed log (§6 + §10).
+    let rows = naivepost::requests::read(&tree).expect("requests.tsv");
+    assert!(!rows.is_empty(), "the request that earned the answer is recorded");
+    assert_eq!(fake.asks.lock().expect("the record lock").bodies.len(), 1, "the second pass made no ask");
+    assert_eq!(
+        naivepost::requests::read(&tree).expect("requests.tsv").len(),
+        rows.len(),
+        "a cache hit writes no row"
+    );
+    assert_eq!(
+        scene.events().lines().filter(|line| !line.is_empty()).count(),
+        FRAMES_PER_REQ,
+        "and the cached pass still writes the whole chunk: {second:?}"
+    );
+}

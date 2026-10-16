@@ -133,16 +133,27 @@ pub fn read(tree: &Tree, step: &str, parts: &[Value]) -> Option<String> {
     std::fs::read_to_string(tree.cache_llm(step, &key)).ok()
 }
 
-/// Store an answer under its key. Nothing touches the filesystem unless the answer is both keyable
-/// and usable, so a refused answer leaves no empty file behind.
-pub fn store(tree: &Tree, step: &str, parts: &[Value], reply: &str) -> Stored {
-    let Some(key) = key(parts) else {
-        return Stored::RefusedNoKey;
-    };
+/// The answer already filed under a key a caller computed itself. [`store_at`]'s twin, for the jobs
+/// whose digest is built from something §6's [`Request`] has no field for — describe folds its frames
+/// into the parts before asking and keeps the hex it got. A name `key` could never produce reads as a
+/// miss, which is the same nothing a cleared cache is.
+pub fn read_at(tree: &Tree, step: &str, key: &str) -> Option<String> {
+    std::fs::read_to_string(tree.cache_llm(step, key)).ok()
+}
+
+/// File an answer under a key the caller already holds, applying §6's store rules to it: an empty
+/// reply is never written, and a cache that will not write comes back as [`Stored::Failed`] with a
+/// sentence rather than as an error the step has to handle.
+pub fn store_at(tree: &Tree, step: &str, key: &str, reply: &str) -> Stored {
     if !usable(reply) {
         return Stored::RefusedEmpty;
     }
-    let path = tree.cache_llm(step, &key);
+    write_at(tree, step, key, reply)
+}
+
+/// The write both [`store`] and [`store_at`] come down to: make the step's folder, then the file.
+fn write_at(tree: &Tree, step: &str, key: &str, reply: &str) -> Stored {
+    let path = tree.cache_llm(step, key);
     if let Some(parent) = path.parent() {
         if let Err(err) = std::fs::create_dir_all(parent) {
             return Stored::Failed(format!("{}: {err}", parent.display()));
@@ -152,6 +163,18 @@ pub fn store(tree: &Tree, step: &str, parts: &[Value], reply: &str) -> Stored {
         Ok(()) => Stored::Written,
         Err(err) => Stored::Failed(format!("{}: {err}", path.display())),
     }
+}
+
+/// Store an answer under its key. Nothing touches the filesystem unless the answer is both keyable
+/// and usable, so a refused answer leaves no empty file behind.
+pub fn store(tree: &Tree, step: &str, parts: &[Value], reply: &str) -> Stored {
+    let Some(key) = key(parts) else {
+        return Stored::RefusedNoKey;
+    };
+    if !usable(reply) {
+        return Stored::RefusedEmpty;
+    }
+    write_at(tree, step, &key, reply)
 }
 
 /// Which jobs use this cache: the five §6 names — describe, transcript (the fixer), textedit

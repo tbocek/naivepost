@@ -319,7 +319,11 @@ pub fn ask_at(
             None => final_body.clone(),
         };
         if let Some(body) = store_body {
-            llm_cache::store(tree, joins::STEP, &parts, &reply_envelope(&body));
+            // §6: what is filed is an ANSWER — `{"joined":…}` for a prose round, `drop_answer`'s text for
+            // a tool round — because that is exactly what the cache branch hands `judge`. Wrapping it in a
+            // reply envelope here would bury it one layer below anything that reads it back: the wire's own
+            // envelope was already taken off by `turn_of`/`answer_of` before this point.
+            llm_cache::store(tree, joins::STEP, &parts, body.as_str());
         }
     }
     Answered { outcome, settled: true, reply: final_body.unwrap_or_default(), failed: false, from_cache: false }
