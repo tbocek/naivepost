@@ -232,7 +232,7 @@ pub fn ask_run(
     draw: usize,
     marks: &mut Marks,
 ) -> RunOutcome {
-    let system = retake_system(paths);
+    let system = system_wording(paths);
     // §6's slot for this draw, named by the one door that spells it. `ask_run` files its answer under
     // exactly this digest — the store below hands `llm_cache` the same parts this key came from.
     let slot = run_key(&system, brief, &conf.model, draw).expect("a brief and a model always key");
@@ -595,11 +595,10 @@ fn briefing_log(lines: &[Line]) -> String {
 
 /// The wording to ask with: the shipped `retake` prompt, overridable through the settings folder so an
 /// edit there wins (§04-prepare#6) and an edited prompt misses the cache (§6).
+///
+/// This is also §6's naming door: [`ask_run`] reads its slot from this same text before it dials, so
+/// the wording that went out and the digest filed under it cannot drift.
 pub fn system_wording(paths: &Paths) -> String {
-    retake_system(paths)
-}
-
-fn retake_system(paths: &Paths) -> String {
     let shipped = crate::prompts::shipped_text("retake").unwrap_or_default();
     settings::prompt_text(paths, "retake", &shipped).unwrap_or(shipped)
 }

@@ -569,3 +569,92 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_and_replays_it_wit
     );
     assert_eq!(scene.fixed(), fixed, "and the cached pass writes the same fixed transcript");
 }
+
+/// The names of the files filed under `cache/llm/fix/` — §6's slots for this job, at either height
+/// (`fix_call::ask_once`'s reply and `store_block`'s resume rows both land in this one folder).
+fn slots_under(tree: &naivepost::layout::Tree) -> Vec<String> {
+    let dir = tree.dir().join("cache/llm").join(naivepost::fix_transcripts::FIX_STEP);
+    std::fs::read_dir(&dir)
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// §6's second irregularity on this job's live path: only the FIRST attempt's answer earns a cache
+/// slot. A block repaired after a refusal keeps its fix — `transcript.fixed.tsv` says the same thing
+/// either way — but the next run re-asks it and re-validates it, because that reply was only ever right
+/// given the refusal it was shown. The first-attempt half is pinned beside it so the rule reads as a
+/// pair rather than as "the fixer never caches".
+#[test]
+fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_only_its_first_attempt() {
+    let respelled = "so the algorithm receives the input";
+    // Round one names a line that is not in this four-row block, so `Block::fix_line` refuses it and a
+    // second attempt actually happens; round two answers properly.
+    let fake = scripted(vec![
+        call_answer("get_lines", serde_json::json!({ "from": 1, "to": 2 })),
+        fix_answer(1, respelled),
+    ]);
+    let scene = Scene::new("s7-first-attempt", &fake.url);
+    let conf = conf_at(&fake.url);
+    let mut log = Vec::new();
+    scene
+        .fix(&conf, &mut |line| log.push(line.to_string()))
+        .expect("the repair still fixes the block");
+    assert_eq!(fake.waited(2).len(), 2, "a refusal costs a second ask");
+
+    // The fix landed anyway: withholding the CACHE is all §6 asks for.
+    let fixed = scene.fixed();
+    assert!(fixed.contains(respelled), "the repaired answer still writes the file: {fixed}");
+    // The repair round's own key is NOT filed: §6 caches the first attempt only, and the plain-ask key
+    // that did earn a slot is `block_key`'s (the resume marker), which is why exactly one slot stands.
+    let slots = slots_under(&scene.tree());
+    assert_eq!(slots.len(), 1, "only the resume marker stands -- {slots:?}");
+    let lines = naivepost::fix_transcripts::load_transcript(&scene.tree(), LANE).expect("rows");
+    let marker = naivepost::fix_transcripts::block_key(&naivepost::fix_transcripts::blocks(&lines)[0]);
+    assert!(slots.contains(&marker), "the slot is the block's own marker: {slots:?}");
+    let repair_key = naivepost::llm_cache::key(&naivepost::llm_cache::parts(
+        &naivepost::llm_cache::Request {
+            system: "", user: "x", state: "", speech: "", context: "",
+            images: Vec::new(), run_index: None, model: "", thinking: false }))
+        .expect("keys");
+    assert!(!slots.contains(&repair_key), "no stray reply slot: {slots:?}");
+
+    // The other half: a first-try answer IS filed, under §6's digest, and the next pass replays it.
+    let other = Fake::start(fix_answer(1, respelled));
+    let first_scene = Scene::new("s7-first-try", &other.url);
+    let first_conf = conf_at(&other.url);
+    let mut again_log = Vec::new();
+    first_scene
+        .fix(&first_conf, &mut |line| again_log.push(line.to_string()))
+        .expect("the first try fixes the block");
+    assert_eq!(other.waited(1).len(), 1, "one ask, answered straight off");
+    let tree = first_scene.tree();
+    let slots: Vec<String> = std::fs::read_dir(tree.dir().join("cache/llm").join(naivepost::fix_transcripts::FIX_STEP))
+        .expect("a first-try answer leaves a slot")
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    assert!(!slots.is_empty(), "the first attempt is filed");
+    for slot in &slots {
+        assert_eq!(slot.len(), 64, "named by a sha256 hex digest: {slot}");
+        assert!(
+            slot.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "lowercase hex, §6's shape: {slot}"
+        );
+    }
+    let mut replay = Vec::new();
+    first_scene.fix(&first_conf, &mut |line| replay.push(line.to_string())).expect("the replay ran");
+    assert_eq!(
+        other.asks.lock().expect("the record lock").bodies.len(),
+        1,
+        "the replay cost no ask: {replay:?}"
+    );
+    assert_eq!(
+        replay.last().map(String::as_str),
+        Some(naivepost::fix_transcripts::cached_blocks_log(LANE, 1).as_str()),
+        "and the stage says it answered from the cache: {replay:?}"
+    );
+}

@@ -395,6 +395,19 @@ pub fn message(n: usize, language: &str) -> String {
     format!("TRANSLATE THESE {n} LINES INTO {language}. Answer with {n} lines, numbered as they are here:")
 }
 
+/// The repair heading's own phrase, spelled once: [`Batch::ask_again_text`] writes it and nothing else
+/// in this module does. §6's first irregularity says translate "never caches its gap-filling second
+/// call", and the leg that files the answer sees only a message and its numbers — so the repair has to
+/// be recognisable from its own wording rather than from a flag bolted onto the `Ask` closure.
+pub const REPAIR_MARK: &str = "their numbers do not start at";
+
+/// Whether this request is the batch's gap-filling re-ask rather than its first call (§6's "never
+/// caches its gap-filling second call"). The phrase is the repair heading's own and appears nowhere
+/// else in what this module sends, so one marker decides it and the spec's two wordings stay verbatim.
+pub fn is_repair_request(message: &str) -> bool {
+    message.contains(REPAIR_MARK)
+}
+
 /// The numbered list under that sentence: `n\ttext`, one entry per line. A cue's row break becomes ` / ` so
 /// one cue is one numbered entry — a raw newline would end the line and the reader of the answer could not
 /// tell a wrapped cue from a missing number.
@@ -418,6 +431,13 @@ fn sent_line(text: &str) -> String {
     // The row breaks are folded to ` / ` so one cue is one numbered entry, and the tag never travels (see
     // [`sent_text`]). A tab in somebody's text would end the numbered line early, so it goes too.
     strip_tag(text).replace('\n', " / ").replace('\t', " ")
+}
+
+/// The same fold for a number paired with its text, which is how a batch's finished answers are filed
+/// in the cache ([`crate::llm_cache::translate_store_value`]): §6 stores translate as the reconstructed
+/// numbered text, and one translated row-break would otherwise split a numbered entry in two.
+pub fn numbered_one(number: usize, text: &str) -> String {
+    format!("{number}\t{}", sent_line(text))
 }
 
 /// A batch's answer book. `first`/`last` are half-open indices into the whole track, so a number arriving on
@@ -472,9 +492,8 @@ impl Batch {
             .collect();
         let n = wanted.len();
         format!(
-            "TRANSLATE THESE {n} LINES. They are lines of a longer track, so their numbers do not start at \
-             1: answer with {n} lines, each beginning with the number printed in front of it here and a tab.\
-             \n\n{}",
+            "TRANSLATE THESE {n} LINES. They are lines of a longer track, so {REPAIR_MARK} 1: answer \
+             with {n} lines, each beginning with the number printed in front of it here and a tab.\n\n{}",
             numbered(&wanted)
         )
     }

@@ -257,7 +257,25 @@ pub fn ask_at(
             // S3: `cached only when complete`. A partial answer stored is a partial answer forever, so
             // the re-ask's chance is thrown away on every later run.
             if subs::cached(got.len() == numbers.len() && !numbers.is_empty()) {
-                llm_cache::store(tree, STEP, &parts, &text);
+                // §6's first irregularity, both halves: what goes in the file is the RECONSTRUCTED
+                // numbered text rather than this reply (so a replay answers `merge` directly and never
+                // re-parses prose), and the gap-filling second call is never filed at all. The leg sees
+                // only a message and its numbers, so the repair is recognised from its own heading —
+                // see [`subs::is_repair_request`] for why that marker is enough to tell them apart.
+                // `gap_fill_caches` takes the SECOND-CALL flag, so the repair answer is what it says "no"
+                // about: a first call (not a repair) earns its slot, the gap-filling one never does.
+                let second_call = subs::is_repair_request(message);
+                if llm_cache::gap_fill_caches(second_call) {
+                    let reconstructed: Vec<String> = numbers
+                        .iter()
+                        .filter_map(|number| {
+                            got.get(number).map(|text| subs::numbered_one(*number, text))
+                        })
+                        .collect();
+                    let stored =
+                        llm_cache::translate_store_value(&reconstructed.join("\n"), &text);
+                    llm_cache::store(tree, STEP, &parts, &stored);
+                }
             }
             Ok(got)
         }

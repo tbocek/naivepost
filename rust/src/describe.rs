@@ -412,9 +412,10 @@ pub fn cache_key(content: &str, images: &[Vec<u8>], model: &str) -> String {
 }
 
 /// S4: the stored reply for this key, if any. Any unreadable file is a miss, so the step asks again
-/// rather than failing — the rule [`crate::llm_cache::read`] states for every cache here.
+/// rather than failing — [`crate::llm_cache::read_at`] is that rule's one spelling, shared with every
+/// other job that keys itself (describe folds its frames into the parts before asking and keeps the hex).
 pub fn cached_reply(tree: &Tree, key: &str) -> Option<String> {
-    std::fs::read_to_string(tree.cache_llm(STEP, key)).ok()
+    crate::llm_cache::read_at(tree, STEP, key)
 }
 
 /// S4: store one reply under its key. A reply that will not write is reported, not swallowed: the
