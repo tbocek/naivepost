@@ -19,7 +19,7 @@
 //! `LLM_SERVER` at a local fake and the same endpoint resolution a typed address goes through reaches
 //! it. Nothing here takes a canned reply.
 
-use crate::exchanges::{Message, Mode, Part};
+use crate::exchanges::{Message, Part};
 use crate::fix_transcripts::{self, Reply};
 use crate::layout::Tree;
 use crate::llm_request;
@@ -286,7 +286,17 @@ fn ask_once(
             &endpoint.url,
             Some(tools),
             &|offer| {
-                Ok(llm_request::body(STEP, &conf.model, conversation, Mode::Execute, offer, true)?.to_string())
+                // §4 gives the transcript fix thinking OFF; read from the prompt table so this cannot
+                // drift from the catalogue (§10 §4).
+                Ok(llm_request::body(
+                    STEP,
+                    &conf.model,
+                    conversation,
+                    crate::prompts::mode_of(STEP),
+                    offer,
+                    true,
+                )?
+                .to_string())
             },
             &|body| {
                 crate::llm_retry_leg::chat(

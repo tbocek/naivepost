@@ -24,7 +24,7 @@
 //! could not be read either way, and new code goes in a new file in a tree this size.
 
 use crate::cancel_leg;
-use crate::exchanges::{Message, Mode, Part};
+use crate::exchanges::{Message, Part};
 use crate::joins::{self, Outcome};
 use crate::layout::Tree;
 use crate::llm_cache;
@@ -529,7 +529,8 @@ fn chat_body_with(
     // content type (`llm_request::reply_from` / `is_event_stream`), so a server that answers plain JSON to a
     // streaming request is still read correctly. That is what lets a one-shot fake keep answering while the
     // real llama.cpp gets chunks a person can watch arrive.
-    llm_request::body(joins::STEP, model, conversation, Mode::Thinking, offered, true)
+    // §4 gives the text edit thinking ON; read from the prompt table (§10 §4) rather than named here.
+    llm_request::body(joins::STEP, model, conversation, crate::prompts::mode_of("textedit"), offered, true)
 }
 
 /// The answer text out of a chat reply: `content`, never the reasoning. Routed by §1's rule — an

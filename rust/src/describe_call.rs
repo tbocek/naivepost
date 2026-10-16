@@ -15,7 +15,7 @@
 //! it. Nothing here takes a canned reply.
 
 use crate::describe::{self, Speech, Stamp};
-use crate::exchanges::{Message, Mode, Part};
+use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_request;
 use crate::roles::Job;
@@ -396,9 +396,17 @@ fn ask(
         Message { role: "user".to_string(), parts },
     ];
     let offered: Vec<Tool> = crate::tools::offered(Job::Describe);
-    // §2's row says thinking OFF, which is `Mode::Execute` here: the two modes are the whole switch
-    // and every non-thinking job in the app takes this one.
-    let body = llm_request::body(STEP, model, &messages, Mode::Execute, Some(&offered), true)?.to_string();
+    // §4 gives describe thinking OFF; the switch is read from the prompt table
+    // ([`crate::prompts::mode_of`]) so this cannot drift from the catalogue.
+    let body = llm_request::body(
+        STEP,
+        model,
+        &messages,
+        crate::prompts::mode_of(STEP),
+        Some(&offered),
+        true,
+    )?
+    .to_string();
     let endpoint = services::llm_endpoint(
         &settings::read(paths).unwrap_or_default(),
     );

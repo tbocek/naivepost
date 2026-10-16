@@ -22,7 +22,7 @@
 
 use crate::cut_speed_pass::{self, Call, GAP_SECONDS};
 use std::path::PathBuf;
-use crate::exchanges::{Message, Mode, Part};
+use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
@@ -156,7 +156,7 @@ pub fn user_message_over(
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
     let messages = two_messages(system, user);
     let tools: Vec<Tool> = this_pass_tools();
-    Ok(llm_request::body(STEP, model, &messages, Mode::Execute, Some(&tools), true)?.to_string())
+    Ok(llm_request::body(STEP, model, &messages, crate::prompts::mode_of(STEP), Some(&tools), true)?.to_string())
 }
 
 /// The two messages every speed ask carries: the SYSTEM rules and the USER clips/rows.
@@ -365,7 +365,9 @@ pub fn ask_at_over(
             STEP,
             &model,
             &two_messages(&system, &user),
-            Mode::Execute,
+            // §4's flag for this prompt, read from the one table (§10 §4: thinking off outside
+            // textedit/cut/narrate/youtube).
+            crate::prompts::mode_of(STEP),
             offer,
             true,
         )?

@@ -23,7 +23,8 @@ fn init() {
 /// The live half: ✐ Captions' prose path against a fake whose FIRST answer is all reasoning and whose
 /// second is a real CAPTIONS document. Before this round the first answer was fatal — the identical request
 /// would have earned the identical non-answer — so the assertions are about the SECOND request's bytes: it
-/// carries the correction, it does not think, and the batch lands.
+/// carries the correction, and the batch lands. Which way the thinking switch sits on either of them is §4's
+/// business and another test's assertion; what this one pins is the repair turn itself.
 #[test]
 fn f6_2_s3_d_a_live_all_reasoning_captions_answer_is_asked_again_repaired_and_lands() {
     init();
@@ -95,8 +96,9 @@ fn f6_2_s3_d_a_live_all_reasoning_captions_answer_is_asked_again_repaired_and_la
     );
     assert_eq!(
         seen[0].parsed()["enable_thinking"].as_bool(),
-        Some(true),
-        "the ask that was not a repair kept thinking"
+        Some(false),
+        "§4 gives the captions prompt no thinking, so neither ask on this pair thinks (see \
+         `sec_10_parameters_4_prompts_s9_the_captions_repair_stays_thinking_off`)"
     );
 }
 

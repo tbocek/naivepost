@@ -23,7 +23,7 @@
 use crate::cut_suggest;
 use crate::cut_suggest_words_run;
 use crate::cut_effect_decisions::Candidate;
-use crate::exchanges::{Message, Mode, Part, ToolCall};
+use crate::exchanges::{Message, Part, ToolCall};
 use crate::layout::Tree;
 use crate::llm_request;
 use crate::project::Project;
@@ -635,7 +635,16 @@ pub fn live_ask<'a>(
             &endpoint.url,
             Some(offered),
             &|offer| {
-                Ok(llm_request::body(STEP, &model, conversation, Mode::Thinking, offer, true)?.to_string())
+                // §4 gives the cut thinking ON; read from the prompt table (§10 §4) rather than named here.
+                Ok(llm_request::body(
+                    STEP,
+                    &model,
+                    conversation,
+                    crate::prompts::mode_of(STEP),
+                    offer,
+                    true,
+                )?
+                .to_string())
             },
             &|body| dial(tree, &model, &endpoint, body),
             &crate::ui::window::log_line,
