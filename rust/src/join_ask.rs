@@ -692,10 +692,14 @@ pub fn run_seams(
     // The seconds actually spoken, which F1.11 asks for when it decides whether a retake's onset is
     // clear of speech — read off the same word list the marks came from so the two never disagree.
     let spoken: Vec<(f64, f64)> = words.iter().map(|word| (word.start, word.end)).collect();
-    // S4: a saying doubled straight across a cut loses its earlier copy.
+    // S4: a saying doubled straight across a cut loses its earlier copy. The notes come back in the
+    // prototype's wording (`seconds: "text" said again...`); the pass re-says each one with its own prefix
+    // so every line this pass speaks is greppable as its own (§12's dedupe row: named in the log).
     let written: Vec<String> = words.iter().map(|word| word.written.clone()).collect();
     let sources: Vec<String> = words.iter().map(|word| word.source.clone()).collect();
-    pass.logs.extend(joins::dedupe_across(&written, times, &mut kept));
+    for note in joins::dedupe_across(&written, times, &mut kept) {
+        pass.logs.push(crate::tools::textedit::dedupe_log_head(&note));
+    }
     // S5: the dropped runs become marks, and F1.11 places their edges on the sound — the words fence
     // both edges and each lane's cached envelope chooses where inside the fence. No envelope (no wave
     // cache for that recording) leaves the mark on its word times, which is the pass's documented

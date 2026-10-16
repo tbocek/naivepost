@@ -218,6 +218,30 @@ pub fn run_pass(
     Ok(())
 }
 
+/// The answer `finish` gives, built the one way the retake leg builds it: a model that is over the ceiling
+/// has to hear it IN THE REPLY, where it can still call `unmark`, rather than only after the pass ended.
+pub fn finish_answer(marks: &Marks) -> String {
+    let total = marks.finish();
+    tools::ok(&serde_json::json!({
+        "finished": true,
+        "marks": total.marks,
+        "speech_marked": total.share,
+        "ceiling": total.ceiling,
+        "over_ceiling": total.over,
+        "marked_seconds": marks.marked_seconds(),
+        "speech_seconds": marks.speech_seconds(),
+        // §12 §4: the three pooled runs are thrown away together, and the model is told so here -- with
+        // the way out named -- instead of discovering it in the log after its last round.
+        "all_runs_dropped": total.over,
+        "why": if total.over {
+            "over the ceiling: every mark from all three runs is thrown away -- take some back with \
+             unmark and call finish again"
+        } else {
+            "inside the ceiling: the marks stand"
+        },
+    }))
+}
+
 /// One pooled call: build the two messages, honour the cache, dial, run what was asked for.
 ///
 /// The run index rides in the cache key ([`crate::llm_cache::Request::run_index`], the field §6 added
@@ -311,7 +335,14 @@ pub fn ask_run(
                 (Some(from), Some(to)) => {
                     // `again` 0 or absent means "never picked up", which the tool spells None.
                     let again = number("again").filter(|n| *n != 0);
-                    let answer = marks.mark_abandoned(from, to, again, Trim::none());
+                    // The retake's own first second goes to the tool with the mark, because the tool's
+                    // answer has to name what the CUT will lose (§12 §2) and only this lookup knows where
+                    // the attempt starts.
+                    let onset = again
+                        .and_then(|n| marks.lines().iter().find(|line| line.n == n))
+                        .map(|line| line.start)
+                        .unwrap_or(0.0);
+                    let answer = marks.mark_abandoned_at(from, to, again, Trim::none(), onset);
                     if !crate::fix_transcripts::refused(&answer) {
                         named += 1;
                     }
@@ -329,16 +360,10 @@ pub fn ask_run(
                 (Some(from), Some(to)) => lines_answer(marks, from, to),
                 _ => tools::error("get_lines needs \"from\" and \"to\""),
             },
-            "finish" => {
-                let total = marks.finish();
-                tools::ok(&serde_json::json!({
-                    "finished": true,
-                    "marks": total.marks,
-                    "speech_marked": total.share,
-                    "ceiling": total.ceiling,
-                    "over_ceiling": total.over,
-                }))
-            }
+            // §12 §4: the ceiling verdict is spoken IN THE REPLY, where the model can still answer with
+            // `unmark`, rather than only in the log after its last round. `finish_answer` is the one home
+            // of that payload; `stage_marking` is what actually drops the marks.
+            "finish" => finish_answer(marks),
             other => tools::error(&format!("{other} is not one of this job's tools")),
         }
     };

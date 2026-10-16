@@ -546,8 +546,7 @@ fn read_answer(
     batch: &[f64],
     name: &str,
     args: &serde_json::Value,
-) -> Option<String> {
-    if name == "speech_around" {
+) -> Option<String> {    if name == "speech_around" {
         return Some(speech_answer(tree, lane, args));
     }
     // `EventRow` is describe's resume shape (`at` + text, no end: §6's middle field is a read-side fold).
@@ -571,6 +570,20 @@ fn read_answer(
         frames: batch,
     };
     tool_reads::dispatch(&ctx, &asked)
+}
+
+/// The live leg's read answer, reached from a test without a session on disk: the same `read_answer` the
+/// chunk loop calls, with the caller's own event rows and frame seconds.
+pub fn read_answer_for_test(
+    tree: &Tree,
+    lane: &str,
+    user_context: &str,
+    rows: &[describe::EventRow],
+    batch: &[f64],
+    name: &str,
+    args: &serde_json::Value,
+) -> Option<String> {
+    read_answer(tree, lane, user_context, rows, batch, name, args)
 }
 
 /// The calls as the chunk's cached reply stores them, each with the answer it was given. `apply_and_write`

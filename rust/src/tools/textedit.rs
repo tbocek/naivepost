@@ -263,6 +263,14 @@ pub fn dedupe_note(seconds: f64, text: &str) -> String {
     format!("{seconds}: {text:?} said again straight after the cut -- the earlier one goes")
 }
 
+/// A dedupe note as the JOIN pass speaks it: [`dedupe_note`]'s wording with the join pass's prefix in
+/// front of it, which is the whole line `run_seams` puts in its log (the note already carries its second
+/// and its text). The pass's own lines all begin with that prefix, so "did the joins run at all" is one
+/// grep, and a bare `12.0: "..."` row does not carry it.
+pub fn dedupe_log_head(note: &str) -> String {
+    format!("{} {note}", crate::join_ask::JOIN_PREFIX)
+}
+
 /// Drop the kept words before a cut that the kept words after it begin with, up to
 /// [`JOIN_REACH_WORDS`] of them, and name each copy dropped. The LATER saying stays: the match that
 /// decided `kept` cannot see this duplication because the model kept both sides of the repeat, so it
