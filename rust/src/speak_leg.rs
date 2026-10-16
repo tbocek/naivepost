@@ -205,10 +205,30 @@ pub fn speech_call(
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string();
+    // §4's slot rule on the voice model: a TTS line takes its model's slot BEFORE the socket opens and gives
+    // it back when the wav is in. Without this every synthesis joins a queue inside audio.cpp, where this app
+    // can neither see nor time it — and `wait_s` would stay empty for the one model that runs per sentence.
+    let slots = services::slots_for(&current_conf(), services::AudioTask::Tts);
+    let (slot, waited) = match crate::slot_gate::hold(
+        &endpoint.url,
+        &model,
+        slots,
+        "speech",
+        &|| crate::cancel_leg::cancelled(),
+    ) {
+        Ok(got) => got,
+        // ⏹ landed while every voice slot was busy: nothing went out, so this reads as the refusal at the top
+        // of this function rather than as a server failure.
+        Err(crate::slot_gate::Wait::Cancelled) => {
+            return Err("speech: cancelled before sending".to_string())
+        }
+    };
     let base = row("speech", &model);
     let attempt = crate::request_timing::next_attempt(None);
     let started_ms = epoch_ms();
-    let mut timer = crate::request_timing::Timer::sent(started_ms);
+    // The wait is reported beside the call rather than folded into it (§10): a row whose `wait_s` is a real
+    // number is how a slot count gets chosen from the log instead of guessed.
+    let mut timer = crate::request_timing::Timer::queued((waited * 1000.0).round() as i64, started_ms);
     // One writer for the row, whichever way the dial ended: §09 §10 wants the request on file even
     // when it died, and written before the caller looks at the bytes.
     let landed = |timer: &crate::request_timing::Timer,
@@ -226,6 +246,7 @@ pub fn speech_call(
         Ok(response) => response,
         Err(why) => {
             timer.finished(epoch_ms());
+            drop(slot);
             landed(
                 &timer,
                 crate::requests::Outcome::Error(why.to_string()),
@@ -241,6 +262,7 @@ pub fn speech_call(
         Ok(_) => timer.first_byte(started_ms),
         Err(why) => {
             timer.finished(epoch_ms());
+            drop(slot);
             landed(
                 &timer,
                 crate::requests::Outcome::Error(format!("mid-reply: {why}")),
@@ -250,6 +272,9 @@ pub fn speech_call(
         }
     }
     timer.finished(epoch_ms());
+    // The voice is in hand (or the dial died): §4's hold covers the call only, so the slot goes back before
+    // the caller looks at the bytes or starts the next line.
+    drop(slot);
     let outcome = if (200..300).contains(&status) {
         crate::requests::Outcome::Ok
     } else {

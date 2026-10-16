@@ -172,6 +172,18 @@ pub fn chat(
     chat_on(step, tree, base, endpoint, body, cancelled, log, &nap)
 }
 
+/// The prototype's queue line needs a holder that is NOT this step. Holder names carry the per-ask `#N`
+/// suffix `slot_gate::hold` adds, so the comparison is on the step prefix; the first such holder is named,
+/// because "it was busy with <other>" reads as one cause and the log already lists every holder in §4's
+/// waiting line.
+pub fn other_holder(step: &str, holders: &[String]) -> Option<String> {
+    holders
+        .iter()
+        .map(|holder| holder.split('#').next().unwrap_or(holder.as_str()))
+        .find(|holder| *holder != step)
+        .map(str::to_string)
+}
+
 /// [`chat`] with the wait supplied — the seam that lets a test watch the patience without living through eight
 /// minutes of it. The program calls [`chat`], which passes §3's own ladder and [`nap`]; the argument exists so
 /// the waits are observable, not so a caller can pick its own patience.
@@ -315,8 +327,24 @@ pub fn dial(
         // §02 §1's slot rule, on the LLM's own door: at most `LLM_SLOTS` of this model's requests on the
         // wire at once. The wait is written into the row's wait column (§09 §10), which is how a slot
         // count gets chosen from the log rather than guessed.
-        let (_slot, waited) = crate::slot_gate::hold(&endpoint.url, &base.model, crate::settings::from_environment().and_then(|paths| crate::settings::read(&paths).ok()).map(|conf| crate::services::llm_slots(&conf)).unwrap_or(1), step);
-        let _ = waited;
+        let slots = crate::settings::from_environment()
+            .and_then(|paths| crate::settings::read(&paths).ok())
+            .map(|conf| crate::services::llm_slots(&conf))
+            .unwrap_or(1);
+        let (slot, waited) = match crate::slot_gate::hold(&endpoint.url, &base.model, slots, step, cancelled) {
+            Ok(got) => got,
+            // ⏹ landed while every slot was busy. Nothing went out, so no patience applies — the same answer
+            // as the check above, reached from inside the wait instead of before it.
+            Err(crate::slot_gate::Wait::Cancelled) => return Err(Failure::Stopped),
+        };
+        // The prototype's queue line, kept: a step that queued behind ANOTHER step's call says who had it.
+        // Its own earlier call is silence — `slot_gate::waited_log`'s caller decides that, because only the
+        // holder list can tell the two apart.
+        if waited > 0.0 {
+            if let Some(other) = other_holder(step, &crate::slot_gate::holders(&endpoint.url, &base.model)) {
+                log(&crate::slot_gate::waited_log(step, &other));
+            }
+        }
         // §7's live half of a chat call. `chat_on` is the one door every chat ask in the app goes through, so
         // this is where "the page fills up while you wait" happens — no flow had to be changed, and none can
         // forget it. The recorder reads the body to decide whether there is anything to stream (§9 §1: only a
@@ -337,13 +365,17 @@ pub fn dial(
                 // §4: every chat call is streamed, so the stall rule holds for all of them — the same decision that
                 // puts `"stream": true` in the body (`llm_request::body`), carried here rather than re-derived.
                 liveness: Some(crate::llm_watch_leg::Liveness::streamed(step)),
-                waited_ms: 0,
+                waited_ms: (waited * 1000.0).round() as i64,
                 delta: hook,
             },
         );
         // §7's live half: this attempt is over, so its hook writes nothing more — a §4 give-up leaves the
         // reader thread alive, and its late words must not land in the NEXT attempt's section.
         live.close_attempt();
+        // The slot is given back here, before the reply is read: §4 holds it across the HTTP call only, so a
+        // step thinking between tool rounds holds nothing. Dropping the guard is the release, which also makes
+        // an early `?` below release just as surely as this line does.
+        drop(slot);
         match reply {
             Ok(sent) if sent.ok() => {
                 note_answer(&endpoint.url);

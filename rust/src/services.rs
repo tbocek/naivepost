@@ -489,3 +489,10 @@ pub fn slots_for(conf: &Conf, wanted: AudioTask) -> u32 {
 pub fn llm_slots(conf: &Conf) -> u32 {
     conf.slots.llm
 }
+
+/// The same for the drawing model (`SD_SLOTS`). sd.cpp has no model row of its own in Settings — one server,
+/// one model — so this is the count behind the spin beside its address, and the gate keys on it the way the
+/// audio tasks key on [`slots_for`]: one answer for the dialog and the gate, never two copies.
+pub fn image_slots(conf: &Conf) -> u32 {
+    conf.slots.sd
+}

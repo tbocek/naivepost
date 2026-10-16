@@ -56,6 +56,20 @@ impl Drop for Held {
 /// Which machine and which model: the gate's identity, as §1's table plus the Settings row name it.
 type Key = (String, String);
 
+/// Why a request did not get its slot: ⏹ landed while it waited (§4's "the wait is cancellable by ⏹").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wait {
+    Cancelled,
+}
+
+/// §4's prototype sentence for a step that queued behind ANOTHER step's call. Only a different step's
+/// holder earns it: a step queued behind its own earlier call waits silently, which `Gate` already decides
+/// for the waiting line and this repeats for the after-the-fact one — "publish waited for publish" says
+/// nothing the two requests in flight do not already say.
+pub fn waited_log(step: &str, other: &str) -> String {
+    format!(">>> {step}: waited for the LLM -- it was busy with {other}; one request at a time")
+}
+
 /// Ask for a slot on `(url, model)`'s gate and wait until it is ours.
 ///
 /// `slots` is the Settings value for this model ([`crate::settings::Slots`]'s field for the task being
@@ -64,29 +78,51 @@ type Key = (String, String);
 ///
 /// Returns the guard and the seconds spent waiting — `0.0` when a slot was free on arrival, which is the
 /// common case and the reason the wait is a return value rather than something only a log sees.
-pub fn hold(url: &str, model: &str, slots: u32, holder: &str) -> (Held, f64) {
+///
+/// While every slot is busy the ask retries, and §4's once-only line is the GATE's to write: `acquire`
+/// hands back [`Acquisition::Waiting`] with the sentence (empty when this step is only queued behind its
+/// own earlier call, and empty again after the first telling), and this puts a non-empty one on the log.
+/// Re-implementing "once" here would give the rule two homes.
+pub fn hold(
+    url: &str,
+    model: &str,
+    slots: u32,
+    holder: &str,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<(Held, f64), Wait> {
     let started = Instant::now();
     // The queue is keyed by step name, so two requests from one step must not share an identity: the
     // second would be told it already holds a slot (it does — the first one's) and go out over count.
     // A per-ask suffix keeps each ask its own holder while leaving the name the gate logs readable.
     let holder = format!("{holder}#{}", ASK.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
     loop {
-        if acquire(&(url.to_string(), model.to_string()), slots, &holder) {
-            return (
-                Held {
-                    inner: Box::new(Guard {
-                        url: url.to_string(),
-                        model: model.to_string(),
-                        step: holder,
-                    }),
-                },
-                started.elapsed().as_secs_f64(),
-            );
+        match acquire(&(url.to_string(), model.to_string()), slots, &holder) {
+            Acquisition::Taken => {
+                return Ok((
+                    Held {
+                        inner: Box::new(Guard {
+                            url: url.to_string(),
+                            model: model.to_string(),
+                            step: holder,
+                        }),
+                    },
+                    started.elapsed().as_secs_f64(),
+                ))
+            }
+            Acquisition::Waiting { log } => {
+                if !log.is_empty() {
+                    crate::ui::window::log_line(&log);
+                }
+            }
+            Acquisition::Cancelled => unreachable!("only Gate::cancel_waiting returns this"),
         }
-        // Every slot is busy. That is a wait, not a failure — §4's whole point is that a queued request
-        // is a normal state of a run — so the ask is retried until the gate hands one over. ⏹ does not
-        // end this wait: the legs that ride the cancel context check it around the wire, and a step that
-        // gave up here would leave its own place in the queue behind.
+        // Every slot is busy: a wait, not a failure — §4's whole point is that a queued request is a
+        // normal state of a run. ⏹ ends it, and the asker drops its own place in the queue on the way out,
+        // so a step that quits leaves nothing behind for the next release to hand a slot to.
+        if cancelled() {
+            cancel_waiting(&(url.to_string(), model.to_string()), &holder);
+            return Err(Wait::Cancelled);
+        }
         std::thread::sleep(POLL);
     }
 }
@@ -125,12 +161,12 @@ impl Slot {
     }
 }
 
-/// true when the slot is ours now; false when every slot is busy and the asker joined the queue.
+/// The slot answer for one ask: `Taken`, or `Waiting` carrying the gate's once-only sentence.
 ///
 /// Lock order, always in this direction: the map first to find the gate, then the gate — and the map's
 /// lock is dropped before the gate is waited on. A blocked asker therefore holds nothing a release needs,
 /// which is what keeps "wait for a free slot" from being a wait that can never end.
-fn acquire(key: &Key, slots: u32, holder: &str) -> bool {
+fn acquire(key: &Key, slots: u32, holder: &str) -> Acquisition {
     let gate = {
         let mut map = registry().lock().expect("the gate map");
         let slot = map.entry(key.clone()).or_insert_with(|| Slot::new(&key.1, slots));
@@ -142,7 +178,20 @@ fn acquire(key: &Key, slots: u32, holder: &str) -> bool {
         slot.gate.clone()
     };
     let mut gate = gate.lock().expect("the gate");
-    matches!(gate.acquire(holder), Acquisition::Taken)
+    gate.acquire(holder)
+}
+
+/// ⏹ during a wait: drop this asker from the queue so a later release does not hand a slot to a step that
+/// has already given up. No-op when the gate does not exist yet.
+fn cancel_waiting(key: &Key, holder: &str) {
+    let found = registry()
+        .lock()
+        .expect("the gate map")
+        .get(key)
+        .map(|slot| slot.gate.clone());
+    if let Some(gate) = found {
+        gate.lock().expect("the gate").cancel_waiting(holder);
+    }
 }
 
 /// Give a slot back. The gate is found under the map's lock and released under its own, in that order and
