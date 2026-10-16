@@ -229,11 +229,14 @@ pub fn ask_run(
     paths: &Paths,
     conf: &Conf,
     brief: &str,
-    run: usize,
+    draw: usize,
     marks: &mut Marks,
 ) -> RunOutcome {
     let system = retake_system(paths);
-    let parts = cache_parts(&system, brief, &conf.model, run);
+    // §6's slot for this draw, named by the one door that spells it. `ask_run` files its answer under
+    // exactly this digest — the store below hands `llm_cache` the same parts this key came from.
+    let slot = run_key(&system, brief, &conf.model, draw).expect("a brief and a model always key");
+    let parts = cache_parts(&system, brief, &conf.model, draw);
     if let Some(cached) = crate::llm_cache::read(tree, STEP, &parts) {
         let named = apply_answer(&cached, marks);
         return RunOutcome::Cached { marks: named };
@@ -341,8 +344,15 @@ pub fn ask_run(
                 return RunOutcome::Failed { reason: "answered with nothing to read".to_string() };
             };
             // Only a readable answer is stored: an unreadable one must go out again rather than be
-            // replayed from the slot it failed in.
-            crate::llm_cache::store(tree, STEP, &parts, &body);
+            // replayed from the slot it failed in. The slot is the one named above.
+            let kept = crate::llm_cache::store(tree, STEP, &parts, &body);
+            if kept == crate::llm_cache::Stored::Written {
+                // Said where it went: a resumed run reads this file back, and the name is what proves
+                // which draw it belongs to.
+                crate::ui::window::log_line(&format!(
+                    ">>> retakes draw {draw}: kept in cache/{STEP}/{slot}"
+                ));
+            }
             let parsed = apply_answer(&body, marks);
             RunOutcome::Answered { marks: parsed.max(named) }
         }
@@ -585,6 +595,10 @@ fn briefing_log(lines: &[Line]) -> String {
 
 /// The wording to ask with: the shipped `retake` prompt, overridable through the settings folder so an
 /// edit there wins (§04-prepare#6) and an edited prompt misses the cache (§6).
+pub fn system_wording(paths: &Paths) -> String {
+    retake_system(paths)
+}
+
 fn retake_system(paths: &Paths) -> String {
     let shipped = crate::prompts::shipped_text("retake").unwrap_or_default();
     settings::prompt_text(paths, "retake", &shipped).unwrap_or(shipped)
@@ -605,6 +619,13 @@ fn cache_parts(system: &str, user: &str, model: &str, run: usize) -> Vec<serde_j
         thinking: false,
     };
     crate::llm_cache::parts(&request)
+}
+
+/// §6's file name for one pooled draw: the digest over [`cache_parts`]' parts, which is how the run
+/// index reaches the key. `ask_run` asks for it before it dials and files its answer under exactly that
+/// name, so the rule has one spelling rather than a second copy of the digest somewhere else.
+pub fn run_key(system: &str, brief: &str, model: &str, run: usize) -> Option<String> {
+    crate::llm_cache::key(&cache_parts(system, brief, model, run))
 }
 
 /// Seconds without a tail of zeroes, for a log line.

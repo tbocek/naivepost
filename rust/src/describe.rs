@@ -17,8 +17,6 @@
 
 use std::path::Path;
 
-use sha2::{Digest, Sha256};
-
 use crate::clock::frame_name;
 use crate::layout::Tree;
 use crate::prepare::EXTRACTION_GRID;
@@ -386,23 +384,31 @@ fn stamp_text(at: f64) -> String {
 /// and a re-encoded frame is a different question even under the same file name. Names alone would
 /// make a changed picture a cache hit, which is the worst kind of stale answer: invisible.
 ///
-/// [`crate::llm_cache::key`] is the shared implementation for the parts shape the other jobs use;
-/// this stage hashes a plain string because its content is one text blob plus N images, and the
-/// digest is fed to the same [`Tree::cache_llm`] path.
-pub fn cache_key(content: &str, images: &[Vec<u8>]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    hasher.update([0u8]);
-    for image in images {
-        hasher.update(image);
-        hasher.update([0u8]);
-    }
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        hex.push_str(&format!("{byte:02x}"));
-    }
-    hex
+/// [`crate::llm_cache`] is the shared implementation of §6's digest for every job that caches;
+/// this stage asks it for the key over its own parts and stores through it, so one rule decides
+/// what may be kept everywhere.
+pub fn cache_key(content: &str, images: &[Vec<u8>], model: &str) -> String {
+    let request = crate::llm_cache::Request {
+        // Describe sends ONE user message, so there is no system prompt to key on; an empty part keeps
+        // §6's order rather than shifting every later field by one.
+        system: "",
+        user: content,
+        state: "",
+        speech: "",
+        context: "",
+        // The bytes exactly as they go on the wire, one part each — §6 names image data URLs, and a
+        // re-encoded frame has to miss rather than replay the old picture.
+        images: images.iter().map(|bytes| crate::llm_request::data_url(bytes, "image/jpeg")).collect(),
+        run_index: None,
+        // §6's rewrite addition: whose answer this was. A model swap must ask again.
+        model,
+        // §2's row says thinking OFF for this job, so the flag never changes here — but it stays a
+        // part, spelled once in [`crate::llm_cache::parts`] rather than assumed away.
+        thinking: false,
+    };
+    // Text parts always key: `key` refuses only an empty list or a value JSON cannot encode, and
+    // neither is reachable from a message plus a list of strings.
+    crate::llm_cache::key(&crate::llm_cache::parts(&request)).expect("a describe ask always keys")
 }
 
 /// S4: the stored reply for this key, if any. Any unreadable file is a miss, so the step asks again
@@ -413,12 +419,15 @@ pub fn cached_reply(tree: &Tree, key: &str) -> Option<String> {
 
 /// S4: store one reply under its key. A reply that will not write is reported, not swallowed: the
 /// answer is still real, only unpaid-for next time.
+/// S4: store one reply under its key. A reply that will not write is reported, not swallowed: the
+/// answer is still real, only unpaid-for next time. An EMPTY reply is never stored — §6's rule, which
+/// is why this goes through [`crate::llm_cache::store_at`] instead of writing the file itself.
 pub fn store_reply(tree: &Tree, key: &str, reply: &str) -> Result<(), String> {
-    let path = tree.cache_llm(STEP, key);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
+    match crate::llm_cache::store_at(tree, STEP, key, reply) {
+        crate::llm_cache::Stored::Failed(reason) => Err(reason),
+        // Refused-empty and refused-no-key are quiet non-events: nothing written, nothing failed.
+        _ => Ok(()),
     }
-    std::fs::write(&path, reply).map_err(|err| format!("{}: {err}", path.display()))
 }
 
 /// S4: how many were answered from the cache, phrased for S7. Empty when none were, so the caller

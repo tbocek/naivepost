@@ -313,7 +313,30 @@ fn f1_8_s3_a_block_is_cached_under_its_own_rows() {
     let rows = lines(2);
     // The key is the block's own text: one changed row asks a different question.
     let key = fix::block_key(&rows);
-    assert_eq!(key.len(), 16, "a short stable hash names one request's reply");
+    // §6's format, not this module's own hash any more: sha256 hex over the deciding parts.
+    assert_eq!(key.len(), 64, "a sha256 hex digest names one request's reply");
+    assert!(
+        key.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "lowercase hex: {key}"
+    );
+    // And it IS the shared digest: the same rule `llm_cache` applies to every caching job, over the
+    // block's rows spelled as `ask_text` spells them.
+    let request = naivepost::llm_cache::Request {
+        system: "",
+        user: &fix::ask_text("", &rows),
+        state: "",
+        speech: "",
+        context: "",
+        images: Vec::new(),
+        run_index: None,
+        model: "",
+        thinking: false,
+    };
+    assert_eq!(
+        Some(key.clone()),
+        naivepost::llm_cache::key(&naivepost::llm_cache::parts(&request)),
+        "the fixer's file name comes from the one digest rule"
+    );
     let mut changed = rows.clone();
     changed[1].text = "something else entirely".into();
     assert_ne!(key, fix::block_key(&changed));
@@ -331,6 +354,68 @@ fn f1_8_s3_a_block_is_cached_under_its_own_rows() {
     );
     // A changed transcript does not read the stale answer back.
     assert!(fix::cached_block(&tree, &changed).is_none());
+}
+
+/// §6's second irregularity on the fixer's own live path: "the transcript fixer caches only its first
+/// attempt". A block repaired after a refusal is right only given that refusal, so filing it would let
+/// a later run replay an answer nothing validated.
+#[test]
+fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_only_its_first_attempt() {
+    // The rule itself, both sides.
+    assert!(fix::caches_attempt(1), "the first ask's answer may be kept");
+    assert!(!fix::caches_attempt(2), "a repaired answer may not");
+
+    let first_tree = tree("first-try");
+    let rows = lines(2);
+
+    // A block answered on the first ask: `attempt` says 1, and it earns a cache slot.
+    let first_ask_asks = Cell::new(0);
+    let good = |_: &str| {
+        first_ask_asks.set(first_ask_asks.get() + 1);
+        Ok(vec![
+            fix::Reply::Fix { n: 1, text: "number 0 about the widget".into() },
+            fix::Reply::Done,
+        ])
+    };
+    let outcome = fix::fix_block(&rows, good).unwrap();
+    assert!(outcome.valid);
+    assert_eq!(outcome.attempt, 1, "one ask answered it");
+    assert!(fix::caches_attempt(outcome.attempt), "so this one may be stored");
+    fix::store_block(&first_tree, &rows, &outcome.lines).expect("stored");
+    assert!(fix::cached_block(&first_tree, &rows).is_some(), "the first attempt's answer is on disk");
+    assert_eq!(first_ask_asks.get(), 1, "and it took exactly one ask");
+
+    // A block that needed the second ask: `attempt` says 2, so the caller files nothing (§6).
+    let repaired_tree = tree("repaired");
+    let asks = Cell::new(0);
+    let repaired = fix::fix_block(&rows, |_| {
+        asks.set(asks.get() + 1);
+        if asks.get() == 1 {
+            // Refused: a number outside the block is what `Block::fix_line` refuses by name.
+            return Ok(vec![fix::Reply::Fix { n: 99, text: "not a row of this block".into() }]);
+        }
+        Ok(vec![
+            fix::Reply::Fix { n: 1, text: "number 0 about the widget".into() },
+            fix::Reply::Done,
+        ])
+    })
+    .unwrap();
+    assert!(repaired.valid, "the second try fixed it");
+    assert_eq!(repaired.attempt, 2, "and the outcome says which try did");
+    assert!(!fix::caches_attempt(repaired.attempt), "§6: that answer earns no cache slot");
+    // Walking it the way `run` does — store only when the attempt may be cached — leaves nothing filed,
+    // so a re-run of the same block asks again instead of replaying an unvalidated reply.
+    if fix::caches_attempt(repaired.attempt) {
+        fix::store_block(&repaired_tree, &rows, &repaired.lines).unwrap();
+    }
+    assert!(fix::cached_block(&repaired_tree, &rows).is_none(), "nothing was filed for the repair");
+    let reread_asks = Cell::new(0);
+    let _again = fix::fix_block(&rows, |_| {
+        reread_asks.set(reread_asks.get() + 1);
+        Ok(vec![fix::Reply::Done])
+    })
+    .unwrap();
+    assert_eq!(reread_asks.get(), 1, "the next run pays for the repaired block again");
 }
 
 // --- S4: transcript.fixed.tsv (+ subtitles.srt) or commentary.fixed.tsv ---------------------------

@@ -99,22 +99,6 @@ fn trim_seconds(secs: f64) -> String {
 
 // ---- S3: the pooled runs --------------------------------------------------
 
-/// S3: the cache slot of run `run` for this brief.
-///
-/// Each of the [`RUNS`] identical calls gets its own key because each answer is its own sample: one
-/// shared key would make the second and third run read the first's reply back out of the cache and
-/// the pool would silently collapse to a single draw. The run index rides in the key exactly the way
-/// [`crate::llm_cache::Request::run_index`] carries it for the other pooled jobs.
-pub fn run_key(brief: &str, run: usize) -> String {
-    // Same digest rule as `describe::cache_key`: stable, content-covering, and cheap.
-    crate::describe::cache_key(&format!("run {run}\n{brief}"), &[])
-}
-
-/// S3: the distinct keys for the whole pool — one per run, none equal to another.
-pub fn run_keys(brief: &str, runs: usize) -> Vec<String> {
-    (0..runs).map(|run| run_key(brief, run)).collect()
-}
-
 /// S3: pool several runs' marks into one set.
 ///
 /// Deduped on the `from`/`to` pair the model named: two runs pointing at the same stretch are one

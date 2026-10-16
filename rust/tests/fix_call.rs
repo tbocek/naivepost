@@ -499,3 +499,73 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s7_a_read_with_bad_
     // The flow continued past the error: the next round's fix is in the file.
     assert!(scene.fixed().contains("and writes it down again"), "the block was still fixed");
 }
+
+/// §6 on this job's live path: a block's answer is filed under `cache/llm/fix/<sha256 hex>` — §6's
+/// digest, model id included — and the next pass over the same rows reads it back: no ask, no new row in
+/// `requests.tsv`, same fixed transcript on disk. Two slots stand there after one pass because this job
+/// files at two heights (`fix_call::ask_once` keeps the reply the round ended with; `store_block` keeps
+/// the respelled rows that resume marker needs), so what is pinned is each slot's NAME and HEX SHAPE, not
+/// a count. "Only its first attempt is cached" is already pinned in `tests/fix_transcripts.rs`.
+#[test]
+fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_and_replays_it_without_a_socket() {
+    let respelled = "so the algorithm receives the input";
+    let fake = Fake::start(fix_answer(1, respelled));
+    let scene = Scene::new("s7-cache", &fake.url);
+    let conf = conf_at(&fake.url);
+    let mut log = Vec::new();
+    scene
+        .fix(&conf, &mut |line| log.push(line.to_string()))
+        .expect("the fix ran");
+    assert_eq!(fake.waited(1).len(), 1, "the first pass made one ask");
+
+    let tree = scene.tree();
+    let dir = tree.dir().join("cache/llm").join(naivepost::fix_transcripts::FIX_STEP);
+    let slots: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|why| panic!("{} exists after an answered block: {why}", dir.display()))
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    assert!(!slots.is_empty(), "an answered block leaves a slot under cache/llm/fix/");
+    for slot in &slots {
+        assert_eq!(slot.len(), 64, "every slot is named by a sha256 hex digest: {slot}");
+        assert!(
+            slot.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "lowercase hex, §6's shape: {slot}"
+        );
+        assert!(tree.cache_llm(naivepost::fix_transcripts::FIX_STEP, slot).exists());
+    }
+    // The key `fix_transcripts` resumes from is one of them: §6's digest over the block's rows.
+    let lines = naivepost::fix_transcripts::load_transcript(&tree, LANE).expect("the source rows");
+    let blocks = naivepost::fix_transcripts::blocks(&lines);
+    assert_eq!(blocks.len(), 1, "four rows fit one block");
+    let block_key = naivepost::fix_transcripts::block_key(&blocks[0]);
+    assert_eq!(block_key.len(), 64, "§6's digest names the resume marker: {block_key}");
+    assert!(slots.contains(&block_key), "the resume slot is filed: {slots:?}");
+
+    let rows = naivepost::requests::read(&tree).expect("requests.tsv");
+    assert!(!rows.is_empty(), "the request that earned the answer is recorded");
+    let fixed = scene.fixed();
+    assert!(fixed.contains(respelled), "{fixed}");
+
+    // The second pass: same door, same rows, same model — so the cache answers before the gate and the
+    // exchange log (§6 + §10), and the file it produces is the same file.
+    let mut again = Vec::new();
+    scene.fix(&conf, &mut |line| again.push(line.to_string())).expect("the second fix ran");
+    assert_eq!(
+        fake.asks.lock().expect("the record lock").bodies.len(),
+        1,
+        "the replay made no ask: {again:?}"
+    );
+    // The stage's own count of blocks answered from the cache, not a test's guess about it.
+    assert_eq!(
+        again.last().map(String::as_str),
+        Some(naivepost::fix_transcripts::cached_blocks_log(LANE, 1).as_str()),
+        "the second pass says it answered its block from the cache: {again:?}"
+    );
+    assert_eq!(
+        naivepost::requests::read(&tree).expect("requests.tsv").len(),
+        rows.len(),
+        "a cache hit writes no row"
+    );
+    assert_eq!(scene.fixed(), fixed, "and the cached pass writes the same fixed transcript");
+}

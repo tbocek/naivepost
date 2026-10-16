@@ -916,6 +916,10 @@ name = "llm_cache"
 path = "tests/llm_cache.rs"
 
 [[test]]
+name = "llm_cache_live_paths"
+path = "tests/llm_cache_live_paths.rs"
+
+[[test]]
 name = "llm_liveness_f6_3"
 path = "tests/llm_liveness_f6_3.rs"
 

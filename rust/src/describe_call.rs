@@ -268,7 +268,7 @@ fn run_chunk(
         // and saying which picture is missing is the honest answer (§Failure-is-specific).
         Err(reason) => return Err(format!("{lane}: {reason}")),
     };
-    let key = describe::cache_key(&message, &images);
+    let key = describe::cache_key(&message, &images, &conf.model);
     if let Some(answer) = resume_answer(tree, lane, &rows, batch, interval, &history, &key) {
         log(&describe::cached_note(1));
         return answer;
