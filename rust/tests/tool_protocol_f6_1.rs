@@ -250,7 +250,12 @@ fn f6_1_s4_the_budget_is_spent_before_the_tools_run() {
         tool_loop::exhausted("narrate"),
         "!!! narrate: still calling tools after 8 rounds \u{2014} the step gets no answer from this call"
     );
-    assert_eq!(run.logs.last().expect("a log"), &tool_loop::exhausted("narrate"));
+    // §2's line is the LAST one; §1 then adds what the model was owed for the calls that could not run (see
+    // `unannounced_calls_log`), so both claims hold: the budget reads as a budget, and the withheld news is said.
+    assert_eq!(
+        run.logs.iter().rev().find(|line| line.starts_with("!!!")).expect("the budget line"),
+        &tool_loop::exhausted("narrate")
+    );
 
     // Divergence pinned, not fixed: an earlier item's line says the same thing in other words and its own test
     // still pins it. Both exist until one round reconciles them.

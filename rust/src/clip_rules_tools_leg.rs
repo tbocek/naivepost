@@ -70,6 +70,7 @@ pub fn run_over_batch_from(
                 messages,
                 logs: vec![crate::tools::exhausted_log(step)],
                 outcome: tool_loop::Outcome::Finished { asked_finish: false },
+                announced: Vec::new(),
             },
             calls: Vec::new(),
             rounds: Vec::new(),
