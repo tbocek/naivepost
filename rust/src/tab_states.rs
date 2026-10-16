@@ -134,6 +134,27 @@ pub fn greyed(page: Page, project: &Project) -> narrate_off::Greyed {
 /// [`crate::preview`]). So a state with both ✂ flags set lights ▶✂✂ only — which is still one —
 /// while the broken states are the ones where a rule stops lighting anything: hence *at least* one
 /// lit for every combination, rather than an exact count that would never catch the bug it guards.
+/// §2's "one lit, one ⏸" as the three slots a painter reads: `[recording ▶, cut ▶✂, review ▶✂✂]`,
+/// exactly one of them true.
+///
+/// The rule is [`exactly_one_preview_lit`]'s own arithmetic, returned instead of merely asserted, so
+/// the three buttons on the Cut page paint their faces from ONE decision rather than each deriving
+/// its own `cut_only && !reviewing` inline (which is how two of them could light at once). Recording
+/// is what is left when neither ✂ mode runs, matching [`crate::preview`]. The invariant is checked
+/// here, on the program path: a state that lights nothing or lights two stops with this sentence.
+pub fn preview_lits(preview: &Preview) -> [bool; 3] {
+    let lits = [
+        !preview.cut_only && !preview.reviewing,
+        cut_screen::play_cut_lit(preview),
+        cut_screen::review_lit(preview),
+    ];
+    assert!(
+        lits.iter().filter(|lit| **lit).count() == 1,
+        "§2 asks for exactly one lit preview mode, got {lits:?}"
+    );
+    lits
+}
+
 pub fn exactly_one_preview_lit(preview: &Preview) -> bool {
     let recording = !preview.cut_only && !preview.reviewing;
     [recording, cut_screen::play_cut_lit(preview), cut_screen::review_lit(preview)]

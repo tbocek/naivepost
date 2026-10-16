@@ -95,8 +95,14 @@ pub fn paint(window: &adw::ApplicationWindow) {
     };
     button.set_sensitive(cut_screen::can_review(&ui::review_cut_of(window)));
     let player = ui::preview_player(window);
-    let ours_running = player.reviewing && player.transport.playing;
-    button.set_label(if ours_running { PAUSE_LABEL } else { PLAY_LABEL });
+    // §2's "one lit" from [`crate::tab_states::preview_lits`], the same decision ▶ and ▶✂ read; the ⏸
+    // face additionally needs the transport to be playing, since a parked review owes a ▶.
+    let [_recording_lit, _cut_lit, ours_lit] =
+        crate::tab_states::preview_lits(&crate::cut_screen::Preview {
+            cut_only: player.cut_only,
+            reviewing: player.reviewing,
+        });
+    button.set_label(if ours_lit && player.transport.playing { PAUSE_LABEL } else { PLAY_LABEL });
 }
 
 /// What one review tick did, so a test can assert the outcome without a window or a clock.

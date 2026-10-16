@@ -25,8 +25,14 @@ pub fn paint(window: &adw::ApplicationWindow) {
     let Some(button) = ui::play_cut_button(window) else { return };
     button.set_sensitive(!cut_play::empty(&ui::review_cut_of(window)));
     let player = ui::preview_player(window);
-    let ours_running = player.cut_only && !player.reviewing && player.transport.playing;
-    button.set_label(if ours_running { PAUSE_LABEL } else { PLAY_LABEL });
+    // §2's "one lit" from [`crate::tab_states::preview_lits`], the same decision the other two buttons
+    // read; ⏸ only while this mode is the lit one AND the transport is actually playing.
+    let [_recording_lit, ours_lit, _review_lit] =
+        crate::tab_states::preview_lits(&crate::cut_screen::Preview {
+            cut_only: player.cut_only,
+            reviewing: player.reviewing,
+        });
+    button.set_label(if ours_lit && player.transport.playing { PAUSE_LABEL } else { PLAY_LABEL });
 }
 
 /// Paint BOTH skipping buttons — ▶✂ and ▶✂✂ — from this window's cut. They read the same cut slot, and the

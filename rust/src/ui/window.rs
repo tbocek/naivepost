@@ -776,7 +776,8 @@ pub use crate::ui::cut_pass_gates::{
 pub use crate::ui::cut_pass_gates::SPEEDS_PASS_LABEL;
 pub(crate) use crate::ui::cut_pass_gates::{wire_captions_pass, wire_decorations_pass, wire_speeds_pass};
 pub(crate) use crate::ui::window_run_press::{
-    wire_lucky, wire_play, wire_play_cut, wire_play_recording, wire_preview_volume, wire_stop,
+    live_transport, wire_lucky, wire_play, wire_play_cut, wire_play_recording, wire_preview_volume,
+    wire_stop,
 };
 
 /// The window's switching state and what it decided on arrival. `help_page` is read from the shell
@@ -1013,7 +1014,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         &stop_,
         &bar.borrow(),
         shell.borrow().page,
-        run::Transport::default(),
+        live_transport(),
     );
 
     let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
