@@ -284,9 +284,12 @@ fn sec_09_llm_and_tools_6_cache_s7_retake_files_each_draw_and_replays_it_without
     assert_eq!(fake.waited(1).len(), 1, "one request went out");
     let rows_after_first = requests::read(&scene.tree).expect("requests.tsv").len();
     let slot = assert_one_hex_slot(&scene.cached_names(naivepost::retakes_ask::STEP), "retakes");
-    // The name on disk is the one this round's naming door spells, so the digest has one spelling.
+    // The name on disk is the one this round's naming door spells, so the digest has one spelling. The
+    // system half of that digest is the ASSEMBLED §8 message (house rules cut to the job + the job's own
+    // wording), not the bare `retake` prompt — §6 keys a slot on what went out, so an edited house prompt
+    // has to miss rather than replay an answer asked under different rules.
     let named = naivepost::retakes_ask::run_key(
-        &naivepost::retakes_ask::system_wording(&scene.paths),
+        &naivepost::retakes_ask::system_message(&scene.paths, ""),
         &brief,
         "retakes-model",
         0,

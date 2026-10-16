@@ -485,7 +485,8 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
         asks[0].path
     );
     let sent: serde_json::Value = serde_json::from_str(&asks[0].body).expect("a JSON body");
-    let parts = sent["messages"][0]["content"].as_array().expect("the user parts");
+    // The system message §8 puts first, so the user turn is the second message on the wire.
+    let parts = sent["messages"][1]["content"].as_array().expect("the user parts");
     let images: Vec<&serde_json::Value> = parts
         .iter()
         .filter(|part| part["type"].as_str() == Some("image_url"))
@@ -674,7 +675,8 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     assert_eq!(chunks.len(), 3, "nine frames at four a call: {chunks:?}");
     assert_eq!(asks.len(), 3, "one call per chunk: {asks:?}");
     let third: serde_json::Value = serde_json::from_str(&asks[2].body).expect("a JSON body");
-    let parts = third["messages"][0]["content"].as_array().expect("the user parts");
+    // Second message again: §8's system message now leads the request.
+    let parts = third["messages"][1]["content"].as_array().expect("the user parts");
     let images = parts
         .iter()
         .filter(|part| part["type"].as_str() == Some("image_url"))

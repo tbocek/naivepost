@@ -484,7 +484,11 @@ fn f1_7_s5_and_s6_the_answer_lands_as_one_row_per_frame_plus_the_state() {
     let asks = fake.waited(1);
     assert_eq!(asks.len(), 1, "four frames fit one call: {log:?}");
     let sent: serde_json::Value = serde_json::from_str(&asks[0].body).expect("a JSON body");
-    let parts = sent["messages"][0]["content"].as_array().expect("the user parts");
+    // The pictures ride on the USER turn; §8's assembled house rules now lead as their own system message,
+    // so picking "the first message" here would read the system turn and count no pictures at all.
+    let parts = sent["messages"][1]["content"]
+        .as_array()
+        .expect("the user parts");
     let images = parts.iter().filter(|part| part["type"].as_str() == Some("image_url")).count();
     assert_eq!(images, FRAMES_PER_REQ, "P.machine.describeFramesPerReq pictures in one call");
     let rows = scene.event_rows();

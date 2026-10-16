@@ -280,7 +280,15 @@ fn run_chunk(
             log(&describe::cached_note(1));
             return Ok(ChunkAnswer { cached: true, missing: answered });
         }
-        let text = match ask(tree, paths, &conf.model.clone(), &message, &images, refusal.take()) {
+        let text = match ask(
+            tree,
+            paths,
+            &conf.model.clone(),
+            &message,
+            &images,
+            refusal.take(),
+            user_context,
+        ) {
             Ok(body) => body,
             Err(reason) => {
                 // A wire failure is not a refusal: asking a server that is not there again answers the
@@ -340,6 +348,30 @@ fn run_chunk(
     ))
 }
 
+/// The system message §8 asks for: the house rules cut to this job's sections, the `describe` wording,
+/// and the precedence rule when there is a User Context to outrank anything.
+///
+/// Describe used to send no system message at all — one user message with the frames — so none of §8's
+/// per-job table reached it. Note this does NOT change describe's §6 cache slot: [`describe::cache_key`]
+/// keys on the user message plus the frame bytes (see its comment), which is §6's own decision for this
+/// job and stays as item #6 pinned it.
+pub fn system_message(paths: &Paths, context: &str) -> String {
+    crate::prompt_assembly::system_message(
+        &wording(paths, "system"),
+        "describe",
+        &wording(paths, "describe"),
+        context,
+        false,
+        false,
+    )
+}
+
+/// The wording reader every ask uses: the shipped file, or the settings copy of it (§04-prepare#6).
+fn wording(paths: &Paths, key: &str) -> String {
+    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
+}
+
 /// The body and the dial, as one call so the retry loop above only changes the message.
 fn ask(
     tree: &Tree,
@@ -348,6 +380,7 @@ fn ask(
     message: &str,
     images: &[Vec<u8>],
     refusal: Option<String>,
+    context: &str,
 ) -> Result<(String, String), String> {
     let user = match refusal {
         Some(note) => format!("{message}\nThe previous answer was refused: {note}"),
@@ -357,7 +390,11 @@ fn ask(
     for image in images {
         parts.push(Part::Image(llm_request::data_url(image, "image/jpeg")));
     }
-    let messages = vec![Message { role: "user".to_string(), parts }];
+    // §8's system half first, then the frames and their stamps as the user turn.
+    let messages = vec![
+        Message { role: "system".to_string(), parts: vec![Part::Text(system_message(paths, context))] },
+        Message { role: "user".to_string(), parts },
+    ];
     let offered: Vec<Tool> = crate::tools::offered(Job::Describe);
     // §2's row says thinking OFF, which is `Mode::Execute` here: the two modes are the whole switch
     // and every non-thinking job in the app takes this one.
