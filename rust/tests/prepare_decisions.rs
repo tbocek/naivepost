@@ -11,12 +11,15 @@
 //! `P.machine.seamNoiseWords`; rule 2.2 (models propose, the machine places); `09 F6.1` (the tool
 //! protocol).
 
-use naivepost::edges::{self as edge, AlignedWord};
+#[path = "captions_wire_harness.rs"]
+mod harness;
+
+use naivepost::edges::{self as edge, Edges};
 use naivepost::prepare_decisions as pd;
 use naivepost::textfmt::Retake;
 use naivepost::tool_loop;
 use naivepost::tools::describe::{self, Batch, MissingReason, Placement, Spoken};
-use naivepost::tools::fix::{self, Block, Line as FixLine};
+use naivepost::tools::fix::{Block, Line as FixLine};
 use naivepost::tools::retakes::{Line, Marks, Trim};
 use naivepost::tools::textedit::{self, Join, Side};
 use naivepost::exchanges::ToolCall;
@@ -39,7 +42,7 @@ fn error(reply: &str) -> String {
 }
 
 /// No envelope anywhere on the clock (same helper shape as tests/edge_placement.rs).
-fn no_envelope(_: f64) -> Option<&'static edge::Edges> {
+fn no_envelope(_: f64) -> Option<&'static Edges> {
     None
 }
 
@@ -138,6 +141,45 @@ fn sec_12_decisions_prepare_s2_both_edges_move_onto_the_envelope_and_are_seen_in
 
 #[test]
 fn sec_12_decisions_prepare_s3_each_case_comes_back_with_one_sentence_of_reason() {
+    // The one-sentence reason is not only in the audit prose: the tool's own answer carries it, because a
+    // model that cannot tell WHICH of the three happened cannot decide whether to take a mark back.
+    let mut marked = Marks::new(
+        (1..=10)
+            .map(|i| Line {
+                n: i,
+                start: f64::from(i - 1) * 2.0,
+                end: f64::from(i) * 2.0,
+            })
+            .collect(),
+        40.0,
+    );
+    let whole = json(&marked.mark_abandoned(1, 3, None, Trim::none()));
+    let never = whole["why"].as_str().expect("a whole take says why");
+    assert!(never.contains("never picked up"), "{whole}");
+    assert!(!never.contains('\n'), "one sentence: {never}");
+
+    // A mark that names its replacement is told the cut reaches to the retake's onset, and the same answer
+    // gives the second it will really cut to (§12 §2) rather than leaving it in the marks file.
+    let picked = json(&marked.mark_abandoned_at(5, 6, Some(9), Trim::none(), 18.0));
+    let reached = picked["why"].as_str().expect("a picked-up take says why");
+    assert!(reached.contains("onset"), "{picked}");
+    assert_eq!(
+        picked["cut_to_seconds"].as_f64(),
+        Some(18.0),
+        "the cut goes to the retake's first word: {picked}"
+    );
+
+    // Merging says so, in the same place.
+    let again_mark = json(&marked.mark_abandoned(1, 3, None, Trim::none()));
+    assert!(again_mark["merged"].as_bool().unwrap(), "{again_mark}");
+    assert!(
+        again_mark["why"]
+            .as_str()
+            .expect("a merge says why")
+            .contains("became one"),
+        "{again_mark}"
+    );
+
     assert_eq!(pd::classify(true, false), pd::MarkCase::WholeTake);
     let whole = pd::MarkCase::WholeTake.reason();
     assert!(whole.contains("again") && whole.contains('0'), "{whole}");
@@ -170,6 +212,7 @@ fn sec_12_decisions_prepare_s3_each_case_comes_back_with_one_sentence_of_reason(
 
 #[test]
 fn sec_12_decisions_prepare_s4_over_the_ceiling_finish_tells_the_total_so_marks_come_back() {
+    assert_eq!(ITEM, "§12-decisions#prepare");
     // P.machine.retakeCeil -- the share of spoken seconds that may be called abandoned.
     let mut marks = Marks::new(
         (1..=10)
@@ -218,6 +261,11 @@ fn sec_12_decisions_prepare_s4_over_the_ceiling_finish_tells_the_total_so_marks_
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert!(lines[0].contains("run 1") && lines[0].contains("set aside"), "{lines:?}");
     assert!(lines[1].contains("going on with 2"), "{lines:?}");
+
+    // The audit row says the ceiling is enforced where the pass ends and the model hears it there.
+    let row = &pd::audit()[3];
+    assert!(row.home.contains("finish"), "{}", row.home);
+    assert!(row.lives_in.contains("Marks::finish"), "{}", row.lives_in);
 }
 
 /// The set-aside log line pair, through the real helper.
@@ -270,10 +318,34 @@ fn sec_12_decisions_prepare_s5_drop_words_takes_counts_and_answers_with_the_word
     assert!(past.contains("past the join"), "{past}");
     // P.machine.seamNoiseWords -- a stretch this small elsewhere reads as a respelling, not a cut.
     assert_eq!(textedit::SEAM_NOISE_WORDS, 2);
+
+    // The answer a refusal gets travels back as a sentence the model can act on, and the loop puts it in
+    // the next round verbatim (§12's correction row: the tool loop IS the correction).
+    let refused = ToolCall {
+        name: "drop_words".into(),
+        args: "{}".into(),
+        result: error(&fresh.drop_words(Side::After, 0)),
+    };
+    let back = tool_loop::tool_result(&refused);
+    assert!(back.contains("keep_join"), "{back}");
 }
 
 #[test]
 fn sec_12_decisions_prepare_s6_dedupejoins_is_named_in_the_log_not_asked_of_the_model() {
+    // The dedupe's own note is NOT the join pass's line: the join prefix is what a reader greps for, and a
+    // bare `12.0: "..." said again` row (the prototype's) does not carry it, so the pass names the step.
+    let bare = textedit::dedupe_note(12.0, "said twice");
+    assert!(
+        !bare.starts_with(naivepost::join_ask::JOIN_PREFIX),
+        "the bare note is not the pass's line: {bare}"
+    );
+    // And this is the shape the live pass actually speaks: a note that came out of `dedupe_joins` goes
+    // through `dedupe_log_head`, which is what `run_seams` puts in its log -- so the prefix is on it.
+    let spoken = textedit::dedupe_log_head(&textedit::dedupe_note(12.0, "said twice"));
+    assert!(
+        spoken.starts_with(naivepost::join_ask::JOIN_PREFIX),
+        "the pass's line is the prefix over the note: {spoken}"
+    );
     // S6: deleting a word the model deliberately kept stays after `finish` -- it is a rule about the
     // cut, not about the sentence -- and the log has to say it happened.
     let note = textedit::dedupe_note(12.0, "said twice");
@@ -331,6 +403,33 @@ fn sec_12_decisions_prepare_s7_one_bad_row_is_one_refusal_and_a_wrong_speaker_ca
 
 #[test]
 fn sec_12_decisions_prepare_s8_record_event_answers_with_the_frame_it_landed_on() {
+    // The three READS §3.2 offers describe are answered by the live leg, not left silent: `get_events`
+    // answers with this chunk's own event rows, which is what lets a frame be NAMED BACK in the next round
+    // rather than guessed from the brief's extract.
+    let rows = vec![
+        naivepost::describe::EventRow { at: 10.0, text: "the tower fires".to_string() },
+        naivepost::describe::EventRow { at: 12.0, text: "a map unrolls".to_string() },
+    ];
+    let batch = [10.0, 11.0, 12.0];
+    let args = serde_json::json!({ "from": 9.0, "to": 11.5 });
+    let dir = std::env::temp_dir().join(format!("naivepost-pd-s8-{}.naivepost", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a scratch folder");
+    let tree = naivepost::layout::Tree::new(&dir).expect("a .naivepost folder is a project");
+    let answered = naivepost::describe_call::read_answer_for_test(
+        &tree,
+        "take-a",
+        "",
+        &rows,
+        &batch,
+        "get_events",
+        &args,
+    )
+    .expect("get_events is a read the leg answers");
+    let got: serde_json::Value = serde_json::from_str(&answered).expect("a read answers JSON");
+    let lines = got["events"].as_array().expect("a list of events");
+    assert_eq!(lines.len(), 1, "only the event whose span touches 9..11.5: {answered}");
+    assert!(lines[0].as_str().unwrap().contains("the tower fires"), "{answered}");
+
     // tool:record_event. Drift beyond half an interval is dropped, an unparseable offset is dropped,
     // and instead of force-writing the batch's first frame the finish names it.
     let frames = [10.0, 11.0, 12.0];
@@ -449,6 +548,42 @@ fn sec_12_decisions_prepare_s10_the_tool_loop_is_the_correction_not_a_quiet_repl
     assert!(row.home.contains("tool loop is the correction"), "{}", row.home);
     assert!(row.home.contains("F6.1"), "{}", row.home);
     assert!(row.home.contains("transport retry is silent"), "{}", row.home);
+}
+
+#[test]
+fn sec_12_decisions_prepare_s12_over_the_ceiling_the_answer_itself_says_the_marks_are_dropped() {
+    // §12 §4's live half: `finish`'s REPLY carries the verdict the model can still act on -- the running
+    // total, the ceiling, and that every run's marks go unless it takes some back. A model that only
+    // learned this after the pass ended had no way to disagree, which is what this row is about.
+    let mut marks = Marks::new(
+        (1..=10)
+            .map(|i| Line {
+                n: i,
+                start: f64::from(i - 1) * 2.0,
+                end: f64::from(i) * 2.0,
+            })
+            .collect(),
+        20.0,
+    );
+    marks.mark_abandoned(1, 6, None, Trim::none());
+    let over = json(&naivepost::retakes_ask::finish_answer(&marks));
+    assert!(over["over_ceiling"].as_bool().unwrap(), "{over}");
+    assert!(
+        over["all_runs_dropped"].as_bool().unwrap(),
+        "the answer says the runs are thrown away: {over}"
+    );
+    assert!(
+        over["why"]
+            .as_str()
+            .expect("a verdict comes with its reason")
+            .contains("take some back"),
+        "{over}"
+    );
+    // The way out is named too, and it is a tool the model still has: `unmark`, then `finish` again.
+    marks.unmark(1, 6);
+    let back = json(&naivepost::retakes_ask::finish_answer(&marks));
+    assert!(!back["all_runs_dropped"].as_bool().unwrap(), "{back}");
+    assert!(back["why"].as_str().unwrap().contains("stand"), "{back}");
 }
 
 /// `tools::error`'s shape, built without importing the module just for one string.

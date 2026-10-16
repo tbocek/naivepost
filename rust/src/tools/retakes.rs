@@ -107,6 +107,20 @@ impl Marks {
         again: Option<u32>,
         trim: Trim,
     ) -> String {
+        self.mark_abandoned_at(from, to, again, trim, 0.0)
+    }
+
+    /// [`mark_abandoned`] with the attempt's onset handed in, which is what §12 §2 wants named back: the
+    /// seconds up to the retake's first word go with the abandoned take, and only the caller can say where
+    /// that onset is. `0.0` — "nothing was picked up" — leaves the trim's own end as the end of the cut.
+    pub fn mark_abandoned_at(
+        &mut self,
+        from: u32,
+        to: u32,
+        again: Option<u32>,
+        trim: Trim,
+        onset: f64,
+    ) -> String {
         // The range has to name lines that exist. Checked first because every other message quotes
         // these numbers, and a refusal about line 900 of 40 should not also explain a reach rule.
         let (Some(first), Some(last)) = (self.lines.first(), self.lines.last()) else {
@@ -202,12 +216,21 @@ impl Marks {
         crate::tools::ok(&json!({
             "lines": [from, to],
             "removed": [removed_start, removed_end],
-            "seconds": (removed_end - removed_start) as f64,
+            "seconds": removed_end - removed_start,
             "trimmed": trimmed,
             "merged": merged,
             "again": again,
             "speech_marked": share,
             "ceiling": RETAKE_CEIL,
+            // §12 §2's other half: the seconds the PLAYED cut loses are not `removed` alone. A take whose
+            // attempt was picked up loses everything up to that attempt's onset (`Retake::to`), so the
+            // model is handed the wider pair in the same answer and can disagree here rather than find it
+            // in the marks file. The caller passes the onset in (`onset`): finding it needs the transcript
+            // lookup that lives outside this module. With no onset the trim's end is the end of the cut.
+            "cut_to_seconds": onset.max(removed_end),
+            // §12 §3: each verdict the model can get here arrives with a one-sentence reason it can act
+            // on, built from what this call actually did rather than from a fixed string.
+            "why": mark_reason(again, trimmed, merged),
         }))
     }
 
@@ -251,7 +274,7 @@ impl Marks {
     /// Including the short ones: §3.4 calls out that the brief omits pauses under
     /// [`RETAKE_PAUSE_SECONDS`], and those are exactly where a speaker stops, breathes and starts the
     /// sentence over again — the shape of an abandoned take.
-    pub fn lines_with_pause<'a>(&'a self, from: u32, to: u32) -> Vec<(&'a Line, f64)> {
+    pub fn lines_with_pause(&self, from: u32, to: u32) -> Vec<(&Line, f64)> {
         self.lines
             .iter()
             .enumerate()
@@ -281,8 +304,7 @@ impl Marks {
     }
 
     /// The running share of the session's speech now marked.
-    fn share(&self) -> f64 {
-        if self.speech_seconds <= 0.0 {
+    fn share(&self) -> f64 {        if self.speech_seconds <= 0.0 {
             return 0.0;
         }
         let marked: f64 = self
@@ -296,9 +318,22 @@ impl Marks {
         marked.min(1.0)
     }
 
+    /// Seconds of speech the marks pooled so far actually take out, counted once per second (overlapping
+    /// marks merge, so adding their lengths twice would report a share over 1).
+    pub fn marked_seconds(&self) -> f64 {
+        self.marks
+            .iter()
+            .map(|mark| (mark.removed.1 - mark.removed.0).max(0.0))
+            .sum::<f64>()
+    }
+
+    /// The session's spoken seconds, which is what the ceiling is a share of.
+    pub fn speech_seconds(&self) -> f64 {
+        self.speech_seconds
+    }
+
     /// The session seconds a line number spans.
-    fn seconds(&self, n: u32) -> (f64, f64) {
-        match self.lines.iter().find(|line| line.n == n) {
+    fn seconds(&self, n: u32) -> (f64, f64) {        match self.lines.iter().find(|line| line.n == n) {
             Some(line) => (line.start, line.end),
             None => (0.0, 0.0),
         }
@@ -333,6 +368,21 @@ impl Trim {
     }
 }
 
+/// The one-sentence reason §12 §3 wants with every accepted mark, written from what THIS call did:
+/// "whole take, never picked up", "trimmed to the fragment that broke off", "merged into the mark already
+/// there". A model that cannot tell which of these happened cannot decide whether to take a mark back.
+fn mark_reason(again: Option<u32>, trimmed: bool, merged: bool) -> &'static str {
+    if merged {
+        return "this stretch was already marked; the two became one";
+    }
+    if trimmed {
+        return "only the words the later take repeats were taken out; the rest of the lines stand";
+    }
+    match again {
+        Some(_) => "every second from the first word of the abandoned take to the retake's onset is cut",
+        None => "the whole take is treated as never picked up, so its own words are all that goes",
+    }
+}
 /// The answer `finish` gives: the share of speech marked against the ceiling.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Total {
