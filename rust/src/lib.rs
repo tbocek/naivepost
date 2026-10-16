@@ -217,6 +217,7 @@ pub mod snapshot;
 pub mod snapshot_insert;
 pub mod snapshot_settings;
 pub mod snapshot_suggest;
+pub mod snapshot_words;
 pub mod sources;
 pub mod startup;
 pub mod subprocess;

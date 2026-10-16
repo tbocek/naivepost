@@ -551,7 +551,79 @@ pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk)
             log: vec![format!("!!! {why}")],
         };
     }
-    let closed = close_holes(model_segs, &walk.talked, SEAM_MAX_SECONDS);
+    let walked = walk_back_spans(model_segs, walk);
+    let closed_len = walked.closed_len;
+    let moved = walked.moved;
+    let segs = walked.segs;
+    let kept_inserts: Vec<Seg> = inserts.to_vec();
+
+    // Clamp against the cut as applied: the scenes below are the ones this walk just produced.
+    let mut probe = Cut::default();
+    probe.segs = segs
+        .iter()
+        .map(|(a, b)| Seg {
+            s: *a,
+            e: *b,
+            ..Default::default()
+        })
+        .collect();
+    probe.fx = fx.to_vec();
+    let clamped = cut_clamp::clamp_to_cut(&probe);
+    let effects = clamped.kept;
+
+    let total: f64 = segs.iter().map(|(a, b)| b - a).sum::<f64>()
+        + kept_inserts.iter().map(|seg| seg.dur).sum::<f64>();
+    let mut log = vec![
+        format!(
+            ">>> {}",
+            walk_account(
+                segs.len(),
+                kept_inserts.len(),
+                total
+            )
+        ),
+        walk_report(closed_len, moved),
+        effects_line(effects.len()),
+    ];
+    log.extend(clamped.dropped_lines.iter().cloned());
+    Applied {
+        segs,
+        kept_inserts,
+        effects,
+        log,
+    }
+}
+
+/// What [`walk_back_spans`] counted, so [`apply`] can say it in its own §S3 wording and a words-path
+/// caller can say it in `>>>` form without re-running any of the arithmetic.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Walked {
+    /// The spans after every mechanical step, coalesced.
+    pub segs: Vec<(f64, f64)>,
+    /// How many holes were closed, i.e. how many segments the walk joined back together.
+    pub closed_len: usize,
+    /// How many stamped edges moved onto a word edge or a silence midpoint.
+    pub moved: usize,
+    /// Marks that took seconds out, and the seconds of silence taken out — both 0 when nothing was marked.
+    pub marks_out: usize,
+    pub silence_out: f64,
+}
+
+/// §12 §4's fourth bullet as one function: **hole closing, edge snapping, mark removal, dead-air
+/// removal and coalescing**, in that order, over whatever spans a reply settled on.
+///
+/// This used to be inline in [`apply`], which only the model arm reaches — so on a words-mode reply
+/// (§S2a, no model asked) hole closing and edge snapping never ran at all, and §4's promise that the
+/// walk-back "runs after `finish` on every reply, model- or hand-made" was true of two of its five steps.
+/// Pulling them out is what lets BOTH doors run the same walk: `apply` adds the audit gate and the effect
+/// clamp on top, and [`crate::cut_suggest_words_run::run_words`] lands these spans and logs
+/// [`walk_report`] for the same reason the model arm does — the page shows what the machine did.
+///
+/// No judgement about the video happens here: every edge move is bounded by the snap tolerance
+/// ([`decisions::SNAP_TOLERANCE_SECONDS`]), a hole is only closed when somebody talked in it
+/// ([`hole_has_speech`]), and a snap that would cross its own segment keeps the stamp.
+pub fn walk_back_spans(segs: &[(f64, f64)], walk: &Walk) -> Walked {
+    let closed = close_holes(segs, &walk.talked, SEAM_MAX_SECONDS);
     let snapped: Vec<(f64, f64)> = closed
         .iter()
         .map(|(from, to)| {
@@ -566,47 +638,29 @@ pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk)
             }
         })
         .collect();
-    let (unmarked, _) = remove_marks(&snapped, &walk.marks);
-    let (kept, _) = remove_dead_air(
-        &unmarked,
-        &walk.silences,
-        DEAD_AIR_MAX_SECONDS,
-        DEAD_AIR_KEEP_SECONDS,
-    );
-    let segs = coalesce(&kept);
-
-    let kept_inserts: Vec<Seg> = inserts.to_vec();
-
-    // Clamp against the cut as applied: the scenes below are the ones this walk just produced.
-    let mut probe = Cut::default();
-    probe.segs = segs
+    // One count per step, from the step itself rather than guessed from the lists afterwards: an edge that
+    // landed where it started is not a move, and a mark over footage already gone is not a removal.
+    let moved = snapped
         .iter()
-        .map(|(a, b)| Seg {
-            s: *a,
-            e: *b,
-            ..Default::default()
-        })
-        .collect();
-    probe.fx = fx.to_vec();
-    let effects = cut_clamp::clamp_to_cut(&probe).kept;
-
-    let total: f64 = segs.iter().map(|(a, b)| b - a).sum::<f64>()
-        + kept_inserts.iter().map(|seg| seg.dur).sum::<f64>();
-    let log = vec![
-        format!(
-            ">>> {}",
-            walk_account(
-                segs.len(),
-                kept_inserts.len(),
-                total
-            )
-        ),
-        effects_line(effects.len()),
-    ];
-    Applied {
-        segs,
-        kept_inserts,
-        effects,
-        log,
+        .zip(closed.iter())
+        .filter(|((start, end), (from, to))| start != from || end != to)
+        .count();
+    let (unmarked, marks_out) = remove_marks(&snapped, &walk.marks);
+    let (kept, silence_out) =
+        remove_dead_air(&unmarked, &walk.silences, DEAD_AIR_MAX_SECONDS, DEAD_AIR_KEEP_SECONDS);
+    Walked {
+        segs: coalesce(&kept),
+        closed_len: closed.len(),
+        moved,
+        marks_out,
+        silence_out,
     }
+}
+
+/// §4's "the page shows what it did", spelled once so both doors say it identically: how many holes were
+/// joined, how many edges moved, and what was taken out. Empty when the walk changed nothing — a line
+/// claiming work that did not happen is worse than silence, and `words_cut` already logged its own
+/// account of the seconds it trimmed.
+pub fn walk_report(closed_len: usize, moved: usize) -> String {
+    format!("walk-back: {closed_len} stretch(es) after closing holes, {moved} edge(s) moved")
 }
