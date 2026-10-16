@@ -30,9 +30,18 @@ pub(crate) fn speak_a_line(
 /// the LLM over HTTP through `server_leg`, so a ticked language reaches whatever `LLM_SERVER` names and
 /// every ask writes its timed row. A server that is not there answers `Err`, which the walk ships as the
 /// original text with the merge's warning.
+///
+/// §3's patience rides this leg too (`llm_retry_leg::chat` waits 5 s → 4 min on a transport death), and it
+/// polls the switch this closure reads, so handing back a closure that always says false would leave ⏹
+/// dead in front of a wait of up to eight minutes. It goes through [`crate::cancel_leg::cancel_check_now`],
+/// the same door every other live ask in the app uses (`join_ask`, `narrate_ask`, `speak_leg`, the cut
+/// passes): the CURRENT generation, because the render's batches belong to whichever run is going right
+/// now, and `runqueue::bump_cancel_context` clears the switch per run so a ⏹ aimed at an earlier one
+/// cannot stop this leg. `render_asked` below answers the same switch for the checkpoint between steps.
 pub(crate) fn translate_leg() -> Box<crate::produce_translate::Ask> {
     let tree = session_tree();
-    let stop: std::rc::Rc<dyn Fn() -> bool> = std::rc::Rc::new(|| false);
+    let stop: std::rc::Rc<dyn Fn() -> bool> =
+        std::rc::Rc::new(|| crate::cancel_leg::cancel_check_now()());
     crate::produce_translate_ask::ask(&tree, &stop)
 }
 

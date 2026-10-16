@@ -1777,3 +1777,19 @@ path = "tests/sec_08_produce_5_rules_press_replaced.rs"
 [[test]]
 name = "sec_08_produce_5_rules_press_webm"
 path = "tests/sec_08_produce_5_rules_press_webm.rs"
+
+[[test]]
+name = "llm_retry_f6_2_translate_stop"
+path = "tests/llm_retry_f6_2_translate_stop.rs"
+
+[[test]]
+name = "llm_repair_f6_2"
+path = "tests/llm_repair_f6_2.rs"
+
+[[test]]
+name = "llm_repair_once_f6_2"
+path = "tests/llm_repair_once_f6_2.rs"
+
+[[test]]
+name = "llm_repair_live_f6_2"
+path = "tests/llm_repair_live_f6_2.rs"
