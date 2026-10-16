@@ -125,6 +125,37 @@ pub fn send(
     send_named(server, endpoint, kind, job, body, None, cancelled)
 }
 
+/// [`send`] with a whole-call ceiling of this caller's own.
+///
+/// §1's table ([`services::timeout_for`]) answers `None` for most kinds — an hour of audio is an hour of
+/// work — but a few calls have a bound that belongs to the SCREEN rather than to the service: Fetch models
+/// gets fifteen seconds because a person waits on the dialog ([`crate::model_list::LIST_MODELS_SECONDS`]),
+/// and F0.13's two probes get 60 s and 120 s for the same reason. The budget rides here rather than at
+/// the call site because the socket is the only thing that can enforce it; §1's `None` stays untouched for
+/// every other caller.
+pub fn send_budget(
+    server: Server,
+    endpoint: &Endpoint,
+    kind: Kind,
+    job: Option<&str>,
+    body: Option<&str>,
+    budget: Option<std::time::Duration>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Sent, String> {
+    send_pinged(
+        server,
+        endpoint,
+        kind,
+        job,
+        body,
+        None,
+        cancelled,
+        None,
+        None,
+        budget,
+    )
+}
+
 /// [`send`] with the upload's file name. Split rather than folded into one signature so the four
 /// ordinary kinds keep calling the four-argument form; only [`Kind::Upload`] has a name to pass.
 pub fn send_named(
@@ -136,7 +167,18 @@ pub fn send_named(
     filename: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Sent, String> {
-    send_pinged(server, endpoint, kind, job, body, filename, cancelled, None, None)
+    send_pinged(
+        server,
+        endpoint,
+        kind,
+        job,
+        body,
+        filename,
+        cancelled,
+        None,
+        None,
+        None,
+    )
 }
 
 /// [`send_named`] with the §4 probe: every byte this read comes off the wire is a heartbeat's evidence, so the
@@ -151,6 +193,7 @@ fn send_pinged(
     cancelled: &dyn Fn() -> bool,
     probe: Option<&crate::llm_watch_leg::Probe>,
     delta: Option<&Delta>,
+    budget: Option<std::time::Duration>,
 ) -> Result<Sent, String> {
     // The eighth argument is §4's byte ping, which only a watched leg has; folding it into `Dial` would make every
     // unwatched caller carry a field it never sets.
@@ -166,8 +209,9 @@ fn send_pinged(
     );
 
     // The timeouts come straight out of §1's table. `Some(d)` bounds the whole call; `None`
-    // bounds only the connect, per CONNECT_TIMEOUT's note above.
-    let overall = services::timeout_for(kind);
+    // bounds only the connect, per CONNECT_TIMEOUT's note above. A caller with a bound of its own (a
+    // Settings row a person is watching) supplies one through [`send_budget`]; the table never says so.
+    let overall = services::timeout_for(kind).or(budget);
     // Timeouts straight out of §1's table, and deliberately nothing about silence: a chat ask has no whole-call
     // ceiling (§1), and §4's silence rule is NOT the socket's business — `guarded` watches it from outside, so this
     // read may block as long as the server makes it and the call still ends on time. Bounding the read here would put
@@ -404,6 +448,7 @@ pub fn call_dialed(
                     &cancelled_now,
                     ping.as_deref(),
                     delta.as_ref(),
+                    None,
                 )
             })
         }
@@ -417,6 +462,7 @@ pub fn call_dialed(
             dial.cancelled,
             None,
             dial.delta.as_ref(),
+            None,
         ),
     };
     let mut timer = Timer::queued(dial.waited_ms, timer_start);

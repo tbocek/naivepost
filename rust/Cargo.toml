@@ -1805,3 +1805,7 @@ path = "tests/llm_repair_once_f6_2.rs"
 [[test]]
 name = "llm_repair_live_f6_2"
 path = "tests/llm_repair_live_f6_2.rs"
+
+[[test]]
+name = "model_list_and_tests_f9"
+path = "tests/model_list_and_tests_f9.rs"

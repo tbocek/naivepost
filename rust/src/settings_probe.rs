@@ -31,9 +31,21 @@ pub fn live_over(fallback: Provider) -> Provider {
         "llm" | "llm-vision" | "tts" | "asr" | "diar" | "sep" | "aligner" => probe(key, typed),
         "ffmpeg" => settings_probe_rows::ffmpeg_row(typed),
         "firefox" => settings_probe_rows::firefox_row(typed),
+        // §9's list job. Not the fallback's to answer: a real session pressing Fetch models has to get
+        // `GET /v1/models` on the wire, which is what fills the dropdown and gives `model_list`'s parse,
+        // verdict and Use rules a path a person can actually reach.
+        crate::ui::settings::FETCH_KEY => fetch_models(typed),
         "audio" | "sd" => probe(key, typed),
         _ => fallback(key, typed),
     })
+}
+
+/// Fetch models: ask the server in the Server box what it serves, and hand the body back for
+/// [`crate::model_list`] to read. The dialog does the widget half (dropdown, badge, log line); this is the
+/// socket half that was missing.
+pub fn fetch_models(typed: &str) -> Result<String, String> {
+    let endpoint = settings_probe_rows::llm_endpoint(&current_conf(), typed);
+    crate::model_list_fetch::models_at(&endpoint)
 }
 
 /// The provider a real session installs with nothing else wired: the HTTP rows dial out, the rest
@@ -150,7 +162,7 @@ pub fn get(
     model: &str,
     body: Option<&str>,
 ) -> Result<String, String> {
-    ask_job(tree, server, endpoint, kind, None, model, body)
+    ask_job(tree, server, endpoint, kind, None, model, body, None)
 }
 
 /// A chat completion from the settings dialog: the LLM and vision rows (§5 — one completion, `max_tokens`
@@ -163,16 +175,22 @@ pub fn chat_post(
     endpoint: &Endpoint,
     model: &str,
     body: &str,
+    budget: Option<u64>,
 ) -> Result<String, String> {
-    ask_job(tree, Server::Llm, endpoint, Kind::Chat, None, model, Some(body))
+    // F0.13's two probes each carry a ceiling (§9: 60 s for the completion, 120 s for the picture), and
+    // only the socket can enforce it — §1 leaves an ordinary chat call unbounded on purpose.
+    let budget = budget.map(std::time::Duration::from_secs);
+    ask_job(tree, Server::Llm, endpoint, Kind::Chat, None, model, Some(body), budget)
 }
 
 /// [`ask_job`] with the sd.cpp job id a poll or cancel acts on. Settings probes never pass one today;
-/// the parameter exists so the job-scoped kinds reach the same leg the flows use, not a copy of it.
+/// The parameter stays so the job-scoped kinds reach the same leg the flows use, not a copy of it.
 ///
 /// The cancel closure is the live session switch ([`crate::cancel_leg`]), not a stub: §02-services#1's
 /// last paragraph puts EVERY request on the run context, and a settings probe is a request. A ⏹
 /// pressed while a probe is in flight therefore ends it rather than leaving the dialog waiting.
+#[allow(clippy::too_many_arguments)] // one leg's whole request: which server, endpoint, kind, job, model,
+// body and per-call ceiling the caller already holds; a struct here would only rename them.
 fn ask_job(
     tree: &Option<crate::layout::Tree>,
     server: Server,
@@ -181,16 +199,17 @@ fn ask_job(
     job: Option<&str>,
     model: &str,
     body: Option<&str>,
+    budget: Option<std::time::Duration>,
 ) -> Result<String, String> {
     let base = crate::server_leg::base_row(server, model, kind.method(), "", "settings", "");
     let cancelled = crate::cancel_leg::cancel_check_now();
-    match tree {
-        Some(tree) => {
-            crate::server_leg::call(tree, &base, server, endpoint, kind, job, body, &cancelled).1
-        }
-        None => crate::server_leg::send(server, endpoint, kind, job, body, &cancelled),
-    }
-    .map(|reply| reply.body)
+    // A budget only bites when nothing else bounds the call: `send_budget` falls back to §1's table,
+    // and the recorded path goes through `call`, which carries no per-call ceiling of its own.
+    let reply = match tree {
+        Some(tree) => crate::server_leg::call(tree, &base, server, endpoint, kind, job, body, &cancelled).1,
+        None => crate::server_leg::send_budget(server, endpoint, kind, job, body, budget, &cancelled),
+    };
+    reply.map(|reply| reply.body)
 }
 
 /// End-of-run housekeeping: unload every audio model, quietly, off-thread, best-effort.

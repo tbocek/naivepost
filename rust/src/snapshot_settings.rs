@@ -46,6 +46,11 @@ pub fn pictured_conf() -> crate::settings::Conf {
     // means 1 (§6), so anything else had to have been set.
     conf.slots.tts = 2;
     conf.slots.llm = 4;
+    // §5's picture is of a configured machine, and the Writing block has to show its own two ids: with
+    // both boxes on their placeholders the Model row reads as unset, and "Fetch models" exists precisely to
+    // fill that box, so the shot shows the id it would have produced.
+    conf.server = "http://127.0.0.1:8731".to_string();
+    conf.model = "qwen2.5vl:7b".to_string();
     conf
 }
 
@@ -82,6 +87,51 @@ pub fn stage_ffmpeg_row() {
         return;
     }
     PHASE.with(|held| *held.borrow_mut() = Some(ui::settings::press_test("ffmpeg", &shown, verdict)));
+}
+
+/// Stage what "Fetch models" would have produced, from the ids §2 names for this machine.
+///
+/// A snapshot presses nothing, so the dropdown would otherwise be photographed empty and its mark blank.
+/// Nothing is invented: the list is the same shipped model ids `pictured_conf` paints into the boxes, read
+/// through [`crate::model_list::list_verdict`]'s own sentence and painted by
+/// [`naivepost::ui::settings::paint_badge`] exactly as a press paints it. Staged onto the dialog itself,
+/// not kept here: the shot's window is the only holder of these widgets.
+pub fn stage_model_list(dialog: &adw::Window) {
+    let conf = pictured_conf();
+    let ids: Vec<String> = [
+        conf.model.clone(),
+        conf.tts_model.clone(),
+        conf.asr_model.clone(),
+        conf.diar_model.clone(),
+        conf.sep_model.clone(),
+    ]
+    .into_iter()
+    .filter(|id| !id.is_empty())
+    .collect();
+    // Staged only when the listing would really pass: an unexplained ✓ is worse than a blank mark, and
+    // §5 keeps a failing verdict in a tooltip no photograph can show.
+    let Ok(said) = crate::model_list::list_verdict(&ids) else {
+        return;
+    };
+    let Some(list) = crate::ui::window::find_widget_by_name(dialog.upcast_ref(), "model-list")
+        .and_then(|widget| widget.downcast::<gtk::DropDown>().ok())
+    else {
+        return;
+    };
+    let shown: Vec<&str> = ids.iter().map(String::as_str).collect();
+    list.set_model(Some(&gtk::StringList::new(&shown)));
+    // Start on the first id, which is what a listing with something to pick looks like; Use still needs its
+    // own press before the Model box changes (§9).
+    list.set_selected(0);
+    let phase = ui::settings::press_test(ui::settings::FETCH_KEY, "", Ok(said));
+    let mark = crate::ui::window::find_widget_by_name(
+        dialog.upcast_ref(),
+        &format!("badge-{}", ui::settings::FETCH_KEY),
+    )
+    .and_then(|widget| widget.downcast::<gtk::Label>().ok());
+    if let Some(mark) = mark {
+        ui::settings::paint_badge(&mark, &phase);
+    }
 }
 
 /// Paint the staged verdict onto the dialog's `badge-ffmpeg`. Silent when nothing was staged.
