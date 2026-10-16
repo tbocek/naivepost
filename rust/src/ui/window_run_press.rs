@@ -342,6 +342,12 @@ pub(crate) fn wire_play(
                 snapshot,
             );
             crate::ui::run_close::note_started_run(&bar);
+            // §4's bill, before the stages run: which models this step is about to ask and how many
+            // times, so a person sees what a press costs the same place they see what it did. Nothing
+            // here counts twice — every number comes from the module that owns it (see `run_bill`).
+            if let Some(bill) = crate::ui::run_bill::line_for(run::step(shell.borrow().page)) {
+                ui::log_line(&bill);
+            }
             // §2: while nothing is countable the bar pulses; it stops itself when a track reports.
             crate::ui::shell_beats::arm_pulse(&progress, &bar, &queue);
             // F0.5 S2/S3: the step's own work is walked under the bookkeeping, its checkpoint asked
