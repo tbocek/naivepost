@@ -122,6 +122,7 @@ pub mod llm_web_offer;
 pub mod migrate;
 pub mod model_calls;
 pub mod model_list;
+pub mod model_list_fetch;
 pub mod narration;
 pub mod params;
 pub mod params_produce;

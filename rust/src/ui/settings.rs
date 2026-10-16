@@ -577,31 +577,36 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     );
     row += 1;
 
-    // Fetch models: the list and the copy-into-Model button share the Writing block.
+    // Fetch models: the list and the copy-into-Model button share the Writing block. Nothing on this row
+    // reaches past the Test buttons' column, where its two marks sit side by side: the dropdown takes the
+    // box column alone (a wider span pushed Use out to the dialog's edge), and an id longer than a box is
+    // ellipsised in the closed widget exactly as every other box here ellipsises long text.
     let fetch = gtk::Button::with_label("Fetch models");
     fetch.set_widget_name("fetch-models-button");
     fetch.set_tooltip_text(Some("List the models this server serves"));
     grid.attach(&fetch, 1, row, 1, 1);
     let list = gtk::DropDown::from_strings(&[]);
     list.set_widget_name("model-list");
-    list.set_hexpand(true);
-    grid.attach(&list, 2, row, 2, 1);
+    grid.attach(&list, 2, row, 1, 1);
     let use_choice = gtk::Button::with_label("Use");
     use_choice.set_widget_name("use-model-button");
     use_choice.set_tooltip_text(Some("Copy the chosen id into Model"));
-    grid.attach(&use_choice, 4, row, 2, 1);
+    grid.attach(&use_choice, 3, row, 1, 1);
     // These two verdicts are not `add(...)` rows, so their badges are made here. Without a named
     // badge widget `Dialog::report` has nowhere to paint and a failed listing would show up only in
-    // the log — §5 wants the ✓/✗ with its verdict as tooltip on the dialog itself.
+    // the log — §5 wants the ✓/✗ with its verdict as tooltip on the dialog itself. Both marks take the
+    // cell every other row's mark sits in (the Test buttons' column): this row has no Test button, so the
+    // pair shares that one cell side by side, in the order the controls they report on sit in.
+    let marks = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    marks.set_halign(gtk::Align::Center);
     for key in [FETCH_KEY, USE_KEY] {
         let badge = gtk::Label::new(None);
         badge.set_widget_name(&format!("badge-{key}"));
         badge.set_width_chars(2);
         badge.set_valign(gtk::Align::Center);
-        // Column 0 is the section-label column and sits empty on this row; the dropdown starts at 2.
-        let column = if key == FETCH_KEY { 0 } else { 6 };
-        grid.attach(&badge, column, row, 1, 1);
+        marks.append(&badge);
     }
+    grid.attach(&marks, 6, row, 1, 1);
     row += 1;
 
     // Cutting.
@@ -736,8 +741,6 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         log_expander,
         test_log: RefCell::new(checks::TestLog::new()),
         provider,
-        // §5's no-Save write, over the conf as it stands now. No config folder at all (a bare test
-        // box with no XDG_HOME) leaves it `None`: the dialog still tests, it just has nowhere to save.
         // §5's no-Save write, over the conf as it stands now. No config folder at all (a bare test
         // box with no XDG_HOME) leaves it `None`: the dialog still tests, it just has nowhere to save.
         store: RefCell::new(crate::settings::from_environment().and_then(|paths| machine_store::Store::open(&paths).ok())),
@@ -1033,7 +1036,6 @@ fn find_in(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     crate::ui::window::find_widget_by_name(root, name)
 }
 
-/// The dialog's log text as it stands in its own view.
 fn buffer_text(view: &gtk::TextView) -> String {
     let buffer = view.buffer();
     let start = buffer.start_iter();

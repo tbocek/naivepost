@@ -26,40 +26,71 @@ fn search_slice() -> Duration {
     crate::web_browser::ladder_slice()
 }
 
-/// The LLM row: ONE completion, `max_tokens` 16, thinking forced off, [`checks::LLM_TEST_SECONDS`].
+/// What a row's dial looks like: hand it a body and the whole-call ceiling §9 gives that probe, get the
+/// reply back. Borrowed lifetime `'a` rather than `'static`: the closure borrows the conf and the typed
+/// address of the press that made it.
+pub type Ask<'a> = dyn Fn(&str, Option<u64>) -> Result<String, String> + 'a;
+
+/// The LLM row: ONE completion at [`crate::model_list::probes`]' first entry — `max_tokens` 16, thinking
+/// forced off, 60 s — timed for real.
 ///
 /// The body is [`checks::llm_test_body`], so the switch that keeps a thinking model from spending the
 /// sixteen tokens on reasoning is the same one the pipeline sends, and a test can read the shape off
-/// that function rather than from a copy here.
-pub fn llm_row(conf: &Conf, ask: &dyn Fn(&str) -> Result<String, String>) -> Result<String, String> {
+/// that function rather than from a copy here. The numbers the row REPORTS and the ceiling it dials with
+/// both come from [`crate::model_list::probes`]: this call used to print "answered in 60.0 s" whatever the
+/// server took, which is §1's budget wearing §5's sentence — a person reading the log learns the timeout,
+/// not the model.
+pub fn llm_row(conf: &Conf, ask: &Ask<'_>) -> Result<String, String> {
     let model = conf.model.trim();
     if model.is_empty() {
         return Err("no model id -- the box is empty, so there is nothing to ask. Use \"Fetch models\" \
                     to pick one this server lists"
             .to_string());
     }
+    let probe = crate::model_list::probes()[0];
     let body = checks::llm_test_body(model).to_string();
-    let reply = ask(&body)?;
+    let began = Instant::now();
+    let reply = ask(&body, Some(probe.seconds))?;
+    let seconds = elapsed_seconds(began);
     let content = crate::llm_request::reply_from("application/json", &reply)
         .map(|reply| reply.content)
         .unwrap_or_default();
-    Ok(checks::llm_verdict(model, checks::LLM_TEST_SECONDS as f64, &content))
+    // An answer of nothing is a failure, not a green tick beside an empty quote: F0.13 reports what came
+    // back, and "nothing came back" is the thing worth reading.
+    crate::model_list::probe_passes(&probe, &content)?;
+    // F0.13's sentence is "<model> answered in X s: “ok”" — the MODEL'S WORDS quoted, not a report about
+    // them. `probe_passes` above decides pass/fail (blank is a failure); its "answered …" phrasing is this
+    // row's own business and stays here.
+    Ok(checks::llm_verdict(model, seconds, &content))
 }
 
-/// The LLM vision row: the 48 px red square as a data URL, [`checks::VISION_TEST_SECONDS`], and it
-/// passes only when the reply says "red" ([`checks::vision_verdict`]).
+/// How long a probe took, in the seconds [`checks::llm_verdict`] prints.
+fn elapsed_seconds(began: Instant) -> f64 {
+    // `as_millis` then a divide rather than `as_secs_f64`'s full precision: the log reads "answered in
+    // 1.2 s", and a nanosecond-precise duration would only make the assertion noisy.
+    u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX) as f64 / 1000.0
+}
+
+/// The LLM vision row: the 48 px red square as a data URL, [`crate::model_list::probes`]' second entry
+/// (120 s, no token cap of its own), and it passes only when the reply says "red".
 ///
-/// No `max_tokens` of its own beyond the text test's: the answer is a colour word and the point is
-/// that the model saw the picture, not that it wrote about it.
-pub fn vision_row(
-    conf: &Conf,
-    ask: &dyn Fn(&str) -> Result<String, String>,
-) -> Result<String, String> {
+/// No `max_tokens`: the table says the vision probe sets none, because the answer is a colour word and
+/// capping an image prompt cuts the answer off inside the reasoning. This row used to build its body from
+/// [`checks::llm_test_body`] and swap the messages, which quietly sent the text probe's 16-token cap with
+/// a picture — enough to spend on reasoning and answer nothing about a model that saw the square fine.
+pub fn vision_row(conf: &Conf, ask: &Ask<'_>) -> Result<String, String> {
     let model = conf.model.trim();
     if model.is_empty() {
         return Err("no model id -- the vision test asks the model in the Model box".to_string());
     }
+    let probe = crate::model_list::probes()[1];
     let mut body = checks::llm_test_body(model);
+    // Drop the text probe's cap rather than inherit it: `Probe.max_tokens` is `None` here by §5's rule.
+    if let Some(cap) = probe.max_tokens {
+        body["max_tokens"] = serde_json::json!(cap);
+    } else if let Some(map) = body.as_object_mut() {
+        map.remove("max_tokens");
+    }
     body["messages"] = serde_json::json!([{
         "role": "user",
         "content": [
@@ -67,7 +98,7 @@ pub fn vision_row(
             { "type": "image_url", "image_url": { "url": checks::vision_probe_url() } },
         ],
     }]);
-    let reply = ask(&body.to_string())?;
+    let reply = ask(&body.to_string(), Some(probe.seconds))?;
     let content = crate::llm_request::reply_from("application/json", &reply)
         .map(|reply| reply.content)
         .unwrap_or_default();
@@ -231,14 +262,18 @@ pub fn probe_tree() -> Option<crate::layout::Tree> {
 }
 
 /// Build the chat caller a row sends through: the same leg the flows use, so ⏹ reaches it and
-/// `requests.tsv` records it. The body is the caller's — [`llm_row`] and [`vision_row`] build it.
+/// `requests.tsv` records it. The body is the caller's — [`llm_row`] and [`vision_row`] build it, and each
+/// hands over the ceiling its [`crate::model_list::Probe`] states so §9's 60 s and 120 s bound the socket
+/// rather than sitting in a comment.
 pub fn chat_ask<'a>(
     conf: &'a Conf,
     typed: &'a str,
-) -> impl Fn(&str) -> Result<String, String> + 'a {
+) -> impl Fn(&str, Option<u64>) -> Result<String, String> + 'a {
     let endpoint = llm_endpoint(conf, typed);
     let model = conf.model.clone();
-    move |body: &str| crate::settings_probe::chat_post(&probe_tree(), &endpoint, &model, body)
+    move |body: &str, budget: Option<u64>| {
+        crate::settings_probe::chat_post(&probe_tree(), &endpoint, &model, body, budget)
+    }
 }
 
 /// The catalogue audio.cpp serves, for the four model rows and the aligner row: `GET /v1/models`,

@@ -1209,6 +1209,7 @@ architecture behind them.
                 shown.present();
                 crate::snapshot_settings::remember(&shown);
                 crate::snapshot_settings::stage_ffmpeg_row();
+                crate::snapshot_settings::stage_model_list(&shown);
                 Some(shown.upcast())
             }
             // `spec/img/04-prompt-picker.png` pictures the row picker OPEN on a prompt, so this
