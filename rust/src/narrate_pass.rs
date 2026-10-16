@@ -130,6 +130,20 @@ fn asset_name(ins: &str) -> &str {
     name.strip_prefix("project:").unwrap_or(name)
 }
 
+/// #29: the card's own words in the brief, read through the same door `describe_insert` uses — the writer sees
+/// in the brief exactly what it would be told if it asked. The file is opened once per insert clip; a session
+/// has a handful of them and the brief is built once per call.
+fn insert_words(seg: &Seg) -> Vec<String> {
+    let path = crate::cut_cards::split_path(&seg.ins);
+    match std::fs::read_to_string(&path.file) {
+        Ok(raw) => {
+            let card = crate::produce_cards::draw(&seg.ins, &raw);
+            crate::cut_cards::card_words(&card.drawn)
+        }
+        Err(_) => Vec::new(),
+    }
+}
+
 /// F4.2 S2 (`with its lines within ±P.machine.narrationContextSeconds as "[+Ns] LABEL: text"`), plus the
 /// moments somebody marked. Seconds are offsets from the clip's own start, so the narration can follow the
 /// clip instead of arriving at it; a line just outside the clip goes negative or past the end, which is
@@ -150,6 +164,12 @@ pub fn brief(segs: &[Seg], rows: &[SessionLine], fx: &[Fx], narrator: &str) -> S
                  the wrong picture)\n",
                 asset_name(&seg.ins)
             ));
+            // §12 #28: the file name alone was the whole description, and a name like `tier.svg?S=Dust II`
+            // says nothing about what the viewer sees. The rendered words go under it, so the writer can
+            // speak to the card without spending a tool round to ask what is on it.
+            for said in insert_words(seg) {
+                out.push_str(&format!("  ON THE CARD: {said}\n"));
+            }
             continue;
         }
         let mut said = 0usize;
@@ -574,15 +594,45 @@ pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
         ));
     }
     let path = crate::cut_cards::split_path(&seg.ins);
+    // §12 #39 ("the file's full path AND its ARGUMENTS"): the arguments come back spelled as the cut wrote them,
+    // because they are what fills the card's holes — the writer cannot know `?S=` is a hole unless it is shown.
     let params: Vec<String> = path
         .args
         .iter()
         .map(|(key, value)| format!("{key}={value}"))
         .collect();
+    // Where the app put it, in the two spellings the cut uses: an absolute seconds-from-clip-start `offset=`, or
+    // a named `at=` position. The model is told which, because #39 is about it knowing WHERE it went.
+    let placed = match path.args.iter().find(|(key, _)| key == "offset") {
+        Some((_, seconds)) => format!("{seconds}s from the clip's start"),
+        None => match path.args.iter().find(|(key, _)| key == "at") {
+            Some((_, where_)) => format!("the {where_} of the frame"),
+            None => "the head of the clip".to_string(),
+        },
+    };
+        // §12 #28: the card's WORDS, read out of the document the app would draw — through the same door the
+// render goes (`produce_cards::draw`: a stamped card is redrawn from its arguments, an unstamped one has
+// its holes filled), then the `<text>` elements picked out of the result. A file that cannot be read
+// answers with what the cut knows (kind + length) rather than an empty string or a refusal: the writer is
+// told what it can be told and nothing is invented.
+    let words = match std::fs::read_to_string(&path.file) {
+        Ok(raw) => {
+            let card = crate::produce_cards::draw(&seg.ins, &raw);
+            crate::cut_cards::card_words(&card.drawn)
+        }
+        Err(_) => Vec::new(),
+    };
+    // #38: a card is not footage. Whether this clip is a STILL (an insert, or a freeze) is what the writer of
+    // a description has to know, because "the screen shows the scoreboard" and "the player drives onto the
+    // field" are different sentences about the same clip.
+    let still = crate::produce_cards::is_card(&path.file) || seg.dur > 0.0;
     crate::tools::ok(&serde_json::json!({
         "clip": clip,
         "insert": path.file,
+        "still": still,
         "params": params,
+        "says": words,
+        "placed_at": placed,
         "seconds_on_screen": on_screen(seg),
     }))
 }

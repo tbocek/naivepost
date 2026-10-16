@@ -385,6 +385,21 @@ impl State {
                         self.publish.frames = vec![format!("frame:{:.1}", picked.taken)];
                         self.wrote = true;
                         self.answers.push(picked.answer.clone());
+                        // §12 #33, the half that belongs to THIS arm: naming a frame takes the thumbnail away
+                        // from the drawer, so an edit instruction standing on the record is now about a
+                        // thumbnail that will not be made. The prototype simply dropped the row; the model is
+                        // told instead, and the instruction itself is left alone (§#33's other half) — the
+                        // person typed it, and a frame named in answer to a question is not a reason to lose it.
+                        if !self.publish.prompt.trim().is_empty() {
+                            let answer = format!(
+                                "{} — the edit instruction ({}) still stands but nothing will be drawn; \
+                                 say set_thumbnail_instruction again to go back to drawing",
+                                picked.answer, self.publish.prompt
+                            );
+                            self.answers.pop();
+                            self.answers.push(answer.clone());
+                            return answer;
+                        }
                         picked.answer
                     }
                     Err(why) => {
