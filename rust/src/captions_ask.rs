@@ -20,7 +20,7 @@
 //! none; a caption answer is a JSON document, a join answer is words.
 
 use crate::cut_captions::{self, Call};
-use crate::exchanges::{Message, Mode, Part};
+use crate::exchanges::{self, Message, Mode, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
@@ -305,6 +305,20 @@ pub fn ask_at(
     for line in &looped.run.logs {
         crate::ui::window::log_line(line);
     }
+    // §7's live half for a tool flow: ONE section per request this ask made, each showing what the model was shown,
+    // what it asked for, and what each tool answered. `call_of` could not do this — it reads a reply's calls blind
+    // to their answers — so the loop files its own rounds, already answered by the one door that ran them.
+    if !looped.rounds.is_empty() {
+        for round in &looped.rounds {
+            if round.turn.calls.is_empty() {
+                // A round that asked nothing is the answer, and the dialling leg already filed that request on the
+                // page when it went out; filing it again would print the same exchange twice.
+                continue;
+            }
+            let filed = page_round(STEP, &model, round);
+            crate::exchange_leg::record(tree, STEP, &filed, &crate::ui::window::log_line);
+        }
+    }
     if looped.run.outcome == crate::tool_loop::Outcome::Exhausted {
         // §2 S4: the step gets no answer from this call. The wording is §2's own, not a paraphrase.
         crate::ui::window::log_line(&crate::tools::exhausted_log(STEP));
@@ -316,6 +330,13 @@ pub fn ask_at(
         return Asked { calls: Vec::new(), failed: false, reason: String::new() };
     }
     Asked { calls: calls_out, failed: false, reason: String::new() }
+}
+
+/// One answered round as §7 shows it: the conversation that round was shown, its calls with their results, and
+/// the prose the model said alongside them. Built by [`crate::exchange_leg::round_of`], so a tool flow's page is
+/// drawn through the same door every other exchange is.
+fn page_round(step: &str, model: &str, round: &crate::clip_rules_tools_leg::Round) -> exchanges::Call {
+    crate::exchange_leg::round_of(step, model, &round.messages, &round.turn)
 }
 
 /// The batch's word lines as clip-relative offsets: each word whose session second falls inside kept

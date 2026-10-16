@@ -52,22 +52,9 @@ pub fn call_of(
     // empty results and the following section shows the answers. Pairing them across requests would
     // mean guessing which later call belongs to this one, which is not what the page is for.
     let reply = llm_request::reply_from(content_type, reply_body).ok();
-    let mut tool_calls: Vec<ToolCall> = reply
-        .as_ref()
-        .map(|answered| {
-            answered
-                .tool_calls
-                .iter()
-                .map(|asked| ToolCall {
-                    name: asked.name.clone(),
-                    args: asked.args.clone(),
-                    result: String::new(),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut tool_calls: Vec<ToolCall> = reply.as_ref().map(calls_of).unwrap_or_default();
     if tool_calls.is_empty() {
-        tool_calls = asked_tool_results(&asked);
+        tool_calls = asked_tool_results(asked_messages(&asked));
     }
     let answered = match content_type {
         // A call that got no reply at all has nothing to read.
@@ -130,24 +117,106 @@ fn message_of(value: &Value) -> Option<Message> {
     Some(Message { role, parts })
 }
 
+/// The messages array of a request body, empty when it holds none.
+fn asked_messages(asked: &Value) -> &[Value] {
+    asked
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+}
+
 /// The tool results sitting in a request body, for a reply that named no calls of its own (a retried
 /// ask whose answer arrived as an event stream without the reassembled calls).
-fn asked_tool_results(asked: &Value) -> Vec<exchanges::ToolCall> {
-    let Some(list) = asked.get("messages").and_then(Value::as_array) else {
-        return Vec::new();
-    };
-    list.iter()
+///
+/// # Why the parts are joined and not just read as a string
+///
+/// A `role: "tool"` message's content reaches here in whichever shape the caller sent it, and this app sends
+/// both spellings: a plain string from a leg that only had words, and a typed part list from one built with
+/// [`crate::llm_request::message_parts`]. Reading only the string form silently filed every part-list result
+/// as EMPTY, which the page then called "answered nothing" — so a refused call and a full answer looked alike.
+/// Joining the text of every part is what makes the two spellings mean the same thing here.
+fn asked_tool_results(messages: &[Value]) -> Vec<exchanges::ToolCall> {
+    messages
+        .iter()
         .filter(|message| message.get("role").and_then(Value::as_str) == Some("tool"))
         .map(|message| exchanges::ToolCall {
-            name: message.get("name").and_then(Value::as_str).unwrap_or_default().to_string(),
-            args: String::new(),
-            result: message
-                .get("content")
+            name: message
+                .get("name")
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string(),
+            args: String::new(),
+            result: message_content(message),
         })
         .collect()
+}
+
+/// One request message's text, however its content was spelled: a string, or the text of each typed part.
+fn message_content(message: &Value) -> String {
+    match message.get("content") {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .filter(|part| part.get("type").and_then(Value::as_str) != Some("image_url"))
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
+/// The call's tool traffic, one entry each, in the order the model asked for them.
+fn calls_of(answered: &llm_request::Reply) -> Vec<ToolCall> {
+    answered
+        .tool_calls
+        .iter()
+        .map(|asked| ToolCall {
+            name: asked.name.clone(),
+            args: asked.args.clone(),
+            result: String::new(),
+        })
+        .collect()
+}
+
+/// §7's wording for one call on the page line, with its outcome when it has one. A tool that answered normally
+/// reads exactly as [`crate::tool_loop::call_note`] spells it; one that refused or came back empty says so, so a
+/// reader scanning the reply need not open the block to learn the call was useless.
+///
+/// # Why it lives here and not inside [`crate::tool_loop::call_note`]
+///
+/// `call_note` is the scrolling log's wording and the log has no outcome to show: it is written at the moment the
+/// tool answers, by a caller that has the result but is printing one line. The page prints the ask and its result
+/// together, so the verdict belongs to the page's module pair, not to the shared note. Both readings of a result
+/// come from [`exchanges::result_outcome`], so the line above a block and the note under it cannot disagree.
+pub fn call_line(call: &ToolCall) -> String {
+    match exchanges::result_outcome(&call.result) {
+        Some(outcome) => format!("{} — {outcome}", crate::tool_loop::call_note(call)),
+        None => crate::tool_loop::call_note(call),
+    }
+}
+
+/// One round of a tool conversation as §7's page shows it: the messages the model was shown, what it answered,
+/// and the calls it made — each carrying the result that answered it.
+///
+/// This is the door a step that runs §2's loop hands to the recorder ([`crate::clip_rules_tools_leg`] files every
+/// round through here). Without it a tool round reached the page only through [`call_of`], which reads a reply's
+/// calls with BLANK results and never sees the answers, so every ask on a live page read `answered nothing` and
+/// the page never said which call had really been used.
+pub fn round_of(step: &str, model: &str, messages: &[Message], turn: &crate::tool_loop::Turn) -> Call {
+    Call {
+        step: step.to_string(),
+        model: model.to_string(),
+        mode: Mode::Execute,
+        took_secs: 0,
+        thinking_secs: None,
+        messages: messages.to_vec(),
+        reply: turn.content.clone(),
+        reasoning: None,
+        tool_calls: turn.calls.clone(),
+        cut_off: false,
+        error: None,
+    }
 }
 
 /// The page stamp §7 names the file with: `MMDD-HHMMSS`, month first.
