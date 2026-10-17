@@ -451,15 +451,55 @@ pub fn run_tool(
 ) -> Option<(String, Option<String>)> {
     use crate::tools::Tool;
     let name = asked.name.as_str();
+    // §02 §1 / §09 §10: the browser legs launch a process instead of dialing a socket, so nothing else
+    // timed them. The clock runs around the whole call — every rung of the ladder, or the one page — and
+    // the row is filed before the answer is handed on, so a caller that then chokes on it still leaves
+    // its request behind.
     if name == Tool::WebSearch.name() {
+        let started = crate::server_leg::epoch_ms();
         let ask = query_for(firefox, ladder_slice());
-        return Some(crate::web_tools::search(step, &asked.args, &ask));
+        let (answer, line) = crate::web_tools::search(step, &asked.args, &ask);
+        record_call(
+            step,
+            crate::web_request_log::KIND_SEARCH,
+            &asked.args,
+            &answer,
+            started,
+        );
+        return Some((answer, line));
     }
     if name == Tool::WebRead.name() {
+        let started = crate::server_leg::epoch_ms();
         let fetch = read_page_for(firefox, read_budget());
-        return Some(crate::web_tools::read_call(step, &asked.args, &fetch));
+        let (answer, line) = crate::web_tools::read_call(step, &asked.args, &fetch);
+        record_call(
+            step,
+            crate::web_request_log::KIND_READ,
+            &asked.args,
+            &answer,
+            started,
+        );
+        return Some((answer, line));
     }
     None
+}
+
+/// File one finished web call's `requests.tsv` row: a refusal names its reason as the outcome, anything
+/// else was content ([`crate::web_request_log`] holds the row's shape and why its model column is empty).
+fn record_call(step: &str, kind: &str, asked: &str, answer: &str, started: i64) {
+    let outcome = match crate::web_request_log::refusal_reason(answer) {
+        Some(reason) => crate::requests::Outcome::Error(reason),
+        None => crate::requests::Outcome::Ok,
+    };
+    crate::web_request_log::record(
+        step,
+        kind,
+        asked,
+        answer,
+        started,
+        crate::server_leg::epoch_ms(),
+        outcome,
+    );
 }
 
 /// Run one web tool for a step and log what it did on the sink every headless flow writes to (a tool closure
