@@ -632,6 +632,13 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         crate::snapshot_preview::paint(&window, &dir, &screen);
         crate::snapshot_narrate::stage(&window, &dir, &screen);
         crate::snapshot_produce::paint(&window, &screen);
+        // F2.7's three pictures stage their own subject too, through the doors the ＋ / | / － buttons fire
+        // (see `snapshot_verbs`). Placed with the other self-staging screens rather than inline above:
+        // `run` is past the size another staging block fits in.
+        if matches!(screen.as_str(), "05-add" | "05-split" | "05-remove") {
+            let said = crate::snapshot_verbs::stage(&window, &screen, &dir);
+            println!("snapshot: {screen} | {}", said.join(" | "));
+        }
         // The Narrate shot's own files go down AFTER the publish above: a `build()` later than this one
         // (one per tab) re-reads them, and only the files keep the voice, shift and take list on screen.
         crate::snapshot_narrate::seed_project_files(&screen);
