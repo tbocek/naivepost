@@ -117,6 +117,13 @@ pub fn ask_at(
     // Only what this pass answers: `add_caption` for the work and `finish` as its own signal (§2 S3's end). The
     // SAME list goes into the request body and into the loop, so the model is never handed a tool whose result
     // this ask cannot place (speeds and decorations are their own passes).
+    //
+    // §3 does say every job names its read tools as well as its write tools, and `get_frames` is §3.7's read for
+    // this job. It stays out ON PURPOSE: this pass makes ONE request (§F3.9 counts a batch by the rows it writes
+    // in `requests.tsv`), so a model that called a read would spend a round this step has no budget for and the
+    // batch would be charged twice. The asks that CAN place a read are the speed and decoration passes, and those
+    // run the loop (`clip_rules_tools_leg::run_over_batch`) over the full `tools::offered(Job::ClipRules)` list,
+    // `get_frames` included.
     let offered: Vec<Tool> = crate::tools::offered(Job::ClipRules)
         .into_iter()
         .filter(|tool| matches!(tool, Tool::AddCaption | Tool::Finish))

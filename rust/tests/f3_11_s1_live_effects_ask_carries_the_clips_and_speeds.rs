@@ -111,9 +111,13 @@ fn f3_11_s1_live_effects_ask_carries_the_clips_and_speeds_to_the_llm() {
         .iter()
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect();
-    assert_eq!(offered.len(), 2, "exactly two tools offered, got {offered:?}");
+    assert_eq!(offered.len(), 3, "the write tool, `finish` and §3.7's read, got {offered:?}");
     assert!(offered.contains(&"add_effect"), "add_effect was offered: {offered:?}");
     assert!(offered.contains(&"finish"), "finish was offered so the reply can be closed: {offered:?}");
+    assert!(
+        offered.contains(&"get_frames"),
+        "§3.7's read rode out beside the write tool: {offered:?}"
+    );
     assert!(
         !seen.body.contains("set_clip_speed") && !seen.body.contains("add_caption"),
         "neither sibling pass's tool is offered here: {offered:?}"

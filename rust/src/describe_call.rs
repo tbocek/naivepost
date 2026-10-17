@@ -546,7 +546,8 @@ fn read_answer(
     batch: &[f64],
     name: &str,
     args: &serde_json::Value,
-) -> Option<String> {    if name == "speech_around" {
+) -> Option<String> {
+    if name == "speech_around" {
         return Some(speech_answer(tree, lane, args));
     }
     // `EventRow` is describe's resume shape (`at` + text, no end: §6's middle field is a read-side fold).

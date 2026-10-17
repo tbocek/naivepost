@@ -170,10 +170,17 @@ fn two_messages(system: &str, user: &str) -> Vec<Message> {
 /// This pass's own two tools, from §3.7's job row: a call of another kind (a caption, a decoration) is not
 /// offered because this ask cannot place it (§2 S4). One list, used for the body AND for the loop, so the wire
 /// and the loop can never disagree about what was on offer.
+/// The speed pass's tools: this pass's own write, `finish`, and §3.7's read.
+///
+/// §3 says every job names its read tools as well as its write tools, and `get_frames` is the read §3.7
+/// offers "so a zoom can be aimed" — the same batch and the same `answer` door already serve it, so
+/// nothing here needs a second implementation. `get_context`, `get_lines` and `get_events` stay out
+/// deliberately: this ask carries the clip list and no transcript, so it could not answer them, and a
+/// tool that can only refuse is a promise the caller cannot keep.
 fn this_pass_tools() -> Vec<Tool> {
     crate::tools::offered(Job::ClipRules)
         .into_iter()
-        .filter(|tool| matches!(tool, Tool::SetClipSpeed | Tool::Finish))
+        .filter(|tool| matches!(tool, Tool::SetClipSpeed | Tool::Finish | Tool::GetFrames))
         .collect()
 }
 

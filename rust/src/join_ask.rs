@@ -33,6 +33,7 @@ use crate::project::Project;
 use crate::requests::{Request, Service};
 use crate::roles::Job;
 use crate::seam_retries::{self, Asking};
+use crate::tool_reads;
 use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tool_loop;
@@ -264,6 +265,12 @@ pub fn ask_at(
         turn_of(&sent)
     };
     let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
+        // §3.1's shared reads first, answered from THIS join's two sides: a read must describe the seam
+        // the model is answering about. `get_words` is NOT taken here — it is this job's own read and is
+        // answered by `run_one` below, from the live `Join` rather than from a copy.
+        if let Some(answer) = read_answer(user_context, asked, before, after) {
+            return answer;
+        }
         // An accepted `drop_words` is remembered in its answer form, which is what a later press reads
         // out of the cache through the same `judge` door a prose answer goes through.
         let answer = live_call(asked, &mut join, &mut refusals);
@@ -410,6 +417,18 @@ pub fn call_for_test(
     live_call(asked, join, refusals)
 }
 
+/// Answer one shared read through the SAME door the live loop uses (`read_answer` runs before
+/// `live_call` there), so a test of the read and the loop cannot drift apart. `None` is the loop's
+/// own signal that the call is one of the job's tool calls rather than a shared read.
+pub fn read_for_test(
+    asked: &crate::exchanges::ToolCall,
+    user_context: &str,
+    before: &[String],
+    after: &[String],
+) -> Option<String> {
+    read_answer(user_context, asked, before, after)
+}
+
 /// The `Outcome` a `Join` arrived at, for the case that pins a tool answer against a prose answer.
 pub fn outcome_for_test(join: &Join) -> Outcome {
     outcome_of(join)
@@ -429,7 +448,58 @@ pub fn body_for_test(shown: &[String]) -> String {
 /// model still gets the tool's own `{"error": …}` text back — §3.2's correction loop — and the caller
 /// keeps the reason for the join's own refusal line). One pass over `run_one`, so an accepted drop is
 /// never counted twice.
-fn live_call(asked: &crate::exchanges::ToolCall, join: &mut Join, refusals: &mut Vec<String>) -> String {
+/// The shared reads for one join ask, answered from the two sides in hand.
+///
+/// §3.1 offers `get_context`, `get_lines`, `get_events` and `get_frames` to this job, and §3's rule is that
+/// a read gets an answer or an actionable error — never silence, which a model reads as a tool that does
+/// not exist. Only the two reads this job actually HAS are answered here: the seam's two sides are its
+/// lines, and a join ask carries no pictures and no event log, so `get_events` and `get_frames` come back
+/// as the honest refusal `tool_reads` gives an empty batch. (`get_frames` belongs to the passes that are
+/// shown frames — describe, the cut, and the §3.7 clip passes, which answer it from their own batch.)
+fn read_answer(
+    user_context: &str,
+    asked: &crate::exchanges::ToolCall,
+    before: &[String],
+    after: &[String],
+) -> Option<String> {
+    if !matches!(asked.name.as_str(), "get_context" | "get_lines" | "get_frames") {
+        return None;
+    }
+    // The two sides of THIS seam, numbered the way the request numbered them: before first, then after,
+    // one shown run per row so `get_lines(from, to)` counts the words the brief displayed.
+    let lines: Vec<crate::textfmt::Line> = before
+        .iter()
+        .chain(after.iter())
+        .enumerate()
+        .map(|(index, text)| crate::textfmt::Line {
+            start: index as f64,
+            end: index as f64,
+            speaker: String::new(),
+            text: text.clone(),
+        })
+        .collect();
+    let ctx = tool_reads::Context {
+        user_context,
+        job: Job::Joins,
+        // §10 gives the text edit nothing the model may set: the seam bounds are the tool's own rules
+        // (`SEAM_MAX_WORDS`, `SEAM_CEIL`), not fields of `naivepost.json`, so there is nothing to name.
+        policy: &[],
+        lines: &lines,
+        events: &[],
+        frames: &[],
+    };
+    tool_reads::dispatch(&ctx, asked)
+}
+
+/// The join's two sides in `tool_reads`' numbering: every shown word of the before side, then of the
+/// after side, as one line each so `get_lines(from, to)` counts the way the brief showed them. Kept
+/// inside [`read_answer`] rather than passed in, so a read can never be answered about a seam other than
+/// the one this call is about.
+fn live_call(
+    asked: &crate::exchanges::ToolCall,
+    join: &mut Join,
+    refusals: &mut Vec<String>,
+) -> String {
     let answer = run_one(asked, join);
     if tool_refused(&answer) {
         refusals.push(answer.clone());
@@ -473,6 +543,7 @@ fn run_one(asked: &crate::exchanges::ToolCall, join: &mut Join) -> String {
             _ => tools::error("drop_words needs \"side\" (\"before\" or \"after\") and \"count\""),
         },
         "keep_join" => join.keep_join(),
+        // §3.5's read: more words than the brief showed, for a seam that looked longer than the
         // §3.5's read: more words than the brief showed, for a seam that looked longer than the
         // extract. Reading is not an answer, so it never ends the flow.
         "get_words" => match (side("side"), count()) {
