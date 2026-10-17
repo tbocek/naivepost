@@ -23,18 +23,23 @@ use gtk4 as gtk;
 use gtk::prelude::*;
 
 /// The order §A/§1 give the page, below the `Cut` title row and the paned: toolbar, band, strip,
-/// camera rows, fold-all badge, effects lane, then the scrollbar — the scrollbar LAST so it is the
+/// camera rows, fold-all badge, then the scrollbar — the scrollbar LAST so it is the
 /// thing above the run bar and the status line, as badge **31** sits above badge **32**.
-const BELOW_PANED: [&str; 7] = [
+/// The effects lane is NOT here: §06-effects#2 puts it directly beneath the preview frame, so it
+/// travels with the picture in [`PREVIEW_STACK`] instead.
+const BELOW_PANED: [&str; 6] = [
     "cut-toolbar",
     "track-layers",
     "track-strip",
     "selection-row",
     "camera-rows",
     "fold-all-holder",
-    "effects-lane",
 ];
 
+/// The two widgets that make up the paned's start half, in order: the preview panel and, immediately
+/// under it, the effects lane (§06-effects#2, `spec/img/06-lane.png`). They stay siblings because a
+/// whole set of readers -- and §06's own seat test -- find the lane as the frame's next sibling.
+const PREVIEW_STACK: [&str; 2] = ["preview-panel", "effects-lane"];
 /// The form holders beside the readings: one `‹thing›-form-‹tab›` per thing being placed or edited.
 /// Tab-scoped by their builder, so the Cut page's own suffix is appended here (PAGES's Cut label).
 fn form_names(page: &str) -> Vec<String> {
@@ -74,10 +79,10 @@ pub fn arrange(page_box: &gtk::Box) {
     let page = crate::shell::Page::Cut.label();
     let forms = form_names(page);
     let mut wanted: Vec<String> = vec![
-        "preview-panel".to_string(),
         "cut-form-frame".to_string(),
         "track-scrollbar".to_string(),
     ];
+    wanted.extend(PREVIEW_STACK.iter().map(|name| name.to_string()));
     wanted.extend(forms.iter().cloned());
     wanted.extend(BELOW_PANED.iter().map(|name| name.to_string()));
     let detached = detach(page_box, &wanted);
@@ -96,7 +101,8 @@ pub fn arrange(page_box: &gtk::Box) {
     }
 
     // --- the top half: preview | form column, in one horizontal paned (A's "paned (660)") -------
-    let preview = detached.iter().find(|w| w.widget_name() == "preview-panel").cloned();
+    let preview = detached.iter().find(|w| w.widget_name() == PREVIEW_STACK[0]).cloned();
+    let lane = detached.iter().find(|w| w.widget_name() == PREVIEW_STACK[1]).cloned();
     // §A's form column is a pinned heading, a scroller and a pinned footer; its scroller vexpands by
     // design, and inside a paned that asks for the whole page's height, which is what pushed the
     // tracks ~750 px below the preview. Both halves of the top row keep their own shape instead.
@@ -177,7 +183,23 @@ pub fn arrange(page_box: &gtk::Box) {
     // paned to fill the window and the tracks are pushed down the column behind a wall of plate.
     split.set_vexpand(false);
     if let Some(preview) = &preview {
-        split.set_start_child(Some(preview));
+        // §06-effects#2: the lane belongs UNDER the frame it marks, so the two go into the paned's start
+        // half together as siblings of one vertical box -- the same pair `cut_preview_panel::install`
+        // packed side by side in the page box. Splitting them (frame into the paned, lane left below)
+        // broke that rule and every reader that walks from the frame to its next sibling.
+        let stack: gtk::Widget = match &lane {
+            Some(lane) => {
+                let box_ = gtk::Box::new(gtk::Orientation::Vertical, 1);
+                box_.set_widget_name("cut-preview-stack");
+                box_.set_valign(gtk::Align::Start);
+                box_.append(preview);
+                box_.append(lane);
+                box_.upcast()
+            }
+            // A page built without the lane keeps the plain fallback: the frame alone.
+            None => preview.clone(),
+        };
+        split.set_start_child(Some(&stack));
         // §1's picture gives the preview the wider share of the top half.
         split.set_resize_start_child(true);
         // §A: the preview is a GtkPicture with min height 160; the panel itself is pinned to the
@@ -188,6 +210,10 @@ pub fn arrange(page_box: &gtk::Box) {
         // it the wide side (§1's badge 1 sits to the LEFT of the readings and dwarfs them).
         preview.set_hexpand(true);
         preview.set_halign(gtk::Align::Fill);
+    } else if let Some(lane) = &lane {
+        // Only the lane exists on this page: it still gets the start half rather than vanishing.
+        split.set_start_child(Some(lane));
+        split.set_resize_start_child(true);
     }
     if !forms.is_empty() {
         // The divider sits at the picture's width (§A's "paned (660)"). Resize on the END child with

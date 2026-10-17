@@ -210,7 +210,10 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // (the same slot `page_recordings` answers from) before repainting.
             ui::cut_picture::set_preview_camera_base("session-tape");
             ui::cut_picture::set_snapshot_dir(&dir);
-            crate::ui::cut_picture::refresh(&window);
+            // `refresh` is called AGAIN after the layout below (the Cut-page drain), because before
+            // `present()` the panel answers 0x0 and a frame picked for an unmeasured plate is the wrong
+            // ask; the second call is what actually paints badge 1.
+            let _painted = crate::ui::cut_picture::refresh(&window);
             // Badge **31** is "hidden when everything fits", and at the opening 4 px a second this session
             // does fit — so no snapshot of the Cut page had ever shown the bar. Deepen the zoom through the
             // toolbar's own + door (the same one a click reaches) until the tape outgrows the view: the bar
@@ -775,6 +778,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 ui::set_playhead(&window, 24.0);
             }
             crate::ui::cut_view::repaint_page(&window);
+            // Badge 1 again, now that the panel has a real allocation: `refresh` measured a 0x0 plate on
+            // the first call (before `present()`), so the picture it chose then was asked of an unmapped
+            // widget. Through the page's own door again -- same call a line move makes.
+            if screen == "05-cut" {
+                crate::ui::cut_picture::refresh(&window);
+            }
         }
         // A dialog sized for its content needs the same drain the Cut tape needs: `present()` only queues the
         // map, so headless the window is still at its requested size when the shot is taken and GTK warns that

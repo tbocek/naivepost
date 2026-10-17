@@ -33,10 +33,18 @@ pub fn build() -> gtk::Button {
     picture.set_content_fit(gtk::ContentFit::Contain);
     picture.set_size_request(-1, PICTURE_MIN_HEIGHT);
     picture.set_can_shrink(true);
+    // The picture is the panel's content at whatever size the panel got (§A's paned gives it far more than
+    // `PREVIEW_PANEL_W` now), so it fills that box and contain-fits the frame inside it -- a picture that
+    // only asked for its minimum drew as a small plate in the middle of the panel.
+    picture.set_hexpand(true);
+    picture.set_vexpand(true);
 
     let button = gtk::Button::new();
     button.set_widget_name("preview-picture-button");
     button.set_tooltip_text(Some(CLICK_TIP));
+    // Same rule one level up: the button is only how a click reaches the picture, so it takes the box.
+    button.set_hexpand(true);
+    button.set_vexpand(true);
     button.set_child(Some(&picture));
     button
 }

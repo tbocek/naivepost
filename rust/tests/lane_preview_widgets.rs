@@ -235,7 +235,9 @@ fn sec_06_effects_2_the_lane_and_the_preview_wire_the_lane_and_the_preview_draw_
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.connect_activate(lane_preview_round);
-        app.run();
+        // `app.run()` hands GTK this process whole argv, so a harness flag like
+        // `--nocapture` would be rejected as an unknown option and the round would never run.
+        app.run_with_args::<String>(&[]);
     });
 
     assert!(RAN_EMPTY_LANE.load(Ordering::SeqCst), "the empty-lane check never ran");

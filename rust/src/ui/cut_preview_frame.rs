@@ -52,12 +52,14 @@ pub fn frame_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
 pub fn build() -> gtk::DrawingArea {
     let frame = gtk::DrawingArea::new();
     frame.set_widget_name(FRAME_NAME);
-    frame.set_size_request(
-        crate::ui::window::PREVIEW_PANEL_W as i32,
-        crate::ui::window::PREVIEW_PANEL_H as i32,
-    );
-    // The frame's own 240 x 135, asked for rather than filled: see `page_box`, where every overlay of the
-    // panel is marked measure/clip so one of them cannot stretch the panel past the picture.
+    // The dim, the stroked camera rect and every overlay are drawn in THIS surface's pixels, so it has to
+    // cover the whole picture. A fixed 240x135 request plus `set_clip_overlay(true)` clipped the surface --
+    // and with it the white camera rect -- to a small square in the middle of a wider panel, which is why
+    // badge 1 read as an empty plate once §A's paned gave the preview its half of the page.
+    frame.set_hexpand(true);
+    frame.set_vexpand(true);
+    // No size request at all: the floor belongs to `preview-panel` (§A's "min height 160" family), and a
+    // second one here fought the panel for the measure/clip marks `page_box` sets on this overlay.
     frame
 }
 
