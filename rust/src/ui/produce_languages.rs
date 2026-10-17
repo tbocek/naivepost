@@ -655,12 +655,16 @@ pub fn upload_ask(
     let tree = tree.clone();
     let publish = publish.clone();
     Box::new(move |brief: &str| {
+        // Read at call time, like the interval below: these are the rows the brief was built from,
+        // so `get_lines` answers with the same lines the fold dropped rather than a stale copy.
+        let rows = crate::textfmt::read_session(&tree.session_tsv()).unwrap_or_default();
         let frames = crate::produce_upload_call::Frames {
             moments: &moments,
             starts: &starts,
             // Read at call time, from the session folder this tree names: Freq is a project field,
             // so a run that started before a Freq change still answers on the grid in force now.
             interval: crate::project::frame_interval(tree.dir()),
+            lines: &rows,
         };
         let cancelled = || false;
         let collected = crate::produce_upload_call::call(
