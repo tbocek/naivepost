@@ -158,7 +158,7 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_finish_asks_for_the_g
     }
     assert!(b.finish().is_empty());
 
-    // The line the prototype used to write in its place, kept so a caller can still choose it.
+    // The line §6 force-writes for that frame, named by the same constant `events_rows` writes.
     assert_eq!(Batch::SAME_WITHOUT_HISTORY, "Calm; same view.");
 }
 

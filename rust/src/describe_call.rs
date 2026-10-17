@@ -25,7 +25,7 @@ use crate::textfmt::FrameEvent;
 use crate::tool_reads;
 use crate::describe_scale;
 
-use crate::tools::describe::Batch;
+use crate::tools::describe::{Batch, MissingReason};
 use crate::tools::Tool;
 
 /// The step name this job's cache entries and timed rows carry: the same word `describe::STEP` uses,
@@ -373,7 +373,15 @@ fn run_chunk(
             }
             describe::apply_tool(&mut held, name, args);
         }
-        let missing = held.finish().len();
+        // `finish` names the cold batch's first frame to the model (§02-services: it must be told the
+        // opening second says nothing), but that frame is NOT a reason to fail the chunk: §04 §6 has the
+        // app force-write `Calm; same view.` there, so it is one the program can fill itself. Counting it
+        // here would spend every attempt re-asking for a line we are about to write, then error.
+        let missing = held
+            .finish()
+            .iter()
+            .filter(|gap| gap.reason != MissingReason::FirstFrameWithNoHistory)
+            .count();
         if missing > 0 {
             refusal = Some(format!(
                 "{missing} frame(s) of this batch have no EVENT yet -- record_event each one by its FRAME number"
@@ -728,10 +736,11 @@ fn apply_and_write(
 /// §F1.7 S6: this chunk's rows appended and `state.txt` rewritten, after EVERY chunk.
 /// §F1.7 S6: this chunk's rows appended and `state.txt` rewritten, after EVERY chunk.
 ///
-/// Writing happens only once `Batch::finish` has reported nothing missing, so every frame of the chunk
-/// has an EVENT of its own: `describe::events_rows` answers an unmentioned frame with the word `same`,
-/// which is a true statement only when a row precedes it (its own doc explains the first-frame-with-
-/// no-history case). The count below is a sanity bound on that precondition, not a branch of its own.
+/// Writing happens once the tool loop is satisfied that every frame of the chunk was answered, so an
+/// unmentioned frame reaches the file as the word `same` — true only when a row precedes it. A cold
+/// batch's first frame is the case where it is not, and `describe::events_rows` writes §6's
+/// `Calm; same view.` line there instead, so this function always gets one row per frame now. The
+/// count below is therefore a sanity bound on that precondition, not a branch of its own.
 fn write_batch(
     tree: &Tree,
     lane: &str,
