@@ -473,7 +473,7 @@ fn sec_12_decisions_prepare_s8_record_event_answers_with_the_frame_it_landed_on(
     assert_eq!(missing[0].frame, 1);
     assert_eq!(missing[0].at, 10.0);
     assert_eq!(missing[0].reason, MissingReason::FirstFrameWithNoHistory);
-    // The string the prototype force-wrote is now only a name in the report.
+    // The line §6 force-writes there, spelled once in the program and written by `events_rows`.
     assert_eq!(Batch::SAME_WITHOUT_HISTORY, "Calm; same view.");
     // With history behind it the same gap is an ordinary missing event.
     let mut continued = Batch::new(20.0, interval, 2).with_history();

@@ -487,8 +487,10 @@ pub fn apply_tool(batch: &mut Batch, name: &str, args: &serde_json::Value) -> St
 /// A frame the model left unanswering is written `same`, which is what the word means here: nothing
 /// changed since the row before. The exception is the batch's FIRST frame with no history: there is
 /// nothing behind it to be the same as, so writing `same` would assert a fact about a second nobody
-/// watched. That frame is left OUT of these rows, which is what makes it visible to the caller as
-/// still unanswered — the same condition [`Batch::finish`] reports as
+/// watched. §6 writes [`describe::Batch::SAME_WITHOUT_HISTORY`] there instead — a real reading of the
+/// opening second, which is also what makes it survive `textfmt::read_events` as the file's first
+/// event rather than folding away into nothing. The same line replaces a bare `same` that the model
+/// DID stamp on that frame, which is the case [`Batch::finish`] reports as
 /// [`describe::MissingReason::FirstFrameWithNoHistory`].
 pub fn events_rows(
     frames: &[f64],
@@ -500,9 +502,13 @@ pub fn events_rows(
     for (index, at) in frames.iter().enumerate() {
         let frame = index + 1;
         let end = frames.get(index + 1).copied().unwrap_or(batch_end);
+        let cold_opening = frame == 1 && !has_history;
         let text = match events.iter().find(|event| event.frame == frame) {
+            Some(event) if cold_opening && describe::is_same(&event.text) => {
+                Batch::SAME_WITHOUT_HISTORY.to_string()
+            }
             Some(event) => event.text.clone(),
-            None if frame == 1 && !has_history => continue,
+            None if cold_opening => Batch::SAME_WITHOUT_HISTORY.to_string(),
             None => "same".to_string(),
         };
         rows.push(crate::textfmt::event_row(*at, end, &text));

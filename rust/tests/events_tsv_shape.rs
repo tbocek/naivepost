@@ -18,7 +18,7 @@ use naivepost::describe;
 use naivepost::fix_transcripts as fix;
 use naivepost::layout::Tree;
 use naivepost::textfmt::{self, FrameEvent};
-use naivepost::tools::describe::Event;
+use naivepost::tools::describe::{Batch, Event};
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::project_tree as project;
@@ -80,24 +80,40 @@ fn sec_01_project_and_files_6_text_formats_s2_one_row_per_frame_and_same_extends
 }
 
 /// S3: the F1.7 S6 rule survives the shape change — a cold batch's FIRST frame is never written
-/// `same`, because there is nothing behind it to be the same as. In §6's columns now.
+/// `same`, because there is nothing behind it to be the same as; §6 force-writes `Calm; same view.`
+/// there instead. In §6's columns now.
 #[test]
-fn sec_01_project_and_files_6_text_formats_s3_a_cold_batch_never_writes_same_for_its_first_frame() {
+fn sec_01_project_and_files_6_text_formats_s3_a_cold_batch_writes_the_calm_line_for_its_first_frame() {
     let (_root, tree) = scratch("s3");
     let frames = [0.0, 1.0];
 
     let cold = describe::events_rows(&frames, &[], false, 2.0);
-    assert_eq!(cold, vec!["1.00\t2.00\tsame"], "frame 1 is left out, not asserted about");
+    assert_eq!(
+        cold,
+        vec![
+            format!("0.00\t1.00\t{}", Batch::SAME_WITHOUT_HISTORY),
+            "1.00\t2.00\tsame".to_string()
+        ],
+        "frame 1 gets its own reading, not a `same` about a second nobody watched"
+    );
     let warm = describe::events_rows(&frames, &[], true, 2.0);
     assert_eq!(warm, vec!["0.00\t1.00\tsame", "1.00\t2.00\tsame"]);
 
     // Both halves reach the file unchanged, and the cold file opens on a real reading instead of a
     // `same` that claims a fact about a second nobody watched.
     describe::write_chunk(&tree, "cold", &cold, None).unwrap();
-    assert_eq!(fs::read_to_string(tree.events_tsv("cold")).unwrap(), "1.00\t2.00\tsame\n");
-    // Read back, that leading `same` has nothing to extend: a file that opens on one has not yet said
-    // what it was the same as (§6's fold rule), so nothing comes back.
-    assert!(textfmt::read_events(&tree.events_tsv("cold")).unwrap().is_empty());
+    assert_eq!(
+        fs::read_to_string(tree.events_tsv("cold")).unwrap(),
+        format!("0.00\t1.00\t{}\n1.00\t2.00\tsame\n", Batch::SAME_WITHOUT_HISTORY)
+    );
+    // Read back, the forced line IS the file's first event (it is not a `same`, so nothing folds it
+    // away) and the `same` after it extends that event rather than adding one (§6's fold rule).
+    let read_back = textfmt::read_events(&tree.events_tsv("cold")).unwrap();
+    assert_eq!(
+        read_back,
+        vec![FrameEvent { start: 0.0, end: 2.0, text: Batch::SAME_WITHOUT_HISTORY.to_string() }],
+        "the calm line reaches a reader as the opening reading"
+    );
     describe::write_chunk(&tree, "warm", &warm, None).unwrap();
     assert_eq!(
         textfmt::read_events(&tree.events_tsv("warm"))

@@ -567,13 +567,20 @@ fn f1_7_s6_one_row_per_frame_with_same_as_the_fallback() {
 }
 
 /// S6: a batch's FIRST frame with no history must NOT be written `same` -- there is nothing behind it
-/// to be the same as. It is left out, which is what keeps it visible as still unanswered.
+/// to be the same as, so §6 force-writes `Calm; same view.` there. `finish` still names the frame to
+/// the model (02-services), which is a separate door from what lands on disk.
 #[test]
 fn f1_7_s6_the_first_frame_of_a_cold_batch_is_never_written_same() {
     let frames = vec![0.0, 1.0];
     let rows = describe::events_rows(&frames, &[], false, 2.0);
-    assert_eq!(rows, vec!["1.00\t2.00\tsame"], "frame 1 is not asserted about: {rows:?}");
-    assert!(!rows.iter().any(|r| r.starts_with("0.00")), "no cold `same` at t=0");
+    assert_eq!(
+        rows,
+        vec![
+            format!("0.00\t1.00\t{}", Batch::SAME_WITHOUT_HISTORY),
+            "1.00\t2.00\tsame".to_string()
+        ],
+        "frame 1 gets the forced opening line, not a bare `same`: {rows:?}"
+    );
     // Same frames, but with history: now `same` is a true statement.
     let warm = describe::events_rows(&frames, &[], true, 2.0);
     assert_eq!(warm, vec!["0.00\t1.00\tsame", "1.00\t2.00\tsame"]);
