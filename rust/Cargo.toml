@@ -409,6 +409,10 @@ name = "describe_call"
 path = "tests/describe_call.rs"
 
 [[test]]
+name = "p_machine_describe_frame_width"
+path = "tests/p_machine_describe_frame_width.rs"
+
+[[test]]
 name = "describe_flow"
 path = "tests/describe_flow.rs"
 

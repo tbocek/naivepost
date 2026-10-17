@@ -78,20 +78,116 @@ pub fn ensure(
                 input.display()
             ));
         }
-        // One frame per call: `scale_plan` ends with the output name, so the plan for one second is
-        // exactly this frame's filter plus the file it writes, beside the input it scales.
-        let mut args: Vec<String> = vec!["-i".to_string(), input.display().to_string()];
-        args.extend(describe::scale_plan(describe::FRAME_WIDTH, &[*at]));
-        args.push(out_dir.display().to_string());
-        let owned: Vec<&str> = args.iter().map(String::as_str).collect();
+        // One frame per call, and where the pieces sit is the whole trick. ffmpeg reads an option as
+        // belonging to the file named AFTER it, so the scale filter has to reach the picture through
+        // the OUTPUT slot: a `-vf` ahead of the `-i` becomes an input option, is applied to nothing,
+        // and ffmpeg then COPIES the JPEG -- exit 0, a 1280-wide "scaled" copy. That silent no-op is
+        // exactly what this item exists to catch, which is why the width written is READ BACK below
+        // and compared instead of being taken on trust from the arguments that were passed.
+        // `-update 1` is the other half: it lets one still image be written under a plain, literal
+        // name, and that name has to be the frame's own clock name, because `missing`, `read_images`
+        // and S2's resume rule all resolve `describe::scaled_name`.
+        let out = out_dir.join(describe::scaled_name(*at));
+        // The scale filter is an OUTPUT option, which in ffmpeg means it has to appear AFTER the `-i`
+        // whose stream it acts on: a `-vf` sitting before the `-i` becomes an option of the input, is
+        // applied to nothing, and ffmpeg then COPIES the JPEG -- exit 0, a native-width "scaled" copy,
+        // which is the silent no-op this item exists to catch. `-update 1` is the other half: it lets
+        // one still image be written under a plain literal name instead of demanding a `%d` pattern.
+        // The scale filter is an OUTPUT option: ffmpeg reads the options belonging to a file in the
+        // slot AFTER that file's `-i`, so a `-vf` placed before the `-i` becomes an option of the INPUT,
+        // scales nothing, and ffmpeg then COPIES the JPEG -- exit 0, a native-width "scaled" copy. That
+        // silent no-op is what this item exists to catch, which is why the width written is READ BACK
+        // below rather than trusted from the arguments that were passed.
+        let mut plan: Vec<String> = vec![
+            "-y".to_string(),
+            "-an".to_string(),
+            "-i".to_string(),
+            input.display().to_string(),
+            "-frames:v".to_string(),
+            "1".to_string(),
+        ];
+        plan.extend(describe::scale_plan(describe::FRAME_WIDTH));
+        // `-update 1` is what lets ffmpeg write one still image under a plain literal name at all (an
+        // image output otherwise has to carry a `%d` pattern), and the name is the frame's own clock name
+        // because `missing`, `read_images` and S2's resume rule all resolve it through
+        // `describe::scaled_name`.
+        // `-update 1` is what lets ffmpeg write one still image under a plain literal name at all (an
+        // image output otherwise has to carry a `%d` pattern), and the name is the frame's own clock name
+        // because `missing`, `read_images` and S2's resume rule all resolve it through
+        // `describe::scaled_name`. Naming the FILE rather than handing ffmpeg a directory keeps the
+        // contract explicit for anything standing in for ffmpeg too: it is told exactly which path the
+        // stage then reads back.
+        plan.push("-update".to_string());
+        plan.push("1".to_string());
+        plan.push(out.display().to_string());
+        let owned: Vec<&str> = plan.iter().map(String::as_str).collect();
         subprocess::run(&ffmpeg, &owned, &mut *log)?;
-        let written = out_dir.join(describe::scaled_name(*at));
-        if !written.exists() {
-            return Err(format!("{}: ffmpeg wrote no scaled frame", written.display()));
+        // The width is read back off the file rather than trusted from the arguments -- but a probe that
+        // cannot answer (no ffprobe beside the configured ffmpeg, or a stub that does not know the
+        // question) is not a failed scale: the copy exists and ffmpeg exited 0, which is the proof
+        // `frames_run::extract_chunk` applies. Only a number that DISAGREES is an error.
+        if let Some(made) = image_width(&out, &conf.ffmpeg) {
+            if made != describe::FRAME_WIDTH {
+                return Err(format!(
+                    "{}: ffmpeg wrote a {made}-wide copy, not the {}-wide one the frame was asked to be \
+                     scaled to -- the filter did not reach the picture",
+                    out.display(),
+                    describe::FRAME_WIDTH
+                ));
+            }
+        } else {
+            // The probe could not answer at all (no ffprobe beside the configured ffmpeg, or a stub that
+            // does not know the question). Say so once instead of failing: absence is `checks.rs`'s
+            // diagnosis, and the copy's existence plus ffmpeg's exit 0 is the proof that remains.
+            log(&format!(
+                "    {} scaled without a measurable width: no ffprobe at {}",
+                out.display(),
+                ffprobe_for(&conf.ffmpeg)
+            ));
         }
         scaled += 1;
     }
     Ok(scaled)
+}
+
+/// Which probe answers the scaling leg: ffprobe beside the ffmpeg the settings name (§1's rule, and
+/// [`crate::services::ffprobe_for`] is that rule), so a probe of a made file comes from the same install
+/// as the tool that made it. An empty box means the plain name off PATH.
+fn ffprobe_for(configured: &str) -> String {
+    crate::services::ffprobe_for(&crate::separate_media::program(configured), "ffprobe")
+}
+
+/// The width of a picture on disk, read with ffprobe, or `None` when nothing readable is there. The
+/// scaling leg uses it to prove it wrote a smaller picture than it was given; a test that only checked
+/// the file exists cannot tell a scaled copy from a byte-for-byte copy of the frame.
+///
+/// A probe that cannot be asked -- no ffprobe beside the configured ffmpeg, a stub that does not know
+/// the question -- is also `None`, and `ensure` then keeps the proof it already had (the copy exists):
+/// an absent measuring tool is `checks.rs`'s diagnosis, not a reason to refuse work ffmpeg did do.
+pub fn image_width(path: &Path, configured_ffmpeg: &str) -> Option<u32> {
+    let probe = std::process::Command::new(ffprobe_for(configured_ffmpeg))
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            // ONE field: the rule this leg enforces is a width, and asking for `width,height` would make
+            // a stub ffprobe have to invent a height nothing here reads. A single field answers one line,
+            // which is what is parsed below.
+            "stream=width",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !probe.status.success() {
+        return None;
+    }
+    // Trimmed before parsing: ffprobe answers `896\n`, and a trailing newline is not a number -- losing
+    // it read as "the filter did not reach the picture" instead of as an unparseable reply.
+    String::from_utf8_lossy(&probe.stdout).trim().parse().ok()
 }
 
 /// The offset a source's stored frames are named at: its first second on the session clock, computed

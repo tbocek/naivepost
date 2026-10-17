@@ -212,8 +212,9 @@ fn fake_audio_server() -> String {
 }
 
 /// The stub tools: `ffprobe` answers a duration, and `ffmpeg` CREATES whatever file its argv names —
-/// the voice copy `-o` names, the scene-detect log, and `<last arg>/<basename of -i arg>` where the
-/// describe scaling leg expects its copy — so every leg of the press that forks a process finishes.
+/// the voice copy `-o` names, the scene-detect log, and the scaled frame the describe scaling leg asks
+/// for (an output ending in `.jpg` is written as given; anything else is the directory it goes into,
+/// named after the `-i` file) — so every leg of the press that forks a process finishes.
 fn stubs() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "np-f18p-tools-{}-{}",
@@ -227,7 +228,7 @@ fn stubs() -> PathBuf {
     let script = dir.join("ffmpeg.sh");
     common::write_script(
         &script,
-        "#!/bin/sh\ninput=''\nout=''\noutdir=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  if [ \"$prev\" = \"-f\" ]; then out=\"$a\"; fi\n  outdir=\"$a\"\n  prev=\"$a\"\ndone\nif [ -n \"$out\" ]; then\n  case \"$out\" in\n    /*|*/*) mkdir -p \"$(dirname -- \"$out\")\" ;;\n  esac\n  printf pcm > \"$out\"\nelif [ -n \"$input\" ]; then\n  base=$(basename -- \"$input\")\n  case \"$outdir\" in\n    /*|*/*) mkdir -p \"$outdir\" ;;\n  esac\n  printf JPEG > \"$outdir/$base\"\n  [ -f \"$outdir/$base\" ]\nfi\n",
+        "#!/bin/sh\ninput=''\nout=''\noutdir=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  if [ \"$prev\" = \"-f\" ]; then out=\"$a\"; fi\n  outdir=\"$a\"\n  prev=\"$a\"\ndone\nif [ -n \"$out\" ]; then\n  case \"$out\" in\n    /*|*/*) mkdir -p \"$(dirname -- \"$out\")\" ;;\n  esac\n  printf pcm > \"$out\"\nelif [ -n \"$input\" ]; then\n  case \"$outdir\" in\n    *.jpg) mkdir -p \"$(dirname -- \"$outdir\")\"; printf JPEG > \"$outdir\" ;;\n    *) base=$(basename -- \"$input\"); mkdir -p \"$outdir\"; printf JPEG > \"$outdir/$base\" ;;\n  esac\nfi\n",
     )
     .expect("the ffmpeg stub");
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");

@@ -165,17 +165,12 @@ pub fn sorted(frames: &[f64]) -> Vec<f64> {
 /// this function and by this stage. Measured on the ETH lecture a 1080p frame is 147 kB and its
 /// 896-wide copy 55 kB, so keeping the grid native and scaling only the copies is what keeps 71
 /// minutes at about 0.9 GB of sent pixels instead of 2.7 GB of stored ones.
-pub fn scale_plan(width: u32, frames: &[f64]) -> Vec<String> {
-    let mut args = vec![
-        "-vf".to_string(),
-        format!("scale={width}:-2"),
-        "-fps_mode".to_string(),
-        "passthrough".to_string(),
-    ];
-    for at in sorted(frames) {
-        args.push(scaled_name(at));
-    }
-    args
+///
+/// The filter pair is what ffmpeg wants of an OUTPUT option: the caller places it AFTER its `-i` (a
+/// `-vf` read before the input belongs to that input and scales nothing) and names the copy through
+/// [`scaled_name`].
+pub fn scale_plan(width: u32) -> Vec<String> {
+    vec!["-vf".to_string(), format!("scale={width}:-2")]
 }
 
 /// S1: the name the scaled copy is written under — the same clock name the stored frame has, so a
@@ -522,6 +517,8 @@ pub fn state_line(state: Option<&str>) -> String {
     state.unwrap_or("").to_string()
 }
 
+/// S6: append this chunk's rows and rewrite `state.txt`. Both happen after EVERY chunk, which is
+/// what makes the resume in S2 correct: the file pair describes exactly the frames answered so far.
 /// S6: append this chunk's rows and rewrite `state.txt`. Both happen after EVERY chunk, which is
 /// what makes the resume in S2 correct: the file pair describes exactly the frames answered so far.
 pub fn write_chunk(
