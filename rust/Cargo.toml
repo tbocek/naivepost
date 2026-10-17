@@ -737,6 +737,10 @@ name = "f2_6_painted_select"
 path = "tests/f2_6_painted_select.rs"
 
 [[test]]
+name = "f2_7_shot_states"
+path = "tests/f2_7_shot_states.rs"
+
+[[test]]
 name = "f2_7_verb_badges"
 path = "tests/f2_7_verb_badges.rs"
 
