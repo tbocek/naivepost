@@ -840,12 +840,16 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // pinned its cwd, and a close must never create or rewrite somebody else's folder.
     let session_folder = startup::session_dir(&std::env::current_dir().unwrap_or_default());
     SESSION_DIRS.with(|held| held.borrow_mut().push(session_folder.clone()));
-    crate::project_autosave::install(Rc::clone(&session), session_folder);
+    crate::project_autosave::install(Rc::clone(&session), session_folder.clone());
     crate::project_autosave::start();
     // The folder this window has open: the working copy beside its launch root. A rename or an Open
     // moves it afterwards -- that is what `save_target` answers -- but a fresh window always starts on
     // its own root's session, whatever an earlier window in this process left behind.
     save_apply::set_open_dir(&startup::session_dir(&std::env::current_dir().unwrap_or_default()));
+    // The Cut page's ▶ resolves its session through `cut_suggest_land`'s own slot (§12 §4's walk-back
+    // reads the words from there), so a fresh window installs its root's session rather than inheriting
+    // whatever an earlier window in this process left behind.
+    crate::ui::window_line_step::push_session_tree(layout::Tree::new(&session_folder).ok());
 
     // The status line: the shell's sentence, right-aligned in the bottom row (§1's "status line").
     // Also before the pages, for the same reason — a row's press reports itself there.

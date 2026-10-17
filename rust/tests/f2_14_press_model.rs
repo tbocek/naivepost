@@ -64,7 +64,7 @@ fn round(app: &adw::Application) {
         ]),
     ]);
     point_llm_at(&llm.url());
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
     ui::tab_button(&window, Page::Cut)
@@ -158,7 +158,7 @@ fn round(app: &adw::Application) {
         on_screen.segs,
         "the written cut holds the walked-back scenes"
     );
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
 }
 

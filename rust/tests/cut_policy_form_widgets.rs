@@ -79,6 +79,17 @@ fn find_by_name_recursive(root: &gtk::Widget, name: &str) -> Option<gtk::Widget>
     None
 }
 
+/// A named widget inside the open form, whatever type it is: a value cell is an editor now (a dropdown,
+/// a switch or an entry), so the walk returns the widget and each reader downcasts what it expects.
+fn control(name: &str) -> gtk::Widget {
+    form_widget(name).unwrap_or_else(|| panic!("the policy form carries a control named {name}"))
+}
+
+/// The value a row's editor shows, read through the same door the form reads it by.
+fn edit_value(name: &str) -> String {
+    naivepost::policy_form_edit::value_of(&control(name))
+}
+
 fn label_text(name: &str) -> String {
     form_widget(name)
         .and_then(|widget| widget.downcast::<gtk::Label>().ok())
@@ -147,7 +158,7 @@ fn check_every_field_has_a_row_with_value_source_and_reason(app: &adw::Applicati
             "a row exists for {}",
             entry.field
         );
-        let value = label_text(&format!("policy-value-{}", entry.field));
+        let value = edit_value(&format!("policy-edit-{}", entry.field));
         let source = label_text(&format!("policy-source-{}", entry.field));
         let reason = label_text(&format!("policy-reason-{}", entry.field));
         assert!(!value.is_empty(), "{} shows no value", entry.field);
@@ -161,13 +172,13 @@ fn check_every_field_has_a_row_with_value_source_and_reason(app: &adw::Applicati
 
     // And the two fields touched above print exactly what the state holds, not a generic string.
     assert_eq!(
-        label_text("policy-value-markingPass"),
+        edit_value("policy-edit-markingPass"),
         "joins",
         "// P.policy.markingPass"
     );
     assert_eq!(label_text("policy-source-markingPass"), "model");
     assert_eq!(label_text("policy-reason-markingPass"), "shot in one take per slide");
-    assert_eq!(label_text("policy-value-speedPass"), "off"); // P.policy.speedPass
+    assert_eq!(edit_value("policy-edit-speedPass"), "off"); // P.policy.speedPass
     assert_eq!(label_text("policy-reason-speedPass"), "no time-lapse wanted");
     // An untouched field still reads as a default, with no invented reason.
     assert_eq!(label_text("policy-source-cutMode"), "default"); // P.policy.cutMode
@@ -188,7 +199,7 @@ fn check_a_hand_set_field_still_reads_user_after_a_later_derivation(app: &adw::A
 
     button(&window, "policy-button").emit_clicked();
     settle();
-    assert_eq!(label_text("policy-value-cutMode"), "words");
+    assert_eq!(edit_value("policy-edit-cutMode"), "words");
     assert_eq!(
         label_text("policy-source-cutMode"),
         "user",
@@ -216,7 +227,7 @@ fn check_a_hand_set_field_still_reads_user_after_a_later_derivation(app: &adw::A
     button(&window, "policy-button").emit_clicked();
     settle();
     assert_eq!(
-        label_text("policy-value-cutMode"),
+        edit_value("policy-edit-cutMode"),
         "words",
         "the raised form refreshed to the live state, not the refused proposal"
     );
@@ -313,7 +324,7 @@ fn check_the_four_columns_and_the_two_buttons(app: &adw::Application) {
 
     let fields: Vec<&str> = policy::derived_fields().iter().map(|e| e.field).collect();
     for entry in policy::derived_fields() {
-        let value = label_text(&format!("policy-value-{}", entry.field));
+        let value = edit_value(&format!("policy-edit-{}", entry.field));
         let source = label_text(&format!("policy-source-{}", entry.field));
         let reason = label_text(&format!("policy-reason-{}", entry.field));
         assert!(!value.is_empty(), "{} shows no value", entry.field);
@@ -349,10 +360,10 @@ fn check_the_four_columns_and_the_two_buttons(app: &adw::Application) {
 
     // Reset puts the derived fields back at their §2 defaults — with origin `default`, NOT `user`,
     // so a later derivation can still speak to them (see policy::reset_to_defaults).
-    assert_eq!(label_text("policy-value-cutMode"), "words"); // P.policy.cutMode
+    assert_eq!(edit_value("policy-edit-cutMode"), "words"); // P.policy.cutMode
     reset.emit_clicked();
     settle();
-    assert_eq!(label_text("policy-value-cutMode"), "model", "// P.policy.cutMode");
+    assert_eq!(edit_value("policy-edit-cutMode"), "model", "// P.policy.cutMode");
     assert_eq!(label_text("policy-source-cutMode"), "default");
     assert_eq!(label_text("policy-reason-cutMode"), "the default");
     assert_eq!(
@@ -428,7 +439,7 @@ fn check_the_gear_derives_before_it_paints(app: &adw::Application) {
     settle();
 
     // P.policy.cutMode — derived, sourced to the model, carrying its reason.
-    assert_eq!(label_text("policy-value-cutMode"), "words", "// P.policy.cutMode");
+    assert_eq!(edit_value("policy-edit-cutMode"), "words", "// P.policy.cutMode");
     assert_eq!(label_text("policy-source-cutMode"), "model");
     assert_eq!(
         label_text("policy-reason-cutMode"),
@@ -457,10 +468,12 @@ fn check_the_target_length_row_shows_the_derived_number(app: &adw::Application) 
     button(&window, "policy-button").emit_clicked();
     settle();
 
-    // P.policy.targetLengthSeconds — 1800 s prints as `30 min`, credited to the derivation.
+    // P.policy.targetLengthSeconds — the derived 1800 s sits in the entry as seconds, credited to the
+    // derivation. The form's own prose still spells it `30 min` (`policy_form::length_word`); the EDITOR
+    // holds the number, because that is what a person can correct without re-parsing a unit.
     assert_eq!(
-        label_text("policy-value-targetLengthSeconds"),
-        "30 min",
+        edit_value("policy-edit-targetLengthSeconds"),
+        "1800",
         "// P.policy.targetLengthSeconds — the derived length is on the form"
     );
     assert_eq!(label_text("policy-source-targetLengthSeconds"), "model");
@@ -470,16 +483,16 @@ fn check_the_target_length_row_shows_the_derived_number(app: &adw::Application) 
     );
     window.close();
 
-    // And the other half of §10's row: with no context there is no target, and the row SAYS "none" rather
-    // than printing a blank cell or a bare 0 that reads like a bug.
+    // And the other half of §10's row: with no context there is no target, and the editor holds 0 (the
+    // value "no target" carries) rather than an empty box that cannot be told from a mistake.
     ui::close_policy_forms();
     let bare = fresh_window(app);
     button(&bare, "policy-button").emit_clicked();
     settle();
     assert_eq!(
-        label_text("policy-value-targetLengthSeconds"),
-        "none",
-        "no target must be visible as the word, not as emptiness"
+        edit_value("policy-edit-targetLengthSeconds"),
+        "0",
+        "no target is the number 0 in the editor, not an empty box"
     );
     assert_eq!(label_text("policy-source-targetLengthSeconds"), "default");
 }

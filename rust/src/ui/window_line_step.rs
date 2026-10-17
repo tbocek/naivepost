@@ -30,6 +30,7 @@ pub(crate) const LINE_STEP_BUTTONS: [(&str, &str, i64); 4] = [
 pub const NO_RECORDING_STATUS: &str = "nothing was filmed \u{2014} there is no recording to play";
 
 type WindowFolders = std::cell::RefCell<Vec<std::path::PathBuf>>;
+type WindowTrees = std::cell::RefCell<Vec<Option<crate::layout::Tree>>>;
 
 // The project root this window's line file sits under, newest slot winning like [`REVIEW_CUTS`]. Held
 // beside [`ui::LINE_STATES`] because the position without its root is a number with nowhere to be saved:
@@ -39,6 +40,22 @@ type WindowFolders = std::cell::RefCell<Vec<std::path::PathBuf>>;
 thread_local! {
     pub(crate) static LINE_ROOTS: WindowFolders = const { std::cell::RefCell::new(Vec::new()) };
     pub(crate) static SESSION_DIRS: WindowFolders = const { std::cell::RefCell::new(Vec::new()) };
+    // The session folder each window took on, as a `Tree`, newest slot winning like [`SESSION_DIRS`].
+    // The Cut page's ▶ resolves its session through this rather than through one shared slot, so a fresh
+    // window stops answering with whatever folder an earlier window in this process pointed at.
+    pub(crate) static SESSION_TREES: WindowTrees = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Publish the session folder THIS window took on, for the Cut page's ▶. One push per window build and
+/// per Open, so the newest entry is always the folder the live window holds.
+pub fn push_session_tree(tree: Option<crate::layout::Tree>) {
+    SESSION_TREES.with(|held| held.borrow_mut().push(tree));
+}
+
+/// The newest published session folder, or `None` when no window has taken one on yet — which is how a
+/// flow with no shell open (or a test that built none) falls back to its own resolution.
+pub(crate) fn last_session_tree() -> Option<Option<crate::layout::Tree>> {
+    SESSION_TREES.with(|held| held.borrow().last().cloned())
 }
 
 /// §2 S6 as the close hook wants it, resolved through THIS window: write the live session into the

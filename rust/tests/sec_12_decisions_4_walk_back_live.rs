@@ -186,7 +186,7 @@ fn door_round(app: &adw::Application) {
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
     ui::seed_review_cut(&window, &base);
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
     let landed = naivepost::cut_suggest_words_run::run_words(&window, &f.tree, &project);
     settle();
     assert!(landed.wrote, "the words door wrote a cut: {landed:?}");
@@ -207,7 +207,7 @@ fn door_round(app: &adw::Application) {
         "§4's 'the page shows what it did', in the line the door returns: {:?}",
         landed.log
     );
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
 }
 

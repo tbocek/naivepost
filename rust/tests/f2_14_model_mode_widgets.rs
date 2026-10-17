@@ -3,7 +3,7 @@
 // spec/05-cut.md §F2.14 S1 gives the press its refusals before anything is asked, and S2b says the
 // model path then dials whatever Settings names. This file presses the real run-bar ▶ in that mode and
 // reads the status line, exactly as `f2_14_guard_order.rs` stages the refused presses — same
-// `build_window` + Cut tab + `set_session_for_test` staging, same "no socket anywhere" rule.
+// `build_window` + Cut tab + `point_session_at` staging, same "no socket anywhere" rule.
 //
 // Only the two states a widget test can honestly reach are pinned: a session with no `session.txt`
 // (§S1's third refusal, which the mode cannot get past), and a session whose SETTINGS FILE cannot be
@@ -124,7 +124,7 @@ fn checks(app: &adw::Application) {
     //
     // The mode cannot get past the guard, so nothing is asked and the bar stays at rest.
     let no_timeline = Project_::fresh("notimeline");
-    cut_suggest_land::set_session_for_test(Some(no_timeline.tree.clone()));
+    cut_suggest_land::point_session_at(Some(no_timeline.tree.clone()));
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);
@@ -177,7 +177,7 @@ fn checks(app: &adw::Application) {
     // file is stamped and compared, not assumed absent.
     naivepost::cut::save(&Cut::default(), &timeline.tree).expect("stamp the cut file");
     let before = std::fs::read(timeline.tree.cut_json()).expect("the stamped cut file");
-    cut_suggest_land::set_session_for_test(Some(timeline.tree.clone()));
+    cut_suggest_land::point_session_at(Some(timeline.tree.clone()));
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);
@@ -198,7 +198,7 @@ fn checks(app: &adw::Application) {
     );
     RAN_UNREADABLE_SETTINGS.store(true, Ordering::SeqCst);
 
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
 }
 

@@ -40,6 +40,10 @@ pub struct Seen {
 /// A fake LLM on a free loopback port, answering each ask with the next scripted reply.
 pub struct FakeLlm {
     port: u16,
+    /// Shared so `next_seen` can take one connection itself when the accept thread has not been
+    /// scheduled yet (see `next_seen`).
+    listener: Arc<Mutex<TcpListener>>,
+    script: Arc<Mutex<Vec<String>>>,
     received: mpsc::Receiver<Seen>,
 }
 
@@ -47,34 +51,40 @@ impl FakeLlm {
     pub fn start(replies: Vec<String>) -> FakeLlm {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
         let port = listener.local_addr().expect("a local address").port();
+        // Non-blocking so neither the accept thread nor a caller polling from its own thread can park:
+        // `accept()` answers WouldBlock and the loop moves on. That is what lets `next_seen` serve the
+        // request itself if the thread below never got a slice of CPU.
+        listener
+            .set_nonblocking(true)
+            .expect("a non-blocking listener");
         let (sender, received) = mpsc::channel();
         let script = Arc::new(Mutex::new(replies));
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(stream) = stream else { continue };
-                let sender = sender.clone();
-                let script = script.clone();
-                std::thread::spawn(move || {
-                    let reply = script
-                        .lock()
-                        .map(|mut list| {
-                            // The first reply is spent; the rest stay for later asks. With one left
-                            // it answers every ask, which is what a single-round test wants.
-                            if list.len() > 1 {
-                                list.remove(0)
-                            } else {
-                                list.first().cloned().unwrap_or_default()
-                            }
-                        })
-                        .unwrap_or_default();
-                    if let Some(mut seen) = serve(stream, &reply) {
-                        seen.reply = reply;
-                        let _ = sender.send(seen);
+        let shared = Arc::new(Mutex::new(listener));
+        {
+            let shared = shared.clone();
+            let script = script.clone();
+            std::thread::spawn(move || loop {
+                // Take the listener only for the instant `accept` needs it: a caller polling in
+                // `next_seen` must be able to win the lock between connections.
+                let accepted = shared.lock().map(|l| l.accept()).unwrap_or(Err(other_would_block()));
+                match accepted {
+                    Ok((stream, _)) => serve_and_report(stream, &sender, &script),
+                    // WouldBlock: nothing waiting; another poller may have taken this one. Spin briefly
+                    // rather than parking, so a request that arrives while nobody else is looking is
+                    // still answered within microseconds.
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::yield_now();
                     }
-                });
-            }
-        });
-        FakeLlm { port, received }
+                    Err(_) => return,
+                }
+            });
+        }
+        FakeLlm {
+            port,
+            listener: shared,
+            script,
+            received,
+        }
     }
 
     /// A port nothing listens on. UNUSED HERE on purpose: `connect` SUCCEEDS against a bound listener's
@@ -102,9 +112,49 @@ impl FakeLlm {
         // runs 332 binaries and this one's accept loop only gets a thread once the scheduler reaches it,
         // so under load 30 s was measured expiring on a request that had not been accepted yet. The
         // assertion is unchanged — the derivation must still really arrive.
-        self.received
-            .recv_timeout(Duration::from_secs(120))
-            .expect("the derivation reached the fake server")
+        //
+        // Under that load the accept THREAD could still starve, so the wait is on the CONDITION (a request
+        // has been read and answered), not on a thread being scheduled: the caller polls the same listener
+        // itself and serves the connection on its own thread when it wins. Same bytes on the wire, same
+        // deadline, no assertion weakened — only the identity of the thread that accepts becomes flexible.
+        let deadline = std::time::Instant::now() + Duration::from_secs(120);
+        loop {
+            match self.received.recv_timeout(Duration::from_millis(5)) {
+                Ok(seen) => return seen,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    panic!("the fake server stopped before the derivation arrived")
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+            if let Some(seen) = self.poll_once() {
+                return seen;
+            }
+            if std::time::Instant::now() >= deadline {
+                panic!("the derivation reached the fake server: timed out after 120 s");
+            }
+        }
+    }
+
+    /// One non-blocking accept-and-serve from the calling thread. `None` when nothing is waiting or when
+    /// the accept thread already took this connection.
+    fn poll_once(&self) -> Option<Seen> {
+        let accepted = self.listener.lock().ok()?.accept().ok()?;
+        let reply = self
+            .script
+            .lock()
+            .map(|mut list| {
+                // The first reply is spent; the rest stay for later asks. With one left it answers
+                // every ask, which is what a single-round test wants.
+                if list.len() > 1 {
+                    list.remove(0)
+                } else {
+                    list.first().cloned().unwrap_or_default()
+                }
+            })
+            .unwrap_or_default();
+        let mut seen = serve(accepted.0, &reply)?;
+        seen.reply = reply;
+        Some(seen)
     }
 
     /// How many further requests arrive, waiting a moment for stragglers.
@@ -116,6 +166,36 @@ impl FakeLlm {
                 Err(_) => return got,
             }
         }
+    }
+}
+
+/// The error the accept loops treat as "nothing waiting yet" when a poller holds the listener.
+fn other_would_block() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::WouldBlock, "another poller holds the listener")
+}
+
+/// Read one request, answer it with `reply`, and hand what was seen to the channel. Shared by the accept
+/// thread and by `FakeLlm::poll_once`, so both halves put identical bytes on the wire.
+fn serve_and_report(
+    stream: TcpStream,
+    sender: &mpsc::Sender<Seen>,
+    script: &Arc<Mutex<Vec<String>>>,
+) {
+    let reply = script
+        .lock()
+        .map(|mut list| {
+            // The first reply is spent; the rest stay for later asks. With one left it answers every
+            // ask, which is what a single-round test wants.
+            if list.len() > 1 {
+                list.remove(0)
+            } else {
+                list.first().cloned().unwrap_or_default()
+            }
+        })
+        .unwrap_or_default();
+    if let Some(mut seen) = serve(stream, &reply) {
+        seen.reply = reply;
+        let _ = sender.send(seen);
     }
 }
 

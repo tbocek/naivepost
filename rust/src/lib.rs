@@ -44,6 +44,8 @@ pub mod cut_wave_edges;
 pub mod policy;
 /// F0.7 S2's live half: the derivation's own HTTP leg, so a non-empty User Context reaches a model.
 pub mod policy_call;
+/// The policy form's value column: one editor per derived field (F0.7 S4/S5).
+pub mod policy_form_edit;
 /// §12 entry 21: reading a plain target length (`45 min`, `half an hour`, `1h20`) out of the User Context's
 /// own words, so the number lands in `P.policy.targetLengthSeconds` instead of silently staying 0.
 pub mod policy_length;

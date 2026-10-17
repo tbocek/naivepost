@@ -264,6 +264,10 @@ name = "cut_policy_form_widgets"
 path = "tests/cut_policy_form_widgets.rs"
 
 [[test]]
+name = "cut_policy_form_edit_widgets"
+path = "tests/cut_policy_form_edit_widgets.rs"
+
+[[test]]
 name = "cut_proposed_speeds"
 path = "tests/cut_proposed_speeds.rs"
 

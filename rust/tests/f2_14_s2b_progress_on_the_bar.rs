@@ -27,6 +27,7 @@ mod harness;
 
 static RAN_PROGRESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_THINKING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_POINTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// §S2b: a reply that placed segments moves the bar off zero and puts the counted line on the status row.
 fn s2b_the_press_paints_progress_on_the_bar(app: &adw::Application) {
@@ -48,7 +49,7 @@ fn s2b_the_press_paints_progress_on_the_bar(app: &adw::Application) {
         ("finish_cut", serde_json::json!({})),
     ])]);
     point_llm_at(&llm.url());
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
     ui::tab_button(&window, Page::Cut)
@@ -133,7 +134,7 @@ fn s2b_the_bar_pulses_while_nothing_has_closed(app: &adw::Application) {
     .to_string();
     let llm = harness::FakeLlm::start(vec![thinking]);
     point_llm_at(&llm.url());
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
     ui::tab_button(&window, Page::Cut)
@@ -185,9 +186,35 @@ fn s2b_the_bar_pulses_while_nothing_has_closed(app: &adw::Application) {
     settle();
 }
 
+/// §12 §4's session resolution: building a window must not move a session someone pointed at. The
+/// suggest tests aim the flow at their own throwaway `.naivepost` and THEN build the shell they press ▶
+/// in, so a fresh window that overwrote the pointing would refuse its own press for want of a timeline.
+fn s2b_a_fresh_window_does_not_move_a_pointed_session(app: &adw::Application) {
+    let f = Fixture::fresh("keep-pointed")
+        .with_timeline()
+        .with_words(&[("point", 4.0), ("here", 17.0)]);
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
+    let window = ui::build_window(app, &f.project, "Prepare");
+    window.present();
+    settle();
+
+    // The window is built on the launch's working copy, which has no `session.txt`: were its own folder
+    // answering, this is the sentence the press would have got. It did not, because the pointing stands.
+    let refused = cut_suggest_land::refuse_suggest_run(&window, false);
+    assert_ne!(
+        refused.as_deref(),
+        Some(suggest::NO_TIMELINE),
+        "the built window moved the session off the pointed folder: {refused:?}"
+    );
+    RAN_POINTED.store(true, std::sync::atomic::Ordering::SeqCst);
+    cut_suggest_land::point_session_at(None);
+    window.close();
+}
+
 fn round(app: &adw::Application) {
     s2b_the_press_paints_progress_on_the_bar(app);
     s2b_the_bar_pulses_while_nothing_has_closed(app);
+    s2b_a_fresh_window_does_not_move_a_pointed_session(app);
     app.quit();
 }
 
@@ -220,5 +247,14 @@ fn f2_14_s2b_the_bar_pulses_while_nothing_has_closed() {
     assert!(
         RAN_THINKING.load(std::sync::atomic::Ordering::SeqCst),
         "the thinking-pulse check never ran"
+    );
+}
+
+#[test]
+fn s2b_a_fresh_window_does_not_move_a_pointed_session_is_checked() {
+    run_round();
+    assert!(
+        RAN_POINTED.load(std::sync::atomic::Ordering::SeqCst),
+        "the pointed-session check never ran"
     );
 }

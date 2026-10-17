@@ -49,7 +49,7 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s3_the_cut_p
 
 fn round(app: &adw::Application) {
     let f = words_fixture("wire");
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
     ui::tab_button(&window, Page::Cut)
@@ -97,6 +97,6 @@ fn round(app: &adw::Application) {
         "the spoken hole is gone from the page: {:?}",
         on_screen.segs
     );
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
 }

@@ -27,7 +27,7 @@ fn round(app: &adw::Application) {
         .with_words(&[("hello", 2.0), ("there", 6.0), ("half", 20.0), ("end", 26.0)])
         .with_marks(&[retake(4.0, 5.0)]);
     // §S1's guards read the launch's folder when nothing points elsewhere; a test points it deliberately.
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
     ui::tab_button(&window, Page::Cut)
@@ -69,7 +69,7 @@ fn round(app: &adw::Application) {
         on_screen.segs
     );
     // §S2a's persist, on the file the NEXT open reads. The write goes to the tree the press resolved for
-    // this session (`session_tree()`), which is the folder `set_session_for_test` pointed at — NOT the
+    // this session (`session_tree()`), which is the folder `point_session_at` pointed at — NOT the
     // working copy beside the cwd, and not the temp tree until a landing has written it.
     let saved = naivepost::cut::load(&f.tree).expect("cut.json was written");
     assert_eq!(
@@ -95,7 +95,7 @@ fn round(app: &adw::Application) {
         base.segs,
         "one Undo undid the words cut and left the page's own cut"
     );
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
 }
 

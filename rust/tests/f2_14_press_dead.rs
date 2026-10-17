@@ -29,7 +29,7 @@ fn round(app: &adw::Application) {
     let f = Fixture::fresh("press-dead")
         .with_timeline()
         .with_words(&[("hello", 3.0), ("there", 17.0)]);
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
     ui::tab_button(&window, Page::Cut)
@@ -57,7 +57,7 @@ fn round(app: &adw::Application) {
         ui::run_bar(&window).expect("the window carries a run bar").borrow().running.is_none(),
         "a refused press opens no run"
     );
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
 }
 

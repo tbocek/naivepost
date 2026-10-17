@@ -245,7 +245,7 @@ fn run_checks(app: &adw::Application) {
     // The page opened on the cut it was seeded with: without this the history would still be the one
     // `build_window` took from an empty page, and ↶ would answer with nothing instead of the pre-cut cut.
     ui::reopen_history_on(&window, &seeded_cut());
-    ui::cut_suggest_land::set_session_for_test(Some(p.tree.clone()));
+    ui::cut_suggest_land::point_session_at(Some(p.tree.clone()));
     settle();
 
     let made = words_run::run_words(&window, &p.tree, &p.project);
@@ -281,7 +281,7 @@ fn run_checks(app: &adw::Application) {
     let dry = Project_::fresh("dry");
     ui::seed_review_cut(&window, &Cut::default());
     ui::reopen_history_on(&window, &Cut::default());
-    ui::cut_suggest_land::set_session_for_test(Some(dry.tree.clone()));
+    ui::cut_suggest_land::point_session_at(Some(dry.tree.clone()));
     let empty = words_run::run_words(&window, &dry.tree, &dry.project);
     assert_eq!(empty.status, "cut by the words: 0 segments");
     assert!(!empty.wrote, "nothing was written");
@@ -291,7 +291,7 @@ fn run_checks(app: &adw::Application) {
         "and the project's cut file was not touched"
     );
     RAN_EMPTY.store(true, Ordering::SeqCst);
-    ui::cut_suggest_land::set_session_for_test(None);
+    ui::cut_suggest_land::point_session_at(None);
     window.close();
 }
 
