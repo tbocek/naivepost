@@ -26,6 +26,10 @@ static RAN_RESTORE_SCROLL: AtomicBool = AtomicBool::new(false);
 static RAN_PROBED_RATE: AtomicBool = AtomicBool::new(false);
 static RAN_REACH: AtomicBool = AtomicBool::new(false);
 static RAN_ZOOM_SCROLL: AtomicBool = AtomicBool::new(false);
+static RAN_ARROW_WIRE: AtomicBool = AtomicBool::new(false);
+static RAN_ARROW_HOLD: AtomicBool = AtomicBool::new(false);
+static RAN_ARROW_EFFECT: AtomicBool = AtomicBool::new(false);
+static RAN_ARROW_SPACE: AtomicBool = AtomicBool::new(false);
 
 const FPS: f64 = 25.0;
 
@@ -300,6 +304,7 @@ fn check_a_real_click_clears_watches_and_a_hold_nudges_instead_of_stepping(app: 
     // Clear the holds so a later check in this one process starts from an empty hand.
     ui::set_held_edge(None);
     ui::set_held_clip(None);
+    ui::set_held_effect(None);
     ui::set_watched_row(None);
     window.close();
 }
@@ -861,6 +866,250 @@ fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget
     walk(window.upcast_ref(), name)
 }
 
+/// F2.4 S3 through the real key controller: an arrow with NOTHING in hand moves no line and
+/// is not swallowed either (it goes on to whatever the focused widget would have done).
+/// gtk4-rs 0.11 exposes no list of a widget's controllers (`gtk_widget_get_controllers` has no
+/// binding, checked in `gtk4-0.11.5/src/auto/widget.rs`), so attachment is proven the way every
+/// other controller check here does it: by what emitting into `line_key_controller(&window)`
+/// changes, through the same controller the window itself hands to GTK in `wire_line_keys`.
+fn check_the_arrows_reach_the_window_through_its_own_key_controller(app: &adw::Application) {
+    pin_session_root("arrow-wire");
+    let window = cut_window(app);
+    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    ui::set_held_edge(None);
+    ui::set_held_clip(None);
+    ui::set_held_effect(None);
+    ui::set_line_position(&window, cut_line::LinePos { t: 33.0 });
+    settle();
+
+    for key in [gtk::gdk::Key::Left, gtk::gdk::Key::Right] {
+        let handled = controller.emit_by_name::<bool>(
+            "key-pressed",
+            &[&key, &0u32, &gtk::gdk::ModifierType::empty()],
+        );
+        settle();
+        assert_eq!(
+            ui::line_position(&window).t,
+            33.0,
+            "S3: {key:?} with nothing held moves no line"
+        );
+        assert!(
+            !handled,
+            "S3: and the refusal is not swallowed -- the focused widget still gets {key:?}"
+        );
+    }
+    window.close();
+}
+
+/// F2.4 S3 with an edge and then a clip in hand: the arrow takes S2's NUDGE branch, so ONE
+/// frame (FIVE with Shift) moves the held item and `cut/line.json`'s second never budges.
+fn check_a_held_edge_and_a_held_clip_are_nudged_by_the_arrows_not_the_line(app: &adw::Application) {
+    use naivepost::cut::{Cut, Seg};
+    pin_session_root("arrow-hold");
+    let window = cut_window(app);
+    let seeded = Cut { segs: vec![Seg { s: 10.0, e: 20.0, ..Default::default() }], ..Default::default() };
+    ui::seed_review_cut(&window, &seeded);
+    ui::set_line_position(&window, cut_line::LinePos { t: 15.0 });
+    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    let line_before = ui::line_position(&window).t;
+
+    // Edge first, then whole clip -- the order S3's "an edge, clip or effect held?" walks.
+    for held in [
+        Some(Seg { s: 10.0, e: 20.0, ..Default::default() }),
+        None,
+    ] {
+        if held.is_some() {
+            ui::set_held_edge(held.clone());
+            assert_eq!(ui::held_now(), Some(cut_line::Held::Edge));
+        } else {
+            ui::set_held_edge(None);
+            ui::set_held_clip(Some(Seg { s: 10.0, e: 20.0, ..Default::default() }));
+            assert_eq!(ui::held_now(), Some(cut_line::Held::Clip));
+        }
+        for (shift, frames) in [(false, 1_i64), (true, 5_i64)] {
+            assert_eq!(
+                cut_line::step_frames(shift),
+                frames,
+                "the rule's own frame count for Shift={shift}"
+            );
+            let mods = if shift {
+                gtk::gdk::ModifierType::SHIFT_MASK
+            } else {
+                gtk::gdk::ModifierType::empty()
+            };
+            for key in [gtk::gdk::Key::Left, gtk::gdk::Key::Right] {
+                let handled =
+                    controller.emit_by_name::<bool>("key-pressed", &[&key, &0u32, &mods]);
+                settle();
+                assert!(handled, "a held item makes {key:?} handled");
+                assert_eq!(
+                    ui::line_position(&window).t,
+                    line_before,
+                    "S2/S3: nudging {:?} of {:?} never moves the line",
+                    ui::held_now(),
+                    frames
+                );
+            }
+        }
+    }
+    ui::set_held_edge(None);
+    ui::set_held_clip(None);
+    window.close();
+}
+
+/// F2.4 S3 with an EFFECT in hand: the arrows move that record by exactly the frame delta at
+/// the page's own rate, UNSNAPPED -- `window_line_step.rs`'s effect branch returns before the
+/// line branch, and `fx_band::nudged` is `effect_rules::nudge`, which consults no snap mark.
+fn check_a_held_effect_is_nudged_unsnapped_by_the_arrows(app: &adw::Application) {
+    use naivepost::cut::{Cut, Fx, Seg};
+    pin_session_root("arrow-effect");
+    let window = cut_window(app);
+    let seeded = Cut {
+        segs: vec![Seg { s: 10.0, e: 20.0, ..Default::default() }],
+        fx: vec![Fx {
+            kind: "zoom".to_string(),
+            t: 12.0,
+            dur: 4.0,
+            cx: Some(0.4),
+            cy: Some(0.6),
+            wf: Some(0.5),
+            hf: Some(0.4),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    ui::seed_review_cut(&window, &seeded);
+    ui::set_line_position(&window, cut_line::LinePos { t: 12.0 });
+    ui::set_held_edge(None);
+    ui::set_held_clip(None);
+    ui::set_held_effect(Some(ui::review_cut_of(&window).fx[0].clone()));
+    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    let fps = naivepost::cut_fps::session_fps(&window);
+    assert!(fps > 0.0, "the page steps at a real rate: {fps}");
+
+    // One frame LEFT, then one frame RIGHT: the band lands on `t - 1/fps` and back on `t`.
+    let mut want = 12.0;
+    for (key, sign) in [
+        (gtk::gdk::Key::Left, -1.0),
+        (gtk::gdk::Key::Right, 1.0),
+        (gtk::gdk::Key::Right, 1.0),
+        (gtk::gdk::Key::Left, -1.0),
+    ] {
+        want += sign / fps;
+        let _ = controller.emit_by_name::<bool>(
+            "key-pressed",
+            &[&key, &0u32, &gtk::gdk::ModifierType::empty()],
+        );
+        settle();
+        let moved = &ui::review_cut_of(&window).fx[0];
+        assert!(
+            (moved.t - want).abs() < 1e-9,
+            "{key:?} moved the band by exactly one frame unsnapped: {} want {want}",
+            moved.t
+        );
+        assert_eq!(moved.dur, 4.0, "a nudge moves a band, never stretches it");
+        assert!(
+            (moved.t - 10.0).abs() > 1e-6 && (moved.t - 20.0).abs() > 1e-6,
+            "and it stayed off the scene's edges, i.e. unsnapped: {}",
+            moved.t
+        );
+    }
+    ui::set_held_effect(None);
+    window.close();
+}
+
+/// F2.4 S3's other half: Space through the same controller toggles play. A text box keeps its
+/// Space, which is `cut_line::space_toggles_preview`'s answer -- the controller never passes
+/// `true` (GTK's key propagation already gives a focused entry the key first), so that half is
+/// pinned on the rule the handler asks.
+fn check_space_still_toggles_play_from_the_key_controller(app: &adw::Application) {
+    use naivepost::run::Transport;
+    pin_session_root("arrow-space");
+    let window = cut_window(app);
+    let seeded = naivepost::cut::Cut {
+        segs: vec![naivepost::cut::Seg { s: 0.0, e: 20.0, ..Default::default() }],
+        ..Default::default()
+    };
+    ui::seed_review_cut(&window, &seeded);
+    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    assert!(
+        !cut_line::space_toggles_preview(true),
+        "a text box keeps its Space: with the focus in an entry the page does NOT take the key"
+    );
+    assert!(
+        !ui::space_toggles(&window, true)
+            && !ui::preview_player(&window).transport.playing,
+        "and a text-focus press starts nothing"
+    );
+    assert!(
+        cut_line::space_toggles_preview(false),
+        "outside a text box the same rule says the page takes it"
+    );
+
+    let first = controller.emit_by_name::<bool>(
+        "key-pressed",
+        &[&gtk::gdk::Key::space, &0u32, &gtk::gdk::ModifierType::empty()],
+    );
+    settle();
+    assert!(first, "S3: Space outside a text box is handled");
+    assert!(
+        ui::preview_player(&window).transport.playing,
+        "and it started play"
+    );
+    let second = controller.emit_by_name::<bool>(
+        "key-pressed",
+        &[&gtk::gdk::Key::space, &0u32, &gtk::gdk::ModifierType::empty()],
+    );
+    settle();
+    assert!(second, "Space again handled");
+    assert!(
+        !ui::preview_player(&window).transport.playing,
+        "and it toggled back off"
+    );
+    window.close();
+}
+
+/// S3 through the window's own key controller, the wire the completion check asked for: a real
+/// `key-pressed` emission reaches the handler `wire_line_keys` attaches, and what it does depends
+/// only on what is in hand. Each is its own `#[test]` (named for the step) and drives the same
+/// checks `window_round` runs -- `std::sync::Once` makes the second and later calls no-ops.
+#[test]
+fn f2_4_s3_the_arrows_reach_the_window_through_its_own_key_controller() {
+    window_round();
+    assert!(
+        RAN_ARROW_WIRE.load(Ordering::SeqCst),
+        "the arrow key-controller check never ran"
+    );
+}
+
+#[test]
+fn f2_4_s3_a_held_edge_and_a_held_clip_are_nudged_by_the_arrows_not_the_line() {
+    window_round();
+    assert!(
+        RAN_ARROW_HOLD.load(Ordering::SeqCst),
+        "the arrow-nudges-a-held-edge-or-clip check never ran"
+    );
+}
+
+#[test]
+fn f2_4_s3_a_held_effect_is_nudged_unsnapped_by_the_arrows() {
+    window_round();
+    assert!(
+        RAN_ARROW_EFFECT.load(Ordering::SeqCst),
+        "the arrow-nudges-a-held-effect check never ran"
+    );
+}
+
+#[test]
+fn f2_4_s3_space_still_toggles_play_from_the_key_controller() {
+    window_round();
+    assert!(
+        RAN_ARROW_SPACE.load(Ordering::SeqCst),
+        "the Space-through-the-key-controller check never ran"
+    );
+}
+
 fn window_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -891,6 +1140,14 @@ fn window_round() {
             RAN_REACH.store(true, Ordering::SeqCst);
             check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app);
             RAN_ZOOM_SCROLL.store(true, Ordering::SeqCst);
+            check_the_arrows_reach_the_window_through_its_own_key_controller(app);
+            RAN_ARROW_WIRE.store(true, Ordering::SeqCst);
+            check_a_held_edge_and_a_held_clip_are_nudged_by_the_arrows_not_the_line(app);
+            RAN_ARROW_HOLD.store(true, Ordering::SeqCst);
+            check_a_held_effect_is_nudged_unsnapped_by_the_arrows(app);
+            RAN_ARROW_EFFECT.store(true, Ordering::SeqCst);
+            check_space_still_toggles_play_from_the_key_controller(app);
+            RAN_ARROW_SPACE.store(true, Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -933,5 +1190,21 @@ fn f2_4_s1_placing_and_stepping_the_line_reaches_the_window_through_real_widgets
     assert!(
         RAN_ZOOM_SCROLL.load(Ordering::SeqCst),
         "the zoomed-tape restore-scroll check never ran"
+    );
+    assert!(
+        RAN_ARROW_WIRE.load(Ordering::SeqCst),
+        "the arrow key-controller check never ran"
+    );
+    assert!(
+        RAN_ARROW_HOLD.load(Ordering::SeqCst),
+        "the arrow-nudges-a-held-edge-or-clip check never ran"
+    );
+    assert!(
+        RAN_ARROW_EFFECT.load(Ordering::SeqCst),
+        "the arrow-nudges-a-held-effect check never ran"
+    );
+    assert!(
+        RAN_ARROW_SPACE.load(Ordering::SeqCst),
+        "the Space-through-the-key-controller check never ran"
     );
 }
