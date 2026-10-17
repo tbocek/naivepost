@@ -263,7 +263,7 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s4_walk_back_is_audited_and_n
     );
     // And it really runs: `apply` walks the same input and reports the pair §S3 spells.
     let applied = suggest::apply(&[(10.0, 20.0)], &[], &[], &walked);
-    assert_eq!(applied.log.len(), 2, "{:?}", applied.log);
+    assert_eq!(applied.log.len(), 3, "{:?}", applied.log);
     assert!(applied.log[0].starts_with(">>> suggested"), "{:?}", applied.log);
 
     // Refused: with nothing to place from, nothing was placed mechanically and nothing is left to see, so
@@ -343,20 +343,27 @@ fn check_policy_form(app: &adw::Application) {
         assert!(policy_form::policy_home(entry.id), "{} is not the policy home", entry.field);
         let row = widget_in_window(&form, &format!("policy-row-{}", entry.field));
         assert!(row.is_some(), "the form shows a marker for {}", entry.field);
-        let value = widget_in_window(&form, &format!("policy-value-{}", entry.field))
-            .expect("the form shows the value");
-        let label = value.downcast_ref::<gtk::Label>().expect("a value cell is a label");
+        let value = widget_in_window(&form, &format!("policy-edit-{}", entry.field))
+            .expect("the form shows an editor for the value");
+        // A numeric row's editor holds seconds and the prose column spells them (`none`, `30 min`), so
+        // each kind is compared against its own spelling of the same policy field.
+        let shown = match naivepost::policy_form_edit::number_of(&value) {
+            Some(seconds) => policy_form::length_word(seconds),
+            None => naivepost::policy_form_edit::value_of(&value),
+        };
         assert_eq!(
-            label.label().to_string(),
+            shown,
             policy_form::value_word(&policy, entry.field),
             "the value cell states the policy's own value for {}",
             entry.field
         );
     }
-    let cut_mode = widget_in_window(&form, "policy-value-cutMode")
-        .and_then(|w| w.downcast::<gtk::Label>().ok())
-        .expect("cutMode's value cell");
-    assert_eq!(cut_mode.label(), "model", "the hand-set value is what the form prints");
+    let cut_mode = widget_in_window(&form, "policy-edit-cutMode").expect("cutMode's value cell");
+    assert_eq!(
+        naivepost::policy_form_edit::value_of(&cut_mode),
+        "model",
+        "the hand-set value is what the form prints"
+    );
     let source = widget_in_window(&form, "policy-source-cutMode")
         .and_downcast::<gtk::Label>()
         .expect("cutMode's source cell");

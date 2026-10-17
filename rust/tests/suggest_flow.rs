@@ -375,11 +375,14 @@ fn f2_14_s3_apply_keeps_the_inserts_and_replaces_the_effects_as_a_list() {
         out.effects
     );
     assert_eq!(out.effects[0].t, 12.0);
-    assert_eq!(out.log.len(), 2);
+    // Four lines: §F2.14 S3's account, §12 §4's walk-back account of what the machine did to these
+    // seconds (hole closing / edge moving), S3's effect line, and one more naming the effect the clamp
+    // dropped — the mark took (70, 80) out, so the zoom at 75 lost its footage.
+    assert_eq!(out.log.len(), 4, "{:?}", out.log);
 }
 
 #[test]
-fn f2_14_s3_the_two_log_lines_are_exact() {
+fn f2_14_s3_the_three_log_lines_are_exact() {
     let out = apply_fixture();
     let total: f64 =
         out.segs.iter().map(|(a, b)| b - a).sum::<f64>() + out.kept_inserts.iter().map(|s| s.dur).sum::<f64>();
@@ -395,10 +398,21 @@ fn f2_14_s3_the_two_log_lines_are_exact() {
     );
     assert_eq!(
         out.log[1],
+        suggest::walk_report(1, 0),
+        "the middle line is §12 §4's walk-back account: {:?}",
+        out.log
+    );
+    assert_eq!(
+        out.log[2],
         format!(
             ">>> \u{2026}and {} effect(s): the speeds, the captions and the decorations",
             out.effects.len()
         )
+    );
+    assert!(
+        out.log[3].contains("zoom at"),
+        "the fourth line names the dropped effect by name (§12 entry 19): {:?}",
+        out.log
     );
 }
 

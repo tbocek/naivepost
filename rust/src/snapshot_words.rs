@@ -71,7 +71,7 @@ pub fn stage_session(tree: &Tree) -> Option<Project> {
         ..Default::default()
     }];
     project.context = "The weekly blockchain lecture, recorded in one sitting.".to_string();
-    crate::project::save(&project, &tree.dir()).ok()?;
+    crate::project::save(&project, tree.dir()).ok()?;
     Some(project)
 }
 

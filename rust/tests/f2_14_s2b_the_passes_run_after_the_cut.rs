@@ -143,7 +143,7 @@ fn press_once(app: &adw::Application, switches: (bool, bool, bool)) -> Vec<Strin
     // usable caption/speed/decoration answer at all — the honest headless outcome.
     let llm = harness::FakeLlm::start(vec![good_plan()]);
     point_llm_at(&llm.url());
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
 
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
@@ -189,7 +189,7 @@ fn press_once(app: &adw::Application, switches: (bool, bool, bool)) -> Vec<Strin
         .emit_by_name::<()>("clicked", &[]);
     settle();
     let added: Vec<String> = ui::window_logs()[logs_before..].to_vec();
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
     added
 }

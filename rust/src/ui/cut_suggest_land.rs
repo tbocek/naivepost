@@ -146,7 +146,7 @@ fn land_effect_pair(window: &adw::ApplicationWindow, answer: &Applied) {
     if let Some(Some(tree)) = session_tree() {
         // §7's one writer, and the tree is `session_tree`'s OWN — written into that folder rather than into
         // whatever `current_dir()` happens to say, because a test points ▶ at a temp `.naivepost` of its own
-        // (`set_session_for_test`) and the write must land where the refusal looked.
+        // (`set_session`) and the write must land where the refusal looked.
         let _ = crate::cut_save::write_cut_at(&with_effects, &tree);
     }
 }
@@ -157,25 +157,30 @@ fn land_effect_pair(window: &adw::ApplicationWindow, answer: &Applied) {
 type Session = Option<crate::layout::Tree>;
 
 thread_local! {
-    /// What ▶ on the Cut page should read as "this session": set by the program at the same moment the
-    /// edit door is installed, replaced by a test that wants to point the flow at a throwaway project.
+    /// What ▶ on the Cut page should read as "this session": what a test aimed it at through
+    /// [`point_session_at`], which outranks the window's own folder.
     static SESSION: std::cell::RefCell<Option<Session>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Point the Cut page's ▶ at a session folder. The program calls it with none (the door then resolves
-/// the folder itself); a test calls it with the `.naivepost` it just wrote.
-pub fn set_session_for_test(tree: Option<crate::layout::Tree>) {
+/// Point the Cut page's ▶ at a session folder, ahead of any window's own: the seam a test uses to aim
+/// the flow at a throwaway `.naivepost` of its own. Passing `None` hands the resolution back to
+/// [`session_tree`]'s own rule — the newest window's folder, else the launch's working copy.
+pub fn point_session_at(tree: Option<crate::layout::Tree>) {
     SESSION.with(|slot| *slot.borrow_mut() = Some(tree));
 }
 
-/// The session folder: what a test pointed at, else the launch's own `session.naivepost` beside the
+/// The session folder: what a test pointed at through [`point_session_at`] (which outranks a window),
+/// else the folder the newest window took on, else the launch's own `session.naivepost` beside the
 /// working directory — the resolution every other page's refusal door uses. `pub(crate)` because the
 /// landing writes where this answers, so reader and writer cannot disagree about the project.
 pub(crate) fn session_tree() -> Option<Option<crate::layout::Tree>> {
-    SESSION.with(|slot| slot.borrow().clone()).or_else(|| {
-        let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
-        crate::layout::Tree::new(&dir).ok().map(Some)
-    })
+    SESSION
+        .with(|slot| slot.borrow().clone())
+        .or_else(crate::ui::window_line_step::last_session_tree)
+        .or_else(|| {
+            let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+            crate::layout::Tree::new(&dir).ok().map(Some)
+        })
 }
 
 /// The session folder as [`session_tree`] resolves it, for the other half of the suggest flow. The

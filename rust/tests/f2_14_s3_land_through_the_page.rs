@@ -106,7 +106,7 @@ fn round(app: &adw::Application) {
         ]),
     ]);
     point_llm_at(&llm.url());
-    cut_suggest_land::set_session_for_test(Some(f.tree.clone()));
+    cut_suggest_land::point_session_at(Some(f.tree.clone()));
 
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
@@ -256,7 +256,7 @@ fn round(app: &adw::Application) {
     );
     RAN_UNDO.store(true, Ordering::SeqCst);
 
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
 }
 

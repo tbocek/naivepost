@@ -87,13 +87,14 @@ pub fn refresh_policy_form(form: &adw::Window) {
         return;
     };
     let policy = session.borrow().policy.clone();
-    for entry in policy::derived_fields() {
-        if let Some(label) =
-            find_widget_by_name(form.upcast_ref(), &format!("policy-value-{}", entry.field))
+    // Walked through `policy_form_edit::rows`, the form's own view of which fields it makes settable, so
+    // this refresh and the code that built the rows agree without either importing the catalogue.
+    for entry in crate::policy_form_edit::rows() {
+        // The value cell is an editor now, so it is re-seeded through the same door that built it.
+        if let Some(widget) =
+            find_widget_by_name(form.upcast_ref(), &format!("policy-edit-{}", entry.field))
         {
-            if let Ok(label) = label.downcast::<gtk::Label>() {
-                label.set_text(&policy_form::value_word(&policy, entry.field));
-            }
+            crate::policy_form_edit::set_value(&widget, &policy, &entry);
         }
         if let Some(label) =
             find_widget_by_name(form.upcast_ref(), &format!("policy-source-{}", entry.field))
@@ -117,25 +118,72 @@ pub fn refresh_policy_form(form: &adw::Window) {
 /// and watch what the form then prints, rather than poking the thread-local from outside.
 pub fn session_policy(window: &adw::ApplicationWindow) -> crate::project::Policy {
     let _ = window;
+    session_policy_for_form()
+}
+
+/// The live policy without needing a window handle: the form's own controls read it through this when a
+/// repaint has to tell its own widget movement from a person's edit.
+pub fn session_policy_for_form() -> crate::project::Policy {
     SESSION
         .with(|slots| slots.borrow().last().cloned())
         .map(|project| project.borrow().policy.clone())
         .unwrap_or_default()
 }
 
-/// Put a value, source and reason on one policy field of this window's live session.
+/// Put a value on one policy field because a person chose it in the policy form (F0.7 S4, §12 §4).
 ///
-/// A test seam for S4/S5: it goes through `policy::apply`, so what lands is exactly what the derivation
-/// path would have written, and the caller only overrides the origin afterwards to stand in for "a
-/// person set this by hand".
-pub fn set_session_policy_field(
-    window: &adw::ApplicationWindow,
+/// The one door between an editor and the state: it goes through `policy::apply`, the same validation the
+/// model's `tool:set_policy` passes, and stamps `source: user` on success — which is what makes S4's
+/// "a person's field is never overwritten" reachable by a click rather than only by a test. A refusal
+/// (unknown field, out-of-range value) leaves the stored field untouched and is said in the log where the
+/// control can still be corrected; a kept-user outcome is not this door's business (the form re-reads the
+/// surviving value on refresh), so both are returned for the caller to paint.
+pub fn set_field_from_form(field: &str, value: &str) -> policy::Applied {
+    let outcome = write_policy_field(field, value, FORM_BECAUSE, Origin::User);
+    if let policy::Applied::Refused(why) = &outcome {
+        // Said BEFORE anything is repainted: the refresh below re-seeds every editor, and a paint that
+        // lands first would bury the refusal under a redraw of the box the person just typed into.
+        crate::ui::window::log_line(&refused_log(why));
+        // The row is where the person is looking, so the refusal goes there too: an entry that keeps bad
+        // text and says nothing is a silent no. The log keeps `why`, the sentence the model would be
+        // handed, because it names the field and the value; the status line gets the short version.
+        let shell = built_window().unwrap_or_else(crate::ui::main_window);
+        if let Some(status) = crate::ui::window::find_status(shell.upcast_ref()) {
+            status.set_text(REFUSED_LENGTH);
+        }
+    }
+    // Repaint every open form so the source badge reads `user` and the reason column reads `set by you`
+    // for the row that changed — in place, like the reset path, so nothing flickers shut under the hand
+    // that just moved the control.
+    POLICY_FORMS.with(|forms| {
+        for form in forms.borrow().iter() {
+            refresh_policy_form(form);
+        }
+    });
+    outcome
+}
+
+/// The `because` a hand-set field carries. A person's own choice needs no justification (§10's note on
+/// the `because` key), but the column must not go blank, so it says what happened in the person's terms.
+pub const FORM_BECAUSE: &str = "set in the policy form";
+
+/// The status row's sentence for a write the policy catalogue refused, SHORT form: what the row shows.
+/// Named so a test can pin the sentence instead of scraping the label for any text.
+pub const REFUSED_LENGTH: &str = "the value is not allowed for that field";
+
+/// The log's sentence for the same refusal: `policy::apply`'s own words, which name the field and the
+/// value it could not take — the long form is what survives in the log after the status row moved on.
+pub fn refused_log(why: &str) -> String {
+    format!("!!! policy form: {why}")
+}
+
+/// The shared half of both writers: validate through `policy::apply`, then stamp the origin on a Set.
+pub(crate) fn write_policy_field(
     field: &str,
     value: &str,
     because: &str,
     origin: Origin,
 ) -> policy::Applied {
-    let _ = window;
     let Some(project) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
         return policy::Applied::Refused("this window holds no session".to_string());
     };
@@ -151,6 +199,23 @@ pub fn set_session_policy_field(
         stamp_origin(&mut project.borrow_mut().policy, field, origin);
     }
     outcome
+}
+
+/// Put a value, source and reason on one policy field of this window's live session.
+///
+/// A test seam for S4/S5: it goes through `policy::apply`, so what lands is exactly what the derivation
+/// path would have written, and the caller only overrides the origin afterwards to stand in for "a
+/// person set this by hand". The program's own version of the same thing is [`set_field_from_form`],
+/// which is what the policy form's controls call.
+pub fn set_session_policy_field(
+    window: &adw::ApplicationWindow,
+    field: &str,
+    value: &str,
+    because: &str,
+    origin: Origin,
+) -> policy::Applied {
+    let _ = window;
+    write_policy_field(field, value, because, origin)
 }
 
 /// Move one field's `source` to `origin` without touching its value or reason.

@@ -2,19 +2,17 @@
 //!
 //! The shape is [`crate::settings`]'s (an `adw::Window` transient for the main one, a grid of labelled
 //! rows built by one closure) because that dialog already solved the layout this page needs; what differs
-//! is that nothing here is editable. The form **shows** the policy: who set each value and why, so a
-//! proposal can be judged rather than merely read. Editing a field is a person's own action on the
-//! project file and arrives with its own item — inventing a control that looks editable but writes
-//! `source: user` behind a half-built path would be worse than not having it.
+//! is that the VALUE column here is an editor, not a readout. §12 §4 puts the pipeline decisions in this
+//! form — "decisions the model makes once, visibly, in the policy form" — and F0.7 S4 says a field a
+//! person set is never overwritten, which needs a control to set it with. Each row's widget is built,
+//! seeded and read back by [`crate::policy_form_edit`], and its change lands through
+//! [`crate::ui::set_field_from_form`] → [`policy::apply`] with `source: user`, the same door the model's
+//! `set_policy` passes through. So there is ONE writer of a policy field, and a person's answer outranks
+//! the model's from then on.
 //!
 //! Every row comes from [`policy::derived_fields`], read at build time off the live [`Policy`]. That is
-//! deliberate: the same list drives validation in `policy::apply`, so a field cannot exist in the form
-//! without being settable, or be settable without appearing here.
-//!
-//! Nothing on it is editable, and that is §1's fifth home working as specified: a policy value reaches the
-//! project through F0.7's `set_policy` tool and [`policy::apply`] (the one door that writes a field, its
-//! source and its reason), which is where the app already routes every change — including a person's own,
-//! which arrives with `source: user` and outranks the model's thereafter.
+//! deliberate: the same list drives validation in `policy::apply` and picks each row's control, so a
+//! field cannot exist in the form without being settable, or be settable without appearing here.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -23,8 +21,8 @@ use crate::policy::{self, CatalogueRow};
 use crate::project::{CutMode, MarkingPass, Origin, Policy};
 
 /// The widget-name prefix of every row part, so names are built from one place rather than scattered
-/// literals: `policy-form`, `policy-row-<field>`, `policy-value-<field>`, `policy-source-<field>`,
-/// `policy-reason-<field>`.
+/// literals: `policy-form`, `policy-row-<field>`, `policy-edit-<field>` (the value cell's control),
+/// `policy-source-<field>`, `policy-reason-<field>`.
 const NAME_PREFIX: &str = "policy";
 
 /// The form's title, §03's label for the screen.
@@ -150,6 +148,9 @@ pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
     grid.set_row_spacing(8);
     grid.set_column_spacing(12);
     grid.set_hexpand(true);
+    // The `because` column already caps itself (`BECAUSE_MAX_CHARS` on the label), so the grid's minimum is
+    // a wrapped sentence, not an endless one: that is what keeps the window's own minimum inside the width
+    // the snapshot asks for, instead of pushing the last caption off the right edge.
     root.append(&grid);
 
     // Column captions, so the four columns read as four answers instead of loose labels. Lowercase as
@@ -213,7 +214,7 @@ pub fn build(parent: Option<&gtk::Window>, policy: &Policy) -> adw::Window {
     window
 }
 
-/// One field: its name and id, its value, its source, and the reason beside them.
+/// One field: its name and id, its editor, its source, and the reason beside them.
 ///
 /// Four columns, as `img/03-policy-form.svg` draws them — one grid row per field. The reason used to
 /// sit under its row at `(1, row + 1)` while the caller advanced `row` by one, which stacked every
@@ -224,10 +225,7 @@ fn add_row(grid: &gtk::Grid, policy: &Policy, entry: CatalogueRow, row: i32) {
     name.set_tooltip_text(Some(entry.id));
     grid.attach(&name, 1, row, 1, 1);
 
-    let value = gtk::Label::new(Some(&value_word(policy, entry.field)));
-    value.set_widget_name(&format!("{NAME_PREFIX}-value-{}", entry.field));
-    value.set_halign(gtk::Align::Start);
-    value.add_css_class("title-4");
+    let value = crate::policy_form_edit::build(policy, &entry);
     grid.attach(&value, 2, row, 1, 1);
 
     let origin = field_origin(policy, entry.field);
@@ -255,7 +253,31 @@ fn add_row(grid: &gtk::Grid, policy: &Policy, entry: CatalogueRow, row: i32) {
     reason.set_wrap(true);
     reason.set_max_width_chars(BECAUSE_MAX_CHARS);
     reason.add_css_class("dim-label");
+    // `img/03-policy-form.svg` draws every `because` in italics, and GTK has no italic label class to
+    // borrow: `dim-label` only greys. The rule is installed once, with the rest of this form's CSS.
+    reason.add_css_class("policy-because");
+    install_form_css_once();
     grid.attach(&reason, 4, row, 1, 1);
+}
+
+/// The form's own CSS, installed on the display once: the `because` column italic, as the picture spells
+/// it. Kept separate from the page CSS because this window is its own top level and outlives any page.
+// The three deprecated calls are the project's existing idiom for process-wide CSS (`install_page_css_once`
+// in `narrate_page.rs` / `produce_page.rs`): gtk4-rs 0.11 has no non-deprecated way to style a whole display.
+#[allow(deprecated)]
+fn install_form_css_once() {
+    static DONE: std::sync::Once = std::sync::Once::new();
+    DONE.call_once(|| {
+        let provider = gtk::CssProvider::new();
+        // The same call the rest of the app makes (`install_page_css_once`), deprecated in 4.12 and still
+        // the only one that styles the whole display on gtk4-rs 0.11.
+        provider.load_from_data(".policy-because { font-style: italic; }");
+        gtk::StyleContext::add_provider_for_display(
+            &gtk::gdk::Display::default().expect("a display to style"),
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
 }
 
 /// The reset and close buttons. Both act on the newest session's policy rather than on the copy this

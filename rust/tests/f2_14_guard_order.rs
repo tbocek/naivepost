@@ -7,7 +7,7 @@
 // here by making every cause true at once except the one being answered.
 //
 // The door is `ui::cut_suggest_land::refuse_suggest_run`, which `build_window` wires into the run-bar ▶.
-// Each check points that door at a throwaway `.naivepost` through `set_session_for_test` — the same
+// Each check points that door at a throwaway `.naivepost` through `point_session_at` — the same
 // arrangement `narrate_tts::speak_line` uses to keep a test off the network — so no case reads a real
 // session folder and none writes one.
 
@@ -148,7 +148,7 @@ fn checks(app: &adw::Application) {
     // Every cause true: busy answers, because a run under way may be about to write the timeline whose
     // absence would otherwise be reported, and hand edits are moot while something else is running.
     let everything = Project::fresh("all").with_timeline().with_hand_edits();
-    cut_suggest_land::set_session_for_test(Some(everything.tree.clone()));
+    cut_suggest_land::point_session_at(Some(everything.tree.clone()));
     assert_eq!(
         refuse(true).as_deref(),
         Some(suggest::BUSY),
@@ -157,7 +157,7 @@ fn checks(app: &adw::Application) {
 
     // Hand edits next: timeline present, words present, so only the edits answer.
     let edited = Project::fresh("edits").with_timeline().with_words().with_hand_edits();
-    cut_suggest_land::set_session_for_test(Some(edited.tree.clone()));
+    cut_suggest_land::point_session_at(Some(edited.tree.clone()));
     assert_eq!(
         refuse(false).as_deref(),
         Some(suggest::HAND_EDITS),
@@ -166,7 +166,7 @@ fn checks(app: &adw::Application) {
 
     // No timeline third: words missing too, but §S1 answers Describe first.
     let no_timeline = Project::fresh("notimeline");
-    cut_suggest_land::set_session_for_test(Some(no_timeline.tree.clone()));
+    cut_suggest_land::point_session_at(Some(no_timeline.tree.clone()));
     assert_eq!(
         refuse(false).as_deref(),
         Some(suggest::NO_TIMELINE),
@@ -175,7 +175,7 @@ fn checks(app: &adw::Application) {
 
     // The word gate last, and verbatim: timeline present, no hand edits, no words.
     let no_words = Project::fresh("nowords").with_timeline();
-    cut_suggest_land::set_session_for_test(Some(no_words.tree.clone()));
+    cut_suggest_land::point_session_at(Some(no_words.tree.clone()));
     assert_eq!(
         refuse(false).as_deref(),
         Some(WORDS_NEEDED),
@@ -186,7 +186,7 @@ fn checks(app: &adw::Application) {
     // --- nothing refuses ----------------------------------------------------------------------------
 
     let good = Project::fresh("good").with_timeline().with_words();
-    cut_suggest_land::set_session_for_test(Some(good.tree.clone()));
+    cut_suggest_land::point_session_at(Some(good.tree.clone()));
     assert_eq!(refuse(false), None, "a ready session gets no refusal");
     // ...and the press really runs: the bar opened, which is what the refusal was preventing.
     ui::play_button(&window)
@@ -197,7 +197,7 @@ fn checks(app: &adw::Application) {
 
     // The handler's own half: a refused press paints the sentence on the status line and leaves the bar
     // showing ▶ rather than ⏸ — checked through the widgets, not by re-asking the door.
-    cut_suggest_land::set_session_for_test(Some(no_words.tree.clone()));
+    cut_suggest_land::point_session_at(Some(no_words.tree.clone()));
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);
@@ -210,7 +210,7 @@ fn checks(app: &adw::Application) {
     RAN_REFUSED_PRESS.store(true, Ordering::SeqCst);
 
     // Back to no session pointed at, so a later test in this binary cannot inherit ours.
-    cut_suggest_land::set_session_for_test(None);
+    cut_suggest_land::point_session_at(None);
     window.close();
 }
 

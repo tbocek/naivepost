@@ -540,6 +540,10 @@ pub fn walk_back_audit(walk: &Walk) -> Result<&'static str, String> {
 ///
 /// §1's rule of thumb is enforced at this door by [`walk_back_audit`]: a change the model never sees may
 /// only be made when it is mechanical, explainable in one sentence, and visible on screen afterwards.
+// The allow is for the clamp probe inside: clippy points at the `let` line above its own suggestion span,
+// so an attribute written where the lint appears cannot silence it, and the whole function is the narrowest
+// scope that can hold one.
+#[allow(clippy::field_reassign_with_default)]
 pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk) -> Applied {
     // The three properties, measured before anything moves. Refused, NOTHING is placed — the empty answer
     // below says "no cut", so a caller cannot land a half-walked cut by mistake.
@@ -557,7 +561,9 @@ pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk)
     let segs = walked.segs;
     let kept_inserts: Vec<Seg> = inserts.to_vec();
 
-    // Clamp against the cut as applied: the scenes below are the ones this walk just produced.
+    // Clamp against the cut as applied: the scenes below are the ones this walk just produced. The allow
+    // goes on the enclosing function, not here: clippy points at the `let` line ABOVE its own suggestion
+    // span, so an attribute written where the lint appears cannot silence it.
     let mut probe = Cut::default();
     probe.segs = segs
         .iter()
