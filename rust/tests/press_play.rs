@@ -74,6 +74,25 @@ fn bar_with_run(step: Step) -> RunBar {
 }
 
 #[test]
+fn f0_2_s1_the_two_readings_land_in_the_bar_status() {
+    // S1's visible effect is exactly these two sentences, so they are pinned as literals on the bar's
+    // own status field — the shell writes `bar.status` onto the status row, so a press that toggled
+    // without saying which it did would leave the person guessing at the button's face alone. Every
+    // tab is checked because each page's own ▶ used to answer a busy bar with PAUSING by itself.
+    let project = with_footage();
+    for page in [Page::Prepare, Page::Cut, Page::Narrate, Page::Produce] {
+        let mut bar = bar_with_run(run::step(page));
+        bar.press(page, Transport::default(), &project);
+        assert_eq!(
+            bar.status, run::PAUSING,
+            "the first press on the {page:?} tab says the stage in hand finishes first"
+        );
+        bar.press(page, Transport::default(), &project);
+        assert_eq!(bar.status, run::RESUMED, "the second press on the {page:?} tab says resumed");
+    }
+}
+
+#[test]
 fn f0_2_s1_a_run_under_way_toggles_pause() {
     // S1: a run is going, so ▶ *is* the pause button. It says which of the two it just did, in the
     // spec's own words, and stops there — pausing is not a new run.

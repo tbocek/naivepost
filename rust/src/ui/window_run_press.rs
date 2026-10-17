@@ -93,6 +93,22 @@ pub(crate) fn wire_play(
         // per-page refusals and the bar below, which stay as they were.
         let has_cut = !ui::review_cut_of(&ui::main_window()).segs.is_empty();
         let tab_play = crate::tab_states::play(shell.borrow().page, &live, has_cut, transport);
+        // §F0.2 S1: a run under way makes ▶ the pause button, and that branch comes before BOTH
+        // earlier branches — the tab's transport answer above and every page's own "busy" refusal
+        // below (`narrate_run::refuse`, `produce_flow::refuse` and the Suggest seam all answer a busy
+        // bar with PAUSING, which would say "pausing…" twice, never actually pause, and leave S1's
+        // second reading (`RESUMED`) unreachable). The flowchart asks "a run under way?" first, so
+        // the bar owns this press; `press` says which of the two readings it is.
+        if bar.borrow().running.is_some() {
+            let pressed = bar.borrow_mut().press(shell.borrow().page, transport, &live);
+            debug_assert!(
+                matches!(pressed, run::Pressed::ToggledPause { .. }),
+                "a bar with a run under way can only toggle its pause here"
+            );
+            paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+            status.set_text(&bar.borrow().status);
+            return;
+        }
         match tab_play.0 {
             crate::tab_states::Play::Transport { resume } => {
                 // The face answers the transport this press LEFT, not the one it found: parking a

@@ -47,6 +47,8 @@ fn window_round() {
             RAN_SNAPSHOT.store(true, std::sync::atomic::Ordering::SeqCst);
             check_a_failed_stage_names_itself(app);
             RAN_FAILURE.store(true, std::sync::atomic::Ordering::SeqCst);
+            check_the_pause_toggle_says_both_readings(app);
+            RAN_BOTH_READINGS.store(true, std::sync::atomic::Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -57,6 +59,7 @@ static RAN_PRESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 static RAN_TRANSPORT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_SNAPSHOT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_FAILURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_BOTH_READINGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// S2 through the widgets: once Cut's ▶✂ has started the preview, the run bar's ▶ belongs to that
 /// preview and toggles it -- it does NOT start a run. Asserted on the state both buttons read
@@ -286,5 +289,85 @@ fn f0_2_s4_a_failed_stage_names_itself_in_the_log() {
     assert!(
         RAN_FAILURE.load(std::sync::atomic::Ordering::SeqCst),
         "the failure-reporting check never ran"
+    );
+}
+
+/// S1's two readings through the real button on the page whose own ▶ used to answer a busy bar with
+/// "pausing…" by itself: Narrate refuses without a cut, so the bar is stood up first and both presses
+/// then belong to it. The label text is read off `status-line` (through `ui::state`, the same widget
+/// the person reads) AND off the bar's own `status`, so the wire and the rule are pinned together.
+fn check_the_pause_toggle_says_both_readings(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Narrate");
+    window.present();
+    assert_eq!(ui::state(&window).page, naivepost::shell::Page::Narrate, "the Narrate tab bounced");
+    // A run under way is what makes ▶ the pause button. `runqueue::start_run` needs a live audio.cpp
+    // (F0.5 S1's preflight asks it), which this binary already serves for its other presses.
+    let queue = ui::run_queue(&window).expect("the window carries a queue");
+    naivepost::runqueue::start_run(
+        &mut ui::run_bar(&window).expect("run bar").borrow_mut(),
+        &mut queue.borrow_mut(),
+        &mut naivepost::exchanges::RunLog::new(),
+        naivepost::run::Step::Narrate,
+        naivepost::run::snapshot_sources(&model),
+    );
+    let bar = ui::run_bar(&window).expect("the window carries a run bar");
+    assert!(bar.borrow().running.is_some(), "a run stands on the bar before the presses");
+
+    let play = ui::play_button(&window).expect("the run bar has a ▶");
+    // The transport is parked, not playing: `tab_states::play` gives a *playing or cued* preview the
+    // button ahead of the step (S2 beats S4), and on Narrate that would take this press away from S1.
+    // A run under way still outranks it — that is what `RunBar::press`'s own order pins — but the shell
+    // asks the player first, so the check starts from a quiet player, as a person who never pressed ▶✂
+    // would.
+    ui::set_preview_state(&window, false, false, naivepost::run::Transport::default());
+    play.emit_by_name::<()>("clicked", &[]);
+    assert!(
+        bar.borrow().running.as_ref().is_some_and(|run| run.paused),
+        "the press paused the run rather than refusing it"
+    );
+    assert_eq!(bar.borrow().status, run::PAUSING, "the bar's sentence is the pause reading");
+    assert_eq!(
+        ui::state(&window).status,
+        run::PAUSING,
+        "S1's first reading reaches the status line on the Narrate tab"
+    );
+
+    play.emit_by_name::<()>("clicked", &[]);
+    assert!(
+        bar.borrow().running.as_ref().is_some_and(|run| !run.paused),
+        "the second press resumed the same run"
+    );
+    assert_eq!(bar.borrow().status, run::RESUMED, "the bar's sentence is the resume reading");
+    assert_eq!(
+        ui::state(&window).status,
+        run::RESUMED,
+        "S1's second reading reaches the status line, which no press could say before"
+    );
+    ui::stop_button(&window).expect("the run bar has a ⏹").emit_by_name::<()>("clicked", &[]);
+    // ⏹ sets the stop flag (F0.3 S3); the bookkeeping comes down through the shell's own close door,
+    // which is what a step ending calls, so the bar is empty again for whichever check runs next.
+    naivepost::ui::run_close::close_step_run(
+        &bar, &queue,
+        &std::rc::Rc::new(std::cell::RefCell::new(naivepost::exchanges::RunLog::new())),
+        &ui::find_status(window.upcast_ref()).expect("the window carries a status line"),
+        &ui::progress_bar(&window).expect("the run bar has a progress widget"),
+        &ui::log_expander(&window).expect("the shell has a log expander"),
+        &ui::log_view(&window).expect("the expander's child is the log body"),
+        None,
+    );
+    assert!(
+        bar.borrow().running.is_none(),
+        "the run this check stood up is closed again"
+    );
+    window.close();
+}
+
+#[test]
+fn f0_2_s1_the_button_press_lands_both_pause_readings() {
+    window_round();
+    assert!(
+        RAN_BOTH_READINGS.load(std::sync::atomic::Ordering::SeqCst),
+        "the two-readings check never ran"
     );
 }
