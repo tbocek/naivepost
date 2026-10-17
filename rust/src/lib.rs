@@ -239,6 +239,7 @@ pub mod llm_retry;
 pub mod llm_retry_leg;
 pub mod machine_store;
 pub mod web_browser;
+pub mod web_request_log;
 pub mod web_tools;
 pub mod tools;
 pub mod voice_ref;

@@ -1685,6 +1685,10 @@ name = "web_tools_f6_1"
 path = "tests/web_tools_f6_1.rs"
 
 [[test]]
+name = "web_requests_tsv"
+path = "tests/web_requests_tsv.rs"
+
+[[test]]
 name = "web_tools_f6_1_browser"
 path = "tests/web_tools_f6_1_browser.rs"
 
