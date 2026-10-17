@@ -417,6 +417,10 @@ name = "p_project_frame_interval"
 path = "tests/p_project_frame_interval.rs"
 
 [[test]]
+name = "p_machine_briefmaxchars"
+path = "tests/p_machine_briefmaxchars.rs"
+
+[[test]]
 name = "describe_flow"
 path = "tests/describe_flow.rs"
 

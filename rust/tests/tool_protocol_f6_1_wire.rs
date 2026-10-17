@@ -234,6 +234,7 @@ fn frames<'a>(moments: &'a [f64], starts: &'a [f64]) -> call::Frames<'a> {
         moments,
         starts,
         interval: 1.0,
+        lines: &[],
     }
 }
 

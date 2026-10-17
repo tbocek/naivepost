@@ -163,6 +163,9 @@ pub struct Frames<'a> {
     /// The project's `P.project.frameInterval`: how far apart two frames ever are, so a named
     /// moment resolves and a window narrows on the grid this session was extracted on.
     pub interval: f64,
+    /// The session's spoken rows, the same ones [`crate::produce_upload::brief`] was built from:
+    /// `get_lines` reads back through these what the brief's fold left out.
+    pub lines: &'a [crate::textfmt::SessionLine],
 }
 
 /// Run one `youtube` call over the brief and answer its tools. Returns what the record looks like after the
@@ -189,6 +192,7 @@ where
         frames_moments: frames.moments.to_vec(),
         starts: frames.starts.to_vec(),
         interval: frames.interval,
+        lines: frames.lines.to_vec(),
         edited_by_hand,
     };
     let offered = crate::tools::offered(Job::UploadText);
@@ -353,6 +357,7 @@ struct State {
     frames_moments: Vec<f64>,
     starts: Vec<f64>,
     interval: f64,
+    lines: Vec<crate::textfmt::SessionLine>,
     edited_by_hand: bool,
 }
 
@@ -453,6 +458,15 @@ impl State {
                         .collect::<Vec<String>>()
                         .join(", ")
                 );
+                self.answers.push(answer.clone());
+                answer
+            }
+            // S1's escape hatch: a folded brief tells the model to read the rest with `get_lines`,
+            // so this arm is what makes that sentence a promise rather than a dead end.
+            n if n == Tool::GetLines.name() => {
+                let from = number_of(&args, "from").unwrap_or(0.0);
+                let to = number_of(&args, "to").unwrap_or(f64::MAX);
+                let answer = upload::read_back(&self.lines, from, to);
                 self.answers.push(answer.clone());
                 answer
             }

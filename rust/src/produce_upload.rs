@@ -171,6 +171,52 @@ pub fn brief(clips: &[BriefClip], lines: &[crate::narration::Entry], max_chars: 
     out
 }
 
+/// S1's escape hatch, the half that makes `P.machine.briefMaxChars` a bound rather than a
+/// truncation: `get_lines(from, to)` over the SAME rows the brief was built from, in produced-clock
+/// seconds (the one clock this brief speaks). Lines come back stamped exactly like the brief's own
+/// narration lines — `m:ss who: text` — so what the fold dropped looks like what it kept. At most
+/// [`crate::narrate_pass::GET_LINES_MAX_ROWS`] rows go back, and when they are cut off the answer
+/// says so instead of answering less than it was asked. An empty window is said too: an empty list
+/// alone cannot tell "wrong window" from "nobody spoke here".
+pub fn read_back(rows: &[crate::textfmt::SessionLine], from: f64, to: f64) -> String {
+    let mut hits: Vec<&crate::textfmt::SessionLine> = rows
+        .iter()
+        .filter(|row| row.end > from && row.start < to)
+        .collect();
+    hits.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let truncated = hits.len() > crate::narrate_pass::GET_LINES_MAX_ROWS;
+    hits.truncate(crate::narrate_pass::GET_LINES_MAX_ROWS);
+    if hits.is_empty() {
+        return crate::tools::ok(&serde_json::json!({
+            "from": from,
+            "to": to,
+            "lines": [],
+            "note": format!(
+                "nothing was said between {} and {} of the finished video",
+                crate::tools::mm_ss(from),
+                crate::tools::mm_ss(to)
+            ),
+        }));
+    }
+    let lines: Vec<String> = hits
+        .iter()
+        .map(|row| {
+            format!(
+                "{} {}: {}",
+                crate::tools::mm_ss(row.start),
+                row.who,
+                row.text
+            )
+        })
+        .collect();
+    crate::tools::ok(&serde_json::json!({
+        "from": from,
+        "to": to,
+        "lines": lines,
+        "truncated": truncated,
+    }))
+}
+
 /// One clip's header line, exactly as S1 spells it \u{2014} plus, only when it is true of this clip, the rate its
 /// source runs at (\u00a712 #30: a sped clip's stamps are on a clock the writer has not been told about).
 fn clip_head(clip: &BriefClip) -> String {
