@@ -485,12 +485,85 @@ pub fn call_dialed(
         Err(reason) => Outcome::Error(reason.clone()),
     };
 
-    let row = request_timing::finish_row(base, &timer, outcome, attempt);
+    let row = fill_sizes(request_timing::finish_row(base, &timer, outcome, attempt), dial.body);
     // Written first, used after. A failure to write the log is not allowed to swallow the
     // reply, so it is reported in the row's own error channel instead: the caller sees the
     // request went through even when the file could not be opened.
     let _ = requests::record(tree, &row);
     (row, result)
+}
+
+/// The two size columns §09 §5 asks for, on whatever [`request_timing::finish_row`] built.
+///
+/// `P.machine.promptMaxChars` is judged at the request builder ([`crate::llm_budget::check`],
+/// applied in [`crate::llm_request::body`]); the row is where the OTHER half of that rule lives —
+/// how big what actually went out was, so a person can see how close a job ran to the bound and
+/// which step's request blew it. Bytes and pictures are read back off the same JSON that went on
+/// the wire, so the row records the request rather than a caller's estimate of it: `sent_bytes`
+/// counts every text part, and `images` counts the `image_url` parts the server was handed. A
+/// caller that filled either column itself (a test, an upload leg that knows its payload size) is
+/// left alone; a body with no pictures leaves `images` empty rather than writing a zero, because
+/// §10's reader must be able to tell "no images" from "not recorded".
+pub fn fill_sizes(mut row: Request, body: Option<&str>) -> Request {
+    let Some(text) = body else { return row };
+    if row.sent_bytes.is_none() {
+        let asked: serde_json::Value = serde_json::from_str(text).unwrap_or(serde_json::Value::Null);
+        let bytes = asked
+            .get("messages")
+            .and_then(|messages| messages.as_array())
+            .map(|list| {
+                list.iter()
+                    .flat_map(|message| {
+                        message
+                            .get("content")
+                            .and_then(|content| content.as_array())
+                            .map(|parts| parts.to_vec())
+                            .unwrap_or_default()
+                    })
+                    .filter(|part| part.get("type").and_then(serde_json::Value::as_str) == Some("text"))
+                    .map(|part| {
+                        part.get("text")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .len()
+                    })
+                    .sum::<usize>()
+            });
+        // A body that is not the chat shape (an audio task's JSON, a raw upload) has no message
+        // list to measure: then what went out IS the body, and saying so beats leaving it blank.
+        row.sent_bytes = Some(bytes.unwrap_or(text.len()) as i64);
+    }
+    if row.images.is_none() {
+        // One picture is spelled `"image_url"` TWICE in the JSON the wire carried — as the part's
+        // `type` and again as its key — so the parts are counted, not the string.
+        let images = serde_json::from_str::<serde_json::Value>(text)
+            .ok()
+            .and_then(|asked| {
+                Some(
+                    asked
+                        .get("messages")?
+                        .as_array()?
+                        .iter()
+                        .flat_map(|message| {
+                            message
+                                .get("content")
+                                .and_then(|content| content.as_array())
+                                .map(|parts| parts.to_vec())
+                                .unwrap_or_default()
+                        })
+                        .filter(|part| {
+                            part.get("type").and_then(serde_json::Value::as_str)
+                                == Some("image_url")
+                        })
+                        .count(),
+                )
+            })
+            .unwrap_or_else(|| text.matches("\"image_url\"").count() / 2);
+        if images > 0 {
+            row.images = u32::try_from(images).ok();
+        }
+    }
+    row
 }
 
 /// A `Request` carrying only what the caller knows, ready for [`call`] to finish.
