@@ -1882,3 +1882,7 @@ path = "tests/sec_12_decisions_5_offer.rs"
 [[test]]
 name = "sec_12_decisions_5_gaps_this_audit_closed_results"
 path = "tests/sec_12_decisions_5_results.rs"
+
+[[test]]
+name = "p_machine_promptmaxchars"
+path = "tests/p_machine_promptmaxchars.rs"
