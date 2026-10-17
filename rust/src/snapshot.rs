@@ -133,31 +133,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             ui::refresh_camera_rows(&window);
         }
         // F2.10's own picture is TWO cameras at once (`spec/img/05-rows.png`), which no fixture on disk
-        // carries -- the demo project's `cut/cut.json` is one camera in three clips. A snapshot asked for
-        // by that image's name therefore lays the figure out here: camera 1 for 0-37, camera 2 overlapping
-        // from 20 with the shift correction its name plate shows, one lane so there is a speaker badge and
-        // a gutter switch, the line inside the overlap, and row 2 watched so the dashed outline is in shot.
-        if screen == "05-rows" {
-            let two_cameras = cut::Cut {
-                segs: vec![
-                    cut::Seg { s: 0.0, e: 37.0, cam: 0, ..Default::default() },
-                    cut::Seg { s: 20.0, e: 37.0, cam: 1, ..Default::default() },
-                ],
-                lanes: vec![cut::Lane {
-                    name: "cam1".into(),
-                    src: "cam1".into(),
-                    at: 20.0,
-                    off: 0.0,
-                    dur: 17.0,
-                }],
-                shift: [("cam1".to_string(), -19.0)].into_iter().collect(),
-                ..Default::default()
-            };
-            ui::seed_review_cut(&window, &two_cameras);
-            ui::set_line_position(&window, cut_line::LinePos { t: 25.0 });
-            ui::press_watch_row(&window, 1);
-            ui::refresh_camera_rows(&window);
-        }
+        // carries -- staged in its own module below, with the other self-staging Cut-page screens.
         // F2.11's own picture (`spec/img/05-fold.png`) is a WIDE dropped stretch folded to a seam. The
         // demo fixture cannot show one: its `cut/cut.json` keeps 0-9.5, 10-30 and 40-70 out of a tape
         // whose only filmed gap is 0.5 s = 2 px at the snapshot zoom, under `cut_fold::FOLD_MIN_PX`, so
@@ -645,6 +621,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             let said = crate::snapshot_trim::stage(&window, &dir);
             println!("snapshot: 05-trim | {}", said.join(" | "));
         }
+        // F2.10's picture stages its own two-camera figure too, through the page's own doors (see
+        // `snapshot_rows`). Same reason as the two above: `run` is past the size another staging block fits in.
+        if screen == "05-rows" {
+            let said = crate::snapshot_rows::stage(&window, &dir);
+            println!("snapshot: 05-rows | {}", said.join(" | "));
+        }
         // The Narrate shot's own files go down AFTER the publish above: a `build()` later than this one
         // (one per tab) re-reads them, and only the files keep the voice, shift and take list on screen.
         crate::snapshot_narrate::seed_project_files(&screen);
@@ -883,11 +865,16 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 // which the painter never asks. Placed before the redraw, exactly as a click on the tape does.
                 ui::set_playhead(&window, 24.0);
             }
+            // `05-rows` parks its line inside the two cameras' overlap for the same reason, and its staging ran
+            // before the map like every other screen's, so the band needs the playhead placed here too.
+            if screen == "05-rows" {
+                ui::set_playhead(&window, crate::snapshot_rows::LINE_T);
+            }
             crate::ui::cut_view::repaint_page(&window);
             // Badge 1 again, now that the panel has a real allocation: `refresh` measured a 0x0 plate on
             // the first call (before `present()`), so the picture it chose then was asked of an unmapped
             // widget. Through the page's own door again -- same call a line move makes.
-            if screen == "05-cut" {
+            if screen == "05-cut" || screen == "05-rows" {
                 crate::ui::cut_picture::refresh(&window);
             }
         }
