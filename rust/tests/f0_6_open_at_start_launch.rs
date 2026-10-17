@@ -100,6 +100,12 @@ fn plant_project(dir: &Path, marker: &str) -> PathBuf {
         ..Default::default()
     };
     project::save(&project, dir).expect("project written");
+    // The recording itself has to be on disk: a launch that opens this project drops a source whose
+    // file is missing (F0.9 S3), and these scenarios ask which PROJECT opened, not whether the
+    // recording survived. `sources/` stays out of S4's untouched-root check, which looks at a blank root.
+    let sources = dir.join("sources");
+    std::fs::create_dir_all(&sources).expect("sources folder");
+    std::fs::write(sources.join(format!("{marker}.mkv")), "video bytes").expect("recording planted");
     dir.to_path_buf()
 }
 
