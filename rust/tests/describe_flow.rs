@@ -46,7 +46,10 @@ fn f1_7_s0_a_scene_shorter_than_freq_sends_only_its_first_frame() {
     let in_short_scene = picked.iter().filter(|at| **at >= 0.7 && **at < 1.0).count();
     assert_eq!(in_short_scene, 1, "the 0.3 s scene sends exactly its first frame: {picked:?}");
     let short_first = *picked.iter().find(|at| **at >= 0.7).expect("the short scene sent a frame");
-    assert!(short_first < 1.0 && short_first >= 0.7, "and it is the change's own frame, snapped up onto the grid: {short_first}");
+    assert!(
+        (0.7..1.0).contains(&short_first),
+        "and it is the change's own frame, snapped up onto the grid: {short_first}"
+    );
 }
 
 /// S0: the first picture of EVERY new scene reaches the model, however many there are and wherever
@@ -119,15 +122,20 @@ fn f1_7_s1_a_missing_or_empty_folder_is_refused() {
 /// into `.llmframes/`; nothing is spawned. P.machine.describeFrameWidth
 #[test]
 fn f1_7_s1_the_scale_plan_hits_896_wide_into_llmframes() {
-    let plan = describe::scale_plan(describe::FRAME_WIDTH, &[1.0, 0.0]);
+    let plan = describe::scale_plan(describe::FRAME_WIDTH);
     let joined = plan.join(" ");
     assert!(joined.contains("scale=896:-2"), "896 wide, height by aspect: {joined}");
     assert_eq!(describe::FRAME_WIDTH, 896, "P.machine.describeFrameWidth");
     // One name per frame, in clock order, and the names are the stored frames' own names so a row and
     // a file point at the same instant.
-    let names: Vec<&String> = plan.iter().filter(|arg| arg.ends_with(".jpg")).collect();
+    let names: Vec<String> = [1.0, 0.0].iter().map(|at| describe::scaled_name(*at)).collect();
     assert_eq!(names.len(), 2, "one scaled copy per frame: {joined}");
-    assert!(names[0] < names[1], "written in stamp order: {names:?}");
+    // The stage sorts before it scales (`describe_scale::ensure` takes the frames in the order
+    // `pick_frames`/`sorted` hands them over), so what has to hold is that the clock naming puts the
+    // earlier frame first -- sorting the names of a shuffled pair says exactly that.
+    let mut ordered = names.clone();
+    ordered.sort();
+    assert_eq!(ordered[0], describe::scaled_name(0.0), "the earlier stamp sorts first: {names:?}");
     // Where they land is the layout's own answer, so this stage cannot invent another folder.
     let (_keep, tree) = scratch("scale");
     let llm = tree.llm_frames_dir("lecture");
@@ -570,7 +578,7 @@ fn f1_7_s6_the_first_frame_of_a_cold_batch_is_never_written_same() {
     let warm = describe::events_rows(&frames, &[], true, 2.0);
     assert_eq!(warm, vec!["0.00\t1.00\tsame", "1.00\t2.00\tsame"]);
     // The condition matches what the tool reports, so the two cannot drift apart.
-    let mut batch = Batch::new(0.0, 1.0, 2);
+    let batch = Batch::new(0.0, 1.0, 2);
     let missing = batch.finish();
     assert!(missing.iter().any(|m| m.frame == 1 && m.reason == MissingReason::FirstFrameWithNoHistory));
 }

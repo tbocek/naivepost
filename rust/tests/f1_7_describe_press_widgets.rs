@@ -177,8 +177,11 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<()> {
     Some(())
 }
 
-/// The stub tools: `ffprobe` answers a duration, `ffmpeg` writes `<last arg>/<basename of -i arg>` —
-/// where the scaling leg expects its copy — and fails if the file is not there afterwards.
+/// The stub tools: `ffprobe` answers a duration for the take, and 896 for the picture-size question the
+/// scaling leg asks -- the width the real ffmpeg would have written at `P.machine.describeFrameWidth`, so
+/// the leg's read-back is satisfied by a stub that does not encode. `ffmpeg` writes the FILE its argv
+/// names: an output ending in `.jpg` is written as given, anything else is taken as the directory the
+/// copy goes into, named after the `-i` file -- which is exactly what real ffmpeg is told to do.
 fn stubs() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "np-f17p-tools-{}-{}",
@@ -188,11 +191,18 @@ fn stubs() -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("the tools folder");
     let probe = dir.join("ffprobe");
-    common::write_script(&probe, "#!/bin/sh\necho \"20.0\"\n").expect("the probe stub");
+    // A duration line for `-show_entries format=duration`; for the size question (`stream=width`) the
+    // width the scaling leg expects. Only ffprobe can answer a size here: the stub ffmpeg writes a
+    // placeholder file, not an encoded picture.
+    common::write_script(
+        &probe,
+        "#!/bin/sh\ncase \"$*\" in\n  *stream=width*) echo \"896\" ;;\n  *) echo \"20.0\" ;;\nesac\n",
+    )
+    .expect("the probe stub");
     let script = dir.join("ffmpeg.sh");
     common::write_script(
         &script,
-        "#!/bin/sh\ninput=''\nout=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  out=\"$a\"\n  prev=\"$a\"\ndone\nbase=$(basename -- \"$input\")\nmkdir -p \"$out\"\nprintf JPEG > \"$out/$base\"\n[ -f \"$out/$base\" ]\n",
+        "#!/bin/sh\ninput=''\nout=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  out=\"$a\"\n  prev=\"$a\"\ndone\ncase \"$out\" in\n  *.jpg) mkdir -p \"$(dirname -- \"$out\")\"; printf JPEG > \"$out\" ;;\n  *) base=$(basename -- \"$input\"); mkdir -p \"$out\"; printf JPEG > \"$out/$base\" ;;\nesac\n",
     )
     .expect("the ffmpeg stub");
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");

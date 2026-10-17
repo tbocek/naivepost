@@ -333,12 +333,13 @@ fn stubs(tag: &str) -> PathBuf {
     let probe = dir.join("ffprobe");
     common::write_script(&probe, "#!/bin/sh\necho \"20.0\"\n").expect("the probe stub");
     let script = dir.join("ffmpeg.sh");
-    // Log the argv, then write `<last arg>/<basename of the -i arg>`: that is where the scaling leg
-    // expects its copy, and `[ -f ... ]` makes the stub fail loudly if the path is nonsense.
+    // Log the argv, then write the FILE the argv names: an output ending in `.jpg` is written as given
+    // (that is the spelling the scaling leg now uses), anything else is the directory the copy goes into,
+    // named after the `-i` file. `[ -f ... ]` makes the stub fail loudly if the path is nonsense.
     common::write_script(
         &script,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{dir}/argv.log\"\ninput=''\nout=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  out=\"$a\"\n  prev=\"$a\"\ndone\nbase=$(basename -- \"$input\")\nmkdir -p \"$out\"\nprintf JPEG > \"$out/$base\"\n[ -f \"$out/$base\" ]\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{dir}/argv.log\"\ninput=''\nout=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  out=\"$a\"\n  prev=\"$a\"\ndone\ncase \"$out\" in\n  *.jpg) mkdir -p \"$(dirname -- \"$out\")\"; printf JPEG > \"$out\" ;;\n  *) base=$(basename -- \"$input\"); mkdir -p \"$out\"; printf JPEG > \"$out/$base\" ;;\nesac\n[ -s \"$out\" ] || [ -d \"$out\" ]\n",
             dir = dir.display()
         ),
     )
