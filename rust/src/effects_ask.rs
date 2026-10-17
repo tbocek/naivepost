@@ -440,6 +440,9 @@ pub fn ask_at_over(
     // the loop uses, so an unknown kind or an empty span comes back as the tool's own sentence and is SAID here
     // (§F3.11 S3). Membership stays `cut_effects_pass::place`'s judgement (§F3.11 S2).
     let mut batch = clips.clone();
+    // The frames a model may aim at are only this far apart: §3.7's `get_frames` walks the batch's
+    // grid, and a default 1 s spread would name pictures this session never extracted.
+    batch.set_frame_interval(crate::project::frame_interval(tree.dir()));
     for line in crate::clip_rules_tools_leg::answer_calls(&reply.tool_calls, &mut batch) {
         crate::ui::window::log_line(&line);
     }

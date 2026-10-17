@@ -160,6 +160,9 @@ pub struct Frames<'a> {
     pub moments: &'a [f64],
     /// Each kept clip's start on the produced clock, 1-based `clip` numbers index into this.
     pub starts: &'a [f64],
+    /// The project's `P.project.frameInterval`: how far apart two frames ever are, so a named
+    /// moment resolves and a window narrows on the grid this session was extracted on.
+    pub interval: f64,
 }
 
 /// Run one `youtube` call over the brief and answer its tools. Returns what the record looks like after the
@@ -185,6 +188,7 @@ where
         answers: Vec::new(),
         frames_moments: frames.moments.to_vec(),
         starts: frames.starts.to_vec(),
+        interval: frames.interval,
         edited_by_hand,
     };
     let offered = crate::tools::offered(Job::UploadText);
@@ -348,6 +352,7 @@ struct State {
     answers: Vec<String>,
     frames_moments: Vec<f64>,
     starts: Vec<f64>,
+    interval: f64,
     edited_by_hand: bool,
 }
 
@@ -432,7 +437,13 @@ impl State {
                 let at = number_of(&args, "at");
                 let span = clip_span(&self.starts, clip);
                 let candidates =
-                    crate::produce_upload_frames::get_frames(&self.frames_moments, span.0, span.1, at);
+                    crate::produce_upload_frames::get_frames(
+                        &self.frames_moments,
+                        span.0,
+                        span.1,
+                        at,
+                        self.interval,
+                    );
                 let answer = format!(
                     "{} candidate frame(s) in clip {clip}: {}",
                     candidates.len(),

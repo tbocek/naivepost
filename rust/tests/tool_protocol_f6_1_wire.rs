@@ -229,7 +229,12 @@ fn cancelled() -> impl Fn() -> bool {
 fn silent(_line: &str) {}
 
 fn frames<'a>(moments: &'a [f64], starts: &'a [f64]) -> call::Frames<'a> {
-    call::Frames { moments, starts }
+    // 1.0 is a project with no opinion (`Project::default().interval`).
+    call::Frames {
+        moments,
+        starts,
+        interval: 1.0,
+    }
 }
 
 /// Does this request body carry a `tools` field?

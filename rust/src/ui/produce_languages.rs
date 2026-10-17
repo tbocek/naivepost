@@ -658,6 +658,9 @@ pub fn upload_ask(
         let frames = crate::produce_upload_call::Frames {
             moments: &moments,
             starts: &starts,
+            // Read at call time, from the session folder this tree names: Freq is a project field,
+            // so a run that started before a Freq change still answers on the grid in force now.
+            interval: crate::project::frame_interval(tree.dir()),
         };
         let cancelled = || false;
         let collected = crate::produce_upload_call::call(
