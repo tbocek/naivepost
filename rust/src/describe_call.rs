@@ -113,26 +113,70 @@ pub fn stage_chunk(
     }
     let mut answered = 0usize;
     let mut from_cache = 0usize;
-    for start in describe::chunk_plan(&picked, describe::FRAMES_PER_REQ) {
-        let batch = &picked[start..picked.len().min(start + describe::FRAMES_PER_REQ)];
-        // The chunk's own span, exactly as `describe::message` is told it: last frame plus one grid
-        // step, so the rows it writes end where the request said its frames covered.
-        let start_second = picked[start];
-        let end = batch.last().copied().unwrap_or(start_second) + freq;
-        let outcome = run_chunk(
-            tree,
-            paths,
-            conf,
-            lane,
-            batch,
-            end,
-            freq,
-            &user_context(tree),
-            log,
-        )?;
-        answered += 1;
-        if outcome.cached {
-            from_cache += 1;
+    // §09 §4's other half, applied to this step: one chunk's request does not read the chunk before
+    // it (`run_chunk` re-reads `events.tsv`/`state.txt` from disk for every chunk, so a chunk only
+    // ever waits on an ALREADY-WRITTEN row, never on a sibling in flight), so the step may put
+    // `P.machine.slots` of its asks on the wire at once instead of one. `in_flight(true, slots)` is
+    // the ONE rule that decides that number; at the default of 1 this is exactly the old serial
+    // walk, so nothing changes for the common case. Sending them one at a time left the extra slots
+    // to the model's other clients while this app's own independent asks queued behind each other.
+    let at_once = crate::llm_liveness::in_flight(true, crate::services::llm_slots(conf));
+    // The two files stay the main thread's alone — `events.tsv` is appended per chunk and is the
+    // resume marker, and `state.txt` holds "the state after the last chunk", so BOTH must go down
+    // in chunk order however the asks overlapped. Workers therefore only ask; the round's answers
+    // are applied here, oldest chunk first.
+    let context = user_context(tree);
+    let plan = describe::chunk_plan(&picked, describe::FRAMES_PER_REQ);
+    for round in plan.chunks(at_once.max(1)) {
+        let dialled = std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(round.len());
+            for start in round {
+                let batch = &picked[*start..picked.len().min(*start + describe::FRAMES_PER_REQ)];
+                // The chunk's own span, exactly as `describe::message` is told it: last frame plus
+                // one grid step, so the rows it writes end where the request said its frames covered.
+                let start_second = picked[*start];
+                let end = batch.last().copied().unwrap_or(start_second) + freq;
+                let batch = batch.to_vec();
+                let context = context.clone();
+                handles.push(scope.spawn(move || {
+                    // `log` is `&mut impl FnMut` and lives on this thread, so a worker buffers what
+                    // it would have said; the main loop prints the buffers in chunk order below.
+                    let mut said: Vec<String> = Vec::new();
+                    let answer = run_chunk(
+                        tree,
+                        paths,
+                        conf,
+                        lane,
+                        &batch,
+                        end,
+                        freq,
+                        &context,
+                        &mut |line| said.push(line.to_string()),
+                    );
+                    (said, answer)
+                }));
+            }
+            // A worker that died is one chunk's failure, not the run's: name what failed and carry
+            // on with the chunks that answered (§Failure-is-specific). `scope` joins every worker
+            // here, so nothing is still asking when the main thread writes the files.
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle.join().unwrap_or_else(|_| {
+                        (Vec::new(), Err(format!("{lane}: describe: a chunk worker died")))
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        for (said, answer) in dialled {
+            for line in said {
+                log(&line);
+            }
+            let outcome = answer?;
+            answered += 1;
+            if outcome.cached {
+                from_cache += 1;
+            }
         }
     }
     let _ = &changes;
