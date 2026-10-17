@@ -40,4 +40,12 @@
 # a session folder the app writes when it is launched from `rust/` itself; anchored so it cannot
 # match a real project folder or anything under rust/src
 /rust/session.naivepost/
+
+# extracted frames the snapshot bench writes into the demo fixture so the Cut page's preview has a
+# real JPEG to decode; generated, like the shot beside it
+/rust/fixtures/demo.naivepost/prepare/
+# the built-in card badges and the video card `05-insert` stages with: `press_insert` seeds `assets/` on
+# first open for a real project too, so the snapshot's copy of that work is generated, not authored
+/rust/fixtures/demo.naivepost/assets/
+/rust/fixtures/demo.naivepost/f2-12-sting.mp4
 .codehalter/
