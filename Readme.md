@@ -204,6 +204,72 @@ default: a bare caption lands in the lower third, a drawing in the middle, a vol
 until you point it at one lane. It starts two seconds wide — drag it to the length you want — and
 **↶ Undo** takes it back.
 
+**🔊 Volume** opens a form instead — "Volume a – b", named for the seconds it is about: your marked
+stretch if you have one, else two seconds from the red line. In it: **Volume %** (0–1000; 100 is as
+recorded, 0 silent), **Length** (at least 0.1 s), **Fade in**, **Fade out** and **Curve**. Volumes that
+overlap multiply rather than replace each other, and the gain is already audible when the preview is
+paused, so you can park the line inside a raised passage and hear what it will do before playing. The
+status ends "— the picture is untouched": a volume changes what you hear and no pixel. With neither a
+marked stretch nor a placed line it says so instead of opening anything.
+
+**🏷 Label** opens "Label at m:ss" — the moment it marks, named for where the line stands. Two fields: a
+**Name**, which is what you call that moment ("the reveal", "boss fight"), and a **Length** of at least 0.4 s,
+how wide the marked moment is drawn. A label changes nothing in the video: the tag shows on the effects lane and
+is never rendered, and the narration writer is told about it as MARKED. A label with no name is not placed —
+type one and it is marked.
+
+Once an effect is on the lane (F3.8) you work with the band itself rather than the menu. A **click** opens its
+form again, titled for the moment it belongs to; a **drag of the middle** moves the whole thing, both ends
+snapping to clip borders, other effects' ends and the red line within 8 px; a **drag of either end**
+resizes it, stopping at 0.1 s so a band can never be squeezed out of existence. The **✕ in the middle**
+takes it out — only bands wide enough to show one clearly away from their own grips offer it — and **Esc**
+drops whatever you are holding and cancels. Every form is live: the first answer you accept costs one undo
+entry, keystrokes land as you type rather than per character, and the footer says so — *kept as you type, ↶
+Undo takes the whole edit back*. Editing a band you already picked up re-reads the effect as it now stands,
+so a box or length changed elsewhere shows up in the form instead of being overwritten by what was there
+when you opened it.
+
+**✐ Captions** (F3.9) is the one effect you don't place at all: after the cut, it asks the model over the
+kept clips in batches of five, showing each clip's length and what was said over it as offsets inside that
+clip. Captions come back as text on the lane; ones too short to read or with no words are dropped without a
+fuss, a batch that names a clip it wasn't shown loses that whole reply and is asked once more, and if it fails
+again you get a `!!! captions: clips a–b skipped -- the cut stands without them` line rather than a failed
+run. **↶ Undo** takes the entire pass back in one step, and the button is greyed out when the Captions policy
+is off.
+
+**⏩ Speeds** (F3.10) asks the model once, over the whole cut — its total length and where the captions sit —
+which stretches run dull. A clip carrying a caption won't be hurried, and the app says so out loud rather than
+dropping the request quietly; a rate of about 1 is ignored as if it had not been said. Two fast stretches at the
+same rate that come within four seconds of each other merge into one, so the tempo change reads as a single move
+instead of a stutter. If the answer is unusable after a second try you get `!!! speed: no usable answer — every
+clip plays at 1` rather than a failed run. **↶ Undo** takes the whole pass back, and the button is greyed when
+the Speeds policy is off. There is no minimum length for a clip to be sped up.
+
+**✨ Decorations** (F3.11) asks the model once, over every kept clip, told what each clip's
+captions and speed already do to it — because a caption rules a zoom out, and a clip already
+running at ×4 wants a different decoration. It asks for the three kinds you can place by hand:
+a zoom, one stop, and volume for a level change, a duck or a mute. A decoration on a clip you
+were never shown is refused outright and the whole answer is thrown away; one whose kind isn't a
+zoom, stop or volume, or whose span is empty, is skipped and the reason is said rather than lost.
+What lands is decorated with the app's own defaults, not the model's: a zoom centred in the
+frame at 60 % of its height, a stop that holds the picture still for the seconds it named, a
+volume that ramps in and out over the second or the quarter-clip, whichever is shorter. A volume
+asked for at gain 1 changes nothing and is ignored; a gain of 0 is kept, because silence is
+something you can mean. `>>> effects: 3 decoration(s)` is what the log says when it answers, and
+`!!! effects: no usable answer -- the cut stands without them` when the second try fails too.
+**↶ Undo** takes the whole pass back in one step, and the button is greyed when the Decorations
+policy is off.
+
+Every effect is held to the cut as it will actually play (F3.12). Once edge snapping, dead-air
+removal, mark removal and coalescing have moved the timeline — or once you press － Remove — an
+effect aimed at the seconds that went away goes with them: a band trimmed to what survives is dropped
+if less than 1 s of it is left (`P.eng.effectMinSurvivingSeconds`), while a longer survivor keeps
+its new place and length, its fades shrinking with it. The status line says `effects clamped to the
+cut — N dropped`, the log carries `>>> N effect(s) pointed at footage the final cut does not keep —
+dropped`, and one ↶ takes the clamp back together with the edit that caused it. A cut whose effects
+already sit inside kept footage changes nothing at all: `nothing to clamp — every effect sits inside
+the footage the cut keeps`, and no undo step is spent on it.
+
 **⊕ Zoom** is the one entry that does not add anything when you pick it — it waits for you to draw
 the box. The picture's camera layer steps aside so you can see the whole source, and you drag a
 rectangle wherever the close-up should be; let go and the form opens, titled with the second it
@@ -232,6 +298,17 @@ you what that answer costs: how many seconds the sound ends up behind the pictur
 sync skips those seconds. Esc or Cancel leaves everything alone. One **↶ Undo** takes the whole effect
 back. Where a fast stretch and a slow one overlap, they don't fight — the two rates average across each
 span, so overlapping effects blend rather than one winning outright.
+
+**▨ SVG** is the other entry that adds nothing when you pick it — but unlike ⊕ Zoom it asks for the
+drawing *first*: a chooser opens in the shared `assets/` folder, because arming you to place a drawing
+you haven't chosen would put the box down for nothing. Close that chooser without picking anything and
+nothing happens. Once you have picked one, its name appears in what the app says next: drag the box it
+goes in anywhere on the picture, any shape — the drawing keeps its own shape inside whatever you draw —
+or just click, which puts it across the middle. The form that opens is titled with the second it belongs
+to and leads with the file, so **Choose…** swaps the drawing without losing the box or the seconds you
+had typed; after that it's Length, the two fades and the curve like every other effect. A drawing with
+no file is never placed, and a length too short for one is refused by name. Esc or Cancel before you
+Apply leaves everything alone, and one **↶ Undo** takes a placed drawing back.
 
 Below the camera rows, the **effects lane** shows one row per group of effects that overlap in time,
 each kind in its own colour so a zoom never looks like a caption, and a staying zoom is coloured apart
@@ -420,9 +497,49 @@ so plainly instead of editing a ghost.
 An editable line per clip: what is said over it, in which voice, with what
 emotion. ▶ writes the lines the cut does not have and speaks the ones not
 already in the cache; rewriting every existing line too is a choice you turn on
-(`P.policy.narrationRewrite`), never the default. A clip grows, or the speech
-speeds up, when a line does not quite fit — both are logged. Turn the narration
-off entirely and everything that exists to carry one disappears from the page.
+(`P.policy.narrationRewrite`), never the default — off, only a clip with no line
+gets one. The list of clips you marked as playing their own audio is yours, not the
+model's: it survives a rewrite of the lines. Before anything is overwritten the
+previous record is kept as `narrate/narration.prev.json`. A clip grows, or the speech
+speeds up, when a line does not fit — both are logged. The row's warning is the same rule read early: it runs
+the render's own fitting ladder over every line of that clip together, so the row never promises a fix the
+render would not apply — 'moved earlier' where sliding is enough, 'moved earlier and sped up' where the
+speech also has to run faster. The writing itself is one long
+call, tried up to three times: it thinks first, and stops thinking after an attempt that
+wrote nothing. While it runs the bar reads `writing N/M clips` and only ever moves
+forward, so a retry looks like work redone rather than undone; if all three attempts
+fail, nothing is written. The narration is never answered from the reply cache — the
+words are cheap to redo and the voice is the expensive part, so the synthesis cache is
+the cache. Untick **Narration** and everything that exists to carry one greys: the
+lines, the preview and the voice picker, while the tick itself stays pressable so
+you can turn it back on. The record is not touched — `narrate/narration.json` is
+left exactly as it is, takes and voice reference included — and Produce drops its
+game-volume slider (keeping the number, so the slider comes back where you left it)
+and renders without lines; an "I'm feeling lucky" run skips Narrate altogether.
+Ticking it back finds everything you had written.
+
+The page itself splits into a working column and the lines. Top left: the **Narration** tick, the preview
+with its transport (back 3 s · ▶ · forward 3 s) and ＋ to start a line at this second, a slider on the
+cut's own clock with the readout `session · cut/length`, and the shared volume. Below it: the voice
+picker — *No audio — captions only*, then Narrator 1..4, then every `.wav` in the voices folder — with
+**Add file…** beside it, the take band — its waveform shows only once the voice on offer has a recording
+on disk (`narrate/voice_ref_base.wav`), since there is nothing to select from otherwise; an empty voice
+means *captions only*, so no band and nothing to clone — and answers to `＋` (make a take of what you
+dragged), `－` (take those seconds back out) and `▶` (play them from the red bar); the sample sentence with `▶ ⏹ ⟳`, and the pitch slider from
+−6 to +6 semitones. On the right, one row per line, sorted by clip then position: its time, what happens
+at the end (`– mm:ss`, `(~)` while the take is still a guess, `(no line — this clip plays on its own
+audio)`, `(caption — the viewer reads it; never spoken)`), the fit warning when a line runs past its
+clip, and `▶` speak this line · `↻` a new take · `＋` a line below · `🗑` remove. A row's `▶` is heard, not
+just spoken: the take lands in `narrate/tts/` and plays from its lead-in (three seconds ahead where those
+seconds are the line's own) on the voice player at the game-audio level, over the cut's own picture when a
+recording covers the clip; a take already on disk replays without dialling the synthesis server again. The text box carries
+`[emotion] words`, or `[top|center|bottom] words` for a caption; a tag may name the second too
+(`[excited @65] Weee` moves the line), but the box never prints that number back — the time field owns
+it. At the bottom: the Inputs readout (`N clip(s) · mm:ss`, plus how many clips are unwritten and how
+many lines sit off the cut) and Outputs (`narrate/ — narration.json, the voice reference and the
+synthesis cache`). Where the prototype drew the row's plus sign as the full-width CJK character U+FF0B,
+which shows as a missing-glyph box on machines without such a font, the rewrite uses the ordinary
+list-add icon.
 
 ### Produce
 
@@ -431,12 +548,35 @@ stream copy, loudness-normalized over the whole thing so the joins do not pump.
 Container, codec, quality, resolution, frame rate, audio bitrate, mono, frame
 edges — all here.
 
+**webm is its own answer**: picking it forces vp9 and turns "track in file"
+into "none in the video", and the page says so on the status line rather than
+changing your choice quietly. With **narration off** the Game audio slider
+leaves the settings list but keeps its value, so ticking narration back on
+finds it where you left it. The **images row** takes up to eight pictures:
+the first is the base the image model edits, the rest are references your
+instruction can name — a ninth is refused, never silently dropped. Each slot's
+**Change…** swaps that one picture for another file and leaves the slot where it
+is: the row keeps its order, only the picture moves, so changing a reference
+never makes a different picture the base. Over the thumbnail you **drag a box**
+to put words on it; they print to fill the box, like a Text effect in Cut, and
+pressing the box's **✎** opens "Words on the thumbnail" to reword it or remove
+it — emptying the box and saving removes it too, since a box with no words has
+nothing to print. The **title** is printed across the thumbnail the first time
+it is drawn; after that the two are separate, so retitling does not repaint the
+picture.
+
 ▶ over an unchanged project costs nothing: the render keeps `produce/final.stamp`
 beside the video, a hash of what it reads — the encoder settings (not where the
 file goes), the segments, each narration line with its take's size and mtime, each
 recording's path, size and mtime, the aspect, the voice and whether narration is on.
-The same hash means the encode is skipped; the title, description, thumbnail and
-upload record are not in it, so re-drawing a picture never makes a video stale.
+The same hash means the encode is skipped, and the skip is said out loud:
+">>> the video is already what this page describes — not encoding it again
+(↻ beside Transcode encodes anyway)". A skip writes no new stamp. Anything in those
+groups makes the video stale and it encodes: a narration line added or reworded, a
+take re-synthesised (its size or mtime moved), an encoder tick flipped, a recording
+re-pointed at another file. The title, description, thumbnail and upload record are
+not in it, so re-drawing a picture never makes a video stale; deleting
+`produce/publish/` starts the upload text over without touching the video.
 
 **Subtitles** come from Prepare's aligned words, not from a second transcription
 and not from reading the finished video back: the words that survive the cut,
@@ -471,17 +611,64 @@ video, or — where your context asks for a picture the video already contains
 the title printed on it locally. The title, the description and the thumbnail
 instruction come from one model call that reads your context.
 
-Under the picture, four runs cost different things: **⊙ Thumbnail only** ticked
-redraws from the instruction as it stands — one drawing call, no text rewritten;
-unticked, or **↻ reword**, that same text comes back from one model call for its
-three answers and the picture stays as it is. Marking your own image as the
-thumbnail copies it rather than referencing it, so it survives reopening, and
-printing words on it costs no model call at all: they go over the drawn picture,
-and the preview shows the text, width and position the export will use. **⤓**
-offers a JPEG at the first quality that fits 2 MiB and never rescales it; **⤓
-Save video** copies the render out without making it stale, and **↻ Transcode**
-encodes a file you name with the settings on the row — no model call, and no
-caption track, since a file from outside has no transcript beside it.
+That call is the run's **words half**: it reads a brief of the finished video —
+"THE FINISHED VIDEO: N clips, m:ss long", then what each clip is and what was
+seen and said in it, then the narration at its time in the video (or the plain
+statement that none has been written). Unlike the narration brief it carries no
+marked or caption lines and no effects; a long session's brief is bounded at
+120 kB, folding each clip to its first lines and events and leaving the model to
+read more with `get_lines`. Each tool answers what it actually did rather than
+just "ok": a picked frame tells you the frame taken **and how far it sits from
+the moment asked for** (frames exist only every interval, so the nearest is
+taken at any distance) and that nothing will be drawn; setting an instruction
+after a frame was picked is refused instead of silently clearing the frame; a
+title answers the size it prints at, or warns that over seven words it will
+overflow the band — and keeps the words either way. `publish.json` and
+`description.txt` are written **before** anything is drawn, so a draw that fails
+keeps the thinking rather than losing it. With nothing chosen and no frame named,
+three frames spread over the kept footage fill the row. The drawing request
+carries your instruction plus "Do not write any words, letters, titles, logos or
+captions into the picture. Keep the upper/middle/lower part calm and uncluttered:
+a title will be printed across it afterwards", at your video's aspect over 1280,
+and it is skipped when the picture's own stamp says these images and this
+instruction were already drawn. The marked texts print first, then the title, and
+the title is reprinted whenever its text changes — until you edit the picture by
+hand, after which it is yours. A reply missing the title or the instruction keeps
+last run's value (an empty box is easier to notice than a wrong line); the
+description is always replaced.
+
+Under the picture, the page's runs cost very different things. **↻** over the
+picture redraws from the images and the instruction as they stand: one drawing
+call, nothing rewritten, ending "thumbnail drawn — ▶ renders the video"; with
+the words asked for again it costs one model call on top, never a second draw.
+**↻ beside Title** is the only thing that rewrites text — one model call for its
+three answers — and it does not touch the picture at all. Marking your own image
+as the thumbnail copies it rather than referencing it, so it survives reopening,
+and printing words on it costs no model call at all: they go over the drawn
+picture, and the preview shows the text, width and position the export will use.
+Every one of them refuses before it starts when there is nothing to work on, in
+its own sentence: no cut, no picture, no rendered video. **⤓** offers a JPEG at
+the first of 92, 85, 75, 60, 40 that fits 2 MiB, writes the last attempt even
+if none of them did, and never rescales; **⤓ Save video** announces itself
+("saving …", then "saved … — size") and copies the render out without making it
+stale, since the stamp describes the file ▶ wrote; and **↻ Transcode** encodes a
+file you name with the settings on the row — no model call, and no caption
+track, since a file from outside has no transcript beside it.
+
+What ▶ actually does, end to end: it clears `produce/clips/`, speaks every line
+that has no take yet (nothing is spoken when the voice is "captions only" — those
+lines ride the subtitle track alone), plans one clip per segment and fits each
+narration line to its clip, writes `produce/clips/final.srt` on the produced
+clock, encodes each clip with the seek before the input, the effect chain, the
+narration mixed over the bed at the Game-audio level and then a limiter, joins
+the clips by stream copy, translates the cues only after the encodes so the
+encoder never idles behind the model, then loudness-normalises and muxes with the
+subtitle tracks and the mp4 faststart flag, and writes the `.srt` and `.vtt`
+pair beside the video for each language. It asks at five points between its
+subprocesses — after each line spoken, after each clip encoded, before the join,
+before the translate and mux, and before the publish model call — and a stop
+leaves no stamp, so the next press does the whole thing rather than trusting
+half a render.
 
 ---
 
@@ -540,7 +727,12 @@ firefox, the audio.cpp endpoint with its four model rows and the forced aligner,
 and the sd.cpp server. Each Test button reads what its box holds at that moment,
 marks ✓ or ✗ with the verdict as its tooltip, and mirrors its line into the main
 log as `settings: …`; "Test All" runs all six kinds and reports each one without
-stopping at a failure — and the four servers of
+stopping at a failure. The three rows that name a port — the LLM, audio.cpp and
+sd.cpp endpoints — dial the address typed in their box over HTTP and leave their
+timed line in `requests.tsv` like any other request; the rows naming no port
+(ffmpeg, firefox, and the five model boxes) answer from whatever provider this
+build was given, so an unwired one says `nothing wired to probe <row>` rather than
+showing a check nobody probed for — and the four servers of
 [02-services.md §1](spec/02-services.md): their loopback defaults, what each
 settings box falls back to, which path and timeout every kind of call has, and
 which aligner a server's own model list offers — and the model roles of
@@ -617,8 +809,10 @@ run ends at a queue reset: the next call starts a fresh page named after its own
 first step, and a call made with no run open gets a page of its own rather than
 going unrecorded. The log gets two lines per call —
 what went out in kB and images, what came back in how long — plus once per run
-the line naming `llm/<page>`. Keeping that page can never fail the call it
-records: a problem turns into a log line instead. And no request is ever too big
+the line naming `llm/<page>`. That one line is the log's only clickable thing:
+activating it opens the page in a browser — GTK's file launcher, `xdg-open` as
+the fallback — and no other path the log names is clickable. Keeping that page
+can never fail the call it records: a problem turns into a log line instead. And no request is ever too big
 ([§5](spec/09-llm-and-tools.md)): one prompt may carry at most 120 000 characters
 (`P.machine.promptMaxChars`), counted as characters rather than bytes so a Cyrillic
 transcript isn't charged twice for its encoding; a job with more to say is split up —
@@ -646,7 +840,10 @@ while open goes back to Prepare in silence; arriving flushes the narration's
 output moved, or refreshes Produce's readouts and publish panel. Those two rows —
 the page's `Inputs:` count and its `Outputs:` count with the folder button beside
 it — sit under the bottom bar on every tab, not only on Prepare, and they are
-redrawn each time you switch. The ⓘ that opens the editing-policy form is now one
+redrawn each time you switch. On Produce the `Inputs:` row carries the answer to
+"what exactly is behind that count" in its tooltip: the cut's own line, the first
+line to be spoken, the voice in use, and whether text leaves the machine — and a
+thing the flows have not published yet contributes no row there rather than a guess. The ⓘ that opens the editing-policy form is now one
 button in the title bar, to the left of ⚙ ⟳, and its tooltip names the tab you are
 looking at. And what one
 means ([F0.2](spec/03-shell.md)): a run under way first, so the same button shows
@@ -983,6 +1180,19 @@ both recipes are how the app is seen here. A screen that is really a dialog —
 `03-new-confirm`, `03-policy-form`, `03-settings` — paints the dialog itself
 rather than the window behind it, matching its spec image; the settings dialog
 shows blank badge cells there because nothing has been probed in a snapshot run.
+Screens with no spec image of their own name themselves after the flow they show:
+`03-log-link` shows the log expander
+open with a run's exchange-page line among the lines above it. `04-prepared`
+shows the shell after a Prepare run ended — bar full, "prepared — N files" on the
+status row, the three folders named in the open log, and the Outputs count moved
+to what the run wrote. The effect screens whose spec image shows a FORM — `06-zoom`,
+`06-speed`, `06-text`, `06-svg`, `06-volume`, `06-label` — render that form by driving
+the same doors the dropdown rows do (a line placed, then the press, and for the drag
+kinds a box drawn on the preview), so each shot is the page with its form open.
+`06-speeds` shows the Cut page after a ⏩ Speeds pass — the speed bar on the effects lane and the pass's
+`>>> speed: N clip(s) run fast` sentence on the status row — driven through the same door the button fires.
+`06-decorations` does the same for a ✨ Decorations pass: a zoom, a stop and a volume bar on the lane beside
+each other, in their own colours, under the `>>> effects: N decoration(s)` sentence.
 
 `just build` (or `cargo build --release`) produces the standalone binary at
 `rust/target/release/naivepost`, and prints the triple it is building for first.
