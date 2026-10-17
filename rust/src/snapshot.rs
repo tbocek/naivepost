@@ -639,6 +639,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             let said = crate::snapshot_verbs::stage(&window, &screen, &dir);
             println!("snapshot: {screen} | {}", said.join(" | "));
         }
+        // F2.8's picture stages its own trim, through the door the strip's left-button drag calls (see
+        // `snapshot_trim`). Same reason as above: `run` is past the size another staging block fits in.
+        if screen == "05-trim" {
+            let said = crate::snapshot_trim::stage(&window, &dir);
+            println!("snapshot: 05-trim | {}", said.join(" | "));
+        }
         // The Narrate shot's own files go down AFTER the publish above: a `build()` later than this one
         // (one per tab) re-reads them, and only the files keep the voice, shift and take list on screen.
         crate::snapshot_narrate::seed_project_files(&screen);
