@@ -153,6 +153,13 @@ pub fn origin() -> f64 {
 
 /// The strip's pixels-per-second right now: the stored zoom over this strip's own view (§2). One door, so
 /// the paint, the press geometry and every test read the SAME number the layout was drawn with.
+///
+/// The surface is the strip's DECLARED width (`window::STRIP_WIDTH`, its size request), NOT whatever width
+/// GTK happened to allocate it. That is deliberate: `press_zoom` floors the ladder at the same declared
+/// width via [`zoom_surface_width`]'s caller passing `view_px(STRIP_WIDTH)`, so §A's "− stops where the
+/// whole session is on screen" means "on screen in the strip as built" — a number that does not change if
+/// the Cut page's paned later stretches the strip across the column. Reading the realized allocation here
+/// would make − stop at one fit while the strip's own paint and press geometry ran at another.
 pub fn strip_pps() -> f64 {
     live_pps(view_px(f64::from(crate::ui::window::STRIP_WIDTH)))
 }

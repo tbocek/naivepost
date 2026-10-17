@@ -170,10 +170,10 @@ fn check_a_notch_over_the_tracks_zooms_and_shift_pans(app: &adw::Application) {
 /// fits — which for a twenty-minute tape is far below the constant the placeholder strip was sized with.
 fn check_the_zoom_buttons_rescale_and_stop_at_the_fit(app: &adw::Application) {
     let window = cut_window(app);
-    // The surface the ladder actually measures its floor over — `cut_view::zoom_surface_width`, asked of the
-    // window rather than assumed, so a page whose band is wider than the placeholder cannot move the number
-    // under this check without saying so here.
-    let view = ui::cut_view::view_px(ui::cut_view::zoom_surface_width(&window));
+    // The surface the ladder actually measures its floor over: the strip's DECLARED width, which is what
+    // `press_zoom` passes to `zoom_step`. Reading the window's realized allocation here instead would check
+    // the rule against a surface no door in the program uses once §05-cut#1's paned stretches the strip.
+    let view = ui::cut_view::view_px(f64::from(ui::window::STRIP_WIDTH));
     let floor = timeline::floor_pps(&timeline::filmed_runs(&tape()), view);
     let button = |name: &str| {
         widget_in(&window, name)

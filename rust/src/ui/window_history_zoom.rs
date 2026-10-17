@@ -221,8 +221,13 @@ pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
 /// session fits (`cut_view::floor_pps`) rather than the placeholder strip's constant, so a session of any
 /// length stops at “all of it on screen”.
 pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
-    // The ladder's floor is the strip's fit (§A), not the full-page band's — see `zoom_surface_width`.
-    let width = crate::ui::cut_view::zoom_surface_width(window);
+    // The ladder's floor is the strip's DECLARED fit (§A), not the full-page band's and not the width GTK
+    // happened to allocate it: `strip_pps` clamps over `view_px(STRIP_WIDTH)`, so a floor worked out over
+    // the realized allocation (which the Cut page's paned stretches across the column) would be a number
+    // nothing else agrees with — − would stop there while the strip still showed the tape from its first
+    // second. Same surface both ways, asked of the constant the strip was built with.
+    let _ = window;
+    let width = f64::from(crate::ui::window::STRIP_WIDTH);
     let (next, _) = crate::ui::cut_view::zoom_step(
         inward,
         &crate::timeline::filmed_runs(&page_recordings()),
