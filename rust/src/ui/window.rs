@@ -480,6 +480,9 @@ fn page_box(
         // its size budget) and come back empty: `refresh_effects_lane` fills them once this window has a cut.
         // The return value is unread — nothing after this arm packs beside the panel — so it is dropped.
         let _ = crate::ui::cut_preview_panel::install(&box_, &previous);
+        // §A/§1 put the page in an order the flows did not build it in (preview | readings on top,
+        // then toolbar, tracks, scrollbar). This re-orders the widgets just built; see the module doc.
+        crate::ui::cut_page_layout::arrange(&box_);
     }
 
     // F2.11 S1 — the whole-cut fold badge's holder, beside the camera rows. THE CUT PAGE ONLY:

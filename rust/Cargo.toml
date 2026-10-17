@@ -1890,3 +1890,7 @@ path = "tests/sec_12_decisions_5_results.rs"
 [[test]]
 name = "p_machine_promptmaxchars"
 path = "tests/p_machine_promptmaxchars.rs"
+
+[[test]]
+name = "sec_05_cut_1_screen_layout"
+path = "tests/sec_05_cut_1_screen_layout.rs"

@@ -126,6 +126,9 @@ pub mod cut_preview_press;
 /// the Cut page, and keeping the overlay stack in step with the frame. Split out of `window.rs`, which is
 /// past its size budget.
 pub mod cut_preview_panel;
+/// §05-cut#1-screen: the Cut page's own child order, assembled in one place because `window.rs` is
+/// past its size budget. See the module doc.
+pub mod cut_page_layout;
 /// §06-effects#2-the-lane-and-the-preview — whether a lane bar earns its dashed debt tail, and the class it
 /// wears. Split out of `window.rs`, which is past its size budget.
 pub mod cut_debt_tail;
