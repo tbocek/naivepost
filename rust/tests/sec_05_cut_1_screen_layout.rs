@@ -21,6 +21,7 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle};
 static RAN_ORDER: AtomicBool = AtomicBool::new(false);
 static RAN_NO_GAP: AtomicBool = AtomicBool::new(false);
 static RAN_WIDTHS: AtomicBool = AtomicBool::new(false);
+static RAN_LANE: AtomicBool = AtomicBool::new(false);
 
 /// How far below the toolbar's bottom edge the tape may start. §A puts the tracks DIRECTLY under the
 /// toolbar; the arrangement bug left ~750 px of empty plate between them, so anything past this fails.
@@ -158,7 +159,9 @@ fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
         "the band and its overlay stack come before the trim strip: {names:?}"
     );
     let bar = at("track-scrollbar");
-    for name in ["cut-toolbar", "track-layers", "track-strip", "camera-rows", "effects-lane"] {
+    // The effects lane is NOT in this list: §06-effects#2 packs it under the preview frame, so it
+    // travels inside `cut-top` with the picture rather than below the paned.
+    for name in ["cut-toolbar", "track-layers", "track-strip", "camera-rows"] {
         assert!(at(name) < bar, "`{name}` sits above the scrollbar: {names:?}");
     }
     RAN_ORDER.store(true, Ordering::SeqCst);
@@ -207,6 +210,42 @@ fn check_the_preview_outranks_the_reading_column(app: &adw::Application) {
     RAN_WIDTHS.store(true, Ordering::SeqCst);
 }
 
+/// §06-effects#2, seen from this item's page: the effects lane travels WITH the frame it marks --
+/// same parent, the child immediately after it, and BELOW it on screen (not beside it in the paned).
+fn check_the_lane_sits_under_the_frame(app: &adw::Application) {
+    let window = cut_page(app);
+    let panel = find_named(&window, "preview-panel").expect("\u{a7}A's preview panel is on the page");
+    let lane = find_named(&window, "effects-lane").expect("the Cut page drew the effects lane");
+    let parent = lane.parent().expect("the lane is packed somewhere");
+    let mut order: Vec<String> = Vec::new();
+    let mut child = parent.first_child();
+    while let Some(node) = child {
+        order.push(node.widget_name().to_string());
+        child = node.next_sibling();
+    }
+    let panel_at = order
+        .iter()
+        .position(|name| name == "preview-panel")
+        .unwrap_or_else(|| panic!("the lane's parent holds no preview panel: {order:?}"));
+    let lane_at = order
+        .iter()
+        .position(|name| name == "effects-lane")
+        .expect("the lane is a child of its own parent");
+    assert_eq!(
+        lane_at, panel_at + 1,
+        "the lane is the frame's next sibling, so every reader that walks from the frame finds it: {order:?}"
+    );
+    // And UNDER it, not beside it: the lane's top edge is at or below the panel's bottom edge.
+    let (_, panel_bottom) = edges(&panel);
+    let (lane_top, _) = edges(&lane);
+    println!("LANE panel bottom y={panel_bottom}, lane top y={lane_top}");
+    assert!(
+        lane_top >= panel_bottom,
+        "the lane sits under the picture it marks: lane top {lane_top} vs panel bottom {panel_bottom}"
+    );
+    RAN_LANE.store(true, Ordering::SeqCst);
+}
+
 fn round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -221,6 +260,8 @@ fn round() {
             check_no_gap_between_toolbar_and_tape(app);
             println!("CHECK 3 the preview takes the wide half");
             check_the_preview_outranks_the_reading_column(app);
+            println!("CHECK 4 the effects lane sits under the frame it marks");
+            check_the_lane_sits_under_the_frame(app);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -239,6 +280,13 @@ fn sec_05_cut_1_screen_the_tape_sits_directly_under_the_toolbar() {
     common::pin_private_cwd();
     round();
     assert!(RAN_NO_GAP.load(Ordering::SeqCst), "the toolbar-to-tape gap check never ran");
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_lane_sits_under_the_frame_it_marks() {
+    common::pin_private_cwd();
+    round();
+    assert!(RAN_LANE.load(Ordering::SeqCst), "the lane-under-the-frame check never ran");
 }
 
 #[test]

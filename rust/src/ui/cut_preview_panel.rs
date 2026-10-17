@@ -50,6 +50,12 @@ pub fn install(page_box: &gtk::Box, previous: &gtk::Widget) -> gtk::Widget {
     // OUTSIDE the camera rect, so "the picture" and "the panel" have to be the same box).
     let rect = gtk::Box::new(gtk::Orientation::Vertical, 0);
     rect.set_widget_name("preview-camera-rect");
+    // The panel's own size is a FLOOR now that the panel sits in a resizable pane (§A's "paned (660)"): a
+    // fixed request made it a 240 px island in a 700 px half. `preview-panel` asks for at least this much,
+    // and this box -- its only child -- fills whatever the panel is given, so the picture, the dim and every
+    // overlay on it are measured against the same box at any width (§2).
+    rect.set_hexpand(true);
+    rect.set_vexpand(true);
     rect.set_size_request(
         crate::ui::window::PREVIEW_PANEL_W as i32,
         crate::ui::window::PREVIEW_PANEL_H as i32,
