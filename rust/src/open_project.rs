@@ -124,9 +124,9 @@ pub struct Applied {
 
 /// S3: set the project path and output folder first, then read and apply the project.
 ///
-/// `exists` answers "is this file still where the project says it is". It is a parameter rather than
-/// a direct filesystem call so the drop rule can be tested against a fake as well as a real tree;
-/// the UI passes `Path::exists`.
+/// `exists` answers "is this file still where the project says it is", resolved against `dir` by
+/// [`source_present`]. It stays a parameter so the drop rule can be tested against a fake as well as
+/// a real tree; every live door passes real `Path::exists`.
 pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, OpenFailure> {
     // --- S3, part one: the paths, before anything is read -------------------
     // The project folder is also the output folder; nothing else stores where work goes.
@@ -152,7 +152,7 @@ pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, Open
         .sources
         .drain(..)
         .filter(|source| {
-            let present = exists(&layout_resolve(&root, &source.path));
+            let present = source_present(&root, &source.path, &exists);
             if !present {
                 dropped.push(source.path.clone());
             }
@@ -160,8 +160,13 @@ pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, Open
         })
         .collect();
     project.sources = kept;
+    // One line per missing FILE, so a source spelled twice in the project prints the complaint once.
+    let mut said: Vec<&String> = Vec::new();
     for path in &dropped {
-        lines.push(dropped_line(path));
+        if !said.contains(&path) {
+            said.push(path);
+            lines.push(dropped_line(path));
+        }
     }
 
     Ok(Applied {
@@ -183,6 +188,14 @@ fn layout_resolve(project_dir: &Path, written: &str) -> PathBuf {
         None if written.starts_with('/') => PathBuf::from(written),
         None => project_dir.join(written),
     }
+}
+
+/// Whether a stored source path still has its file in `project_dir`, asked through `present` so a
+/// caller can answer it from a fake. The ONE place a stored path becomes a disk path for this
+/// question: `apply` filters through it and so does the launch (`ui::launch::load_for_launch`), so
+/// S3's dropped-source sentence cannot be spelled or decided differently in two places.
+pub fn source_present(project_dir: &Path, written: &str, present: &impl Fn(&Path) -> bool) -> bool {
+    present(&layout_resolve(project_dir, written))
 }
 
 /// S4: migrate old folder names and hand back the lines that say what moved.

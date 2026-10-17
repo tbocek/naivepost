@@ -18,8 +18,36 @@ use crate::{icons, machine_store, open_project, project, settings, startup, ui};
 /// could sit in a session opened at start without anyone being told (§8's [F0.9] bullet). A folder
 /// that cannot be read still opens blank — the same behaviour this call replaced (`unwrap_or_default`)
 /// keeps, because losing the session over an unreadable file is worse than opening empty.
+///
+/// F0.9 S3's dropped-source line belongs here too: a launch takes on a project exactly as the Open
+/// button does, so it asks [`open_project::apply`] — the ONE door that decides which sources are gone —
+/// and returns its lines after the load report. Going through `apply` rather than re-checking the files
+/// here is what keeps the sentence spelled in one place and said once per missing file.
 pub fn load_for_launch(path: &Path) -> (project::Project, Vec<String>) {
-    project::load_report(path).unwrap_or_else(|_| (project::Project::default(), Vec::new()))
+    let (mut project, mut report) =
+        project::load_report(path).unwrap_or_else(|_| (project::Project::default(), Vec::new()));
+    // Only a folder with a project file has sources to lose; a blank session has none and must not
+    // gain a complaint about it.
+    if path.join(project::PROJECT_FILE).is_file() {
+        let kept = std::mem::take(&mut project.sources);
+        project.sources = kept
+            .iter()
+            .filter(|source| {
+                open_project::source_present(path, &source.path, &|file| file.exists())
+            })
+            .cloned()
+            .collect();
+        // One line per missing file, in the order the project listed them, and once each: a source
+        // spelled twice would otherwise print the same complaint twice.
+        let mut said: Vec<String> = Vec::new();
+        for source in kept.iter().filter(|s| !project.sources.contains(s)) {
+            if !said.contains(&source.path) {
+                said.push(source.path.clone());
+                report.push(open_project::dropped_line(&source.path));
+            }
+        }
+    }
+    (project, report)
 }
 
 /// The launch's icon search, in the shape `open_at_start` calls it: beside the binary, under the

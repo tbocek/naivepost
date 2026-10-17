@@ -219,6 +219,69 @@ fn f0_9_s3_an_exists_closure_of_true_drops_nothing() {
     );
 }
 
+#[test]
+fn f0_9_s3_the_drop_line_is_the_spec_literal_once_per_missing_file() {
+    // The sentence is the spec's, so it is pinned as bytes rather than only through `dropped_line`:
+    // a reword must fail here. Two spaces before the `--`, no em dash.
+    let root = temp_dir("s3-literal");
+    let folder = project_folder(
+        &root.join("eth.naivepost"),
+        r#"{
+  "sources": [
+    {"path": "project:sources/keep.mkv", "footage": true},
+    {"path": "project:sources/gone.mkv", "footage": true},
+    {"path": "project:sources/gone.mkv", "footage": true},
+    {"path": "project:sources/away.mkv", "footage": false}
+  ]
+}"#,
+        &["keep.mkv"],
+    );
+
+    let applied = open_project::apply(&folder, |path| path.exists()).expect("opens");
+
+    let literal = "!!! project:sources/gone.mkv is not there any more -- dropped from the session";
+    assert_eq!(
+        applied.lines.iter().filter(|line| *line == literal).count(),
+        1,
+        "a source listed twice is still one complaint: {:?}",
+        applied.lines
+    );
+    assert_eq!(
+        applied.lines.iter().filter(|line| line.contains("is not there any more")).count(),
+        2,
+        "each missing file once, and nothing else said: {:?}",
+        applied.lines
+    );
+    assert_eq!(
+        open_project::dropped_line("project:sources/gone.mkv"),
+        literal,
+        "the helper spells the spec's sentence"
+    );
+    assert_eq!(applied.project.sources.len(), 1, "only the present file survives");
+}
+
+#[test]
+fn f0_9_s3_a_launch_reopen_says_the_dropped_source() {
+    // S3's wording belongs to any applied project, not only one picked in the chooser: a launch that
+    // reopens a remembered folder takes sources away the same way, and must say so. That door is
+    // `ui::launch::load_for_launch`, which now goes through the same presence rule as `apply`.
+    let root = temp_dir("s3-launch");
+    let folder = project_folder(&root.join("eth.naivepost"), TWO_SOURCES, &["keep.mkv"]);
+
+    let (project, lines) = naivepost::ui::launch::load_for_launch(&folder);
+
+    assert_eq!(project.sources.len(), 1, "the gone file is out of the opened session");
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| **line
+                == "!!! project:sources/gone.mkv is not there any more -- dropped from the session")
+            .count(),
+        1,
+        "the launch says it once: {lines:?}"
+    );
+}
+
 // --- S4: a failed open leaves nothing half-applied --------------------------------------------------
 
 #[test]

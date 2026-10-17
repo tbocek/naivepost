@@ -36,6 +36,8 @@ fn window_round() {
             s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app);
             s4_the_opened_project_lands_in_the_conf_on_disk(app);
             RAN.store(true, std::sync::atomic::Ordering::SeqCst);
+            the_dropped_source_is_said_by_the_real_open(app);
+            RAN_DROP.store(true, std::sync::atomic::Ordering::SeqCst);
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -43,6 +45,7 @@ fn window_round() {
 }
 
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_DROP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// A project folder holding `body` as its `naivepost.json`, with real files for `present`.
 /// A project folder written with `body` as its `naivepost.json`, plus real files for each of the
@@ -358,5 +361,70 @@ fn s4_the_opened_project_lands_in_the_conf_on_disk(app: &adw::Application) {
             folder.join(PROJECT_FILE).display()
         )),
         "and the FILE half: {body}"
+    );
+}
+
+/// S3's dropped-source sentence through the button's own path. The literal is pinned as bytes and
+/// counted, not just searched for: `open_folder` logs every line the apply produced, so a second door
+/// saying the same thing (or the same line logged twice) must fail here rather than read as a detail.
+fn the_dropped_source_is_said_by_the_real_open(app: &adw::Application) {
+    let root = temp_dir("s3-drop-wire");
+    let folder = project_folder(
+        &root.join("drop-eth.naivepost"),
+        TWO_SOURCES_ONE_GONE,
+        &["keep.mkv"],
+    );
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+
+    // The seam the folder chooser's response calls — same body, no dialog in the way.
+    assert!(ui::open_from(&window, &folder), "the project opened");
+
+    assert_eq!(
+        ui::session_sources(&window),
+        vec!["project:sources/keep.mkv".to_string()],
+        "only the source whose file is there survives"
+    );
+    let literal = "!!! project:sources/gone.mkv is not there any more -- dropped from the session";
+    // Counted over THIS press only: take the log from the `>>> opened ‹this folder›` line that ends
+    // it, since three earlier checks in this round open a project with the same missing file and the
+    // sink is shared process-wide. The drop line comes BEFORE that line (the repaint's ffprobe rows
+    // follow it), so the window starts one marker further back.
+    let logs = ui::window_logs();
+    let end = logs
+        .iter()
+        .rposition(|line| line.starts_with(">>> opened") && line.contains(&folder.display().to_string()))
+        .expect("this open logged its own >>> opened line");
+    let start = logs[..end]
+        .iter()
+        .rposition(|line| line.starts_with(">>> opened"))
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let mine = &logs[start..=end];
+    assert!(
+        mine.iter().any(|line| line.as_str() == literal),
+        "this open must say the drop: {mine:?}"
+    );
+    assert_eq!(
+        mine.iter().filter(|line| line.as_str() == literal).count(),
+        1,
+        "said once by this press, not twice: {mine:?}"
+    );
+    assert_eq!(
+        ui::state(&window).status,
+        naivepost::ui::open_apply::opened_status("drop-eth.naivepost"),
+        "the open succeeded, so the status carries the opened wording, not a failure"
+    );
+    window.close();
+}
+
+#[test]
+fn f0_9_s3_the_real_open_button_logs_the_dropped_source() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_DROP.load(std::sync::atomic::Ordering::SeqCst),
+        "the dropped-source check never ran"
     );
 }
