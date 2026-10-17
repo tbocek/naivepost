@@ -210,21 +210,26 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
     // allocation — a lane drawn below it would be clipped away, which is what "detached at the bottom
     // of the page" looked like.
     let layers = find_named(&window, "track-layers").expect("the band's layer stack is on the page");
-    let _band = find_named(&window, "track-band").expect("the band's drawing area is on the page");
+    let band = find_named(&window, "track-band").expect("the band's drawing area is on the page");
     let (band_top, band_bottom) = local(&layers);
-    let allocated = band_bottom - band_top;
+    // The size request, not the allocation: `fit_band_height` grows the request and the allocation only
+    // catches up on the next layout pass, so reading the allocation here races it — the same lane that
+    // grew correctly read 132 px in one suite run and 200 px in another.
+    let requested = f64::from(band.size_request().1);
     let needed = naivepost::ui::cut_tracks::band_height_px(
         &scene,
         naivepost::ui::cut_tracks::THUMB_DEFAULT_PX,
     );
     println!(
-        "LANES band y={band_top}..{band_bottom} ({allocated} px), scene needs {needed} px, {} lane(s)",
+        "LANES band y={band_top}..{band_bottom} ({} px), size request {requested} px, scene needs \
+         {needed} px, {} lane(s)",
+        band_bottom - band_top,
         scene.lanes.len()
     );
     assert!(
-        allocated as f64 + 2.0 >= needed,
-        "the band's allocation covers the height its scene costs, so the recorders' lanes are \
-         inside the tape rather than below it: allocated {allocated} px vs needed {needed} px"
+        requested + 2.0 >= needed,
+        "the band's size request covers the height its scene costs, so the recorders' lanes are \
+         inside the tape rather than below it: requested {requested} px vs needed {needed} px"
     );
     // And the gap from the toolbar to the tape is still small — §A packs the tracks directly under it,
     // and the failure mode was ~750 px of empty plate between the two.
@@ -245,9 +250,9 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
         // at least that tall plus one row, or the lane would be clipped away.
         let rows_height = naivepost::ui::cut_tracks::band_height_px(&scene, thumb);
         assert!(
-            (band_bottom - band_top) as f64 + 2.0 >= rows_height,
-            "the band's allocation covers the height its scene costs: allocated {} px vs needed {rows_height} px",
-            band_bottom - band_top
+            requested + 2.0 >= rows_height,
+            "the band's size request covers the height its scene costs: {requested} px vs needed \
+             {rows_height} px"
         );
         rows_height
     };
