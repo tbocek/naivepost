@@ -1902,3 +1902,7 @@ path = "tests/cut_lane_plate.rs"
 [[test]]
 name = "cut_lane_plate_widgets"
 path = "tests/cut_lane_plate_widgets.rs"
+
+[[test]]
+name = "sec_05_cut_1_screen_screen"
+path = "tests/sec_05_cut_1_screen_screen.rs"

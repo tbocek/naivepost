@@ -245,6 +245,30 @@ fn sec_02_services_4_degraded_modes_s8_a_tools_refusal_on_round_one_runs_as_one_
         degraded::tools_fallback("stop", 1),
         ToolsFallback::KeepTools
     );
+
+    // A DEAD server is not a server refusing the `tools` field either. §2's fallback is for a
+    // server that ANSWERED and objected to the request; a wire that never spoke must never be
+    // talked into a DIFFERENT request, because re-asking a dead wire is what turned §3's one
+    // retry into three asks on a box that is down. `connection refused` already read as no; the
+    // case that could not is a RESET, whose real transport string (OpenSSL, and ureq's body-read
+    // wrapper around it) carries the words inside a longer sentence with a trailing
+    // ` (os error 104)` — a shape the word-boundary matcher must still catch. The string below
+    // also carries the letters of the noun the fallback looks for, which is what makes the guard
+    // in `tools_refused` load-bearing rather than decorative.
+    let dead_wire = "failed, transport error: connection reset by peer (os error 104)";
+    assert!(
+        naivepost::llm_retry::transport_death(dead_wire),
+        "the ladder's own door reads this as a dead transport"
+    );
+    assert!(
+        !degraded::tools_refused(dead_wire),
+        "a reset is a transport death, not a tools refusal"
+    );
+    assert_eq!(
+        degraded::tools_fallback(dead_wire, 1),
+        ToolsFallback::KeepTools,
+        "and it asks for no fallback body: the wire, not the request, is the problem"
+    );
 }
 
 #[test]

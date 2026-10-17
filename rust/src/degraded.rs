@@ -265,6 +265,18 @@ pub fn tools_refused(error: &str) -> bool {
     if lower.contains("stop") || lower.contains("end of turn") {
         return false;
     }
+    // A transport death is not a refusal of the `tools` field, whatever words the OS put in
+    // it. §2's fallback exists for a server that ANSWERED and objected to the request ("the
+    // request's `tools` field does not match this server's expected shape"), and a dead wire
+    // never got that far. Without this guard a reset whose wording happens to carry the noun
+    // (OpenSSL's `reset by peer` line reads `... connection reset by peer (os error 104)` under
+    // some loaders, whose trailing parenthetical defeats a plain word-boundary match) reads as
+    // a tools refusal, and the caller's §2 S5 fallback then puts a THIRD identical request on
+    // a server that is down -- §3's "one retry after 2 s" becomes three asks. The load decides
+    // which wording the kernel hands back, which is exactly why the count could differ.
+    if crate::llm_retry::transport_death(&lower) {
+        return false;
+    }
     lower.contains("tool")
 }
 
