@@ -69,15 +69,23 @@ pub fn frame_at(moments: &[f64], at: f64) -> Option<f64> {
 
 /// §3.9's `get_frames(clip, at?)`: the candidate frames inside one clip, so the picture is chosen by
 /// LOOKING rather than by position (the prototype showed the writer none and picked band middles itself).
-/// With `at` given the answer narrows to a window around that moment — `P.project.frameInterval` either side,
-/// which is how far apart two frames ever are, so a window of one interval always holds a neighbour.
+/// With `at` given the answer narrows to a window around that moment, and the window is the PROJECT's
+/// `P.project.frameInterval` (`interval`, passed in by the caller) — that is how far apart two frames
+/// ever are, so a window of one interval always holds a neighbour. A fixed stop here would name frames
+/// wider or nearer than the ones this session actually extracted.
 /// An unknown span answers everything rather than nothing: showing no frames would read as an empty video.
-pub fn get_frames(moments: &[f64], from: f64, to: f64, at: Option<f64>) -> Vec<f64> {
+pub fn get_frames(
+    moments: &[f64],
+    from: f64,
+    to: f64,
+    at: Option<f64>,
+    interval: f64,
+) -> Vec<f64> {
     let inside = moments.iter().copied().filter(|at| *at >= from && *at < to).collect::<Vec<f64>>();
     let Some(at) = at else {
         return inside;
     };
-    let half = crate::prepare::FREQ_DEFAULT;
+    let half = interval;
     let mut window = inside
         .into_iter()
         .filter(|moment| (moment - at).abs() <= half)

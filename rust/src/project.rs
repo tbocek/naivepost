@@ -902,6 +902,16 @@ pub fn save(project: &Project, dir: &Path) -> Result<(), String> {
     write_bytes(dir, &marshal(project)?)
 }
 
+/// `P.project.frameInterval` for the session in `dir`: the project's own `interval`, and for a
+/// folder with no readable project the same default [`Project::default`] carries, so the two
+/// never disagree. Frames exist only this far apart (§02 §3.9), so every door that names a frame
+/// grid asks here instead of assuming a spread — the number stays in [`Project::interval`].
+pub fn frame_interval(dir: &Path) -> f64 {
+    load(dir)
+        .map(|project| project.interval)
+        .unwrap_or_else(|_| Project::default().interval)
+}
+
 fn write_bytes(dir: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     let file = dir.join(PROJECT_FILE);

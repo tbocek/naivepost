@@ -420,6 +420,9 @@ pub fn ask_at_over(
     // tried against them and each refusal is said in this step's log (§F3.10 S2). Every rate still travels in
     // `Asked`, because `cut_speed_pass::place` keeps making the placement judgement on the calls that arrived.
     let mut batch = crate::clip_rules_tools_leg::batch_of(clips);
+    // The frames a model may aim at are only this far apart: §3.7's `get_frames` walks the batch's
+    // grid, and a default 1 s spread would name pictures this session never extracted.
+    batch.set_frame_interval(crate::project::frame_interval(tree.dir()));
     for (clip, count) in captioned {
         // One placeholder line per caption the caller reported: `set_clip_speed` refuses any rate above 1 over a
         // clip that carries one, whatever the words are, and this pass is not shown the texts.

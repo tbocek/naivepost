@@ -271,6 +271,9 @@ pub fn ask_at(
     // conversation rides on every later round (§2 S2), each with its own timed row -- rounds only happen because
     // the model asked, so a plain answer still costs the one request above.
     let mut batch = crate::clip_rules_tools_leg::batch_of(clips);
+    // The frames a model may aim at are only this far apart: §3.7's `get_frames` walks the batch's
+    // grid, and a default 1 s spread would name pictures this session never extracted.
+    batch.set_frame_interval(crate::project::frame_interval(tree.dir()));
     let messages = vec![
         Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
         Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },

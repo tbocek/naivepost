@@ -253,7 +253,8 @@ fn f5_6_s2_the_youtube_call_offers_thinking_and_the_six_tools() {
     let scene = fixture("thinking_and_tools", &llm.url());
     let moments = [1.0f64, 2.0, 3.0];
     let starts = [0.0f64, 20.0];
-    let frames = call::Frames { moments: &moments, starts: &starts };
+    // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
+    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0 };
     let collected = call::call(
         &scene.tree,
         "THE FINISHED VIDEO: 2 clips, 00:24 long.",
@@ -330,7 +331,8 @@ fn f5_6_s2_each_tool_answers_as_3_9_promises() {
     // and §3.9 says the ANSWER states that distance rather than hiding it.
     let moments = [1.0f64, 21.0, 34.0, 40.0];
     let starts = [0.0f64, 20.0];
-    let frames = call::Frames { moments: &moments, starts: &starts };
+    // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
+    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0 };
     let collected = call::call(&scene.tree, "BRIEF", &empty(), &frames, false, &cancelled(), silent)
         .expect("the fake answers");
     let said = collected.answers.join("\n");
@@ -389,7 +391,8 @@ fn f5_6_s2_finish_names_what_is_still_missing() {
     let scene = fixture("finish_missing", &llm.url());
     let moments = [1.0f64];
     let starts = [0.0f64];
-    let frames = call::Frames { moments: &moments, starts: &starts };
+    // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
+    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0 };
     let mut previous = empty();
     previous.description = "last run's description".to_string();
     let collected = call::call(&scene.tree, "BRIEF", &previous, &frames, false, &cancelled(), silent)
@@ -420,7 +423,8 @@ fn f5_6_s2_the_finish_tool_answers_ok_or_names_what_is_missing() {
     let scene = fixture("finish_ok", &llm.url());
     let moments = [1.0f64];
     let starts = [0.0f64];
-    let frames = call::Frames { moments: &moments, starts: &starts };
+    // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
+    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0 };
     let collected = call::call(&scene.tree, "BRIEF", &empty(), &frames, false, &cancelled(), silent)
         .expect("the fake answers");
     assert!(collected.answers.iter().any(|answer| answer == "finished"), "{:?}", collected.answers);
@@ -457,7 +461,8 @@ fn f5_6_s2_a_down_llm_is_named() {
     point_at(&dead);
     let moments = [1.0f64];
     let starts = [0.0f64];
-    let frames = call::Frames { moments: &moments, starts: &starts };
+    // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
+    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0 };
     let err = call::call(&scene.tree, "BRIEF", &empty(), &frames, false, &cancelled(), silent)
         .expect_err("nothing listens there");
     assert!(err.contains(MODEL), "the reason must name the model (§00-principles): {err}");
