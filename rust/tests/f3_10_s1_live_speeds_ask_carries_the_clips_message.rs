@@ -136,11 +136,18 @@ fn f3_10_s1_live_speeds_ask_carries_the_clips_message_to_the_llm() {
         .iter()
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect();
-    assert_eq!(offered.len(), 2, "exactly two tools offered, got {offered:?}");
+    assert_eq!(offered.len(), 3, "the write tool, `finish` and §3.7's read, got {offered:?}");
     assert!(offered.contains(&"set_clip_speed"), "set_clip_speed was offered: {offered:?}");
     assert!(offered.contains(&"finish"), "finish was offered so the reply can be closed: {offered:?}");
+    assert!(
+        offered.contains(&"get_frames"),
+        "§3.7's read rode out beside the write tool: {offered:?}"
+    );
     assert_eq!(
-        offered.iter().filter(|name| **name != "set_clip_speed" && **name != "finish").count(),
+        offered
+            .iter()
+            .filter(|name| **name != "set_clip_speed" && **name != "finish" && **name != "get_frames")
+            .count(),
         0,
         "nothing else is offered -- a caption or decoration tool here would invite an answer this pass ignores"
     );

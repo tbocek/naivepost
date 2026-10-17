@@ -324,6 +324,30 @@ pub fn ask_run(
         })
     };
     let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
+        // §3.1's shared reads, answered from the batch in hand. `get_lines` is deliberately NOT taken
+        // here: §3.4 wants that read with the pause before every line, which is this job's own answer
+        // below, so the shared door is tried only for the names the retake hunt does not redefine.
+        if !matches!(asked.name.as_str(), "get_lines") {
+            let ctx = crate::tool_reads::Context {
+                user_context: &user_context(tree),
+                job: Job::Retakes,
+                // The two fields §3.4's retake rules read, spelled as `naivepost.json` spells them, so
+                // `get_context` answers with what this job's answer actually depends on.
+                // The two fields §3.4's retake rules read, spelled as `naivepost.json` spells them. Read
+                // from the settings dialog's live fields rather than restated: `ask_run` is handed the
+                // `Marks`, not the project, and §12 §4 makes the marking pass the thing that decided this
+                // job runs at all.
+                policy: &marking_policy_fields(),
+                // The transcript rows, in the numbering the request used. `get_lines` is answered from
+                // `marks` below (§3.4's pause), but `get_context` reads this batch's extent.
+                lines: &shared_lines(marks.lines()),
+                events: &[],
+                frames: &[],
+            };
+            if let Some(answer) = crate::tool_reads::dispatch(&ctx, asked) {
+                return answer;
+            }
+        }
         let args: serde_json::Value = serde_json::from_str(&asked.args)
             .unwrap_or_else(|_| serde_json::json!({}));
         let number = |key: &str| args.get(key).and_then(|v| v.as_u64()).map(|v| v as u32);
@@ -475,7 +499,45 @@ fn rehear(
 }
 
 /// The §3.4 `get_lines` answer: each line with its seconds and the pause in front of it.
-fn lines_answer(marks: &Marks, from: u32, to: u32) -> String {
+/// The retake hunt's lines in `tool_reads`' shape, so `get_context`/`get_events`/`get_frames` can be
+/// answered by the shared door while `get_lines` stays this file's own (§3.4 wants the pause with it).
+fn shared_lines(lines: &[Line]) -> Vec<crate::textfmt::Line> {
+    lines
+        .iter()
+        .map(|line| crate::textfmt::Line {
+            start: line.start,
+            end: line.end,
+            speaker: String::new(),
+            text: String::new(),
+        })
+        .collect()
+}
+
+/// The policy fields `get_context` names for this job: the marking pass that turned the retake hunt on
+/// (§12 §4 derives it from "stumbled and started again") and the target length the ceiling is judged
+/// against. Spelled as `naivepost.json` spells them; a value the hunt reads but §10 gives no field for
+/// (the reach, the floor, the ceiling) is the tool's own rule and is not offered as settable.
+pub(crate) fn marking_policy_fields() -> Vec<(&'static str, String)> {
+    let policy = crate::ui::session_policy_for_form();
+    vec![
+        (
+            "markingPass",
+            crate::ui::policy_form::value_word(&policy, "markingPass"),
+        ),
+        (
+            "targetLengthSeconds",
+            crate::ui::policy_form::value_word(&policy, "targetLengthSeconds"),
+        ),
+    ]
+}
+
+/// The §3.4 read, reached from outside the crate: the same `lines_answer` the live loop calls, so a
+/// test of the read and the loop cannot drift apart.
+pub fn lines_answer_for_test(marks: &Marks, from: u32, to: u32) -> String {
+    lines_answer(marks, from, to)
+}
+
+pub(crate) fn lines_answer(marks: &Marks, from: u32, to: u32) -> String {
     let rows: Vec<String> = marks
         .lines_with_pause(from, to)
         .into_iter()

@@ -75,6 +75,55 @@ pub fn correction(problems: &[String]) -> String {
         suggest::answer(problems)
     )
 }
+/// The cut job's shared reads, answered from the plan the call is being made against: its footage extent
+/// is the timeline the request was stamped on, so `get_frames(from, to)` names seconds the model can put
+/// an `add_segment` on. `get_lines` and `get_events` get an honest refusal rather than a silence — §3's
+/// rule is that a problem comes back as a sentence the model can act on, and the transcript for this
+/// session is not in scope here (the brief that IS, is already in the prompt the plan was asked with).
+fn read_answer(plan: &cutpass::Plan, call: &ToolCall) -> Option<String> {
+    match call.name.as_str() {
+        // The transcript this cut was proposed from is already in the brief the plan was asked with; a
+        // second copy is not what these two reads are for, and §3's rule is that a problem comes back as
+        // a sentence the model can act on rather than as silence it has to guess at.
+        "get_lines" | "get_events" => Some(crate::tools::error(&format!(
+            "{} is not answered for this job: the lines and events this cut was asked about are already \
+             in the brief above",
+            call.name
+        ))),
+        "get_frames" | "get_context" => {
+            let frames = frames_of_footage(plan.footage_end());
+            let ctx = crate::tool_reads::Context {
+                user_context: "",
+                job: crate::roles::Job::ModelCut,
+                policy: &[("targetLengthSeconds", plan.target().to_string())],
+                lines: &[],
+                events: &[],
+                frames: &frames,
+            };
+            crate::tool_reads::dispatch(&ctx, call)
+        }
+        _ => None,
+    }
+}
+
+/// How many frames one `get_frames` answer may name: enough to aim a segment, few enough that a read
+/// cannot blow the request cap every chat call is checked against (`llm_budget`).
+const FRAMES_ANSWER_MAX: usize = 200;
+
+/// The seconds a cut may be aimed at, one per `P.project.frameInterval` out to the end of the footage.
+/// The request shows the model these same stamps, so a `get_frames` answer has to name them and not
+/// another grid: that interval is the only spacing a frame exists at.
+fn frames_of_footage(footage_end: f64) -> Vec<f64> {
+    let interval = crate::prepare::FREQ_DEFAULT.max(0.25);
+    let mut at = 0.0;
+    let mut out = Vec::new();
+    while at < footage_end && out.len() < FRAMES_ANSWER_MAX {
+        out.push(at);
+        at += interval;
+    }
+    out
+}
+
 /// §05-cut#8: `the checks answer with every fault at once, worst first, joined by "; "`. `check` is the
 /// whole-cut check's own list; `past_end` is a number the model wrote with its colons taken out, which is
 /// faulted with the conversion shown on the model's OWN digits (`2804 … 1684`) because that is the only way
@@ -229,6 +278,13 @@ fn wording(paths: Option<&Paths>, key: &str) -> Option<String> {
 /// Defaulting it to `0.0` would place a zero-length segment at the head of the session and teach the
 /// model nothing, which is the opposite of what §3.6's result column is for.
 pub fn answer_call(plan: &mut cutpass::Plan, call: &ToolCall) -> String {
+    // §3.1's shared reads first. §3 lists them for every job, and the cut is the one the model most needs
+    // them for: `get_lines` and `get_events` over the footage the request was built from, `get_frames`
+    // over the seconds the tape runs. Tried BEFORE this job's own six names, which never collide with a
+    // shared read, so the plan's answers below are untouched.
+    if let Some(answer) = read_answer(plan, call) {
+        return answer;
+    }
     let args: serde_json::Value =
         serde_json::from_str(&call.args).unwrap_or_else(|_| serde_json::json!({}));
     let seconds = |name: &str| -> Option<f64> { args.get(name).and_then(|v| v.as_f64()) };

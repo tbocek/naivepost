@@ -176,10 +176,17 @@ fn two_messages(system: &str, user: &str) -> Vec<Message> {
 /// `get_frames` stays out too — §F3.11 names exactly these two on the wire (`tests/f3_11_s1_…` counts them), and a
 /// zoom is aimed at the clip's centre by the app's own default rather than by a frame the model asked to see.
 /// One list, used for the body AND for any later round, so the wire can never disagree with itself.
+/// The decoration pass's tools: this pass's own write, `finish`, and §3.7's read.
+///
+/// §3 says every job names its read tools as well as its write tools, and `get_frames` is exactly the read
+/// this pass wants — a zoom aimed at nothing is the prototype's centred punch-in, which is what §3.7 names
+/// as the reason the read exists. The batch and the `answer` door already serve it (`add_effect`'s result
+/// already carries the `box` the app used). `get_context`, `get_lines` and `get_events` stay out: this ask
+/// carries the clip list and no transcript, so it could only refuse them.
 fn this_pass_tools() -> Vec<Tool> {
     crate::tools::offered(Job::ClipRules)
         .into_iter()
-        .filter(|tool| matches!(tool, Tool::AddEffect | Tool::Finish))
+        .filter(|tool| matches!(tool, Tool::AddEffect | Tool::Finish | Tool::GetFrames))
         .collect()
 }
 

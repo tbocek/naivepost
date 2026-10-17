@@ -1862,3 +1862,11 @@ path = "tests/sec_10_parameters_4_prompts_s9_effects_ask_is_thinking_off.rs"
 [[test]]
 name = "sec_10_parameters_4_prompts_s10_policy_derives_over_the_wire"
 path = "tests/sec_10_parameters_4_prompts_s10_policy_derives_over_the_wire.rs"
+
+[[test]]
+name = "sec_12_decisions_5_gaps_this_audit_closed_offer"
+path = "tests/sec_12_decisions_5_offer.rs"
+
+[[test]]
+name = "sec_12_decisions_5_gaps_this_audit_closed_results"
+path = "tests/sec_12_decisions_5_results.rs"
