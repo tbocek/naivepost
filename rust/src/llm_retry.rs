@@ -224,7 +224,7 @@ pub fn wait_seconds(died: bool, failure: u32) -> Option<u64> {
 /// reads in the log, so they win. A number the ladder does not hold keeps the unit that fits it, so a shortened
 /// backoff still reads sensibly rather than falling through to seconds.
 pub fn wait_spelling(seconds: u64) -> String {
-    if seconds >= 60 && seconds % 60 == 0 {
+    if seconds >= 60 && seconds.is_multiple_of(60) {
         let minutes = seconds / 60;
         return format!("{minutes} min");
     }

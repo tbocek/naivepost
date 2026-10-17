@@ -165,6 +165,88 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // the session filmed 0-120 as one take (that is what gives head/hole/tail anywhere to exist, see
         // `ui::page_recordings`), two clips are kept, the 30-40 hole is FOLDED so the bars meet at a
         // seam with a `+` on it, and the 60-120 tail is left open wearing a `-`.
+        // §F2.5's own picture (`spec/img/05-lanes.png`) is the SAME page staged the way its
+        // caption says the prototype was: "the lecture has no separate recordings, so 45 s of
+        // another day's recording was added to a clip" — i.e. one lane overlapping the footage,
+        // and one scene that has it silenced. The `05-cut` staging above already lays a lane
+        // down; this arm restages it for the lanes shot so the plate, the camera row's own sound
+        // strip (badge **1**) and the recorders' band (badge **2**) are all on screen together,
+        // and drives the silence through the page's own door rather than faking a painted band.
+        if screen == "05-lanes" {
+            // 45 s of a separate recording, placed to overlap two scenes, the way the caption
+            // stages it: the second scene silences it, the first does not.
+            let lanes_shot = cut::Cut {
+                segs: vec![
+                    cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
+                    cut::Seg { s: 30.0, e: 60.0, cam: 0, quiet: vec!["mic-lav".into()], ..Default::default() },
+                ],
+                lanes: vec![cut::Lane {
+                    name: "mic-lav".to_string(),
+                    src: "project:sources/mic-lav.wav".to_string(),
+                    at: 12.0,
+                    off: 0.0,
+                    dur: 45.0,
+                }],
+                ..Default::default()
+            };
+            ui::set_session_recordings(&[crate::timeline::Recording {
+                base: "session-tape".to_string(),
+                start: 0.0,
+                end: 120.0,
+            }]);
+            // The lane's file has to exist for its plate to carry a channel layout: `cut_lanes`
+            // asks ffprobe for the first audio stream, and an absent file answers `None`, which
+            // would leave the plate a bare name. A silent mono wav is the smallest file that
+            // really is mono (same helper the Narrate shot uses for its voice reference). It
+            // goes in the folder the resolution actually points at — `layout::resolve` with the
+            // app root and the session folder as the project, which is what `channels_of` uses —
+            // so the shot stages the file where the plate will look for it, not beside `--project`.
+            let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let wav = crate::layout::resolve(
+                &root,
+                &crate::startup::session_dir(&root),
+                "project:sources/mic-lav.wav",
+            );
+            if let Some(folder) = wav.parent() {
+                let _ = std::fs::create_dir_all(folder);
+            }
+            let _ = write_silence_wav(&wav, 8000, 8000 * 45);
+            ui::seed_review_cut(&window, &lanes_shot);
+            ui::refresh_camera_rows(&window);
+            // The plate text, printed the way the other staged screens print what they staged:
+            // the string is the app's own (`cut_lanes::plates` over the seeded lanes), so the
+            // shot's stdout says what badge **2** reads rather than leaving it to be squinted at.
+            let plates = crate::cut_lanes::plates(&lanes_shot.lanes);
+            println!("snapshot: 05-lanes plates | {}", plates.join(" | "));
+            // The line sits inside the scene that hears nothing, so the shot shows the silenced
+            // state the caption names, with the lane still drawn below the camera row.
+            ui::set_line_position(&window, cut_line::LinePos { t: 40.0 });
+            // Badge **1** shows a frame of the session (the demo fixture ships no extracted
+            // frames), staged the same way the `05-cut` shot stages it, so the shot has a
+            // picture above the recorders' band as the spec's picture does.
+            seed_snapshot_frame(&dir, "session-tape", 0.0);
+            ui::cut_picture::set_preview_camera_base("session-tape");
+            ui::cut_picture::set_snapshot_dir(&dir);
+        }
+        // §F2.5's own picture (`spec/img/05-lanes.png`) is the recorders' band drawn DOWNSTAIRS,
+        // in the strip under the ruler — not in the preview panel above. So the lane shot has to
+        // reach the same door `repaint_page` uses after the layout settles: `fit_band_height_for_window`
+        // grows `track-layers` (and the red line's layer) to the height the scene needs, which is
+        // what makes the lane row and its plate land inside the painted allocation. Called here so
+        // the shot's own drain repaints at that height; `install` sized it once with no cut yet.
+        if screen == "05-lanes" {
+            crate::ui::cut_tracks::fit_band_height_for_window(
+                &window,
+                &crate::ui::cut_view::band_scene_for(&window),
+            );
+            // Why the lane row did not reach an earlier version of this shot: the recorders'
+            // band is painted DOWNSTAIRS, in the strip under the ruler, and at the snapshot's
+            // zoom floor the whole session fits the visible tape, so the horizontal scrollbar
+            // is correctly hidden (§1: the track scrollbar, badge **31**, appears only when the
+            // tape is wider than the view). That is the same settled state the `05-cut` shot
+            // already shows; the plate itself is printed on stdout above, where a check can read
+            // it, and pinned in tests by `f2_5_s2_the_lane_plate_on_the_live_band_carries_the_layout`.
+        }
         if screen == "05-cut" || screen == "05-fold" {
             let folded_segs = vec![
                 cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },

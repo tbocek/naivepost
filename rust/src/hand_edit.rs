@@ -29,7 +29,7 @@ pub const EDITED_NOTE: &str = ">>> final.txt was edited after Prepare -- the mar
 /// times are not newer — the model's marks stand and no work is redone.
 pub fn edited(final_mtime: Option<SystemTime>, marks_mtime: Option<SystemTime>) -> bool {
     match final_mtime {
-        Some(text) => !marks_mtime.is_some_and(|marks| text <= marks),
+        Some(text) => marks_mtime.is_none_or(|marks| text > marks),
         None => false,
     }
 }

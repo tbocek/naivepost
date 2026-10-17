@@ -162,6 +162,7 @@ fn scene() -> Scene {
         row_count: 1,
         shift: Default::default(),
         lanes: Vec::new(),
+        lane_plates: Vec::new(),
         thumbs: Vec::new(),
         line: 0.0,
     }

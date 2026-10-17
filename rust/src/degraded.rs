@@ -178,7 +178,7 @@ pub fn can_draw(supported_modes: Option<&[&str]>) -> bool {
     match supported_modes {
         None => true,
         Some(modes) if modes.is_empty() => true,
-        Some(modes) => modes.iter().any(|mode| *mode == "draw"),
+        Some(modes) => modes.contains(&"draw"),
     }
 }
 
@@ -238,7 +238,7 @@ fn parse_id(reason: &str) -> String {
     match reason.find("job ") {
         Some(at) => {
             let rest = &reason[at + 4..];
-            let end = rest.find(|c: char| c == ' ' || c == '(').unwrap_or(rest.len());
+            let end = rest.find([' ', '(']).unwrap_or(rest.len());
             rest[..end].to_string()
         }
         None => String::new(),

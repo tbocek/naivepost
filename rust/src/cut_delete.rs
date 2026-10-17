@@ -47,7 +47,7 @@ pub fn refuses(scope: Option<&Scope>, scene: Option<&Seg>) -> Option<String> {
 /// §05-cut#8: the scene ⌦ would take at `t` — the [`crate::cut_hear::scene_at`] index read back as the scene
 /// itself, so a caller holding the list hands [`refuses`] the thing it asks for. `None` is a second the cut
 /// removed, which is exactly the answer that makes ⌦ refuse.
-pub fn scene_under<'a>(segs: &'a [Seg], t: f64) -> Option<&'a Seg> {
+pub fn scene_under(segs: &[Seg], t: f64) -> Option<&Seg> {
     let index = cut_hear::scene_at(segs, t)?;
     segs.get(index)
 }

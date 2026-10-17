@@ -165,7 +165,7 @@ pub fn vision_calls(frames: usize) -> usize {
 /// [`FIX_BLOCK_LINES`].
 pub fn fixer_calls(lines: usize) -> usize {
     let per_block = FIX_BLOCK_LINES;
-    lines / per_block + usize::from(lines % per_block != 0)
+    lines / per_block + usize::from(!lines.is_multiple_of(per_block))
 }
 
 /// The Inputs readout (§1): "N frames → M vision · L lines → K fixer".

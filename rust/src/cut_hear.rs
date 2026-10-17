@@ -431,7 +431,7 @@ pub fn toggle_lane_all(cut: &mut Cut, lanes: &[&str], name: &str) -> String {
         let quiet: Vec<String> = seg
             .quiet
             .iter()
-            .filter(|held| !lanes.iter().any(|lane| held.as_str() == *lane))
+            .filter(|held| !lanes.contains(&held.as_str()))
             .cloned()
             .chain(silenced)
             .collect();

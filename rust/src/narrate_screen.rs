@@ -785,7 +785,7 @@ fn same_clip(clip: &Seg, entry: &Entry) -> bool {
 }
 
 /// The clip the playhead stands on, half-open like every other range in the app.
-fn clip_at<'a>(clips: &'a [Seg], at: f64) -> Option<&'a Seg> {
+fn clip_at(clips: &[Seg], at: f64) -> Option<&Seg> {
     clips.iter().find(|seg| seg.s <= at && at < seg.e)
 }
 

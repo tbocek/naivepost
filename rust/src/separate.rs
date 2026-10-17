@@ -285,7 +285,7 @@ pub fn separate(
     // `lecture.split-voice.wav` — and so "both halves already there?" asks about the same names on
     // the next run instead of looking for `lecture.mkv.split-voice.wav` forever.
     let stem = base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(&base).to_string();
-    let stored = layout::resolve(root, &tree.dir(), &source.path);
+    let stored = layout::resolve(root, tree.dir(), &source.path);
     let container = if is_video(Path::new(&base)) { "mkv" } else { "wav" };
     let rest_path = tree.split_novoice(&stem, container);
     let voice_path = tree.split_voice(&stem);
@@ -318,8 +318,8 @@ pub fn separate(
         &file_name(&voice_path),
     ));
 
-    let rest = layout::write_path(root, &tree.dir(), &rest_path);
-    let voice = layout::write_path(root, &tree.dir(), &voice_path);
+    let rest = layout::write_path(root, tree.dir(), &rest_path);
+    let voice = layout::write_path(root, tree.dir(), &voice_path);
     split_rows(project, index, &rest, &voice);
     Ok(Outcome { logs, rest, voice })
 }

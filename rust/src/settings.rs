@@ -828,7 +828,7 @@ pub fn write_hang_dump(
 /// How long a component had been unresponsive, printed the way Go prints a duration.
 pub(crate) fn seconds_for(wait: std::time::Duration) -> String {
     let ms = wait.as_millis();
-    if ms % 1000 == 0 {
+    if ms.is_multiple_of(1000) {
         format!("{}s", ms / 1000)
     } else {
         format!("{:.1}s", ms as f64 / 1000.0)

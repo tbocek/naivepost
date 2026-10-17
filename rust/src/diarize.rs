@@ -178,7 +178,7 @@ pub fn pick_window(windows: &[&[Turn]]) -> Option<usize> {
         }
         let quietest = heard.iter().map(|(_, seconds)| *seconds).fold(f64::INFINITY, f64::min);
         // More voices wins; then the window whose least-represented voice has more of it.
-        if best.map_or(true, |(_, best_held, best_quiet)| held > best_held || (held == best_held && quietest > best_quiet))
+        if best.is_none_or(|(_, best_held, best_quiet)| held > best_held || (held == best_held && quietest > best_quiet))
         {
             best = Some((index, held, quietest));
         }

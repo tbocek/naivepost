@@ -40,6 +40,7 @@ pub struct Project {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Source {
     pub path: String,
     pub footage: bool,
@@ -66,17 +67,6 @@ impl Default for Project {
     }
 }
 
-impl Default for Source {
-    fn default() -> Self {
-        Self {
-            path: String::new(),
-            footage: false,
-            narrator: 0,
-            sepvoice: false,
-            tracks: Vec::new(),
-        }
-    }
-}
 
 impl Project {
     /// The last video chooser folder. Its default is root-relative, so `None`

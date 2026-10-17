@@ -197,12 +197,9 @@ pub fn extend_previous(cues: &mut Vec<Cue>) {
             kept.push(cue);
             continue;
         }
-        match kept.last_mut() {
-            Some(previous) => {
-                let longest = (cue.e - previous.s).min(MAX_SECONDS);
-                previous.e = previous.s + longest.max(0.0);
-            }
-            None => {}
+        if let Some(previous) = kept.last_mut() {
+            let longest = (cue.e - previous.s).min(MAX_SECONDS);
+            previous.e = previous.s + longest.max(0.0);
         }
     }
     *cues = kept;

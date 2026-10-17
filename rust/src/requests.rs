@@ -248,7 +248,7 @@ pub fn record(tree: &layout::Tree, request: &Request) -> Result<(), String> {
     // file is the only record of the requests, so repairing it by hand would be inventing
     // history rather than correcting it.
     let needs_header = match fs::read_to_string(&path) {
-        Ok(text) => !text.lines().next().is_some_and(|line| line == HEADER),
+        Ok(text) => text.lines().next().is_none_or(|line| line != HEADER),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
         Err(err) => return Err(format!("{}: {err}", path.display())),
     };

@@ -515,7 +515,7 @@ pub fn outputs_summary(files: usize, bytes: u64) -> String {
         return "0 files".to_string();
     }
     if bytes < MIB {
-        return format!("{files} files, {} KB", (bytes + 1023) / 1024);
+        return format!("{files} files, {} KB", bytes.div_ceil(1024));
     }
     format!("{files} files, {} MB", (bytes + MIB / 2) / MIB)
 }
