@@ -29,7 +29,6 @@ pub const NOTHING_OPEN: &str = "nothing is open \u{2014} the timeline shows the 
 pub fn frame(body: &gtk::Widget) -> gtk::Box {
     let column = gtk::Box::new(gtk::Orientation::Vertical, 4);
     column.set_widget_name("cut-form-frame");
-
     let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     heading.set_widget_name("cut-form-heading");
     let title = gtk::Label::new(None);
