@@ -222,6 +222,7 @@ pub mod snapshot_insert;
 pub mod snapshot_narrate;
 pub mod snapshot_preview;
 pub mod snapshot_produce;
+pub mod snapshot_rows;
 pub mod snapshot_settings;
 pub mod snapshot_suggest;
 pub mod snapshot_trim;

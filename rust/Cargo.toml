@@ -741,6 +741,10 @@ name = "f2_8_shot_state"
 path = "tests/f2_8_shot_state.rs"
 
 [[test]]
+name = "f2_10_rows_shot"
+path = "tests/f2_10_rows_shot.rs"
+
+[[test]]
 name = "f2_7_shot_states"
 path = "tests/f2_7_shot_states.rs"
 
