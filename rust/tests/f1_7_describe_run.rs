@@ -580,9 +580,27 @@ fn f1_7_s4_an_unchanged_run_answers_from_the_cache() {
         log.iter().any(|line| line.contains("answered from the cache")),
         "and said where the answer came from: {log:?}"
     );
-    // The rows are gone because THIS test deleted them, not because the cache failed: what proves the
-    // cached reply was replayed rather than skipped is that it cost no wire and still ended the pass.
-    assert_eq!(scene.event_rows().len(), 0, "this test removed the files it clears");
+    // The rows are BACK: the replay wrote one per frame while the wire stayed silent, and this chunk
+    // has no history (this test just deleted it), so §6's forced line opens the file. Before that rule
+    // landed a cold replay came back one row short, `write_batch` refused to write half an answer, and
+    // a cached chunk cost nothing AND wrote nothing while the pass still closed "event log complete".
+    let rows = scene.event_rows();
+    assert_eq!(rows.len(), FRAMES_PER_REQ, "the replay wrote one row per frame: {rows:?}");
+    assert!(
+        rows[0].ends_with(naivepost::tools::describe::Batch::SAME_WITHOUT_HISTORY),
+        "the cold replay opens on §6's forced line: {rows:?}"
+    );
+    // What is NOT written here: the reply the request cache holds is the CALL list without the STATE
+    // call -- `with_results` records only what the model asked of the four READ tools it did not answer
+    // itself (§3.2 Reads), and describe answers record_event/set_state/finish in-process. So the
+    // replay reproduces the EVENTS but cannot re-derive the state, and `write_chunk` writes the empty
+    // state it was handed (§S6: a cleared state must reach the file). Decided in the spec's spirit:
+    // events.tsv is the resume marker and is whole again; state.txt stays as the replay knows it.
+    assert!(
+        !scene.tree.describe_state(LANE).exists() || scene.state().trim().is_empty(),
+        "the cached replay leaves no state behind, since its stored reply carries no set_state: {}",
+        scene.state()
+    );
     assert!(
         log.iter().any(|line| line.starts_with(">>> [lecture] event log complete")),
         "the cached pass still closes: {log:?}"
