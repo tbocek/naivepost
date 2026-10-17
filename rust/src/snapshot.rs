@@ -305,6 +305,17 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             for _ in 0..6 {
                 ui::press_zoom(&window, true);
             }
+            // ...except on `05-cut` itself. Its picture is `spec/img/05-cut.png`, and there the
+            // whole session FITS the view, so §A's rule ("scrollbar (hidden when everything fits)")
+            // keeps badge **31** hidden; a bar in this shot would be an object the spec's own
+            // picture does not have. Every other Cut-page shot keeps the zoomed staging above,
+            // because those subjects need a bar. Walked back with the toolbar's own − door, so the
+            // ladder's floor (the film length fit) is what stops it, not a painted-over widget.
+            if screen == "05-cut" {
+                for _ in 0..20 {
+                    ui::press_zoom(&window, false);
+                }
+            }
         }
         // §2's own picture (`spec/img/03-runbar.svg`) is the run bar WITH WORK GOING ON: "the gears turn
         // while a run computes", and ▶ has become ⏸ "Pause". No snapshot could show that face until now

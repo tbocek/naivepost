@@ -1111,10 +1111,15 @@ pub fn frame_paths(tree: &layout::Tree, base: &str) -> Vec<std::path::PathBuf> {
             entries
                 .flatten()
                 .map(|entry| entry.path())
+                // The frame's STAMP is the rule (§B.3: `‹YYYY-MM-DD_HH-MM-SS.mmm›.jpg`, and
+                // `frame_near` compares names byte-wise), not one encoder's suffix. Prepare writes
+                // JPEG, so `.jpg` is what a real session holds; accepting PNG as well costs nothing
+                // and lets anything that renders a frame — the snapshot bench, a test fixture — plant
+                // a decodable file under its proper stamp instead of mislabelling PNG bytes `.jpg`.
                 .filter(|path| {
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.ends_with(".jpg"))
+                    path.file_name().and_then(|n| n.to_str()).is_some_and(|name| {
+                        name.ends_with(".jpg") || name.ends_with(".png")
+                    })
                 })
                 .collect()
         })
