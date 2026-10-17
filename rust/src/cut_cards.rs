@@ -44,7 +44,7 @@ pub fn unesc(value: &str) -> String {
         let tail = &rest[i..];
         if tail.starts_with('%') {
             if let Some(hex) = tail.get(1..3) {
-                if let Some(byte) = u8::from_str_radix(hex, 16).ok() {
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
                     if let Some(c) = char::from_u32(byte as u32) {
                         out.push(c);
                         i += 3;

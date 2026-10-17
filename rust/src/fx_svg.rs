@@ -106,7 +106,7 @@ pub fn arm_words(file: &str, marked: Option<(f64, f64)>) -> String {
 /// F3.5 S2: [`ARM_WORDS`] with the file filled in — the first half of [`arm_words`], exposed so a test can hold the
 /// sentence up against §A.5 without also asserting the tail's seconds.
 pub fn arm_head(file: &str) -> String {
-    ARM_WORDS.replace("{}", &format!("{file}"))
+    ARM_WORDS.replace("{}", file)
 }
 
 // --- S3: where it lands -------------------------------------------------------------------------------------------

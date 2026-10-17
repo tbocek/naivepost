@@ -279,7 +279,7 @@ pub fn runs_fast(clips: &Clips, effects: &[Fx], footage: f64) -> String {
 /// cut carries no speeds at all. Em dash again (per §F3.10's bytes), and the second half is the promise that matters:
 /// a longer video, and a whole one.
 pub fn no_answer() -> String {
-    format!("!!! speed: no usable answer \u{2014} every clip plays at 1")
+    "!!! speed: no usable answer \u{2014} every clip plays at 1".to_string()
 }
 
 /// F3.10 S5 (`two rounds fail`, with the fault appended and the call put again): what is logged between the two

@@ -337,7 +337,7 @@ fn glides(zoom: &Fx) -> (f64, f64) {
 pub fn is_static(samples: &[Sample]) -> bool {
     samples
         .get(1)
-        .map_or(true, |first| samples.iter().all(|s| near(s, first)))
+        .is_none_or(|first| samples.iter().all(|s| near(s, first)))
 }
 
 fn near(a: &Sample, b: &Sample) -> bool {

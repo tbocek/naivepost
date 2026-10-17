@@ -201,7 +201,7 @@ pub fn diar_window(attempt: usize) -> f64 {
 pub fn vision_batches(frames: usize) -> usize {
     let per_call = VISION_FRAMES_PER_CALL as usize;
     // Integer ceil without the +per-1 trick reading like an off-by-one at a glance.
-    frames / per_call + usize::from(frames % per_call != 0)
+    frames / per_call + usize::from(!frames.is_multiple_of(per_call))
 }
 
 /// Whether this job runs under this project's policy (§5, `P.policy.markingPass` and

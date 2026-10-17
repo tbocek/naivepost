@@ -81,6 +81,10 @@ pub struct Scene {
     pub shift: std::collections::BTreeMap<String, f64>,
     /// The cut lanes, whose `at` the plate spells "from m:ss".
     pub lanes: Vec<cut::Lane>,
+    /// §05-cut F2.5 badge 2: each lane's name plate WITH its channel layout (`‹name› mono`), in
+    /// `lanes`' order. Built by `crate::cut_lanes::plates`, which is where the rule lives; the
+    /// painter only draws what is here, so a check can read the same text the band shows.
+    pub lane_plates: Vec<String>,
     /// Thumbnails the band can show, keyed by the recording's base name. Decoded elsewhere (the page
     /// decodes once per row height and hands the paths in); an absent entry draws no pictures.
     pub thumbs: Vec<(String, Vec<std::path::PathBuf>)>,
@@ -193,6 +197,7 @@ pub fn scene_of(
         row_count,
         shift: shift.clone(),
         lanes: lanes.to_vec(),
+        lane_plates: crate::cut_lanes::plates(lanes),
         thumbs: Vec::new(),
         line,
     }
@@ -499,7 +504,13 @@ fn draw_lane_rows(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
         cr.set_font_size(9.0);
         ink(cr, (0.15, 0.15, 0.2));
-        text_at(cr, 2.0, top + 10.0, &lane.name);
+        // Badge 2's plate: the name WITH its channel layout, from `Scene::lane_plates`.
+        let plate = scene
+            .lane_plates
+            .get(index)
+            .map(String::as_str)
+            .unwrap_or(lane.name.as_str());
+        text_at(cr, 2.0, top + 10.0, plate);
     }
 }
 

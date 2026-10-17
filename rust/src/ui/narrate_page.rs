@@ -141,8 +141,8 @@ fn install_page_css_once() {
     }
     let css = ".narrate-plate { background-color: #1c1c1d; border: 1px solid #000000; }\n";
     let provider = gtk::CssProvider::new();
-    let _ = provider.load_from_data(css);
-    gtk::StyleContext::add_provider_for_display(
+    provider.load_from_string(css);
+    gtk::style_context_add_provider_for_display(
         &gtk::gdk::Display::default().expect("a display to style"),
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,

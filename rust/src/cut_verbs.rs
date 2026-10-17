@@ -214,7 +214,7 @@ pub fn snap_end(at: f64, points: &[f64]) -> f64 {
         if distance > SNAP_TOLERANCE_SECONDS {
             continue;
         }
-        if best.map_or(true, |(closest, _)| distance < closest) {
+        if best.is_none_or(|(closest, _)| distance < closest) {
             best = Some((distance, point));
         }
     }

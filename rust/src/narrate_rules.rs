@@ -96,7 +96,7 @@ pub fn narrator_slot(id: &str) -> Option<usize> {
         return Some(1);
     }
     let number = id.strip_prefix("narrator")?.parse::<usize>().ok()?;
-    (number >= 1 && number <= NARRATOR_SLOTS).then_some(number)
+    (1..=NARRATOR_SLOTS).contains(&number).then_some(number)
 }
 
 /// The row the dropdown should show for the voice this project stores, or `None` when nothing on offer is that

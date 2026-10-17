@@ -135,8 +135,8 @@ fn install_page_css_once() {
                .produce-crop-box { border: 2px solid #d0a215; background-color: alpha(#d0a215, 0.15); }\n\
                .produce-word-box { border: 2px dashed #8a5fd0; }\n";
     let provider = gtk::CssProvider::new();
-    let _ = provider.load_from_data(css);
-    gtk::StyleContext::add_provider_for_display(
+    provider.load_from_string(css);
+    gtk::style_context_add_provider_for_display(
         &gtk::gdk::Display::default().expect("a display to style"),
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,

@@ -1042,7 +1042,7 @@ fn human_size(bytes: u64) -> String {
         return "0 B".to_string();
     }
     if bytes < MIB {
-        return format!("{} KB", (bytes + 1023) / 1024);
+        return format!("{} KB", bytes.div_ceil(1024));
     }
     format!("{} MB", (bytes + MIB / 2) / MIB)
 }

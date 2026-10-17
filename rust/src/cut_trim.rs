@@ -675,7 +675,7 @@ pub fn border_at(boxes: &[Box_], px: f64) -> Option<(usize, Border)> {
     let mut best: Option<(f64, usize, Border)> = None;
     for (edge, index, border) in border_positions(boxes) {
         let d = (px - edge).abs();
-        if d <= EDGE_GRAB_PX && best.map_or(true, |(bd, _, _)| d < bd) {
+        if d <= EDGE_GRAB_PX && best.is_none_or(|(bd, _, _)| d < bd) {
             best = Some((d, index, border));
         }
     }
@@ -736,7 +736,7 @@ pub fn box_at(boxes: &[Box_], px: f64) -> Option<(usize, Option<Border>)> {
     for b in trimmable.clone() {
         for (edge, border) in [(b.x, Border::Start), (b.x + b.w, Border::End)] {
             let d = (px - edge).abs();
-            if d <= EDGE_GRAB_PX && best.map_or(true, |(bd, _, _)| d < bd) {
+            if d <= EDGE_GRAB_PX && best.is_none_or(|(bd, _, _)| d < bd) {
                 best = Some((d, b.index, border));
             }
         }

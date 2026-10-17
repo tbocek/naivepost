@@ -64,7 +64,7 @@ pub fn visible_seg_at(segs: &[Seg], t: f64) -> Option<&Seg> {
 /// clip there is nothing ahead, so the line goes to the last clip's start rather than off the end of
 /// the video (the spec is silent; landing on material beats parking on a hole).
 pub fn snap_to_kept(segs: &[Seg], line: f64) -> f64 {
-    let Some(last) = segs.iter().filter(|seg| visible(seg)).last() else {
+    let Some(last) = segs.iter().rfind(|seg| visible(seg)) else {
         return 0.0;
     };
     // Inside a kept clip already: the line stays where it is. Forward otherwise.

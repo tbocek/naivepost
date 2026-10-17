@@ -1894,3 +1894,11 @@ path = "tests/p_machine_promptmaxchars.rs"
 [[test]]
 name = "sec_05_cut_1_screen_layout"
 path = "tests/sec_05_cut_1_screen_layout.rs"
+
+[[test]]
+name = "cut_lane_plate"
+path = "tests/cut_lane_plate.rs"
+
+[[test]]
+name = "cut_lane_plate_widgets"
+path = "tests/cut_lane_plate_widgets.rs"
