@@ -174,6 +174,10 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         };
         ui::set_state(state);
         ui::refresh(window);
+        // The lane fitted itself against a 0-second view (the scroller was still hidden then, and an
+        // unmapped lane reports 0 px wide), so it asked for its 240 px minimum and the wave stopped a fifth
+        // of the way across the plate. Re-fit now that the band knows its seconds.
+        crate::ui::narrate_band::note_lane_size(window);
         // 0.0–2.6 s: 2.6 s of reference, the spec image's own take, said through the same door the
         // ＋ press says it from — which now spells §F4.6's own sentence ("take added: 0:00–0:03 — 1
         // take(s), 2.6 s of reference (14 s is plenty)"): the span of the seconds just dragged, then
@@ -182,6 +186,14 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         // placed at 1.0–3.6 would quote "00:01–00:03" and the shot's status would not line up with
         // its own caption's seconds.
         ui::press_take_add(window, (0.0, 2.6));
+        // §F4.6 S4 is right and the shot has to live with it: making a take removes the built reference, and
+        // `snapshot.rs::seed_voice_reference` ran BEFORE this arm. Re-seed after the press so the lane the
+        // picture is about has its recording under it — §A.7 asks whether the VOICE has a recording, which
+        // an invalidation does not change, and the band's own visibility rule now agrees.
+        if let Some(tree) = crate::ui::window::narrate_session_tree() {
+            crate::snapshot::seed_voice_reference(&tree);
+        }
+        ui::refresh(window);
         return true;
     }
     false

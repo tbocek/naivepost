@@ -51,6 +51,7 @@ pub fn build_band() -> (gtk::ScrolledWindow, gtk::DrawingArea) {
 
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_widget_name("take-band-scroller");
+    // `Automatic` horizontally so §1's "own scrollbar once the wheel zooms past fit" appears exactly then.
     scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::External);
     scroller.set_child(Some(&lane));
     scroller.set_propagate_natural_height(false);
@@ -127,11 +128,41 @@ pub fn attach(window: &adw::ApplicationWindow) {
     repaint(window);
 }
 
-/// Hand `lane_width`'s answer to the widget. Called wherever the view changes — attach, zoom, pan.
+/// Hand `lane_width`'s answer to the widget. Called wherever the view changes — attach, zoom, pan, and
+/// after the page publishes the seconds the band is drawn across.
 fn fit_lane_to_view(window: &adw::ApplicationWindow) {
+    note_lane_size(window);
+}
+
+/// Give the lane the width its own view now implies. Split from [`paint`]'s copy of the same arithmetic
+/// because a paint that changes its widget's request redraws forever: this one runs from the page's
+/// refresh, where a relayout is the point.
+pub fn note_lane_size(window: &adw::ApplicationWindow) {
     let Some(lane) = lane_of(window) else { return };
-    let (duration, width) = size();
-    lane.set_size_request(lane_width(zoom(), duration, width) as i32, LANE_PX);
+    let Some(seconds) = painted_seconds() else { return };
+    let scroller = match crate::ui::window::find_widget_by_name(
+        &window.content().expect("the window has content"),
+        "take-band-scroller",
+    ) {
+        Some(scroller) => scroller,
+        None => return,
+    };
+    // The viewport is the width the lane is fitted TO, and it is the PAINTED one: `paint` records the width
+    // GTK actually drew across, which is what every px/s mapping in this file already uses. Reading
+    // `scroller.width()` instead would fit against a number no repaint agrees with (a scroller that has not
+    // been allocated yet answers 0 px), and then §A.7's "own scrollbar once past fit" check — which compares
+    // the lane's request with `lane_width(zoom, seconds, view_width)` — would disagree with the widget.
+    let viewport = VIEW_WIDTH.with(|slot| slot.get());
+    if viewport <= 0.0 {
+        return;
+    }
+    let wanted = lane_width(zoom(), seconds, viewport) as i32;
+    if lane.width_request() != wanted {
+        lane.set_size_request(wanted, LANE_PX);
+    }
+    if let Some(scroller) = scroller.downcast_ref::<gtk::ScrolledWindow>() {
+        scroller.set_min_content_width(wanted);
+    }
 }
 
 /// The pointer's bar as [`paint`] lays it down (§1's "faint red bar under the pointer"): the same red as
@@ -155,6 +186,10 @@ pub fn pointer_px() -> f64 {
 /// Show the band only for a voice that HAS a recording (§A.7: "visible only for a narrator slot with a
 /// recording") — captions-only, or a reference that is not on disk, leaves nothing to waveforms. The
 /// SCROLLER goes hidden rather than the lane, so the sensitivity rules that grey `take-band` still see it.
+///
+/// Asked of the PROJECT ([`crate::narrate_band_face::recording_exists`]), not of `voice_ref_base.wav`: §F4.6
+/// S4 deletes that file on every take, pitch or voice change, so keying visibility to it hid the band on the
+/// very press that made a take — the shot printed "take band seeded = true" over a page with no lane in it.
 pub fn show_only_with_recording(window: &adw::ApplicationWindow) {
     let Some(scroller) = crate::ui::window::find_widget_by_name(
         &window.content().expect("the window has content"),
@@ -162,7 +197,40 @@ pub fn show_only_with_recording(window: &adw::ApplicationWindow) {
     ) else {
         return;
     };
-    scroller.set_visible(recording_seconds().is_some());
+    scroller.set_visible(recording_shown());
+    // And the lane's width follows the seconds it is about to draw: the first fit ran while the scroller was
+    // hidden (§A.7 hides it until a voice has a recording) and a hidden widget answers 0 px wide, so the lane
+    // kept its 240 px request and the wave filled less than half the plate.
+    note_lane_size(window);
+}
+
+/// Does this window's voice have a recording to draw? `false` when no project is open at all (nothing is
+/// tagged anywhere) and otherwise §A.7's question, answered by [`crate::narrate_band_face`].
+/// Does this window's voice have a recording to draw? §A.7's question, asked of the PROJECT (a source
+/// tagged with that narrator slot whose file is on disk) and, failing that, of the built reference: §F4.6 S4
+/// removes `voice_ref_base.wav` on every take, pitch or voice change, so an answer built ONLY from the
+/// project would hide the band for a voice that has a reference but no tagged row — which is what the page
+/// does in a scratch session with no project open at all.
+pub fn recording_shown() -> bool {
+    if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        if let Ok(project) = crate::project::load(tree.dir()) {
+            if crate::narrate_band_face::recording_exists(&tree, &project, &crate::ui::narrate_page::read_state().voice) {
+                return true;
+            }
+        }
+    }
+    // No recording behind the slot: the reference itself is still something to select from (§Readme: the
+    // waveform shows "once the voice on offer has a recording on disk (`narrate/voice_ref_base.wav`)"), and
+    // captions speak nothing, so they never get a band whatever is on disk.
+    crate::ui::narrate_page::read_state().voice != crate::narrate_screen::CAPTIONS
+        && crate::ui::narrate_band::recording_seconds().is_some()
+}
+
+/// The seconds the band spans, asked the same way: the built reference first, then the recording itself.
+pub fn painted_seconds() -> Option<f64> {
+    let tree = crate::ui::window::narrate_session_tree()?;
+    let project = crate::project::load(tree.dir()).ok()?;
+    crate::narrate_band_face::band_seconds(&tree, &project, &crate::ui::narrate_page::read_state().voice)
 }
 
 /// The band's gesture, kept for the test that fires it the way GTK does — the same reason
@@ -258,7 +326,7 @@ pub fn painted_plan_for_test(width: f64, height: f64) -> band::Plan {
         takes: state.takes.clone(),
         session: state.session,
         playing: false,
-        envelope_decoded: recording_seconds().is_some(),
+        envelope_decoded: painted_seconds().is_some(),
     });
     // The painter keeps this one in step with its own frame; a check must read the same number it drew.
     plan.red_bar_px = band::second_to_px(red_bar, offset(), pps);
@@ -491,8 +559,18 @@ pub fn recording_seconds() -> Option<f64> {
 /// The peaks to draw, straight off the wave cache: measured by the same code Prepare's envelope step
 /// uses, so the band and the trim strips cannot disagree about where the loud parts are. Returns the
 /// cache's own peaks and rate; `Err` says why there are none.
+///
+/// The 16 kHz decode is asked for first, through the door Prepare itself uses ([`crate::decode_audio::ensure`]):
+/// `wave_build::ensure` folds a decode that already exists but never makes one, so on a project whose voice
+/// lane was never transcribed the band had nothing to draw and printed "reading the recording…" forever.
+/// ffmpeg decides where ffprobe/ffmpeg live, exactly as everywhere else in the app (`""` = this machine has
+/// no settings home, which the decode reports as its own refusal).
 fn envelope(tree: &crate::layout::Tree, lane: &str, source: &std::path::Path) -> Result<Vec<u8>, String> {
     let mut said = Vec::new();
+    let configured = crate::settings::from_environment()
+        .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
+        .unwrap_or_default();
+    crate::decode_audio::ensure(tree, lane, source, &configured, &mut |line| said.push(line.to_string()))?;
     wave_build::ensure(tree, lane, source, &mut |line| said.push(line.to_string()))?;
     let (size, mtime) = stamp(source)?;
     let wave = crate::wave::read(tree, lane, size, mtime)?
@@ -518,16 +596,24 @@ fn stamp(path: &std::path::Path) -> Result<(i64, i64), String> {
 pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     VIEW_WIDTH.with(|slot| slot.set(width));
     let state = crate::ui::narrate_page::read_state();
-    let seconds = recording_seconds();
+    let seconds = painted_seconds();
     DURATION.with(|slot| slot.set(seconds.unwrap_or(0.0).max(0.1)));
     let (duration, _) = size();
     let pps = band::px_per_second(zoom(), duration, width);
+    // Keep the lane as wide as the file it draws. GTK gives no size-allocate hook to hang this on and the
+    // first fit runs while the scroller is still hidden (a hidden widget answers 0 px wide), so this is where
+    // the real numbers first arrive: without it the lane kept its 240 px request and a 45 s recording fit
+    // across a 560 px column stopped two fifths of the way across the plate.
+    // The lane's width comes from `note_lane_size`, which the page's refresh calls: a draw func that changes
+    // its own widget's size request queues another draw, and the next one changes it again.
+
 
     // The ground, so the plate's CSS colour is under everything even where cairo paints first.
     cr.set_source_rgb(0.11, 0.11, 0.115);
     cr.rectangle(0.0, 0.0, width, height);
     let _ = cr.fill();
 
+    let peaks = envelope_of(&state);
     let mut plan = band::paint_plan(&BandPaint {
         duration,
         width,
@@ -540,7 +626,10 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         takes: state.takes.clone(),
         session: state.session,
         playing: state.playing,
-        envelope_decoded: seconds.is_some(),
+        // §1's "reading the recording…" is about the ENVELOPE, so it is answered by whether the envelope was
+        // had — not by whether a file has seconds. The two came apart on a shot whose recording was measured
+        // at 45 s but whose cache could not be read: the lane drew nothing and said nothing either.
+        envelope_decoded: peaks.is_some(),
     });
     // `paint_plan` maps the red bar with the same helper this frame uses; keep them one number.
     plan.red_bar_px = band::second_to_px(red_bar_or(state.session), offset(), pps);
@@ -554,7 +643,7 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         cr.set_font_size(10.0);
         cr.move_to(4.0, lane_top + 14.0);
         let _ = cr.show_text(note);
-    } else if let Some(peaks) = envelope_of(&state) {
+    } else if let Some(peaks) = &peaks {
         draw_envelope(cr, &peaks.1, width, lane_top, lane_h);
     }
 
@@ -582,7 +671,9 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         if *take_w <= 0.0 {
             continue;
         }
-        cr.set_source_rgb(0.3, 0.75, 0.42);
+        // Translucent: the envelope is already on the lane and §F4.6's picture shows the waveform THROUGH
+        // the take, so an opaque fill would erase the part of the wave the person just picked.
+        cr.set_source_rgba(0.3, 0.75, 0.42, 0.45);
         cr.rectangle(*left, lane_top, *take_w, lane_h);
         let _ = cr.fill_preserve();
         cr.set_source_rgb(0.16, 0.42, 0.24);
@@ -630,17 +721,35 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     }
 }
 
-/// The envelope for the voice in hand: `(peaks, their rate)`. Captions-only or a missing reference
-/// answers `None`, which is what makes the band print the "reading…" sentence instead.
+/// The envelope for the voice in hand: `(peaks, their rate)`. Captions-only answers `None`, and so does a
+/// voice with nothing to measure — which is what makes the band print the "reading…" sentence instead.
+///
+/// Asked of the RECORDING first (§A.7: the lane is "the recording this voice is cloned from"): the built
+/// reference is §F4.6 S3's output and S4 deletes it on every take, pitch or voice change, so measuring only
+/// that file left the lane blank right after the ＋ press that made a take. With no recording to read (a
+/// voices-folder id whose file went away), the reference still answers.
 fn envelope_of(state: &crate::ui::narrate_page::NarrateState) -> Option<(f64, Vec<u8>)> {
     let tree = crate::ui::window::narrate_session_tree()?;
-    let source = crate::narrate_data::base_reference(&tree);
-    if !source.exists() || state.voice == screen::CAPTIONS {
+    if state.voice == screen::CAPTIONS {
         return None;
     }
-    let lane = format!("voice:{}", state.voice);
-    let peaks = envelope(&tree, &lane, &source).ok()?;
-    Some((PEAK_HZ, peaks))
+    let mut sources: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(project) = crate::project::load(tree.dir()) {
+        sources.extend(crate::narrate_band_face::recording_path(&tree, &project, &state.voice));
+    }
+    sources.push(crate::narrate_data::base_reference(&tree));
+    // One lane per SOURCE file, not one per voice slot: `wave_build` keys its cache by (lane, size, mtime),
+    // so two different files sharing a lane name would each accept whichever cache was written first.
+    for source in sources {
+        if !source.is_file() {
+            continue;
+        }
+        let lane = format!("voice:{}", crate::narrate_data::take_base(&source));
+        if let Ok(peaks) = envelope(&tree, &lane, &source) {
+            return Some((PEAK_HZ, peaks));
+        }
+    }
+    None
 }
 
 /// Vertical peak bars across the visible window, blue over the ground.
