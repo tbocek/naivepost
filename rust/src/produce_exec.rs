@@ -665,21 +665,50 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
 
     // S8: the mux. Whether subtitle tracks go in is the container rule inside `mux_command`, so the
     // settings row and the command cannot disagree about what webm carries.
+    // §6: EVERY subtitle track is its own input, tagged with its ISO-639-2 code and name — so a run that
+    // translated into German muxes the session's own sheet AND the German one, not one untitled stream.
+    // The list is the same one S9 writes sidecars from (own language bare first, then each ticked code that
+    // names a track), which is what keeps the file beside the video and the stream inside it one fact.
+    // Paths are the ones the sidecar step below writes to; a track whose file this run never writes would be
+    // an `-i` ffmpeg has to fail on, so an empty cue list means no tracks at all.
+    let (_, carried) = crate::produce_screen::apply_container_rules(
+        settings.container,
+        settings.codec,
+        settings.subtitles,
+    );
     let sheet_path = scratch.join(render::final_srt_name());
-    let tracks: Vec<(&str, &Path)> = if cues.all.is_empty() {
-        Vec::new()
-    } else {
-        vec![("", sheet_path.as_path())]
-    };
+    let mut tracks: Vec<(String, PathBuf)> = Vec::new();
+    if carried == crate::project::Subtitles::TrackInFile && !cues.all.is_empty() {
+        tracks.push((cues.session_language.clone(), sheet_path.clone()));
+        for code in cues
+            .languages
+            .iter()
+            .filter(|code| is_track_code(code.trim()))
+        {
+            tracks.push((code.clone(), tree.final_srt(Some(code))));
+        }
+    }
+    let track_refs: Vec<(&str, &Path)> =
+        tracks.iter().map(|(code, path)| (code.as_str(), path.as_path())).collect();
+    // The tag/name pair comes from the app's own language list (`SUBTITLE_LANGUAGES`, 03-shell §6), read
+    // here rather than inside `mux_command` so that stays a pure argv builder. No settings file = no list,
+    // and every track then falls back the way §6 spells it: `und`, named by its upper-cased code.
+    let known_languages = crate::roles::subtitle_languages(
+        &crate::settings::from_environment()
+            .and_then(|paths| crate::settings::read(&paths).ok())
+            .map(|conf| conf.subtitle_languages)
+            .unwrap_or_default(),
+    );
     let joined = scratch.join(details::joined(container_ext(settings)));
     let mux = command(
         "muxing",
         render::mux_command(
             &joined,
             &joined,
-            &tracks,
+            &track_refs,
             settings,
             &tree.final_video(container_ext(settings)),
+            &known_languages,
         ),
     );
 
@@ -1021,13 +1050,20 @@ pub fn write_stamp(plan: &Plan, tree: &Tree, ran: &Ran, mut log: impl FnMut(&str
     if !ran.clean() || !render::stamp_written(!ran.encoded.is_empty(), ran.failed.is_some()) {
         return false;
     }
-    let ok = produce_stamp::write_stamp(tree, &plan.stamp).is_ok();
-    // Said once per clean render: the hash goes in because these lines are compared between runs, and a
-    // stale stamp somebody wants to delete has to be findable by eye.
-    if ok {
-        log(&produce_stamp::wrote_stamp_log(&plan.stamp));
+    // §6: an unwritable stamp is SAID, not swallowed — the next ▶ encodes again and the person should know why.
+    // It still never fails the run: the video is finished, only the promise that it is up to date is missing.
+    match produce_stamp::write_stamp(tree, &plan.stamp) {
+        Ok(()) => {
+            // Said once per clean render: the hash goes in because these lines are compared between runs, and a
+            // stale stamp somebody wants to delete has to be findable by eye.
+            log(&produce_stamp::wrote_stamp_log(&plan.stamp));
+            true
+        }
+        Err(why) => {
+            log(&details::stamp_unwritable_log(&why));
+            false
+        }
     }
-    ok
 }
 
 /// The produced file's size, or 0 when it is not there yet.

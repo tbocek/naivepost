@@ -426,11 +426,52 @@ pub fn load_report(dir: &Path) -> Result<(Project, Vec<String>), String> {
         }
         Err(err) => return Err(format!("{}: {err}", file.display())),
     };
-    let raw: Raw = serde_json::from_value(alias_produce(
-        serde_json::from_str::<serde_json::Value>(&text).map_err(|err| format!("{}: {err}", file.display()))?,
-    ))
-    .map_err(|err| format!("{}: {err}", file.display()))?;
-    Ok(migrate(raw, dir))
+    // §6's two stored-word fallbacks first: they are what keeps a load working when one row's word is stale,
+    // so they must be in hand before anything can fail on that word.
+    let stored = crate::project_produce::read(produce_block(&text).as_ref());
+    // Two readings of one block, each owning what it can. The strict pass carries every legacy key this file
+    // still knows about; when a single stale word makes one of its enum fields fail, the value-read block
+    // already answers for the whole `produce` section, so the file loads with its other rows intact instead of
+    // collapsing to defaults (§6: "an unknown answer must not letter somebody's picture").
+    let parsed = serde_json::from_str::<serde_json::Value>(&text)
+        .map_err(|err| format!("{}: {err}", file.display()))
+        .and_then(|value| {
+            serde_json::from_value::<Raw>(alias_produce(value))
+                .map_err(|err| format!("{}: {err}", file.display()))
+        });
+    match parsed {
+        Ok(raw) => Ok(migrate(raw, dir, stored)),
+        // Only a `produce`-shaped failure may be carried this way: anything else in the file is still the
+        // person's problem to hear about, spelled exactly as it was before this fallback existed. The word
+        // serde names is the one that failed (`unknown variant "sidcar"`, `invalid value: string …`), and both
+        // spellings came out of the `produce` block — there is no other enum in the file for them to come from.
+        Err(why) if why.contains("variant") || why.contains("invalid value") => {
+            let mut report = stored.report.clone();
+            report.push(format!(
+                "produce: read row by row ({why}) \u{2014} a row this app does not offer keeps its default"
+            ));
+            Ok((
+                Project {
+                    produce: stored.settings,
+                    ..Project::default()
+                },
+                report,
+            ))
+        }
+        Err(why) => Err(why),
+    }
+}
+
+/// The file's `produce` object, re-read from the text. `None` when there is no such object (absent key, not an
+/// object, or unreadable JSON — the last reported by the strict pass below, which owns the error).
+/// Crate-visible because [`load_report`] reads the file with it BEFORE the strict pass, so a stale word cannot
+/// fail the load before the fallbacks have been applied.
+pub(crate) fn produce_block(text: &str) -> Option<serde_json::Value> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()?
+        .as_object()?
+        .get("produce")
+        .cloned()
 }
 
 /// The alias key [`Raw::produce_legacy`] reads the `produce` object under. Not a key any file has: it is put
@@ -603,7 +644,7 @@ const HINT_FOLDS: [(&str, &str, &str); 4] = [
 ///
 /// `dir` is the project folder being loaded: only it can say whether a legacy
 /// `out_dir` named this folder or somewhere else (§03-shell.md §8).
-fn migrate(mut raw: Raw, dir: &Path) -> (Project, Vec<String>) {
+fn migrate(mut raw: Raw, dir: &Path, mut stored: crate::project_produce::Stored) -> (Project, Vec<String>) {
     let mut report = Vec::new();
     // Taken before the moves below: each migration needs to know whether the file
     // carried the new key or only its legacy spelling.
@@ -622,7 +663,9 @@ fn migrate(mut raw: Raw, dir: &Path) -> (Project, Vec<String>) {
         aud_dir: raw.aud_dir.take(),
         context: std::mem::take(&mut raw.context),
         policy: raw.policy.take().unwrap_or_default(),
-        produce: std::mem::take(&mut raw.produce),
+        // The value-read block, not the strict one: see [`load_report`]. A file that states every row the way
+        // this app writes them reads back identically either way.
+        produce: std::mem::take(&mut stored.settings),
         publish: publish_raw.map(migrate_publish),
     };
     // An absent `language` is the default "en"; serde's default gave us that, so a
@@ -634,6 +677,8 @@ fn migrate(mut raw: Raw, dir: &Path) -> (Project, Vec<String>) {
     migrate_hints(&raw, &mut report);
     // §08 §6's legacy `produce` keys, folded into the settings the current model holds and reported there.
     report.extend(migrate_produce(&mut project.produce, &raw.produce_legacy));
+    // And §6's two stored-word fallbacks, said in the same voice as every other fold.
+    report.extend(stored.report);
     migrate_prompts(&raw, &mut report);
     if raw.pitch.is_some() {
         report.push("pitch: ignored, the field is gone".to_string());
