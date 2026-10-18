@@ -11,7 +11,6 @@
 
 use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -47,9 +46,6 @@ impl Dirs {
 }
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-/// Held while a test pins the process-wide env, so two tests never resolve endpoints at once.
-static ENV: Mutex<()> = Mutex::new(());
 
 /// A fake audio.cpp that answers each request only when the test releases it.
 ///
@@ -111,11 +107,6 @@ impl Releaser {
     /// True once a request has arrived and been read — the honest signal that a dial is on the wire.
     fn arrived(&self) -> bool {
         self.arrived.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    /// Forget any request seen so far, so the next arrival can be waited for.
-    fn reset(&self) {
-        self.arrived.store(false, std::sync::atomic::Ordering::SeqCst);
     }
 }
 

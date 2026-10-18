@@ -173,7 +173,7 @@ fn f1_13_s2_a_word_on_almost_no_sound_is_timed_at_the_end_of_the_word_before() {
     let mut two = vec![word("a.mkv", "one", 0.0, 0.2), word("a.mkv", "two", 4.0, 4.2)];
     two.push(word("b.mkv", "one", 0.0, 0.2));
     two.push(word("b.mkv", "two", 4.0, 4.2));
-    let by_source = move |source: &str, start: f64, end: f64| match source {
+    let by_source = move |source: &str, start: f64, _end: f64| match source {
         // a.mkv words are all loud; b.mkv's second word is a tenth of its own median.
         "a.mkv" => Some(100),
         _ if start > 3.0 => Some(9),
@@ -395,7 +395,7 @@ fn f1_13_s6_one_list_for_the_whole_session_and_its_parameters() {
     let mic = vec![token("and", 0.0, 0.2), token("here", 0.3, 0.5)];
     let sources = vec![(format!("camera.mkv"), camera), (format!("mic.wav"), mic)];
 
-    let loud = |source: &str, start: f64, end: f64| match source {
+    let loud = |source: &str, start: f64, _end: f64| match source {
         "camera.mkv" if start > 13.9 => Some(8),
         "camera.mkv" => Some(120),
         _ => None,

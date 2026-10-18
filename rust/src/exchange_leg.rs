@@ -553,6 +553,22 @@ fn run_open() -> bool {
     RUN_OPEN.with(|cell| cell.get())
 }
 
+/// The open run's page name — §10's `run` column — or empty when this thread is not inside a run whose
+/// page has been opened yet.
+///
+/// A call made outside a run still gets its own page (§7 keeps a stray exchange rather than dropping it),
+/// but that page is not what §10 means: the column says "the run it belongs to", so an unattached call
+/// leaves it blank. The name arrives only once the run's first call has opened the page, which is why a
+/// leg dialling before any chat ask sees empty here — and writes empty, exactly as §10 spells it.
+pub fn current_page_name() -> String {
+    if !run_open() {
+        return String::new();
+    }
+    let held_page = page();
+    let held = write_to(&held_page);
+    held.page_rel().unwrap_or_default()
+}
+
 /// Note for the recorder that a run has begun (§7's page boundary): the previous run's page is closed,
 /// so this run's first call opens its own, and the return says whether anything was closed. Called
 /// from [`crate::runqueue::start_run`], the one call every ▶ and ↻ makes, so no flow has to remember

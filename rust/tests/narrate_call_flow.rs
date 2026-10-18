@@ -7,24 +7,16 @@
 // No display, no pipeline, no server: every answer comes from a closure, and every claim is read back
 // out of the values and callback observations below rather than from anything printed.
 
-use naivepost::cut::{Fx, Seg};
+use naivepost::cut::Seg;
 use naivepost::narrate_call::drive;
 use naivepost::narrate_pass as pass;
 use naivepost::narrate_reply::{
-    self, ENTRY_MATCH_TOLERANCE_SECONDS, all_silent_fault, clip_without_entry, unmatched_entry_fault,
+    ENTRY_MATCH_TOLERANCE_SECONDS, all_silent_fault, clip_without_entry, unmatched_entry_fault,
 };
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
 use common::{seg};
-
-/// The transcript's own lane name: what `session.tsv` writes in the source column.
-const MIC: &str = "2026-09-16 17-26-20";
-
-
-fn effect(kind: &str, t: f64, dur: f64, text: &str) -> Fx {
-    Fx { kind: kind.into(), t, dur, text: text.into(), ..Default::default() }
-}
 
 /// One entry in the prototype's reply shape, with the bounds the model echoed.
 fn entry(start: f64, end: f64, at: f64, text: &str, emotion: &str) -> String {

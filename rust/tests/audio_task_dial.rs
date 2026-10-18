@@ -142,31 +142,6 @@ fn dial_here(dirs: &Dirs, ask: Ask<'_>, model: &str, envelope: &serde_json::Valu
     audio_task::dial(&None, &dirs.paths, ask, model, envelope)
 }
 
-/// Wait until some fake server has logged a request whose line contains `needle` AND whose body
-/// contains `in_body`, newest match first.
-///
-/// The recording happens on the server's own thread, so a dial can return before its entry appears;
-/// polling for the entry rather than sleeping a fixed time keeps the assertion honest and the test
-/// fast. Cargo runs these tests as threads of one process, so the body is part of the search: it is
-/// what tells this test's request from another test's identical-looking one.
-fn wait_for_recorded(needle: &str, in_body: &str) -> Seen {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        if let Some(seen) = recorded()
-            .into_iter()
-            .rev()
-            .find(|seen| seen.line.contains(needle) && seen.body.contains(in_body))
-        {
-            return seen;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "no request to {needle} carrying {in_body:?} was ever dialed"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-}
-
 /// [`wait_for_recorded`] scoped to ONE fake server, which is what makes it safe for a claim about a
 /// header or a byte count.
 ///
@@ -333,27 +308,6 @@ fn server_refusing(status: u16, body: &str) -> String {
         }
     });
     format!("http://127.0.0.1:{port}")
-}
-
-/// Read a request far enough that the client is not left waiting to finish writing.
-fn drain(stream: &mut TcpStream) {
-    let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone the socket"));
-    let mut line = String::new();
-    let _ = reader.read_line(&mut line);
-    let mut length = 0usize;
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
-            break;
-        }
-        if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
-        }
-    }
-    let mut body = vec![0u8; length];
-    if length > 0 {
-        let _ = reader.read_exact(&mut body);
-    }
 }
 
 /// A fake audio.cpp: answers every request with `answer`, remembering each one in order.

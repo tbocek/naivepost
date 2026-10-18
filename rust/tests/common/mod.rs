@@ -559,6 +559,22 @@ pub fn temp_root(tag: &str) -> std::path::PathBuf {
     dir
 }
 
+/// The Cut page opened on the fixture with an empty history, for the tests that stage or read the
+/// effect menu rather than drive a seeded cut. Three test files each carried one byte-identical copy.
+pub fn cut_page_empty(app: &adw::Application) -> adw::ApplicationWindow {
+    release_last_window();
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    hold_last_window(window.clone());
+    window.present();
+    ui::tab_button(&window, Page::Cut)
+        .expect("the shell has a Cut tab")
+        .emit_by_name::<()>("clicked", &[]);
+    ui::reopen_history_on(&window, &Cut::default());
+    settle();
+    window
+}
+
 /// An envelope of `total` seconds, silent at `room` except in these spans.
 pub fn wave(total: f64, spans: &[(f64, f64, u8)], hz: f64, room: u8) -> naivepost::wave::Wave {
     let mut peaks = vec![room; (total * hz) as usize];

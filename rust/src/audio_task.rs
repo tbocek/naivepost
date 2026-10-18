@@ -270,6 +270,7 @@ pub fn dial(
                 waited_ms,
                 delta: None,
                 budget: None,
+                attempt: 1,
             },
         )
         .1,
@@ -808,6 +809,7 @@ pub fn upload_bytes(
                 waited_ms: 0,
                 delta: None,
                 budget: None,
+                attempt: 1,
             },
         )
         .1,

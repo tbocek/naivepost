@@ -39,18 +39,6 @@ fn crowded_room() -> Vec<Turn> {
     turns
 }
 
-/// A room whose anchor only fits a lower rung. `diarize::anchor_per` gives each voice a quarter of whatever
-/// window is in use, so the anchor grows with the number of voices while the window's slack shrinks: three
-/// voices leave 53 s to place at 90 s (plans) but only 10.2 s at 45 s and 5.2 s at 25 s, under
-/// `NEW_AUDIO_MIN_SECONDS`, so those two refuse.
-fn crowded_too_far() -> Vec<Turn> {
-    let mut turns = speaks(0, 1.0, 8.0, 6.0, 4);
-    for slot in 1..4 {
-        turns.extend(speaks(slot, 2.0 + slot as f64, 8.0, 6.0, 4));
-    }
-    turns
-}
-
 /// The same room answered as if the recording were longer than it is: pass 1 strides further, so the window
 /// `plan` picks holds fewer voices and its anchor fits. That is what makes a refusal on one rung a success on
 /// the next — a bigger window covers more clock per ask and therefore hears fewer voices inside any one of them.

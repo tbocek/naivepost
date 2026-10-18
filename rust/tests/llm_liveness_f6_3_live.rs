@@ -206,3 +206,50 @@ fn f6_3_s1_live_the_heartbeat_ticks_while_the_server_is_silent() {
     assert_eq!(heartbeats[0], ">>> f63live: nothing yet, 1s in");
     assert_eq!(heartbeats[1], ">>> f63live: nothing yet, 2s in");
 }
+
+/// §10's half of the same live call: whatever §4's watch ends, the request still leaves its line in the open
+/// project's `requests.tsv`. The two checks above read the log and the return value only, so nothing here looked
+/// at the FILE before — and "written down the moment it ends, whether it succeeded, failed, was given up by the
+/// stall watch or cancelled" is exactly the ending that is easiest to lose, because a give-up returns through the
+/// error path where a recorder could plausibly decide there was nothing to write.
+///
+/// No new seam is set: this binary fixes §4's bounds once (`bounds_agreed`), and a second value would be silently
+/// ignored (see this file's header). What is asserted is what the row says about a call the watch ended.
+#[test]
+fn f6_3_s1_live_a_stalled_call_is_recorded_in_requests_tsv() {
+    let address = silent_llm();
+    let scene = fixture("stall-row", &address);
+    let outcome = ask(&scene, "say nothing");
+    let why = outcome.expect_err("a server that answers nothing must not come back as an answer");
+    assert!(why.contains("nothing arrived in 3s"), "{why}");
+
+    let mine: Vec<naivepost::requests::Request> = naivepost::requests::read(&scene.tree)
+        .expect("requests.tsv reads back")
+        .into_iter()
+        .filter(|row| row.step == STEP)
+        .collect();
+    assert!(!mine.is_empty(), "a call the watch gave up on still left its line: {mine:?}");
+    for row in &mine {
+        // §4's give-up is its OWN outcome in the log, not folded into a generic error: the whole reason §10 lists
+        // "given up by the stall watch" beside success and failure is so a reader can tell a silent server from a
+        // broken one, and the slot counts and model comparisons downstream are read off that column.
+        assert!(
+            matches!(row.outcome, naivepost::requests::Outcome::Stalled),
+            "§4's ending is its own outcome in the row, got {:?}",
+            row.outcome
+        );
+    }
+    assert_eq!(mine[0].attempt, 1, "the first line is the first try");
+    assert!(
+        mine[0].on_wire_s.unwrap_or(-1.0) >= 2.5,
+        "and it costs the silence bound that ended it (§4's 3 s here), got {:?}",
+        mine[0].on_wire_s
+    );
+    if mine.len() > 1 {
+        // §10: "A retry is a line of its own." Whatever the ladder underneath did, each attempt is its own row
+        // and none repeats another's number.
+        let numbers: Vec<u32> = mine.iter().map(|row| row.attempt).collect();
+        let expected: Vec<u32> = (1..=numbers.len() as u32).collect();
+        assert_eq!(numbers, expected, "each attempt is numbered once, in order: {mine:?}");
+    }
+}

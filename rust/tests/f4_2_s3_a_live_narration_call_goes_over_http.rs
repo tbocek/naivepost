@@ -8,7 +8,6 @@
 mod harness;
 
 use harness::*;
-use naivepost::narrate_live;
 
 #[test]
 fn f4_2_s3_a_live_narration_call_goes_over_http_to_the_settings_address() {
@@ -21,9 +20,9 @@ fn f4_2_s3_a_live_narration_call_goes_over_http_to_the_settings_address() {
         (10.0, 20.0, 1.0, "", ""),
     ]);
     let llm = FakeLlm::start(vec![answer]);
-    let addr = point_at(&llm.url());
-    let (segs, transcript, narrator) = material(&fixture);
-    let request = build_request(&fixture);
+    let _addr = point_at(&llm.url());
+    let (segs, _transcript, _narrator) = material(&fixture);
+    let _request = build_request(&fixture);
 
     // One ask over the socket, then the matching through drive's own rules. Asked explicitly rather
     // than inside the loop because every round lands its own `requests.tsv` row, and the claim below

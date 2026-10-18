@@ -10,7 +10,6 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::add_sources;
 // F3.5 ▨ SVG: the page half of the drawing flow lives in `cut_svg`; these are the doors this shell calls.
 // F3.3 ⏩ Speed and stop by hand: the page half of that flow lives in `cut_speed_hand`; these are the
 // doors this shell calls.
@@ -22,32 +21,20 @@ use crate::ui::cut_folds::{
     fold_badges_box, page_recordings, press_fold_all, push_session_recordings, refresh_fold_badges,
 };
 use crate::ui::cut_cameras::refresh_camera_rows;
-use crate::ui::cut_tracks;
 use crate::ui::cut_form_frame;
 use crate::ui::cut_picture;
 use crate::ui::save_apply;
-use crate::ui::rescan_apply;
-use crate::ui::cut_cameras::hand_preview_back;
 // F3.5 ▨ SVG: the page half of the drawing flow lives in `cut_svg`; these are the doors this shell calls.
 use crate::ui::cut_svg::{press_svg_item, wire_svg_esc};
 use crate::cut::{self, Cut};
 use crate::fx_record;
 use crate::cut_hear;
-use crate::cut_play;
 use crate::cut_play_leg;
-use crate::cut_review;
 use crate::cut_select;
 use crate::cut_verbs;
 use crate::cut_line;
-use crate::cut_screen;
-use crate::cut_trim;
 use crate::layout;
-use crate::new_project;
-use crate::open_project;
-use crate::prepare;
-use crate::preview::{self, Player, Press};
 use crate::project::Project;
-use crate::rescan;
 use crate::lucky;
 use crate::run;
 use crate::runqueue;
@@ -55,8 +42,6 @@ use crate::exchanges;
 use crate::save_as;
 use crate::policy;
 use crate::ui::policy_form;
-use crate::sources::{self};
-use crate::ui::source_rows;
 use crate::startup;
 use crate::narration::{self, Narration};
 use crate::shell::{Move, Outcome, Page, Refresh, Shell};
@@ -69,513 +54,10 @@ const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
 
 pub const APP_ID: &str = "ch.bocek.naivepost";
 
-/// One page of the window: its name and the state it shows.
-/// Prepare's two widgets are handed back beside the page so `build_window` can wire *that* button —
-/// see [`build_window`] for why they are not found by name. On every other page both are `None`.
-fn page_box(
-    page: &str,
-    project: &Project,
-    session: &Rc<RefCell<Project>>,
-    status: &gtk::Label,
-    window: &adw::ApplicationWindow,
-) -> (gtk::Widget, Option<gtk::Button>, Option<gtk::CheckButton>) {
-    let view = adw::ToolbarView::new();
-
-    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    box_.set_margin_start(24);
-    box_.set_margin_end(24);
-    box_.set_margin_top(24);
-    box_.set_margin_bottom(24);
-
-    let title = gtk::Label::new(Some(page));
-    title.add_css_class("title-1");
-    title.set_halign(gtk::Align::Start);
-
-    // F0.7 S5: each tab's ⓘ opens the policy form, beside the page title where a person looking for
-    // "why is the pipeline doing this?" would look. Every page gets one and they all call the same
-    // `press_policy`, so the form is reachable from here as well as from the run bar's ⚙ — two ways in,
-    // one implementation. The name carries the page because four widgets sharing `tab-info-button` in
-    // one window would make a lookup ambiguous (the reason `add-sources-button` is found by walking
-    // rather than by name elsewhere).
-    //
-    // §1 lists ⓘ once at position **6** of the header bar, not once per page, and F0.1 S4 owns keeping
-    // its tooltip synced to the visible tab ("current tab's label + help text"). That single header
-    // widget is F0.1's round; until it exists this per-page ⓘ is what makes the form reachable from a
-    // tab at all. When the header one lands, it calls the same `press_policy` and these become the
-    // per-page shortcuts rather than being replaced by a second mechanism.
-    let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let info = gtk::Button::from_icon_name("help-about-symbolic");
-    info.set_widget_name(&format!("tab-info-button-{page}"));
-    info.set_tooltip_text(Some(policy_form::OPEN_TIP));
-    info.set_valign(gtk::Align::Center);
-    wire_policy(&info, window);
-    title_row.append(&title);
-    title_row.append(&info);
-    box_.append(&title_row);
-
-    // §1's badge **9** is the visible tab's own page, so the way in belongs to Prepare and to no
-    // other page. Only its two widgets are here: the source rows with their camera and microphone
-    // icons, and the Freq / Original / Language / Style controls under them, are F1.x's — this item
-    // is how files get added, not what each row says about itself.
-    let mut prepare: Option<(gtk::Button, gtk::CheckButton)> = None;
-    if page == "Prepare" {
-        let add_ = gtk::Button::with_label(ADD_LABEL);
-        add_.set_widget_name("add-sources-button");
-        let copy_ = gtk::CheckButton::with_label(COPY_LABEL);
-        copy_.set_widget_name("copy-into-project");
-        // Tick on: the default is to bring the files inside the project, so the folder stays one
-        // thing to move (F0.12 S2).
-        copy_.set_active(!project.reference_sources);
-
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        row.set_widget_name("add-sources-row");
-        row.append(&add_);
-        row.append(&copy_);
-        box_.append(&row);
-
-        // §4's list itself. The rows are drawn from the project and every control on them forwards to
-        // `sources.rs` — this page holds no rule of its own (spec/00-principles.md §5), so what a test
-        // can read back is which rows exist, which controls they show, and what a press put on the
-        // status line.
-        let list = sources_list(session, status);
-        let frame = gtk::Frame::new(None);
-        frame.set_child(Some(&list));
-        box_.append(&frame);
-
-        // §1's badge **8**: Freq and Language under the list. Both are choices from a list rather
-        // than free text — an interval off the stops would be sent to the model as a claim about
-        // frames that were never picked.
-        box_.append(&frame_controls(session));
-
-        // §1's badges **2**-**5**: the prompt bench, one heading row over one text box. The rows it
-        // offers and every sentence on it come from `bench`; the box only forwards what is typed.
-        let (heading, editor) = bench_box(session, &bench_paths());
-        box_.append(&heading);
-        box_.append(&editor);
-
-        prepare = Some((add_, copy_));
-    }
-
-    let context = gtk::Label::new(Some(&project.context));
-    context.set_wrap(true);
-    context.set_xalign(0.0);
-    context.add_css_class("body");
-    box_.append(&context);
-
-    // §07-narrate#1-screen: the Narrate page is one surface built by its own module, appended where
-    // every other page puts its content. Its handlers go on in `build_window`, after `set_content`.
-    if page == Page::Narrate.label() {
-        box_.append(&crate::ui::narrate_page::build());
-    }
-
-    // §08-produce#1-screen: like Narrate, the Produce page is one surface from its own module, so the
-    // tab holds §A's fifteen widgets rather than a stub.
-    if page == Page::Produce.label() {
-        box_.append(&crate::ui::produce_page::build());
-    }
-
-
-    // F2.1: the Cut page's own transport, first under the title rather than last in the box. The
-    // page's content box is top-packed and does not stretch its children, so anything appended after
-    // the context paragraph sits below a tall label and reads as an unrelated control; the spec puts
-    // the transport at the head of the page, so it goes there.
-    if page == Page::Cut.label() {
-        // §05-cut#1-screen: the toolbar is ONE row of six groups, in `cut_screen::TOOLBAR_GROUPS`'
-        // order — transport, volume, verbs, effects, history, zoom — each group a linked Box filled from
-        // its own table so the control set and its order live in one place that a test can read. The
-        // widgets keep the names every flow's tests already find them by; what changed is that they are
-        // grouped rather than stacked, and that the groups the earlier rounds had not reached (effects,
-        // history, zoom) are now on the page at all.
-        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        toolbar.set_widget_name("cut-toolbar");
-        toolbar.set_halign(gtk::Align::Start);
-        box_.insert_child_after(&toolbar, Some(&title_row));
-        // Every control lands in the groups appended below; `previous` threads the placeholder bands
-        // after the toolbar, exactly as it threaded them through the old stack of buttons.
-        let mut previous: gtk::Widget = toolbar.clone().upcast();
-
-        // Transport group (§1 items 5-8), built from `cut_screen::TRANSPORT_BUTTONS` so the seven
-        // controls and their order are one table rather than seven blocks of packing code. Each keeps
-        // the name its flow's test finds it by.
-        // Transport starts live: ▶ Play the recording and the frame steps have a job the moment the page
-        // opens, whatever the cut holds.
-        let transport = cut_tool_group("transport", &cut_screen::TRANSPORT_BUTTONS, false);
-        toolbar.append(&transport);
-
-        // Volume group (§1 item 9) — see F2.5 below for why one slider owns no copy of the number.
-        let volume_group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        volume_group.set_widget_name("group-volume");
-        toolbar.append(&volume_group);
-
-
-        // F2.5 S6: the preview volume. One control for one number — `cut_hear::PreviewVolume` is the
-        // app's single loudness setting and every slider shown mirrors it, so this widget owns no copy of
-        // its own. 0..100 at step 1 because that is what a slider reads as, while the property under it
-        // is 0..1; the two meet in `PreviewVolume::set_percent`. Width 120 px per
-        // `spec/inventory/cut.md` §D item 2. The inventory asks for an icon beside it; none is drawn --
-        // a themed speaker icon does not render reliably in the headless snapshot (no icon theme), so the
-        // shared tooltip carries the wording instead and the slider stands alone. Value text off: the
-        // number means nothing to a person where the tooltip says what the control does.
-        let volume = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
-        volume.set_widget_name("preview-volume");
-        volume.set_tooltip_text(Some(cut_hear::VOLUME_TIP));
-        volume.set_draw_value(false);
-        volume.set_size_request(120, -1);
-        volume.set_halign(gtk::Align::Start);
-        volume.set_value(cut_hear::VOLUME_DEFAULT * 100.0);
-        // The trough alone read as an anonymous blue line: only a hover tooltip said what it was, where
-        // the prototype's speaker glyph makes it obvious at a glance. A row with the word beside it puts
-        // that back without a theme dependency, and the 24 px floor keeps it reading as a control next to
-        // the ~34 px buttons instead of a hairline under them.
-        let volume_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        volume_row.append(&gtk::Label::new(Some(cut_hear::VOLUME_LABEL)));
-        volume_row.append(&volume);
-        volume_row.set_halign(gtk::Align::Start);
-        volume_row.set_size_request(-1, 24);
-        // The slider belongs to the toolbar's volume group, not to the page column: §A puts it in group 2
-        // between the transport and the verbs. The labelled row is what moves -- the slider stays inside
-        // it, so F2.5's sizing and its handler wiring (which finds `preview-volume` by name) are
-        // untouched. Do NOT unparent the slider from this row on its way into the group: that leaves it
-        // attached to nothing, `find_widget_by_name("preview-volume")` returns None, and
-        // `cut_hear_mix_widgets` panics inside `connect_activate` -- which aborts the process with a
-        // SIGABRT rather than reporting a test failure.
-        volume_group.append(&volume_row);
-        // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
-        // widget that is not yet inside the realized tree never fires (see the F2.1 note there).
-
-        // The selection band's controls are NOT part of the toolbar: §A puts the drag surface, its ✕
-        // and its readout with the tracks, under the bar. They stay placeholders — the gutter, ruler,
-        // green bars, picture rows and scrollbar are F2.10/F2.11's work, and nothing here invents them.
-        let surface_group = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        surface_group.set_widget_name("selection-row");
-        // F2.6 S1: the drag surface. A left-drag on any track area no control claims draws a band
-        // scoped to what it was drawn on. The real picture rows, wave strips, lanes and ruler are later
-        // items (F2.8/F2.10/F2.11), so this placeholder carries NO invented tracks: it is scoped
-        // `Surface::Ruler`, which S1 lists as ground belonging to no row and which selects the whole
-        // timeline's footage (`cut_select::ANY_ROW`). When the tracks arrive each one passes its own
-        // surface to the same seam; nothing downstream changes.
-        let surface = gtk::DrawingArea::new();
-        surface.set_widget_name("select-surface");
-        // Width must be asked for explicitly: a `DrawingArea` has no natural size and with
-        // `halign(Start)` inside this top-packed column it collapses to 0 px -- mapped but with nothing
-        // to drag on. 240 px is a reach a hand can actually drag across; the real track widths are
-        // later items' business.
-        surface.set_size_request(240, 48);
-        surface.set_halign(gtk::Align::Start);
-        surface.set_tooltip_text(Some(cut_select::SURFACE_TIP));
-        surface_group.append(&surface);
-
-        // F2.6 S2: the cross that clears the band, and S3: the readout that follows it. Both start
-        // insensitive/empty because a fresh window has no selection -- the sensitivity is the visible
-        // proof the state is live rather than a button that lies about having something to clear.
-        let clear_ = gtk::Button::with_label(cut_select::CLEAR_LABEL);
-        clear_.set_widget_name("clear-selection");
-        clear_.set_tooltip_text(Some(cut_select::CLEAR_TIP));
-        // Greyed at rest: a fresh window has nothing to clear. `refresh_selection_readout` sets it from
-        // the live band on every draw, nudge and clear — a button that starts live would be lying about
-        // having something to clear until the first refresh ran, which is after the page is shown.
-        clear_.set_sensitive(false);
-        clear_.set_halign(gtk::Align::Start);
-        surface_group.append(&clear_);
-
-        let readout = gtk::Label::new(Some(cut_select::READOUT_NONE));
-        readout.set_widget_name("selection-readout");
-        readout.set_xalign(0.0);
-        readout.add_css_class("dim-label");
-        surface_group.append(&readout);
-
-        // Verbs, effects, history and zoom (§1 items 10-22), each group a linked Box off its own table
-        // in `cut_screen`, appended in TOOLBAR_GROUPS' order. They land in the toolbar rather than in the
-        // page column so the row reads as one bar: transport, volume, verbs, effects, history, zoom.
-        //
-        // The verb buttons start insensitive because a fresh window holds no selection;
-        // `refresh_verb_buttons` sets them from `selection_verbs` on every draw, nudge and clear, so a
-        // greyed button is always today's answer and never a leftover. | Split is the exception at rest:
-        // with no band it splits at the red line, so it stays live — see `verb_buttons_state`.
-        // Verbs start greyed: with no band there is nothing to add, remove, copy or paste, and the refresh
-        // path lights them from the live selection. `insert-button` starts greyed with its siblings for the
-        // same reason — a fresh window has no line and no seconds — but it is NOT left that way:
-        // `refresh_insert_button`, on the same refresh path, lights it as soon as a line or a selection
-        // exists and puts the word "Edit" on it while a card is held (F2.12 S1/S6).
-        let verbs = cut_tool_group("verbs", &cut_screen::VERB_BUTTONS, true);
-        toolbar.append(&verbs);
-
-        // Effects dropdown (§1 item 17). A MenuButton whose popover holds the six effects §A lists. If a
-        // popover cannot be built headless the fallback is a flat Box named `effect-menu` holding the
-        // same six named buttons, which keeps every test's lookup working either way.
-        let effect_button = gtk::MenuButton::new();
-        effect_button.set_widget_name("effect-button");
-        effect_button.set_label("\u{271a} Effect");
-        effect_button.set_tooltip_text(Some(cut_screen::EFFECT_MENU_TIP));
-        let effect_menu = cut_effect_menu(&main_window());
-        effect_button.set_popover(Some(&effect_menu));
-        let effects = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        effects.set_widget_name("group-effects");
-        effects.append(&effect_button);
-        toolbar.append(&effects);
-
-        // History (§1 items 18-21) and zoom (item 22). Their sensitivity comes from
-        // `cut_screen::history_buttons_enabled` through `refresh_history_buttons`, called from the
-        // same refresh path the verbs use, so nothing here decides who is clickable.
-        // History starts greyed: nothing to undo, redo, revert or clear on a page that has not been edited.
-        let history = cut_tool_group("history", &cut_screen::HISTORY_BUTTONS, true);
-        toolbar.append(&history);
-        // Zoom starts live: −/+ act on any timeline immediately.
-        let zoom = cut_tool_group("zoom", &cut_screen::ZOOM_BUTTONS, false);
-        toolbar.append(&zoom);
-
-        // Form column (§1's "Form column", §A's idle rows). Until a form is open for something being
-        // placed or edited, this holds the eight readings: thumbnail size (with its −/+ ladder), aspect
-        // ratio, playhead, selection, cut, cut at 1×, source, segments — each value label named off
-        // `cut_screen::readout_widget(label)` so the label is spelled once and the name follows.
-        let form = cut_form_frame::frame(&cut_form_column().upcast::<gtk::Widget>());
-        box_.insert_child_after(&form, Some(&previous));
-        previous = form.upcast();
-
-        // F2.12 Insert — the insert form's own holder, right under the readout column. DECISION: it is a
-        // separate box rather than rows bolted into `cut-form`, because §A puts an open form INSTEAD of
-        // the idle readings and the eight rows are read by their own names; hiding one box and showing the
-        // other cannot disturb them. Built empty here and filled by `show_insert_form` from a
-        // `cut_insert::FormPlan`, so nothing about a card's fields is invented in the widget layer.
-        let insert_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        insert_form.set_widget_name("insert-form");
-        insert_form.set_visible(false);
-        box_.insert_child_after(&insert_form, Some(&previous));
-
-        // F3.1 S4: the zoom's own form, built the same way and right after the insert form's slot so
-        // neither disturbs the other. Hidden until a drag lands a box; `show_zoom_form` fills it from an
-        // `fx_zoom::Form`, so no field label, help sentence or default is invented in the widget layer.
-        let zoom_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        // Tab-scoped name rather than an unscoped one: `page_box` runs once per tab, so an unscoped name would
-        // exist four times in every window's tree and `find_widget_by_name` would hand back whichever tab's box
-        // the walk reaches first -- often a hidden one whose children were never cleared for this pass, which is
-        // how a re-draw ends up appending into a box that already holds another form's widgets
-        // (`gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`). This is the same reason
-        // `fold-badges` and `camera-rows` are built inside the Cut-page guard rather than out here.
-        zoom_form.set_widget_name(&format!("zoom-form-{page}"));
-        zoom_form.set_visible(false);
-        box_.insert_child_after(&zoom_form, Some(&insert_form.upcast::<gtk::Widget>()));
-
-        // F3.3 Speed — the speed form's own holder, right under the zoom form's and built EMPTY here for the
-        // same tab-scoping reason: `page_box` runs once per tab, so a name not carrying `{page}` would exist
-        // four times per window. Hidden until a ⏩ Speed press finds a band or a line to work on; filled by
-        // `show_speed_form`, which draws nothing of its own about rates or sounds — every word comes from
-        // `cut_speed`.
-        let speed_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        speed_form.set_widget_name(&format!("speed-form-{page}"));
-        speed_form.set_visible(false);
-        box_.insert_child_after(
-            &speed_form,
-            Some(&zoom_form.upcast::<gtk::Widget>()),
-        );
-
-        // F3.4 Text — the caption form's own holder, right under the speed form's and built EMPTY here for the
-        // same tab-scoping reason: `page_box` runs once per tab, so a name not carrying `{page}` would exist
-        // four times per window and a lookup by name would land on whichever box the walk reached first (the
-        // `fold-badges` / `camera-rows` / `zoom-form` / `speed-form` rule). Hidden until ❝ Text is armed and a
-        // click or drag lands a box; filled by `show_text_form`, which invents nothing — every word comes from
-        // `fx_text`.
-        let text_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        text_form.set_widget_name(&format!("text-form-{page}"));
-        text_form.set_visible(false);
-        box_.insert_child_after(
-            &text_form,
-            Some(&speed_form.upcast::<gtk::Widget>()),
-        );
-        // F3.5 #06-effects#1-svg: the drawing form's holder, named the same tab-scoped way as the
-        // `zoom-form` / `speed-form` / `text-form` rule above. Hidden until a file is chosen and a box has
-        // landed; filled by `show_svg_form`, which invents nothing -- every word comes from `fx_svg`.
-        let svg_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        svg_form.set_widget_name(&format!("svg-form-{page}"));
-        svg_form.set_visible(false);
-        box_.insert_child_after(
-            &svg_form,
-            Some(&text_form.upcast::<gtk::Widget>()),
-        );
-        // F3.6 Volume — the volume form's own holder, named the same tab-scoped way as the `zoom-form` /
-        // `speed-form` / `text-form` / `svg-form` rule above: `page_box` runs once per tab, so an unscoped
-        // name would exist four times per window and a lookup by name would land on whichever box the walk
-        // reached first. Hidden until 🔊 Volume finds a band or a placed line; filled by `show_volume_form`,
-        // which invents nothing — every word and number comes from `fx_volume`.
-        let volume_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        volume_form.set_widget_name(&format!("volume-form-{page}"));
-        volume_form.set_visible(false);
-        box_.insert_child_after(
-            &volume_form,
-            Some(&svg_form.upcast::<gtk::Widget>()),
-        );
-        // F3.7 Label — the label form's own holder, named the same tab-scoped way as the `zoom-form` /
-        // `speed-form` / `text-form` / `svg-form` / `volume-form` rule above: `page_box` runs once per tab, so
-        // an unscoped name would exist four times per window and a lookup by name would land on whichever box
-        // the walk reached first. Hidden until 🏷 Label finds a band or a placed line; filled by
-        // `show_label_form`, which invents nothing — every word and number comes from `fx_label`.
-        let label_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        label_form.set_widget_name(&format!("label-form-{page}"));
-        label_form.set_visible(false);
-        box_.insert_child_after(
-            &label_form,
-            Some(&volume_form.upcast::<gtk::Widget>()),
-        );
-
-
-
-        // F2.8: the strip that carries trim and move. A PLACEHOLDER standing in for the picture rows,
-        // green bars and wave strips F2.10/F2.11 draw, scoped the way `select-surface` above is — no
-        // invented tracks. Two hands on one strip: a press within `cut_trim::EDGE_GRAB_PX` of a clip
-        // border drags that border (`// layout.edgeGrabPx`), and a right-press anywhere else moves what
-        // is under the pointer. The gestures are attached in `wire_track_strip`, after `set_content`,
-        // because a handler on a widget outside the realized tree never fires.
-        let strip = gtk::DrawingArea::new();
-        strip.set_widget_name("track-strip");
-        strip.set_size_request(STRIP_WIDTH, STRIP_HEIGHT);
-        strip.set_halign(gtk::Align::Start);
-        // The strip paints itself from this window's cut — the ruler, the kept bar and its borders, or
-        // `cut_trim::STRIP_EMPTY_HINT` when there is nothing to show. See `paint_track_strip`.
-        strip.set_draw_func(move |_, cr, w, h| paint_track_strip(cr, w, h));
-        strip.set_tooltip_text(Some(&format!(
-            "{} / {}",
-            cut_trim::TRIM_TIP,
-            cut_trim::MOVE_TIP
-        )));
-        box_.insert_child_after(&surface_group, Some(&previous));
-        previous = surface_group.upcast();
-        // §05-cut#1-screen — the band that draws every §1 mark, with the red playhead on its own layer
-        // above it and the scrollbar under them. `cut_tracks::install` builds, stacks, attaches and packs
-        // all three; it reads this window's state at draw time through `cut_view::band_scene_for`, so no
-        // rule is copied here, and lists Prepare's frames for the thumbnails as the page asks for its
-        // scene. The draw callbacks outlive this call, hence the clone rather than `page_box`'s borrow.
-        let held = window.clone();
-        previous = cut_tracks::install(
-            window,
-            &box_,
-            &previous,
-            move || crate::ui::cut_view::band_scene_for(&held),
-            session_reads().0,
-        )
-        .upcast();
-        box_.insert_child_after(&strip, Some(&previous));
-
-        // F2.10 Cameras and hearing — the named row list, right under the strip's ruler, where
-        // `spec/img/05-rows.png` puts the camera rows. DECISION: F2.11 owns the real picture rows,
-        // thumbnails and wave strips, and F2.8's placeholder geometry on `track-strip` is left EXACTLY
-        // as that item drew it (STRIP_WIDTH / STRIP_HEIGHT over `cut_trim::PLACEHOLDER_STRIP_BANDS`) —
-        // reflowing the strip would move every press band F2.8's widget test fires into. So the things
-        // this item actually names — the name plate you click to watch a row, the 🔍 lens badge, the 🔈
-        // speaker badges and the gutter switches — are drawn as their own stacked list in a box named
-        // `camera-rows`, one row per coloured row from `timeline::row_count`, so the whole flow is
-        // reachable by a click and testable today. The contents are rebuilt by
-        // `refresh_camera_rows` from this window's cut; nothing here holds a second copy of a rule.
-        let cam_rows = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        cam_rows.set_widget_name("camera-rows");
-        cam_rows.set_tooltip_text(Some(
-            "one row per camera \u{2014} click its name plate to watch that row in the preview",
-        ));
-        box_.insert_child_after(&cam_rows, Some(&previous));
-        // NOT filled here: `window` is still under construction and not in the widget tree yet, so a
-        // search for `camera-rows` from it finds nothing. The rows are drawn by `refresh_camera_rows`,
-        // which `build_window` calls after `set_content` alongside the other Cut-page wiring.
-
-        // §06-effects#2 — the preview frame and, directly beneath it, the effects lane, in the order
-        // `spec/img/06-lane.png` gives them. Both are built by `cut_preview_panel::install` (window.rs is past
-        // its size budget) and come back empty: `refresh_effects_lane` fills them once this window has a cut.
-        // The return value is unread — nothing after this arm packs beside the panel — so it is dropped.
-        let _ = crate::ui::cut_preview_panel::install(&box_, &previous);
-        // §A/§1 put the page in an order the flows did not build it in (preview | readings on top,
-        // then toolbar, tracks, scrollbar). This re-orders the widgets just built; see the module doc.
-        crate::ui::cut_page_layout::arrange(&box_);
-    }
-
-    // F2.11 S1 — the whole-cut fold badge's holder, beside the camera rows. THE CUT PAGE ONLY:
-    // `page_box` runs once per tab (PAGES is four long), and a box named `fold-all-holder` on each of them
-    // makes that name ambiguous — every lookup from `fold_badges_box` then lands on whichever page the
-    // walk reaches first, which is how one page's refresh appends into another page's tree and trips
-    // `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`. Measured: 4 such boxes
-    // per window before this guard, 1 after.
-    //
-    // DECISION (§A names no widget seat for the WHOLE-CUT badge): §B puts the fold-all badge in the 30 px
-    // gutter, which today is painted rather than widgetled, so this button takes the nearest real seat the
-    // page has — beside the rows, where a person looks for the tape's controls. The PER-GAP −/+ badges are
-    // NOT here: they are children of the band's own overlay (`fold-badges`, built in `cut_tracks::build`)
-    // so each sits over the bar whose gap it folds. Placement stays single-sourced in `cut_fold`:
-    // `FOLD_MIN_PX` (no badge over a gap with no room) and `BADGE_INSIDE_PX` (just inside the neighbouring
-    // bar, never mid-gap), both applied by `cut_fold::badges`, whose x each button is placed at.
-    if page == Page::Cut.label() {
-        let folds_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        folds_box.set_widget_name("fold-all-holder");
-        folds_box.set_tooltip_text(Some(
-            "\u{2212} folds a stretch the cut drops away \u{00b7} + on the seam opens it again",
-        ));
-        box_.append(&folds_box);
-    }
-
-    view.set_content(Some(&box_));
-    // The two widgets are handed back only for Prepare; every other page has none. `build_window`
-    // wires that button directly rather than finding it by name, because a window whose four pages
-    // each hold an "add-sources-button" makes `find_widget_by_name` return whichever one it reaches
-    // first — and wiring an arbitrary page's copy leaves the visible one doing nothing.
-    let (add_, copy_) = prepare.map_or((None, None), |(add_, copy_)| (Some(add_), Some(copy_)));
-    (view.upcast(), add_, copy_)
-}
-
-/// One toolbar group: a linked horizontal Box named `group-<name>` holding one button per entry in
-/// `tools`, in the table's order. Every control gets its stable widget name and its tooltip here, so
-/// no group is assembled differently from any other and a test that reads a table knows what the page
-/// holds (§1's groups, §A's tooltips).
-///
-/// `rests_insensitive` is how the group starts before any refresh has run. The rule for who is live
-/// lives in the refresh path (`refresh_verb_buttons`, `refresh_copy_buttons`,
-/// `refresh_history_buttons`), but the page is shown before the first of those runs, so a button that
-/// started sensitive would be claiming it has work to do when it has none. Groups whose controls act on
-/// nothing (verbs with no band, history with no edit) start greyed; groups that always have a job
-/// (transport, zoom) start live.
-fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insensitive: bool) -> gtk::Box {
-    let group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    group.set_widget_name(&format!("group-{name}"));
-    group.set_halign(gtk::Align::Start);
-    for tool in tools {
-        let button = gtk::Button::with_label(tool.label);
-        button.set_widget_name(tool.name);
-        button.set_tooltip_text(Some(tool.tip));
-        button.set_sensitive(!rests_insensitive);
-        group.append(&button);
-    }
-    group
-}
-
-/// The effects dropdown's contents: the six effects §1 item 17 lists, each a named row of the popover
-/// so a test finds `effect-item-zoom` whether or not the popover was ever popped. Built as a Box of
-/// buttons rather than a `PopoverMenu` because a menu model cannot be inspected by name under
-/// `GSK_RENDERER=cairo` — the flat rows keep the same names and the same order.
-fn cut_effect_menu(window: &adw::ApplicationWindow) -> gtk::Popover {
-    let popover = gtk::Popover::new();
-    let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    list.set_widget_name("effect-menu");
-    for item in cut_screen::EFFECT_ITEMS {
-        // `tip` carries the effect kind id here, not a sentence: it is what the row means to the cut,
-        // and the label is what a person reads.
-        let row = gtk::Button::with_label(item.label);
-        row.set_widget_name(item.name);
-        row.set_tooltip_text(Some(&format!("add a {} effect", item.tip)));
-        // The rule lives in `press_effect_item`; this closure parses the row's own kind id, calls that
-        // one function and prints the sentence it returns. Nothing else.
-        let owner = window.clone();
-        let kind_id = item.tip.to_string();
-        row.connect_clicked(move |_| {
-            let Some(kind) = cut::Fx::parse_kind(&kind_id) else {
-                return;
-            };
-            let say = press_effect_item(&owner, kind);
-            if let Some(status) = find_widget_by_name(owner.upcast_ref(), "status-line")
-                .and_then(|w| w.downcast::<gtk::Label>().ok())
-            {
-                status.set_text(&say);
-            }
-        });
-        list.append(&row);
-    }
-    popover.set_child(Some(&list));
-    popover
-}
+// The page's widget tree (one page per tab), the Cut toolbar groups and their effect popover, and
+// Prepare's source list and frame controls live in `window_page_box` (window.rs is past its size
+// budget); these are the same names, re-exported under the paths every other module reaches them through.
+pub(crate) use crate::ui::window_page_box::page_box;
 
 /// §06-effects#1-record: record one effect of this kind on this window's cut.
 ///
@@ -657,87 +139,15 @@ pub(crate) use crate::ui::cut_zoom_hand::{
 // The §05-cut effects-lane group lives in `cut_lane_rows` (window.rs is past its size budget); these are
 // the doors the rest of the page and the other ui modules call, kept at the paths they had.
 pub use crate::ui::cut_lane_rows::{cut_bar_width_px, effects_lane_box, refresh_effects_lane};
-pub(crate) use crate::ui::cut_lane_rows::{
-    cut_form_column, preview_widget, set_class,
-};
+pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
 
 
-/// §4's list of rows, one per source file. The rows and their controls are `source_rows`'s (that file
-/// is where the row rules live now that `window.rs` is past its size budget); this only builds the
-/// container and hands it the handles a row needs.
-fn sources_list(session: &Rc<RefCell<Project>>, status: &gtk::Label) -> gtk::Widget {
-    let list = gtk::ListBox::new();
-    list.set_widget_name("sources-list");
-    list.set_selection_mode(gtk::SelectionMode::None);
-    list.set_tooltip_text(Some(sources::LIST_TIP));
-    // One hairline between rows, which is how §4's band reads; the frame around it is the page's.
-    list.add_css_class("boxed-list");
-    source_rows::append_all(&source_rows::Rows {
-        session: Rc::clone(session),
-        status: status.clone(),
-        list: list.clone(),
-    });
-    list.upcast()
-}
-
-/// §1's badge **8**: the two frame controls under the list. Freq is a dropdown of the stops
-/// ([`prepare::FREQ_STOPS`]) and Language an entry with the warning as its tooltip; both write
-/// through to the session, so the page holds no rule of its own.
-fn frame_controls(session: &Rc<RefCell<Project>>) -> gtk::Widget {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    row.set_widget_name("frame-controls");
-
-    row.append(&label("Freq"));
-    let freq = gtk::DropDown::from_strings(
-        &prepare::FREQ_STOPS
-            .iter()
-            .map(|secs| prepare::freq_label(*secs))
-            .collect::<Vec<_>>()
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-    );
-    freq.set_widget_name("freq-control");
-    freq.set_selected(
-        prepare::FREQ_STOPS
-            .iter()
-            .position(|stop| *stop == session.borrow().interval)
-            .map(|index| index as u32)
-            .unwrap_or(gtk::INVALID_LIST_POSITION),
-    );
-    let held = session.clone();
-    freq.connect_selected_notify(move |picker| {
-        // `INVALID_LIST_POSITION` is the empty selection GTK gives before a choice exists; anything
-        // off the stops is `set_freq`'s refusal to make, not this handler's decision.
-        let index = picker.selected();
-        if index == gtk::INVALID_LIST_POSITION {
-            return;
-        }
-        let secs = prepare::FREQ_STOPS[usize::try_from(index).unwrap_or(0)];
-        prepare::set_freq(&mut held.borrow_mut(), secs);
-    });
-    row.append(&freq);
-
-    row.append(&label("Language"));
-    let language = gtk::Entry::new();
-    language.set_widget_name("language-entry");
-    language.set_tooltip_text(Some(prepare::LANGUAGE_TIP));
-    // The code as it will be used, so an empty box shows the "en" it means rather than a blank.
-    language.set_text(&prepare::language_label(&session.borrow().language));
-    let held = session.clone();
-    language.connect_changed(move |entry| {
-        held.borrow_mut().language = entry.text().to_string();
-    });
-    row.append(&language);
-
-    row.upcast()
-}
 
 // The §1 bench, tabs and readouts group lives in `window_bench` (window.rs is past its size budget);
 // these are the doors the rest of the page calls, kept at the paths they had.
 pub use crate::ui::window_bench::{label, paint_progress, set_bench_open_row};
 pub(crate) use crate::ui::window_bench::{
-    bench_box, bench_paths, depth, has_label, paint_readouts, paint_readouts_for, paint_run_bar,
+    depth, has_label, paint_readouts, paint_readouts_for, paint_run_bar,
     paint_tabs, paint_tabs_for, refresh_cut_readouts, tab_buttons, LOG_OPEN_PX,
 };
 
@@ -752,8 +162,8 @@ pub use crate::ui::window_selection::{
     selection_verbs, set_preview_volume,
 };
 pub(crate) use crate::ui::window_selection::{
-    held_narration, placeholder_surface_bands, refresh_selection_readout, refresh_verb_buttons,
-    set_pressed_surface, HELD_NARRATION, PREVIEW_VOLUMES, SELECT_GESTURES, SELECT_SURFACES,
+    held_narration, refresh_selection_readout, refresh_verb_buttons,
+    HELD_NARRATION, PREVIEW_VOLUMES, SELECT_SURFACES,
     SELECTED,
 };
 
@@ -766,7 +176,7 @@ pub use crate::ui::window_trim_strip::{
     set_press_scene, set_press_x, track_strip, trim_gesture, TRACK_REC_END, TRACK_STRIP_PPS,
 };
 pub(crate) use crate::ui::window_trim_strip::{
-    paint_track_strip, refresh_copy_buttons, wire_copy_esc, wire_delete_keys, wire_track_strip,
+    refresh_copy_buttons, wire_copy_esc, wire_delete_keys, wire_track_strip,
 };
 
 // The §02 run-bar presses live in `window_run_press` and the three pass jobs in `cut_pass_gates`
@@ -1677,114 +1087,7 @@ pub(crate) fn session_reads() -> (Option<layout::Tree>, Cut, Narration) {
 
 
 
-/// The New button's tooltip, §1's wording for badge **1**.
-const NEW_TIP: &str = "New project \u{2014} name it, put it where you want it, and start over";
 
-/// S3's confirmation, drawn from [`new_project`]'s strings and deciding nothing: the question, the
-/// two paragraphs, and the two answers. "Start new…" is destructive because what it does cannot be
-/// undone, and Cancel keeps the focus so a blind Enter does nothing (the prototype's `confirm`).
-pub fn new_project_confirm(
-    parent: Option<&adw::ApplicationWindow>,
-    detail: &str,
-) -> adw::MessageDialog {
-    let dialog = adw::MessageDialog::new(parent, Some(new_project::QUESTION), Some(detail));
-    // The × in the header bar answers exactly as Cancel does. `close-button` is adw::Window's own
-    // property (the response its × produces is `close-response`, which names Cancel), so both are
-    // set through the object rather than through a trait method this binding only has on Window.
-    dialog.set_property("close-response", "cancel");
-    dialog.add_response("cancel", "Cancel");
-    dialog.add_response("start", new_project::BUTTON);
-    dialog.set_response_appearance("start", adw::ResponseAppearance::Destructive);
-    dialog.set_default_response(Some("cancel"));
-    dialog
-}
-
-/// Where a press of ＋ New goes: ask [`new_project::press`], then draw what it says. Every string the
-/// user sees comes from that module, including the refusal's and the confirmation's. Whether the
-/// session is empty comes from the live handle the pages mutate, so S2 asks only when there is
-/// something to lose; a run under way comes from F0.2's [`run::RunBar`], which ▶ answers for too.
-fn wire_new(new_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, status: &gtk::Label, session: &Rc<RefCell<Project>>) {
-    let bar = bar.clone();
-    let status = status.clone();
-    let session = session.clone();
-    new_.connect_clicked(move |_| {
-        let root = std::env::current_dir().unwrap_or_default();
-        let open = startup::session_dir(&root);
-        let empty = session.borrow().sources.is_empty();
-        match new_project::press(bar.borrow().running.is_some(), empty, &open) {
-            new_project::Gate::Refused { reason } => status.set_text(reason),
-            new_project::Gate::Name => ask_new_project(&status, &root, &open, &session),
-            new_project::Gate::Confirm { detail } => {
-                let dialog = new_project_confirm(None, &detail);
-                let status = status.clone();
-                let root = root.clone();
-                let open = open.clone();
-                let session = session.clone();
-                dialog.connect_response(None, move |dialog: &adw::MessageDialog, response| {
-                    // Cancel is not pressing on: S3's whole point is that nothing was changed.
-                    if response == "start" {
-                        ask_new_project(&status, &root, &open, &session);
-                    }
-                    dialog.destroy();
-                });
-                dialog.present();
-            }
-        }
-    });
-}
-
-/// S4: ask where the new project goes and what it is called. The name's date is taken here because
-/// [`new_project`] is handed the day rather than reading a clock, which is what keeps its tests off
-/// today; the folder chooser is the desktop's own sheet, so the folder it hands back *is* the new
-/// project, and S5's refusal or S6's sentence goes on the status line.
-fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path, session: &Rc<RefCell<Project>>) {
-    // `%F` is the ISO date, which is what the spec's default name is.
-    let day = glib::DateTime::now_local()
-        .and_then(|today| today.format("%F").map(|day| day.to_string()))
-        .unwrap_or_else(|_| "new-project".to_string());
-    let dir = open.parent().map(Path::to_path_buf).unwrap_or_else(|| root.to_path_buf());
-    let dialog = gtk::FileDialog::builder()
-        .title(new_project::TITLE)
-        .accept_label("New project")
-        .build();
-    dialog.set_initial_folder(Some(&gio::File::for_path(&dir)));
-    dialog.set_initial_name(Some(&new_project::free_name(&dir, &day)));
-
-    let status = status.clone();
-    let root = root.to_path_buf();
-    let session = session.clone();
-    dialog.select_folder(
-        None::<&gtk::Window>,
-        None::<&gio::Cancellable>,
-        move |chosen: Result<gio::File, glib::Error>| {
-            let Ok(file) = chosen else {
-                return; // dismissed: nothing was asked for, so nothing changed
-            };
-            // The folder the chooser hands back *is* the project (01 §1), and its own name is what
-            // S5 checked and S6 says in the status line.
-            let path = file.path().unwrap_or_default();
-            let named = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            match new_project::create(&root, &path, &named) {
-                // S6: apply it, not just announce it — log, session swap, remembered pair, status.
-                Ok(created) => crate::ui::new_apply::apply(&created, &session, &status),
-                Err(reason) => status.set_text(&reason),
-            }
-        },
-    );
-}
-
-/// Prepare's own two widgets (F0.12): the button that adds files, and the tick that decides whether
-/// they come inside the project or stay where they are. The ellipsis is the single character §1's
-/// screenshot shows, not three dots.
-const ADD_LABEL: &str = "Add source files…";
-const COPY_LABEL: &str = "copy into project";
-
-/// The Rescan button's tooltip, §1's wording for badge **8**.
-const RESCAN_TIP: &str = "Rescan inputs and outputs";
-
-/// §1's wording for the Settings badge: the two servers the dialog is about, named in the tooltip
-/// so the gear is never an unlabelled control.
-const SETTINGS_TIP: &str = "Settings \u{2014} the LLM and audio.cpp endpoints";
 
 pub use crate::ui::window_policy::{
     built_window, close_policy_forms, derive_policy, forget_policy_form, main_window,
@@ -1797,318 +1100,6 @@ pub(crate) use crate::ui::window_policy::{
     POLICY_WATCH_WINDOW,
 };
 
-/// Where a press of Rescan goes: [`rescan`] decides everything — which rows are gone, what was
-/// re-read, what the status says. The button forwards and draws the answer (spec/00-principles.md §5).
-///
-/// No run refusal here: S1 drops what has vanished whether or not a run is on, so unlike Save this
-/// handler never reads [`run::RunBar`].
-fn wire_rescan(
-    button: &gtk::Button,
-    status: &gtk::Label,
-    session: &Rc<RefCell<Project>>,
-    shell: &Rc<RefCell<Shell>>,
-) {
-    let status = status.clone();
-    // The window is handed an immutable `&Project` and holds no live project yet, so the scan works on
-    // the private copy shared with Add sources, and [`rescan_apply`] writes the pruned list back to the
-    // session file. Which folder is open is the same stand-in New and Save use, so all three agree.
-    let root = std::env::current_dir().unwrap_or_default();
-    let project = session.clone();
-    let shell = shell.clone();
-    button.connect_clicked(move |_| {
-        let dir = startup::session_dir(&root);
-        let tree = layout::Tree::new(&dir).ok();
-        let found = rescan::rescan(&mut project.borrow_mut(), &root, &dir, tree.as_ref());
-        // Every step the window takes with that answer -- the drop lines, the write-back, the vanished
-        // page, all three refreshes and the status -- is `rescan_apply`'s, in the spec's order.
-        let scanned = project.borrow().clone();
-        rescan_apply::apply(
-            &found,
-            &scanned,
-            &project,
-            &dir,
-            tree.as_ref(),
-            &status,
-            &shell,
-        );
-    });
-}
-
-/// Where a press of "Add source files…" goes: [`add_sources`] decides whether it may happen at all,
-/// which kinds the chooser offers, what is copied and what is only referenced, and what the status
-/// says. The button forwards (spec/00-principles.md §5).
-///
-/// The copy's bytes are drawn on F0.5's bar: a copy is a run of its own (F0.12 S0), so it reports
-/// through the same bookkeeping ▶'s run uses ([`add_files`], which feeds `runqueue::Queue`) rather
-/// than painting a second bar. The session that grows here is the window's private copy for the
-/// same reason [`wire_rescan`] spells out — the pages render the `&Project` handed to
-/// `build_window`, and a live project state is F0.9's.
-fn wire_add(
-    window: &adw::ApplicationWindow,
-    button: &gtk::Button,
-    copy_into: &gtk::CheckButton,
-    bar: &Rc<RefCell<run::RunBar>>,
-    status: &gtk::Label,
-    session: &Rc<RefCell<Project>>,
-) {
-    let window = window.clone();
-    let bar = bar.clone();
-    let status = status.clone();
-    let session = session.clone();
-    // The tick is read when the chooser is answered, not when it opened.
-    let copy_into = copy_into.clone();
-    button.connect_clicked(move |_| {
-        // S0 first: a copy is a run of its own, so no chooser opens while something else runs.
-        if let Err(reason) = add_sources::press(bar.borrow().running.is_some()) {
-            status.set_text(reason);
-            return;
-        }
-        ask_add_sources(&window, &status, &session, &copy_into);
-    });
-}
-
-/// S1's chooser: titled for adding, filtered to audio and video, and willing to take a whole card at
-/// once. As in [`ask_save_project`] it is answered by nobody in a headless test, which is the point —
-/// what a test asserts is that the press got this far.
-///
-/// GTK 4.10 replaced the file chooser with `gtk::FileDialog` and deprecated everything below it; the
-/// replacement has no multiple-selection filter API that answers a *native* chooser, so this stays on
-/// the old calls and takes their warnings here rather than silencing them crate-wide.
-#[expect(
-    deprecated,
-    reason = "the 4.10 replacement cannot offer a filtered multi-select native chooser"
-)]
-fn ask_add_sources(
-    window: &adw::ApplicationWindow,
-    status: &gtk::Label,
-    session: &Rc<RefCell<Project>>,
-    copy_into: &gtk::CheckButton,
-) {
-    let chooser = gtk::FileChooserNative::builder()        .title(add_sources::CHOOSER_TITLE)
-        .modal(true)
-        .action(gtk::FileChooserAction::Open)
-        .build();
-    // The accept button says what it does. `add_choice` is not the three-label call it looks like —
-    // that one adds an extra combo — so the buttons are set where they belong.
-    chooser.set_accept_label(Some("Add"));
-    chooser.set_cancel_label(Some("Cancel"));
-    chooser.set_select_multiple(true);
-    let filter = gtk::FileFilter::new();
-    filter.set_name(Some(add_sources::FILTER_NAME));
-    for ext in add_sources::MEDIA_EXT {
-        filter.add_pattern(&format!("*{ext}"));
-    }
-    chooser.add_filter(&filter);
-    // F0.8 S6: a project created outside the root is where its footage almost certainly is, so the
-    // chooser opens there; with nothing remembered the chooser keeps its own default.
-    if let Some(dir) = crate::ui::new_apply::chooser_dir() {
-        let _ = chooser.set_current_folder(Some(&gio::File::for_path(&dir)));
-    }
-
-    let _status = status.clone();
-    let _session = session.clone();
-    let _copy_into = copy_into.clone();
-    // The same stand-in New, Save and Rescan use, so all four flows agree on which project is open.
-    let _root = std::env::current_dir().unwrap_or_default();
-    let window = window.clone();
-    chooser.connect_response(move |chooser, response| {
-        if response != gtk::ResponseType::Accept {
-            return;
-        }
-        let files: Vec<std::path::PathBuf> = chooser
-            .files()
-            .iter::<gio::File>()
-            .flatten()
-            .filter_map(|file| file.path())
-            .collect();
-        // The same body a widget test drives, so the chooser and the seam cannot drift apart.
-        add_files(&window, &files);
-    });
-}
-
-/// The Save button's tooltip, §1's wording for badge **3**.
-const SAVE_TIP: &str = "Save this project to a file";
-
-/// The seam a widget test drives: the same body the chooser's callback calls, reached through the
-/// window rather than by threading `bar`/`status`/`session` by hand. It decides nothing — it finds
-/// the widgets this window built and forwards to [`open_folder`].
-pub fn open_from(window: &adw::ApplicationWindow, picked: &Path) -> bool {
-    let (Some(bar), Some(status), Some(session)) = (
-        WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
-        find_status(window.upcast_ref()),
-        SESSION.with(|slots| slots.borrow().last().cloned()),
-    ) else {
-        panic!("the window has no run bar, status line or session");
-    };
-    open_folder(&bar, &status, &session, picked)
-}
-
-/// The seam a widget test drives for F0.12: the same body the "Add source files…" chooser's response
-/// calls, reached through the window rather than by threading `bar`/`status`/`session`/`queue`/
-/// `progress` by hand. It decides nothing — [`add_sources`] does — but it is where the copy's bytes
-/// reach the bar.
-///
-/// A copy is a run of its own (F0.12 S0), so it borrows F0.5's bookkeeping instead of painting a
-/// second bar: the copy owns one track, each file asked for is one task on it, and each file's byte
-/// fraction inside that task is what `prog` reports. That is why the bar moves in proportion to the
-/// bytes actually copied rather than to the number of rows added — a slow card is what the bar is
-/// waiting on, and `add_sources::Progress` already carries those bytes.
-///
-/// Returns whether anything was added. Refused while another run is on (S0): the session is not
-/// touched, so a refused press cannot half-apply.
-pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) -> bool {
-    let (Some(bar), Some(status), Some(session), Some(queue), Some(progress)) = (
-        WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
-        find_status(window.upcast_ref()),
-        SESSION.with(|slots| slots.borrow().last().cloned()),
-        WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned()),
-        progress_bar(window),
-    ) else {
-        panic!("the window has no run bar, status line, session, queue or progress bar");
-    };
-    let copy = copy_into_project(window).is_some_and(|tick| tick.is_active());
-    let root = std::env::current_dir().unwrap_or_default();
-    let dir = startup::session_dir(&root);
-    // S0 first, again at the seam: pressed while a run is on, it says the sentence and stops before
-    // any byte moves. Nothing here clears a ▶ run's flag — ⏹ owns that.
-    if let Err(reason) = add_sources::press(bar.borrow().running.is_some()) {
-        status.set_text(reason);
-        return false;
-    }
-    // Ours alone: the import marks itself as *the* run so a ▶ press during a copy is refused the
-    // other way round, and only this call may take that flag away.
-    bar.borrow_mut().running = Some(run::Run {
-        step: run::Step::Prepare,
-        paused: false,
-        log_expanded: true,
-        sources: run::snapshot_sources(&session.borrow()),
-    });
-    let added = add_copy(
-        &mut session.borrow_mut(),
-        &queue,
-        &progress,
-        &root,
-        &dir,
-        files,
-        copy,
-    );
-    // End it through F0.5's own path, whatever the copy did: the import is over either way. The log
-    // expander's state is put back by hand rather than left to `end_run`'s clear — that clears the
-    // status line, which this flow needs for S5's sentence.
-    bar.borrow_mut().running = None;
-
-    match added {
-        Ok(answer) => {
-            status.set_text(&answer.status);
-            // The added rows are drawn by the same door the build used, so an added row carries every
-            // control §4 gives a row (the track menu included) rather than a shorter version of one.
-            let total_rows = session.borrow().sources.len();
-            if let Some(list) = find_widget_by_name(window.upcast_ref(), "sources-list")
-                .and_then(|widget| widget.downcast::<gtk::ListBox>().ok())
-            {
-                // GTK's `ListBox` exposes its rows through the widget tree, so they are counted with
-                // the same iterator the rest of this module walks widgets with: that count is where
-                // the build-time drawing stopped, so everything past it is new.
-                let drawn = list
-                    .observe_children()
-                    .iter::<glib::Object>()
-                    .filter_map(|child| child.ok())
-                    .filter(|child| child.downcast_ref::<gtk::ListBoxRow>().is_some())
-                    .count();
-                for index in drawn..total_rows {
-                    list.append(&source_rows::row_at(
-                        &source_rows::Rows {
-                            session: Rc::clone(&session),
-                            status: status.clone(),
-                            list: list.clone(),
-                        },
-                        index,
-                    ));
-                }
-            }
-            answer.added > 0
-        }
-        // S0's abandonment: the log keeps the reason, the status line the sentence.
-        Err(err) => {
-            status.set_text(add_sources::NO_SOURCES_DIR);
-            log_line(&err);
-            false
-        }
-    }
-}
-
-/// The copy half of a press, with the bar fed from the bytes as they land. Split out so the seam
-/// above stays about finding widgets and this stays about the run of its own.
-fn add_copy(
-    session: &mut Project,
-    queue: &std::cell::RefCell<runqueue::Queue>,
-    progress: &gtk::ProgressBar,
-    root: &Path,
-    dir: &Path,
-    files: &[std::path::PathBuf],
-    copy: bool,
-) -> Result<add_sources::Added, String> {
-    // One job on the first track; every file asked for is one task of it, so the tooltip counts the
-    // pick rather than what survived (`added N of M` is the status line's job, not the bar's).
-    queue.borrow_mut().job(TRACK_IMPORT, IMPORT_JOB, 0, 0);
-    queue.borrow_mut().push(TRACK_IMPORT, files.len(), "file");
-    // The folder a copy lands in has to exist before the first `.part` is renamed into it. `add`
-    // makes the same folder afterwards, but the byte-by-byte report runs first (F0.12 S2).
-    if copy {
-        std::fs::create_dir_all(dir.join("sources"))
-            .map_err(|_| add_sources::NO_SOURCES_DIR.to_string())?;
-    }
-    // The total is taken before the first byte moves, so the fraction never chases a growing sum.
-    let total: u64 = files
-        .iter()
-        .map(|file| file.metadata().map(|meta| meta.len()).unwrap_or(0))
-        .sum();
-    let mut done_bytes = 0u64;
-    for file in files {
-        let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
-        queue.borrow_mut().take(TRACK_IMPORT);
-        if copy {
-            // `add_sources`' own copy rule — `.part` then rename, same name + same size skipped, a
-            // file already inside the project left where it is. Not reimplemented here.
-            add_sources::copy_one(file, dir).map_err(|err| err.to_string())?;
-        }
-        done_bytes += size;
-        // The bar means "how much of this import is on disk": the byte fraction, not the task count.
-        // Three tiny files beside one long recording should not read as mostly copied.
-        let fraction = if total == 0 {
-            1.0
-        } else {
-            done_bytes as f64 / total as f64
-        };
-        let name = file
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default();
-        queue
-            .borrow_mut()
-            .prog(TRACK_IMPORT, fraction, &format!("copying {name}"));
-        paint_import(progress, queue);
-    }
-    queue.borrow_mut().done(TRACK_IMPORT, 1.0);
-    add_sources::add(session, root, dir, files, copy)
-}
-
-/// Draw the import on F0.5's bar. The fraction and the tooltip come from the queue exactly as
-/// [`paint_progress`] takes them for a ▶ run; only the expander's body is left alone, since an
-/// import writes no run lines of its own.
-fn paint_import(progress: &gtk::ProgressBar, queue: &std::cell::RefCell<runqueue::Queue>) {
-    let (_text, tip) = queue.borrow().text_and_tip();
-    progress.set_fraction(queue.borrow().fraction());
-    if !tip.is_empty() {
-        progress.set_tooltip_text(Some(&tip));
-    }
-}
-
-/// The import's own job name on the bar's line and tooltip.
-const IMPORT_JOB: &str = "import";
-/// The copy gets one track: the whole pick is a single run of its own, not work interleaved with a
-/// ▶ run (which is precisely why S0 refuses while one is on).
-const TRACK_IMPORT: usize = 0;
 
 thread_local! {
     /// The run bar `build_window` created, published for the same reason as [`SESSION`]: so the
@@ -2151,15 +1142,7 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// The Open button's tooltip, §1's wording for badge **2**.
-const OPEN_TIP: &str = "Load a project \u{2014} sources, prompts and settings";
 
-thread_local! {
-    /// One window's preview state, pushed beside [`SESSION`] so each window owns its own;
-    /// newest slot wins — the same arrangement `session_sources` reads.
-    static PREVIEW_PLAYERS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Player>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
 
 thread_local! {
     /// One window's cut, held beside [`PREVIEW_PLAYERS`] with the same newest-slot rule.
@@ -2185,294 +1168,20 @@ pub use crate::ui::window_line_step::{
     step_the_line, Step, NO_RECORDING_STATUS,
 };
 pub(crate) use crate::ui::window_line_step::{
-    flush_session_on_close, LINE_ROOTS, LINE_STEP_BUTTONS, now_ms, SESSION_DIRS,
+    flush_session_on_close, LINE_ROOTS, LINE_STEP_BUTTONS, SESSION_DIRS,
     wire_line_keys, wire_line_step,
 };
 
-
-/// The Cut page's ▶ (F2.1), found by name the way [`play_button`] finds the run bar's.
-pub fn play_recording_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    find_widget_by_name(window.upcast_ref(), "play-recording-button")?
-        .downcast()
-        .ok()
-}
-
-/// The Cut page's ▶✂ (F2.2), found by name the way [`play_recording_button`] finds ▶.
-pub fn play_cut_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    find_widget_by_name(window.upcast_ref(), "play-cut-button")?
-        .downcast()
-        .ok()
-}
-
-/// The Cut page's ▶✂✂ (F2.3), found by name the way [`play_cut_button`] finds ▶✂.
-pub fn review_cuts_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    find_widget_by_name(window.upcast_ref(), "review-cuts-button")?
-        .downcast()
-        .ok()
-}
-
-/// F2.8 S1: the strip's own cut, read back — the visible state a trim writes and the painter reads.
-pub fn review_cut_segs(window: &adw::ApplicationWindow) -> Vec<cut::Seg> {
-    let _ = window;
-    newest_review_cut().segs
-}
-
-/// How many segments this window's cut holds right now — the read side of `seed_review_cut`, so a test can
-/// see whether a gesture changed the list.
-pub fn review_cut_segs_count(window: &adw::ApplicationWindow) -> usize {
-    let _ = window;
-    newest_review_cut().segs.len()
-}
-
-/// This window's shift correction (F2.8 S2), read straight off the cut the gesture wrote. A slide of a
-/// recording or a row lands here, so a test can assert WHICH sources moved and by how much instead of
-/// trusting the status sentence alone.
-pub fn review_cut_shift(
-    window: &adw::ApplicationWindow,
-) -> std::collections::BTreeMap<String, f64> {
-    let _ = window;
-    newest_review_cut().shift.clone()
-}
-
-/// This window's lanes (F2.9 S3), by their stable read: ⇲ Lane adds one and cuts nothing, so a test
-/// asserts the lane arrived while `review_cut_segs_count` stayed put.
-pub fn review_lanes(window: &adw::ApplicationWindow) -> Vec<cut::Lane> {
-    let _ = window;
-    newest_review_cut().lanes
-}
-
-/// F2.13 S3: the whole cut this window holds, as a read seam. Clear takes the scenes and the effects off
-/// and keeps everything recording-side, so a check has to read `fx`, `rows` and `nrows` too — the three
-/// the narrower accessors above do not cover. Reading only: no rule lives here.
-pub fn review_cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
-    let _ = window;
-    newest_review_cut()
-}
-
-/// This window's preview as it currently stands — for a test that fired the real button and wants to
-/// check the same state the logic test checks rather than a painted pixel.
-pub fn preview_player(window: &adw::ApplicationWindow) -> Player {
-    let _ = window;
-    PREVIEW_PLAYERS.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|player| *player.borrow())
-            .unwrap_or_default()
-    })
-}
-
-/// This window's live preview handle — the newest registered player, which is the one this window's
-/// button moves. Shared by every accessor below so they all read and write the same object.
-pub(crate) fn live_player(window: &adw::ApplicationWindow) -> Option<Rc<RefCell<Player>>> {
-    let _ = window;
-    PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned())
-}
-
-/// Give this window its own preview slot. The Cut page gets one with its ▶ (F2.1); the Narrate page
-/// registers the same slot from `narrate_page::wire`, because §5 makes the run bar read THAT page's
-/// transport once its preview has started, and a bar can only paint a slot that exists.
-pub fn register_preview_player_slot() {
-    PREVIEW_PLAYERS.with(|slots| {
-        slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(Player::default())))
-    });
-}
-
-/// Publish what the run bar should draw for this window's preview: [`crate::run::controls`] reads the
-/// transport off the player, so the page that owns the playing state writes it here rather than the
-/// bar guessing. Silently does nothing with no slot — a page that never registered one has no preview.
-pub fn publish_preview_transport(window: &adw::ApplicationWindow, transport: run::Transport) {
-    if let Some(player) = live_player(window) {
-        player.borrow_mut().transport = transport;
-    }
-}
-
-/// Put the red line somewhere before a press, which is what placing the cursor on the timeline does in
-/// the finished page. F2.1 S2 plays from here, so a test seeds it rather than depending on a click
-/// landing on a track that this round does not draw.
-pub fn set_playhead(window: &adw::ApplicationWindow, at: f64) {
-    if let Some(player) = live_player(window) {
-        player.borrow_mut().playhead = Some(at);
-    }
-    crate::ui::cut_view::follow_playhead(window, at);
-    // The tick writes the playhead; the playing half reads the smoothed clock at paint time, so this is what
-    // keeps the black mask and the camera layer from drifting off the picture between ticks.
-    crate::ui::cut_preview_frame::repaint(window);
-}
-
-/// Stand the preview in one of its three modes (recording / ✂ cut / ▶✂✂ review), playing or not,
-/// before a press — which is what the ✂ toggles and the transport itself do on the finished page.
-pub fn set_preview_state(
-    window: &adw::ApplicationWindow,
-    cut_only: bool,
-    reviewing: bool,
-    transport: run::Transport,
-) {
-    if let Some(player) = live_player(window) {
-        let mut held = player.borrow_mut();
-        held.cut_only = cut_only;
-        held.reviewing = reviewing;
-        held.transport = transport;
-    }
-}
-
-/// The seam F2.1's button calls: [`preview::press_recording`] decides which of switch-to-the-
-/// recording, pause or play-from-the-red-line the press means; this forwards it and paints only what
-/// the answer says.
-///
-/// `runs` are the filmed stretches ([`crate::timeline::filmed_runs`]) — needed because a session
-/// with nothing filmed has nothing to start at, and starting at 0 would pretend otherwise.
-///
-/// The player's own `Transport` is deliberately NOT pushed into the shell's [`run::RunBar`]: the bar
-/// tracks a *run* (`Run { step, paused, .. }`), not a preview transport, and folding one into the
-/// other would mean changing its API for a state it has no rule about. The two stay separate until a
-/// round owns both.
-pub fn press_play_recording(window: &adw::ApplicationWindow, runs: &[(f64, f64)]) -> Press {
-    let Some(status) = find_status(window.upcast_ref()) else {
-        panic!("the window has no status line");
-    };
-    let Some(player) = PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned()) else {
-        panic!("the window has no preview player");
-    };
-    let pressed = preview::press_recording(&mut player.borrow_mut(), runs);
-    match pressed {
-        // S1: the clock just changed meaning, so the sentence that says so goes where a press's
-        // answer is read.
-        Press::SwitchedToRecording { .. } => status.set_text(preview::RECORDING_STATUS),
-        // S2: playing and pausing need no sentence — the bar's own progress owns the line while a
-        // preview runs, and a pause leaves the previous one standing.
-        Press::Playing { .. } | Press::Paused => {}
-        Press::NoFootage => status.set_text(NO_RECORDING_STATUS),
-    }
-    pressed
-}
-
-
-
-/// The placeholder surface's pixels-per-second (F2.6). Named here rather than inlined so the widget
-/// test converts its drag with the SAME number the handler uses -- two copies of 4.0 in two files are
-/// how a drag assertion starts disagreeing with the code it tests.
-pub const SELECT_SURFACE_PPS: f64 = cut_screen::ZOOM_AT_OPEN;
-
-/// F2.4 S1: the click gesture that places the red line, newest window winning like [`SELECT_GESTURES`].
-/// A test emits `released` on this and reads back what the rule stored.
-pub fn line_click_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureClick> {
-    let _ = window;
-    LINE_CLICKS.with(|cell| cell.borrow().clone())
-}
-
-thread_local! {
-    static LINE_CLICKS: std::cell::RefCell<Option<gtk::GestureClick>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Attach a left-button click to this window's `select-surface` so a real press places the line.
-fn wire_line_click_surface(window: &adw::ApplicationWindow) {
-    let Some(area) = select_surface(window) else { return };
-    let gesture = gtk::GestureClick::new();
-    // Left button only: the right button belongs to trim/move (F2.8) and must not move the line.
-    gesture.set_button(1);
-    let win = window.clone();
-    gesture.connect_released(move |_g, _n_press, x, y| {
-        crate::ui::cut_line_press::press_strip(&win, x, y, now_ms());
-    });
-    area.add_controller(gesture.clone());
-    LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
-}
-
-/// Attach the same press to the PAINTED band, where the geometry the rule reads is.
-pub fn wire_band_line_press(window: &adw::ApplicationWindow) {
-    let Some(content) = window.content() else { return };
-    for name in ["track-band", "track-playhead"] {
-        if let Some(band) = find_widget_by_name(&content, name) {
-            crate::ui::cut_line_press::attach(window, &band);
-        }
-    }
-}
-
-thread_local! {
-    /// The gesture attached to the painted band, kept so a widget test can fire it the toolkit's way.
-    static BAND_LINE_CLICKS: std::cell::RefCell<Option<gtk::GestureClick>> =
-        const { std::cell::RefCell::new(None) };
-}
-/// Store the band's line gesture (called by [`crate::ui::cut_line_press::attach`]).
-pub(crate) fn store_band_line_gesture(gesture: gtk::GestureClick) {
-    BAND_LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
-}
-
-/// The millisecond clock the line throttle reads, for the page half that places a line.
-pub fn line_now_ms() -> u64 {
-    now_ms()
-}
-
-/// This window's line-placing gesture on the painted band. Test-only reader: the page attaches the gesture
-/// itself (`cut_line_press::attach`) and never asks for it back, so a name saying so keeps the program path
-/// honest about what calls this.
-pub fn band_line_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk::GestureClick> {
-    let _ = window;
-    BAND_LINE_CLICKS.with(|cell| cell.borrow().clone())
-}
-
-/// Attach the drag gesture to this window's `select-surface` and remember it. S1's scope is chosen once at
-/// the press and the band is drawn FROM THE SECOND THE HAND LANDED ON to the second under it (never from 0:
-/// a drag that always started at the head of the tape could not select a stretch in the middle of a
-/// session, which is the only thing a selection is for). Scope resolution stays `cut_select::draw`'s.
-fn wire_select_surface(window: &adw::ApplicationWindow) {
-    let Some(area) = select_surface(window) else { return };
-    let gesture = gtk::GestureDrag::new();
-    let win = window.clone();
-    // F2.6 S1: the press decides the scope, once. Which band the y fell in (ruler / picture row / wave
-    // strip / lane / selection band / effects lane) is answered by `cut_select::surface_at` -- a pure
-    // function over the drawn bands -- and remembered, so the drag below never re-decides it. The begin x
-    // goes with it: that second is the band's start.
-    gesture.connect_drag_begin(move |_g, sx, sy| {
-        let (bands, rows) = placeholder_surface_bands();
-        let surface = cut_select::surface_at(sy, &bands, rows);
-        set_pressed_surface(surface);
-        crate::ui::cut_select_press::set_drag_begin(sx / SELECT_SURFACE_PPS);
-        // The effects lane refuses a selection and puts a held effect down instead — at the press, once,
-        // so dragging across it cannot put the same effect down on every update.
-        if surface == cut_select::Surface::FxLane {
-            press_fx_lane(&win);
-        }
-    });
-    let fx_win = window.clone();
-    gesture.connect_drag_update(move |_g, x, y| {
-        let surface = pressed_surface(&fx_win).unwrap_or_else(|| {
-            let (bands, rows) = placeholder_surface_bands();
-            cut_select::surface_at(y, &bands, rows)
-        });
-        // The effects lane takes nothing back: it puts a held effect down and draws no band, so the
-        // selection that was there stays exactly as it was.
-        if surface == cut_select::Surface::FxLane {
-            return;
-        }
-        // Pixels to seconds at the page's current zoom; until the tracks exist the placeholder runs at
-        // the open-at zoom so a drag still lands on real session seconds.
-        let from = crate::ui::cut_select_press::drag_begin().unwrap_or(0.0);
-        draw_selection(
-            &fx_win,
-            surface,
-            crate::ui::cut_select_press::recording_for_surface(&fx_win, surface, y).as_deref(),
-            from,
-            x / SELECT_SURFACE_PPS,
-        );
-    });
-    area.add_controller(gesture.clone());
-    SELECT_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
-}
-
-/// Wire the ✕ to [`clear_selection`] and nothing else: the rule for what clearing means (and that it
-/// clears only the selection, never the cut) lives in `cut_select::clear`.
-/// Wire the ✕ to [`cut_verb_press::press_badge`] with the `selection` badge and nothing else: the rule for
-/// what clearing means (and that it clears only the selection, never the cut) lives in `cut_select::clear`,
-/// and the dispatch of a ✕ lives in the one badge door every ✕ on this page fires through.
-fn wire_clear_selection(button: &gtk::Button, window: &adw::ApplicationWindow) {
-    let window = window.clone();
-    button.connect_clicked(move |_| {
-        crate::ui::cut_verb_press::press_badge(&window, crate::cut_verbs::Badge::Selection, 0);
-    });
-}
+// The drag surface and the line-placing click (their gestures, storage and the ✕ that clears the band)
+// live in `window_surfaces` (window.rs is past its size budget); these are the same names, re-exported
+// under the paths every other module and test already reaches them through.
+pub use crate::ui::window_surfaces::{
+    band_line_gesture_for_test, line_click_gesture, line_now_ms, SELECT_SURFACE_PPS,
+    wire_band_line_press,
+};
+pub(crate) use crate::ui::window_surfaces::{
+    store_band_line_gesture, wire_clear_selection, wire_line_click_surface, wire_select_surface,
+};
 
 /// F2.7: wire one verb button to its seam. The callback holds no rule — it presses, prints the answer
 /// and leaves the state where [`cut_verbs`] said to leave it.
@@ -2560,97 +1269,18 @@ pub(crate) fn set_review_segs(window: &adw::ApplicationWindow, segs: &[cut::Seg]
     });
 }
 
-/// What ⌦ would take first: the effect in hand. Set by the effects-lane rounds when a person picks one
-/// up; a seam today so the delete order is testable before those pixels exist.
-///
-/// `None` puts the effect down and nothing else ([`crate::ui::cut_hand::drop_effect`]): the door that deleted
-/// the effect does not also decide what the next ⌦ takes.
-pub fn set_held_effect(effect: Option<cut::Fx>) {
-    match effect {
-        Some(fx) => {
-            crate::ui::cut_hand::pick_up(crate::ui::cut_hand::Hand::Effect(fx));
-        }
-        None => crate::ui::cut_hand::clear_all(),
-    };
-}
-
-/// Read side of [`set_held_effect`].
-pub fn held_effect() -> Option<cut::Fx> {
-    crate::ui::cut_hand::held_effect()
-}
-
-/// What ⌦ takes next: the clip in hand — `the only way to remove a spliced card` (§J rule 8). Same
-/// seam arrangement as the held effect: real drags set it from F2.8/F2.9 onward.
-pub fn set_held_clip(seg: Option<cut::Seg>) {
-    match seg {
-        Some(seg) => {
-            crate::ui::cut_hand::pick_up(crate::ui::cut_hand::Hand::Clip(seg));
-        }
-        None => crate::ui::cut_hand::clear_all(),
-    };
-}
-
-/// Read side of [`set_held_clip`]: the hand holds a WHOLE clip, as opposed to one of its edges.
-pub fn held_clip() -> Option<cut::Seg> {
-    crate::ui::cut_hand::held_clip()
-}
-
-/// The segment in hand either way — whole clip or held edge — for the doors that move a segment without asking
-/// which of the two the hand took.
-pub fn held_segment() -> Option<cut::Seg> {
-    crate::ui::cut_hand::held_clip_or_edge()
-}
-
-/// F2.4 S1b: put a picked clip EDGE in the hand (the 12 px reach, `// layout.lineReachPx`).
-pub fn set_held_edge(seg: Option<cut::Seg>) {
-    match seg {
-        Some(seg) => {
-            crate::ui::cut_hand::pick_up(crate::ui::cut_hand::Hand::Edge(seg));
-        }
-        None => crate::ui::cut_hand::clear_all(),
-    };
-}
-
-/// Read side of [`set_held_edge`].
-pub fn held_edge() -> Option<cut::Seg> {
-    crate::ui::cut_hand::held_edge()
-}
-
-/// F2.4 S2/S3: what the line is holding right now, in the order the spec steps them — edge first, then
-/// the whole clip, then an effect. This is what a frame-step or arrow press asks; with the hardcoded
-/// `None` that stood here before, a real key press could never take the nudge branch at all.
-pub fn held_now() -> Option<cut_line::Held> {
-    crate::ui::cut_hand::held_kind()
-}
-
-/// F2.4 S1b: turn what the first left press picked into the hold it means. Edge goes to the edge slot so
-/// a frame step moves only that border; a border or whole-clip pick takes the clip.
-pub fn apply_pick(pick: cut_line::PressPick, seg: Option<cut::Seg>) {
-    match pick {
-        cut_line::PressPick::Edge => set_held_edge(seg),
-        cut_line::PressPick::Border | cut_line::PressPick::Clip => set_held_clip(seg),
-    }
-}
-
-/// F2.4 S1: which picture row this window watches. Set by a picture-band click through
-/// [`place_line_press`]; read by whatever opens a row on the watched one.
-pub fn watched_row() -> Option<usize> {
-    WATCHED_ROW.with(|cell| *cell.borrow())
-}
-
-/// Write side of [`watched_row`].
-pub fn set_watched_row(row: Option<usize>) {
-    WATCHED_ROW.with(|cell| *cell.borrow_mut() = row);
-}
+// What the hand holds and which picture row this window watches (the effect / clip / edge slots, the
+// pick that fills them, the watched-row read and write) live in `window_holds` (window.rs is past its
+// size budget); these are the same names, re-exported under their old paths.
+pub use crate::ui::window_holds::{
+    apply_pick, held_clip, held_edge, held_effect, held_now, held_segment, set_held_clip,
+    set_held_edge, set_held_effect, set_watched_row, watched_row,
+};
 
 thread_local! {
     /// F2.12 S1: whether this session has been told where its red line stands. `None` means no line was
     /// ever placed, which is the state that makes "click the timeline where the insert goes first" true.
     pub(crate) static INSERT_PLACE_KNOWN: std::cell::RefCell<Option<bool>> =
-        const { std::cell::RefCell::new(None) };
-    /// F2.4 S1: which picture row this window is watching. Only a picture-band click sets it, and only
-    /// while nothing plays with sources loaded — `cut_line::watches_row` owns that; this just remembers.
-    static WATCHED_ROW: std::cell::RefCell<Option<usize>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -2756,114 +1386,6 @@ fn wire_review_cuts(button: &gtk::Button, window: &adw::ApplicationWindow) {
         let _ = press_review_cuts(&window, &newest_review_cut());
     });
 }
-
-/// Where a press of Open goes. [`open_project`] decides everything — which folder the pick names,
-/// whether it is an old single-file project, what the read produced and what had to be dropped; this
-/// only asks for a folder, then draws the answer.
-fn wire_open(
-    open_: &gtk::Button,
-    bar: &Rc<RefCell<run::RunBar>>,
-    status: &gtk::Label,
-    session: &Rc<RefCell<Project>>,
-) {
-    let bar = bar.clone();
-    let status = status.clone();
-    let session = session.clone();
-    open_.connect_clicked(move |_| {
-        // The chooser cannot be answered in a headless test, so what a test asserts is that the press
-        // got here and that every rule behind it lives in `open_project` (see
-        // `tests/open_project_widgets.rs`, which drives `open_folder` directly).
-        ask_open_project(&bar, &status, &session);
-    });
-}
-
-/// S1: the folder chooser, titled for opening. Folder-select rather than file-select because a
-/// project *is* a folder (01 §1); a user who picks `naivepost.json` inside one still gets that
-/// folder, which is [`open_project::folder_for`]'s rule rather than the chooser's.
-fn ask_open_project(
-    bar: &Rc<RefCell<run::RunBar>>,
-    status: &gtk::Label,
-    session: &Rc<RefCell<Project>>,
-) {
-    let dialog = gtk::FileDialog::builder()
-        .title(open_project::TITLE)
-        .accept_label("Open")
-        .build();
-
-    let bar = bar.clone();
-    let status = status.clone();
-    let session = session.clone();
-    dialog.select_folder(
-        None::<&gtk::Window>,
-        None::<&gio::Cancellable>,
-        move |chosen: Result<gio::File, glib::Error>| {
-            let Ok(file) = chosen else {
-                return; // dismissed: nothing was asked for, so nothing changed
-            };
-            let picked = file.path().unwrap_or_default();
-            open_folder(&bar, &status, &session, &picked);
-        },
-    );
-}
-
-/// S1 → S4 for one picked path, with no chooser in the way. This is the body the chooser's callback
-/// calls, and the seam a widget test drives so the assertions land on real state rather than on a
-/// dialog nobody answers.
-pub fn open_folder(
-    bar: &Rc<RefCell<run::RunBar>>,
-    status: &gtk::Label,
-    session: &Rc<RefCell<Project>>,
-    picked: &Path,
-) -> bool {
-    match open_project::open(picked, |path| path.is_file(), |path| path.exists()) {
-        Err(failure) => {
-            log_line(&failure.log);
-            status.set_text(failure.status);
-            false
-        }
-        Ok(applied) => {
-            // S3: paths settled before the read; migration first, it reads what the swap consumes.
-            let migration = open_project::finish(&applied);
-            let lines = applied.lines.clone();
-            let opened_project = applied.project.clone();
-            *session.borrow_mut() = opened_project.clone();
-            for line in &lines {
-                log_line(line);
-            }
-            // S4: old folder names move, and each move is logged.
-            for line in &migration.lines {
-                log_line(line);
-            }
-            for line in &migration.failures {
-                log_line(line);
-            }
-            // S4's last three steps live in `ui::open_apply`, which owns their order and wording.
-            crate::ui::open_apply::finish(&applied, &opened_project, status);
-            // A run reading the old project would now be reading files that are not its own, so the
-            // stop flag is raised rather than letting it carry on over swapped sources.
-            let _ = bar.borrow();
-            true
-        }
-    }
-}
-
-thread_local! {
-    /// What this launch has opened, per root — the pairs settings writes as `PROJECT_<n>_ROOT` /
-    /// `PROJECT_<n>_FILE`. Held here rather than written out because persisting belongs to
-    /// `settings`' writer, which owns quoting and the whole-store render.
-    static REMEMBERED: std::cell::RefCell<std::collections::BTreeMap<String, String>> =
-        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
-}
-
-/// Put an opened project into the window's remembered list AND into `llm.conf`, the one conf door.
-pub(crate) fn remember_opened(root: &Path, file: &Path) -> Result<open_project::Remembered, String> {
-    let paths = crate::settings::from_environment().ok_or("no settings folder to write into")?;
-    REMEMBERED.with(|list| {
-        let mut projects = list.borrow_mut();
-        crate::machine_store::persist_project(&paths, &mut projects, root, file)
-            .map(|_| open_project::remember(&mut projects, root, file))
-    })
-}
 /// Where a press of Save goes: [`save_as::press`] decides whether it may happen at all, and the
 /// chooser only names the project. [`save_apply`] says every sentence and moves the open-folder memory.
 ///
@@ -2927,60 +1449,13 @@ fn ask_save_project(status: &gtk::Label, session: &Rc<RefCell<Project>>, open: &
     );
 }
 
-thread_local! {
-    /// The window's log lines, standing in for F0.5's log expander: `>>> moved the output folder
-    /// to …` and the `!!!` refusals have nowhere to be drawn until that row exists, and a test has
-    /// to be able to see that they were said at all.
-    static LOGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-}
-
-/// The launch's own log lines (§7's desktop registration), held until a window exists to read them.
-static PENDING_LOGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-
-/// §7's launch lines: `main` produces them while there is still no log to write into, so they wait in
-/// [`PENDING_LOGS`] and the first [`build_window`] drains them through [`note_startup`].
-pub fn note_startup(lines: &[String]) {
-    if let Ok(mut pending) = PENDING_LOGS.lock() {
-        pending.extend(lines.iter().cloned());
-    }
-    for line in PENDING_LOGS.lock().map(|mut p| p.drain(..).collect::<Vec<_>>()).unwrap_or_default() {
-        log_line(&line);
-    }
-}
-
-pub(crate) fn log_line(line: &str) {
-    LOGS.with(|logs| logs.borrow_mut().push(line.to_string()));
-}
-
-/// Empty the log sinks. Only a test binary asks: nothing clears the shell's log while a session runs.
-pub fn clear_logs_for_test() {
-    LOGS.with(|logs| logs.borrow_mut().clear());
-}
-
-/// What the log holds right now, for the test that must say WHY a write did not land rather than only that
-/// it did not: a failed `narrate/pitch.txt` write is invisible on disk but named in the log.
-pub fn logs_for_test() -> Vec<String> {
-    LOGS.with(|logs| logs.borrow().clone())
-}
-
-/// The one line a finished run leaves about its audio housekeeping. Called from the unload thread,
-/// so it goes through the same log sink as everything else; `log_line` itself stays `pub(crate)`
-/// because only this crate's own flows are allowed to write to the user's log.
-pub fn note_unload(said: &str) {
-    // Written straight to the shared buffer: this runs on the unload's own thread, whose thread-local
-    // sink no reader ever sees.
-    crate::ui::run_close::log(&format!("{}{said}", crate::ui::run_close::UNLOAD_PREFIX));
-}
-
-/// Every line the window has logged this session, oldest first.
-///
-/// The thread-local is THE record: every reader counts lines in it (a migration note checked as
-/// `before + 1` counts exactly what it added). §S4's unload answers on its own thread and does NOT join
-/// this record -- its news lives in [`crate::ui::run_close::SHARED_LOG`] and on the status row, because a
-/// sentence written after the close returned would land after the run's last word (§2).
-pub fn window_logs() -> Vec<String> {
-    LOGS.with(|logs| logs.borrow().clone())
-}
+// The window's log (the launch lines held until a window exists, the sink every flow writes into, and
+// the readers a test asserts against) live in `window_logs` (window.rs is past its size budget); these
+// are the same names, re-exported under the paths every other module and test already reaches them through.
+pub use crate::ui::window_logs::{
+    clear_logs_for_test, logs_for_test, note_startup, note_unload, window_logs,
+};
+pub(crate) use crate::ui::window_logs::log_line;
 
 
 
@@ -3050,13 +1525,6 @@ pub(crate) use crate::ui::window_history_zoom::{
     wire_zoom_drag, wire_zoom_esc, zoom_form_owner,
 };
 
-/// This window's preview-volume slider, by its stable name (F2.5 S6). The seam a test fires and the
-/// page reads; `None` on a page that drew none.
-pub fn preview_volume_scale(window: &adw::ApplicationWindow) -> Option<gtk::Scale> {
-    find_widget_by_name(window.upcast_ref(), "preview-volume")?
-        .downcast()
-        .ok()
-}
 
 /// F2.2 S5: this window's side of the ▶✂ tick loop, over the SAME player and cut slots the buttons use.
 struct CutPreviewSlot(adw::ApplicationWindow);
@@ -3085,100 +1553,9 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
 }
 
 
-/// The seam F2.2's ▶✂ calls: [`cut_play::pressed`] decides whether the press switches to the cut,
-/// ends a review or toggles play/pause; this forwards it and paints only what the answer says.
-///
-/// `segs` are the cut's own segments ([`crate::cut::Cut::segs`]). Like ▶'s `runs`, they are not yet
-/// reachable from the window — the Cut page holds no live cut model until its own round — so an empty
-/// list is what the button knows today, which is exactly the S1 case: nothing to skip to, refused.
-pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_play::Pressed {
-    let Some(status) = find_status(window.upcast_ref()) else {
-        panic!("the window has no status line");
-    };
-    let Some(player) = live_player(window) else {
-        panic!("the window has no preview player");
-    };
-    let pressed = cut_play::pressed(&mut player.borrow_mut(), cut);
-    // F2.10 S3: ▶ is what takes the preview back from a watched row. The release runs FIRST and its
-    // sentence wins over `cut_play`'s own, because "▶ plays the cut — <row> no longer watched" answers
-    // the click the user just made; a press that released nothing leaves the status as `cut_play`
-    // answered it. (It used to run before the match below and be overwritten by it.)
-    let released = hand_preview_back(window);
-    if let Some(back) = &released {
-        status.set_text(back);
-    }
-    // The outer `status` is the status Label, so each arm binds its own name and paints from it. A row
-    // release already printed above keeps the line; otherwise this press's own sentence goes there.
-    match &pressed {
-        // S2/S3: both change what the clock means or what is playing, so both get their sentence. Both also
-        // need a process making sound from the line the press just snapped to: ▶✂ owns that player, so the
-        // press starts it (`cut_play_back::cue_clips` has no other program door).
-        cut_play::Pressed::SwitchedToCut { status: line, .. } => {
-            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
-            if released.is_none() {
-                status.set_text(line)
-            }
-        }
-        cut_play::Pressed::ReviewEnded { status: ended } => {
-            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
-            if released.is_none() {
-                status.set_text(ended)
-            }
-        }
-        cut_play::Pressed::Refused(line) => status.set_text(line),
-        // S4: the toggle needs no sentence — the button's own face carries it. A pause takes the cut's
-        // processes back with it (the player and the prerolled spare); a resume re-cues at the second the
-        // press snapped to, which `Toggle::Playing` names rather than leaving this seam to guess.
-        cut_play::Pressed::Toggled(cut_play::Toggle::Paused) => crate::ui::cut_cut_play::pause_media(),
-        cut_play::Pressed::Toggled(cut_play::Toggle::Playing { from }) => {
-            crate::ui::cut_cut_play::cue_running(window, *from);
-        }
-    }
-    pressed
-}
 
 
-/// Put this window's cut where ▶✂✂ can read it — the seam the cut-model round plugs into. Until then
-/// `build_window` seeds an empty one and a press answers S1's refusal.
-pub fn seed_review_cut(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
-    let _ = window;
-    REVIEW_CUTS.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = cut_.clone();
-        }
-    });
-    // F2.10/F2.11: the row list, the fold badges and ⇲ Lane's "is anything rolling at m:ss" all read this
-    // page's session spans, so a cut seeded after the window opened moves them — until someone declares the
-    // real takes, what the page holds is only what the cut it OPENED implied, and the newer fact is this one.
-    // A session DECLARED through `set_session_recordings` is never rewritten: its heads, tails and holes are
-    // what fold badges and row-emptiness are asked against, and no kept clip can imply them.
-    if !crate::ui::cut_folds::session_declared() {
-        crate::ui::cut_folds::set_session_recordings(&crate::ui::cut_session::session_or_kept(cut_));
-    }
-}
 
-/// The newest cut this window holds, or an empty one when nothing has been seeded.
-pub(crate) fn newest_review_cut() -> cut::Cut {
-    REVIEW_CUTS
-        .with(|slots| slots.borrow().last().map(|slot| slot.borrow().clone()))
-        .unwrap_or_default()
-}
-
-/// The seam F2.3's ▶✂✂ calls: [`cut_review::pressed`] decides whether the press starts the review from
-/// the red line, refuses for want of a join, or pauses-and-ends a running one; this forwards it and hands
-/// the answer to [`cut_review_play::answer_press`], which owns what each arm does to the page. Every
-/// sentence comes from `cut_review` itself.
-pub fn press_review_cuts(window: &adw::ApplicationWindow, cut_: &cut::Cut) -> cut_review::Pressed {
-    let Some(status_line) = find_status(window.upcast_ref()) else {
-        panic!("the window has no status line");
-    };
-    let Some(player) = live_player(window) else {
-        panic!("the window has no preview player");
-    };
-    let pressed = cut_review::pressed(&mut player.borrow_mut(), cut_);
-    crate::ui::cut_review_play::answer_press(window, &status_line, &pressed, cut_);
-    pressed
-}
 
 /// F3.9's label. The spec's flowchart starts at "after the cut" and names no control, so nothing existed to
 /// wire the pass to: a named button is the decision taken in its spirit — the pass has to be startable, and its
@@ -3192,3 +1569,24 @@ pub use crate::ui::window_doors::{
 
 };
 pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};
+
+// The project dialogs (＋ New / Open / Save / Rescan / Add sources) live in `window_project`
+// (window.rs is past its size budget); these are the same names, re-exported under the paths every
+// other module and test already reaches them through.
+pub use crate::ui::window_project::{add_files, new_project_confirm, open_folder, open_from};
+pub(crate) use crate::ui::window_project::{
+    wire_add, wire_new, wire_open, wire_rescan, remember_opened,
+    NEW_TIP, OPEN_TIP, RESCAN_TIP, SAVE_TIP, SETTINGS_TIP,
+};
+
+// The preview player and the review cut (▶ / ▶✂ / ▶✂✂ presses, their widget doors and reads) live in
+// `window_preview` (window.rs is past its size budget); these are the same names, re-exported under
+// the paths every other module and test already reaches them through.
+pub use crate::ui::window_preview::{
+    play_cut_button, play_recording_button,
+    press_play_cut, press_play_recording, press_review_cuts, preview_player, preview_volume_scale,
+    publish_preview_transport, register_preview_player_slot, review_cut_of, review_cut_segs,
+    review_cut_segs_count, review_cut_shift, review_lanes, review_cuts_button, seed_review_cut,
+    set_playhead, set_preview_state,
+};
+pub(crate) use crate::ui::window_preview::{live_player, newest_review_cut};

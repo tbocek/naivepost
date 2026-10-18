@@ -137,6 +137,69 @@ pub fn finish_row(
     }
 }
 
+/// §10's `run` column: the name of the run's `llm/` page, empty outside a run.
+///
+/// The column names a run rather than describing a request, and the only thing in the app that knows
+/// which page this thread's run is writing is [`crate::exchange_leg`] (§7 owns the page per thread), so
+/// that is where the answer comes from rather than from a caller remembering to pass it. Every program
+/// call site builds its row with an empty `run`; each of the doors that files a row calls this instead,
+/// which is why no `base_row` call site had to change.
+pub fn stamp_run(row: &mut crate::requests::Request) {
+    if row.run.is_empty() {
+        // A test may pin the column directly; the program leaves it empty and it is filled here.
+        row.run = crate::exchange_leg::current_page_name();
+    }
+}
+
+/// What the server said it spent, in tokens: `(in, out)`.
+///
+/// §10 fills these two columns "when the server says" and leaves them empty when it does not, so
+/// nothing here invents an estimate. Both spellings of a chat reply are read: one JSON object with a
+/// top-level `usage`, and an event stream whose chunks each carry their own copy — the LAST chunk
+/// saying anything wins, which is where vLLM and llama.cpp put the finished counts. A body that is
+/// neither (an error page, prose) answers `(None, None)`.
+pub fn usage_of(body: &str) -> (Option<i64>, Option<i64>) {
+    let Ok(asked) = serde_json::from_str::<serde_json::Value>(body) else {
+        // Not one JSON object, so it is either a stream or noise; the scan below decides which.
+        return stream_usage(body);
+    };
+    match usage_pair(asked.get("usage")) {
+        Some(said) => said,
+        // A JSON answer that says nothing about tokens may still be a stream-shaped body; a plain
+        // answer with no `usage` is the server not saying, which is an empty pair.
+        None => stream_usage(body),
+    }
+}
+
+/// The same pair read out of an event stream's chunks: each `data:` line is a chunk, and the LAST one
+/// carrying `usage` is the finished count (vLLM and llama.cpp repeat the running totals per chunk).
+fn stream_usage(body: &str) -> (Option<i64>, Option<i64>) {
+    let mut latest: Option<(Option<i64>, Option<i64>)> = None;
+    for line in body.lines() {
+        let Some(payload) = line.trim().strip_prefix("data:") else {
+            continue;
+        };
+        let Ok(chunk) = serde_json::from_str::<serde_json::Value>(payload.trim()) else {
+            continue;
+        };
+        if let Some(said) = usage_pair(chunk.get("usage")) {
+            latest = Some(said);
+        }
+    }
+    latest.unwrap_or((None, None))
+}
+
+/// One object's token pair, `None` when that key is missing or carries neither count: an object with
+/// nothing in it is the server saying nothing, which is not the same as a zero.
+fn usage_pair(usage: Option<&serde_json::Value>) -> Option<(Option<i64>, Option<i64>)> {
+    let usage = usage?;
+    let taken = usage.get("prompt_tokens").and_then(serde_json::Value::as_i64);
+    let made = usage
+        .get("completion_tokens")
+        .and_then(serde_json::Value::as_i64);
+    (taken.is_some() || made.is_some()).then_some((taken, made))
+}
+
 /// The row for a reply served from the cache.
 ///
 /// §10: "A reply served from the cache is a line too, marked as such with no time on the wire, so
@@ -338,5 +401,6 @@ pub fn record_cached(tree: &crate::layout::Tree, mut base: crate::requests::Requ
             crate::server_leg::local_offset_secs(),
         );
     }
+    stamp_run(&mut base);
     let _ = crate::requests::record(tree, &cached_row(&base, 1));
 }

@@ -4,7 +4,7 @@
 //! the red line starts and what it says while it runs. The rules live in [`naivepost::cut_review`], so
 //! none of this needs a player or a window (spec/00-principles.md §5).
 
-use naivepost::cut::{Cut, Seg};
+use naivepost::cut::Cut;
 use naivepost::cut_review::{self as cut_review, Start, Window};
 use naivepost::preview::Player;
 

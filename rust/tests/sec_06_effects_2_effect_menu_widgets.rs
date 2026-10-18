@@ -13,15 +13,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::Cut;
 use naivepost::cut_screen::EFFECT_ITEMS;
 use naivepost::fx_lane;
-use naivepost::shell::Page;
 use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
+use common::settle;
 
 static RAN_MENU: AtomicBool = AtomicBool::new(false);
 
@@ -52,17 +50,7 @@ fn menu_button(window: &adw::ApplicationWindow, name: &str) -> gtk::MenuButton {
 /// A window sitting on the Cut tab, built the way `tests/common::cut_page` builds one (that one also repaints
 /// the lane, which this check does not need; this one keeps the tab order and the window pinning).
 fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
-    release_last_window();
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    let window = ui::build_window(app, &model, "Prepare");
-    hold_last_window(window.clone());
-    window.present();
-    ui::tab_button(&window, Page::Cut)
-        .expect("the shell has a Cut tab")
-        .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, &Cut::default());
-    settle();
-    window
+    common::cut_page_empty(app)
 }
 
 fn menu_shows_the_rows(app: &adw::Application) {

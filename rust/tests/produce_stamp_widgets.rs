@@ -31,7 +31,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
 use naivepost::narration::{self, Entry};

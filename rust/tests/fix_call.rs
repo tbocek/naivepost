@@ -15,7 +15,7 @@
 //! sends only `flag_line` notes — the channel §3.3 gives a model for "the speaker on this row is wrong"
 //! — and the fixed file comes back with every original time and speaker still standing.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -55,8 +55,6 @@ fn flag_answer(n: u32, why: &str) -> String {
 struct Fake {
     url: String,
     asks: std::sync::Arc<Mutex<Asks>>,
-    /// The reply it gives, read at ask time so a scenario can change its mind between asks.
-    answer: std::sync::Arc<Mutex<String>>,
 }
 
 #[derive(Default)]
@@ -97,7 +95,7 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: held }
+        Fake { url: format!("http://127.0.0.1:{port}"), asks }
     }
 
     /// The chat requests this fake has recorded. Recording happens on the connection's own thread, so
@@ -262,7 +260,7 @@ fn scripted(replies: Vec<String>) -> Fake {
             });
         }
     });
-    Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: std::sync::Arc::new(Mutex::new(String::new())) }
+    Fake { url: format!("http://127.0.0.1:{port}"), asks }
 }
 
 /// One call inside the chat envelope, with whatever arguments the caller built.

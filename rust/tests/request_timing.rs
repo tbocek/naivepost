@@ -392,6 +392,102 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s7_the_run_ends_with_one_line
     assert_eq!(rt::summary_line(&[]), ">>> requests: none");
 }
 
+/// The rows the file holds for a temp project, read back off disk.
+fn rows_of(tree: &Tree) -> Vec<Request> {
+    requests::read(tree).expect("requests.tsv reads back")
+}
+
+/// §10's closing sentence, over a run that sent two services' worth of requests.
+///
+/// `request_run` resolves the project through `web_request_log::session_tree()`, i.e. the session folder
+/// beside this process's working directory, so the scenario pins `cwd` to its own root and hands the same
+/// folder to the mark and the rows. The scenario lock keeps it the only test doing so — cargo runs a
+/// binary's tests on parallel threads, and `cwd` belongs to the process.
+struct RunScenario {
+    tree: Tree,
+    _scenario: std::sync::MutexGuard<'static, ()>,
+    _root: PathBuf,
+}
+
+fn scenario_lock() -> &'static std::sync::Mutex<()> {
+    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
+}
+
+fn run_scenario(tag: &str) -> RunScenario {
+    let guard = scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let root = std::env::temp_dir().join(format!("naivepost-reqrun-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let session = naivepost::startup::session_dir(&root);
+    std::fs::create_dir_all(&session).expect("session folder");
+    std::env::set_current_dir(&root).expect("cwd pinned to the scenario root");
+    RunScenario {
+        tree: Tree::new(&session).expect("a .naivepost folder is a project"),
+        _scenario: guard,
+        _root: root,
+    }
+}
+
+#[test]
+fn sec_09_llm_and_tools_10_every_request_timed_new_s9_the_run_ends_with_one_line_per_service_it_used() {
+    // §10: "At the end of every run the log says it in one line per service". The sentence itself is
+    // s7's; what this pins is that the run's OWN rows are the ones tallied, both services named, llm
+    // first (the fixed order), and its slot wait carried into the clause.
+    let scene = run_scenario("closing-two");
+    naivepost::request_run::note_run_begins();
+    let mut llm = worked(Service::Llm, "cut", "chat", 20.0);
+    llm.wait_s = Some(4.0);
+    requests::record(&scene.tree, &llm).unwrap();
+    requests::record(&scene.tree, &worked(Service::Audio, "transcribe", "asr", 6.5)).unwrap();
+
+    let line = naivepost::request_run::closing_line().expect("the open project has a log to tally");
+    assert!(line.starts_with(">>> requests: llm 1 in "), "{line}");
+    assert!(line.contains("on the wire"), "{line}");
+    assert!(line.contains("waiting for a slot"), "{line}");
+    assert!(line.contains("; audio 1 in "), "{line}");
+    assert!(!line.contains("image"), "a service the run never touched says nothing: {line}");
+    // The same numbers s7 spells from hand: 20 s then 6.5 s rounds to 7 s, and the wait to 4 s.
+    assert!(line.contains("llm 1 in 20s"), "{line}");
+    assert!(line.contains("4s waiting for a slot"), "{line}");
+    assert!(line.contains("audio 1 in 7s"), "{line}");
+}
+
+#[test]
+fn sec_09_llm_and_tools_10_every_request_timed_new_s10_a_run_that_sent_nothing_still_says_so() {
+    // Nothing outside was used: `>>> requests: none`, not an empty sentence after the prefix.
+    let scene = run_scenario("closing-none");
+    naivepost::request_run::note_run_begins();
+    assert_eq!(rows_of(&scene.tree).len(), 0, "a new project starts an empty log");
+    assert_eq!(
+        naivepost::request_run::closing_line().as_deref(),
+        Some(">>> requests: none")
+    );
+}
+
+#[test]
+fn sec_09_llm_and_tools_10_every_request_timed_new_s11_only_this_runs_rows_are_counted() {
+    // The mark, not the `run` column, is what bounds the sentence: a row written before ▶ was pressed is
+    // the previous run's business, and a re-mark leaves the finished run's rows out of the next one.
+    let scene = run_scenario("closing-mark");
+    requests::record(&scene.tree, &worked(Service::Llm, "cut", "chat", 5.0)).unwrap();
+    naivepost::request_run::note_run_begins();
+    assert_eq!(
+        naivepost::request_run::closing_line().as_deref(),
+        Some(">>> requests: none"),
+        "the earlier run's row is not this run's"
+    );
+
+    requests::record(&scene.tree, &worked(Service::Web, "youtube", "read", 3.0)).unwrap();
+    let line = naivepost::request_run::closing_line().expect("the log reads back");
+    assert_eq!(line, ">>> requests: web 1 in 3s on the wire", "{line}");
+
+    // Mark again -- as the next ▶ does -- and the row just counted belongs to a finished run.
+    naivepost::request_run::note_run_begins();
+    assert_eq!(naivepost::request_run::closing_line().as_deref(), Some(">>> requests: none"));
+}
+
 #[test]
 fn sec_09_llm_and_tools_10_every_request_timed_new_s8_the_wait_share_is_what_slots_are_chosen_by() {
     // P.machine.slots -- the count these numbers inform -- is held by llm_liveness and is NOT

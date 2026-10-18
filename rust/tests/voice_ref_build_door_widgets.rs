@@ -25,7 +25,7 @@ mod common;
 #[path = "speak_tts_wire_harness.rs"]
 mod harness;
 
-use harness::{wav_bytes, FakeAudio, Script};
+use harness::{FakeAudio, Script};
 
 static RAN_BUILD_DOOR: AtomicBool = AtomicBool::new(false);
 

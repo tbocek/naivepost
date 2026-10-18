@@ -18,12 +18,11 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_effects_pass::{self as pass, Call};
-use naivepost::shell::Page;
 use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, widget_in, cut_page};
+use common::{settle, status_text, widget_in, cut_page};
 
 static RAN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);

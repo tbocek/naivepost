@@ -463,6 +463,7 @@ fn fetch_stem(
                         let mut row = row.clone();
                         row.on_wire_s = Some(started.elapsed().as_millis() as f64 / 1000.0);
                         row.outcome = RowOutcome::Error(format!("{url}: {why}"));
+                        crate::request_timing::stamp_run(&mut row);
                         let _ = requests::record(tree, &row);
                         return Err(format!("{url}: {why}"));
                     }
@@ -474,6 +475,7 @@ fn fetch_stem(
             let mut row = row.clone();
             row.on_wire_s = Some(started.elapsed().as_millis() as f64 / 1000.0);
             row.outcome = RowOutcome::Error(format!("{url}: {why}"));
+            crate::request_timing::stamp_run(&mut row);
             let _ = requests::record(tree, &row);
             return Err(format!("{url}: {why}"));
         }
@@ -508,6 +510,8 @@ fn record_stem_row(
     let mut row = base.clone();
     row.received_bytes = Some(received as i64);
     row.on_wire_s = Some(wire);
+    // §10's run column, stamped by the same door every other leg uses.
+    crate::request_timing::stamp_run(&mut row);
     row.outcome = match outcome {
         Ok(status) if (200..300).contains(&status) => RowOutcome::Ok,
         Ok(status) => RowOutcome::Error(format!("{status}")),

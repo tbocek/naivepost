@@ -48,6 +48,10 @@ pub struct Sent {
     pub wait_ms: i64,
     pub first_byte_ms: Option<i64>,
     pub on_wire_ms: Option<i64>,
+    /// For a thinking model that STREAMS its reasoning before its answer: how much of the trip was
+    /// reasoning. Measured on the wire ([`send_pinged`]), empty for every other reply — §10 asks for it
+    /// "for a thinking model", and a server that sends no reasoning never says where it ended.
+    pub thinking_ms: Option<i64>,
 }
 
 impl Sent {
@@ -278,6 +282,13 @@ fn send_pinged(
     // first read (the shape this had) truncates any reply that arrives over more than one read to its first chunk,
     // which is exactly what cut a streamed answer off after its first word.
     let mut first: Option<i64> = None;
+    // §10's thinking column, for the one reply that can say where its reasoning ended: an event stream
+    // carries `reasoning_content` deltas before its `content` deltas, so the first read that brings
+    // answer text after reasoning text is the moment the model stopped thinking. A plain-JSON answer has
+    // no such moment on the wire — its reasoning arrives inside the same body as its answer — so this
+    // stays empty there rather than claiming the whole call was thinking.
+    let mut saw_reasoning = false;
+    let mut thinking: Option<i64> = None;
     let total_reads = loop {
         let mut chunk = [0u8; 8192];
         match reader.read(&mut chunk) {
@@ -289,6 +300,17 @@ fn send_pinged(
                     probe.byte();
                 }
                 buf.extend_from_slice(&chunk[..n]);
+                // The split is looked for in THIS read's bytes only: re-scanning the whole buffer would
+                // find the answer marker again on every later read and move the boundary to the end.
+                if thinking.is_none() {
+                    let fresh = String::from_utf8_lossy(&chunk[..n]);
+                    if fresh.contains("reasoning_content") {
+                        saw_reasoning = true;
+                    }
+                    if saw_reasoning && fresh.contains("\"content\"") {
+                        thinking = Some(elapsed);
+                    }
+                }
                 // §7's live half, part 1: hand the sink everything received so far. The sink keeps its own
                 // read offset, so a caller decodes only what it has not seen; handing it `&chunk[..n]` instead
                 // would make every caller re-invent that offset for one field's convenience.
@@ -326,6 +348,7 @@ fn send_pinged(
         // An empty body has no first byte of its own; it keeps the old meaning of "the call ended".
         first_byte_ms: Some(first.unwrap_or_else(|| started.elapsed().as_millis() as i64)),
         on_wire_ms: Some(total),
+        thinking_ms: thinking,
     })
 }
 
@@ -371,6 +394,7 @@ pub fn call(
             waited_ms: 0,
             delta: None,
             budget: None,
+            attempt: 1,
         },
     )
 }
@@ -408,6 +432,7 @@ pub fn call_budget(
             waited_ms: 0,
             delta: None,
             budget,
+            attempt: 1,
         },
     )
 }
@@ -441,6 +466,10 @@ pub struct Dial<'a> {
     /// table does ([`Kind::ListModels`] at fifteen seconds is that case). `call` leaves it `None`, so the
     /// ordinary legs keep §1's bound untouched.
     pub budget: Option<std::time::Duration>,
+    /// Which try of this request the row says: 1 is the first, and §10 gives every retry a line of its own
+    /// with its own number, so [`crate::llm_retry_leg`] passes its own count rather than letting the leg
+    /// guess. A leg that only ever dials once leaves it 1.
+    pub attempt: u32,
 }
 
 /// What [`Dial::delta`] holds: somewhere to put the body as it grows. A `'static` `Arc`, not a plain `&dyn Fn`,
@@ -454,13 +483,18 @@ pub fn call_dialed(
     base: &Request,
     dial: &Dial<'_>,
 ) -> (Request, Result<Sent, String>) {
-    let attempt = request_timing::next_attempt(None);
+    let attempt = dial.attempt.max(1);
     let timer_start = epoch_ms();
+    // Set when this call goes out under §4's watch, so the outcome can ask the watch whether it ended the call.
+    let mut watched: Option<std::sync::Arc<crate::llm_watch_leg::Probe>> = None;
     let result = match &dial.liveness {
         // Under §4's watch: the send runs where a blocked read cannot stop the ticker, and the probe is what tells
         // the ticker that bytes are arriving.
         Some(liveness) => {
             let probe = crate::llm_watch_leg::Probe::new();
+            // Remembered so the outcome below can tell §4's give-up from every other failure: the watch
+            // marks its own probe when it ends a call, and nothing else writes that flag.
+            watched = Some(probe.clone());
             // The worker is detached (see `guarded`), so it must OWN everything: the endpoint, and copies of the two
             // borrowed strings it sends. Nothing here may borrow the caller's `Dial`.
             let ping = Some(probe.clone());
@@ -505,6 +539,8 @@ pub fn call_dialed(
         ),
     };
     let mut timer = Timer::queued(dial.waited_ms, timer_start);
+    // The reply's own timings arrive as elapsed times from the socket; the row wants moments on one clock,
+    // so they are shifted onto `timer_start` here and nowhere else.
     match &result {
         Ok(reply) => {
             if let Some(first) = reply.first_byte_ms {
@@ -513,6 +549,10 @@ pub fn call_dialed(
             if let Some(total) = reply.on_wire_ms {
                 timer.finished(timer_start + total);
             }
+            // §10's thinking column, measured where the bytes were read.
+            if let Some(thinking) = reply.thinking_ms {
+                timer.thought(thinking);
+            }
         }
         Err(_) => timer.finished(epoch_ms()),
     }
@@ -520,11 +560,31 @@ pub fn call_dialed(
     let outcome = match &result {
         Ok(reply) if reply.ok() => Outcome::Ok,
         Ok(reply) => Outcome::Error(format!("{}", reply.status)),
+        // §4 ended this call for silence. Checked before the cancellation test because the two are
+        // different endings with different words — "nothing arrived in 5m0s" is not something ⏹ did.
+        Err(_) if watched.as_ref().is_some_and(|probe| probe.gave_up()) => Outcome::Stalled,
         Err(reason) if reason.contains("cancelled") => Outcome::Cancelled,
         Err(reason) => Outcome::Error(reason.clone()),
     };
 
-    let row = fill_sizes(request_timing::finish_row(base, &timer, outcome, attempt), dial.body);
+    let mut row = fill_sizes(request_timing::finish_row(base, &timer, outcome, attempt), dial.body);
+    // What came back, off the wire rather than guessed: §10 wants the size of the reply beside the size
+    // of the request. A caller that already filled the column (a leg that counts its own payload) is left.
+    if let Ok(reply) = &result {
+        if row.received_bytes.is_none() {
+            row.received_bytes = Some(reply.received_bytes);
+        }
+        // "tokens in and out when the server says": read back off the body that arrived, empty when the
+        // server never spoke about tokens (§10), which is why nothing here estimates them.
+        if row.tokens_in.is_none() && row.tokens_out.is_none() {
+            let (taken, made) = request_timing::usage_of(&reply.body);
+            row.tokens_in = taken;
+            row.tokens_out = made;
+        }
+    }
+    // §10's run column: the run's `llm/` page name, empty outside a run. Every call site leaves it blank
+    // because only the exchange recorder knows the page, so it is stamped here instead.
+    request_timing::stamp_run(&mut row);
     // Written first, used after. A failure to write the log is not allowed to swallow the
     // reply, so it is reported in the row's own error channel instead: the caller sees the
     // request went through even when the file could not be opened.

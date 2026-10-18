@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use naivepost::cut::{self, Cut, Lane};use naivepost::layout::Tree;
+use naivepost::cut::{self};use naivepost::layout::Tree;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
@@ -92,7 +92,7 @@ fn sec_01_project_and_files_3_cutcutjson_s3_a_fold_press_writes_the_migrated_cut
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         use adw::prelude::*;
-        use gio::prelude::*;
+        
         let app = adw::Application::builder()
             .application_id(naivepost::ui::APP_ID)
             .flags(gio::ApplicationFlags::NON_UNIQUE)
@@ -113,7 +113,7 @@ thread_local! {
 
 fn press_folds_the_file(app: &adw::Application) {
     use adw::prelude::*;
-    use gio::prelude::*;
+    
     use naivepost::shell::Page;
     use naivepost::ui;
 

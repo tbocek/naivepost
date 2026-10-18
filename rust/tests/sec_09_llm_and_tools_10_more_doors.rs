@@ -480,3 +480,111 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s7_a_budgeted_call_is_recorde
     assert!(written[0].on_wire_s.unwrap_or(-1.0) >= 0.0, "and timed");
     drop(project);
 }
+
+/// §3's waits, recorded rather than slept: what is under test below is the LOG's shape, not the patience, and a
+/// check that sat through even §3's one short retry would be skipped rather than run. Each entry is the number of
+/// seconds the ladder asked for, in the order it asked.
+///
+/// `chat_on` takes the wait as an argument precisely so a caller can decide this; the rule itself runs untouched.
+fn waited() -> &'static std::sync::Mutex<Vec<u64>> {
+    static WAITED: std::sync::OnceLock<std::sync::Mutex<Vec<u64>>> = std::sync::OnceLock::new();
+    WAITED.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+fn clear_waited() {
+    waited().lock().expect("wait list").clear();
+}
+
+/// §10's "A retry is a line of its own", with its attempt number — the half no other check in the suite produced:
+/// every other one writes at most one row per request, so a recorder that OVERWROTE the first attempt's line
+/// instead of appending the second's would pass them all. A plain 500 is the cleanest way to force a retry: it is
+/// neither a transport death (so no ladder) nor a refusal of the `tools` field (which the caller answers with a
+/// DIFFERENT request), so §3 gives exactly one short retry of the identical body.
+#[test]
+fn sec_09_llm_and_tools_10_every_request_timed_new_s8_a_retry_is_a_line_of_its_own() {
+    let project = fixture("retry-lines");
+    let fake = Fake::start(|_| (500, r#"{"error":"nope"}"#.to_string()));
+    point_llm_at(&fake.url);
+    let tree = Tree::new(startup::session_dir(&project.root)).expect("session tree");
+    clear_waited();
+    let base = server_leg::base_row(Server::Llm, "s8model", "chat", "", "s8step", "");
+    let outcome = naivepost::llm_retry_leg::chat_on(
+        "s8step",
+        &tree,
+        &base,
+        &endpoint_at(&fake.url),
+        r#"{"model":"s8model","messages":[{"role":"user","content":"say it"}]}"#,
+        &never,
+        &|_| {},
+        // Recorded, not spent: the wait is §3's business, the two rows are §10's.
+        &|seconds| {
+            waited().lock().expect("wait list").push(seconds);
+            true
+        },
+    );
+    let why = outcome.expect_err("a server that refuses every try is not an answer: {outcome:?}");
+    assert!(why.contains("500"), "the caller gets the status back: {why}");
+    // One wait, and it is §3's short retry (`RETRY_SECONDS`), not the dead-server ladder: a status is never
+    // "the server went away".
+    assert_eq!(
+        waited().lock().expect("wait list").as_slice(),
+        &[naivepost::llm_retry::RETRY_SECONDS],
+        "one short retry, asked for once"
+    );
+    // The point: BOTH attempts are in the file, each numbered, neither replacing the other.
+    let mine: Vec<requests::Request> = requests::read(&tree)
+        .expect("requests.tsv reads back")
+        .into_iter()
+        .filter(|row| row.step == "s8step")
+        .collect();
+    assert_eq!(mine.len(), 2, "two attempts went out, so two lines: {mine:?}");
+    assert_eq!(mine[0].attempt, 1, "the first line is the first try");
+    assert_eq!(mine[1].attempt, 2, "and the retry is a line of its own, numbered");
+    for row in &mine {
+        match &row.outcome {
+            Outcome::Error(reason) => assert!(reason.contains("500"), "{reason}"),
+            other => panic!("a refused response is an error row, got {other:?}"),
+        }
+        assert!(row.on_wire_s.unwrap_or(-1.0) >= 0.0, "and each is timed: {row:?}");
+    }
+    drop(project);
+}
+
+/// §10's fourth named ending — "cancelled by ⏹" — reaching the FILE. Nothing outside a hand-written row has ever
+/// put `cancelled` in `requests.tsv`, and the case is easy to lose: the row is written where the call RETURNS, so
+/// a stop that keeps a request from going out at all still has to leave its line. `send_pinged`'s guard is that
+/// path ("chat: cancelled before sending"), and `call_dialed` must not swallow it.
+#[test]
+fn sec_09_llm_and_tools_10_every_request_timed_new_s9_a_request_stopped_by_the_stop_key_leaves_its_cancelled_row() {
+    let project = fixture("cancelled-row");
+    let tree = Tree::new(startup::session_dir(&project.root)).expect("session tree");
+    let base = server_leg::base_row(Server::Llm, "s9model", "chat", "", "s9step", "");
+    // The address is irrelevant — nothing goes out — but a closed port keeps the check honest if the guard ever
+    // stops firing: the failure would then be a refused connect, i.e. an ERROR row, and this check would say so.
+    let (_row, result) = server_leg::call(
+        &tree,
+        &base,
+        Server::Llm,
+        &endpoint_at(&dead_url()),
+        Kind::Chat,
+        None,
+        Some("{}"),
+        &|| true,
+    );
+    let why = result.expect_err("a stopped call has no reply: {result:?}");
+    assert!(why.contains("cancelled"), "the caller is told it was stopped: {why}");
+    assert_eq!(_row.outcome, Outcome::Cancelled, "the row says which ending this was");
+    let mine: Vec<requests::Request> = requests::read(&tree)
+        .expect("requests.tsv reads back")
+        .into_iter()
+        .filter(|row| row.step == "s9step")
+        .collect();
+    assert_eq!(mine.len(), 1, "a ⏹ stop leaves exactly one line: {mine:?}");
+    assert!(
+        matches!(mine[0].outcome, Outcome::Cancelled),
+        "⏹ is an ending the log records, not a request that never happened: {:?}",
+        mine[0].outcome
+    );
+    assert!(mine[0].on_wire_s.unwrap_or(-1.0) >= 0.0, "and it is timed all the same: {:?}", mine[0].on_wire_s);
+    drop(project);
+}

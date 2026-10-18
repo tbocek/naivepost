@@ -40,7 +40,7 @@ fn refuses_while_a_run_is_going(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
 
-    let play = ui::play_button(&window).expect("play button");
+    let _play = ui::play_button(&window).expect("play button");
     let gears = ui::lucky_button(&window).expect("F0.4 puts the gears in the run bar");
 
     // The button is labelled, not an anonymous icon.

@@ -67,6 +67,26 @@ pub fn clear_log_for_test() {
     window::clear_logs_for_test();
 }
 
+/// The record the chain's closings leave in [`SHARED_LOG`]: each line carries §10's request summary for the run
+/// that just ended, prefixed so a reader can tell it from the unload report that shares the buffer.
+pub const CLOSE_PREFIX: &str = ">>> run closed: ";
+
+/// What the chain's closings wrote, for a test: every line `close_chain_end` / `close_chain_step` put in
+/// [`SHARED_LOG`] when a chain ended, in order.
+///
+/// It exists because a chain has no log pane of its own and §S6 gives the WINDOW log's last word to the press's
+/// end line, so a chain's request summary goes to this record instead of to the user's log (see
+/// [`CLOSE_PREFIX`]). Nothing here re-words the sentence: it is §10's line, kept verbatim.
+pub fn chain_close_lines_for_test() -> Vec<String> {
+    SHARED_LOG
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|line| line.starts_with(CLOSE_PREFIX))
+        .map(|line| line.trim_start_matches(CLOSE_PREFIX).to_string())
+        .collect()
+}
+
 /// The record a run's audio housekeeping leaves. `settings_probe::fire_unload`'s thread is its only
 /// author, so a line here means the unload went out and reported back.
 pub const UNLOAD_PREFIX: &str = ">>> audio housekeeping: ";
@@ -165,6 +185,9 @@ pub fn close_step_run(
     // would be a second `Handles` for one call.
     #![allow(clippy::too_many_arguments)]
     let said = queue.borrow().text();
+    // §10: the run says what it sent outside, in one line per service, as its last word in the log.
+    // Said BEFORE anything is unwound so the sentence belongs to this run and not the next one.
+    crate::request_run::log_closing_line();
     // A single-step press has nowhere to move on to, so its run ends here. A lucky step's boundary
     // keeps the press's one open run going (see [`close_chain_step`]), because §2 wants ⏸/⏹ acting for
     // the whole chain and F0.4 S1 refuses a second press over an open run.
@@ -232,6 +255,14 @@ pub(crate) fn paint_chain_step(handles: &super::lucky_run::Handles) {    let mai
 /// The chain's own ending: close the press's single run and repaint what a closed run leaves.
 pub(crate) fn close_chain_end(handles: &super::lucky_run::Handles) {
     let said = handles.queue.borrow().text();
+    // §10's closing line, on the same rule as `close_step_run`: the run ends with what it sent outside.
+    // It goes through `log` -- the shared buffer the chain's own threads write to -- and NOT through
+    // `request_run::log_closing_line`, because a chain runs inside the gears' press: that door writes the
+    // window's log, where the sentence would land BETWEEN §S6's end line ("all done in T …") and whatever the
+    // close still puts after it, and F0.4 S6 gives that end line the log's last word. The chain's record keeps
+    // it instead, where the press's reader looks (§2: the run's housekeeping answers after its last word).
+    let line = crate::request_run::closing_line().unwrap_or_default();
+    log(&format!("{CLOSE_PREFIX}{line}"));
     runqueue::end_run(&mut handles.bar.borrow_mut(), None);
     hand_over_unload(crate::services::Kind::UnloadAll);
     shell_beats::stop_pulse();
@@ -261,6 +292,11 @@ pub fn close_chain_step(handles: &super::lucky_run::Handles, next: Option<Page>)
     let said = handles.queue.borrow().text();
     crate::ui::run_close::note_started_run(&handles.bar);
     if next.is_none() {
+        // §10: the chain's ending says what the run sent outside, exactly as a single-step close does — into
+        // the chain's own record rather than the window's log, for the same reason `close_chain_end` has
+        // (F0.4 S6 keeps the log's last word), and spelled identically once, never twice.
+        let line = crate::request_run::closing_line().unwrap_or_default();
+        log(&format!("{CLOSE_PREFIX}{line}"));
         runqueue::end_run(&mut handles.bar.borrow_mut(), None);
     } else {
         // §S4's "a lucky run moves on": the same predicate `end_run` answers with, asked of the step

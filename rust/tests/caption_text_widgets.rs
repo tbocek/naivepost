@@ -451,7 +451,7 @@ fn f3_4_s3_typing_words_places_the_caption_and_one_undo_takes_it_back(app: &adw:
 fn f3_4_s5_a_moved_box_snaps_and_a_resized_edge_moves_one_axis_only(app: &adw::Application) {
     let window = land_click_form(app, 30.0);
     let (frame_w, frame_h) = (ui::PREVIEW_PANEL_W, ui::PREVIEW_PANEL_H);
-    let (x, y, _w, h) = fx_text::LOWER_THIRD.to_px(frame_w, frame_h);
+    let (x, y, _w, _h) = fx_text::LOWER_THIRD.to_px(frame_w, frame_h);
 
     // THE SNAP: move the box UP so its TOP line comes within `SNAP_PX` of the frame's CENTRE line, and the
     // seam must close the last few px exactly. Computed from the box/frame constants only: on a 135 px panel

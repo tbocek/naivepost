@@ -1,7 +1,6 @@
 //! F4.7's rules, tested as plain logic: no window, no widget, no dial. Each test names the step whose
 //! sentence or number it pins, so a reworded refusal fails here rather than in a screenshot.
 
-use naivepost::cut::Seg;
 use naivepost::narrate_edit::{self as edit, MoveResult};
 use naivepost::narrate_screen;
 use naivepost::narration::{Entry, Narration, Silent};

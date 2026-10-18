@@ -133,21 +133,9 @@ fn dropped() -> cut::Cut {
     fresh
 }
 
-/// The page's own view of this cut: the two kept clips plus the tape they were cut out of, exactly as
-/// `refresh_fold_badges` sees it — one recording spanning 0–120, hence one run.
-fn page_view(cut_: &cut::Cut) -> Vec<Recording> {
-    tape_for(cut_)
-}
-
 /// The recordings the page would draw rows for: the session's tape over 0–120.
 fn tape_for(_cut_: &cut::Cut) -> Vec<Recording> {
     vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
-}
-
-/// The laid-out band the badges are placed on, from the SAME inputs `refresh_fold_badges` uses.
-fn band_of(cut_: &cut::Cut) -> Span {
-    let runs = timeline::filmed_runs(&tape_for(cut_));
-    Span::new(timeline::cells(&runs, &cut_.folds), PPS, naivepost::cut_screen::GUTTER_PX)
 }
 
 /// The gap index whose stretch is `gap`, read off the WINDOW's own badge list — which is what

@@ -21,7 +21,6 @@
 //! command's own output file; and the cue sheet must be NON-empty or S9 writes no sidecars at all,
 //! which is why the session word list is written with words inside the first segment.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::rc::Rc;
@@ -400,7 +399,7 @@ fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
 
 /// Seed the page's own row (as `tests/produce_stamp_widgets.rs` does), then tick a language and name
 /// the session's own — the two fields the S3 walk reads out of `ProduceState`.
-fn seed_page(window: &adw::ApplicationWindow) {
+fn seed_page(_window: &adw::ApplicationWindow) {
     let row = naivepost::produce_screen::defaults();
     let mut page = ui::produce_page::read_state();
     page.container = row[0].1.to_string();

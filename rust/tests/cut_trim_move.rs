@@ -414,7 +414,7 @@ fn f2_8_s2_a_press_on_a_wave_strip_targets_that_one_recording() {
 /// strip -- so the flowchart falls through past M1/M2 instead of sliding a recording nobody pointed at.
 #[test]
 fn f2_8_s2_a_press_on_the_bar_is_not_on_a_band() {
-    let b = trim::PLACEHOLDER_STRIP_BANDS;
+    let _b = trim::PLACEHOLDER_STRIP_BANDS;
     let boxes = [drawn_box(3)];
     // The RULER is not band ground. On the placeholder the bar's span and the wave's span share the lower
     // half of the row (there is no room for a third band yet), so every y under the ruler resolves to

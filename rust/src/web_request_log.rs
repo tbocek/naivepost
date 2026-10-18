@@ -84,12 +84,14 @@ pub fn record(
     let mut timer = Timer::sent(started_ms);
     timer.first_byte(ended_ms);
     timer.finished(ended_ms);
-    let row = request_timing::finish_row(
+    let mut row = request_timing::finish_row(
         &base,
         &timer,
         outcome,
         request_timing::next_attempt(None),
     );
+    // §10's run column, same rule as every other door: the open run's page name, empty outside a run.
+    request_timing::stamp_run(&mut row);
     // Written and ignored on failure: a cache-less, log-less step is still a correct step.
     requests::record(&tree, &row).ok()?;
     Some(row)

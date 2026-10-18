@@ -358,13 +358,6 @@ fn side_name(side: crate::tools::textedit::Side) -> &'static str {
     }
 }
 
-/// A reply's envelope in the shape every chat job reads: what `ask_at` itself stores when a prose
-/// answer wins, so a reply planted from outside lands in exactly the form the cache branch reads back.
-/// Public for that reason — the private `envelope` a live ask uses is the same bytes.
-pub fn reply_envelope(answer: &str) -> String {
-    serde_json::json!({ "choices": [ { "message": { "content": answer } } ] }).to_string()
-}
-
 /// Read a reply the way every chat job reads it, then let the rules already written decide.
 fn judge(reply: &str, before: &[String], after: &[String]) -> Outcome {
     let mut join = Join::new(

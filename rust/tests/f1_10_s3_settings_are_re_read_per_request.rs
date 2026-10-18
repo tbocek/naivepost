@@ -12,7 +12,7 @@ mod harness;
 use harness::*;
 #[path = "joined_answer.rs"]
 mod joined_answer;
-use joined_answer::{chat, raw};
+use joined_answer::raw;
 
 #[test]
 fn f1_10_s3_settings_are_re_read_per_request() {

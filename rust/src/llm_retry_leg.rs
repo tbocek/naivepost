@@ -385,6 +385,9 @@ pub fn dial(
                 waited_ms: (waited * 1000.0).round() as i64,
                 delta: hook,
                 budget: None,
+                // §10: "a retry is a line of its own", with its attempt number. This loop is the only
+                // thing that knows which rung it is on, so it says so rather than letting the leg guess.
+                attempt: attempts,
             },
         );
         // §7's live half: this attempt is over, so its hook writes nothing more — a §4 give-up leaves the

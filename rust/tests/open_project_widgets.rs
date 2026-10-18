@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::open_project::{self, CANNOT_OPEN, NOT_A_PROJECT};
+use naivepost::open_project::{CANNOT_OPEN, NOT_A_PROJECT};
 use naivepost::project::PROJECT_FILE;
 use naivepost::shell::Page;
 use naivepost::ui;
