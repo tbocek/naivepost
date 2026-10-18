@@ -231,14 +231,31 @@ pub fn gaps_of(inputs: &cut_suggest_words_run::Inputs, end: f64) -> Vec<(f64, f6
 /// ([`crate::prompt_assembly::user_message`] — only `cut` and `narrate` carry that rule), then the material
 /// [`suggest::message`] spells (SESSION LENGTH, the target block, the dead-air number, the timeline).
 pub fn user_turn(user_context: &str, session_len: f64, target: f64, session_txt: &str) -> String {
+    user_turn_named(user_context, session_len, target, session_txt, &[], &[])
+}
+
+/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`): the same turn with
+/// the session's camera rows and heard lanes in front of the material, which is what a press holding a real
+/// cut passes. With one row and one lane the message is unchanged — [`crate::effect_overlap::brief_lines`]
+/// says nothing worth saying.
+pub fn user_turn_named(
+    user_context: &str,
+    session_len: f64,
+    target: f64,
+    session_txt: &str,
+    rows: &[String],
+    lanes: &[String],
+) -> String {
     crate::prompt_assembly::user_message(
         user_context,
         "cut",
-        &suggest::message(
+        &suggest::message_over(
             session_len,
             target,
             suggest::DEAD_AIR_MAX_SECONDS,
             session_txt,
+            rows,
+            lanes,
         ),
     )
 }
@@ -508,7 +525,27 @@ where
         return Landed::refused(suggest::NO_TIMELINE);
     }
     let walk = walk_of(&inputs);
-    let user = user_turn(&project.context, end, target, &read_session_txt(tree));
+    // §9's last paragraph at the cut pass's own door: once there is more than one camera row or heard lane to
+    // tell apart, the brief names them, and a suggested scene can then say which camera it is shown from
+    // ([`crate::effect_overlap::suggested_scene_cam`] reads a named row back at the placement door).
+    // Rows are spelled the way the other passing briefs spell them — the page's 1-based camera number.
+    let mut rows: Vec<String> = cut
+        .segs
+        .iter()
+        .filter(|scene| scene.ins.is_empty())
+        .map(|scene| (crate::cut_cam::scene_row(scene) + 1).to_string())
+        .collect();
+    rows.sort();
+    rows.dedup();
+    let lanes: Vec<String> = cut.lanes.iter().map(|lane| lane.name.clone()).collect();
+    let user = user_turn_named(
+        &project.context,
+        end,
+        target,
+        &read_session_txt(tree),
+        &rows,
+        &lanes,
+    );
     let inserts: Vec<crate::cut::Seg> = cut
         .segs
         .iter()

@@ -596,6 +596,13 @@ impl Cue {
         crate::effect_overlap::gain_reaches(&self.as_effect(), lane)
     }
 
+    /// [`crate::effect_overlap::gain_reaches_the_clip`] for this cue: whether it acts on a clip that hears exactly
+    /// `heard`. The plan asks this per clip so a card's own sound is gained (a whole-bed cue needs no heard lane)
+    /// while a duck naming a lane the scene does not hear is still not counted as work the encode must do.
+    pub fn reaches_the_clip(&self, heard: &[String]) -> bool {
+        crate::effect_overlap::gain_reaches_the_clip(&self.as_effect(), heard)
+    }
+
     /// The cue read back as the record it came from, so §9's two reach predicates stay the
     /// ONE wording in both the plan and the encode. A volume carries only kind, seconds,
     /// gain and lane; nothing else here is consulted by either rule.

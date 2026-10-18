@@ -159,6 +159,20 @@ pub fn gain_reaches(fx: &Fx, lane: &str) -> bool {
     }
 }
 
+/// §9 (`The render MUST apply a volume over a card's own sound, as the preview does`): does this gain act on a
+/// clip that hears exactly the lanes in `heard`? A whole-bed volume reaches the clip whatever it hears — a card,
+/// an insert or a freeze has no heard lane at all and its OWN sound is the bed the gain acts on, which is why the
+/// plan may not ask "is any of these lanes heard" of a bed cue (the bug this fixes: a card segment hears nothing,
+/// so every cue was filtered out and the render applied no volume over a card while the preview did). A
+/// lane-named cue still needs that very lane heard; a duck aimed at a silent recording reaches nothing.
+pub fn gain_reaches_the_clip(fx: &Fx, heard: &[String]) -> bool {
+    match fx.lane() {
+        // The whole bed: always gained, card or footage, however many lanes the scene mixes in.
+        None => true,
+        Some(name) => heard.iter().any(|lane| lane == name),
+    }
+}
+
 /// §9 (`or one lane's name, gained before the mix`): where in the graph a cue runs. A named lane is gained **before**
 /// the lanes are summed; the whole bed rides **after** the mix and before the narration, which is
 /// [`crate::render_fx::audio_order`]'s sequence. The two cannot be swapped: a per-lane gain placed after the mix
@@ -233,6 +247,25 @@ pub fn brief_lines(rows: &[String], lanes: &[String]) -> Option<String> {
 /// of cameras. With more than one row the brief names them (§9's last sentence) and a suggestion can name one back;
 /// until then every scene is filmed from the first.
 pub const SUGGESTED_ROW: i32 = 0;
+
+/// §9 (`suggested scenes all take row 0`, with `the cut brief names the rows`): which row a suggested scene is
+/// filmed from, read at the door that places it. A reply that NAMED a row is kept — that is what naming the rows
+/// in the brief is for, a suggestion may say which camera it means — and a row the session does not have falls
+/// back to [`SUGGESTED_ROW`], because placing a scene on a camera nothing is recorded on is not a suggestion an
+/// app may land. Rows here are the stored numbers [`crate::cut_cam::scene_row`] answers for a scene on the page.
+pub fn suggested_scene_cam(named: Option<i32>, rows: &[i32]) -> i32 {
+    match named {
+        Some(row) if rows.contains(&row) => row,
+        _ => SUGGESTED_ROW,
+    }
+}
+
+/// The same door read off the scene a suggestion lands into, before it is stored: the row it named (its stored
+/// `cam`, which is all the lens badge reads and writes; an insert names none, having no picture of its own) asked
+/// against the rows this session has. The one call site that asks is [`crate::ui::cut_suggest_land`]'s placement.
+pub fn suggested_scene_cam_of(scene: &Seg, rows: &[i32]) -> i32 {
+    suggested_scene_cam(if scene.is_insert() { None } else { Some(scene.cam) }, rows)
+}
 
 /// §9 (`suggested zooms are always centred at height 0.6`): the framing a model proposes, with no picture in front
 /// of it to aim at. The height is [`cut_effects_pass::ZOOM_HEIGHT`] — the same number §F3.11 places with and

@@ -228,12 +228,14 @@ pub fn plan_clips(
             .filter(|lane| lane_heard(lane, seg))
             .map(|lane| lane.name.clone())
             .collect();
-        // A cue naming a lane this scene does not hear reaches nothing here: the reach is
-        // §9's [`crate::effect_overlap::gain_reaches`], asked of every lane this scene hears,
-        // so a duck aimed at a silent recording is not counted as work the encode must do.
+    // §9's reach rule, asked per clip: a lane-named cue acts only where that lane is heard, so a duck
+    // aimed at a silent recording is not counted as work the encode has to do. A whole-bed cue reaches
+    // whatever the scene hears — INCLUDING nothing at all, which is a card's own sound (§9: the render
+    // applies a volume over a card's own sound, as the preview does; asking "is any of these lanes heard"
+    // of a bed cue dropped every cue for a card, because a card hears no lane).
         let cues = render_fx::all_gain_cues(&fx, seg.s, rate, on_screen)
             .into_iter()
-            .filter(|cue| heard.iter().any(|lane| cue.reaches(lane)))
+            .filter(|cue| cue.reaches_the_clip(&heard))
             .count();
         // The lines this clip was written for, in placement order, with the room the clip has after the
         // previous clips were counted — the fit is per clip, so each gets its own call.

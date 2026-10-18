@@ -97,6 +97,55 @@ fn add(start: f64, end: f64) -> naivepost::exchanges::ToolCall {
     call("add_segment", &format!("{{\"start\": {start}, \"end\": {end}, \"why\": \"the point\"}}"))
 }
 
+/// The camera rows a two-camera cut shows, spelled the way every passing brief spells them (§A's 1-based
+/// camera number). The cut pass reads them the same way at its own door.
+fn camera_rows(cut: &Cut) -> Vec<String> {
+    let mut rows: Vec<String> = cut
+        .segs
+        .iter()
+        .filter(|scene| scene.ins.is_empty())
+        .map(|scene| (naivepost::cut_cam::scene_row(scene) + 1).to_string())
+        .collect();
+    rows.sort();
+    rows.dedup();
+    rows
+}
+
+/// §9's last paragraph, on the WIRE: a cut with two camera rows puts the naming line in front of the material
+/// the model reads, and a single-row cut sends the message it always sent. Asserted on the turn the scripted
+/// ask actually received, because a brief the program never sends names nothing.
+#[test]
+fn sec_06_effects_9_where_recordings_overlap_s15_the_cut_pass_puts_the_naming_line_on_the_wire() {
+    let s = Scenario::fresh("naming");
+    let two = two_cam_cut();
+    let mut scripted = Scripted::new(vec![good_turn("")]);
+    let asked_for = scripted.asked.clone();
+    let made = model::run_model(&s.tree, &s.project, &two, 30.0, Some(&s.paths), |c, t| {
+        scripted.ask(c, t)
+    });
+    assert!(made.wrote, "the scripted answer landed: {:?}", made.said);
+    let turn = asked_for
+        .borrow()
+        .first()
+        .expect("the pass asked at least once")
+        .clone();
+    let header = naivepost::effect_overlap::brief_lines(&camera_rows(&two), &[])
+        .expect("two camera rows are named");
+    assert!(turn.contains(&header), "{turn}");
+    assert!(turn.contains("camera 1, camera 2"), "{turn}");
+    assert!(
+        turn.find("SHOWN FROM").expect("naming") < turn.find("SESSION TIMELINE").expect("timeline"),
+        "the naming line leads the material: {turn}"
+    );
+    // One camera: no naming line, and the message is the plain one.
+    let one = Cut { segs: vec![Seg { s: 0.0, e: 20.0, cam: 0, ..Default::default() }], ..Default::default() };
+    let mut plain = Scripted::new(vec![good_turn("")]);
+    let plain_for = plain.asked.clone();
+    model::run_model(&s.tree, &s.project, &one, 30.0, Some(&s.paths), |c, t| plain.ask(c, t));
+    let turn = plain_for.borrow().first().expect("asked").clone();
+    assert!(!turn.contains("SHOWN FROM"), "{turn}");
+}
+
 /// A turn that only thinks: no content, no calls — the reply §8 says gets asked again without reasoning.
 fn empty_turn() -> Turn {
     Turn { content: String::new(), calls: Vec::new(), finish: false }
@@ -141,6 +190,8 @@ struct Scripted {
     turns: Rc<RefCell<std::collections::VecDeque<Turn>>>,
     /// What each ask was OFFERED — the proof the web tools actually came off the request, not just logged.
     offered: Rc<RefCell<Vec<Vec<String>>>>,
+    /// The USER turn of each ask, verbatim: the proof a naming line reached the wire, not just a door.
+    asked: Rc<RefCell<Vec<String>>>,
 }
 
 impl Scripted {
@@ -148,11 +199,29 @@ impl Scripted {
         Scripted {
             turns: Rc::new(RefCell::new(turns.into_iter().collect())),
             offered: Rc::new(RefCell::new(Vec::new())),
+            asked: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
-    fn ask(&mut self, _: &[naivepost::exchanges::Message], tools: &[naivepost::tools::Tool]) -> Result<Turn, String> {
+    fn ask(&mut self, messages: &[naivepost::exchanges::Message], tools: &[naivepost::tools::Tool]) -> Result<Turn, String> {
         self.offered.borrow_mut().push(tools.iter().map(|t| t.name().to_string()).collect());
+        self.asked
+            .borrow_mut()
+            .push(
+                messages
+                    .last()
+                    .map(|m| {
+                        m.parts
+                            .iter()
+                            .filter_map(|p| match p {
+                                naivepost::exchanges::Part::Text(text) => Some(text.as_str()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default(),
+            );
         let next = self.turns.borrow_mut().pop_front();
         Ok(next.unwrap_or_else(empty_turn))
     }

@@ -292,9 +292,41 @@ pub fn dead_air_block(max: f64) -> String {
 /// and the speech rule in front of this, and that part belongs to [`crate::prompt_assembly::user_message`],
 /// not here — so this function no longer takes a context, because anything it put first would be a second
 /// copy of the block the assembly door writes.
+///
+/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`): with one camera and one
+/// recording this is the whole message, which is why the four-argument form stays the plain answer. A cut that
+/// has more to tell passes its rows and lanes through [`suggest::message_over`].
 pub fn message(session_len: f64, target: f64, dead_air_max: f64, session_txt: &str) -> String {
+    message_over(session_len, target, dead_air_max, session_txt, &[], &[])
+}
+
+/// §9's last paragraph, at the cut pass's own door: the material with the session's camera rows and heard
+/// lanes named above the length, target and dead-air lines. The naming rule is
+/// [`crate::effect_overlap::brief_lines`]'s — one row and one lane adds a line and nothing else can say — so a
+/// single-camera session gets the byte-identical message it always got, and a two-camera one is told which
+/// cameras filmed it and which recordings are heard before it proposes scenes from them.
+///
+/// `rows` are spelled the way every passing brief spells them: the page's **1-based** camera number, so two
+/// rows read `camera 1, camera 2`. [`crate::cut_cam::row_count`] counts them the same way from the rows the
+/// cut and its lanes fill.
+pub fn message_over(
+    session_len: f64,
+    target: f64,
+    dead_air_max: f64,
+    session_txt: &str,
+    rows: &[String],
+    lanes: &[String],
+) -> String {
+    let named: Vec<String> = crate::effect_overlap::brief_lines(rows, lanes)
+        .into_iter()
+        .collect();
+    let naming = if named.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", named.join("\n"))
+    };
     format!(
-        "SESSION LENGTH: {} seconds\n\n{}\n\n{}\n\nSESSION TIMELINE:\n{}",
+        "{naming}SESSION LENGTH: {} seconds\n\n{}\n\n{}\n\nSESSION TIMELINE:\n{}",
         session_len as i64,
         target_block(target),
         dead_air_block(dead_air_max),

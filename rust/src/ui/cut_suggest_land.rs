@@ -271,6 +271,11 @@ pub fn suggested_cut(before: &Cut, answer: &Applied) -> Cut {
     // The footage half is the walk-back's own seconds; everything else in `before` that is a hand-placed card
     // is added back by [`Cut::keep_inserts`], which is where §7's `keeps inserts` is spelled — including the
     // time ordering, so a card at 0:12 lands between two suggested scenes rather than after them.
+    // §9 (`suggested scenes all take row 0`, with `a suggested scene says which camera it is shown from`): each
+    // landed scene answers that question with a row of its own, read through
+    // [`crate::effect_overlap::suggested_scene_cam`] against the rows this session has. A model reply names no
+    // row today — the cut pass's `add_segment` tool carries no camera field and inventing one is not this item —
+    // so §9's row answers every scene this door places, while a card keeps no claim on a row at all.
     let footage: Vec<Seg> = answer
         .segs
         .iter()
@@ -282,6 +287,13 @@ pub fn suggested_cut(before: &Cut, answer: &Applied) -> Cut {
         .chain(answer.kept_inserts.iter().cloned())
         .collect();
     landed.segs = cut::keep_inserts(&footage, &before.segs);
+    // §9's row, asked of every landed scene — the ones this reply proposed and the hand-placed cards carried
+    // over — so "which camera is this shown from?" has one answer for the whole cut rather than a default
+    // nothing reads. The rows to ask against are the ones the cut already shows.
+    let rows: Vec<i32> = crate::cut_suggest_words::depended_cam_slots(before);
+    for scene in landed.segs.iter_mut() {
+        scene.cam = crate::effect_overlap::suggested_scene_cam_of(scene, &rows);
+    }
     landed.fx = answer.effects.clone();
     landed
 }
