@@ -206,6 +206,12 @@ mod window_page_box;
 /// doors, the reads a test asserts against, and the ▶ / ▶✂ / ▶✂✂ presses. Split out of `window.rs`,
 /// which is past its size budget. Its doors are re-exported through `window`.
 mod window_preview;
+/// F0.8's Save door — where a press of Save goes and the dialog that names the project. Split out of
+/// `window.rs`, which is past its size budget. Its door is re-exported through `window`.
+mod window_save;
+/// §06-effects#1-record — the effect dropdown's record door (`press_effect_item`). Split out of
+/// `window.rs`, which is past its size budget. Its door is re-exported through `window`.
+mod window_effect_item;
 mod window_surfaces;
 /// §F3.9/§F3.10/§F3.11 — the ✐ Captions, ⏩ Speeds and ✨ Decorations run-bar jobs and their gates. Split
 /// out of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
