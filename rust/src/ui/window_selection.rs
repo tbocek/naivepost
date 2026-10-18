@@ -27,9 +27,12 @@ use crate::ui::window as ui;
 use crate::ui::cut_cameras::refresh_camera_rows;
 use crate::ui::cut_label_hand::{close_label_form, label_form_open, show_label_form};
 use crate::ui::cut_speed_hand::{close_speed_form, show_speed_form, speed_form_open};
-use crate::ui::cut_svg::{close_svg_form, show_svg_form, svg_form_open};
+use crate::ui::cut_svg::{
+    close_svg_form, press_svg_esc, release_svg_arm_only, show_svg_form, svg_armed, svg_form_open,
+};
 use crate::ui::cut_text_hand::{
-    close_text_form, refresh_aspect_readout, show_text_form, text_form_open,
+    close_text_form, press_text_esc, refresh_aspect_readout, release_text_arm_only, show_text_form,
+    text_armed, text_form_open,
 };
 use crate::ui::cut_volume_hand::{close_volume_form, show_volume_form, volume_form_open};
 use crate::ui::window::refresh_effects_lane;
@@ -602,10 +605,30 @@ pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
 
 /// F3.8 S3 (`Esc drops the hold and disarms ("cancelled" for a bare disarm)`): Escape when an effect is in
 /// hand. Returns `None` when this window holds nothing, so the key travels on to whichever form or arm does
-/// own it — the per-kind Esc controllers keep their precedence and this one only claims the leftover.
+/// own it — with nothing held the per-kind controllers keep their precedence, and this one only claims the
+/// leftover (see `window.rs`: it is wired FIRST among the Esc controllers, which is what lets it disarm below).
+///
+/// Both halves of S3 happen here, because claiming the key means no other Esc handler runs after this one:
+/// the hold goes, and every hand-armed drag comes down with it. One word covers both — `fx_band::CANCELLED`
+/// is the bare-disarm sentence §A.9 spells, and the armed kinds' own sentences belong to their own Cancel.
 pub fn press_band_esc(window: &adw::ApplicationWindow) -> Option<String> {
     let _ = ui::held_effect()?;
+    // The arms come down BEFORE the hold is cleared, so a door that refuses (a caption form this window does
+    // not own) still leaves the press having done what it said: nothing is claimed and then half-done.
+    if ui::zoom_armed() {
+        let _ = ui::press_zoom_esc(window);
+    }
+    if text_armed() && press_text_esc(window).is_none() {
+        // This window did not draw the caption form, so its own door left the arm up; S3's "disarms" half
+        // needs the arm gone regardless of which window raised it.
+        release_text_arm_only();
+    }
+    if svg_armed() && press_svg_esc(window).is_none() {
+        release_svg_arm_only();
+    }
     ui::set_held_effect(None);
+    // A held effect plus an OPEN form is out of S3's way: this press drops the hold and the arms, and the form
+    // takes the next Esc (or the heading's ✕, which forwards to the same doors). The spec names no other shape.
     refresh_effects_lane(window);
     ui::refresh_insert_button(window);
     Some(fx_band::CANCELLED.to_string())

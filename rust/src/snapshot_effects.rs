@@ -269,6 +269,26 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
         // the held state: the white outline, the line walked to the band's start, and the
         // "Zoom picked up" sentence the lane prints.
         ui::press_effect_bar(window, 0, 100.0, 200.0, 20.0, false);
+        // The plate needs a real frame under it and the line to stand on it: the demo fixture ships no
+        // extracted frames, so one PNG is written where the page lists them (the door `05-cut`, `06-preview`
+        // and `06-text` use). Without it the panel paints its dimmed camera rect over an empty plate and the
+        // held zoom has nothing to frame -- the shot's whole point. The line is the pick-up's own second
+        // (the band's start, 5.0 s), NOT the pre-pick-up 140.0 above: S1 walks the line to the band's start,
+        // and a held effect whose band no longer covers the line would be dropped by the very next refresh.
+        crate::snapshot_face::seed_snapshot_frame(dir, "session-tape", 5.0);
+        ui::cut_picture::set_preview_camera_base("session-tape");
+        ui::cut_picture::set_snapshot_dir(dir);
+        ui::set_session_recordings(&[crate::timeline::Recording {
+            base: "session-tape".to_string(),
+            start: 0.0,
+            end: 300.0,
+        }]);
+        ui::set_playhead(window, 5.0);
+        // Repaint through the page's own doors, exactly as a press's refresh does, so the plate, the dimming
+        // and the zoom's rect are the app's answer to the state above rather than a half-painted frame.
+        ui::cut_view::repaint_page(window);
+        let painted = ui::cut_picture::refresh(window);
+        println!("snapshot: 06-lane | held zoom: {} | frame painted: {painted}", ui::held_effect().is_some());
         return true;
     }
 

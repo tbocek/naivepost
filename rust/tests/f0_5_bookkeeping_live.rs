@@ -151,15 +151,35 @@ fn single_step_closes(app: &adw::Application) {
     let project = footage_project();
     let dir = scratch("close");
     std::env::set_current_dir(&dir).expect("cwd pinned to the temp root");
+    // Re-point AFTER this scenario pins its own cwd: `window_round` wrote the conf into whatever root
+    // stood there BEFORE any scenario moved, so on a busy machine the press could dial an address that
+    // is not the answering server's and take a different leg of the handler.
+    point_presses_at_the_answering_server();
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
 
     let play = ui::play_button(&window).expect("the run bar has a ▶");
+    // The one door to every live bar (`shell_beats::run_bar` answers `WINDOW_BAR`'s newest), and THIS
+    // window's bar IS the newest: `single_step_closes` built it last, so waiting on it is waiting on the
+    // bar this press will act for. A ▶ over a run that is still standing PAUSES (F1.12/S1) instead of
+    // starting-and-closing, so if an earlier scenario's close were still in flight this press would be a
+    // pause and S4's assertion below would be measuring the wrong press. Wait for the condition instead
+    // of assuming the previous scenario is done: same helper as everywhere else here, wall-clock ceiling.
+    assert!(
+        wait_until(
+            || ui::run_bar(&window).is_some_and(|b| b.borrow().running.is_none()),
+            "no run was open on this window's bar before the press"
+        ),
+        "a run from an earlier scenario never closed, so ▶ here would be a pause, not a step"
+    );
     play.emit_by_name::<()>("clicked", &[]);
 
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
+    // The close runs inside the press, but the unload it hands over is a thread and the repaint lands on
+    // the main context: wait for `running` to actually go off rather than reading it once, at whatever
+    // point the scheduler happened to deliver the emission.
     assert!(
-        bar.borrow().running.is_none(),
+        wait_until(|| bar.borrow().running.is_none(), "S4: the step's own run closing when the press ended"),
         "S4: the step's own run closed when the press ended"
     );
     // And the audio unload was handed over rather than skipped: `end_run` answers with it every time,
@@ -168,10 +188,14 @@ fn single_step_closes(app: &adw::Application) {
     assert_eq!(timeout, std::time::Duration::from_secs(20), "the unload is bounded");
     assert!(best_effort, "and it never fails the run that made it");
     // A bar with no open run cannot answer the next press as busy: ▶'s S1 pause sentence is impossible.
+    // Wait for the row to settle rather than reading it the instant after the emission: on a loaded
+    // machine the refusal and the queue's line land on the main context, not inside `emit_by_name`.
     play.emit_by_name::<()>("clicked", &[]);
-    assert_ne!(
-        ui::state(&window).status,
-        run::PAUSING,
+    assert!(
+        wait_until(
+            || ui::state(&window).status != run::PAUSING,
+            "the second ▶ answering as a step, not a pause"
+        ),
         "nothing was under way, so the second press is not a pause"
     );
     let _ = std::fs::remove_dir_all(&dir);
@@ -433,9 +457,13 @@ fn single_step_close_dials(app: &adw::Application) {
 
     // The press closed its own bookkeeping (§S4), so the bar is idle again -- the same state the logic
     // check in `single_step_closes` asserts, read here off the widget press rather than off a call.
+    // Waited for, not read once: an earlier scenario's close can still be in flight when this press runs
+    // (one process-wide bar list), and then this press is a pause whose close lands on the main context
+    // later than the emission returns -- which is how this assert went red on one machine and green on
+    // another. The condition is what S4 claims; the deadline keeps a genuinely stuck run loud.
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     assert!(
-        bar.borrow().running.is_none(),
+        wait_until(|| bar.borrow().running.is_none(), "S4: the ▶ press closing the run it opened"),
         "S4: the ▶ press closed the run it opened"
     );
     naivepost::settings_probe::drain_unload(std::time::Duration::from_secs(5));
