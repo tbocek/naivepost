@@ -86,6 +86,12 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
     // skips and must change nothing. So the flag comes from `hand_edit::edited`, the pure half of the
     // same rule, over the same two files. No session folder means no text anyone could have edited.
     chain.set_narration_off(project.no_narration);
+    // The pages carry the same switch as their own state (§08 §A hides Produce's Game-audio row behind it,
+    // §F4.8 greys Narrate's controls), so the chain hands it to both before its first step lands on either
+    // page: a lucky run that skipped Narrate because there is no narration must not find Produce still
+    // drawing the game-volume slider.
+    crate::ui::produce_page::note_narration_off(project.no_narration);
+    chain.set_hand_edits(session_hand_edits());
     chain.set_hand_edits(session_hand_edits());
 
     // F0.5 S1: the chain is a run like any other, so it opens the bookkeeping the same way.

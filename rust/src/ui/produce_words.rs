@@ -36,7 +36,7 @@ fn remember(dialog: Option<&adw::MessageDialog>) {
     OPEN_DIALOG.with(|held| *held.borrow_mut() = dialog.cloned());
 }
 
-/// A small dialog over the Produce page: one entry, the buttons this box needs, nothing else.
+/// A small dialog over the Produce page: the words box, the buttons this box needs, nothing else.
 /// Built as an `adw::MessageDialog` because that is the dialog shape this app already uses and whose
 /// response ids stay readable from a test; `with_remove` is false for a NEW box (§A: the Remove button
 /// belongs to a box that already exists, not to one being drawn for the first time).
@@ -44,34 +44,59 @@ fn build(parent: &adw::ApplicationWindow, current: &str, with_remove: bool) -> a
     let dialog = adw::MessageDialog::new(
         Some(parent),
         Some(DIALOG_TITLE),
-        Some("they print to fill the box"),
+        Some(crate::produce_details::TEXT_CHIP_HINT),
     );
     dialog.set_widget_name("words-dialog");
     // × answers Cancel, the same convention `new_project_confirm` sets: closing without saying is not a save.
     dialog.set_property("close-response", "cancel");
-    dialog.add_response("cancel", "Cancel");
+    // The order the spec's picture shows: Remove first (it is the destructive answer to a box that exists),
+    // then Cancel, then Save as the suggested action on the right.
     if with_remove {
         dialog.add_response("remove", "Remove");
         dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
     }
+    dialog.add_response("cancel", "Cancel");
     dialog.add_response("save", "Save");
     dialog.set_default_response(Some("save"));
 
     // The words themselves go in the body, prefilled: a reword dialog that opened blank would lose the
-    // words it was opened to change.
-    let entry = gtk::Entry::new();
-    entry.set_widget_name("words-dialog-entry");
-    entry.set_text(current);
-    entry.set_placeholder_text(Some("the words to print in this box"));
-    dialog.set_extra_child(Some(&entry));
+    // words it was opened to change. Multi-line on purpose — §A's sentence says "Enter starts a new line",
+    // and the box is sized for about three lines so a two-line title fits without scrolling.
+    let view = gtk::TextView::new();
+    view.set_widget_name("words-dialog-entry");
+    view.set_wrap_mode(gtk::WrapMode::Word);
+    view.buffer().set_text(current);
+    let box_height = 3 * LINE_HEIGHT;
+    view.set_size_request(-1, box_height);
+    let scroller = gtk::ScrolledWindow::new();
+    scroller.set_child(Some(&view));
+    scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    scroller.set_hexpand(true);
+    scroller.set_min_content_height(box_height);
+    // The frame is what gives the box its visible edge in the spec's picture; without it a `TextView`
+    // inside a dialog body reads as loose text on the background.
+    let frame = gtk::Frame::new(None);
+    frame.set_child(Some(&scroller));
+    frame.set_hexpand(true);
+    dialog.set_extra_child(Some(&frame));
     dialog
 }
 
-/// Read the entry back out of the dialog before its response handler runs anything away.
+/// Rough height of one line in the dialog's font, so the editor asks for about three of them.
+const LINE_HEIGHT: i32 = 24;
+
+/// Read the words back out of the dialog before its response handler runs anything away. The editor is
+/// named on the `TextView`, so the walk finds the view through the scroller that holds it.
 fn entry_of(dialog: &adw::MessageDialog) -> String {
     fn walk(node: &gtk::Widget) -> Option<String> {
         if node.widget_name() == "words-dialog-entry" {
-            return node.downcast_ref::<gtk::Entry>().map(|e| e.text().to_string());
+            return node
+                .downcast_ref::<gtk::TextView>()
+                .map(|view| {
+                    let buffer = view.buffer();
+                    let (start, end) = buffer.bounds();
+                    buffer.text(&start, &end, true).to_string()
+                });
         }
         if let Some(child) = node.first_child() {
             let mut cursor = Some(child);

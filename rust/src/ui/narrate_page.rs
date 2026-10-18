@@ -1220,6 +1220,10 @@ pub fn set_narration_off(window: &adw::ApplicationWindow, off: bool) -> String {
         }
     }
     mutate(|s| s.narration_off = off);
+    // The Produce page keeps its own copy of the same switch, because §08 §A hides its Game-audio row
+    // behind it. Handing it over here is what keeps the two pages answering one fact: a tick moved on the
+    // Narrate page would otherwise leave Produce drawing the slider under a readout that says "no narration".
+    crate::ui::produce_page::note_narration_off(off);
     // A preview that is already running keeps running unless this stops it: greying the panel only
     // takes away the controls, so the app would go on playing a narration through greyed-out widgets —
     // sound coming out of a page whose tick says there is no narration. The tick's answer is that the
