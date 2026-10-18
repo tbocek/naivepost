@@ -370,6 +370,7 @@ pub fn call(
             liveness: None,
             waited_ms: 0,
             delta: None,
+            budget: None,
         },
     )
 }
@@ -377,6 +378,40 @@ pub fn call(
 /// Everything [`call`] takes plus the file name the upload carries. Grouped into [`Dial`] rather
 /// than spread across nine positional arguments, because the eight- and nine-argument forms are the
 /// two every flow reaches for and a mis-ordered `job`/`body` pair would dial the wrong place.
+/// [`call`] with a per-call ceiling on the whole exchange, for a request § bounds tighter than §1's table
+/// does ([`crate::model_list_fetch`]’s fifteen-second listing is the one that needed it). `None` keeps §1's
+/// bound, which is what every other caller wants; passing one cannot leave a logged call unbounded.
+pub fn call_budget(
+    tree: &crate::layout::Tree,
+    base: &Request,
+    server: Server,
+    endpoint: &Endpoint,
+    kind: Kind,
+    job: Option<&str>,
+    body: Option<&str>,
+    budget: Option<std::time::Duration>,
+    cancelled: &dyn Fn() -> bool,
+) -> (Request, Result<Sent, String>) {
+    #![allow(clippy::too_many_arguments)]
+    call_dialed(
+        tree,
+        base,
+        &Dial {
+            server,
+            endpoint,
+            kind,
+            job,
+            body,
+            filename: None,
+            cancelled,
+            liveness: None,
+            waited_ms: 0,
+            delta: None,
+            budget,
+        },
+    )
+}
+
 pub struct Dial<'a> {
     pub server: Server,
     pub endpoint: &'a Endpoint,
@@ -402,6 +437,10 @@ pub struct Dial<'a> {
     /// (`crate::exchange_leg::ServerHook`) rather than a borrow: borrowed data cannot cross into that worker.
     /// The sink writes the exchange page itself; the page is a mutex for exactly that reason.
     pub delta: Option<Delta>,
+    /// A per-call ceiling on the whole exchange, `Some` only when § bounds this request tighter than §1's
+    /// table does ([`Kind::ListModels`] at fifteen seconds is that case). `call` leaves it `None`, so the
+    /// ordinary legs keep §1's bound untouched.
+    pub budget: Option<std::time::Duration>,
 }
 
 /// What [`Dial::delta`] holds: somewhere to put the body as it grows. A `'static` `Arc`, not a plain `&dyn Fn`,
@@ -462,7 +501,7 @@ pub fn call_dialed(
             dial.cancelled,
             None,
             dial.delta.as_ref(),
-            None,
+            dial.budget,
         ),
     };
     let mut timer = Timer::queued(dial.waited_ms, timer_start);

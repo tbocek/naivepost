@@ -384,6 +384,7 @@ pub fn dial(
                 liveness: Some(crate::llm_watch_leg::Liveness::streamed(step)),
                 waited_ms: (waited * 1000.0).round() as i64,
                 delta: hook,
+                budget: None,
             },
         );
         // §7's live half: this attempt is over, so its hook writes nothing more — a §4 give-up leaves the

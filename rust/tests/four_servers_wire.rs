@@ -13,7 +13,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -328,6 +328,7 @@ fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_head
             liveness: None,
             waited_ms: 0,
             delta: None,
+            budget: None,
         },
     );
     result.expect("the upload reached the fake server");
