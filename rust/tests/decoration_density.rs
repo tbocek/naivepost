@@ -102,22 +102,26 @@ fn p_policy_decorationdensity_the_context_outranks_the_default() {
 // --- S6: where the id lives -------------------------------------------------------------------
 
 #[test]
-fn p_policy_decorationdensity_family_is_policy_and_no_row_exists() {
-    // The family resolves from the prefix even though the id has no row.
+fn p_policy_decorationdensity_row_points_at_the_prompt_clause() {
+    // The family resolves from the prefix even for a §10 id that is wording rather than a number.
     assert_eq!(params::family("P.policy.decorationDensity"), Family::Policy);
-    // No section carries it: effect_parameters.rs s5 pins that the density is prompt wording, not a
-    // value the app multiplies anything by, and asserts no catalogued id contains "density". Adding a
-    // row here would break that test rather than improve this one.
+    // §10 gives this id a row ("three or four per five minutes", home `fxRules`), so the catalogue carries it
+    // exactly once and points at the constants holding the prompt's own clause. Nothing multiplies it by
+    // anything: the hard bound on a reply is `P.machine.maxProposedEffects`, not this guide.
     let rows = params::prepare()
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
         .chain(params::narrate())
-        .chain(params::produce());
-    assert_eq!(
-        rows.filter(|row| row.id == "P.policy.decorationDensity")
-            .count(),
-        0,
-        "the density is deliberately unrowed; see DENSITY_GUIDE's doc comment"
-    );
+        .chain(params::produce())
+        .filter(|row| row.id == "P.policy.decorationDensity")
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 1, "§10's decorationDensity row must be catalogued once");
+    assert_eq!(rows[0].from, "cut_effects_pass::DENSITY_GUIDE");
+    assert!(rows[0].spelled.contains("three or four"), "{}", rows[0].spelled);
+    assert!(rows[0].spelled.contains("five minutes"), "{}", rows[0].spelled);
+    // And the constants the row names agree with each other and with the shipped prompt wording.
+    assert_eq!(fx::DENSITY_PER_FIVE_MINUTES, (3, 4));
+    assert!(fx::DENSITY_GUIDE.contains("three or four"));
+    assert!(fx::DENSITY_GUIDE.contains("five minutes"));
 }

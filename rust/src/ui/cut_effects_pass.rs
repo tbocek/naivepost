@@ -106,6 +106,9 @@ fn place_effects_reply(
     // happens. A fault is an UNUSABLE reply (a clip number never given); a per-call skip (an unknown kind, an
     // empty span) is unwelcome, not unusable, and costs no round.
     let mut placed: Option<Vec<crate::cut::Fx>> = None;
+    // How many decorations this pass ended up placing, kept for the density sentence below (`None` is a pass
+    // that never got an usable answer, which has nothing to weigh against the guide).
+    let mut placed_count: Option<usize> = None;
     let mut skipped: Vec<String> = Vec::new();
     for attempt in 1..=2u32 {
         // S4: each round asks afresh, so a retry never reads back the reply it is retrying.
@@ -142,8 +145,10 @@ fn place_effects_reply(
                 // Nothing landed, which is a right answer to a cut that wants no decoration (every gain was 1,
                 // every span empty) rather than a failed run -- so it is not [`cut_effects_pass::no_answer`]'s
                 // sentence, which promises the model was asked and gave nothing usable.
+                placed_count = Some(0);
                 "nothing proposed \u{2014} the cut stands as it is".to_string()
             } else {
+                placed_count = Some(effects.len());
                 cut_.fx.extend(effects.iter().cloned());
                 window::save_insert_cut(&cut_);
                 window::record_edit(window, &cut_);
@@ -157,6 +162,24 @@ fn place_effects_reply(
         said.push_str(" \u{2014} ");
         said.push_str(&reason);
         window::log_line(&reason);
+    }
+    // §06-effects#6's "decorations density (prompt)", reported against what this pass actually placed.
+    // REPORTED, never trimmed: the User Context outranks the default ("Asked for more, write more",
+    // `spec/prompts/effects.md`) and the hard bound is `P.machine.maxProposedEffects`, which was already
+    // applied above. A reply inside the guide says nothing extra -- the row keeps its own news.
+    if let Some(count) = placed_count {
+        // The finished length is the cut's own total, through the same door the page's "Cut" readout uses
+        // (`cut_screen::cut_seconds`), so the seconds the guide is quoted against are the seconds the screen shows.
+        let seconds = crate::cut_screen::cut_seconds(&cut_);
+        let (low, high) = crate::cut_effects_pass::expected_decorations(seconds);
+        if crate::cut_effects_pass::above_density_guide(count, seconds) {
+            said.push_str(&format!(
+                " \u{2014} past the guide: {} ({}-{high} for {})",
+                crate::cut_effects_pass::DENSITY_GUIDE,
+                low,
+                crate::tools::mm_ss(seconds)
+            ));
+        }
     }
     if let Some(status_line) = window::find_status(window.upcast_ref()) {
         status_line.set_text(&said);

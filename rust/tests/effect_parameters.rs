@@ -176,9 +176,11 @@ fn sec_06_effects_6_parameters_used_s4_the_forms_typed_floors_are_the_numbers_ap
 // --- S5: what §6 names that is not here, and why --------------------------------------------------------------
 
 /// §06-effects#6-parameters-used — the drawing numbers §6's Engineering sentence lists ("lane height 26, grip/kill
-/// widths, snap 8/10 px, … svg preview 512 px, card constants, bake fps") against the two items it names that have
-/// no row: the label form's floor and the decorations density. A number nothing reads has no module to live in, so
-/// asserting their absence is what stops one arriving as a decoration.
+/// widths, snap 8/10 px, … svg preview 512 px, card constants, bake fps") against the items it names that have
+/// no row: the label form's floor and §I's kill widths. A number nothing reads has no module to live in, so
+/// asserting their absence is what stops one arriving as a decoration. The decorations density is NOT one of them:
+/// `spec/10-parameters.md`'s `P.policy.decorationDensity` row ("three or four per five minutes", home `fxRules`)
+/// makes it a catalogued parameter, and its row points at the prompt clause.
 #[test]
 fn sec_06_effects_6_parameters_used_s5_the_drawing_numbers_are_here_and_the_unowned_items_are_not() {
     assert_eq!(number_anywhere("layout.effectRowPx"), 26.0);
@@ -209,12 +211,22 @@ fn sec_06_effects_6_parameters_used_s5_the_drawing_numbers_are_here_and_the_unow
             "{absent} would catalogue a floor §10 deliberately leaves uncatalogued"
         );
     }
-    // The decorations density is §F3.11's prompt wording ("few and deliberate: three or four across five minutes"),
-    // not a value this app multiplies anything by.
-    assert!(
-        !listed.iter().any(|id| id.contains("density")),
-        "the density lives in prompts/effects.md as wording, not as a number"
+    // The decorations density IS catalogued: §10 gives `P.policy.decorationDensity` a row ("three or four per
+    // five minutes", home `fxRules`), so the catalogue must be able to point at it. Its value is prompt WORDING,
+    // not a number -- the row names the constants that hold that wording, and they must agree with each other and
+    // with the shipped prompt clause, which is what `tests/decoration_density.rs` pins.
+    let density = anywhere("P.policy.decorationDensity");
+    assert_eq!(
+        listed.iter().filter(|id| *id == "P.policy.decorationDensity").count(),
+        1,
+        "the density is §10's row and must appear exactly once"
     );
+    assert_eq!(density.from, "cut_effects_pass::DENSITY_GUIDE");
+    assert!(density.spelled.contains("three or four"), "{}", density.spelled);
+    assert!(density.spelled.contains("five minutes"), "{}", density.spelled);
+    assert!(naivepost::cut_effects_pass::DENSITY_GUIDE.contains("three or four"));
+    assert!(naivepost::cut_effects_pass::DENSITY_GUIDE.contains("five minutes"));
+    assert_eq!(naivepost::cut_effects_pass::DENSITY_PER_FIVE_MINUTES, (3, 4));
     // §I's killMin 32, fxMinBand 30 and fxGrab 9: no constant here holds them. Matched case-sensitively on whole
     // names — `layout.edgeGrabPx` already contains "grab", and the 10 px hit radius is §10's list's business.
     // F3.8's kill width WAS in this list as a number nothing read -- §A.9 states it, no module used it. That is
