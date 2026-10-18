@@ -293,7 +293,10 @@ pub struct Fixture {
 /// the whole file and would wipe an address set before it.
 pub fn fixture(tag: &str) -> Fixture {
     let depth = FIXTURES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let root = std::env::temp_dir().join(format!("naivepost-f07live-{tag}-{depth}"));
+    // The pid rides the name: `cargo test` runs binaries in parallel, two of them may ask for the same tag, and
+    // `depth` restarts at 0 in every process -- without it they share one folder and one `requests.tsv`. Same rule
+    // as `join_live_harness::fixture`.
+    let root = std::env::temp_dir().join(format!("naivepost-f07live-{tag}-{}-{depth}", std::process::id()));
     // Wipe everything, INCLUDING any answer cached under an earlier run of this tag: a cached reply
     // would answer the ask without ever reaching the fake server, and the test would then assert about
     // a request that never went out.

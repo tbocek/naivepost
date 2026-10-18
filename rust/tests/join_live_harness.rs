@@ -197,7 +197,13 @@ pub struct Fixture {
 /// folder itself. Nothing outside this root is read or written.
 pub fn fixture(tag: &str) -> Fixture {
     let depth = FIXTURES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let root = std::env::temp_dir().join(format!("naivepost-f110live-{tag}-{depth}"));
+    // The pid is part of the name because `cargo test` runs test BINARIES in parallel and two of them may ask
+    // for the SAME tag: `f1_10_s3_a_down_llm...` and another binary both call `fixture("down")`, and `depth` is a
+    // PER-PROCESS counter that starts at 0 in each, so without the pid both pick one directory, both wipe it out
+    // from under the other, and both append their `chat` rows to the same `requests.tsv`. The count this scenario
+    // reads back then carries the sibling's dial too -- three asks where two were promised -- which is how it
+    // failed in one suite run and passed in the next.
+    let root = std::env::temp_dir().join(format!("naivepost-f110live-{tag}-{}-{depth}", std::process::id()));
     // Wipe the whole scenario root, INCLUDING any answer cached under an earlier run of this tag:
     // a cached reply would answer the ask without ever reaching the fake server, and the test would
     // then assert about a request that never went out.

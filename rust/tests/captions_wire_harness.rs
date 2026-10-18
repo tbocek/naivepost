@@ -186,7 +186,10 @@ pub fn fixture(tag: &str) -> Fixture {
     if FIXTURES.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 0 {
         panic!("two fixtures in one test binary: the process-wide env races -- one scenario per binary");
     }
-    let root = std::env::temp_dir().join(format!("naivepost-f39live-{tag}"));
+    // The pid rides the name: `cargo test` runs binaries in parallel, two may ask for the same tag, and a
+    // per-process counter restarts at 0 in each -- without it they share one folder and one `requests.tsv`.
+    // Same rule as `join_live_harness::fixture`.
+    let root = std::env::temp_dir().join(format!("naivepost-f39live-{tag}-{}", std::process::id()));
     // Wipe the whole scenario root, including any answer cached under an earlier run of this tag: a
     // cached reply would answer the ask without ever reaching the fake server, and the test would then
     // assert about a request that never went out.

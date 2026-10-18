@@ -986,6 +986,10 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // screen paints the ▶ itself into `<out>` and the whole window beside it as `-window.png`: the
         // strip is what gets looked at, the page is there to show the bar in place.
         let face_only = screen == "03-runbar-busy";
+        // §06-effects#2's Effect-menu shot is painted from the dropdown's own box, because a popover lives on a
+        // separate surface and is therefore absent from the window's render node. The staging step asked for
+        // this by name (`snapshot_effect_menu::note_shot_sidecar`), so no screen is hardcoded here.
+        let menu_only = crate::snapshot_effect_menu::shot_sidecar_wanted();
         // The glyph goes beside the window shot as `<name>-face.png`; the whole page stays at `<name>.png`
         // so every snapshot keeps writing exactly one file under the name it was asked for.
         let face_out = out.with_extension("face.png");
@@ -1012,6 +1016,17 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             } else if let Err(err) = write_png(&painted, &out) {
                 eprintln!("snapshot: {err}");
                 OUT.with(|e| *e.borrow_mut() = Some(err));
+            }
+            if menu_only {
+                // The menu rows beside the page: the page shot above still lands at `<name>.png` (every snapshot
+                // writes exactly one file under the name it was asked for is the rule for the WINDOW), and the
+                // subject this screen exists to record -- the six labelled rows -- goes to `<name>-menu.png`.
+                let menu_out = out.with_extension("menu.png");
+                let button = crate::snapshot_effect_menu::effect_button();
+                if let Err(err) = crate::snapshot_effect_menu::write_png(&button, &menu_out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
             }
             app.quit();
         });

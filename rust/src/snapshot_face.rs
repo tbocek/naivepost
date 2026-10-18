@@ -24,6 +24,17 @@ pub(crate) fn face_of(window: &adw::ApplicationWindow) -> (String, String, bool)
     )
 }
 
+/// Run the main context until nothing is pending, at most `rounds` rounds. Bounded and non-blocking: a snapshot
+/// must not park on a context with nothing in it. Shared with [`write_face_png`], which needed the same.
+pub(crate) fn pump_context(rounds: usize) {
+    let context = glib::MainContext::default();
+    for _ in 0..rounds {
+        while context.pending() {
+            context.iteration(false);
+        }
+    }
+}
+
 /// Draw the run bar's ▶ at a legible size into a PNG on its own. A whole-window shot cannot show which
 /// glyph the button wears: at 1334 px wide the icon is ~16 px and reads as a blue blob whether it is ▶ or
 /// ⏸, so the face this screen exists to record is invisible in it. The widget has to be laid out first --
@@ -45,12 +56,7 @@ pub(crate) fn write_face_png(face: &gtk::Button, out: &Path) -> Result<(), Strin
     holder.set_child(Some(&glyph));
     holder.present();
     // The map must happen before the frame is taken; `write_png` reads the widget's allocated size.
-    let context = glib::MainContext::default();
-    for _ in 0..64 {
-        while context.pending() {
-            context.iteration(false);
-        }
-    }
+    pump_context(64);
     let result = write_png(glyph.upcast_ref(), out);
     holder.close();
     result

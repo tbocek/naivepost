@@ -216,6 +216,7 @@ pub mod settings;
 pub mod slot_gate;
 pub mod shell;
 pub mod snapshot;
+pub mod snapshot_effect_menu;
 pub mod snapshot_effects;
 pub mod snapshot_face;
 pub mod snapshot_insert;
