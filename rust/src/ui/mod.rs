@@ -66,6 +66,8 @@ pub mod rescan_apply;
 pub mod source_rows;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
+/// §07-narrate#1-screen badge 13 — the pitch control as a labelled row (`pitch:` · slider · value).
+pub mod narrate_pitch;
 
 /// F4.4 — the row's speak-and-audition leg (▶ speak this line and ↻ re-roll): files the take over the real
 /// wire and plays it at the render's level, so the page above keeps only surface and wires.

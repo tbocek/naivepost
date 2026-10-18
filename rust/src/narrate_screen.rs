@@ -90,6 +90,14 @@ pub fn clamp_pitch(semitones: f64) -> f64 {
     semitones.clamp(PITCH_MIN_SEMITONES, PITCH_MAX_SEMITONES)
 }
 
+/// §1 (`pitch −6..+6 semitones`), as the screen draws it: the number beside the slider, one decimal
+/// (`0.0`, `1.5`, `-6.0`) — spec/img/07-narrate.png badge 13 shows `pitch: ─── 0.0`, so the shift has to be
+/// readable, not only draggable. Clamped first for the same reason [`clamp_pitch`] is: an out-of-range stored
+/// value acts as the end it is clamped to, so that is the number it gets to show.
+pub fn pitch_readout(semitones: f64) -> String {
+    format!("{:.1}", clamp_pitch(semitones))
+}
+
 /// Is there a shift at all? Zero writes no `narrate/pitch.txt` and no shifted copy — the reference is used as
 /// cut, which keeps every take cached before the slider existed valid.
 pub fn pitch_is_shifted(semitones: f64) -> bool {
