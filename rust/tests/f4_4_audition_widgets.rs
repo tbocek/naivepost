@@ -37,6 +37,10 @@ use common::{hold_last_window, narrate_button, release_last_window, settle, stat
 mod harness;
 use harness::{FakeAudio, Script};
 
+/// The session's one footage row, and the stub file written at it: `footage_path` matches a one-camera
+/// session's single row by its stem, and then insists the path is a file before it will cue a picture.
+static PROJECT_SOURCE: &str = "take.mp4";
+
 /// The game level saved into `naivepost.json`. `narrate_preview_leg::game_volume_for` reads it off the
 /// project file, so the number the player is asked for travels the app's own route.
 static GAME_VOLUME: f64 = 0.4;
@@ -212,7 +216,7 @@ fn run_round(app: &adw::Application) {
     };
     project.produce.game_volume = GAME_VOLUME;
     project.sources.push(Source {
-        path: "/media/take.mp4".into(),
+        path: PROJECT_SOURCE.into(),
         footage: true,
         ..Default::default()
     });
@@ -231,6 +235,17 @@ fn run_round(app: &adw::Application) {
     let reference = tree.voice_ref_wav();
     std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent")).expect("narrate/ made");
     std::fs::write(&reference, b"RIFF fake voice reference").expect("reference written");
+    // The bed's cue needs the footage the source row names to EXIST (`narrate_preview_media::footage_path`
+    // answers None for a path that is not a file, and a picture that cannot be cued spawns nothing), so the
+    // stub sits where the row points. Absolute rows stay absolute through `layout::resolve`, which is why
+    // the file goes to the row's own path and not beside the session.
+    std::fs::create_dir_all(
+        std::path::Path::new(PROJECT_SOURCE)
+            .parent()
+            .expect("the source row names a folder to write it in"),
+    )
+    .ok();
+    std::fs::write(PROJECT_SOURCE, b"stub footage").expect("the bed's footage is on disk");
 
     let entry = entry();
     // The take the PROGRAM files it under: the weighted tag becomes the 8-float vector name (§4).

@@ -1638,7 +1638,16 @@ path = "tests/tool_catalogue_shared.rs"
 
 [[test]]
 name = "tool_protocol_f6_1"
+
 path = "tests/tool_protocol_f6_1.rs"
+
+[[test]]
+name = "tool_set_policy"
+path = "tests/tool_set_policy.rs"
+
+[[test]]
+name = "tool_set_policy_s1_live_tool_result_carries_the_error"
+path = "tests/tool_set_policy_s1_live_tool_result_carries_the_error.rs"
 
 [[test]]
 name = "tool_protocol_f6_1_wire"
