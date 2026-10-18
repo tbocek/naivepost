@@ -44,11 +44,17 @@ fn slot(fixture: &Fixture, attempt: u32) -> std::path::PathBuf {
     effects_ask::cache_file_for_test(&fixture.tree, CTX, &batch(), &[], MODEL, attempt)
 }
 
-/// How many asks this fake has answered, counted by timed rows (§09 §10: one row per REQUEST).
+/// How many asks this fake has ANSWERED on the wire, counted by timed rows (§09 §10: one row per
+/// request, and a cache hit's row is not a request). The `job` column is `effects` for both kinds of
+/// row, so the outcome is what tells them apart.
 fn asked(fixture: &Fixture) -> usize {
     read(&fixture.tree.requests_tsv())
         .lines()
-        .filter(|line| line.split('\t').any(|field| field == "effects"))
+        .filter(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            fields.contains(&"effects")
+                && !fields.contains(&"cache")
+        })
         .count()
 }
 
@@ -79,18 +85,23 @@ fn f3_11_s4_live_effects_answer_is_cached_so_the_next_identical_ask_opens_no_soc
     assert!(kept.contains("\"fx\""), "the slot holds the EFFECTS document: {kept}");
     assert!(!kept.contains("\"choices\""), "the framing is not what got cached: {kept}");
 
-    // Same settings, same prompt, same round: the slot answers it. No socket, and no second timed row for a
-    // call that did not happen.
+    // Same settings, same prompt, same round: the slot answers it. No socket, so no second WIRE row;
+    // §09 §10 does want a line for the hit, marked `cache` with no time on the wire.
     let second = effects_ask::ask(&fixture.tree, CTX, &batch, &[], ATTEMPT, &|| false);
     assert_eq!(second.calls, first.calls, "the cached answer is the same decoration list");
-    assert_eq!(asked(&fixture), 1, "the identical ask wrote no second row, so it dialled nobody");
+    assert_eq!(asked(&fixture), 1, "the identical ask dialled nobody, so the wire rows did not grow");
+    let cached_rows = read(&fixture.tree.requests_tsv())
+        .lines()
+        .filter(|line| line.split('\t').any(|field| field == "cache"))
+        .count();
+    assert_eq!(cached_rows, 1, "§10: the cache hit is a line of its own");
 
     // A DIFFERENT round of the same cut is a different question and keys elsewhere, so it dials again: §F3.11's
     // second round must not be served the reply that was just rejected.
     assert_ne!(slot(&fixture, ATTEMPT), slot(&fixture, 2), "and the two rounds really do keep separate slots");
     let retry = effects_ask::ask(&fixture.tree, CTX, &batch, &[], 2, &|| false);
     assert_eq!(retry.calls, first.calls, "the retry is answered afresh (the fake repeats; the socket proves it)");
-    assert_eq!(asked(&fixture), 2, "one timed row per request that went out");
+    assert_eq!(asked(&fixture), 2, "one timed row per request that went out, and the retry wrote no cache line");
 
     // ---- S4's defaults, applied to what the cached answer asked for -------------------------------
     //

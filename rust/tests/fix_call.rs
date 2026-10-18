@@ -562,11 +562,12 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_and_replays_it_wit
         Some(naivepost::fix_transcripts::cached_blocks_log(LANE, 1).as_str()),
         "the second pass says it answered its block from the cache: {again:?}"
     );
-    assert_eq!(
-        naivepost::requests::read(&tree).expect("requests.tsv").len(),
-        rows.len(),
-        "a cache hit writes no row"
-    );
+    let cached_rows = naivepost::requests::read(&tree)
+        .expect("requests.tsv")
+        .iter()
+        .filter(|row| row.outcome == naivepost::requests::Outcome::Cache)
+        .count();
+    assert_eq!(cached_rows, 1, "§10: the cached block wrote its own marked row, and no wire row");
     assert_eq!(scene.fixed(), fixed, "and the cached pass writes the same fixed transcript");
 }
 

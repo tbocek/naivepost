@@ -32,12 +32,15 @@ fn fx(clip: u32, kind: &str, start: f64, end: f64) -> serde_json::Value {
     json!({"clip": clip, "kind": kind, "start": start, "end": end})
 }
 
-/// How many asks this fake has answered, counted by timed rows: §09 §10 writes one per REQUEST, so the count
-/// is the wire count and reading it never waits on a request that must not arrive.
+/// How many asks this fake has ANSWERED on the wire, counted by timed rows: §09 §10 writes one per
+/// REQUEST, and marks a cache hit's line `cache`, so that line is not a dial.
 fn asked(fixture: &Fixture) -> usize {
     read(&fixture.tree.requests_tsv())
         .lines()
-        .filter(|line| line.split('\t').any(|field| field == "effects"))
+        .filter(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            fields.contains(&"effects") && !fields.contains(&"cache")
+        })
         .count()
 }
 

@@ -143,15 +143,15 @@ pub fn ask_at(
     let user = joins::request(user_context, k, n, before, after);
     let parts = seam_parts(&system, &user, &model, attempt);
     if let Some(cached) = llm_cache::read(tree, joins::STEP, &parts) {
-        // A reply served from the cache costs no wire and writes no row: the request that earned it
-        // is already in `requests.tsv`, and a second row for the same answer would double-count a
-        // call that did not happen (§09 §10).
+        // §09 §10: the cached answer writes its own `cache` line, with no time on the wire; the row is
+        // the record that this ask cost nothing, not a second count of the request that earned it.
         //
         // A cached TOOL answer is stored as the counts it came to, not as the calls: the round that
         // ended a tool flow says only "I am done", so the drops themselves live in earlier rounds and
         // a replay would have to re-dial them. Storing the outcome is what lets the next press cost no
         // wire at all, and it is the same shape the prose path always stored — a reply this door reads.
         let outcome = judge(&cached, before, after);
+        crate::request_timing::record_cached(tree, base_row(&model));
         return Answered { outcome, settled: true, reply: cached, failed: false, from_cache: true };
     }
     // No model configured: asking again answers the same way, so this settles. Checked before the

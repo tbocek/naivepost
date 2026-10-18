@@ -159,25 +159,31 @@ fn f3_10_s1_live_speeds_ask_carries_the_clips_message_to_the_llm() {
     assert!(rows.contains("speed"), "requests.tsv carries this job's row: {rows}");
 
     // The cache half of S1: the same ask again costs no wire. One scripted reply exists, so a second
-    // request would be handed the same text and pass for the wrong reason — the timed-row count is the proof,
-    // because §09 §10 writes one row per REQUEST and reading it never waits on a request that must not come.
+    // request would be handed the same text and pass for the wrong reason — the WIRE row count is the proof,
+    // because §09 §10 writes one row per REQUEST, and a cache hit's row is marked `cache`, not one.
     let again = speeds_ask::ask(&fixture.tree, "Run the dull stretches fast.", &three_clips(), &captioned(), 1, &|| false);
     assert_eq!(again.calls, asked.calls, "the cached answer is the same two rates");
     let rows = read(&fixture.tree.requests_tsv());
-    assert_eq!(
-        rows.lines().filter(|line| line.split('\t').any(|field| field == "speed")).count(),
-        1,
-        "one timed row, so the second ask dialled nobody: {rows}"
-    );
+    let wire = rows
+        .lines()
+        .filter(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            fields.contains(&"speed") && !fields.contains(&"cache")
+        })
+        .count();
+    assert_eq!(wire, 1, "one timed row on the wire, so the second ask dialled nobody: {rows}");
 
     // Delete the cache and the same question is a fresh one: the wire is dialled again, and the row count says so.
     std::fs::remove_dir_all(fixture.root.join("session.naivepost/cache/llm")).expect("cache folder removed");
     let third = speeds_ask::ask(&fixture.tree, "Run the dull stretches fast.", &three_clips(), &captioned(), 1, &|| false);
     assert_eq!(third.calls, asked.calls, "re-dialling answers the same, since nothing about the cut changed");
     let rows = read(&fixture.tree.requests_tsv());
-    assert_eq!(
-        rows.lines().filter(|line| line.split('\t').any(|field| field == "speed")).count(),
-        2,
-        "a cache that is gone means the ask goes out again: {rows}"
-    );
+    let wire = rows
+        .lines()
+        .filter(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            fields.contains(&"speed") && !fields.contains(&"cache")
+        })
+        .count();
+    assert_eq!(wire, 2, "a cache that is gone means the ask goes out again: {rows}");
 }

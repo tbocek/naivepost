@@ -104,9 +104,9 @@ pub fn ask_at(
     let user = cut_captions::message(user_context, clips, &shown);
     let parts = cache_parts(&system, &user, &model, attempt);
     if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
-        // A reply served from the cache costs no wire and writes no row: the request that earned it
-        // is already in `requests.tsv`, and a second row for the same answer would double-count a
-        // call that did not happen (§09 §10).
+        // §09 §10: a reply served from the cache writes its own line, marked `cache` with no time on
+        // the wire, so the file shows what a re-run saved. Nothing goes out here; the row only says so.
+        crate::request_timing::record_cached(tree, base_row(&model));
         return match parse_captions(&cached) {
             Ok(calls) => Asked { calls, failed: false, reason: String::new() },
             Err(reason) => failed(reason),

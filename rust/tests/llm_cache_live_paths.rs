@@ -170,6 +170,23 @@ impl Scene {
     }
 }
 
+/// §10's two counts on a folder's log: requests that went out, and hits served from the cache.
+fn wire_rows(tree: &naivepost::layout::Tree) -> usize {
+    requests::read(tree)
+        .expect("requests.tsv")
+        .iter()
+        .filter(|row| row.outcome != naivepost::requests::Outcome::Cache)
+        .count()
+}
+
+fn cache_rows(tree: &naivepost::layout::Tree) -> usize {
+    requests::read(tree)
+        .expect("requests.tsv")
+        .iter()
+        .filter(|row| row.outcome == naivepost::requests::Outcome::Cache)
+        .count()
+}
+
 /// Exactly one file under this step's folder, and its name is §6's sha256 hex.
 fn assert_one_hex_slot(names: &[String], step: &str) -> String {
     assert_eq!(names.len(), 1, "{step}: one answer filed, got {names:?}");
@@ -235,7 +252,7 @@ fn sec_09_llm_and_tools_6_cache_s7_translate_files_its_answer_and_replays_it_wit
     let slot = assert_one_hex_slot(&scene.cached_names(naivepost::produce_translate_ask::STEP), "translate");
 
     // The identical batch again: §6 answers it from disk, BEFORE the gate and the exchange log, so the
-    // fake sees nothing and `requests.tsv` gains nothing.
+    // fake sees nothing. §10 still files the hit: one `cache` row, no new WIRE row.
     let second = naivepost::produce_translate_ask::ask_at(
         &scene.tree,
         &scene.conf,
@@ -246,11 +263,8 @@ fn sec_09_llm_and_tools_6_cache_s7_translate_files_its_answer_and_replays_it_wit
     .expect("the cached batch still translates");
     assert_eq!(second, want, "the replay says the same thing");
     assert_eq!(fake.count(), 1, "the second ask opened no socket: {}", fake.count());
-    assert_eq!(
-        requests::read(&scene.tree).expect("requests.tsv").len(),
-        rows_after_first,
-        "a cache hit writes no row"
-    );
+    assert_eq!(wire_rows(&scene.tree), rows_after_first, "a cache hit adds no wire row");
+    assert_eq!(cache_rows(&scene.tree), 1, "a cache hit writes its own marked row");
     assert_eq!(assert_one_hex_slot(&scene.cached_names(naivepost::produce_translate_ask::STEP), "translate"), slot);
     scene.leave();
 }
@@ -300,11 +314,8 @@ fn sec_09_llm_and_tools_6_cache_s7_retake_files_each_draw_and_replays_it_without
     let second = naivepost::retakes_ask::ask_run(&scene.tree, &scene.paths, &scene.conf, &brief, 0, &mut marks);
     assert!(matches!(second, naivepost::retakes_ask::RunOutcome::Cached { .. }), "the replay is a hit: {second:?}");
     assert_eq!(fake.count(), 1, "the second draw opened no socket: {}", fake.count());
-    assert_eq!(
-        requests::read(&scene.tree).expect("requests.tsv").len(),
-        rows_after_first,
-        "a cache hit writes no row"
-    );
+    assert_eq!(wire_rows(&scene.tree), rows_after_first, "a cache hit adds no wire row");
+    assert_eq!(cache_rows(&scene.tree), 1, "a cache hit writes its own marked row");
     scene.leave();
 }
 
@@ -381,11 +392,8 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         "the second ask opened no socket at all: {} vs {asked_first_time}",
         fake.count()
     );
-    assert_eq!(
-        requests::read(&scene.tree).expect("requests.tsv").len(),
-        rows_after_first,
-        "a cache hit writes no row"
-    );
+    assert_eq!(wire_rows(&scene.tree), rows_after_first, "a cache hit adds no wire row");
+    assert_eq!(cache_rows(&scene.tree), 1, "a cache hit writes its own marked row");
     scene.leave();
 }
 
@@ -515,11 +523,8 @@ fn sec_09_llm_and_tools_6_cache_s7_translate_files_the_numbered_text_not_the_rep
     .expect("the cached batch still translates");
     assert_eq!(second, want, "the replay says the same thing");
     assert_eq!(fake.count(), 1, "the second ask opened no socket: {}", fake.count());
-    assert_eq!(
-        requests::read(&scene.tree).expect("requests.tsv").len(),
-        rows_after_first,
-        "a cache hit writes no row"
-    );
+    assert_eq!(wire_rows(&scene.tree), rows_after_first, "a cache hit adds no wire row");
+    assert_eq!(cache_rows(&scene.tree), 1, "a cache hit writes its own marked row");
     scene.leave();
 }
 

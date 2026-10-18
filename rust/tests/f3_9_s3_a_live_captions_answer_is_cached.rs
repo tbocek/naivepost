@@ -9,6 +9,7 @@ mod harness;
 
 use harness::*;
 use naivepost::captions_ask;
+use naivepost::requests;
 
 /// The cache folder this step writes into, keyed on the exact request (§09 §4: a changed prompt misses).
 fn cache_dir(fixture: &Fixture) -> std::path::PathBuf {
@@ -55,7 +56,7 @@ fn f3_9_s3_a_live_captions_answer_is_cached_so_the_next_identical_ask_opens_no_s
     assert!(!kept(&fixture, "\"choices\""), "the envelope is not what got cached: {:?}", cache_dir(&fixture));
 
     // Same settings, same prompt, same attempt: the slot answers it, so the fake sees no second
-    // request and `requests.tsv` gains no second line.
+    // request. §09 §10 still wants the hit in the log: one `cache` line, and no second WIRE line.
     let second = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &[], 0, &|| false);
     assert!(
         !second.failed,
@@ -63,10 +64,11 @@ fn f3_9_s3_a_live_captions_answer_is_cached_so_the_next_identical_ask_opens_no_s
         second.reason
     );
     assert_eq!(second.calls, first.calls, "the cache handed back the same answer, word for word");
-    let rows = read(&fixture.tree.requests_tsv());
-    let data_rows = rows.lines().skip(1).filter(|line| !line.trim().is_empty()).count();
-    assert_eq!(
-        data_rows, 1,
-        "the cache hit asked for no wire and so writes no second row: {rows}"
-    );
+    let rows = requests::read(&fixture.tree).expect("requests.tsv reads back");
+    let wire = rows.iter().filter(|row| row.outcome != requests::Outcome::Cache).count();
+    let hits = rows.iter().filter(|row| row.outcome == requests::Outcome::Cache).count();
+    assert_eq!(wire, 1, "the identical ask dialled nobody, so the wire count did not grow: {rows:?}");
+    assert_eq!(hits, 1, "§10: the cache hit is a line of its own, marked as such: {rows:?}");
+    let hit = rows.iter().find(|row| row.outcome == requests::Outcome::Cache).expect("the cache row");
+    assert_eq!(hit.on_wire_s, None, "a hit never was on the wire");
 }

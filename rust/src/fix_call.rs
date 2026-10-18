@@ -258,8 +258,11 @@ fn ask_once(
     let system = fix_system(paths);
     let parts = cache_parts(&system, message, &conf.model);
     if let Some(cached) = crate::llm_cache::read(tree, STEP, &parts) {
-        // A reply served from the cache costs no wire and writes no row: the request that earned it is
-        // already in `requests.tsv` (§09 §10).
+        // §09 §10: the cached answer writes its own `cache` line, with no time on the wire.
+        crate::request_timing::record_cached(
+            tree,
+            crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "fix"),
+        );
         let reply = llm_request::reply_from("application/json", &cached)?;
         return Ok(calls_of(&reply));
     }
