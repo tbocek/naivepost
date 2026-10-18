@@ -40,6 +40,8 @@ fn main() -> ExitCode {
              \x20     to, and the display it can see.\n\
              \x20 naivepost --layout [root]\n\
              \x20     Print where this checkout's pieces live (spec, app code, tests, fixture).\n\
+             \x20 naivepost --rules\n\
+             \x20     Print the rules AGENT.md holds this code to, and where each one lives.\n\
              \n\
              Both need a display; headless runs use `just snapshot <screen>` from rust/, which wraps\n\
              the call in xvfb-run with GSK_RENDERER=cairo.\n\
@@ -101,6 +103,15 @@ fn main() -> ExitCode {
             .map(std::path::Path::new)
             .unwrap_or(std::path::Path::new("."));
         for line in naivepost::layout_manifest::lines(root) {
+            println!("{line}");
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    // The rules AGENT.md holds this code to, printed from the doors that enforce them: answered here,
+    // before any display is asked for, so it works in the headless container the other doors do.
+    if args.iter().any(|a| a == "--rules") {
+        for line in naivepost::code_rules::lines() {
             println!("{line}");
         }
         return ExitCode::SUCCESS;
