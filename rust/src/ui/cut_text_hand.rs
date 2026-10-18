@@ -221,6 +221,15 @@ pub fn text_armed() -> bool {
     TEXT_ARMED.with(|cell| cell.get())
 }
 
+/// Take the caption arm down WITHOUT touching an open form — the mirror of `cut_svg::release_svg_arm_only`.
+/// Public because the band's Esc (`ui::press_band_esc`) owns the key whenever an effect is in hand and so
+/// claims it before this kind's own controller runs: with the arm raised on a window that does not own the
+/// caption form, `press_text_esc` answers `None` (it only releases what its own window drew) and the arm
+/// would stay up after a press that said "cancelled". This clears the arm alone, leaving any form standing.
+pub fn release_text_arm_only() {
+    set_text_armed(false);
+}
+
 fn set_text_armed(armed: bool) {
     TEXT_ARMED.with(|cell| cell.set(armed));
 }

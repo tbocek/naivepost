@@ -1413,6 +1413,12 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     }
     // S2: Esc drops what is in hand, and only that key.
     wire_copy_esc(&window);
+    // F3.8 S3: Esc drops a HELD EFFECT **and disarms** whatever hand-armed drag is up, so it must be wired
+    // FIRST among the Esc controllers: GTK runs a window's `key-pressed` controllers in add order and the first
+    // that stops wins, so a per-kind arm controller wired before this one would claim the key and the hold would
+    // never drop. With nothing held [`press_band_esc`] answers `None` and proceeds to the kind's own controller,
+    // which keeps its job unchanged. The order here is load-bearing, not cosmetic.
+    wire_band_esc(&window);
     // F3.1: the zoom's own drag on the preview panel, plus Esc releasing the arm. Wired after
     // `set_content` like every other control, so the panel being wired is the one inside the realized tree.
     wire_zoom_drag(&window);
@@ -1432,9 +1438,6 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // F3.5: Esc releases the drawing arm / drops an open drawing form. Wired here (after `set_content`) like
     // every other control on this page.
     wire_svg_esc(&window);
-    // F3.8 S3: Esc drops a HELD EFFECT. Wired last among the Esc controllers so the six per-kind form/arm
-    // controllers keep their precedence and this one only claims what they left — a hold with no form open.
-    wire_band_esc(&window);
     // F3.2: the Aspect ratio dropdown, wired by name after `set_content` for the same reason — the widget
     // the lookup finds must be the one in the realized tree.
     wire_aspect_choice(&window);
