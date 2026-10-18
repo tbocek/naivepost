@@ -269,6 +269,7 @@ pub fn dial(
                 liveness: None,
                 waited_ms,
                 delta: None,
+                budget: None,
             },
         )
         .1,
@@ -806,6 +807,7 @@ pub fn upload_bytes(
                 liveness: None,
                 waited_ms: 0,
                 delta: None,
+                budget: None,
             },
         )
         .1,

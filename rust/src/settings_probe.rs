@@ -43,9 +43,14 @@ pub fn live_over(fallback: Provider) -> Provider {
 /// Fetch models: ask the server in the Server box what it serves, and hand the body back for
 /// [`crate::model_list`] to read. The dialog does the widget half (dropdown, badge, log line); this is the
 /// socket half that was missing.
+///
+/// §10 counts every request sent outside, and a listing is one, so the fetch goes through
+/// [`crate::model_list_fetch::models_at`] with the session tree: with a project open the call is filed by
+/// the same recorder every logged leg rides, timings included. No project open, nowhere to file — the same
+/// door takes `None` and simply opens the socket, as §00 rule 8 asks of anything that only loses a log.
 pub fn fetch_models(typed: &str) -> Result<String, String> {
     let endpoint = settings_probe_rows::llm_endpoint(&current_conf(), typed);
-    crate::model_list_fetch::models_at(&endpoint)
+    crate::model_list_fetch::models_at(&endpoint, &crate::web_request_log::session_tree())
 }
 
 /// The provider a real session installs with nothing else wired: the HTTP rows dial out, the rest

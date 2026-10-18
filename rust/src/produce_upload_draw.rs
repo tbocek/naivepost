@@ -99,6 +99,7 @@ fn dialed(
             liveness: None,
             waited_ms: (waited * 1000.0).round() as i64,
             delta: None,
+            budget: None,
         },
     );
     drop(slot);

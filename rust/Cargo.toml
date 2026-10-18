@@ -1938,3 +1938,7 @@ path = "tests/sec_06_effects_2_text_staging.rs"
 [[test]]
 name = "f3_8_esc_drops_the_hold_and_disarms"
 path = "tests/f3_8_esc_drops_the_hold_and_disarms.rs"
+
+[[test]]
+name = "sec_09_llm_and_tools_10_more_doors"
+path = "tests/sec_09_llm_and_tools_10_more_doors.rs"
