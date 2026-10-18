@@ -206,7 +206,7 @@ pub(crate) fn wire_add(
 }
 
 /// S1's chooser: titled for adding, filtered to audio and video, and willing to take a whole card at
-/// once. As in [`ask_save_project`] it is answered by nobody in a headless test, which is the point —
+/// once. As in `ask_save_project` it is answered by nobody in a headless test, which is the point —
 /// what a test asserts is that the press got this far.
 ///
 /// GTK 4.10 replaced the file chooser with `gtk::FileDialog` and deprecated everything below it; the

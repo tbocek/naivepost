@@ -4,7 +4,6 @@
 //! state it was handed, so every value on screen traces back to the model.
 
 use std::cell::RefCell;
-use std::path::Path;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -13,10 +12,10 @@ use gtk4 as gtk;
 // F3.5 ▨ SVG: the page half of the drawing flow lives in `cut_svg`; these are the doors this shell calls.
 // F3.3 ⏩ Speed and stop by hand: the page half of that flow lives in `cut_speed_hand`; these are the
 // doors this shell calls.
-use crate::ui::cut_speed_hand::{press_speed_item, wire_band_esc, wire_speed_esc};
-use crate::ui::cut_volume_hand::{press_volume_item, wire_volume_esc};
-use crate::ui::cut_text_hand::{press_text_item, wire_text_esc};
-use crate::ui::cut_label_hand::{press_label_item, wire_label_esc};
+use crate::ui::cut_speed_hand::{wire_band_esc, wire_speed_esc};
+use crate::ui::cut_volume_hand::wire_volume_esc;
+use crate::ui::cut_text_hand::wire_text_esc;
+use crate::ui::cut_label_hand::wire_label_esc;
 use crate::ui::cut_folds::{
     fold_badges_box, page_recordings, press_fold_all, push_session_recordings, refresh_fold_badges,
 };
@@ -25,9 +24,8 @@ use crate::ui::cut_form_frame;
 use crate::ui::cut_picture;
 use crate::ui::save_apply;
 // F3.5 ▨ SVG: the page half of the drawing flow lives in `cut_svg`; these are the doors this shell calls.
-use crate::ui::cut_svg::{press_svg_item, wire_svg_esc};
+use crate::ui::cut_svg::wire_svg_esc;
 use crate::cut::{self, Cut};
-use crate::fx_record;
 use crate::cut_hear;
 use crate::cut_play_leg;
 use crate::cut_select;
@@ -39,7 +37,6 @@ use crate::lucky;
 use crate::run;
 use crate::runqueue;
 use crate::exchanges;
-use crate::save_as;
 use crate::policy;
 use crate::ui::policy_form;
 use crate::startup;
@@ -59,68 +56,9 @@ pub const APP_ID: &str = "ch.bocek.naivepost";
 // budget); these are the same names, re-exported under the paths every other module reaches them through.
 pub(crate) use crate::ui::window_page_box::page_box;
 
-/// §06-effects#1-record: record one effect of this kind on this window's cut.
-///
-/// One call to `fx_record::record_into` (which lays down a record carrying exactly the columns §1 gives
-/// the kind), then the same save path `save_insert_cut` uses, then `record_edit` so F2.13's Undo covers
-/// the addition — never `seed_review_cut`, which would publish without recording and leave the new bar
-/// un-undoable. Returns the sentence the status line shows.
-pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind) -> String {
-    // F3.1 S1: a Zoom is NOT recorded here. The dropdown's ⊕ Zoom entry ARMS a drag — the box someone draws is
-    // what becomes the zoom, through `press_zoom_item` and then `zoom_drag_ended`. Recording one on the click would
-    // put a whole effect on the cut before anyone has said where, which is why this flow was unreachable from the UI.
-    // Every other kind still records straight through, unchanged.
-    if kind == cut::EffectKind::Zoom {
-        return press_zoom_item(window);
-    }
-    // F3.3 S1: Speed is NOT recorded here either. ⏩ Speed opens a FORM — the band's own seconds, or a stop at
-    // the line, with rate / sound / length / two fades / Curve still to be settled. The generic path below lays
-    // down a fresh record of `NEW_EFFECT_SECONDS` width and no rate answer, which is why none of `cut_speed`'s
-    // S1-S4 flow was reachable from the UI before this branch existed.
-    if kind == cut::EffectKind::Speed {
-        return press_speed_item(window);
-    }
-    // F3.4 S1: Text is NOT recorded here either. ❝ Text ARMS a gesture -- the box someone clicks or drags on
-    // the picture is what becomes the caption, through `press_text_item` and then `text_drag_ended`. The
-    // generic path below would lay down a record before anyone has said where the words go or WHAT they say,
-    // which is why none of §F3.4's S1-S3 was reachable from the UI before this branch existed.
-    if kind == cut::EffectKind::Text {
-        return press_text_item(window);
-    }
-    // F3.5 S1: SVG is NOT recorded here either. The square-with-a-pen entry asks for the FILE first and only
-    // then arms -- the chooser comes before the gesture, because a drawing with no ink cannot be drawn. The
-    // generic path below would lay down a record before anyone has chosen a file or drawn a box, which is why
-    // none of section F3.5's S1-S4 was reachable from the UI before this branch existed.
-    if kind == cut::EffectKind::Svg {
-        return press_svg_item(window);
-    }
-    // F3.6 S1: Volume is NOT recorded here either. 🔊 Volume opens a FORM — the band's own seconds, or two
-    // from the line, with the percent still to be given. The generic path below lays down a record of
-    // `NEW_EFFECT_SECONDS` width at whatever gain the struct defaults to, which is why none of §F3.6's S2-S5
-    // (the 200 % default, the percent field, the 0.1 s floor, "heard even while paused") was reachable from
-    // the UI before this branch existed. A volume has no box and nothing to arm: it works on SECONDS.
-    if kind == cut::EffectKind::Volume {
-        return press_volume_item(window);
-    }
-    // F3.7 S1: Label is NOT recorded here either. 🏷 Label opens a FORM — the band's own seconds, or two from
-    // the line, with the NAME still to be given. The generic path below lays down a `NEW_EFFECT_SECONDS` record
-    // with no name at all, and a label without a name is refused (§F3.7: "nothing is placed until then"), which
-    // is why none of §F3.7's S2-S5 (the empty-name refusal, the 0.4 s floor, the tag that is drawn but never
-    // rendered) was reachable from the UI before this branch existed.
-    if kind == cut::EffectKind::Label {
-        return press_label_item(window);
-    }
-    let mut cut_ = review_cut_of(window);
-    // The red line, read the way Paste reads it: the live preview's playhead if one is going, else the
-    // saved line position. No new position store — the line already has one owner.
-    let at = paste_line(window);
-    fx_record::record_into(&mut cut_, kind, at, fx_record::NEW_EFFECT_SECONDS);
-    save_insert_cut(&cut_);
-    record_edit(window, &cut_);
-    // Draw the new bar in the same turn, so the lane never lags the thing that was just added.
-    refresh_effects_lane(window);
-    fx_record::recorded_status(kind)
-}
+// The effect dropdown's record door lives in `window_effect_item` (window.rs is past its size budget);
+// this is the same name, re-exported under the paths every other module and test already reaches it through.
+pub use crate::ui::window_effect_item::press_effect_item;
 
 // The §05-cut F3.1 zoom-by-hand arm group lives in `cut_zoom_hand` (window.rs is past its size budget);
 // these are the doors the rest of the page and the other ui modules call, kept at the paths they had.
@@ -1386,68 +1324,11 @@ fn wire_review_cuts(button: &gtk::Button, window: &adw::ApplicationWindow) {
         let _ = press_review_cuts(&window, &newest_review_cut());
     });
 }
-/// Where a press of Save goes: [`save_as::press`] decides whether it may happen at all, and the
-/// chooser only names the project. [`save_apply`] says every sentence and moves the open-folder memory.
-///
-/// Save reads the LIVE session (the handle [`wire_new`] and [`wire_open`] swap), not the `&Project`
-/// the window was built from, so what reaches disk is tonight's work.
-fn wire_save(
-    save_: &gtk::Button,
-    bar: &Rc<RefCell<run::RunBar>>,
-    status: &gtk::Label,
-    session: &Rc<RefCell<Project>>,
-) {
-    let bar = bar.clone();
-    let status = status.clone();
-    let session = session.clone();
-    save_.connect_clicked(move |_| {
-        if let Err(reason) = save_as::press(bar.borrow().running.is_some()) {
-            save_apply::refused(reason, &status);
-            return;
-        }
-        // The folder this window took on: a Save's rename or an Open's pick, whichever it was.
-        let open = save_apply::save_target();
-        ask_save_project(&status, &session, &open);
-    });
-}
+// The Save door (where a press goes, and the dialog that names the project) lives in `window_save`
+// (window.rs is past its size budget); this is the same name, re-exported under its old path.
+pub(crate) use crate::ui::window_save::wire_save;
 
-/// S2: the dialog that names the project. `select_folder` rather than `save_folder` because a
-/// project is a folder (01 §1) and a file chooser would insist on a file; the name typed in the
-/// sheet is what S3 renames to, so it starts as the open folder's own name.
-fn ask_save_project(status: &gtk::Label, session: &Rc<RefCell<Project>>, open: &Path) {
-    let dialog = gtk::FileDialog::builder()
-        .title(save_as::TITLE)
-        .accept_label("Save")
-        .build();
-    if let Some(dir) = open.parent() {
-        dialog.set_initial_folder(Some(&gio::File::for_path(dir)));
-    }
-    dialog.set_initial_name(open.file_name().and_then(|name| name.to_str()));
 
-    let status = status.clone();
-    let open = open.to_path_buf();
-    let session = session.clone();
-    dialog.select_folder(
-        None::<&gtk::Window>,
-        None::<&gio::Cancellable>,
-        move |chosen: Result<gio::File, glib::Error>| {
-            let Ok(file) = chosen else {
-                return; // dismissed: nothing was asked for, so nothing changed
-            };
-            let named = file
-                .path()
-                .unwrap_or_default()
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            // The decided save itself belongs to `save_apply` -- the sentences, the log, and moving
-            // the open-folder memory with the folder that moved. A test drives THAT door, because no
-            // headless run can answer the desktop's sheet.
-            save_apply::save_named(&session, &status, &open, &named).ok();
-        },
-    );
-}
 
 // The window's log (the launch lines held until a window exists, the sink every flow writes into, and
 // the readers a test asserts against) live in `window_logs` (window.rs is past its size budget); these
