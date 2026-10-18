@@ -471,7 +471,7 @@ pub use window::CaptionBatch;
 pub use cut_text_hand::{
     drag_text_edge, nudge_text_box, press_aspect, press_text_apply, press_text_cancel,
     press_text_esc, press_text_item, text_armed, text_drag_ended, text_drag_ended_with_source,
-    text_form_open,
+    text_form_open, text_type_words,
 };
 pub use window::note_zoom_place;
 pub use window::zoom_armed;

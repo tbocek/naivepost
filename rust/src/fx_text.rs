@@ -211,6 +211,13 @@ pub const FADES_HELP: &str = "0 cuts them straight on|off";
 /// newline rather than Apply — a one-line entry that ended the form on Enter would leave no way to break a line.
 pub const WORDS_ROWS: usize = 3;
 
+/// The caption the `06-text` snapshot types into the words field (`just snapshot 06-text`, staged in
+/// `crate::snapshot_effects`). Named here rather than spelled in the staging code so the shot's words come from
+/// the module that owns what a caption IS, and so a reader of `shots/06-text.png` can find the sentence's owner.
+/// It repeats the fixture's own lecture subject because `spec/img/06-text.png` shows exactly that: a caption
+/// reading as a title across the lower third of the slide.
+pub const SNAPSHOT_CAPTION: &str = "Ethereum in one lecture";
+
 /// F3.4 S3 (`length ≥ 0.3`): §06 §6's forms' typed floor "text/svg 0.3" — `// effects.textMinSeconds`, which §10
 /// gives no `P.` row. A caption of no length does nothing, cannot be grabbed again on the lane, and looks exactly
 /// like the form having thrown the words away.

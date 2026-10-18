@@ -332,6 +332,22 @@ pub fn press_text_apply(window: &adw::ApplicationWindow) -> String {
     said
 }
 
+/// Type words into the caption form's OWN TextView and let the page repaint from it, which is the path typing
+/// takes: the field is the app's widget, and [`press_text_apply`] reads it back from the same place. A snapshot
+/// needs the caption visible in the shot, and there was no door for putting words into the field from outside a
+/// keyboard until this one.
+pub fn text_type_words(window: &adw::ApplicationWindow, words: &str) -> String {
+    find_widget_by_name(window.upcast_ref(), "text-field-words")
+        .and_then(|w| w.downcast::<gtk::TextView>().ok())
+        .map(|view| {
+            view.buffer().set_text(words);
+            // The page already watches this buffer for typing (`note_typing`), so the repaint that follows is the
+            // one a keystroke gets; nothing is poked around the buffer behind its back.
+            format!("typed {words}")
+        })
+        .unwrap_or_else(|| "no caption form on this page \u{2014} press \u{275d} Text first".to_string())
+}
+
 /// Read the caption's words back out of the TextView, typed newlines intact. `buffer.bounds()` gives the whole
 /// buffer's range and `delete_range(.., true)` keeps the visible characters rather than their display
 /// equivalents, which is what a file has to store.
