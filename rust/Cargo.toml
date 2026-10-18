@@ -1946,3 +1946,7 @@ path = "tests/sec_09_llm_and_tools_10_more_doors.rs"
 [[test]]
 name = "sec_agent_which_tree_is_which"
 path = "tests/sec_agent_which_tree_is_which.rs"
+
+[[test]]
+name = "sec_agent_stack"
+path = "tests/sec_agent_stack.rs"

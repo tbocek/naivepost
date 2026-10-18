@@ -244,6 +244,9 @@ pub mod tool_loop;
 /// Which tree is which: `rust/` the app, `gui/` the Go prototype, `spec/` the spec (AGENT.md).
 pub mod tree_roles;
 
+/// The stack this binary was built on: toolkit, delegated services, display (AGENT.md).
+pub mod stack_facts;
+
 pub mod llm_liveness;
 pub mod llm_watch_leg;
 pub mod llm_repair_leg;
