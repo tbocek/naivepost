@@ -1,7 +1,7 @@
 //! §08-produce#6-details-confirmed-against-the-code-verification-pass — 08 §6, the verification pass.
 //!
 //! §6 is not a flow: it is the list of details that were checked line by line against the Go prototype
-//! (`gui/produce.go`, `gui/publish.go`, `gui/subs.go`) and found to be load-bearing. Most of them already live
+//! (`gui/produce.go`, `gui/publish.go`, `gui/subwords.go`) and found to be load-bearing. Most of them already live
 //! in the module whose flow owns them — [`crate::produce_render`], [`crate::render_fx`],
 //! [`crate::produce_subtitles`], [`crate::produce_embed`], [`crate::produce_stamp`] — and this module does not
 //! restate those: it links to them, or wraps one call so §6's rule has one address.
