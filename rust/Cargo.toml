@@ -745,6 +745,10 @@ name = "f2_10_rows_shot"
 path = "tests/f2_10_rows_shot.rs"
 
 [[test]]
+name = "sec_05_cut_6_pic_grip"
+path = "tests/sec_05_cut_6_pic_grip.rs"
+
+[[test]]
 name = "f2_7_shot_states"
 path = "tests/f2_7_shot_states.rs"
 

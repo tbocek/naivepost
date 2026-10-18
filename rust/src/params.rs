@@ -812,6 +812,9 @@ pub fn cut() -> Vec<Param> {
         // §6 lists these as a family and §10 gives them no `P.` ids of their own (§I's implicit constants),
         // so each is spelled after §D's name for it — as `machine.jpegQuality` does for the JPEG quality.
         param("layout.edgeGrabPx", num(cut_trim::EDGE_GRAB_PX), "cut_trim::EDGE_GRAB_PX"),
+        // §6's third reach: grabbing a selection END on a picture row reaches further than in the band
+        // (`// layout.picGripPx` at `cut_select::PIC_GRIP_PX`), read by `cut_select::grip_px` for every press.
+        param("layout.picGripPx", num(cut_select::PIC_GRIP_PX), "cut_select::PIC_GRIP_PX"),
         param("layout.snapPx", num(cut_select::SNAP_PX), "cut_select::SNAP_PX"),
         param("layout.lineReachPx", num(cut_line::EDGE_REACH_PX), "cut_line::EDGE_REACH_PX"),
         param("layout.rulerPx", num(cut_screen::RULER_PX), "cut_screen::RULER_PX"),
