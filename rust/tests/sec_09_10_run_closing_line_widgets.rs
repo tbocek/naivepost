@@ -74,19 +74,10 @@ fn worked(service: Service, step: &str, kind: &str, on_wire_s: f64) -> Request {
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            closing_line_lands_in_the_window_log(app);
-            chain_close_says_it_too();
-            RAN.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        closing_line_lands_in_the_window_log(app);
+        chain_close_says_it_too();
+        RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

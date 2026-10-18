@@ -217,19 +217,10 @@ fn s8_a_hand_set_field_survives_a_re_derivation(app: &adw::Application) {
 fn round(app: &adw::Application) {
     s7_the_form_hands_a_field_over_to_the_policy(app);
     s8_a_hand_set_field_survives_a_re_derivation(app);
-    app.quit();
 }
 
 fn run_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(round);
-        app.run_with_args::<String>(&[]);
-    });
+    common::one_app_round(round);
 }
 
 #[test]

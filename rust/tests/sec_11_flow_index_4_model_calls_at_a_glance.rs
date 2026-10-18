@@ -390,18 +390,9 @@ fn check_gear_logs_the_setup_row(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_prepare_press_logs_its_bill(app);
-            check_gear_logs_the_setup_row(app);
-            app.quit();
-        });
-        let _ = app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_prepare_press_logs_its_bill(app);
+        check_gear_logs_the_setup_row(app);
     });
 }
 

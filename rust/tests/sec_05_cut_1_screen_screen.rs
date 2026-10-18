@@ -447,24 +447,15 @@ fn write_a_real_frame(path: &std::path::Path) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(naivepost::ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK 1 badge 1 holds a real picture");
-            check_the_preview_holds_a_real_picture(app);
-            println!("CHECK 2 the lanes sit under the picture rows");
-            check_the_lanes_sit_under_the_picture_rows(app);
-            println!("CHECK 3 the scrollbar shows when it must and hides when everything fits");
-            check_the_scrollbar_shows_and_hides(app);
-            println!("CHECK 4 the red line is 2 px on its own layer across both bands");
-            check_the_red_line_is_two_pixels_on_its_own_layer(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        println!("CHECK 1 badge 1 holds a real picture");
+        check_the_preview_holds_a_real_picture(app);
+        println!("CHECK 2 the lanes sit under the picture rows");
+        check_the_lanes_sit_under_the_picture_rows(app);
+        println!("CHECK 3 the scrollbar shows when it must and hides when everything fits");
+        check_the_scrollbar_shows_and_hides(app);
+        println!("CHECK 4 the red line is 2 px on its own layer across both bands");
+        check_the_red_line_is_two_pixels_on_its_own_layer(app);
     });
 }
 

@@ -13,8 +13,7 @@
 //! `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and the working directory are process-wide, so each scenario
 //! gets its own test BINARY (the sibling files) sharing this harness by `#[path]` include.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -24,21 +23,12 @@ use naivepost::cut::{Cut, Seg};
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::seg;
+pub use common::{serve, Seen};
 
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
 use naivepost::settings::{self, Conf, Paths};
 use serde_json::json;
-
-/// What one request looked like from the server's side.
-pub struct Seen {
-    pub method: String,
-    pub path: String,
-    pub body: String,
-    /// The exact bytes this request was answered with, so a test can assert what the leg was handed
-    /// rather than only what it sent.
-    pub reply: String,
-}
 
 /// A fake LLM on a free loopback port, answering each ask with the next scripted reply.
 pub struct FakeLlm {
@@ -106,45 +96,6 @@ impl FakeLlm {
             }
         }
     }
-}
-
-fn serve(mut stream: TcpStream, body: &str) -> Option<Seen> {
-    let mut reader = BufReader::new(stream.try_clone().ok()?);
-    let mut request_line = String::new();
-    reader.read_line(&mut request_line).ok()?;
-    let mut length = 0usize;
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line).ok()? == 0 {
-            break;
-        }
-        let lower = line.to_ascii_lowercase();
-        if let Some(rest) = lower.strip_prefix("content-length:") {
-            length = rest.trim().parse().unwrap_or(0);
-        }
-        if line.trim().is_empty() {
-            break;
-        }
-    }
-    let mut payload = vec![0u8; length];
-    if length > 0 {
-        reader.read_exact(&mut payload).ok()?;
-    }
-    let parts: Vec<&str> = request_line.split_whitespace().collect();
-    let seen = Seen {
-        method: parts.first().copied().unwrap_or_default().to_string(),
-        path: parts.get(1).copied().unwrap_or_default().to_string(),
-        body: String::from_utf8_lossy(&payload).to_string(),
-        reply: String::new(),
-    };
-    let framed = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        body.len(),
-        body
-    );
-    let _ = stream.write_all(framed.as_bytes());
-    let _ = stream.flush();
-    Some(seen)
 }
 
 // --- the two answer shapes a real server sends --------------------------------------------------

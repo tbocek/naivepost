@@ -50,6 +50,7 @@ use naivepost::project::{Codec, Container, Produce, Publish, Source, Subtitles};
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 use common::produce_project as project;
+use common::session_tree_of as session;
 
 const ITEM: &str = "sec_08_produce_3_data";
 
@@ -65,13 +66,6 @@ thread_local! {
 
 fn app_in_round() -> adw::Application {
     CURRENT_APP.with(|held| held.borrow().clone()).expect("run_round published the application")
-}
-
-/// The session folder the press resolves: `startup::session_dir(current_dir())`, with cwd pinned per check.
-fn session(root: &Path) -> Tree {
-    let dir = naivepost::startup::session_dir(root);
-    std::fs::create_dir_all(&dir).expect("session folder created");
-    Tree::new(&dir).expect("the session folder is a project tree")
 }
 
 fn two_segs() -> Vec<Seg> {

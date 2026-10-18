@@ -12,34 +12,16 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx, Lane, Seg};
 use naivepost::cut_hear::{self, LaneStart};
-use naivepost::shell::Page;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, settle};
+use common::{cut_window_with_footage as cut_window, settle};
 
 static RAN_VOLUME: AtomicBool = AtomicBool::new(false);
 static RAN_MIX: AtomicBool = AtomicBool::new(false);
 
 /// A window sitting on the Cut page, built fresh per check so one check's volume cannot leak into
 /// another's assertions; the newest window is the one every accessor reads.
-fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    assert!(
-        model.sources.iter().any(|source| source.footage),
-        "the fixture must carry a footage row or the Cut tab is locked (shell::lock) and this would \
-         test the wrong page"
-    );
-    let window = ui::build_window(app, &model, "Prepare");
-    window.present();
-    ui::tab_button(&window, Page::Cut)
-        .expect("the shell has a Cut tab")
-        .emit_clicked();
-    assert_eq!(ui::state(&window).page, Page::Cut, "the Cut page is showing");
-    settle();
-    window
-}
-
 /// Let GTK finish laying out and mapping what was just shown. gtk4-rs 0.11 exposes no free
 /// `events_pending`, so pump the GLib main context directly until the widgets are mapped.
 
@@ -205,20 +187,11 @@ fn check_the_page_seam_refuses_a_silenced_lane_whatever_the_gain(app: &adw::Appl
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_the_volume_slider_hands_one_number_to_every_preview(app);
-            RAN_VOLUME.store(true, Ordering::SeqCst);
-            check_the_page_seam_refuses_a_silenced_lane_whatever_the_gain(app);
-            RAN_MIX.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_the_volume_slider_hands_one_number_to_every_preview(app);
+        RAN_VOLUME.store(true, Ordering::SeqCst);
+        check_the_page_seam_refuses_a_silenced_lane_whatever_the_gain(app);
+        RAN_MIX.store(true, Ordering::SeqCst);
     });
 }
 

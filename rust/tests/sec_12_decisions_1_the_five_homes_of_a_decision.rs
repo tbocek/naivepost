@@ -401,16 +401,7 @@ fn widget_in_window(widget: &impl IsA<gtk::Widget>, name: &str) -> Option<gtk::W
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_policy_form(app);
-            app.quit();
-        });
-        let _ = app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_policy_form(app);
     });
 }

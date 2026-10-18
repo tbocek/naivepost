@@ -340,24 +340,15 @@ fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            the_form_opens_at_the_cards_own_seconds(app);
-            RAN_LENGTH.store(true, Ordering::SeqCst);
-            the_paths_argument_lands_in_its_field(app);
-            RAN_FIELD.store(true, Ordering::SeqCst);
-            apply_says_what_the_logic_would_say(app);
-            RAN_APPLY.store(true, Ordering::SeqCst);
-            typed_answers_land_on_the_paths_arguments(app);
-            RAN_ANSWER.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        the_form_opens_at_the_cards_own_seconds(app);
+        RAN_LENGTH.store(true, Ordering::SeqCst);
+        the_paths_argument_lands_in_its_field(app);
+        RAN_FIELD.store(true, Ordering::SeqCst);
+        apply_says_what_the_logic_would_say(app);
+        RAN_APPLY.store(true, Ordering::SeqCst);
+        typed_answers_land_on_the_paths_arguments(app);
+        RAN_ANSWER.store(true, Ordering::SeqCst);
     });
 }
 

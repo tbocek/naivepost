@@ -224,22 +224,13 @@ fn f2_7_badges_a_narrow_bar_offers_no_live_cross(app: &adw::Application) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            f2_7_badges_the_green_bar_cross_drops_that_scene(app);
-            RAN_SCENE_CROSS.store(true, Ordering::SeqCst);
-            f2_7_badges_each_other_cross_still_does_its_own_thing(app);
-            RAN_OTHERS.store(true, Ordering::SeqCst);
-            f2_7_badges_a_narrow_bar_offers_no_live_cross(app);
-            RAN_NARROW.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        f2_7_badges_the_green_bar_cross_drops_that_scene(app);
+        RAN_SCENE_CROSS.store(true, Ordering::SeqCst);
+        f2_7_badges_each_other_cross_still_does_its_own_thing(app);
+        RAN_OTHERS.store(true, Ordering::SeqCst);
+        f2_7_badges_a_narrow_bar_offers_no_live_cross(app);
+        RAN_NARROW.store(true, Ordering::SeqCst);
     });
 }
 

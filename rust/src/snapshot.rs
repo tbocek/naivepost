@@ -100,8 +100,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // request for another row, `04-prepare` and `03-window` differ by 552 bytes and nothing else.
         // A screen that DOES want another row has to say so BEFORE the window is built: `bench_box` reads
         // this once and paints from it, and a later call would arrive after the heading was already drawn.
-        // Both of these ask for row 2 (Describe): §1's own picture of the Prepare page is the page *with
-        // the Describe prompt open*, and the picker shot is that same row with its dropdown spread.
+        // Both of these ask for row 2 (Describe): `spec/img/04-prepare.png` IS the Prepare page with the
+        // Describe prompt open (its badge 2 labels the prompt text), and `spec/img/04-prompt-picker.png` is
+        // that same row with its dropdown spread — the popup is its own surface, so the two shots come out
+        // the same picture here (see the `04-prompt-picker` seed arm for why). `03-window` and `03-sources`
+        // stay on the default row, which is the User Context (§1 **5**).
         if matches!(screen.as_str(), "04-prepare" | "04-prompt-picker") {
             ui::set_bench_open_row(2);
         }
@@ -726,6 +729,19 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // out the same picture as `04-prepare`). The page's picker is right as it is — §1's badge 3
             // is a row picker — so what this shot proves is the row chosen, not the popup.
             "04-prompt-picker" => None,
+            // §1's own picture (`spec/img/03-window.png`) is captioned "Prepare page, LOG OPEN", so the
+            // shell shot carries the exchange lines in an open expander — drawn through the same door §7's
+            // recorder writes through, which opens and fills it exactly as a live run does. Without this the
+            // shot was the page at rest with a closed log, which is not what §1 pictures. The reference log
+            // carries `settings:` / `rescanned` lines rather than the §7 exchange lines below; the open
+            // expander itself is the fidelity this shot records.
+            "03-window" => {
+                let step = crate::run::step(crate::shell::Page::Prepare).label();
+                ui::note_exchange_line(&format!(">>> {step}: 451.4 kB of text and 0 image(s) went to the LLM"));
+                ui::note_exchange_line(&format!(">>> {step}: 28.6 kB came back in 2m39s"));
+                ui::note_exchange_line(&crate::exchanges::link_line("llm/prepare-page.html"));
+                None
+            }
             // §7's log lines, then the once-per-run link, in the expander a run would have opened. All
             // three go in through `ui::note_exchange_line`, the door §7's recorder writes through:
             // it pushes to the same sink every flow uses AND opens and fills the expander through

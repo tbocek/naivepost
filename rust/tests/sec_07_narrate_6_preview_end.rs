@@ -14,7 +14,6 @@ use std::process::{Child, Stdio};
 use naivepost::cut::Seg;
 use naivepost::narrate_preview_leg::{self as leg, Spawn};
 use naivepost::narrate_preview_media::{self as media, Cue};
-use naivepost::narration::Entry;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
@@ -90,15 +89,7 @@ fn proc_state_after_stop(pid: u32) -> char {
     proc_state(pid)
 }
 
-fn entry(s: f64, e: f64, text: &str) -> Entry {
-    Entry {
-        s,
-        e,
-        at: 0.5,
-        text: text.into(),
-        ..Default::default()
-    }
-}
+use common::entry_at_mid as entry;
 
 /// A session folder: `Tree::new` needs the `.naivepost` name, and the take's wav lives under it.
 struct Session {

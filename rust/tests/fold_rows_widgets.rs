@@ -396,29 +396,21 @@ fn f2_11_s2_the_lane_cross_takes_pin_shift_pictures_and_sound(app: &adw::Applica
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            f2_11_s1_a_click_on_the_minus_folds_the_hole(app);
-            RAN_FOLD.store(true, Ordering::SeqCst);
-            f2_11_s1_a_second_click_unfolds_it_again(app);
-            RAN_UNFOLD.store(true, Ordering::SeqCst);
-            f2_11_s1_the_gutter_badge_folds_and_unfolds_all(app);
-            RAN_ALL.store(true, Ordering::SeqCst);
-            f2_11_s1_a_fold_is_saved_and_never_undone(app);
-            RAN_SAVED.store(true, Ordering::SeqCst);
-            f2_11_s1_a_tiny_gap_gets_no_widget(app);
-            RAN_NO_ROOM.store(true, Ordering::SeqCst);
-            f2_11_s2_the_row_cross_removes_an_emptied_bottom_row(app);
-            RAN_ROW_CROSS.store(true, Ordering::SeqCst);
-            f2_11_s2_the_lane_cross_takes_pin_shift_pictures_and_sound(app);
-            RAN_LANE_CROSS.store(true, Ordering::SeqCst);
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        f2_11_s1_a_click_on_the_minus_folds_the_hole(app);
+        RAN_FOLD.store(true, Ordering::SeqCst);
+        f2_11_s1_a_second_click_unfolds_it_again(app);
+        RAN_UNFOLD.store(true, Ordering::SeqCst);
+        f2_11_s1_the_gutter_badge_folds_and_unfolds_all(app);
+        RAN_ALL.store(true, Ordering::SeqCst);
+        f2_11_s1_a_fold_is_saved_and_never_undone(app);
+        RAN_SAVED.store(true, Ordering::SeqCst);
+        f2_11_s1_a_tiny_gap_gets_no_widget(app);
+        RAN_NO_ROOM.store(true, Ordering::SeqCst);
+        f2_11_s2_the_row_cross_removes_an_emptied_bottom_row(app);
+        RAN_ROW_CROSS.store(true, Ordering::SeqCst);
+        f2_11_s2_the_lane_cross_takes_pin_shift_pictures_and_sound(app);
+        RAN_LANE_CROSS.store(true, Ordering::SeqCst);
     });
 }
 

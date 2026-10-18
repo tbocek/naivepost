@@ -30,28 +30,19 @@ fn serve_audio_for_the_presses(url: &str) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            // §S5's preflight runs before any stage, so every press below needs an audio.cpp that answers.
-            serve_audio_for_the_presses(&fake_audio_server());
-            check_press_forwards(app);
-            RAN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_the_run_button_toggles_a_started_preview(app);
-            RAN_TRANSPORT.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_the_snapshot_names_the_live_sources(app);
-            RAN_SNAPSHOT.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_a_failed_stage_names_itself(app);
-            RAN_FAILURE.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_the_pause_toggle_says_both_readings(app);
-            RAN_BOTH_READINGS.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        // §S5's preflight runs before any stage, so every press below needs an audio.cpp that answers.
+        serve_audio_for_the_presses(&fake_audio_server());
+        check_press_forwards(app);
+        RAN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_run_button_toggles_a_started_preview(app);
+        RAN_TRANSPORT.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_snapshot_names_the_live_sources(app);
+        RAN_SNAPSHOT.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_a_failed_stage_names_itself(app);
+        RAN_FAILURE.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_pause_toggle_says_both_readings(app);
+        RAN_BOTH_READINGS.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

@@ -12,6 +12,8 @@ use std::io::{Read, Write};
 use std::rc::Rc;
 
 use adw::prelude::*;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
 use naivepost::project::{Project, Source};
 use naivepost::run::{self, RunBar};
 use naivepost::runqueue::{self, Queue, TRACK_FRAMES};
@@ -117,28 +119,18 @@ fn point_presses_at_the_answering_server() {
 /// application the round runs under is handed to each scenario by `connect_activate`; nothing here needs
 /// a global copy of it.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        GTK_UP.store(true, std::sync::atomic::Ordering::SeqCst);
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            // §S5 asks audio.cpp before any stage runs, so the round's presses need a server that
-            // answers. It is stood up here; each scenario points at it AFTER its own pinning, so no
-            // scenario loses the conf it asserts against.
-            pressable_audio_server();
-            point_presses_at_the_answering_server();
-            single_step_closes(app);
-            line_overwrites(app);
-            unload_handed_over(app);
-            lucky_moves_on();
-            the_pulse_belongs_to_the_run();
-            RAN.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        // §S5 asks audio.cpp before any stage runs, so the round's presses need a server that
+        // answers. It is stood up here; each scenario points at it AFTER its own pinning, so no
+        // scenario loses the conf it asserts against.
+        pressable_audio_server();
+        point_presses_at_the_answering_server();
+        single_step_closes(app);
+        line_overwrites(app);
+        unload_handed_over(app);
+        lucky_moves_on();
+        the_pulse_belongs_to_the_run();
+        RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

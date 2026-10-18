@@ -40,7 +40,7 @@ use naivepost::shell::Page;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
+use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
 
 /// One slot per check, holding that block's failure text if it failed. Written from inside the activate
 /// callback and read after `run_with_args` returns, so a failing assert never unwinds into GTK.
@@ -87,14 +87,6 @@ fn in_root(name: String, check: fn(&Path)) -> impl FnOnce() -> Result<(), String
         check(&root);
         Ok(())
     }
-}
-
-/// This test's own session folder: `<root>/session.naivepost`, the name `startup::SESSION_NAME` gives
-/// the working copy beside a root, which is what the page resolves from cwd.
-fn session(root: &Path) -> Tree {
-    let dir = naivepost::startup::session_dir(root);
-    std::fs::create_dir_all(&dir).expect("session folder created");
-    Tree::new(&dir).expect("the session folder is a project tree")
 }
 
 /// Two segments, so the cut is non-empty and the gate is reached rather than refused for want of a cut.

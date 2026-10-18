@@ -314,32 +314,23 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_a_right_drag_moves_and_never_touches_the_line(app);
-            RAN_MOVE.store(true, Ordering::SeqCst);
-            check_an_unmoved_press_is_a_click(app);
-            RAN_CLICK.store(true, Ordering::SeqCst);
-            check_a_right_drag_on_a_wave_strip_slides_that_recording(app);
-            RAN_WAVE.store(true, Ordering::SeqCst);
-            check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app);
-            RAN_SEL_SLIDE.store(true, Ordering::SeqCst);
-            check_the_right_button_on_a_border_trims_it(app);
-            RAN_RIGHT_TRIM.store(true, Ordering::SeqCst);
-            check_an_unmoved_right_press_changes_nothing_through_the_widget(app);
-            RAN_UNMOVED.store(true, Ordering::SeqCst);
-            check_a_border_drag_lands_where_the_rule_says(app);
-            RAN_TRIM.store(true, Ordering::SeqCst);
-            check_a_border_drag_on_the_real_strip_trims_the_clip(app);
-            RAN_REAL_TRIM.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_a_right_drag_moves_and_never_touches_the_line(app);
+        RAN_MOVE.store(true, Ordering::SeqCst);
+        check_an_unmoved_press_is_a_click(app);
+        RAN_CLICK.store(true, Ordering::SeqCst);
+        check_a_right_drag_on_a_wave_strip_slides_that_recording(app);
+        RAN_WAVE.store(true, Ordering::SeqCst);
+        check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app);
+        RAN_SEL_SLIDE.store(true, Ordering::SeqCst);
+        check_the_right_button_on_a_border_trims_it(app);
+        RAN_RIGHT_TRIM.store(true, Ordering::SeqCst);
+        check_an_unmoved_right_press_changes_nothing_through_the_widget(app);
+        RAN_UNMOVED.store(true, Ordering::SeqCst);
+        check_a_border_drag_lands_where_the_rule_says(app);
+        RAN_TRIM.store(true, Ordering::SeqCst);
+        check_a_border_drag_on_the_real_strip_trims_the_clip(app);
+        RAN_REAL_TRIM.store(true, Ordering::SeqCst);
     });
 }
 

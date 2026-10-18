@@ -167,20 +167,11 @@ static RAN_S10: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::n
 static RAN_S11: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_the_gear_dials_the_policy_prompt(app);
-            RAN_S10.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_an_edited_policy_prompt_wins_on_the_wire(app);
-            RAN_S11.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_the_gear_dials_the_policy_prompt(app);
+        RAN_S10.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_an_edited_policy_prompt_wins_on_the_wire(app);
+        RAN_S11.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

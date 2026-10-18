@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
+#[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
+mod common;
 use naivepost::cut::{self, Seg};
 use naivepost::layout::Tree;
 use naivepost::narration::{self, Entry};
@@ -81,18 +83,9 @@ fn narration_with(s: f64, e: f64) -> narration::Narration {
 /// `tests/rescan_widgets.rs` uses. The check records that it ran, so one that never happened is a
 /// failure rather than a quiet pass.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_switch(app);
-            RAN.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_switch(app);
+        RAN.store(true, Ordering::SeqCst);
     });
 }
 

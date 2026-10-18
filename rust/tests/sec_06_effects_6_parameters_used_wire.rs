@@ -256,18 +256,9 @@ fn lane_bars(window: &adw::ApplicationWindow) -> Vec<String> {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            cap_round(app);
-            density_round(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        cap_round(app);
+        density_round(app);
     });
 }
 

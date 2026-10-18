@@ -26,9 +26,8 @@ static RAN_TEXT_STAGE: AtomicBool = AtomicBool::new(false);
 /// `spec/img/06-text.png` shows it.)
 const LINE_SECOND: f64 = 81.0;
 
-fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
-    common::cut_page_empty(app)
-}
+// The shared builder, under the name these checks already call: an empty Cut opened on the Cut page.
+use common::cut_page_empty as cut_page;
 
 /// First widget in this window's tree carrying this name (`ui::find_widget_by_name` is crate-private).
 fn find_widget(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {

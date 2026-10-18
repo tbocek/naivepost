@@ -72,24 +72,15 @@ fn fixture_project_loads() {
 /// and `window_round`'s `Once` makes every other test wait for it, which is what keeps GTK's own
 /// single-main-loop rule out of the tests' way.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(naivepost::ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            // Each check records itself only if it got that far, so the first one to fail does not
-            // leave the other two reported as never having run.
-            check_four_pages(app);
-            RAN_FOUR_PAGES.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_locked_tab(app);
-            RAN_LOCKED.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_unlocked_tab(app);
-            RAN_UNLOCKED.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        // Each check records itself only if it got that far, so the first one to fail does not
+        // leave the other two reported as never having run.
+        check_four_pages(app);
+        RAN_FOUR_PAGES.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_locked_tab(app);
+        RAN_LOCKED.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_unlocked_tab(app);
+        RAN_UNLOCKED.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

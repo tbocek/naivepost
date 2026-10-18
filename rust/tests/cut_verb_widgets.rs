@@ -217,22 +217,13 @@ fn check_delete_takes_the_effect_first(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_the_verb_buttons_reach_the_rule(app);
-            RAN_BUTTONS.store(true, Ordering::SeqCst);
-            check_a_sound_band_greys_the_three(app);
-            RAN_SOUND_GREY.store(true, Ordering::SeqCst);
-            check_delete_takes_the_effect_first(app);
-            RAN_DELETE_ORDER.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_the_verb_buttons_reach_the_rule(app);
+        RAN_BUTTONS.store(true, Ordering::SeqCst);
+        check_a_sound_band_greys_the_three(app);
+        RAN_SOUND_GREY.store(true, Ordering::SeqCst);
+        check_delete_takes_the_effect_first(app);
+        RAN_DELETE_ORDER.store(true, Ordering::SeqCst);
     });
 }
 

@@ -67,27 +67,18 @@ fn with_sources(paths: &[&str]) -> Project {
 /// refuses a second claimant of the default main context). Every check runs inside one `activate`,
 /// in order, because ▶'s meaning depends on what the press before it did.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            // §S5 asks audio.cpp before any stage runs, so every press below needs a server that answers
-            // -- healthy, ASR + diarization served. Without it the press is refused and S1-S4 never run.
-            serve_audio_for_the_presses(&fake_audio_server());
-            check_no_sources_refuses(app);
-            RAN_NO_SOURCES.store(true, Ordering::SeqCst);
-            check_name_clash_refuses(app);
-            RAN_CLASH.store(true, Ordering::SeqCst);
-            check_busy_prepare_pauses_first(app);
-            RAN_BUSY.store(true, Ordering::SeqCst);
-            check_start_clears_and_logs(app);
-            RAN_START.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        // §S5 asks audio.cpp before any stage runs, so every press below needs a server that answers
+        // -- healthy, ASR + diarization served. Without it the press is refused and S1-S4 never run.
+        serve_audio_for_the_presses(&fake_audio_server());
+        check_no_sources_refuses(app);
+        RAN_NO_SOURCES.store(true, Ordering::SeqCst);
+        check_name_clash_refuses(app);
+        RAN_CLASH.store(true, Ordering::SeqCst);
+        check_busy_prepare_pauses_first(app);
+        RAN_BUSY.store(true, Ordering::SeqCst);
+        check_start_clears_and_logs(app);
+        RAN_START.store(true, Ordering::SeqCst);
     });
 }
 

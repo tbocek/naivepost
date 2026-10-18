@@ -177,22 +177,13 @@ fn f1_1_s7_a_failed_run_names_the_reason_and_points_at_the_log() {
 /// One application for this binary: `g_application_run` refuses a second claimant of the default main
 /// context, so every window case below runs inside ONE `activate`, in order.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_finished_run_on_screen(app);
-            RAN_DONE.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_stopped_run_on_screen(app);
-            RAN_STOPPED.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_the_close_hands_the_unload_over(app);
-            RAN_UNLOAD.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_finished_run_on_screen(app);
+        RAN_DONE.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_stopped_run_on_screen(app);
+        RAN_STOPPED.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_close_hands_the_unload_over(app);
+        RAN_UNLOAD.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

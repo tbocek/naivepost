@@ -14,20 +14,11 @@ use common::{fixture_dir};
 /// same single-main-loop arrangement tests/smoke.rs needs for the same reason. Each check records
 /// that it ran, so one that never happened is a failure rather than a quiet pass.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_save_offers_the_project(app);
-            RAN_OFFER.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_refused_during_a_run(app);
-            RAN_REFUSED.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_save_offers_the_project(app);
+        RAN_OFFER.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_refused_during_a_run(app);
+        RAN_REFUSED.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

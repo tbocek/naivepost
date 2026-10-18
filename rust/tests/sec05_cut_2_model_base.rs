@@ -163,19 +163,10 @@ fn check_revert_after_a_suggestion_keeps_the_suggestion(app: &adw::Application) 
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
+    common::one_app_round(|app| {
         check_the_suggestion_is_the_base();
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK the page's Revert after a landed suggestion");
-            check_revert_after_a_suggestion_keeps_the_suggestion(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+        println!("CHECK the page's Revert after a landed suggestion");
+        check_revert_after_a_suggestion_keeps_the_suggestion(app);
     });
 }
 

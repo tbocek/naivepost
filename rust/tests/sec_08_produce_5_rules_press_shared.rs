@@ -33,14 +33,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every target compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
-
-/// The session folder the press resolves through `startup::session_dir(current_dir())`.
-fn session(root: &Path) -> Tree {
-    let dir = naivepost::startup::session_dir(root);
-    std::fs::create_dir_all(&dir).expect("session folder created");
-    Tree::new(&dir).expect("the session folder is a project tree")
-}
+use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
 
 fn two_segs() -> Vec<naivepost::cut::Seg> {
     vec![

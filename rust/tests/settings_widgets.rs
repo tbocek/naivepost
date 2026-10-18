@@ -29,24 +29,15 @@ use common::{fixture_dir, settle};
 /// failure rather than a quiet pass. GTK's main loop may only be started by the thread that will
 /// run it, which is why the checks share one application.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_press_reads_the_typed_value(app);
-            RAN_TYPED.store(true, Ordering::SeqCst);
-            check_failure_keeps_its_reason(app);
-            RAN_FAILED.store(true, Ordering::SeqCst);
-            check_test_all_reports_every_kind(app);
-            RAN_ALL.store(true, Ordering::SeqCst);
-            check_fetch_and_use(app);
-            RAN_FETCH.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_press_reads_the_typed_value(app);
+        RAN_TYPED.store(true, Ordering::SeqCst);
+        check_failure_keeps_its_reason(app);
+        RAN_FAILED.store(true, Ordering::SeqCst);
+        check_test_all_reports_every_kind(app);
+        RAN_ALL.store(true, Ordering::SeqCst);
+        check_fetch_and_use(app);
+        RAN_FETCH.store(true, Ordering::SeqCst);
     });
 }
 

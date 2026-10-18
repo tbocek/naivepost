@@ -362,31 +362,22 @@ fn check_a_row_watch_moves_the_preview_frame(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_a_row_click_watches_it_and_says_what_the_cut_shows(app);
-            RAN_ROWS.store(true, Ordering::SeqCst);
-            check_the_lens_badge_moves_the_picture_to_that_row(app);
-            RAN_WATCH.store(true, Ordering::SeqCst);
-            check_the_speaker_badge_silences_this_scene(app);
-            RAN_LENS.store(true, Ordering::SeqCst);
-            check_a_held_scene_is_the_one_the_badge_silences(app);
-            RAN_HELD.store(true, Ordering::SeqCst);
-            check_the_gutter_switch_speaks_for_the_whole_cut(app);
-            RAN_SPEAKER.store(true, Ordering::SeqCst);
-            check_play_takes_the_preview_back(app);
-            RAN_GUTTER.store(true, Ordering::SeqCst);
-            check_a_row_watch_moves_the_preview_frame(app);
-            RAN_PREVIEW.store(true, Ordering::SeqCst);
-            RAN_HANDED_BACK.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_a_row_click_watches_it_and_says_what_the_cut_shows(app);
+        RAN_ROWS.store(true, Ordering::SeqCst);
+        check_the_lens_badge_moves_the_picture_to_that_row(app);
+        RAN_WATCH.store(true, Ordering::SeqCst);
+        check_the_speaker_badge_silences_this_scene(app);
+        RAN_LENS.store(true, Ordering::SeqCst);
+        check_a_held_scene_is_the_one_the_badge_silences(app);
+        RAN_HELD.store(true, Ordering::SeqCst);
+        check_the_gutter_switch_speaks_for_the_whole_cut(app);
+        RAN_SPEAKER.store(true, Ordering::SeqCst);
+        check_play_takes_the_preview_back(app);
+        RAN_GUTTER.store(true, Ordering::SeqCst);
+        check_a_row_watch_moves_the_preview_frame(app);
+        RAN_PREVIEW.store(true, Ordering::SeqCst);
+        RAN_HANDED_BACK.store(true, Ordering::SeqCst);
     });
 }
 

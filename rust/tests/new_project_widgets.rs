@@ -14,21 +14,12 @@ use common::{fixture_dir};
 /// One running GTK application for this test binary, taken in turn by the checks below — the same
 /// single-main-loop arrangement tests/smoke.rs needs for the same reason.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_button_and_dialog(app);
-            empty_session_goes_straight_to_naming(app);
-            applied_new_project_moves_the_window(app);
-            already_there_is_not_applied(app);
-            RAN.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_button_and_dialog(app);
+        empty_session_goes_straight_to_naming(app);
+        applied_new_project_moves_the_window(app);
+        already_there_is_not_applied(app);
+        RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

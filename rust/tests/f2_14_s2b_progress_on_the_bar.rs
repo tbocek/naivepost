@@ -215,21 +215,12 @@ fn round(app: &adw::Application) {
     s2b_the_press_paints_progress_on_the_bar(app);
     s2b_the_bar_pulses_while_nothing_has_closed(app);
     s2b_a_fresh_window_does_not_move_a_pointed_session(app);
-    app.quit();
 }
 
 /// The two checks read one click each, and `#[test]` functions run in parallel threads inside one process,
 /// so the whole round runs ONCE and each test asserts the half it owns.
 fn run_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(round);
-        app.run_with_args::<String>(&[]);
-    });
+    common::one_app_round(round);
 }
 
 #[test]

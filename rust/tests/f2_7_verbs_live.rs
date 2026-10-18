@@ -323,26 +323,17 @@ fn f2_7_s4_the_delete_order_runs_from_the_page(_app: &adw::Application) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            f2_7_s1_a_verb_press_writes_cut_json(app);
-            RAN_PERSIST.store(true, Ordering::SeqCst);
-            f2_7_s1_the_live_snap_list_carries_borders_the_line_and_wave_edges(app);
-            RAN_SNAP_LIST.store(true, Ordering::SeqCst);
-            f2_7_s1_a_multi_row_add_names_the_camera_and_admits_the_steal(app);
-            RAN_MULTI_ROW.store(true, Ordering::SeqCst);
-            f2_7_s2_a_split_at_the_line_hands_over_the_right_half(app);
-            RAN_SPLIT_HAND.store(true, Ordering::SeqCst);
-            f2_7_s4_the_delete_order_runs_from_the_page(app);
-            RAN_DELETE_ORDER.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        f2_7_s1_a_verb_press_writes_cut_json(app);
+        RAN_PERSIST.store(true, Ordering::SeqCst);
+        f2_7_s1_the_live_snap_list_carries_borders_the_line_and_wave_edges(app);
+        RAN_SNAP_LIST.store(true, Ordering::SeqCst);
+        f2_7_s1_a_multi_row_add_names_the_camera_and_admits_the_steal(app);
+        RAN_MULTI_ROW.store(true, Ordering::SeqCst);
+        f2_7_s2_a_split_at_the_line_hands_over_the_right_half(app);
+        RAN_SPLIT_HAND.store(true, Ordering::SeqCst);
+        f2_7_s4_the_delete_order_runs_from_the_page(app);
+        RAN_DELETE_ORDER.store(true, Ordering::SeqCst);
     });
 }
 
