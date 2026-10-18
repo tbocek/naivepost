@@ -973,14 +973,22 @@ fn sec_09_llm_and_tools_6_cache_s7_describe_files_its_answer_and_replays_it_with
     );
     assert!(tree.cache_llm(describe::STEP, slot).exists(), "under cache/llm/describe/");
 
-    // The replay cost nothing on the wire AND nothing in the timed log (§6 + §10).
+    // The replay cost nothing on the wire; §10 still files the hit as its own `cache` line.
     let rows = naivepost::requests::read(&tree).expect("requests.tsv");
     assert!(!rows.is_empty(), "the request that earned the answer is recorded");
     assert_eq!(fake.asks.lock().expect("the record lock").bodies.len(), 1, "the second pass made no ask");
+    let wire = rows
+        .iter()
+        .filter(|row| row.outcome != naivepost::requests::Outcome::Cache)
+        .count();
     assert_eq!(
-        naivepost::requests::read(&tree).expect("requests.tsv").len(),
-        rows.len(),
-        "a cache hit writes no row"
+        naivepost::requests::read(&tree)
+            .expect("requests.tsv")
+            .iter()
+            .filter(|row| row.outcome != naivepost::requests::Outcome::Cache)
+            .count(),
+        wire,
+        "the cached pass added no wire row"
     );
     assert_eq!(
         scene.events().lines().filter(|line| !line.is_empty()).count(),

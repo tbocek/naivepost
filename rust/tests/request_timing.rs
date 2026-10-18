@@ -224,6 +224,29 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s4_a_cache_hit_has_no_time_on
 }
 
 #[test]
+fn sec_09_llm_and_tools_10_every_request_timed_new_s4b_a_cache_hit_records_its_own_row_on_disk() {
+    // The same rule one level up: `record_cached` is what every ask calls when `llm_cache::read`
+    // answers, so the hit leaves a line in `requests.tsv` and not merely in memory.
+    let (_root, tree) = project("cached-door");
+    let mut base = base(Service::Llm, "captions", "chat");
+    // An ask hands over the row its own builder made, which leaves `started` empty: the door stamps it.
+    base.started = String::new();
+    rt::record_cached(&tree, base);
+
+    let rows = requests::read(&tree).expect("requests.tsv reads back");
+    assert_eq!(rows.len(), 1, "the hit wrote exactly one row");
+    let row = &rows[0];
+    assert_eq!(row.outcome, Outcome::Cache);
+    assert!(!row.started.is_empty(), "the door stamped the moment the answer was read");
+    assert_eq!(row.attempt, 1, "a hit is not a retry");
+    // Round-tripped as empty fields, so a reader cannot mistake the hit for a fast request.
+    assert_eq!(row.on_wire_s, None);
+    assert_eq!(row.first_byte_s, None);
+    assert_eq!(row.wait_s, None);
+    assert_eq!(row.thinking_s, None);
+}
+
+#[test]
 fn sec_09_llm_and_tools_10_every_request_timed_new_s5_rows_are_appended_and_never_rewritten() {
     // §10: "Nothing in the file is ever rewritten; a line is written before the reply is used, so a
     // step that then fails still leaves its requests behind."

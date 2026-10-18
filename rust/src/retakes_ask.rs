@@ -264,6 +264,11 @@ pub fn ask_run(
     let slot = run_key(&system, brief, &conf.model, draw).expect("a brief and a model always key");
     let parts = cache_parts(&system, brief, &conf.model, draw);
     if let Some(cached) = crate::llm_cache::read(tree, STEP, &parts) {
+        // §09 §10: the cached draw writes its own `cache` line, with no time on the wire.
+        crate::request_timing::record_cached(
+            tree,
+            crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "retakes"),
+        );
         let named = apply_answer(&cached, marks);
         return RunOutcome::Cached { marks: named };
     }

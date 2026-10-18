@@ -448,6 +448,20 @@ pub fn block_key(lines: &[Line]) -> String {
 /// a block that failed rather than replaying its failure.
 pub fn cached_block(tree: &Tree, lines: &[Line]) -> Option<Vec<Reply>> {
     let text = crate::llm_cache::read_at(tree, FIX_STEP, &block_key(lines))?;
+    // §09 §10: the block's stored reply writes its own `cache` line, with no time on the wire, so the
+    // file shows what the re-run saved. The model column stays empty for the same reason `block_key`
+    // leaves it empty: at this height nothing knows which model spelled the answer.
+    crate::request_timing::record_cached(
+        tree,
+        crate::server_leg::base_row(
+            crate::services::Server::Llm,
+            "",
+            "POST",
+            "",
+            FIX_STEP,
+            FIX_STEP,
+        ),
+    );
     let mut out = Vec::new();
     // The rows kept are the ones whose text differs from what the ASR heard — exactly the set of
     // `fix_line` calls to replay.

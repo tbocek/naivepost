@@ -31,7 +31,10 @@ fn fx(clip: u32, kind: &str, start: f64, end: f64) -> serde_json::Value {
 fn asked(fixture: &Fixture) -> usize {
     read(&fixture.tree.requests_tsv())
         .lines()
-        .filter(|line| line.split('\t').any(|field| field == "effects"))
+        .filter(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            fields.contains(&"effects") && !fields.contains(&"cache")
+        })
         .count()
 }
 

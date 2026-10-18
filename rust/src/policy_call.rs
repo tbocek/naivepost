@@ -124,9 +124,8 @@ pub fn answer_at(
     let parts = cache_parts(&system, &user, &model, refusals.len());
     if let Some(tree) = tree {
         if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
-            // A reply served from the cache costs no wire and writes no row: the request that earned
-            // it is already in `requests.tsv`, and a second row would double-count a call that did not
-            // happen (§09 §10).
+            // §09 §10: the cached answer writes its own `cache` line, with no time on the wire.
+            crate::request_timing::record_cached(tree, log_row(&model));
             return Round { proposals: proposals_of(&cached), failed: false, reason: String::new() };
         }
     }

@@ -12,6 +12,7 @@ use harness::*;
 mod common;
 use common::three_clips;
 use naivepost::cut_speed_pass::Call;
+use naivepost::requests;
 use naivepost::speeds_ask;
 use serde_json::json;
 
@@ -90,35 +91,33 @@ fn f3_10_s4_live_speeds_answer_is_cached_so_the_next_identical_ask_opens_no_sock
     assert!(kept.contains("\"speeds\""), "the slot holds the SPEEDS document: {kept}");
     assert!(!kept.contains("\"choices\""), "the framing is not what got cached: {kept}");
 
-    // Same settings, same prompt, same round: the slot answers it. No socket, and no second timed row for a
-    // call that did not happen (§09 §10 counts one row per request that went out).
+    // Same settings, same prompt, same round: the slot answers it. No socket, so the WIRE row count is
+    // unchanged; §09 §10 does want a line for the hit, marked `cache` with no time on the wire.
     let second = speeds_ask::ask(&fixture.tree, CTX, &three_clips(), &captioned(), ATTEMPT, &|| false);
     assert_eq!(second.calls, first.calls, "the cached answer is the same rate");
-    // Nothing new went out: §09 §10 writes one timed row per REQUEST, so the row count is the wire count, and
-    // reading it never waits on a request that must not arrive.
-    let rows_after_two = read(&fixture.tree.requests_tsv());
-    assert_eq!(
-        rows_after_two.lines().filter(|line| line.split('\t').any(|field| field == "speed")).count(),
-        1,
-        "the identical ask wrote no second row, so it dialled nobody: {rows_after_two}"
-    );
-    let rows = read(&fixture.tree.requests_tsv());
-    assert_eq!(
-        rows.lines().filter(|line| line.split('\t').any(|field| field == "speed")).count(),
-        1,
-        "one timed row for one request: {rows}"
-    );
+    // Nothing new went out: the wire rows still count one, and reading them never waits on a request
+    // that must not arrive.
+    let rows = requests::read(&fixture.tree).expect("requests.tsv reads back");
+    let wire = |rows: &[requests::Request]| {
+        rows.iter()
+            .filter(|row| row.job == "speed" && row.outcome != requests::Outcome::Cache)
+            .count()
+    };
+    let hits = |rows: &[requests::Request]| {
+        rows.iter()
+            .filter(|row| row.job == "speed" && row.outcome == requests::Outcome::Cache)
+            .count()
+    };
+    assert_eq!(wire(&rows), 1, "the identical ask dialled nobody: {rows:?}");
+    assert_eq!(hits(&rows), 1, "§10: the cache hit wrote its own line: {rows:?}");
 
     // A DIFFERENT round of the same cut is a different question and keys elsewhere, so it dials again: §F3.10's
     // second round must not be served the reply that was just refused.
     let retry = speeds_ask::ask(&fixture.tree, CTX, &three_clips(), &captioned(), 2, &|| false);
     assert_eq!(retry.calls, first.calls, "the retry is answered afresh (the fake repeats; the socket proves it)");
-    let rows_after_retry = read(&fixture.tree.requests_tsv());
-    assert_eq!(
-        rows_after_retry.lines().filter(|line| line.split('\t').any(|field| field == "speed")).count(),
-        2,
-        "the retry really dialled: one row per request that went out\n{rows_after_retry}"
-    );
+    let rows_after_retry = requests::read(&fixture.tree).expect("requests.tsv reads back");
+    assert_eq!(wire(&rows_after_retry), 2, "the retry really dialled: one wire row per request\n{rows_after_retry:?}");
+    assert_eq!(hits(&rows_after_retry), 1, "and the retry wrote no cache line of its own\n{rows_after_retry:?}");
     assert_ne!(slot(&fixture), speeds_ask::cache_file_for_test(&fixture.tree, CTX, &three_clips(), &captioned(), MODEL, 2),
         "and the two rounds really do keep separate slots");
 }

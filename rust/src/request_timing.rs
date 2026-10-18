@@ -320,3 +320,23 @@ pub fn wait_share(tally: &ServiceTally) -> Option<f64> {
 pub fn wants_more_slots(share: f64, threshold: f64) -> bool {
     share > threshold
 }
+
+/// File the line a cache hit owes §10: "A reply served from the cache is a line too, marked as such
+/// with no time on the wire, so the file shows what a re-run saved."
+///
+/// The door every LLM ask calls the moment `llm_cache::read` answers, so a re-run's savings are
+/// visible in the file rather than only in the absence of a second wire row. `base` may be the same
+/// row builder the wire path uses with its `started` left empty — this stamps the timestamp, because
+/// the stamp a hit carries is the moment the answer was read, not the moment a request went out.
+///
+/// Recording never fails the step (§00-principles rule 8), hence no `Result`: a cache that answers is
+/// a whole answer whether or not its line could be written.
+pub fn record_cached(tree: &crate::layout::Tree, mut base: crate::requests::Request) {
+    if base.started.is_empty() {
+        base.started = crate::requests::format_started(
+            crate::server_leg::epoch_ms(),
+            crate::server_leg::local_offset_secs(),
+        );
+    }
+    let _ = crate::requests::record(tree, &cached_row(&base, 1));
+}

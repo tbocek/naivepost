@@ -242,9 +242,9 @@ pub fn ask_at(
     let system = system(current_paths().as_ref());
     let parts = cache_parts(&system, message, &model, numbers);
     if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
-        // A cached answer costs no wire and writes no row: the request that earned it is already in
-        // `requests.tsv` (§09 §10). Only a COMPLETE answer is ever stored, so a cache hit here is a
-        // whole answer by construction.
+        // §09 §10: the cached answer writes its own `cache` line, with no time on the wire. Only a
+        // COMPLETE answer is ever stored, so a cache hit here is a whole answer by construction.
+        crate::request_timing::record_cached(tree, base_row(&model));
         return Ok(parse_answer("application/json", &cached, numbers));
     }
     // No model configured is §02-services' own refusal, named, not a silent empty track.
