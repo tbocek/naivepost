@@ -35,6 +35,9 @@ fn main() -> ExitCode {
              \x20 naivepost --trees\n\
              \x20     Print which tree is which (app, prototype, spec) and where new work goes.\n\
              \x20     With paths, says which tree each one belongs to.\n\
+             \x20 naivepost --stack\n\
+             \x20     Print the stack this binary was built on: toolkit, the services it delegates\n\
+             \x20     to, and the display it can see.\n\
              \n\
              Both need a display; headless runs use `just snapshot <screen>` from rust/, which wraps\n\
              the call in xvfb-run with GSK_RENDERER=cairo.\n\
@@ -76,8 +79,17 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    if args.iter().any(|a| a == "--snapshot") {
-        return match parse_snapshot(&args)
+    // The stack this binary was built on (AGENT.md), from live facts: the services it delegates to,
+    // the toolkit it is linked against, and whether this process can see a display at all. Answered
+    // before any display is asked for, so it works in the headless container it describes.
+    if args.iter().any(|a| a == "--stack") {
+        for line in naivepost::stack_facts::lines() {
+            println!("{line}");
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    if args.iter().any(|a| a == "--snapshot") {        return match parse_snapshot(&args)
             .and_then(|(screen, dir, out)| naivepost::snapshot::run(&screen, &dir, &out))
         {
             Ok(()) => ExitCode::SUCCESS,
