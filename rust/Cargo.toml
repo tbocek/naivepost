@@ -1942,3 +1942,7 @@ path = "tests/f3_8_esc_drops_the_hold_and_disarms.rs"
 [[test]]
 name = "sec_09_llm_and_tools_10_more_doors"
 path = "tests/sec_09_llm_and_tools_10_more_doors.rs"
+
+[[test]]
+name = "sec_agent_which_tree_is_which"
+path = "tests/sec_agent_which_tree_is_which.rs"

@@ -16,6 +16,12 @@ fn main() -> ExitCode {
     // container that has none, so the two modes are answered here instead: before any display is asked
     // for, and on stdout with exit 0.
     if args.iter().any(|a| a == "--help" || a == "-h") {
+        // The three trees belong in the help text because "where does this change go?" is the first
+        // question a new checkout raises, and AGENT.md's answer is short enough to ship verbatim.
+        let trees: Vec<&str> = naivepost::tree_roles::Role::all()
+            .iter()
+            .map(|role| role.sentence())
+            .collect();
         println!(
             "naivepost — a cut-and-narrate editor for sessions already recorded.\n\
              \n\
@@ -26,10 +32,47 @@ fn main() -> ExitCode {
              \x20 naivepost --snapshot <screen> [--project <dir>] [--out <file.png>]\n\
              \x20     Render one screen to a PNG without a user, for checking against spec/img.\n\
              \x20     Screens: 03-window, 04-prepare, 05-cut, 06-preview, 07-narrate, 08-produce, …\n\
+             \x20 naivepost --trees\n\
+             \x20     Print which tree is which (app, prototype, spec) and where new work goes.\n\
+             \x20     With paths, says which tree each one belongs to.\n\
              \n\
              Both need a display; headless runs use `just snapshot <screen>` from rust/, which wraps\n\
-             the call in xvfb-run with GSK_RENDERER=cairo."
+             the call in xvfb-run with GSK_RENDERER=cairo.\n\
+             \n\
+             Trees:\n\
+             {}",
+            trees.join("\n")
         );
+        return ExitCode::SUCCESS;
+    }
+
+    // Which tree is which (AGENT.md), printed by the program rather than by a README: answered here,
+    // before any display is asked for, so it works in a container that has none. With no path it prints
+    // the three trees; with paths it answers the same rule for each one, which is the question that
+    // actually comes up when somebody is holding a file: "can new work go here?".
+    if let Some(at) = args.iter().position(|a| a == "--trees") {
+        let asked: Vec<&String> = args[at + 1..]
+            .iter()
+            .take_while(|arg| !arg.starts_with("--"))
+            .collect();
+        if asked.is_empty() {
+            for role in naivepost::tree_roles::Role::all() {
+                println!("{}", role.sentence());
+            }
+        } else {
+            for path in asked {
+                match naivepost::tree_roles::role_of(std::path::Path::new(path)) {
+                    Some(role) => println!(
+                        "{path}: {} (new work here: {})",
+                        role.sentence(),
+                        role.takes_new_work()
+                    ),
+                    None => println!(
+                        "{path}: in none of the three trees -- not the app, the prototype or the spec"
+                    ),
+                }
+            }
+        }
         return ExitCode::SUCCESS;
     }
 

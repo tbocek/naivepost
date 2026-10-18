@@ -240,6 +240,10 @@ pub mod tab_states;
 pub mod textfmt;
 pub mod transcribe;
 pub mod tool_loop;
+
+/// Which tree is which: `rust/` the app, `gui/` the Go prototype, `spec/` the spec (AGENT.md).
+pub mod tree_roles;
+
 pub mod llm_liveness;
 pub mod llm_watch_leg;
 pub mod llm_repair_leg;
