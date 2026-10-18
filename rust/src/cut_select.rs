@@ -270,6 +270,32 @@ pub fn clear(_: Option<Selection>) -> Option<Selection> {
 /// among "grab reaches", whose shortest is 6 px.
 pub const GRIP_PX: f64 = 6.0;
 
+/// §6's third pixel reach (`spec/05-cut.md` §6: "pixel reaches (6, 8, 10, 12 px)", and `spec/inventory/cut.md`
+/// §I's press order: "selection ends on the pictures within **10 px**"): how far from an end a press still
+/// grabs that end WHEN THE PRESS IS ON A PICTURE ROW.
+///
+/// Wider than [`GRIP_PX`] because the two surfaces ask different questions of the hand. In the selection band
+/// the band is the only thing drawn and its end is a visible edge to aim at, so 6 px is enough. On the pictures
+/// the press is over thumbnails, the green kept-scene bars and the red line — nothing there says "this is the
+/// selection's end" — so the end has to reach further to be found at all; the prototype spells the pair as
+/// `selGripPx` / `selGripPicsPx` (`gui/cut_selband.go`) for exactly this reason.
+///
+/// Deliberately NOT [`SNAP_PX`] (8 px): snapping pulls a dragged end ONTO a landmark, which is what the cut's
+/// borders and word edges are for, while a grip decides whether the hand meant THAT END in the first place. Two
+/// different acts, so unifying them would silently change one of the two rules.
+pub const PIC_GRIP_PX: f64 = 10.0;
+
+/// The reach that grabs a selection end on each surface: [`PIC_GRIP_PX`] on a picture row, [`GRIP_PX`
+/// ] everywhere else (§I widens the reach for the pictures alone). The wave strip under a picture row keeps the
+/// narrow grip on purpose: that strip is where F2.6's own band lives and is aimed at, not ground the end has to
+/// be found through.
+pub fn grip_px(surface: Surface) -> f64 {
+    match surface {
+        Surface::PictureRow(_) => PIC_GRIP_PX,
+        Surface::WaveStrip | Surface::Lane | Surface::Ruler | Surface::SelectionBand | Surface::FxLane => GRIP_PX,
+    }
+}
+
 /// F2.6 S2: which part of the band a press lands on — what decides whether the drag resizes, moves or
 /// starts something new.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -285,10 +311,17 @@ pub enum Part {
 /// narrower than two grips an end wins over the middle — a press can only mean one thing, and resizing is
 /// what the hand was aiming at when it found such a thin band in the first place.
 pub fn part_at(px: f64, from_px: f64, to_px: f64) -> Part {
-    if (px - from_px).abs() <= GRIP_PX && px <= to_px {
+    part_at_reach(px, from_px, to_px, GRIP_PX)
+}
+
+/// [`part_at`] with the reach spelled out, because it is not one number: [`grip_px`] answers 10 px on a picture
+/// row and 6 px elsewhere, and the page passes what its press's surface says. The body is `part_at`'s unchanged:
+/// the thin-band rule (an end wins over the middle when the band is narrower than two grips) holds at any reach.
+pub fn part_at_reach(px: f64, from_px: f64, to_px: f64, grip_px: f64) -> Part {
+    if (px - from_px).abs() <= grip_px && px <= to_px {
         return Part::Start;
     }
-    if (px - to_px).abs() <= GRIP_PX && px >= from_px {
+    if (px - to_px).abs() <= grip_px && px >= from_px {
         return Part::End;
     }
     if px > from_px && px < to_px {

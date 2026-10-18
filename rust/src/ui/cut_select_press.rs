@@ -103,8 +103,24 @@ impl Geometry {
     }
 
     /// S2: which part of the band already drawn this press lands on. `Outside` when there is no band.
+    ///
+    /// The reach comes from the surface the PRESS is on (§I's "selection ends on the pictures within 10 px"),
+    /// not from one constant: the same pixel offset grabs an end on a picture row and misses it in the
+    /// selection band, which is what `cut_select::grip_px` decides. A caller that has no surface to hand (the
+    /// older two-argument call sites) gets [`GRIP_PX`](cut_select::GRIP_PX), the narrow grip, i.e. exactly the
+    /// rule this method had before §6's third reach existed.
     pub fn part_of(&self, x_px: f64, band: &cut_select::Selection) -> Part {
-        cut_select::part_at(x_px, self.px_of(band.start), self.px_of(band.end))
+        self.part_of_on(x_px, band, Surface::SelectionBand)
+    }
+
+    /// [`Self::part_of`] with the press's surface named, so the reach is the one that surface earns.
+    pub fn part_of_on(&self, x_px: f64, band: &cut_select::Selection, surface: Surface) -> Part {
+        cut_select::part_at_reach(
+            x_px,
+            self.px_of(band.start),
+            self.px_of(band.end),
+            cut_select::grip_px(surface),
+        )
     }
 }
 
@@ -131,7 +147,7 @@ pub fn press_at(geo: &Geometry, x_px: f64, y_px: f64, held_band: Option<&cut_sel
     }
     // S2 before S1: a hand that lands on the band is adjusting it, not drawing over it.
     if let Some(band) = held_band {
-        let part = geo.part_of(x_px, band);
+        let part = geo.part_of_on(x_px, band, surface);
         if part != Part::Outside {
             return Press::Adjusts { part };
         }

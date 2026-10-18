@@ -145,6 +145,23 @@ pub fn note_answer(endpoint: &str) {
     }
 }
 
+/// Forget that this endpoint ever answered, so a later death of it reads as "a box nobody started" again.
+///
+/// The mirror of [`note_answer`], for the other half of the same race. The table is process-wide and keyed by
+/// URL, and a test's dead server sits on an EPHEMERAL port: an earlier scenario in the same binary may have been
+/// ANSWERED on that number before its listener was released, so `has_answered` can come back true for a wire
+/// this scenario has never dialled — and §3's ladder, which should cost nothing here, is spent instead (three
+/// rows where two were promised). A scenario that means "a server this app has never heard from" says so here
+/// instead of depending on which port number the OS happened to hand out.
+///
+/// Named `_for_test` because nothing in the program calls it: an endpoint that answered keeps its mid-call history
+/// for the life of the run, which is the point of the table, so only a proof needs it wiped.
+pub fn forget_answer_for_test(endpoint: &str) {
+    if let Ok(mut seen) = answered_once().lock() {
+        seen.remove(endpoint);
+    }
+}
+
 /// Ask the LLM for one chat turn and keep asking until it answers, the patience runs out, or ⏹ says otherwise.
 ///
 /// This is the door every chat ask should go through: it writes its timed row per dial (so a retried call leaves

@@ -12,7 +12,6 @@ mod harness;
 use harness::*;
 #[path = "joined_answer.rs"]
 mod joined_answer;
-use joined_answer::{chat, raw};
 
 #[test]
 fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
@@ -27,8 +26,20 @@ fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
     // * Accept-and-close keeps the transport failure honest: no bytes ever arrive, so nothing can be read as
     //   an answer, and §3's classification still sees a wire that never spoke (no rung of the 5 s-to-4 min
     //   ladder is spent on a box nobody started).
+    // * The address is also FORGOTTEN by the answered-endpoints table before anything is dialled. `has_answered`
+    //   is process-wide and keyed by URL, and this port is ephemeral: another test program on this machine can
+    //   hold that number and have ANSWERED on it, which makes a death here read as "gone away mid-call" and
+    //   spends the ladder -- three asks where two were promised, the second half of the same race.
     let dead = harness::FakeLlm::dead_listener();
     let dead_port = dead.local_addr().expect("the dead port has an address").port();
+    // State the precondition this scenario ASSUMES, BEFORE any dial can record history: "a server this app has
+    // never had an answer from" is a claim about the process-wide answered-endpoints table
+    // (`llm_retry_leg::answered_once`), not about the port -- and the port is EPHEMERAL. An earlier scenario in
+    // this binary may have been ANSWERED on that number before releasing its listener, and another test program
+    // on this machine can be holding it now; either way `has_answered` says true, §3's ladder is spent on a box
+    // nobody started, and three asks appear where two were promised. That is how this check flaked under a
+    // full-suite run while passing alone.
+    naivepost::llm_retry_leg::forget_answer_for_test(&format!("http://127.0.0.1:{dead_port}"));
     std::thread::spawn(move || {
         for incoming in dead.incoming() {
             // Dropping the stream here closes it immediately: the dialler's read ends with nothing.

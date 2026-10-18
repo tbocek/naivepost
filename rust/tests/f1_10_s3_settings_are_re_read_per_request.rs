@@ -34,6 +34,12 @@ fn f1_10_s3_settings_are_re_read_per_request() {
     // whole 10-minute ceiling (job 58). The other case -- keeping a LIVE address from being re-dialled -- is
     // what `FakeLlm::dead_listener` is for, and it is held only by scenarios that want it.
     let dead = FakeLlm::dead_listener().local_addr().expect("a port").port();
+    // The answered-endpoints table (`llm_retry_leg::answered_once`) is process-wide and keyed by URL, and this
+    // number came from the OS's ephemeral pool: an earlier scenario in this binary may have been ANSWERED on
+    // it before releasing its listener. This half of the scenario means "the server went away", so say so to
+    // the table rather than depending on which port was handed out -- otherwise §3's ladder is spent on a box
+    // nobody started and the ask count here drifts by one between runs.
+    naivepost::llm_retry_leg::forget_answer_for_test(&format!("http://127.0.0.1:{dead}"));
     point_at(&format!("http://127.0.0.1:{dead}"));
     let lines = press(&fixture.tree, &fixture.project);
     assert!(
