@@ -61,7 +61,11 @@ fn staged_text_shot_has_its_form_open(app: &adw::Application) {
     let window = cut_page(app);
     // The staging entry point itself, not a re-run of its steps: if the branch is ever dropped, `paint` returns
     // false and this fires rather than the shot quietly becoming the bare page again.
-    let owned = naivepost::snapshot_effects::paint(&window, "06-text");
+    let owned = naivepost::snapshot_effects::paint(
+        &window,
+        std::path::Path::new("/tmp/f3_4_text_staging"),
+        "06-text",
+    );
     assert!(owned, "`snapshot_effects::paint` no longer owns the `06-text` screen");
     let form = ui::text_form_open().expect("the staged `06-text` shot drew no caption form");
     assert_eq!(form.t, LINE_SECOND, "the staged caption does not start at the line it placed");
@@ -123,4 +127,39 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_the_staged_text_shot_has_its_for
     });
 
     assert!(RAN_TEXT_STAGE.load(Ordering::SeqCst), "the `06-text` staging check never ran");
+}
+
+/// §F3.4 S4 (`PREVIEW = RENDER`, and the shot has to show the words): a placed caption is only painted where
+/// `fx_lane::visibility_at` says it is visible. The staging used to leave the red line AT the record's own first
+/// second, and `visibility_at` ramps the fade-in from there (`(t - from) / trans`), so the frame painted the
+/// caption at alpha 0.0 -- an invisible caption on a screen whose whole point is the caption. This pins both
+/// edges of that ramp: zero AT the record's second, full once the fade has run out.
+#[test]
+fn f3_4_s4_the_placed_caption_is_visible_at_the_second_the_shot_paints_it() {
+    use naivepost::cut::Fx;
+    // The record the `06-text` shot applies: 81.0 s (the line the shot places), 3 s long, 0.3 s fades.
+    let caption = Fx {
+        kind: "text".into(),
+        t: 81.0,
+        dur: 3.0,
+        trans: 0.3,
+        tout: 0.3,
+        text: fx_text::SNAPSHOT_CAPTION.to_string(),
+        ..Default::default()
+    };
+    // An overlay the paused preview draws at all: a zoom's rect and a rate's mask are guides, a caption is ink.
+    assert!(
+        naivepost::fx_lane::drawn_paused(naivepost::cut::EffectKind::Text),
+        "a caption must be one of the kinds the paused frame paints"
+    );
+    // The bug: standing exactly on the record's first second, the fade-in has not started -- alpha 0.0.
+    assert_eq!(naivepost::fx_lane::visibility_at(&caption, 81.0), 0.0);
+    // What the staging now does instead: one second inside, past the whole fade-in, fully visible.
+    assert_eq!(naivepost::fx_lane::visibility_at(&caption, 82.0), 1.0);
+    // And the far edge keeps working: inside the fade-out the caption is partly there, past the span it is gone.
+    assert!(
+        (naivepost::fx_lane::visibility_at(&caption, 83.9) - (84.0 - 83.9) / 0.3).abs() < 1e-9,
+        "the fade-out half of the ramp is what the preview paints too"
+    );
+    assert_eq!(naivepost::fx_lane::visibility_at(&caption, 84.0), 0.0);
 }

@@ -392,9 +392,7 @@ pub fn zoom_drag_ended_with_source(
                 PREVIEW_PANEL_W,
                 PREVIEW_PANEL_H,
             );
-            if let Some(said) =
-                cut_preview_press::play_toggle_on_press(window, at, fit, from)
-            {
+            if let Some(said) = cut_preview_press::play_toggle_on_press(window, at, fit, from) {
                 return said;
             }
             let said = super::cut_zoom_hand::press_on_release(window, from);

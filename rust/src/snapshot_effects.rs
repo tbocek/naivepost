@@ -3,15 +3,13 @@
 //! size another staging block fits in; every rule below lives in the module whose screen it draws.
 
 use adw::prelude::*;
-use gtk4 as gtk;
 
 use crate::cut;
 use crate::cut_line;
-use crate::fx_text;
 use crate::ui;
 
 /// Paint one of the effect screens onto `window`. Returns true when this module owned `screen`.
-pub fn paint(window: &adw::ApplicationWindow, screen: &str) -> bool {
+pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &str) -> bool {
     // F3.5's screen is the drawing form OPEN, so the shot must drive the same doors the widgets use
     // (`tests/svg_drawing_widgets.rs` fires exactly these) rather than poke state: a picture painted
     // from a shortcut would not be the picture the app draws.
@@ -216,66 +214,16 @@ pub fn paint(window: &adw::ApplicationWindow, screen: &str) -> bool {
         return true;
     }
 
-    // §F3.4's own picture (`spec/img/06-text.png`) is the caption form OPEN: the heading `Text at 1:21`, the
-    // three-row words box, Length / Fade in / Fade out / Curve, and the box on the preview it was drawn for.
-    // Driven through the same doors `tests/caption_text_widgets.rs` fires -- the dropdown row arms, the panel's
-    // press lands the box, the form follows -- and the words then go in through the form's OWN widget, exactly
-    // as typing does, so the caption in the shot is what a person would have read. `06-preview` already stages
-    // a caption record; this screen is the form, so Apply is NOT pressed (Apply closes it).
+    // §F3.4's own picture (`spec/img/06-text.png`) is TWO things at once: the caption ON the preview, across the
+    // lower third, and the `Text at m:ss` form beside it with the words in its field. The staging lives in
+    // `snapshot_text` (see its header): the spec's state spans two live states -- the placed record Apply writes,
+    // and the open form Apply closes -- so it is more than one call, and this file is past the size for it.
     if screen == "06-text" {
-        ui::note_place(true);
-        // No `set_default_size` here on purpose: `snapshot::run` sizes the window itself after this call (the
-        // Cut-page screens get their width from that arm, matched to the strip), and a size asked here was
-        // overwritten by it -- measured, not guessed: the shot came out at 1334 px with or without it.
-        ui::note_place(true);
-        ui::set_line_position(window, cut_line::LinePos { t: 81.0 });
-        // The dropdown row itself, through the same door a click fires (`tests/caption_text_widgets.rs` arms by
-        // clicking `effect-item-text`), so the shot is armed by the widget the spec's picture shows.
-        let said = ui::press_effect_item(window, cut::EffectKind::Text);
-        assert!(ui::text_armed(), "snapshot: 06-text could not arm -- {said}");
-        // A zero-travel press: §F3.4 S2 makes a click take the lower third, which is the wide box the spec's
-        // picture shows across the bottom of the frame.
-        let said = ui::text_drag_ended(window, (40.0, 40.0), (40.0, 40.0));
-        let form = ui::text_form_open().expect("snapshot: 06-text landed no caption form");
-        assert_eq!(form.t, 81.0, "snapshot: 06-text's form does not start at the line -- {said}");
-        // Type the caption into the form's own TextView (the words field IS a TextView, three rows tall) and
-        // let the page repaint from it, which is the path typing takes.
-        ui::text_type_words(window, fx_text::SNAPSHOT_CAPTION);
-        // Repaint the picture through the page's own door, which is what a keystroke's refresh calls.
-        ui::cut_view::repaint_page(window);
-        // The words came in through the form's OWN field, so read them back off that field rather than echoing
-        // the constant: if the typing ever stopped reaching the widget, this prints empty and the stdout line --
-        // and `tests/sec_06_effects_2_text_staging.rs` -- say so.
-        let field = ui::window::find_widget_by_name(window.upcast_ref(), "text-field-words")
-            .and_then(|w| w.downcast::<gtk::TextView>().ok())
-            .map(|view| {
-                let (start, end) = view.buffer().bounds();
-                view.buffer().text(&start, &end, true).to_string()
-            })
-            .unwrap_or_default();
-        assert_eq!(
-            field, fx_text::SNAPSHOT_CAPTION,
-            "snapshot: 06-text's words never reached the form's own words box"
-        );
-        // The form's live values, read back through the door the form itself uses: the words a person typed are
-        // what `text_form_open` reports, so the two readings of the same field have to agree.
-        let stored = ui::text_form_open().map(|form| form.words).unwrap_or_default();
-        assert!(
-            stored.is_empty(),
-            "snapshot: 06-text must show the form BEFORE Apply: a stored caption means Apply ran, and Apply \
-             closes the form this screen exists to show"
-        );
-        println!(
-            "snapshot: 06-text | {} | {} s | fades {}/{} | words in the form: {field}",
-            fx_text::form_title(form.t),
-            form.dur,
-            form.trans,
-            form.tout
-        );
+        let said = crate::snapshot_text::stage(window, dir);
+        println!("snapshot: 06-text | {}", said.join(" | "));
         return true;
     }
 
-    // F3.8's screen is the LANE being worked on (`spec/img/06-lane.png`), which the fixture cannot show:
     // its `cut/cut.json` carries `fx: []`, so every shot of the Cut page draws an empty lane. Seeded here
     // the way `05-fold` seeds its hole -- the shared fixture file untouched -- and driven through the same
     // doors the widgets fire (`tests/band_hold_widgets.rs` presses exactly these) rather than by poking

@@ -267,7 +267,12 @@ pub fn fixture(tag: &str) -> Fixture {
     if FIXTURES.fetch_add(1, Ordering::SeqCst) > 0 {
         panic!("two fixtures in one test binary: the process-wide env races -- one scenario per binary");
     }
-    let root = std::env::temp_dir().join(format!("naivepost-f44wire-{tag}"));
+    // The pid rides the name: `cargo test` runs test BINARIES in parallel, and a tag alone is not unique across
+    // them -- two processes asking for one tag each pick the SAME folder, both wipe it out from under the other,
+    // and both append their timed rows to one `requests.tsv`. That is how `f4_4_s7_every_call_its_own_timed_row`
+    // failed in one suite run and passed in the next: six audio rows where four were promised, the extra pair
+    // being another process's upload+speech. Same rule as `join_live_harness::fixture`.
+    let root = std::env::temp_dir().join(format!("naivepost-f44wire-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let config = root.join("config");
     let data = root.join("data");

@@ -604,7 +604,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // another staging block fits in (see `snapshot_insert` for the same split). They ran here, in the
         // order they ran inside `run`: after every Cut-page arm had laid its strip out, before the subject is
         // chosen and the window is sized and mapped.
-        crate::snapshot_effects::paint(&window, &screen);
+        crate::snapshot_effects::paint(&window, &dir, &screen);
         crate::snapshot_preview::paint(&window, &dir, &screen);
         crate::snapshot_narrate::stage(&window, &dir, &screen);
         crate::snapshot_produce::paint(&window, &screen);
