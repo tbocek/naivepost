@@ -250,6 +250,9 @@ pub mod stack_facts;
 /// Where this checkout's pieces live: spec, app code, tests, fixture (AGENT.md).
 pub mod layout_manifest;
 
+/// The rules AGENT.md says the code holds to, checked from live doors.
+pub mod code_rules;
+
 pub mod llm_liveness;
 pub mod llm_watch_leg;
 pub mod llm_repair_leg;

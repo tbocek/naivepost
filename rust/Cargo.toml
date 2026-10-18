@@ -1954,3 +1954,7 @@ path = "tests/sec_agent_stack.rs"
 [[test]]
 name = "sec_agent_layout"
 path = "tests/sec_agent_layout.rs"
+
+[[test]]
+name = "sec_agent_rules_the_code_holds_to"
+path = "tests/sec_agent_rules_the_code_holds_to.rs"
