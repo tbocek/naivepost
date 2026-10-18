@@ -18,8 +18,6 @@ path = "src/lib.rs"
 name = "naivepost"
 path = "src/main.rs"
 
-autotests = false
-
 # Nobody attaches a debugger here: line tables keep file:line in backtraces, and without the full debug
 # info every test binary is a fraction of the size and links faster after each change.
 [profile.dev]
