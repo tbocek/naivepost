@@ -896,12 +896,10 @@ pub fn cut() -> Vec<Param> {
 /// their single row in [`cut`]: one row, one home, so this list is the rest of §06's rather than a copy of it.
 ///
 /// Two of §06's items have no row and are absent on purpose. The label form's typed floor (0.4) belongs to §F3.7,
-/// whose form has no constant in this tree yet — a number nothing reads has no module to live in. So is the
-/// decorations density: §F3.11 keeps it as the prompt's own wording ("few and deliberate: three or four across
-/// five minutes"), which is wording, not a value the app multiplies anything by. §I's `killMin` 32, `fxMinBand` 30
-/// and `fxGrab` 9 are absent for the same reason — no constant here holds them. Note that §I's `fxMinBand` (30) is
-/// the PIXEL width from which a bar's ends become handles at all, and stays unowned; `P.eng.effectMinSeconds`, the
-/// SECONDS floor a drag may shrink a band down to, is owned by [`fx_lane::MIN_BAND_SECONDS`] and has its row
+/// whose form has no constant in this tree yet — a number nothing reads has no module to live in. §I's `killMin` 32,
+/// `fxMinBand` 30 and `fxGrab` 9 are absent for the same reason — no constant here holds them. Note that §I's
+/// `fxMinBand` (30) is the PIXEL width from which a bar's ends become handles at all, and stays unowned;
+/// `P.eng.effectMinSeconds`, the SECONDS floor a drag may shrink a band down to, is owned by [`fx_lane::MIN_BAND_SECONDS`] and has its row
 /// below. The prototype's two similarly-named constants (`fxMinBand`, `fxMinDur`) are different rules, not one —
 /// and its third, `fxMinSel` (0.2), is likewise a SECONDS floor rather than a pixel width: it is
 /// `P.eng.effectMinSelectionSeconds`, held by [`cut_speed::MIN_MARKED_SECONDS`] and rowed twice on purpose
@@ -946,6 +944,16 @@ pub fn effects() -> Vec<Param> {
             "P.policy.suggestedZoomHeight",
             num(cut_effects_pass::ZOOM_HEIGHT),
             "cut_effects_pass::ZOOM_HEIGHT",
+        ),
+        // How many decorations an edit is expected to carry. §10 gives this a row ("three or four per five
+        // minutes", home `fxRules`), so it is catalogued -- and its value is WORDING, the clause the shipped
+        // effects prompt states, not a number anything is multiplied by. The guide's own constants are
+        // `DENSITY_GUIDE` / `DENSITY_PER_FIVE_MINUTES`; what refuses a runaway reply is
+        // `P.machine.maxProposedEffects` below, never this.
+        param(
+            "P.policy.decorationDensity",
+            "\"three or four per five minutes\"".to_string(),
+            "cut_effects_pass::DENSITY_GUIDE",
         ),
         // The cap on effects per cut reply. §10 spells its own qualification into the row — "effectively
         // none: the prompt decides" — and that is what the constant says too: this bounds a runaway

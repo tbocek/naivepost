@@ -396,11 +396,12 @@ pub fn rejected(problem: &str) -> String {
 /// three or four across five minutes of finished video"), copied here so a test can pin the two
 /// against each other and neither can drift.
 ///
-/// Deliberately NOT a [`crate::params`] row and not a field on [`crate::project::Policy`]:
-/// `rust/tests/effect_parameters.rs` s5 asserts no catalogued id contains "density" ("the density
-/// lives in prompts/effects.md as wording, not as a number"), `params::effects`' doc says the same,
-/// and `spec/12-decisions.md` row 37 puts the home at "density (prompt)". The id stays unrowed;
-/// [`crate::params::family`] still answers `Family::Policy` from the prefix.
+/// Deliberately NOT a number the app tunes: it is catalogued as [`crate::params`]'s
+/// `P.policy.decorationDensity` row because §10 gives that id a row ("three or four per five minutes", home
+/// `fxRules`), and the row points HERE rather than at a tuning constant — nothing multiplies this by anything to
+/// decide what gets placed. What refuses a runaway reply is `P.machine.maxProposedEffects`
+/// ([`MAX_PROPOSED_EFFECTS`]); this only says out loud when a reply is more than the guide expects, and
+/// `spec/12-decisions.md` keeps the home at "density (prompt)".
 pub const DENSITY_GUIDE: &str = "three or four across five minutes of finished video";
 
 /// The same guide as its band: low and high decorations per [`FIVE_MINUTES_SECONDS`] of finished video.
