@@ -28,7 +28,7 @@ use naivepost::shell::Page;
 use naivepost::ui;
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
+use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
 
 // ---- logic helpers -------------------------------------------------------------------------------
 
@@ -722,12 +722,6 @@ thread_local! {
 
 fn app_in_round() -> adw::Application {
     CURRENT_APP.with(|held| held.borrow().clone()).expect("run_round published the application")
-}
-
-fn session(root: &Path) -> Tree {
-    let dir = naivepost::startup::session_dir(root);
-    std::fs::create_dir_all(&dir).expect("session folder created");
-    Tree::new(&dir).expect("the session folder is a project tree")
 }
 
 fn two_segs() -> Vec<Seg> {

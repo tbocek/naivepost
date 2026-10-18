@@ -214,22 +214,13 @@ fn check_undo_redo_reach_the_history(app: &adw::Application) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK 1 toolbar order");
-            check_the_group_order_is_the_table_order(app);
-            RAN_ORDER.store(true, std::sync::atomic::Ordering::SeqCst);
-            println!("CHECK 2 undo/redo");
-            check_undo_redo_reach_the_history(app);
-            RAN_UNDO.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        println!("CHECK 1 toolbar order");
+        check_the_group_order_is_the_table_order(app);
+        RAN_ORDER.store(true, std::sync::atomic::Ordering::SeqCst);
+        println!("CHECK 2 undo/redo");
+        check_undo_redo_reach_the_history(app);
+        RAN_UNDO.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

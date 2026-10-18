@@ -181,7 +181,6 @@ fn round(app: &adw::Application) {
     esc_drops_hold_and_disarms(app);
     real_escape_key_drops_hold_and_disarms(app);
     bare_hold_still_answers_cancelled(app);
-    app.quit();
 }
 
 /// ONE application, ONE `connect_activate`, ONE scenario: every check lives inside it in sequence, which is what
@@ -191,18 +190,10 @@ fn round(app: &adw::Application) {
 /// (`--test-threads=1` runs them one after another, so a "whoever claims first" scheme leaves the other two
 /// waiting on work that will never come). So there is a single `#[test]` below, and it asserts all three flags.
 fn run_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let root = std::env::temp_dir().join(format!("np-f38esc-{}", std::process::id()));
-        std::fs::create_dir_all(&root).expect("temp root created");
-        std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(round);
-        app.run();
-    });
+    let root = std::env::temp_dir().join(format!("np-f38esc-{}", std::process::id()));
+    std::fs::create_dir_all(&root).expect("temp root created");
+    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
+    common::one_app_round(round);
 }
 
 #[test]

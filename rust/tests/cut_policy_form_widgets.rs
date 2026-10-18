@@ -269,30 +269,21 @@ fn check_the_tab_info_button_opens_the_same_form(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_the_gear_opens_the_form(app);
-            RAN_GEAR.store(true, Ordering::SeqCst);
-            check_every_field_has_a_row_with_value_source_and_reason(app);
-            RAN_ROWS.store(true, Ordering::SeqCst);
-            check_a_hand_set_field_still_reads_user_after_a_later_derivation(app);
-            RAN_USER_STICKS.store(true, Ordering::SeqCst);
-            check_the_tab_info_button_opens_the_same_form(app);
-            RAN_INFO.store(true, Ordering::SeqCst);
-            check_the_four_columns_and_the_two_buttons(app);
-            RAN_COLUMNS.store(true, Ordering::SeqCst);
-            check_the_gear_derives_before_it_paints(app);
-            RAN_DERIVE.store(true, Ordering::SeqCst);
-            check_the_target_length_row_shows_the_derived_number(app);
-            RAN_TARGET.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_the_gear_opens_the_form(app);
+        RAN_GEAR.store(true, Ordering::SeqCst);
+        check_every_field_has_a_row_with_value_source_and_reason(app);
+        RAN_ROWS.store(true, Ordering::SeqCst);
+        check_a_hand_set_field_still_reads_user_after_a_later_derivation(app);
+        RAN_USER_STICKS.store(true, Ordering::SeqCst);
+        check_the_tab_info_button_opens_the_same_form(app);
+        RAN_INFO.store(true, Ordering::SeqCst);
+        check_the_four_columns_and_the_two_buttons(app);
+        RAN_COLUMNS.store(true, Ordering::SeqCst);
+        check_the_gear_derives_before_it_paints(app);
+        RAN_DERIVE.store(true, Ordering::SeqCst);
+        check_the_target_length_row_shows_the_derived_number(app);
+        RAN_TARGET.store(true, Ordering::SeqCst);
     });
 }
 

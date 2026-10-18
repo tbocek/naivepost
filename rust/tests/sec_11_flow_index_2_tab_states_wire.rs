@@ -331,19 +331,10 @@ fn check_s4_no_cut_refuses_on_narrate(app: &adw::Application) {
 /// `tests/cut_review_cuts_widgets.rs` sequences its windows inside one round. A check closes its window
 /// before the next builds one.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_s4_the_run_bar_becomes_the_transport(app);
-            check_s5_exactly_one_preview_mode_is_lit(app);
-            check_s4_no_cut_refuses_on_narrate(app);
-            app.quit();
-        });
-        let _ = app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_s4_the_run_bar_becomes_the_transport(app);
+        check_s5_exactly_one_preview_mode_is_lit(app);
+        check_s4_no_cut_refuses_on_narrate(app);
     });
 }
 

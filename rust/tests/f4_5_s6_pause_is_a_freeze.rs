@@ -10,20 +10,11 @@ use std::process::{Child, Stdio};
 
 use naivepost::cut::Seg;
 use naivepost::narrate_preview_leg::{self as leg, Spawn};
-use naivepost::narration::Entry;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
 
-fn entry(s: f64, e: f64, text: &str) -> Entry {
-    Entry {
-        s,
-        e,
-        at: 0.5,
-        text: text.into(),
-        ..Default::default()
-    }
-}
+use common::entry_at_mid as entry;
 
 /// A session folder under /tmp: enough for `Tree::new` and for the footage check to answer "no recording",
 /// which is what makes the picture's spawn the ONLY child this scenario has to keep alive.

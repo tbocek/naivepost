@@ -48,20 +48,13 @@ fn seed_session(tree: &Tree, lines: &[Entry]) {
 }
 /// One GTK app for the whole binary: `gio` refuses a second `run_with_args`, so every check shares it.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder().application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE).build();
-        app.connect_activate(|app| {
-            check_autosave_beat(app);
-            RAN_A.store(true, Ordering::SeqCst);
-            check_run_line(app);
-            RAN_B.store(true, Ordering::SeqCst);
-            check_the_pulse_belongs_to_the_press(app);
-            RAN_PULSE.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_autosave_beat(app);
+        RAN_A.store(true, Ordering::SeqCst);
+        check_run_line(app);
+        RAN_B.store(true, Ordering::SeqCst);
+        check_the_pulse_belongs_to_the_press(app);
+        RAN_PULSE.store(true, Ordering::SeqCst);
     });
 }
 static RAN_A: AtomicBool = AtomicBool::new(false);

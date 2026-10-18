@@ -209,22 +209,13 @@ fn check_a_drag_scrolls_and_holds_the_selection(app: &adw::Application) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK 1 hidden while everything fits");
-            check_the_bar_is_hidden_while_everything_fits(app);
-            println!("CHECK 2 shown once the session outgrows the view");
-            check_the_bar_appears_when_the_session_stops_fitting(app);
-            println!("CHECK 3 a drag scrolls the view and holds the selection");
-            check_a_drag_scrolls_and_holds_the_selection(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        println!("CHECK 1 hidden while everything fits");
+        check_the_bar_is_hidden_while_everything_fits(app);
+        println!("CHECK 2 shown once the session outgrows the view");
+        check_the_bar_appears_when_the_session_stops_fitting(app);
+        println!("CHECK 3 a drag scrolls the view and holds the selection");
+        check_a_drag_scrolls_and_holds_the_selection(app);
     });
 }
 

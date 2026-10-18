@@ -132,20 +132,11 @@ fn check_the_stored_zoom_moves_the_layout(app: &adw::Application) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK 1 the floor is the filmed-length fit");
-            check_the_floor_is_the_fit(app);
-            println!("CHECK 2 the stored zoom moves the band");
-            check_the_stored_zoom_moves_the_layout(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        println!("CHECK 1 the floor is the filmed-length fit");
+        check_the_floor_is_the_fit(app);
+        println!("CHECK 2 the stored zoom moves the band");
+        check_the_stored_zoom_moves_the_layout(app);
     });
 }
 

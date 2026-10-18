@@ -1111,46 +1111,37 @@ fn f2_4_s3_space_still_toggles_play_from_the_key_controller() {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_the_four_step_buttons_move_the_line(app);
-            RAN_STEPS.store(true, Ordering::SeqCst);
-            check_the_key_controller_is_attached_and_refuses_without_a_hold(app);
-            RAN_KEYS.store(true, Ordering::SeqCst);
-            check_a_track_press_places_the_line(app);
-            RAN_CLICK.store(true, Ordering::SeqCst);
-            check_a_real_click_clears_watches_and_a_hold_nudges_instead_of_stepping(app);
-            RAN_EFFECTS.store(true, Ordering::SeqCst);
-            check_the_line_is_restored_on_open(app);
-            RAN_RESTORE.store(true, Ordering::SeqCst);
-            check_closing_flushes_the_line_through_the_real_file(app);
-            RAN_FLUSH.store(true, Ordering::SeqCst);
-            check_a_real_band_press_uses_where_the_pointer_landed(app);
-            RAN_BAND_PRESS.store(true, Ordering::SeqCst);
-            check_the_restored_line_is_cued_and_scrolled_into_view(app);
-            RAN_RESTORE_SCROLL.store(true, Ordering::SeqCst);
-            check_a_step_moves_one_frame_of_the_probed_rate(app);
-            RAN_PROBED_RATE.store(true, Ordering::SeqCst);
-            check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app);
-            RAN_REACH.store(true, Ordering::SeqCst);
-            check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app);
-            RAN_ZOOM_SCROLL.store(true, Ordering::SeqCst);
-            check_the_arrows_reach_the_window_through_its_own_key_controller(app);
-            RAN_ARROW_WIRE.store(true, Ordering::SeqCst);
-            check_a_held_edge_and_a_held_clip_are_nudged_by_the_arrows_not_the_line(app);
-            RAN_ARROW_HOLD.store(true, Ordering::SeqCst);
-            check_a_held_effect_is_nudged_unsnapped_by_the_arrows(app);
-            RAN_ARROW_EFFECT.store(true, Ordering::SeqCst);
-            check_space_still_toggles_play_from_the_key_controller(app);
-            RAN_ARROW_SPACE.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_the_four_step_buttons_move_the_line(app);
+        RAN_STEPS.store(true, Ordering::SeqCst);
+        check_the_key_controller_is_attached_and_refuses_without_a_hold(app);
+        RAN_KEYS.store(true, Ordering::SeqCst);
+        check_a_track_press_places_the_line(app);
+        RAN_CLICK.store(true, Ordering::SeqCst);
+        check_a_real_click_clears_watches_and_a_hold_nudges_instead_of_stepping(app);
+        RAN_EFFECTS.store(true, Ordering::SeqCst);
+        check_the_line_is_restored_on_open(app);
+        RAN_RESTORE.store(true, Ordering::SeqCst);
+        check_closing_flushes_the_line_through_the_real_file(app);
+        RAN_FLUSH.store(true, Ordering::SeqCst);
+        check_a_real_band_press_uses_where_the_pointer_landed(app);
+        RAN_BAND_PRESS.store(true, Ordering::SeqCst);
+        check_the_restored_line_is_cued_and_scrolled_into_view(app);
+        RAN_RESTORE_SCROLL.store(true, Ordering::SeqCst);
+        check_a_step_moves_one_frame_of_the_probed_rate(app);
+        RAN_PROBED_RATE.store(true, Ordering::SeqCst);
+        check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app);
+        RAN_REACH.store(true, Ordering::SeqCst);
+        check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app);
+        RAN_ZOOM_SCROLL.store(true, Ordering::SeqCst);
+        check_the_arrows_reach_the_window_through_its_own_key_controller(app);
+        RAN_ARROW_WIRE.store(true, Ordering::SeqCst);
+        check_a_held_edge_and_a_held_clip_are_nudged_by_the_arrows_not_the_line(app);
+        RAN_ARROW_HOLD.store(true, Ordering::SeqCst);
+        check_a_held_effect_is_nudged_unsnapped_by_the_arrows(app);
+        RAN_ARROW_EFFECT.store(true, Ordering::SeqCst);
+        check_space_still_toggles_play_from_the_key_controller(app);
+        RAN_ARROW_SPACE.store(true, Ordering::SeqCst);
     });
 }
 

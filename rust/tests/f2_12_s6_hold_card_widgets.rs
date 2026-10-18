@@ -202,26 +202,17 @@ fn f2_12_s6_the_gate_is_the_rule(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            f2_12_s6_a_double_click_on_a_card_holds_it(app);
-            RAN_DOUBLE.store(true, Ordering::SeqCst);
-            f2_12_s6_a_right_click_holds_a_card_too(app);
-            RAN_RIGHT.store(true, Ordering::SeqCst);
-            f2_12_s6_a_press_on_footage_holds_nothing(app);
-            RAN_FOOTAGE.store(true, Ordering::SeqCst);
-            f2_12_s6_a_held_card_presses_as_edit(app);
-            RAN_PRESSED.store(true, Ordering::SeqCst);
-            f2_12_s6_the_gate_is_the_rule(app);
-            RAN_RULE.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        f2_12_s6_a_double_click_on_a_card_holds_it(app);
+        RAN_DOUBLE.store(true, Ordering::SeqCst);
+        f2_12_s6_a_right_click_holds_a_card_too(app);
+        RAN_RIGHT.store(true, Ordering::SeqCst);
+        f2_12_s6_a_press_on_footage_holds_nothing(app);
+        RAN_FOOTAGE.store(true, Ordering::SeqCst);
+        f2_12_s6_a_held_card_presses_as_edit(app);
+        RAN_PRESSED.store(true, Ordering::SeqCst);
+        f2_12_s6_the_gate_is_the_rule(app);
+        RAN_RULE.store(true, Ordering::SeqCst);
     });
 }
 

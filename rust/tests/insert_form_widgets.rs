@@ -443,30 +443,21 @@ fn f2_12_s5_lane_adds_a_row_and_cuts_nothing(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            f2_12_s1_a_click_with_no_target_refuses(app);
-            RAN_REFUSE.store(true, Ordering::SeqCst);
-            f2_12_s1_a_line_or_a_selection_makes_insert_live(app);
-            RAN_LIVE.store(true, Ordering::SeqCst);
-            f2_12_s4_the_form_offers_modes_seconds_and_the_sound_tick(app);
-            RAN_FORM.store(true, Ordering::SeqCst);
-            f2_12_s5_apply_between_splices_a_card(app);
-            RAN_SPLICE.store(true, Ordering::SeqCst);
-            f2_12_s5_apply_over_replaces_those_seconds(app);
-            RAN_OVER.store(true, Ordering::SeqCst);
-            f2_12_s6_a_held_card_makes_insert_edit(app);
-            RAN_EDIT.store(true, Ordering::SeqCst);
-            f2_12_s5_lane_adds_a_row_and_cuts_nothing(app);
-            RAN_LANE_ONLY.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        f2_12_s1_a_click_with_no_target_refuses(app);
+        RAN_REFUSE.store(true, Ordering::SeqCst);
+        f2_12_s1_a_line_or_a_selection_makes_insert_live(app);
+        RAN_LIVE.store(true, Ordering::SeqCst);
+        f2_12_s4_the_form_offers_modes_seconds_and_the_sound_tick(app);
+        RAN_FORM.store(true, Ordering::SeqCst);
+        f2_12_s5_apply_between_splices_a_card(app);
+        RAN_SPLICE.store(true, Ordering::SeqCst);
+        f2_12_s5_apply_over_replaces_those_seconds(app);
+        RAN_OVER.store(true, Ordering::SeqCst);
+        f2_12_s6_a_held_card_makes_insert_edit(app);
+        RAN_EDIT.store(true, Ordering::SeqCst);
+        f2_12_s5_lane_adds_a_row_and_cuts_nothing(app);
+        RAN_LANE_ONLY.store(true, Ordering::SeqCst);
     });
 }
 

@@ -173,20 +173,11 @@ fn check_a_click_on_the_picture_toggles_play(app: &adw::Application) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK 1 the preview shows a frame of the line");
-            check_the_preview_shows_a_frame(app);
-            println!("CHECK 2 a click on the picture toggles play");
-            check_a_click_on_the_picture_toggles_play(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        println!("CHECK 1 the preview shows a frame of the line");
+        check_the_preview_shows_a_frame(app);
+        println!("CHECK 2 a click on the picture toggles play");
+        check_a_click_on_the_picture_toggles_play(app);
     });
 }
 

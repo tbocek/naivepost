@@ -247,24 +247,15 @@ fn check_the_lane_sits_under_the_frame(app: &adw::Application) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(naivepost::ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK 1 the page's children are in \u{a7}A's order");
-            check_the_page_children_are_in_spec_order(app);
-            println!("CHECK 2 no empty wall between the toolbar and the tape");
-            check_no_gap_between_toolbar_and_tape(app);
-            println!("CHECK 3 the preview takes the wide half");
-            check_the_preview_outranks_the_reading_column(app);
-            println!("CHECK 4 the effects lane sits under the frame it marks");
-            check_the_lane_sits_under_the_frame(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        println!("CHECK 1 the page's children are in \u{a7}A's order");
+        check_the_page_children_are_in_spec_order(app);
+        println!("CHECK 2 no empty wall between the toolbar and the tape");
+        check_no_gap_between_toolbar_and_tape(app);
+        println!("CHECK 3 the preview takes the wide half");
+        check_the_preview_outranks_the_reading_column(app);
+        println!("CHECK 4 the effects lane sits under the frame it marks");
+        check_the_lane_sits_under_the_frame(app);
     });
 }
 

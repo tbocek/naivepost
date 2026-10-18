@@ -27,26 +27,17 @@ static RAN_S1: AtomicBool = AtomicBool::new(false);
 static RAN_REFUSAL: AtomicBool = AtomicBool::new(false);
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_button_exists_with_the_specs_tooltip(app);
-            RAN_WIDGET.store(true, Ordering::SeqCst);
-            check_the_button_is_laid_out_on_the_page(app);
-            RAN_LAYOUT.store(true, Ordering::SeqCst);
-            check_s2_plays_from_the_red_line_through_the_click(app);
-            RAN_S2.store(true, Ordering::SeqCst);
-            check_s1_switches_back_to_the_recording_through_the_click(app);
-            RAN_S1.store(true, Ordering::SeqCst);
-            check_nothing_filmed_refuses_through_the_click(app);
-            RAN_REFUSAL.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_button_exists_with_the_specs_tooltip(app);
+        RAN_WIDGET.store(true, Ordering::SeqCst);
+        check_the_button_is_laid_out_on_the_page(app);
+        RAN_LAYOUT.store(true, Ordering::SeqCst);
+        check_s2_plays_from_the_red_line_through_the_click(app);
+        RAN_S2.store(true, Ordering::SeqCst);
+        check_s1_switches_back_to_the_recording_through_the_click(app);
+        RAN_S1.store(true, Ordering::SeqCst);
+        check_nothing_filmed_refuses_through_the_click(app);
+        RAN_REFUSAL.store(true, Ordering::SeqCst);
     });
 }
 

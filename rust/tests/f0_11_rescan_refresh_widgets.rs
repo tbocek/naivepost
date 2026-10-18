@@ -27,26 +27,17 @@ mod common;
 /// One application for the whole binary, entered once; the checks run sequentially inside its single
 /// `activate` (GTK allows one `g_application_run` per process) and each records that it finished.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_readouts_refreshed(app);
-            RAN_READOUTS.store(true, Ordering::SeqCst);
-            check_cut_rebuilt(app);
-            RAN_CUT.store(true, Ordering::SeqCst);
-            check_narrate_reread(app);
-            RAN_NARRATE.store(true, Ordering::SeqCst);
-            check_pruned_list_written_back(app);
-            RAN_WRITEBACK.store(true, Ordering::SeqCst);
-            check_slot_1_persisted(app);
-            RAN_SLOT1.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_readouts_refreshed(app);
+        RAN_READOUTS.store(true, Ordering::SeqCst);
+        check_cut_rebuilt(app);
+        RAN_CUT.store(true, Ordering::SeqCst);
+        check_narrate_reread(app);
+        RAN_NARRATE.store(true, Ordering::SeqCst);
+        check_pruned_list_written_back(app);
+        RAN_WRITEBACK.store(true, Ordering::SeqCst);
+        check_slot_1_persisted(app);
+        RAN_SLOT1.store(true, Ordering::SeqCst);
     });
 }
 

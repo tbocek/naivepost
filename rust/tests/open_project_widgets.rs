@@ -21,26 +21,17 @@ use common::{fixture_dir, temp_dir_created as temp_dir};
 
 /// One running GTK application for this test binary, taken in turn by the checks below.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            open_button_is_in_the_header(app);
-            a_press_nobody_answers_changes_nothing(app);
-            an_old_single_file_refuses_through_the_window(app);
-            a_folder_that_will_not_open_refuses_through_the_window(app);
-            a_valid_project_switches_the_session(app);
-            s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app);
-            s4_the_opened_project_lands_in_the_conf_on_disk(app);
-            RAN.store(true, std::sync::atomic::Ordering::SeqCst);
-            the_dropped_source_is_said_by_the_real_open(app);
-            RAN_DROP.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        open_button_is_in_the_header(app);
+        a_press_nobody_answers_changes_nothing(app);
+        an_old_single_file_refuses_through_the_window(app);
+        a_folder_that_will_not_open_refuses_through_the_window(app);
+        a_valid_project_switches_the_session(app);
+        s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app);
+        s4_the_opened_project_lands_in_the_conf_on_disk(app);
+        RAN.store(true, std::sync::atomic::Ordering::SeqCst);
+        the_dropped_source_is_said_by_the_real_open(app);
+        RAN_DROP.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

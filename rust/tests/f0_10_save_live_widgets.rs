@@ -24,24 +24,15 @@ use common::temp_dir_created as temp_dir;
 /// `connect_activate` (the shape `tests/f0_6_open_at_start_launch.rs` uses) and each records that it
 /// ran, so a check that never happened is a failure rather than a quiet pass.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_live_session_is_what_gets_saved(app);
-            RAN_LIVE.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_rename_moves_the_window_too(app);
-            RAN_RENAME.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_refused_move_leaves_the_folder_alone(app);
-            RAN_REFUSED_MOVE.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_button_refused_during_a_run(app);
-            RAN_BUTTON.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_live_session_is_what_gets_saved(app);
+        RAN_LIVE.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_rename_moves_the_window_too(app);
+        RAN_RENAME.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_refused_move_leaves_the_folder_alone(app);
+        RAN_REFUSED_MOVE.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_button_refused_during_a_run(app);
+        RAN_BUTTON.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

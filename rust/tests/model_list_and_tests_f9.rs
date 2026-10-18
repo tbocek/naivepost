@@ -137,30 +137,21 @@ fn conf_pointing_at(server: &str, model: &str) {
 /// far, so a case that never ran is a failure rather than a quiet pass. The `#[test]` wrappers take the
 /// shared env lock, start this round (idempotent) and then assert their own flag.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            s1_fetch(app);
-            RAN_S1.store(true, Ordering::SeqCst);
-            s2_use(app);
-            RAN_S2.store(true, Ordering::SeqCst);
-            s3_down(app);
-            RAN_S3.store(true, Ordering::SeqCst);
-            s4_empty(app);
-            RAN_S4.store(true, Ordering::SeqCst);
-            s5_completion(app);
-            RAN_S5.store(true, Ordering::SeqCst);
-            s6_vision(app);
-            RAN_S6.store(true, Ordering::SeqCst);
-            s7_blank(app);
-            RAN_S7.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        s1_fetch(app);
+        RAN_S1.store(true, Ordering::SeqCst);
+        s2_use(app);
+        RAN_S2.store(true, Ordering::SeqCst);
+        s3_down(app);
+        RAN_S3.store(true, Ordering::SeqCst);
+        s4_empty(app);
+        RAN_S4.store(true, Ordering::SeqCst);
+        s5_completion(app);
+        RAN_S5.store(true, Ordering::SeqCst);
+        s6_vision(app);
+        RAN_S6.store(true, Ordering::SeqCst);
+        s7_blank(app);
+        RAN_S7.store(true, Ordering::SeqCst);
     });
 }
 

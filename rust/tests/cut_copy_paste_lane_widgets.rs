@@ -326,28 +326,19 @@ fn check_esc_drops_the_copy(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_a_short_or_absent_selection_never_reaches_the_hand(app);
-            RAN_SHORT.store(true, Ordering::SeqCst);
-            check_a_long_selection_is_taken_in_hand_and_survives(app);
-            RAN_TAKEN.store(true, Ordering::SeqCst);
-            check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app);
-            RAN_PASTED.store(true, Ordering::SeqCst);
-            check_a_lane_gives_the_copy_its_own_row_without_cutting(app);
-            RAN_LANE.store(true, Ordering::SeqCst);
-            check_esc_drops_the_copy(app);
-            RAN_ESC.store(true, Ordering::SeqCst);
-            check_copy_then_paste_lengthens_through_the_real_buttons(app);
-            RAN_PASTE_LENGTHENS.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_a_short_or_absent_selection_never_reaches_the_hand(app);
+        RAN_SHORT.store(true, Ordering::SeqCst);
+        check_a_long_selection_is_taken_in_hand_and_survives(app);
+        RAN_TAKEN.store(true, Ordering::SeqCst);
+        check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app);
+        RAN_PASTED.store(true, Ordering::SeqCst);
+        check_a_lane_gives_the_copy_its_own_row_without_cutting(app);
+        RAN_LANE.store(true, Ordering::SeqCst);
+        check_esc_drops_the_copy(app);
+        RAN_ESC.store(true, Ordering::SeqCst);
+        check_copy_then_paste_lengthens_through_the_real_buttons(app);
+        RAN_PASTE_LENGTHENS.store(true, Ordering::SeqCst);
     });
 }
 

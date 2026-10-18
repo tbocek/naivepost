@@ -28,8 +28,7 @@ use naivepost::settings::{self, Conf, Paths};
 use naivepost::textfmt::{self, Line};
 use naivepost::tools::{self, clips::Clips, Tool};
 use naivepost::{cut_captions, cut_speed_pass, roles};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -223,34 +222,7 @@ impl Fake {
     }
 }
 
-fn serve(mut stream: TcpStream, answer: &str) -> Option<String> {
-    let mut reader = BufReader::new(stream.try_clone().ok()?);
-    let mut line = String::new();
-    let _ = reader.read_line(&mut line);
-    let mut length = 0usize;
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header).ok()? == 0 || header.trim().is_empty() {
-            break;
-        }
-        if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
-        }
-    }
-    let mut body = vec![0u8; length];
-    if length > 0 {
-        let _ = reader.read_exact(&mut body);
-    }
-    let payload = answer.to_string();
-    let framed = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
-        payload.len()
-    );
-    let _ = stream.write_all(framed.as_bytes());
-    let _ = stream.flush();
-    let _ = stream.shutdown(std::net::Shutdown::Both);
-    Some(String::from_utf8_lossy(&body).into_owned())
-}
+use common::serve_body as serve;
 
 
 /// Messages of `n` ASCII characters: one text part each, so a size is easy to state exactly.

@@ -152,18 +152,9 @@ fn check_a_slided_recording_shows_at_its_new_place(app: &adw::Application) {
 fn round() {
     check_the_conversion_round_trips();
     check_a_shift_moves_the_coordinates();
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK a slid recording draws at its new place");
-            check_a_slided_recording_shows_at_its_new_place(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        println!("CHECK a slid recording draws at its new place");
+        check_a_slided_recording_shows_at_its_new_place(app);
     });
 }
 

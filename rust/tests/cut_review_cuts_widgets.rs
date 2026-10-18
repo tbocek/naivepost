@@ -280,24 +280,15 @@ fn check_s1_grey_and_pause_face(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_s2_starts_through_the_widget(app);
-            check_s1_refuses_with_one_clip(app);
-            RAN_END.store(true, Ordering::SeqCst);
-            check_s7_the_press_leaves_a_running_player(app);
-            check_s1_grey_and_pause_face(app);
-            check_s3_the_tick_drives_the_review(app);
-            RAN_TICK.store(true, Ordering::SeqCst);
-            check_s5_a_hand_on_the_line_ends_the_review(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_s2_starts_through_the_widget(app);
+        check_s1_refuses_with_one_clip(app);
+        RAN_END.store(true, Ordering::SeqCst);
+        check_s7_the_press_leaves_a_running_player(app);
+        check_s1_grey_and_pause_face(app);
+        check_s3_the_tick_drives_the_review(app);
+        RAN_TICK.store(true, Ordering::SeqCst);
+        check_s5_a_hand_on_the_line_ends_the_review(app);
     });
 }
 

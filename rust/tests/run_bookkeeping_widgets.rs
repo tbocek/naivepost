@@ -13,22 +13,13 @@ use common::{fixture_dir};
 
 /// One running GTK application for this test binary, taken in turn by the checks below.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            idle_window_carries_both_widgets(app);
-            play_expands_the_log_through_the_widget(app);
-            stop_leaves_the_bar_where_the_step_left_it(app);
-            lucky_opens_the_bookkeeping_the_same_way(app);
-            play_walks_the_stage_onto_the_bar(app);
-            RAN.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        idle_window_carries_both_widgets(app);
+        play_expands_the_log_through_the_widget(app);
+        stop_leaves_the_bar_where_the_step_left_it(app);
+        lucky_opens_the_bookkeeping_the_same_way(app);
+        play_walks_the_stage_onto_the_bar(app);
+        RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

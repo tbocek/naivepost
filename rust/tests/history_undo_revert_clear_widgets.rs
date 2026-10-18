@@ -265,26 +265,17 @@ fn f2_13_s4_the_keyboard_reaches_the_same_rules(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            f2_13_s1_a_real_add_makes_undo_live_and_a_real_undo_says_what_is_left(app);
-            RAN_ADD_UNDO.store(true, Ordering::SeqCst);
-            f2_13_s1_redo_puts_it_back(app);
-            RAN_REDO.store(true, Ordering::SeqCst);
-            f2_13_s2_revert_refuses_then_returns_to_the_base(app);
-            RAN_REVERT.store(true, Ordering::SeqCst);
-            f2_13_s3_clear_takes_scenes_and_effects_and_keeps_the_recordings(app);
-            RAN_CLEAR.store(true, Ordering::SeqCst);
-            f2_13_s4_the_keyboard_reaches_the_same_rules(app);
-            RAN_KEYS.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        f2_13_s1_a_real_add_makes_undo_live_and_a_real_undo_says_what_is_left(app);
+        RAN_ADD_UNDO.store(true, Ordering::SeqCst);
+        f2_13_s1_redo_puts_it_back(app);
+        RAN_REDO.store(true, Ordering::SeqCst);
+        f2_13_s2_revert_refuses_then_returns_to_the_base(app);
+        RAN_REVERT.store(true, Ordering::SeqCst);
+        f2_13_s3_clear_takes_scenes_and_effects_and_keeps_the_recordings(app);
+        RAN_CLEAR.store(true, Ordering::SeqCst);
+        f2_13_s4_the_keyboard_reaches_the_same_rules(app);
+        RAN_KEYS.store(true, Ordering::SeqCst);
     });
 }
 

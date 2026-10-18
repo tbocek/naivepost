@@ -35,13 +35,18 @@ headless instead:
 
     cd rust && just snapshot 05-cut        # -> rust/shots/05-cut.png
 
-The accepted screen names are the match arms in `src/snapshot.rs` — `03-window`, `03-settings`,
-`03-sources`, `03-new-confirm`, `03-policy-form`, `04-prepare`, `04-prompt-picker`, `05-cut`,
-`05-add`, `05-fold`, `05-rows`, `05-split`, `05-trim`, `05-remove`, `05-lanes`, `06-preview`,
-`06-zoom`, `06-speed`, `06-text`, `06-volume`, `06-label`, `06-lane`, `06-svg`,
-`06-effect-menu`, `07-narrate`, `07-take`, `08-produce`, `08-words` — one per picture in
-`spec/img/`. There is no `--do <widget>` flag; the worked states of a screen get their own name
-(`05-split`, `05-trim`, `06-svg`, `06-volume`, `06-label`, `08-words`).
+The accepted screen names are the match arms in `src/snapshot.rs` — 39 of them:
+`03-log-link`, `03-new-confirm`, `03-policy-form`, `03-runbar`, `03-runbar-busy`,
+`03-settings`, `03-sources`, `03-window`, `04-prepare`, `04-prepared`, `04-prompt-picker`,
+`05-add`, `05-copy`, `05-cut`, `05-fold`, `05-insert`, `05-insert-form`, `05-lanes`,
+`05-remove`, `05-rows`, `05-split`, `05-suggest`, `05-trim`, `05-words`, `06-decorations`,
+`06-effect-menu`, `06-label`, `06-lane`, `06-preview`, `06-speed`, `06-speeds`, `06-svg`,
+`06-text`, `06-volume`, `06-zoom`, `07-narrate`, `07-take`, `08-produce`, `08-words`.
+Twenty-nine of them stand for a picture in `spec/img/`; ten are program-side screens with
+no picture of their own (`03-log-link`, `04-prepared`, `05-copy`, `05-insert`,
+`05-insert-form`, `05-suggest`, `05-words`, `06-speeds`, `06-decorations`), each named
+after the flow it records. There is no `--do <widget>` flag; the worked states of a screen
+get their own name (`05-split`, `05-trim`, `06-svg`, `06-volume`, `06-label`, `08-words`).
 
 Headless work needs `GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory`
 under `xvfb-run -a` — exactly what the `test` and `snapshot` recipes set, so prefer the recipes
@@ -76,8 +81,8 @@ from; `rust/session.naivepost` is a fuller one with `prepare/` as well.
 
     cd rust && just test > /tmp/test.log 2>&1     # ~3-4 min; then read the summary in the file
 
-Several tests build real GTK widgets, so they run under xvfb. Current state: **242**
-`test result: ok` lines, **2013 passed**, **0 failed**. Lint: `cargo clippy --all-targets
+Several tests build real GTK widgets, so they run under xvfb. Current state: **483**
+`test result: ok` lines, **3104 passed**, **0 failed**. Lint: `cargo clippy --all-targets
 --quiet` from `rust/`.
 
 ## What the spec covers
@@ -121,14 +126,18 @@ Gaps found by this pass and left open:
   under `~/.config/naivepost/prompts/<key>.txt`; what gets sent is assembled by
   `prompt_assembly::cut_system`/`user_message` from caller-supplied pieces. Needs a decision:
   vendor `prompts/` into the repo and wire the loader, or declare prompts user-supplied-only.
-- **18 of the 28 snapshot names render the base page.** Only 10 have a seed block in
-  `src/snapshot.rs` (`04-prompt-picker`, `05-cut`, `05-fold`, `05-rows`, `06-label`,
-  `06-lane`, `06-svg`, `06-volume`, `07-narrate`, `08-produce`); the rest collapse into two
-  identical groups (Prepare-at-rest, bare Cut page) rather than showing the distinct state their
-  `spec/img/` picture shows.
-- **Some Cut-page snapshots render narrow.** A Cut-page shot needs `set_default_size` before
-  `present()` or the page collapses to one column; the seeded screens do this, the unseeded ones
-  (`06-preview`, `05-add`, `05-lanes`, …) do not.
+- **Snapshot shots: 39 distinct pictures among the 39 names, but four pairs and some bare
+  pages.** Measured by rendering every name and hashing the files: only four groups come out
+  byte-identical. `04-prepare` = `04-prompt-picker` (the same page state — a GtkDropDown pops
+  its rows as its own surface, so the open picker can never be captured); `03-window` =
+  `03-log-link` (both are the Prepare shell with the log expander open, which is what §1's
+  caption pictures); `03-runbar` = `03-sources` (both render the Prepare page at rest, while
+  `spec/img/03-sources.png` zooms the sources list and the frame controls — this one is a
+  real gap); and `f34-caption-held.png` = `f34_caption_held.png`, one glyph shot under two
+  spellings. The crops `03-runbar-busy.face.png` and `06-effect-menu.menu.png` are deliberate,
+  not duplicates. Beyond the hashes, several Cut-page names still render the bare page where
+  their `spec/img/` picture shows a landed effect or an open form (`05-add`, `05-lanes`,
+  `05-remove`, `05-trim`, `06-preview`), so a unique hash is not the same as a faithful shot.
 - `03-runbar.svg` has no snapshot name — it is a proposed-state drawing, not a renderable screen.
 
 Nothing here commits anything; `git commit` is left to whoever wants it.

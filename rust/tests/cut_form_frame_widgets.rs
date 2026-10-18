@@ -143,20 +143,11 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            println!("CHECK 1 the column pins a heading and a footer");
-            check_the_column_pins_a_heading_and_a_footer(app);
-            println!("CHECK 2 the pinned cross closes the open form");
-            check_the_pinned_cross_closes_the_open_form(app);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        println!("CHECK 1 the column pins a heading and a footer");
+        check_the_column_pins_a_heading_and_a_footer(app);
+        println!("CHECK 2 the pinned cross closes the open form");
+        check_the_pinned_cross_closes_the_open_form(app);
     });
 }
 

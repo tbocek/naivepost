@@ -343,28 +343,19 @@ fn sec_05_cut_1_screen_s5_a_wheel_notch_on_the_band_zooms_around_the_cursor_and_
 }
 
 fn round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_the_three_gestures_are_attached(app);
-            RAN_CONTROLLERS.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_a_notch_over_the_transport_steps_the_line(app);
-            RAN_STEP.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_a_notch_over_the_tracks_zooms_and_shift_pans(app);
-            RAN_ZOOM.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_the_zoom_buttons_rescale_and_stop_at_the_fit(app);
-            RAN_BUTTONS.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_the_drawn_band_carries_the_tracks_controller(app);
-            RAN_BAND_CONTROLLER.store(true, std::sync::atomic::Ordering::SeqCst);
-            check_a_notch_emitted_on_the_band_zooms_and_pans(app);
-            RAN_BAND_EMIT.store(true, std::sync::atomic::Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_the_three_gestures_are_attached(app);
+        RAN_CONTROLLERS.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_a_notch_over_the_transport_steps_the_line(app);
+        RAN_STEP.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_a_notch_over_the_tracks_zooms_and_shift_pans(app);
+        RAN_ZOOM.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_zoom_buttons_rescale_and_stop_at_the_fit(app);
+        RAN_BUTTONS.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_drawn_band_carries_the_tracks_controller(app);
+        RAN_BAND_CONTROLLER.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_a_notch_emitted_on_the_band_zooms_and_pans(app);
+        RAN_BAND_EMIT.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

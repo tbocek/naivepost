@@ -47,11 +47,10 @@ fn menu_button(window: &adw::ApplicationWindow, name: &str) -> gtk::MenuButton {
     found.expect("the Cut page drew a MenuButton named effect-button")
 }
 
-/// A window sitting on the Cut tab, built the way `tests/common::cut_page` builds one (that one also repaints
-/// the lane, which this check does not need; this one keeps the tab order and the window pinning).
-fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
-    common::cut_page_empty(app)
-}
+// The shared builder, under the name these checks already call: `cut_page_empty` is that same page build
+// (the other one also repaints the lane, which this check does not need), and what matters here — the tab
+// order and the window pinning — it keeps.
+use common::cut_page_empty as cut_page;
 
 fn menu_shows_the_rows(app: &adw::Application) {
     let window = cut_page(app);

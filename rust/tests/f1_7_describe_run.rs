@@ -11,8 +11,7 @@
 //!
 //! The parameter the flow runs on is pinned after its token too: `P.machine.describeFramesPerReq`.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -65,13 +64,7 @@ struct Fake {
     answer: std::sync::Arc<Mutex<String>>,
 }
 
-#[derive(Debug, Clone)]
-struct ChatAsk {
-    /// Recorded because the endpoint matters to a wire test; kept in the struct so the ask is one value.
-    #[allow(dead_code)]
-    path: String,
-    body: String,
-}
+use common::{serve_chat as serve, ChatAsk};
 
 impl Fake {
     fn start(answer: String) -> Fake {
@@ -116,36 +109,6 @@ impl Fake {
     fn count(&self) -> usize {
         self.asks.lock().expect("the record lock").len()
     }
-}
-
-fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
-    let mut reader = BufReader::new(stream.try_clone().ok()?);
-    let mut line = String::new();
-    let _ = reader.read_line(&mut line);
-    let path = line.split_whitespace().nth(1).unwrap_or("/").to_string();
-    let mut length = 0usize;
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header).ok()? == 0 || header.trim().is_empty() {
-            break;
-        }
-        if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
-        }
-    }
-    let mut body = vec![0u8; length];
-    if length > 0 {
-        let _ = reader.read_exact(&mut body);
-    }
-    let payload = answer.to_string();
-    let framed = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
-        payload.len()
-    );
-    let _ = stream.write_all(framed.as_bytes());
-    let _ = stream.flush();
-    let _ = stream.shutdown(std::net::Shutdown::Both);
-    Some(ChatAsk { path, body: String::from_utf8_lossy(&body).into_owned() })
 }
 
 /// One scene: a session whose project holds the given sources, frames planted on disk (and optionally

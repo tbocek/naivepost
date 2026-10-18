@@ -346,20 +346,11 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// One running GTK application for this binary: GTK's main loop may only be started by the thread that
 /// runs it, so both widget checks happen in one `connect_activate`, each recording that it got there.
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_the_row(app);
-            RAN_ROW.store(true, Ordering::SeqCst);
-            check_a_press(app);
-            RAN_PRESS.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_the_row(app);
+        RAN_ROW.store(true, Ordering::SeqCst);
+        check_a_press(app);
+        RAN_PRESS.store(true, Ordering::SeqCst);
     });
 }
 

@@ -261,24 +261,15 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
 }
 
 fn window_round() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(|app| {
-            check_s2_switches_through_the_widget(app);
-            RAN_SWITCH.store(true, Ordering::SeqCst);
-            check_s1_greyed_with_no_clips(app);
-            RAN_GREYED.store(true, Ordering::SeqCst);
-            check_other_ways_refuse_an_empty_cut(app);
-            RAN_OTHER_WAYS.store(true, Ordering::SeqCst);
-            check_s4_face_follows_the_preview(app);
-            RAN_FACE.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        let _ = app.run_with_args::<String>(&[]);
+    common::one_app_round(|app| {
+        check_s2_switches_through_the_widget(app);
+        RAN_SWITCH.store(true, Ordering::SeqCst);
+        check_s1_greyed_with_no_clips(app);
+        RAN_GREYED.store(true, Ordering::SeqCst);
+        check_other_ways_refuse_an_empty_cut(app);
+        RAN_OTHER_WAYS.store(true, Ordering::SeqCst);
+        check_s4_face_follows_the_preview(app);
+        RAN_FACE.store(true, Ordering::SeqCst);
     });
 }
 

@@ -219,7 +219,6 @@ fn round(app: &adw::Application) {
             Err(_) => PANIC.with(|slot| *slot.borrow_mut() = Some(format!("{what}: panicked"))),
         }
     }
-    app.quit();
 }
 
 thread_local! {
@@ -228,15 +227,7 @@ thread_local! {
 
 #[test]
 fn f3_4_s5_a_press_without_travel_on_a_caption_toggles_play() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(round);
-        app.run();
-    });
+    common::one_app_round(round);
     let trouble = PANIC.with(|slot| slot.borrow().clone());
     if let Some(reason) = trouble {
         panic!("{reason}");
