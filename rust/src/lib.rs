@@ -225,6 +225,7 @@ pub mod snapshot_preview;
 pub mod snapshot_produce;
 pub mod snapshot_rows;
 pub mod snapshot_settings;
+pub mod snapshot_text;
 pub mod snapshot_suggest;
 pub mod snapshot_trim;
 pub mod snapshot_verbs;

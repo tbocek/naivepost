@@ -7,6 +7,10 @@
 #[path = "speak_tts_wire_harness.rs"]
 mod harness;
 
+#[allow(dead_code)] // this binary calls one helper from it; the rest belongs to the files that include it
+mod common;
+
+use common::wait_until;
 use harness::*;
 
 #[test]
@@ -22,7 +26,17 @@ fn f4_4_s3_the_reference_uploads_itself_for_every_line() {
     let second = speak_tagged(&fixture, "calm", "en", "two");
     assert!(second.wav().is_some(), "the second line was spoken: {:?}", second.refused());
 
-    let seen = audio.drain();
+    // Wait on the CONDITION: both lines' uploads actually reached the server. `drain` alone stops at the first
+    // 900 ms gap in the socket, which on a busy machine can come before a request is handed over -- and then the
+    // count below would be short for a reason that has nothing to do with S3's rule. `hits` DRAINS what it counts,
+    // so the arrivals have to be accumulated across the waits, not added to a drained set twice (that double-
+    // counted and let this wait end before both uploads had really arrived).
+    let mut seen: Vec<Seen> = Vec::new();
+    seen.extend(audio.drain());
+    wait_until("both lines' uploads reaching the fake server", || {
+        seen.extend(audio.drain());
+        seen.iter().filter(|seen| seen.path == "/v1/ui/upload").count() >= 2
+    });
     let uploads: Vec<&Seen> = seen
         .iter()
         .filter(|seen| seen.path == "/v1/ui/upload")

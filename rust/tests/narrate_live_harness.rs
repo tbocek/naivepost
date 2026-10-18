@@ -201,7 +201,10 @@ pub fn fixture(tag: &str) -> Fixture {
     if FIXTURES.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 0 {
         panic!("two fixtures in one test binary: the process-wide env races -- one scenario per binary");
     }
-    let root = std::env::temp_dir().join(format!("naivepost-f42live-{tag}"));
+    // The pid rides the name, as in every other live harness here: `cargo test` runs binaries in parallel and a
+    // tag alone is not unique across them -- two processes picking one folder wipe it out from under each other
+    // and append their timed rows to one `requests.tsv`.
+    let root = std::env::temp_dir().join(format!("naivepost-f42live-{tag}-{}", std::process::id()));
     // Wipe the whole scenario root, including anything an earlier run left under this tag: a stale
     // cut or transcript would answer the brief without the seeded one.
     let _ = std::fs::remove_dir_all(&root);

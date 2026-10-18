@@ -8,6 +8,10 @@
 #[path = "speak_tts_wire_harness.rs"]
 mod harness;
 
+#[allow(dead_code)] // this binary calls one helper from it; the rest belongs to the files that include it
+mod common;
+
+use common::wait_until;
 use harness::*;
 
 #[test]
@@ -22,7 +26,14 @@ fn f4_4_s4_the_speech_post_speaks_the_projects_language_not_the_prototypes() {
     let outcome = speak(&fixture, "angry=1", "pl");
     assert!(outcome.wav().is_some(), "the line was spoken: {:?}", outcome.refused());
 
-    let seen = audio.drain();
+    // Wait on the CONDITION -- the speech POST having reached the fake -- rather than on `drain`'s 900 ms socket
+    // gap, which can close before the request is handed over on a busy machine and then leave no speech row to
+    // find for an unrelated reason. The arrivals are accumulated because `drain` empties what it returns.
+    let mut seen: Vec<Seen> = Vec::new();
+    wait_until("the speech POST reaching the fake server", || {
+        seen.extend(audio.drain());
+        seen.iter().any(|seen| seen.path == "/v1/audio/speech")
+    });
     let speech = seen
         .iter()
         .find(|seen| seen.path == "/v1/audio/speech")
