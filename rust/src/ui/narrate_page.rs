@@ -306,11 +306,16 @@ pub fn build() -> gtk::Widget {
     sample.set_widget_name("sample-sentence");
     sample.set_text(narrate_screen::DEFAULT_SAMPLE);
     sample.set_tooltip_text(Some("Spoken in the selected voice"));
+    // The entry takes the width of its row, so the buttons and the pitch control after it keep their own.
+    sample.set_hexpand(true);
     left.append(&sample);
 
     let sample_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     sample_row.set_widget_name("sample-row");
-    sample_row.set_halign(gtk::Align::Start);
+    // No `halign = Start` on this row: it has to fill the column so the pitch control after the buttons sits
+    // where spec/img/07-narrate.png draws it (`sentence · ▶ ⏹ ⟳ · pitch: ─── 0.0` on ONE line). Pinned to the
+    // start with an entry that only asked for its natural width, the row squeezed into a few pixels and the
+    // pitch part fell to the line below.
     for (name, label, tip) in [
         ("sample-play", "\u{25b6}", "speak the sample in this voice"),
         ("sample-stop", "\u{23f9}", "stop the sample"),
@@ -321,20 +326,13 @@ pub fn build() -> gtk::Widget {
         button.set_tooltip_text(Some(tip));
         sample_row.append(&button);
     }
+    // **13** pitch: the labelled row (`pitch:` · slider · the shift's number), built by
+    // [`crate::ui::narrate_pitch`] on the sample line, as spec/img/07-narrate.png draws badges 11–13 together.
+    // Appended BEFORE `left.append(&sample_row)` and before the buttons are wired by name, so the one row holds
+    // sentence · ▶ ⏹ ⟳ · pitch in the picture's order. Seeded from the state above, so control and state agree
+    // on `narrate/pitch.txt`'s shift from the first paint.
+    sample_row.append(&crate::ui::narrate_pitch::build_row(read_state().pitch));
     left.append(&sample_row);
-
-    let pitch = gtk::Scale::with_range(
-        gtk::Orientation::Horizontal,
-        narrate_screen::PITCH_MIN_SEMITONES,
-        narrate_screen::PITCH_MAX_SEMITONES,
-        narrate_screen::PITCH_STEP,
-    );
-    pitch.set_round_digits(1);
-    pitch.set_widget_name("pitch-slider");
-    pitch.set_tooltip_text(Some(&narrate_screen::pitch_tip()));
-    // Seeded from the state above, so control and state agree on `narrate/pitch.txt`'s shift.
-    pitch.set_value(read_state().pitch);
-    left.append(&pitch);
 
     // **14–21** the lines column: one row per entry, sorted by clip then offset.
     let scroller = gtk::ScrolledWindow::new();
@@ -1194,6 +1192,8 @@ pub fn press_pitch(window: &adw::ApplicationWindow, delta: f64) -> String {
         crate::ui::window::log_line(&format!("!!! could not save the pitch -- {why}"));
     }
     let voice = read_state().voice;
+    // Badge 13: this is the other path that moves the shift, so the number beside the slider follows it too.
+    crate::ui::narrate_pitch::show_value(window, pitch);
     say(window, &narrate_details::voice_line(&voice, pitch))
 }
 
@@ -1381,6 +1381,8 @@ pub fn wire(window: &adw::ApplicationWindow) {
                             crate::ui::window::log_line(&format!("!!! could not save the pitch -- {why}"));
                         }
                         let voice = read_state().voice;
+                        // Badge 13: the number beside the slider follows the drag, once per drag like the write.
+                        crate::ui::narrate_pitch::show_value(&w, value);
                         say(&w, &narrate_details::voice_line(&voice, value));
                         glib::ControlFlow::Break
                     }

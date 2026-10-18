@@ -307,3 +307,24 @@ fn sec_07_narrate_1_screen_s8_a_frame_step_is_one_frame_and_never_leaves_the_cut
     assert_eq!(frame::step(0.0, 0.0, 0.04, true), None, "no cut means no clock to step");
     assert_eq!(frame::step(3.0, -1.0, 0.04, true), None, "a negative length is not a cut either");
 }
+
+/// §07-narrate#1-screen badge **13** (`pitch −6..+6 semitones`, drawn as `pitch: ─── 0.0` in
+/// spec/img/07-narrate.png): the number beside the slider is the shift's own face — one decimal, and an
+/// out-of-range stored value reads as the end it acts on, because that is the reference it will be cut at.
+#[test]
+fn sec_07_narrate_1_screen_s13_the_pitch_readout_is_the_sliders_face() {
+    // The ends and the middle, spelled the way the picture spells them.
+    assert_eq!(screen::pitch_readout(0.0), "0.0", "no shift still shows a number");
+    assert_eq!(screen::pitch_readout(1.5), "1.5", "half a semitone keeps its decimal");
+    assert_eq!(screen::pitch_readout(-2.5), "-2.5");
+    assert_eq!(screen::pitch_readout(screen::PITCH_MIN_SEMITONES), "-6.0");
+    assert_eq!(screen::pitch_readout(screen::PITCH_MAX_SEMITONES), "6.0");
+    // An edited `narrate/pitch.txt` outside the range acts as the nearest end, so that is what it shows.
+    assert_eq!(screen::pitch_readout(9.0), "6.0", "past the top it reads the top");
+    assert_eq!(screen::pitch_readout(-9.0), "-6.0", "below the bottom it reads the bottom");
+    // The face and the slider cannot drift: these are the numbers the scale spans, and the step it moves by.
+    assert_eq!((screen::PITCH_MIN_SEMITONES, screen::PITCH_MAX_SEMITONES), (-6.0, 6.0));
+    assert_eq!(screen::clamp_pitch(9.0), screen::PITCH_MAX_SEMITONES);
+    assert_eq!(screen::clamp_pitch(-9.0), screen::PITCH_MIN_SEMITONES);
+    assert_eq!(screen::PITCH_STEP, 0.5, "the face's one decimal can show every stop the slider has");
+}

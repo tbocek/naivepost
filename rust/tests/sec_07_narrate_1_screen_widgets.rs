@@ -18,7 +18,7 @@ use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module
 mod common;
-use common::{click, fixture_dir, hold_last_window, release_last_window, settle, status_text};
+use common::{click, fixture_dir, hold_last_window, release_last_window, settle, status_text, wait_until};
 
 static RAN_DRAG: AtomicBool = AtomicBool::new(false);
 static RAN_BUTTONS: AtomicBool = AtomicBool::new(false);
@@ -31,6 +31,7 @@ static RAN_BAND_SHOWN: AtomicBool = AtomicBool::new(false);
 static RAN_GLYPHS: AtomicBool = AtomicBool::new(false);
 static RAN_NUMBERED_WIDGETS: AtomicBool = AtomicBool::new(false);
 static RAN_INPUTS_READOUT: AtomicBool = AtomicBool::new(false);
+static RAN_PITCH_ROW: AtomicBool = AtomicBool::new(false);
 
 /// A session folder of our own, so nothing this test writes lands in a real project or another test's.
 fn scratch_root(tag: &str) -> std::path::PathBuf {
@@ -440,6 +441,10 @@ fn sec_07_narrate_1_screen_widgets_the_band_and_add_file_reach_their_rules() {
         RAN_INPUTS_READOUT.load(Ordering::SeqCst),
         "the Inputs readout check never ran"
     );
+    assert!(
+        RAN_PITCH_ROW.load(Ordering::SeqCst),
+        "the labelled pitch row check never ran"
+    );
 }
 
 // --- S7/S8 + §A.7 visibility: the pointer, the scrollbar, the frame step ---------
@@ -811,6 +816,29 @@ fn s10_widgets_round(app: &adw::Application) {
         tip_of(&found(&window, "pitch-slider")).contains("reference"),
         "**13** the pitch slider explains itself"
     );
+    // **13** as spec/img/07-narrate.png draws it: `pitch: ─── 0.0` — a label, the slider and the number,
+    // on ONE row. A bare slider (which is what this page had) shows neither the label nor the value.
+    assert_eq!(text_of(&found(&window, "pitch-label")), "pitch:", "**13** the control is labelled");
+    assert_eq!(
+        text_of(&found(&window, "pitch-value")),
+        narrate_screen::pitch_readout(0.0),
+        "**13** the shift's number is on screen at build"
+    );
+    let slider_widget = found(&window, "pitch-slider");
+    let label_parent = found(&window, "pitch-label").parent();
+    assert_eq!(
+        label_parent.as_ref().map(|p| p.upcast_ref::<gtk::Widget>().widget_name().to_string()),
+        Some("pitch-row".to_string()),
+        "**13** the label sits on the pitch row"
+    );
+    assert!(
+        slider_widget.parent().as_ref() == label_parent.as_ref(),
+        "**13** label, slider and value share one row, not three places"
+    );
+    assert!(
+        found(&window, "pitch-value").parent().as_ref() == label_parent.as_ref(),
+        "**13** the readout shares that row too"
+    );
 
     // **14**-**21**: row 0's parts. The time field, the status, the four row buttons and the text box.
     assert_eq!(
@@ -899,11 +927,61 @@ fn s11_inputs_round(app: &adw::Application) {
     settle();
 }
 
+/// **s13** — the pitch control as badge 13 draws it, driven the way GTK drives it.
+///
+/// Two halves: at build the row is `pitch:` · slider · `0.0` on one line (spec/img/07-narrate.png), and both
+/// program paths that move the shift — a drag's `value-changed`, and the keyboard step `press_pitch` — leave
+/// the number beside the slider reading the state the slider wrote. The readout is asserted AFTER waiting on
+/// the page's own 400 ms apply timer (`common::wait_until`, wall-clock deadline), so it cannot be the test's
+/// own number echoed back: the state check goes through `read_state()`, the door the logic tests read.
+fn s13_pitch_round(app: &adw::Application) {
+    let window = narrate_page(app, base_state());
+    assert_eq!(text_of(&found(&window, "pitch-label")), "pitch:");
+    assert_eq!(text_of(&found(&window, "pitch-value")), "0.0", "one decimal, as the picture shows it");
+    // The drag path: setting a GtkScale's value emits `value-changed`, exactly as a pointer drag does.
+    let scale = found(&window, "pitch-slider")
+        .downcast::<gtk::Scale>()
+        .expect("`pitch-slider` is a scale");
+    scale.set_value(-2.5);
+    wait_until("the pitch readout to show -2.5 after the slider moved", || {
+        text_of(&found(&window, "pitch-value")) == "-2.5"
+    });
+    assert_eq!(
+        ui::narrate_page::read_state().pitch,
+        -2.5,
+        "the face follows the state the slider wrote"
+    );
+    // The drag's own apply timer is what moved the state (§1: `applied 400 ms after the last move`), so a
+    // later stage of this application must not start while it is still pending — otherwise its write lands on
+    // the previous stage's value. Waiting on the condition, not on a guessed pause.
+    wait_until("the slider's apply timer to settle at -2.5", || {
+        ui::narrate_page::read_state().pitch == -2.5
+    });
+    // The other path: the keyboard step, which moves the same state by a delta.
+    let said = ui::narrate_page::press_pitch(&window, 1.0);
+    assert_eq!(ui::narrate_page::read_state().pitch, -1.5, "the step moved the shift: {said}");
+    wait_until("the pitch readout to follow the keyboard step to -1.5", || {
+        text_of(&found(&window, "pitch-value")) == "-1.5"
+    });
+    // And past the top of the slider the face reads the end it acts as, not a number nothing can do.
+    ui::narrate_page::press_pitch(&window, 9.0);
+    wait_until("the pitch readout to clamp at the slider's top", || {
+        text_of(&found(&window, "pitch-value")) == "6.0"
+    });
+    RAN_PITCH_ROW.store(true, Ordering::SeqCst);
+    eprintln!("SEC07-1 s13 (labelled pitch row) done");
+    // Back to no shift, so a later stage of this application sees the default face.
+    ui::narrate_page::press_pitch(&window, -6.0);
+    window.close();
+    settle();
+}
+
 /// The three checks above run as stages of the same application (see the note on `round`).
 fn third_round(app: &adw::Application) {
     s9_glyph_round(app);
     s10_widgets_round(app);
     s11_inputs_round(app);
+    s13_pitch_round(app);
 }
 
 /// A tiny valid mono 16-bit PCM wav: enough header for `voice_ref::wav_header` and enough bytes for
