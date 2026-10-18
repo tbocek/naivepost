@@ -846,7 +846,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // out: a `DrawingArea` clips its draw callback to its own allocation, and headless nothing repaints
         // between the map and the shot. One `queue_draw` after the layout is enough — it lands on the same
         // surface the band paints into, at the width the paned actually gave it.
-        if screen_page(&screen) == Some("Cut") {
+        if screen_page(&screen) == Some("Cut") || screen_page(&screen) == Some("Narrate") {
             // Drain the loop so GTK has laid the page out before anything asks it for a width: `present()`
             // only queues the map, and headless nothing else runs between here and the pixels. Without this
             // the band's draw is clipped to its pre-layout request and the tape stops at its floor.
@@ -876,6 +876,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // widget. Through the page's own door again -- same call a line move makes.
             if screen == "05-cut" || screen == "05-rows" {
                 crate::ui::cut_picture::refresh(&window);
+            }
+            // The take band re-fits its lane now that the scroller has a real width: the staging above ran
+            // before `present()`, so the width it sized from was the one an unmapped widget answers.
+            if screen_page(&screen) == Some("Narrate") {
+                crate::ui::narrate_band::note_lane_size(&window);
+                crate::ui::narrate_band::repaint(&window);
             }
         }
         // A dialog sized for its content needs the same drain the Cut tape needs: `present()` only queues the
@@ -1049,6 +1055,11 @@ pub fn exit_code(err: &str) -> ExitCode {
 
 /// A mono 16-bit PCM wav of `samples` silent samples at `rate`: the smallest file `voice_ref`'s
 /// header reader and the take band's seconds arithmetic both accept, written without ffmpeg.
+///
+/// Not all-zero bytes: a shot's band is supposed to show a WAVEFORM, and the envelope the band draws is the
+/// loudest sample of each 5 ms bucket — pure silence folds to a flat line that reads as an empty lane. So
+/// every bucket carries one small tone burst, enough for `wave_build::peak_byte` to land well above zero
+/// while staying far from clipping (a voice reference must never be loud, it is only measured).
 pub fn write_silence_wav(path: &Path, rate: u32, samples: u32) -> std::io::Result<()> {
     let data = (samples * 2) as usize;
     let mut bytes = Vec::with_capacity(44 + data);
@@ -1065,29 +1076,142 @@ pub fn write_silence_wav(path: &Path, rate: u32, samples: u32) -> std::io::Resul
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&(data as u32).to_le_bytes());
     bytes.resize(44 + data, 0);
+    // A SPEECH-LIKE envelope, not a flat block: the band draws each peak at `peak / 255` of its lane height
+    // (`ui::narrate_band::draw_envelope`), and peaks are the loudest sample of each 5 ms bucket folded onto
+    // a byte (`wave_build::peak_byte`), so the SHAPE has to change on a scale coarser than one bucket or it
+    // averages back to a rectangle. Hence SYLLABLES of 0.20-0.50 s at 0.15-0.70 of full scale (peaks land
+    // around 40-180 of the 255) separated by word gaps of 0.15-0.40 s of near-silence.
+    //
+    // Lengths are counted in SAMPLES (`rate * 0.2` is 1600 samples at 8 kHz), which is what `at` counts; the
+    // random draw is a seeded xorshift advanced once per syllable, so the same shot renders the same wave
+    // every time — deterministic without a table, and no flaky pixel comparison downstream.
+    let period = (rate / 200).max(1) as usize;
+    let mut rng: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = || {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        rng
+    };
+    let rate = rate as usize;
+    let mut at = 0usize;
+    while at < samples as usize {
+        // 0.20-0.50 s of "speech" at 0.15-0.70 of full scale.
+        let loud_end = at + (2 * rate / 10 + (next() % (rate as u64 / 2)) as usize);
+        let amp = (i16::MAX as f64) * (0.15 + (next() % 5_600) as f64 / 10_000.0);
+        while at < loud_end && at < samples as usize {
+            let phase = (at % period) as f64 / period as f64 * std::f64::consts::TAU;
+            let offset = 44 + at * 2;
+            bytes[offset..offset + 2].copy_from_slice(&((amp * phase.sin()) as i16).to_le_bytes());
+            at += 1;
+        }
+        // The gap after it: near-silence, so the wave has quiet stretches between the loud ones.
+        at = (at + rate * 15 / 100 + (next() % (rate as u64 * 25 / 100)) as usize).min(samples as usize);
+    }
     std::fs::write(path, bytes)
 }
 
-/// The shot's own take band, seeded the way §A.7 says it appears: the band is drawn only for a narrator
-/// slot whose recording is on disk, so `voice_ref_base.wav` has to exist before the page first lays out.
-/// An EMPTY voice.txt is the default project's voice, which is the captions-only choice — and captions
-/// have no recording, so the shot used to render a bare voice picker with no band under it.
-/// Writing the file is the state the app itself reaches by building a reference; the bench only gets
-/// there without ffmpeg. Returns whether a band can be drawn, so a screen can say which face it took.
+/// The shot's own take band, seeded the way §A.7 says it appears: the band is drawn for a narrator slot
+/// whose RECORDING exists, so two things have to be true before the page first lays out — a source tagged
+/// narrator 1 whose file is on disk, and a reference that has been built from it.
+///
+/// The recording half matters because the fixture cannot carry one: `fixtures/demo.naivepost` tags
+/// `project:sources/lecture.mkv`, which no checkout holds (the fixtures are text plus tiny generated files,
+/// and a real camera recording would be hundreds of megabytes). With nothing at that path §A.7's rule answers
+/// "no recording", which is why `just snapshot 07-take` printed "take band seeded = true" over a shot with
+/// no lane in it. So the renderer stands a short silent wav there — the same kind of file the app itself
+/// writes into its scratch folders, made without ffmpeg — and points the tagged source at it through the
+/// project door the app reads projects by. An EMPTY voice.txt is the default project's voice, which is the
+/// captions-only choice, and captions have no recording, so the file is written too.
+/// Writing these is the state the app itself reaches by tagging a recording and building a reference; the
+/// bench only gets there without a camera or a long encode. Returns whether a band can be drawn, so a screen
+/// can say which face it took.
 pub fn seed_voice_reference(tree: &crate::layout::Tree) -> bool {
     let base = crate::narrate_data::base_reference(tree);
     let Some(folder) = base.parent() else { return false };
     if std::fs::create_dir_all(folder).is_err() {
         return false;
     }
+    // The recording behind the narrator slot, stood up first: §A.7 asks about THIS file, and every answer
+    // downstream (visibility, the ruler's seconds, the envelope) reads it through the project.
+    if !seed_narrator_recording(tree) {
+        return false;
+    }
     if crate::voice_ref::wav_header(&base).is_none() {
         // 8 kHz is the smallest rate `voice_ref::wav_header` accepts, and 60 s is plenty of band to fit.
-        if write_silence_wav(&base, 8_000, 60 * 8_000).is_err() {
+        // 45 s, matching the recording `seed_narrator_recording` stands up below: the band spans whichever
+        // file it measures first (the reference, then the recording), and two different lengths made the
+        // drawn wave stop part-way across a ruler sized by the longer one.
+        if write_silence_wav(&base, 8_000, 45 * 8_000).is_err() {
             return false;
         }
     }
     // The slot the recording belongs to: `narrator1` is the always-available narrator, and naming it is
     // what takes the page off the captions-only face (`narrate_screen::CAPTIONS` is the empty choice).
     let _ = crate::narrate_data::write_voice(tree, "narrator1");
+    // §F4.6 S4 removes these on every take, pitch or voice change, and the shot's own arm makes a take after
+    // this runs — so the files the bench just wrote are gone again before the pixels. Put them back for the
+    // same reason the arm re-writes `takes.json`: a snapshot shows the state the flow is standing in, and
+    // §A.7's lane needs a recording under it whatever the invalidation did.
+    if crate::voice_ref::wav_header(&base).is_none() {
+        let _ = write_silence_wav(&base, 8_000, 45 * 8_000);
+    }
     crate::ui::narrate_band::recording_seconds().is_some()
+}
+
+/// Stand a recording where the project's narrator-1 row points, and point the row at it if that file is not
+/// there. Silent wavs only: no ffmpeg, no camera, and nothing that could make a shot depend on a machine.
+fn seed_narrator_recording(tree: &crate::layout::Tree) -> bool {
+    let Ok(mut project) = crate::project::load(tree.dir()) else {
+        return false;
+    };
+    let Some(row) = project.sources.iter_mut().find(|source| source.narrator == 1) else {
+        // Nothing is tagged: §A.7 has no recording to ask about, and inventing a row here would be the shot
+        // making up project state the Prepare step never produced.
+        return false;
+    };
+    let stored = row.path.clone();
+    let target = crate::layout::resolve(tree.dir(), tree.dir(), &stored);
+    // A file that is there but is not audio (the working copy's `lecture.mkv` is a 4 KB stand-in, not a
+    // matroska) answers ffprobe with "Invalid data", so §A.7's band would have no seconds to span. Ask the
+    // probe rather than trusting `is_file`: whatever it cannot measure gets stood up as a real wav.
+    if target.is_file() && recording_seconds_of(&target).is_some() {
+        return true;
+    }
+    let parent = match target.parent() {
+        Some(parent) => parent,
+        None => return false,
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return false;
+    }
+    // 45 s of silence at 8 kHz mono: long enough that the band fits it at a readable px/s and shows takes
+    // inside it, small enough to write in a blink (~360 KB).
+    let renamed = target.with_extension("wav");
+    if write_silence_wav(&renamed, 8_000, 45 * 8_000).is_err() {
+        return false;
+    }
+    if renamed != target {
+        // A wav where an .mkv was named: the row has to SAY wav, or ffprobe, the wave cache and every later
+        // reader ask a container that is not there. The stand-in goes with it — two files claiming one row.
+        let _ = std::fs::remove_file(&target);
+    }
+    row.path = crate::layout::write_path(tree.dir(), tree.dir(), &renamed);
+    crate::project::save(&project, tree.dir()).is_ok()
+}
+
+/// How long one audio file holds, by header first and ffprobe second — [`crate::narrate_band_face`]'s
+/// reading, reached through the same door the band uses so the shot and the page can never disagree.
+fn recording_seconds_of(path: &Path) -> Option<f64> {
+    if let Some((channels, rate)) = crate::voice_ref::wav_header(path) {
+        let bytes = std::fs::metadata(path).ok()?.len();
+        let per_second = (channels.max(1) as u64) * (rate.max(1) as u64) * 2;
+        return Some(((bytes.saturating_sub(44)) as f64 / per_second as f64).max(0.1));
+    }
+    let configured = crate::settings::from_environment()
+        .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
+        .unwrap_or_default();
+    crate::cut_lanes::probe_duration(&configured, &path.display().to_string(), &mut |_| {})
+        .ok()
+        .filter(|seconds| *seconds > 0.0)
 }

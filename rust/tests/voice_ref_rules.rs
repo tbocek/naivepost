@@ -935,3 +935,110 @@ fn f4_6_s4_the_build_shifts_the_base_at_the_pitch_the_project_holds() {
     let _ = std::fs::remove_dir_all(tree.dir());
     let _ = std::fs::remove_file(&script);
 }
+
+// --- S1 / §A.7: which voice the take band is drawn for ---------------------------------------
+//
+// The band's own lane geometry has a widget test (`sec_07_narrate_1_screen_widgets`); what lives here is
+// the QUESTION behind it — does this voice have anything to select from — because that question is answered
+// from the project, not from `voice_ref_base.wav`: §F4.6 S4 deletes the built reference on every take,
+// pitch or voice change, so a rule keyed to that file hides the band on the very ＋ press that made a take.
+
+/// A session with one narrator-1 row pointing at `take`, and no built reference anywhere: the state right
+/// after Prepare tagged a recording and before any line was spoken.
+fn band_session(root: &std::path::Path, take: &std::path::Path) -> naivepost::layout::Tree {
+    let session = root.join("session.naivepost");
+    std::fs::create_dir_all(&session).expect("session folder");
+    let tree = naivepost::layout::Tree::new(&session).expect("tree");
+    let mut project = naivepost::project::Project::default();
+    project.sources.push(naivepost::project::Source {
+        path: take.to_string_lossy().into_owned(),
+        footage: false,
+        narrator: 1,
+        ..Default::default()
+    });
+    naivepost::project::save(&project, tree.dir()).expect("naivepost.json written");
+    tree
+}
+
+#[test]
+fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_captions_and_a_missing_file_get_none() {
+    let root = std::env::temp_dir().join(format!("np-f46-band-a-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("scratch folder");
+    let take = root.join("narrator-mic.wav");
+    std::fs::write(&take, wav_bytes(1, 48_000)).expect("the tagged recording");
+    let tree = band_session(&root, &take);
+    let project = naivepost::project::load(tree.dir()).expect("the project the test wrote");
+
+    // Captions speak nothing, so there is nothing to drag a take out of, whatever is on disk.
+    assert!(
+        !naivepost::narrate_band_face::recording_exists(&tree, &project, CAPTIONS),
+        "captions-only gets no take band (§A.7)"
+    );
+    // An empty voice id is the same choice spelled differently (the picker stores "" for captions).
+    assert!(
+        !naivepost::narrate_band_face::recording_exists(&tree, &project, ""),
+        "an unset voice is captions, so no band"
+    );
+    // A voices-folder id whose file went away: §S1's "voice X is no longer in DIR", asked of the folder.
+    assert!(
+        !naivepost::narrate_band_face::recording_exists(&tree, &project, "gone"),
+        "a voices-folder id with no .wav in the folder has no recording to draw"
+    );
+    // The tagged row exists but its file does not: still no band, which is §A.7's "with a recording".
+    let missing_root = root.join("elsewhere");
+    std::fs::create_dir_all(&missing_root).expect("folder");
+    let missing = band_session(&missing_root, &missing_root.join("vanished.wav"));
+    let missing_project = naivepost::project::load(missing.dir()).expect("project");
+    assert!(
+        !naivepost::narrate_band_face::recording_exists(&missing, &missing_project, "narrator1"),
+        "a tagged row whose file is gone answers 'no recording', not 'empty band'"
+    );
+    // And the same slot WITH its file is the positive case the next test measures.
+    assert!(
+        naivepost::narrate_band_face::recording_exists(&tree, &project, "narrator1"),
+        "the slot Prepare tagged, with its file on disk, is exactly §A.7's case for showing the band"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_spans_the_recording_it_is_drawn_across() {
+    let root = std::env::temp_dir().join(format!("np-f46-band-b-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("scratch folder");
+    let take = root.join("narrator-mic.wav");
+    // 30 s of 8 kHz mono PCM: a real header and real sample count, so the seconds come from the file.
+    naivepost::snapshot::write_silence_wav(&take, 8_000, 30 * 8_000).expect("the recording");
+    let tree = band_session(&root, &take);
+    let project = naivepost::project::load(tree.dir()).expect("the project the test wrote");
+    // No built reference at all: S4 has not run, and §F4.6 S4 would delete it again anyway, so the band
+    // must measure the RECORDING rather than answer None because `narrate/` is empty.
+    // The session folder first: `band_seconds` asks `ui::narrate_band::recording_seconds()` before it looks
+    // at anything it is handed, and that door reads the RUNNING program's session (`startup::session_dir`
+    // off the cwd), which a unit test cannot stand up — an earlier round's snapshot leaves a 45 s reference
+    // in `rust/session.naivepost/`, and here it would be read as this test's own.
+    let session = std::env::current_dir().unwrap().join("session.naivepost");
+    let reference = naivepost::narrate_data::base_reference(
+        &naivepost::layout::Tree::new(&session).expect("the program's session folder"),
+    );
+    let _ = std::fs::remove_file(&reference);
+    assert!(
+        naivepost::voice_ref::wav_header(&reference).is_none(),
+        "this run has no built reference, which is the state being tested"
+    );
+    // The band's own seconds, asked the way the painter asks them: `band_seconds` is given the tree and
+    // project explicitly, so it cannot pick up a reference left in another test's scratch folder.
+    let seconds = naivepost::narrate_band_face::band_seconds(&tree, &project, "narrator1")
+        .expect("the recording itself sizes the band");
+    assert!(
+        (seconds - 30.0).abs() < 0.5,
+        "the band spans the recording's own 30 s, got {seconds}"
+    );
+    // Captions still get nothing, even with a recording sitting under the slot.
+    assert!(
+        naivepost::narrate_band_face::band_seconds(&tree, &project, CAPTIONS).is_none(),
+        "captions have no band to size"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

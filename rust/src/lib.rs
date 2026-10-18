@@ -74,6 +74,9 @@ pub mod narrate_preview_media;
 pub mod narrate_frame;
 pub mod narrate_screen;
 pub mod narrate_band;
+/// §F4.6 / inventory §A.7: when the take band shows and how many seconds it spans, read off the project
+/// rather than off whichever reference file happens to be on disk.
+pub mod narrate_band_face;
 pub mod voices;
 pub mod narrate_data;
 pub mod narrate_details;

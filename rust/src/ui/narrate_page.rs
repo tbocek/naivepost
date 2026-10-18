@@ -156,6 +156,8 @@ pub fn build() -> gtk::Widget {
     let split = gtk::Paned::new(gtk::Orientation::Horizontal);
     // §A.1: 560 px to the left pair, the window's extra width going to the lines.
     split.set_position(560);
+    split.set_resize_start_child(true);
+    split.set_shrink_start_child(false);
     split.set_wide_handle(true);
 
     let left = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -163,6 +165,11 @@ pub fn build() -> gtk::Widget {
     // asked for width, so GTK gave the column its natural (~140 px) size and every control below was cut
     // off at the fold.
     left.set_hexpand(true);
+    // §A.1's 560 px stated as a REQUEST as well as a paned position: the take band sizes its lane off the
+    // width its scroller actually got (`narrate_band::note_lane_size`), and a position is only a suggestion
+    // next to a child's own minimum.
+    left.set_size_request(560, -1);
+    left.set_halign(gtk::Align::Fill);
 
     // **1** the Narration tick.
     let tick = gtk::CheckButton::with_label(narrate_off::TICK_LABEL);
