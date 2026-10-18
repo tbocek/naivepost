@@ -6,7 +6,7 @@
 //! door the form calls, a lane-named volume reaches the encode before the mix, and the model
 //! briefs name rows and lanes only when there is more than one of either to tell apart.
 
-use naivepost::cut::{EffectKind, Fx, Seg};
+use naivepost::cut::{Cut, EffectKind, Fx, Lane, Seg};
 use naivepost::cut_cam;
 use naivepost::cut_clamp;
 use naivepost::cut_effects_pass;
@@ -20,6 +20,11 @@ use naivepost::tools::clips::Clips;
 /// A footage scene on camera `cam`, from `s` to `e`.
 fn scene(s: f64, e: f64, cam: i32) -> Seg {
     Seg { s, e, cam, ..Default::default() }
+}
+
+/// The session's heard lane: named, running from `at` for `dur` session seconds.
+fn lane(name: &str, at: f64, dur: f64) -> Lane {
+    Lane { name: name.into(), src: format!("{name}.wav"), at, off: 0.0, dur }
 }
 
 /// The same seconds filmed from a card instead of a camera: an overwrite insert, which is how
@@ -256,6 +261,267 @@ fn sec_06_effects_9_where_recordings_overlap_s7_preview_and_render_agree_on_came
     assert_eq!(effect_overlap::preview_camera(false, Some(2), 0), 2);
     // With nothing watched, the lens camera is the picture either way.
     assert_eq!(effect_overlap::preview_camera(false, None, 1), 1);
+}
+
+/// §9 (`The render MUST apply a volume over a card's own sound, as the preview does`): a card hears no
+/// recording — its own sound IS the bed — so a whole-bed gain must still be counted and built for that clip,
+/// while a duck naming a lane the card does not hear stays out. The plan decides it through
+/// [`effect_overlap::gain_reaches_the_clip`] and the encode builds what the plan counted.
+#[test]
+fn sec_06_effects_9_where_recordings_overlap_s9_the_render_applies_a_volume_over_a_cards_own_sound() {
+    let dir = std::env::temp_dir().join(format!("np-s9-card-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let card_file = "cards/title.svg";
+    let exists = |path: &str| path == card_file;
+
+    // A half-loud stretch over the whole bed, and one aimed at a lane this card never hears.
+    let bed = cut_effects_pass::defaults("volume", 1.0, (2.0, 6.0), Some(0.5));
+    assert!(bed.lane.is_empty(), "the pass proposes a bed volume");
+    let lav = Fx { kind: "volume".into(), t: 3.0, dur: 4.0, gain: 0.5, lane: "mic-lav".into(), ..Default::default() };
+    assert_eq!(lav.effect_kind(), Some(EffectKind::Volume));
+
+    // One footage scene that hears the lane, then a card over the same kind of stretch. Both gains fall inside
+    // both scenes' own seconds, so each clip is asked about both: the footage hears `mic-lav` and takes both,
+    // the card hears nothing and takes only the bed.
+    let pieces = [scene(0.0, 10.0, 0), card(10.0, 16.0)];
+    let mic = &Lane { name: "mic-lav".into(), src: "mic.wav".into(), at: 0.0, off: 0.0, dur: 60.0 };
+    fn both_fx(_seg: &Seg) -> Vec<Fx> {
+        vec![
+            cut_effects_pass::defaults("volume", 1.0, (2.0, 6.0), Some(0.5)),
+            Fx { kind: "volume".into(), t: 3.0, dur: 4.0, gain: 0.5, lane: "mic-lav".into(), ..Default::default() },
+        ]
+    }
+    // The same two records placed inside the CARD's seconds, which is what its graph is built from.
+    // (`defaults` adds `at` to the span's start, so the bed duck lands at 12 s, inside the card.)
+    fn card_fx(_seg: &Seg) -> Vec<Fx> {
+        vec![
+            cut_effects_pass::defaults("volume", 10.0, (2.0, 6.0), Some(0.5)),
+            Fx { kind: "volume".into(), t: 11.0, dur: 4.0, gain: 0.5, lane: "mic-lav".into(), ..Default::default() },
+        ]
+    }
+    let (clips, logs) = produce_render::plan_clips(
+        &pieces,
+        both_fx,
+        "16:9",
+        exists,
+        std::slice::from_ref(mic),
+        &[],
+        (1920, 1080),
+        true,
+        produce_render::unknown_footage,
+    );
+    assert!(logs.is_empty(), "nothing should be dropped: {logs:?}");
+    assert_eq!(clips.len(), 2);
+    let (footage, on_card) = (&clips[0], &clips[1]);
+    assert!(on_card.source == card_file && footage.lanes.contains(&"mic-lav".to_string()));
+    // Over the footage BOTH gains are work the encode has to do; over the card only the bed is, because the
+    // card hears no `mic-lav` — §9's `lane` field is exactly that branch.
+    assert_eq!(footage.cues, 2, "the lane duck and the bed duck both act on footage\n{footage:?}");
+    assert!(footage.lanes.contains(&"mic-lav".to_string()), "the footage hears the lane: {:?}", footage.lanes);
+    // A card that is told to hear nothing — §9's `Over inserts` row, seen from the sound side — still takes the
+    // bed duck: its OWN sound is the bed. Before this fix a whole-bed cue was filtered out of every clip that
+    // heard no lane, so the render applied no volume over a card while the preview did.
+    let quiet_card = Seg { quiet: vec!["mic-lav".into()], ..card(10.0, 16.0) };
+    assert!(!quiet_card.hears("mic-lav"), "the scene says what it does not hear");
+    let (card_clips, card_logs) = produce_render::plan_clips(
+        &[quiet_card],
+        card_fx,
+        "16:9",
+        exists,
+        std::slice::from_ref(mic),
+        &[],
+        (1920, 1080),
+        true,
+        produce_render::unknown_footage,
+    );
+    assert!(card_logs.is_empty(), "nothing should be dropped: {card_logs:?}");
+    assert_eq!(card_clips.len(), 1);
+    let over_card = &card_clips[0];
+    assert_eq!(over_card.source, card_file);
+    assert!(over_card.lanes.is_empty(), "it hears no recording: {:?}", over_card.lanes);
+    assert_eq!(over_card.cues, 1, "the card's own sound takes the bed duck and nothing else\n{over_card:?}");
+
+    // And the filter graph the encode builds for that card carries the volume filter, not an empty audio list.
+    let built = produce_fx_chain::for_clip(over_card, &over_card.fx, (1920, 1080), &dir);
+    assert!(
+        built.audio.iter().any(|f| f.contains("volume=volume=")),
+        "the render applies the volume over the card's own sound: {:?}",
+        built.audio
+    );
+    // The reach rule itself, in both directions, with no plan involved: each cue read at seconds that fall
+    // inside its own clip.
+    let bed_cues = render_fx::all_gain_cues(std::slice::from_ref(&bed), 1.0, 1.0, 9.0);
+    assert_eq!(bed_cues.len(), 1, "the pass's bed volume is one cue\n{bed:?}");
+    let none_heard: Vec<String> = Vec::new();
+    assert!(bed_cues[0].reaches_the_clip(&none_heard), "a bed reaches a clip that hears nothing");
+    let lavs = render_fx::all_gain_cues(std::slice::from_ref(&lav), 1.0, 1.0, 9.0);
+    assert_eq!(lavs.len(), 1);
+    assert!(!lavs[0].reaches_the_clip(&none_heard), "a lane duck reaches nothing where its lane is not heard");
+    let heard = vec!["mic-lav".to_string()];
+    assert!(lavs[0].reaches_the_clip(&heard), "and it reaches its own lane where it is heard");
+    drop(dir);
+}
+
+/// §9's last paragraph at the CUT pass's own door: the assembled request names the camera rows and the heard
+/// lanes, but only once there is more than one of either to tell apart. The message is the one
+/// `run_model` puts on the wire, assembled through `cut_suggest_model_run::user_turn_named`.
+#[test]
+fn sec_06_effects_9_s11_the_cut_brief_names_the_rows_and_lanes_when_there_are_more() {
+    // The camera rows a two-camera cut shows, spelled the way the passing briefs spell them (§A's 1-based
+    // camera number), read off the scenes the same door the press reads them from.
+    let two_cam = Cut {
+        segs: vec![scene(0.0, 20.0, 0), scene(20.0, 40.0, 1)],
+        lanes: vec![lane("mic", 0.0, 60.0), lane("screen", 0.0, 60.0)],
+        ..Default::default()
+    };
+    let rows: Vec<String> = {
+        let mut named: Vec<String> = two_cam
+            .segs
+            .iter()
+            .filter(|scene| scene.ins.is_empty())
+            .map(|scene| (cut_cam::scene_row(scene) + 1).to_string())
+            .collect();
+        named.sort();
+        named.dedup();
+        named
+    };
+    let lanes: Vec<String> = two_cam.lanes.iter().map(|lane| lane.name.clone()).collect();
+    assert_eq!(rows, vec!["1".to_string(), "2".to_string()], "the cut says which cameras filmed it");
+    assert_eq!(lanes, vec!["mic".to_string(), "screen".to_string()]);
+
+    let material = "[0.0s-5.0s] A: hi";
+    let named = naivepost::ui::cut_suggest_model_run::user_turn_named(
+        "a lecture about routers",
+        1200.0,
+        300.0,
+        material,
+        &rows,
+        &lanes,
+    );
+    // The header is `brief_lines`' own wording, not a retyped copy of it.
+    let header = effect_overlap::brief_lines(&rows, &lanes).expect("two rows and two lanes are named");
+    assert!(named.contains(&header), "{named}");
+    assert!(named.contains("camera 1, camera 2"), "{named}");
+    assert!(named.contains("mic, screen"), "{named}");
+    // And it sits BEFORE the material the model has to read, with the person's context still leading.
+    assert!(
+        named.find("a lecture about routers").expect("context") < named.find("SHOWN FROM").expect("header"),
+        "{named}"
+    );
+    assert!(
+        named.find("SHOWN FROM").expect("header") < named.find("SESSION LENGTH").expect("length"),
+        "the naming line leads the material: {named}"
+    );
+    assert!(named.find("SESSION TIMELINE").expect("timeline") < named.find(material).expect("body"));
+    // One camera, one lane: the message is the one this pass always sent, byte for byte.
+    let plain =
+        naivepost::ui::cut_suggest_model_run::user_turn("a lecture about routers", 1200.0, 300.0, material);
+    assert!(!plain.contains("SHOWN FROM"), "{plain}");
+    assert_eq!(
+        plain,
+        naivepost::ui::cut_suggest_model_run::user_turn_named(
+            "a lecture about routers",
+            1200.0,
+            300.0,
+            material,
+            &["1".into()],
+            &["mic".into()],
+        ),
+        "one row and one lane adds nothing"
+    );
+    // Two lanes alone count too — the naming rule is §9's, not a camera-only rule.
+    let one_camera = naivepost::ui::cut_suggest_model_run::user_turn_named(
+        "",
+        1200.0,
+        300.0,
+        material,
+        &["1".into()],
+        &lanes,
+    );
+    assert!(one_camera.contains("one camera, HEARD LANES: mic, screen"), "{one_camera}");
+    // The decoration pass, over the same cut, gets the same line from the same rule (§9's naming condition).
+    let batch = Clips::new(&[(1, 0.0, 20.0), (2, 20.0, 20.0)]);
+    let decorated = naivepost::effects_ask::user_message_over(&batch, &[], &rows, &lanes);
+    assert!(decorated.contains(&header), "{decorated}");
+    assert!(!naivepost::effects_ask::user_message(&batch, &[]).contains("SHOWN FROM"));
+}
+
+/// §9's other half: a suggested scene says which camera it is shown from. The cut pass's `add_segment` tool
+/// carries no camera field (inventing one is not this item), so the placement door asks for the row a reply
+/// named against the rows this session has, and §9's default answers — but the scene a suggestion lands into
+/// is then ASKED, and answers with a row of its own.
+#[test]
+fn sec_06_effects_9_s12_a_suggested_scene_says_which_camera_it_is_shown_from() {
+    // The rule: a named row this session has is kept, a row it has not falls back, nothing named is §9's row 0.
+    assert_eq!(effect_overlap::suggested_scene_cam(Some(1), &[0, 1]), 1);
+    assert_eq!(effect_overlap::suggested_scene_cam(Some(4), &[0, 1]), effect_overlap::SUGGESTED_ROW);
+    assert_eq!(effect_overlap::suggested_scene_cam(None, &[0, 1]), effect_overlap::SUGGESTED_ROW);
+    assert_eq!(effect_overlap::SUGGESTED_ROW, 0, "§9: suggested scenes all take row 0");
+    // The placement door: the walk-back's answer landed over a cut the page shows from two cameras.
+    let before = Cut {
+        segs: vec![scene(0.0, 20.0, 0), scene(20.0, 40.0, 1)],
+        ..Default::default()
+    };
+    let answer = naivepost::suggest::Applied {
+        segs: vec![(0.0, 10.0), (22.0, 30.0)],
+        kept_inserts: Vec::new(),
+        effects: Vec::new(),
+        log: Vec::new(),
+    };
+    let landed = naivepost::ui::cut_suggest_land::suggested_cut(&before, &answer);
+    // Every landed scene answers the lens badge's question with a row of its own; the reply named none, so
+    // they say the default, and the badge would light exactly one row.
+    assert_eq!(landed.segs.len(), 2);
+    for seg in &landed.segs {
+        assert_eq!(
+            seg.cam,
+            effect_overlap::suggested_scene_cam(None, &naivepost::cut_suggest_words::depended_cam_slots(&before)),
+            "the placed scene says its camera: {seg:?}"
+        );
+        assert!(cut_cam::shown_from(seg.cam, effect_overlap::SUGGESTED_ROW));
+    }
+    // And a scene that DOES name a row the session has keeps it through the same door.
+    let named_card = Seg { s: 5.0, e: 6.0, dur: 0.0, ins: "cards/title.svg".into(), ..Default::default() };
+    let with_named = naivepost::suggest::Applied {
+        segs: Vec::new(),
+        kept_inserts: vec![scene(0.0, 10.0, 1), named_card],
+        effects: Vec::new(),
+        log: Vec::new(),
+    };
+    let landed_named = naivepost::ui::cut_suggest_land::suggested_cut(&before, &with_named);
+    assert_eq!(landed_named.segs[0].cam, 1, "a named row of this session survives placement");
+    // A card names no camera of its own — §9's `Over inserts: none` — and takes the default.
+    assert_eq!(landed_named.segs[1].cam, effect_overlap::SUGGESTED_ROW);
+    // And the placement path is the one that ASKS: with the scene's own row outside the session's rows, §9's
+    // fallback answers the landed scene, which only happens inside `suggested_cut`.
+    let one_row_session = Cut {
+        segs: vec![scene(0.0, 20.0, 0)],
+        ..Default::default()
+    };
+    let out_of_range = naivepost::ui::cut_suggest_land::suggested_cut(
+        &one_row_session,
+        &naivepost::suggest::Applied {
+            segs: Vec::new(),
+            kept_inserts: vec![scene(0.0, 10.0, 4)],
+            effects: Vec::new(),
+            log: Vec::new(),
+        },
+    );
+    assert_eq!(
+        out_of_range.segs[0].cam,
+        effect_overlap::SUGGESTED_ROW,
+        "a scene naming a row this session has not is placed on §9's row, not on a camera nothing records"
+    );
+    // The door is called from the same place the page lands a WORDS cut with no model at all (§S2a), so the
+    // rule runs on every suggestion whether or not a model spoke: `land_spans` goes through `suggested_cut`.
+    let by_span = naivepost::ui::cut_suggest_land::suggested_cut(&before, &naivepost::suggest::Applied {
+        segs: vec![(0.0, 12.0)],
+        kept_inserts: Vec::new(),
+        effects: Vec::new(),
+        log: Vec::new(),
+    });
+    assert_eq!(by_span.segs[0].cam, effect_overlap::SUGGESTED_ROW, "the no-model cut answers too");
+    assert!(cut_cam::shown_from(by_span.segs[0].cam, effect_overlap::SUGGESTED_ROW));
 }
 
 /// §9's last paragraph: the model passes know nothing of cameras and lanes until there is more
