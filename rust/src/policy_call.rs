@@ -23,7 +23,7 @@ use crate::exchanges::{Message, Mode, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
-use crate::policy::{self, CatalogueRow, DerivationRequest, Proposal};
+use crate::policy::{self, Applied, CatalogueRow, DerivationRequest, Proposal};
 use crate::project::Policy;
 use crate::requests::Request;
 use crate::server_leg::base_row;
@@ -451,15 +451,34 @@ fn proposal_of(call: &crate::exchanges::ToolCall) -> Proposal {
 /// five fields it may set, spelled as the catalogue spells them. Answering it is what makes a read
 /// round possible — without an answer the model asks for the fields, gets silence, and the round cap
 /// ends the derivation.
-fn tool_answer(asked: &crate::exchanges::ToolCall, req: &DerivationRequest, policy: &Policy) -> String {
+pub fn tool_answer(asked: &crate::exchanges::ToolCall, req: &DerivationRequest, policy: &Policy) -> String {
     match asked.name.as_str() {
-        "set_policy" => crate::tools::ok(&serde_json::json!({
-            // Echo what was recorded, so the model can see the app read its call correctly; whether it
-            // was ACCEPTED is `policy::apply`'s answer, and a refusal reaches it as the next round's text.
-            "recorded": true,
-            "field": proposal_of(asked).field,
-            "value": proposal_of(asked).value,
-        })),
+        "set_policy" => {
+            let proposal = proposal_of(asked);
+            // §3.11's result column is "ok or error (unknown field, out of range)", and directive B says
+            // the app validates INSIDE the tool and hands the problem back as the tool result -- so the
+            // verdict is computed here, by `policy::apply`, the one validator that knows the catalogue.
+            // It runs against a throwaway copy: answering is this function's job, applying stays
+            // `policy::derive`'s loop, which still sees every proposal through `run_tool` and feeds its
+            // refusals back as the next round's user text (S3).
+            let mut scratch = policy.clone();
+            match policy::apply(&mut scratch, &proposal) {
+                Applied::Refused(say) => crate::tools::error(&say),
+                // A hand-set field is not an error -- the person's value stands -- but nothing was
+                // recorded either, and saying `recorded: true` would tell the model otherwise.
+                Applied::KeptUser => crate::tools::ok(&serde_json::json!({
+                    "kept": "user",
+                    "field": proposal.field,
+                    "value": proposal.value,
+                })),
+                Applied::Set => crate::tools::ok(&serde_json::json!({
+                    // Echo what was recorded, so the model can see the app read its call correctly.
+                    "recorded": true,
+                    "field": proposal.field,
+                    "value": proposal.value,
+                })),
+            }
+        }
         "get_context" => crate::tools::ok(&serde_json::json!({
             "userContext": req.context,
             "fields": fields_as_offered(policy),
