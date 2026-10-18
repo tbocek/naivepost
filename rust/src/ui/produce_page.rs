@@ -561,7 +561,15 @@ fn say(window: &adw::ApplicationWindow, said: &str) -> String {
 
 /// Repaint everything the held state owns: slots, the settings' values, the readouts.
 pub fn refresh(window: &adw::ApplicationWindow) {
-    let s = read_state();
+    let mut s = read_state();
+    // §A's Game-audio row and §15's "no narration" clause are the same fact about the project, so they are
+    // decided BEFORE anything is drawn: `build_settings` reads the held state, and a page that rebuilt its
+    // rows from last minute's flag drew the slider beside a readout saying there is no narration. `None` (no
+    // session to read) leaves whatever a flow published in place rather than claiming the folder is empty.
+    if let Some(counts) = session_readouts(s.narration_off) {
+        s.to_speak = counts.0;
+        s.publish_written = screen::publish_written(s.publish_written, counts.1);
+    }
     draw_into(&s);
     // The ✎ chips belong to the marks, so they are redrawn by the same door that redraws the slots.
     draw_word_chips(window, &s);
@@ -590,16 +598,6 @@ pub fn refresh(window: &adw::ApplicationWindow) {
         }
     }
     SETTINGS_GUARD.with(|guard| guard.set(false));
-    // §15's two counts come off the session, not off a flow's memory: how many lines still need a take
-    // (`to_speak`, §A's "N to speak") and whether `publish.json` is there (`publish_written`, §A's
-    // "no upload text"). Both were held numbers a flow had to remember to publish, which meant a reload
-    // showed "0 to speak" beside a folder of unwritten wavs. `None` = no session to count over, which
-    // leaves whatever a flow published in place rather than claiming the folder is empty.
-    let mut s = s;
-    if let Some(counts) = session_readouts(s.narration_off) {
-        s.to_speak = counts.0;
-        s.publish_written = screen::publish_written(s.publish_written, counts.1);
-    }
     if let Some(inputs) = label(window, "produce-inputs") {
         inputs.set_text(&screen::inputs_line(
             s.clips,
@@ -634,12 +632,12 @@ pub fn refresh(window: &adw::ApplicationWindow) {
 /// `ttsWav` is missing, and says "no narration" when there are no lines at all), asked here through the
 /// stamp's seam: `wav_of` is where a take lives, so the count and the stamp can never disagree about which
 /// lines are owed. Narration off is answered by the caller's own flag, not read here: the page holds it
-/// (§A hides Game audio behind it) and `lines_to_speak` already returns nothing for it.
+/// (§A hides Game audio behind it) and `lines_to_speak` already returns nothing for it. The flag arrives
+/// through [`note_narration_off`] rather than being read off disk here, so that the rows and the readout
+/// cannot be built from two different answers.
 fn session_readouts(narration_off: bool) -> Option<(usize, bool)> {
-    let tree = crate::layout::Tree::new(crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .ok()?;
+    let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let tree = crate::layout::Tree::new(&dir).ok()?;
     let lines = crate::narration::load(&tree).map(|n| n.entries).unwrap_or_default();
     let owed = crate::narrate_off::lines_to_speak(narration_off, &lines)
         .iter()
@@ -651,6 +649,17 @@ fn session_readouts(narration_off: bool) -> Option<(usize, bool)> {
     // §A's "no upload text" is the file's existence, and `publish::is_written` is that question already
     // asked (a present-but-unparseable record is still one the next ▶ overwrites).
     Some((owed, crate::publish::is_written(&tree)))
+}
+
+/// Hand the page the narration switch of the project this window is about (§F4.8, §08 §A).
+///
+/// The page does NOT read `naivepost.json` for this: `build_settings` hides the Game-audio row from the
+/// held state and `inputs_line` spells its "no narration" clause from the same field, so a page that
+/// learned the fact twice — once from a file probe, once from whatever a flow published — drew the slider
+/// beside a readout saying there is no narration. One door, called by whoever takes a project on or moves
+/// the tick, publishes it once.
+pub fn note_narration_off(off: bool) {
+    mutate(|state| state.narration_off = off);
 }
 
 // --- the seams: one widget press, one rules call, one printed sentence -------------------------------

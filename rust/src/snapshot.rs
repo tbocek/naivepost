@@ -651,7 +651,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             "08-words" => {
                 ui::produce_words::open_reword(&window, 0, "Ethereum, one lecture at a time");
                 let shown = ui::produce_words::open_dialog().expect("the chip opens its dialog");
-                shown.set_default_size(420, 220);
+                shown.set_default_size(420, 300);
                 Some(shown.upcast())
             }
             // No parent: a transient of the window is kept alive by it, and this run ends when the
