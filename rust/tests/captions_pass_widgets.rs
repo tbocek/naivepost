@@ -16,13 +16,12 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_captions::{self, Call};
-use naivepost::shell::Page;
 use naivepost::tools::clips::CAPTION_MIN_SECONDS; // P.policy.captionMinSeconds
 use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, widget_in, cut_page};
+use common::{settle, status_text, widget_in, cut_page};
 
 static RAN_CLICK_PLACES: AtomicBool = AtomicBool::new(false);
 static RAN_REJECTED_WHOLE_REPLY: AtomicBool = AtomicBool::new(false);

@@ -12,14 +12,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::Cut;
 use naivepost::fx_text;
-use naivepost::shell::Page;
 use naivepost::ui;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
+use common::settle;
 
 static RAN_TEXT_STAGE: AtomicBool = AtomicBool::new(false);
 
@@ -29,17 +27,7 @@ static RAN_TEXT_STAGE: AtomicBool = AtomicBool::new(false);
 const LINE_SECOND: f64 = 81.0;
 
 fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
-    release_last_window();
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    let window = ui::build_window(app, &model, "Prepare");
-    hold_last_window(window.clone());
-    window.present();
-    ui::tab_button(&window, Page::Cut)
-        .expect("the shell has a Cut tab")
-        .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, &Cut::default());
-    settle();
-    window
+    common::cut_page_empty(app)
 }
 
 /// First widget in this window's tree carrying this name (`ui::find_widget_by_name` is crate-private).

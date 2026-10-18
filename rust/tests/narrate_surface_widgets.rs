@@ -288,7 +288,7 @@ fn narrate_round(app: &adw::Application) {
         3,
         "§1 says off greys lines, preview and voice picker -- three things"
     );
-    let tick = widget_in(&window, "narration-tick")
+    let _tick = widget_in(&window, "narration-tick")
         .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
         .expect("the Narration tick is a check button");
     // The page starts with the narration ON (narrate_off::tick_checked), so the three surfaces are live

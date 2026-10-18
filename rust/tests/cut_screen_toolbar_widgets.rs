@@ -10,7 +10,7 @@
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{self, Seg};
+use naivepost::cut::{self};
 use naivepost::cut_verbs;
 use naivepost::cut_screen::{self, HISTORY_BUTTONS, TRANSPORT_BUTTONS, VERB_BUTTONS, ZOOM_BUTTONS};
 use naivepost::shell::Page;
@@ -53,27 +53,6 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
 /// Let the main context run what the widget emissions queued.
 
-
-/// Every widget name under `root`, depth-first, skipping unnamed ones. `observe_children` gives the
-/// direct children of a box in pack order, which is the order the page assembled them in.
-fn names_under(widget: &gtk::Widget) -> Vec<String> {
-    let mut out = vec![widget.widget_name().to_string()];
-    for child in widget.observe_children().iter::<glib::Object>() {
-        let Ok(child) = child else { continue };
-        let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-        out.extend(names_under(child));
-    }
-    out
-}
-
-fn named_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    // `find_widget_by_name` is crate-private; walking from the window is the same search and keeps the
-    // test honest about what is actually in the tree.
-    names_under(window.upcast_ref())
-        .iter()
-        .position(|n| n == name)
-        .and_then(|_| find_first(window.upcast_ref(), name))
-}
 
 fn find_first(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if widget.widget_name() == name {
@@ -127,20 +106,6 @@ fn collect_named(widget: &gtk::Widget, out: &mut Vec<String>) {
         let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
         collect_named(child, out);
     }
-}
-
-/// The strings a `StringList` holds, in order.
-fn strings(model: &glib::Object) -> Vec<String> {
-    let list = model.downcast_ref::<gtk::StringList>().expect("a list of strings");
-    (0..list.n_items())
-        .map(|index| {
-            list.item(index)
-                .and_downcast::<gtk::StringObject>()
-                .expect("a string item")
-                .string()
-                .to_string()
-        })
-        .collect()
 }
 
 // --- the checks, each run inside the one activate ---------------------------------------------------

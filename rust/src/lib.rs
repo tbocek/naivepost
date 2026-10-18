@@ -190,6 +190,7 @@ pub mod probes;
 pub mod rescan;
 pub mod requests;
 pub mod request_timing;
+pub mod request_run;
 pub mod server_leg;
 pub mod stop_legs;
 pub mod settings_probe;

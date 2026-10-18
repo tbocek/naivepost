@@ -12,7 +12,7 @@ use naivepost::prepare_decisions as pd;
 
 #[allow(dead_code)] // every test binary compiles this whole module; a helper it does not call is not a warning here
 mod common;
-use common::{all_rows, anywhere};
+use common::all_rows;
 
 /// A row found anywhere in the catalogue. Asserted NON-EMPTY rather than exactly-one: some ids are deliberately
 /// catalogued twice in this tree (`P.eng.minPieceSeconds` has a Prepare row and a Cut-page row), so a strict

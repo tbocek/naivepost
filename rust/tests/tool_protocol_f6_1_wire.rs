@@ -39,7 +39,6 @@ const TITLE_FIRST: &str = "TITLE: first attempt\nThe first description.";
 struct FakeLlm {
     port: u16,
     received: Receiver<String>,
-    script: Arc<Mutex<Vec<Reply>>>,
 }
 
 impl FakeLlm {
@@ -61,7 +60,7 @@ impl FakeLlm {
                 });
             }
         });
-        FakeLlm { port, received, script }
+        FakeLlm { port, received }
     }
 
     fn url(&self) -> String {

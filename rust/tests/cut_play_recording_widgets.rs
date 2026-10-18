@@ -12,7 +12,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::preview::{self, Press};
 use naivepost::run::Transport;
 use naivepost::shell::Page;

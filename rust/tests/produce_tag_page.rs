@@ -16,7 +16,6 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
 use naivepost::produce_embed as embed;
@@ -68,7 +67,6 @@ fn write_thumbnail(tree: &Tree) {
 #[derive(Clone, Default)]
 struct Legs {
     calls: Rc<RefCell<Vec<Vec<String>>>>,
-    fail: bool,
 }
 
 impl Legs {
@@ -396,7 +394,7 @@ fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
 }
 
 /// Seed the page's rows the way `tests/produce_stamp_widgets.rs` does, so the press hashes real settings.
-fn seed_page(window: &adw::ApplicationWindow) {
+fn seed_page(_window: &adw::ApplicationWindow) {
     let row = naivepost::produce_screen::defaults();
     let mut page = ui::produce_page::read_state();
     page.container = row[0].1.to_string();

@@ -61,6 +61,10 @@ pub struct Probe {
     /// Arrival times in the same epoch seconds the watch works in, which is what makes them comparable.
     last_byte: AtomicU64,
     ever_arrived: AtomicBool,
+    /// Set when the watch ENDED this call for silence (§4's give-up). The caller needs the difference
+    /// between "the guard gave up" and "the socket failed" for `requests.tsv`'s outcome column (§10),
+    /// and both arrive as an `Err` whose wording belongs to §4's sentences, not to a classifier.
+    gave_up: AtomicBool,
 }
 
 impl Probe {
@@ -90,6 +94,17 @@ impl Probe {
             0 => None,
             secs => Some(secs),
         }
+    }
+
+    /// Say that the watch ended this call. Written by [`guarded`]'s give-up arm and read by the leg that
+    /// filed the request, so the row can say `stalled` rather than `error nothing arrived in 5m0s`.
+    pub fn note_gave_up(&self) {
+        self.gave_up.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether the watch ended this call for silence.
+    pub fn gave_up(&self) -> bool {
+        self.gave_up.load(Ordering::Relaxed)
     }
 }
 
@@ -198,6 +213,8 @@ pub fn guarded<T: Send + 'static>(
             Poll::Heartbeat(line) => crate::ui::window::log_line(&line),
             Poll::GaveUp { log, blame } => {
                 crate::ui::window::log_line(&log);
+                // Tell the leg that filed this request that THIS is why it ended (§10's `stalled`).
+                probe.note_gave_up();
                 // §7's watchdog dump: the give-up is exactly the stall a `hang-*.txt` exists to
                 // record, so it is written here rather than by a second watcher nobody wired up.
                 // Failing to write it changes nothing about the call's ending (principle 8).

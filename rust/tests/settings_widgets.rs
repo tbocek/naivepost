@@ -106,7 +106,7 @@ fn open_settings_dialog() -> Option<adw::Window> {
 
 /// A named widget inside the open dialog, whatever its type — `model-list` is a DropDown, Fetch and
 /// Use are Buttons, so the walk cannot hand back a `gtk::Button` for every name.
-fn find_dialog_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
+fn find_dialog_widget(_window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     open_settings_dialog().and_then(|dialog| walk(dialog.upcast_ref(), name))
 }
 
@@ -383,7 +383,7 @@ fn check_fetch_and_use(app: &adw::Application) {
 
     // A refused fetch marks the cross and reaches the main log with the reason.
     let failing: Provider =
-        Rc::new(|key, _| Err("connection refused on the typed address".to_string()));
+        Rc::new(|_key, _| Err("connection refused on the typed address".to_string()));
     open_canned(&window, failing);
     settings_button_named(&window, "fetch-models-button").emit_clicked();
     settle();

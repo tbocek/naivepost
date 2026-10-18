@@ -10,7 +10,7 @@
 //! own next to the others that re-point the settings.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 
 use naivepost::layout::Tree;
 use naivepost::llm_request as llm;

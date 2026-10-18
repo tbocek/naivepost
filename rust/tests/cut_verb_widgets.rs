@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{self, Seg};
-use naivepost::cut_select::{self, Scope, Surface};
+use naivepost::cut_select::{Scope, Surface};
 use naivepost::cut_verbs::{self, Outcome};
 use naivepost::shell::Page;
 use naivepost::ui;

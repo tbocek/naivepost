@@ -85,6 +85,7 @@ fn ask(
             waited_ms: 0,
             delta: None,
             budget: None,
+            attempt: 1,
         },
     )
     .1
@@ -238,6 +239,8 @@ pub fn speech_call(
         let mut row = base.clone();
         row.sent_bytes = Some(payload.len() as i64);
         row.received_bytes = Some(got);
+        // §10's run column, stamped by the same door every other leg uses.
+        crate::request_timing::stamp_run(&mut row);
         let _ = crate::requests::record(
             tree,
             &crate::request_timing::finish_row(&row, timer, outcome, attempt),

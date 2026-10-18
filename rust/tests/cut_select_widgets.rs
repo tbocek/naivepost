@@ -8,7 +8,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::cut_hear;
 use naivepost::cut_select::{self, Scope, Surface};
 use naivepost::shell::Page;

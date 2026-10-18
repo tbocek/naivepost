@@ -75,6 +75,10 @@ pub mod narrate_page_speak;
 pub mod narrate_page_seek;
 pub mod narrate_inputs;
 pub mod narrate_page_transport;
+/// §F4.6 — the take band and the sample plate: ＋ / － / ▶ on a take and ▶ / ⏹ / ⟳ on the sample
+/// sentence. Split out of `narrate_page.rs`, which is past its size budget; its doors are re-exported
+/// through that page.
+pub mod narrate_page_take;
 pub mod narrate_seed;
 pub mod narrate_band;
 pub mod narrate_voices;
@@ -184,10 +188,25 @@ mod window_history_zoom;
 /// to it, the four step buttons and their key controller. Split out of `window.rs`, which is past its
 /// size budget; its doors are re-exported through `window`.
 mod window_line_step;
+mod window_holds;
+mod window_logs;
 mod window_narrate;
 /// §1's widget doors — the named lookups, readouts and tooltip readers. Split out of `window.rs`,
 /// which is past its size budget. Every name is re-exported through `window`.
 mod window_doors;
+/// §F0.9 / §F0.10 / §F0.12 — the project dialogs: ＋ New, Open, Save, Rescan and Add sources, plus the
+/// import run they drive. Split out of `window.rs`, which is past its size budget. Its doors are
+/// re-exported through `window`.
+mod window_project;
+/// §F0.1–§F0.12 / §05-cut#1-screen / §06-effects#2 — one page's widget tree, the Cut toolbar groups and
+/// their effect popover, and Prepare's source list and frame controls. Split out of `window.rs`, which is
+/// past its size budget; its doors are re-exported through `window`.
+mod window_page_box;
+/// §F2.1–§F2.3 / §F2.5 S6 / §F2.8–§F2.9 — the preview player and the review cut: the named widget
+/// doors, the reads a test asserts against, and the ▶ / ▶✂ / ▶✂✂ presses. Split out of `window.rs`,
+/// which is past its size budget. Its doors are re-exported through `window`.
+mod window_preview;
+mod window_surfaces;
 /// §F3.9/§F3.10/§F3.11 — the ✐ Captions, ⏩ Speeds and ✨ Decorations run-bar jobs and their gates. Split
 /// out of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
 mod cut_pass_gates;

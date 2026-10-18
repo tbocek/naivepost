@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{self, Seg};
+use naivepost::cut::{self};
 use naivepost::cut_copy as cp;
 use naivepost::cut_select::{Surface, MIN_SCENE_SECONDS};
 use naivepost::shell::Page;
@@ -193,7 +193,7 @@ fn check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app: &adw::Ap
         .expect("copy-button exists")
         .emit_clicked();
     settle();
-    let hand = ui::copy_hand().expect("the copy is in hand");
+    let _hand = ui::copy_hand().expect("the copy is in hand");
 
     let before_segs = ui::review_cut_segs_count(&window);
     let before_len = naivepost::cut_screen::cut_seconds(&cut_of(&window));

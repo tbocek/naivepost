@@ -1409,6 +1409,10 @@ name = "request_timing"
 path = "tests/request_timing.rs"
 
 [[test]]
+name = "sec_09_10_run_closing_line_widgets"
+path = "tests/sec_09_10_run_closing_line_widgets.rs"
+
+[[test]]
 name = "rescan"
 path = "tests/rescan.rs"
 

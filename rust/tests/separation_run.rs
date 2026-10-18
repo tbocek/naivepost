@@ -76,11 +76,7 @@ fn leave() {
 /// own port — a port can be recycled by another fake, but never while its own listener is alive.
 struct Scene {
     root: PathBuf,
-    paths: Paths,
     url: String,
-    /// The scene's own ffmpeg stub, which is also where its ffprobe lives (§1: ffprobe comes from the
-    /// same folder as the configured ffmpeg).
-    tools: PathBuf,
     /// Requests this scene's fake answered, newest last.
     seen: std::sync::Arc<Mutex<Vec<Seen>>>,
 }
@@ -122,7 +118,7 @@ impl Scene {
         conf.audio_server = url.clone();
         conf.ffmpeg = tools.join("ffmpeg").to_string_lossy().into_owned();
         settings::save(&paths, &conf).expect("the conf is written");
-        Scene { root, paths, url, tools, seen }
+        Scene { root, url, seen }
     }
 
     fn project(&self, sources: Vec<Source>) {

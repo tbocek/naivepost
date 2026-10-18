@@ -258,8 +258,3 @@ fn cut_verbs_snap(band_end: f64, points: &[f64]) -> (f64, f64) {
     use naivepost::cut_verbs;
     (cut_verbs::snap_end(band_end, &[]), cut_verbs::snap_end(band_end, points))
 }
-
-/// The other side of the same question, so the test fails if `waveform_mode` ever inverts.
-fn waveform_named(aligner: &str) -> bool {
-    !wave_edges::waveform_mode(aligner)
-}

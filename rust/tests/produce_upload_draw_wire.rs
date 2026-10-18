@@ -169,8 +169,6 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc:
     Some(())
 }
 
-fn silent(_line: &str) {}
-
 /// §F5.6 S6 over the wire: the submit leg dials `/sdcpp/v1/img_gen` with the body the walk built, and the
 /// job id comes out of the reply — the only handle the two job kinds have.
 #[test]

@@ -48,7 +48,6 @@ struct FakeServer {
     port: u16,
     /// Receives one `Seen` per request served. Kept so a test asserts what arrived.
     received: mpsc::Receiver<Seen>,
-    listener: Option<TcpListener>,
 }
 
 impl FakeServer {
@@ -74,11 +73,7 @@ impl FakeServer {
             }
         });
         let _ = tag;
-        FakeServer {
-            port,
-            received,
-            listener: None,
-        }
+        FakeServer { port, received }
     }
 
     /// An address nothing listens on, held for as long as the caller keeps the returned listener.
@@ -329,6 +324,7 @@ fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_head
             waited_ms: 0,
             delta: None,
             budget: None,
+            attempt: 1,
         },
     );
     result.expect("the upload reached the fake server");
@@ -428,7 +424,7 @@ fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are
         Duration::ZERO,
     );
     let tree = Tree::new(project_dir("s19")).expect("a project folder");
-    let endpoint = endpoint_at(&server.url(), "");
+    let _endpoint = endpoint_at(&server.url(), "");
 
     let steps = [
         (Kind::Capabilities, "/sdcpp/v1/capabilities", "capabilities"),
@@ -437,7 +433,7 @@ fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are
         (Kind::CancelImage, "/sdcpp/v1/jobs/job-42/cancel", "cancel"),
     ];
     for (kind, want_path, label) in steps {
-        let base = server_leg::base_row(Server::Image, "sd-v1", label, "", "settings", "job-42");
+        let _base = server_leg::base_row(Server::Image, "sd-v1", label, "", "settings", "job-42");
         let body = if kind.method() == "POST" {
             Some(r#"{"prompt":"a frame"}"#)
         } else {

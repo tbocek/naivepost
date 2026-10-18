@@ -90,7 +90,7 @@ fn f1_10_s1_words_an_earlier_join_took_are_left_out_so_it_cannot_be_blamed_twice
     // The 2026-09-18 fix. Shown a repeat that a previous join already removed, the one-stretch check
     // counts THAT stretch against this join and refuses an answer that was right.
     let words = two_takes();
-    let none_gone = vec![false; words.len()];
+    let _none_gone = vec![false; words.len()];
     assert_eq!(joins::seams(&words), vec![4], "one seam, at take-b's first word");
 
     // Take the whole of take-a out (an earlier join's doing) and the seam moves to where the film now
@@ -316,7 +316,7 @@ fn f1_10_s3_a_stretch_past_the_snap_bound_is_refused_by_name() {
     // stretch belongs to somebody else's sentence.
     let before = split("one two three four five six seven eight nine ten");
     let after = split("eleven twelve");
-    let mut join = Join::new(&strings(&before), &strings(&after));
+    let _join = Join::new(&strings(&before), &strings(&after));
     // Keep everything but the LAST two of BEFORE: that touches the seam and snaps fine.
     let ok_reply = r#"{"joined":"one two three four five six seven eight nine ten eleven twelve"}"#;
     let untouched = joins::answer_join(&mut Join::new(&strings(&before), &strings(&after)), ok_reply, &before, &after);

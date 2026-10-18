@@ -5,7 +5,7 @@
 // The rules themselves belong to earlier items (F2.9 owns Copy/Paste/Lane); what this file pins is that the
 // refusals are the ones written down, and that two of them leave the copy in hand rather than swallowing it.
 
-use naivepost::cut::{Cut, Seg};
+use naivepost::cut::Cut;
 use naivepost::cut_copy as cp;
 use naivepost::cut_delete as del;
 use naivepost::cut_select::{Scope, Selection};

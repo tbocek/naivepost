@@ -281,7 +281,7 @@ fn f3_1_s2_a_free_rectangle_drag_lands_a_form_at_the_red_line(app: &adw::Applica
     // (measured: a 40 x 40 px box came back as hf 0.02, i.e. divided by ~2000 px), so the seam reads the
     // panel's OWN height instead of assuming the pinned frame. A real window reports 135 and gets the same
     // answer this check computes from the same function.
-    let box_ = zoom::free_rectangle((90.0, 70.0), (40.0, 30.0)).expect("that drag counts");
+    let _box_ = zoom::free_rectangle((90.0, 70.0), (40.0, 30.0)).expect("that drag counts");
     // The exact fractions are NOT re-checked here against a hand-fed source: that arithmetic belongs to
     // `fx_zoom` and is pinned in `tests/cut_zoom_by_hand.rs::f3_1_s2_a_free_rectangle` (free rectangle +
     // `to_fractions` + `clamp_rect`, both drag directions). Driving the seam a second time inside this binary

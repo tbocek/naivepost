@@ -269,7 +269,7 @@ fn f0_3_s3_the_button_leg_terminates_every_registered_child() {
         .expect("spawn second sleep");
     let (one, two) = (first.id(), second.id());
 
-    let bar = bar_with_run(run::Step::Prepare, false);
+    let _bar = bar_with_run(run::Step::Prepare, false);
     let mut procs = Subprocesses::default();
     procs.register(one);
     procs.register(two);

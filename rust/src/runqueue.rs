@@ -311,6 +311,8 @@ pub fn start_run(bar: &mut RunBar, queue: &mut Queue, log: &mut RunLog, step: St
     // own copy of the boundary is raised and closes the live page in the same breath — §7's page is a
     // run's, and `exchange_leg` is what every chat call files itself with, so the pair cannot drift.
     crate::exchange_leg::note_run_started();
+    // §10: the run's closing line counts what THIS run sent, so mark where the log stands now.
+    crate::request_run::note_run_begins();
     let closed_log_page = log.reset().is_some();
     Started {
         epoch,
