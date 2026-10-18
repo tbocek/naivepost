@@ -325,14 +325,14 @@ fn sec_08_produce_4_parameters_used_s7_input_order_and_the_faststart_flags() {
     let video = std::path::Path::new("produce/video.mp4");
     let audio = std::path::Path::new("produce/audio.m4a");
     let out = std::path::Path::new("produce/final.mp4");
-    let mp4 = render::mux_command(video, audio, &[], &settings(), out).join(" ");
+    let mp4 = render::mux_command(video, audio, &[], &settings(), out, &[]).join(" ");
     for flag in ["+faststart", "-use_editlist", "0", "-negative_cts_offsets"] {
         assert!(mp4.contains(flag), "{flag} missing from {mp4}");
     }
     for container in [Container::Mkv, Container::Webm] {
         let mut other = settings();
         other.container = container;
-        let line = render::mux_command(video, audio, &[], &other, out).join(" ");
+        let line = render::mux_command(video, audio, &[], &other, out, &[]).join(" ");
         assert!(!line.contains("faststart"), "{container:?} should carry none: {line}");
         assert!(!line.contains("use_editlist"), "{line}");
     }
@@ -587,14 +587,14 @@ fn sec_08_produce_4_parameters_used_s11_the_sd_wait_and_the_command_rules_have_r
         std::path::Path::new("produce/audio.m4a"),
         std::path::Path::new("produce/final.mp4"),
     );
-    let mp4 = render::mux_command(video, audio, &[], &settings(), out).join(" ");
+    let mp4 = render::mux_command(video, audio, &[], &settings(), out, &[]).join(" ");
     for flag in flags.spelled.split(' ') {
         assert!(mp4.contains(flag), "{flag} from the row is missing from {mp4}");
     }
     for container in [Container::Mkv, Container::Webm] {
         let mut other = settings();
         other.container = container;
-        let line = render::mux_command(video, audio, &[], &other, out).join(" ");
+        let line = render::mux_command(video, audio, &[], &other, out, &[]).join(" ");
         assert!(!line.contains("faststart"), "{container:?} carries none: {line}");
         assert!(!line.contains("use_editlist"), "{line}");
     }

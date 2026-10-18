@@ -554,7 +554,7 @@ fn f5_2_s8_the_mux_carries_only_ticked_subtitles() {
     let settings = Produce::default();
 
     // Nothing ticked: the video is repacked with its loudness fixed and no subtitle stream at all.
-    let line = r::mux_command(video, audio, &[], &settings, out).join(" ");
+    let line = r::mux_command(video, audio, &[], &settings, out, &[]).join(" ");
     assert!(!line.contains("-c:s"), "{line}");
     assert!(!line.contains("mov_text"), "{line}");
 
@@ -562,7 +562,7 @@ fn f5_2_s8_the_mux_carries_only_ticked_subtitles() {
     let mut track = settings.clone();
     track.subtitles = Subtitles::TrackInFile;
     let tracks = [("de", std::path::Path::new("produce/final.de.srt"))];
-    let line = r::mux_command(video, audio, &tracks, &track, out).join(" ");
+    let line = r::mux_command(video, audio, &tracks, &track, out, &[]).join(" ");
     assert!(line.contains("produce/final.de.srt"), "{line}");
     assert!(line.contains("-c:s mov_text"), "{line}");
     assert!(line.contains("-map s:0"), "{line}");
@@ -570,14 +570,14 @@ fn f5_2_s8_the_mux_carries_only_ticked_subtitles() {
     // Burned-in is the encoder's business (§F5.2 S5), so the mux adds nothing for it.
     let mut burned = settings.clone();
     burned.subtitles = Subtitles::BurnedIn;
-    let line = r::mux_command(video, audio, &tracks, &burned, out).join(" ");
+    let line = r::mux_command(video, audio, &tracks, &burned, out, &[]).join(" ");
     assert!(!line.contains("-c:s"), "{line}");
     assert!(!line.contains("final.de.srt"), "{line}");
 
     // A webm carries no subtitle track whatever the tick says — the container rules answer, not a guess.
     let mut web = track.clone();
     web.container = Container::Webm;
-    let line = r::mux_command(video, audio, &tracks, &web, out).join(" ");
+    let line = r::mux_command(video, audio, &tracks, &web, out, &[]).join(" ");
     assert!(!line.contains("-c:s"), "{line}");
     assert_eq!(r::subtitle_codec(project::Container::Mp4), "mov_text");
     assert_eq!(r::subtitle_codec(project::Container::Mkv), "srt");
@@ -588,7 +588,7 @@ fn f5_2_s8_the_mux_carries_only_ticked_subtitles() {
         r::LOUDNORM,
         "aresample=async=1:first_pts=0,loudnorm=I=-14:TP=-1.5:LRA=11"
     );
-    let line = r::mux_command(video, audio, &[], &settings, out).join(" ");
+    let line = r::mux_command(video, audio, &[], &settings, out, &[]).join(" ");
     assert!(line.contains(r::LOUDNORM), "{line}");
     assert!(line.contains("-c:v copy"), "{line}");
 

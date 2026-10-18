@@ -253,10 +253,17 @@ pub fn language_tag(spoken: &str, list: &[Language]) -> (String, String) {
 }
 
 /// The mux line itself is [`render::mux_command`]'s — one input per track, each mapped to its own subtitle
-/// stream and tagged `language=`/`name=`. Named here so §6's sentence points at the command rather than at a
+/// stream and tagged `language=`/`title=`. Named here so §6's sentence points at the command rather than at a
 /// second copy of it. (`tool:ffmpeg.encode`.)
-pub fn mux(video: &std::path::Path, audio: &std::path::Path, tracks: &[(&str, &std::path::Path)], settings: &Produce, out: &std::path::Path) -> Vec<String> {
-    render::mux_command(video, audio, tracks, settings, out)
+pub fn mux(
+    video: &std::path::Path,
+    audio: &std::path::Path,
+    tracks: &[(&str, &std::path::Path)],
+    settings: &Produce,
+    out: &std::path::Path,
+    languages: &[crate::roles::Language],
+) -> Vec<String> {
+    render::mux_command(video, audio, tracks, settings, out, languages)
 }
 
 /// After a webm mux. The container refuses an `srt` stream outright, so the tracks are not lost — they were

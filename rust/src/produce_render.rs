@@ -1058,12 +1058,15 @@ pub const SEEK_FLAG: &str = "-ss";
 /// The input flag [`SEEK_FLAG`] goes in front of.
 pub const INPUT_FLAG: &str = "-i";
 
+/// `languages` is the app's own subtitle-language list (`SUBTITLE_LANGUAGES`, read by the caller rather than
+/// here so this stays a pure argv builder): each track is tagged from it through [`crate::produce_details::language_tag`].
 pub fn mux_command(
     video: &std::path::Path,
     audio: &std::path::Path,
     srt_tracks: &[(&str, &std::path::Path)],
     settings: &Produce,
     out: &std::path::Path,
+    languages: &[crate::roles::Language],
 ) -> Vec<String> {
     let (codec, subtitles) = crate::produce_screen::apply_container_rules(
         settings.container,
@@ -1092,16 +1095,21 @@ pub fn mux_command(
     ];
     if subtitles == Subtitles::TrackInFile {
         argv.extend(["-c:s".into(), subtitle_codec(settings.container).into()]);
-        for (index, (_, path)) in srt_tracks.iter().enumerate() {
+        for (index, (code, path)) in srt_tracks.iter().enumerate() {
             // The .srt files are inputs after the two streams, so their index starts at 2; each is mapped
-            // to its own subtitle stream and keeps its language tag.
+            // to its own subtitle stream and tagged with its ISO-639-2 code and name (§6: "so players name them").
+            // `title` is ffmpeg's stream-name field — a player's language menu reads `language`, its track list
+            // reads the title, and an untitled track shows as "Subtitle 1".
+            let (tag, name) = crate::produce_details::language_tag(code, languages);
             argv.push("-i".into());
             argv.push(path.display().to_string());
             argv.extend([
                 "-map".into(),
                 format!("s:{index}"),
                 "-metadata".into(),
-                format!("s:{index}:language={index}"),
+                format!("s:{index}:language={tag}"),
+                "-metadata".into(),
+                format!("s:{index}:title={name}"),
             ]);
         }
     }
