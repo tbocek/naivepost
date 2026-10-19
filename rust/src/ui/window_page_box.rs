@@ -26,6 +26,15 @@ use crate::prepare;
 /// The height a page's own scroller offers before its content scrolls (§1's draggable divider: the page
 /// half can be dragged down to this and no further; below it the page would be unreadable).
 pub(crate) const PAGE_MIN_H: i32 = 360;
+
+/// §1's Prepare split, opened at half: half of the 1240 px window §1 opens at, less the page's own
+/// 24 px margins on both sides ((1240 - 48) / 2). A starting position only — dragging the handle
+/// replaces it and nothing reads it back, exactly like `window_divider::START_PAGE_PX`.
+pub(crate) const PREPARE_HALF_PX: i32 = 596;
+
+/// The shortest band the sources list may be squeezed into before its own scrollbar appears (§1:
+/// the list scrolls while the add row above and the Freq row below stay put).
+pub(crate) const SOURCES_MIN_H: i32 = 120;
 use crate::project::Project;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
@@ -63,6 +72,17 @@ pub(crate) fn page_box(
     page_scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     // The page keeps a usable height band rather than collapsing to nothing beside a huge log.
     page_scroller.set_min_content_height(PAGE_MIN_H);
+    // Width too: without it the scroller reports a 0 px natural width and its child is laid out at
+    // whatever minimum the parts ask for, so a two-column page (Prepare's paned) never sees the window's
+    // real width and the handle cannot sit at half. `hscrollbar-policy: never` says the page is meant to
+    // fit its width, not scroll sideways in it — an `Automatic` bar makes the scroller's own minimum
+    // width zero, which is what let the whole page collapse into a narrow column while the window was
+    // 1230 px wide (`tests/suite/window_shrinks.rs` measures the floor this keeps low).
+    page_scroller.set_hscrollbar_policy(gtk::PolicyType::Never);
+    // `propagate_natural_width` was tried and REMOVED: it makes the scroller report the page's full
+    // natural width as its own minimum, which is exactly what `tests/suite/window_shrinks.rs` forbids
+    // (every page must let the window down to 1024x640). The page fits its width because the parts that
+    // could overflow scroll inside themselves — the sources list, the bench box, the Cut tool groups.
     page_scroller.set_child(Some(&box_));
     box_.set_margin_start(24);    box_.set_margin_end(24);
     box_.set_margin_top(24);
@@ -100,6 +120,12 @@ pub(crate) fn page_box(
     // is how files get added, not what each row says about itself.
     let mut prepare: Option<(gtk::Button, gtk::CheckButton)> = None;
     if page == "Prepare" {
+        // §1: "The page is split left and right by a draggable divider opened at half: two columns side
+        // by side, not one above the other." Left = how files get in and what the session says about
+        // them; right = the prompt bench. Both halves are built here and joined below.
+        let left = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        left.set_widget_name("prepare-left");
+
         let add_ = gtk::Button::with_label(ADD_LABEL);
         add_.set_widget_name("add-sources-button");
         let copy_ = gtk::CheckButton::with_label(COPY_LABEL);
@@ -112,27 +138,76 @@ pub(crate) fn page_box(
         row.set_widget_name("add-sources-row");
         row.append(&add_);
         row.append(&copy_);
-        box_.append(&row);
+        left.append(&row);
 
         // §4's list itself. The rows are drawn from the project and every control on them forwards to
         // `sources.rs` — this page holds no rule of its own (spec/00-principles.md §5), so what a test
         // can read back is which rows exist, which controls they show, and what a press put on the
         // status line.
+        //
+        // §1 gives the list its OWN scroller: "it scrolls, the rows above and below it stay". Without
+        // it a long list pushed the Freq/Language row out of the column, and the column's minimum
+        // height would be the whole list (`tests/suite/window_shrinks.rs`).
         let list = sources_list(session, status);
         let frame = gtk::Frame::new(None);
         frame.set_child(Some(&list));
-        box_.append(&frame);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_widget_name("sources-scroll");
+        scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(SOURCES_MIN_H);
+        scroll.set_vexpand(true);
+        scroll.set_vexpand_set(true);
+        // Width, same reason as the bench box: with an `Automatic` bar this scroller's minimum width is
+        // zero, so the paned handed it a sliver. §1 wants the LIST to scroll — vertically — while the
+        // rows above and below it stay; nothing here scrolls sideways.
+        scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
+        scroll.set_hexpand(true);
+        scroll.set_hexpand_set(true);
+        scroll.set_child(Some(&frame));
+        left.append(&scroll);
 
-        // §1's badge **8**: Freq and Language under the list. Both are choices from a list rather
-        // than free text — an interval off the stops would be sent to the model as a claim about
-        // frames that were never picked.
-        box_.append(&frame_controls(session));
+        // §1's badge **8**: Freq and Language under the list, in the same left column. Both are
+        // choices from a list rather than free text — an interval off the stops would be sent to the
+        // model as a claim about frames that were never picked.
+        left.append(&frame_controls(session));
+        // Same as the right column: the Paned's child claims the width, not the widgets inside it.
+        left.set_hexpand(true);
+        left.set_hexpand_set(true);
 
         // §1's badges **2**-**5**: the prompt bench, one heading row over one text box. The rows it
         // offers and every sentence on it come from `bench`; the box only forwards what is typed.
         let (heading, editor) = bench_box(session, &bench_paths());
-        box_.append(&heading);
-        box_.append(&editor);
+        let right = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        right.set_widget_name("prepare-right");
+        right.set_vexpand(true);
+        // A Paned's own child must claim the width the paned hands it; expand flags set on the grandchildren
+        // (the scrollers inside) do not travel up to the child the paned measures.
+        right.set_hexpand(true);
+        right.set_hexpand_set(true);
+        right.append(&heading);
+        // The bench's own scroller (window_bench), not the editor: its height band is what keeps a
+        // hundred-line prompt from setting the page's minimum. It must FILL the column — §1 wants "one
+        // text box filling the rest of the column" — and inside a Paned half, expand alone does not
+        // stretch a child across the paned's allocation; `fill` does.
+        right.append(&editor_scroller(&editor));
+
+        // The divider itself. `shrink_*_child(true)` on BOTH halves is what keeps the window
+        // shrinkable: a Paned that refuses to shrink forces each column's own minimum width on the
+        // window, and §1 lets the window down to 1024 px wide.
+        let split = gtk::Paned::new(gtk::Orientation::Horizontal);
+        split.set_widget_name("prepare-split");
+        split.set_wide_handle(false);
+        split.set_shrink_start_child(true);
+        split.set_shrink_end_child(true);
+        // Both columns must take the width the paned hands them. Without `hexpand` a Paned half keeps
+        // its own natural width and the handle sits wherever that leaves it, so "opened at half" would
+        // only be true by accident of what the two columns happen to ask for.
+        left.set_hexpand(true);
+        right.set_hexpand(true);
+        split.set_start_child(Some(&left));
+        split.set_end_child(Some(&right));
+        box_.append(&split);
+        split.set_position(PREPARE_HALF_PX);
 
         prepare = Some((add_, copy_));
     }
@@ -596,6 +671,35 @@ pub(crate) fn sources_list(session: &Rc<RefCell<Project>>, status: &gtk::Label) 
         list: list.clone(),
     });
     list.upcast()
+}
+
+/// The bench's text view wrapped in the scroller that gives it a height band. `bench_box` returns the
+/// text view itself (every flow finds `bench-text` by name and reads its buffer); this walks up to the
+/// `ScrolledWindow` it sits in so the column can size the SCROLLER rather than the document.
+fn editor_scroller(editor: &gtk::TextView) -> gtk::Widget {
+    let scroller = editor
+        .parent()
+        .and_then(|scroller| scroller.downcast::<gtk::ScrolledWindow>().ok());
+    match scroller {
+        Some(scroller) => {
+            // §1 wants the box to FILL the column, so the band that bounds it is lifted to "no ceiling"
+            // and only its 160 px floor survives: a Paned half gives what it has, and a max height there
+            // would leave blank plate under a prompt that has more to show.
+            scroller.set_max_content_height(-1);
+            scroller.set_vexpand(true);
+            scroller.set_vexpand_set(true);
+            // Width too. An `Automatic` horizontal policy makes a ScrolledWindow's minimum WIDTH zero,
+            // so in a narrow Paned half it would rather shed width than show a bar — which is what left
+            // the bench column unreadably thin. The box wraps its own text; it never needs to scroll
+            // sideways.
+            scroller.set_hscrollbar_policy(gtk::PolicyType::Never);
+            scroller.set_hexpand(true);
+            scroller.set_hexpand_set(true);
+            scroller.upcast::<gtk::Widget>()
+        }
+        // Built without its scroller (no caller does today): the view alone still belongs on the page.
+        None => editor.clone().upcast(),
+    }
 }
 
 /// §1's badge **8**: the two frame controls under the list. Freq is a dropdown of the stops
