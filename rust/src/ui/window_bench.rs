@@ -123,6 +123,11 @@ pub(crate) fn bench_box(
     // §6's other tooltip: idle wording until something is edited; `bench_paint::paint_marks` swaps in
     // the live one.
     reset.set_tooltip_text(Some(bench::UNCHANGED_TIP));
+    // §1 puts the picker and Reset at the heading row's RIGHT END, after the title and its mark: the
+    // spacer takes the free width so they sit at the column's edge rather than beside the title.
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    heading.append(&spacer);
     heading.append(&picker);
     heading.append(&reset);
 

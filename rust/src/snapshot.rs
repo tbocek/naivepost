@@ -856,12 +856,32 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                     window.set_default_size(if wide { 2400 } else { 1280 }, 800);
                 }
             }
+            // §04-prepare#1-screen: the Prepare page is TWO COLUMNS side by side behind a draggable
+            // divider opened at half. Headless the window is never resized, so without a request it gets its
+            // minimum width and each Paned half gets a sliver — the shot then shows a bench cut off mid-word
+            // while the reference (`spec/img/04-prepare.png`) is the full 1240x740 window §1 opens at.
+            // Asking for §1's own default size is what makes the two pictures comparable.
+            if screen_page(&screen) == Some("Prepare") {
+                window.set_default_size(1240, 740);
+            }
             window.present();
         }
         // §1's tape is as wide as the page, so a snapshot has to ask for its picture AFTER GTK laid the page
         // out: a `DrawingArea` clips its draw callback to its own allocation, and headless nothing repaints
         // between the map and the shot. One `queue_draw` after the layout is enough — it lands on the same
         // surface the band paints into, at the width the paned actually gave it.
+        // §04-prepare#1-screen: the Prepare page is TWO COLUMNS behind a draggable divider, and like the
+        // Cut band its layout only exists after GTK has allocated the page. `present()` queues the map and
+        // headless nothing else runs between here and the pixels, so without a drain the paned measures 0 px
+        // wide, each column collapses to its own minimum, and the shot reads as one narrow column.
+        if screen_page(&screen) == Some("Prepare") {
+            let context = glib::MainContext::default();
+            for _ in 0..64 {
+                while context.pending() {
+                    context.iteration(false);
+                }
+            }
+        }
         if screen_page(&screen) == Some("Cut") || screen_page(&screen) == Some("Narrate") {
             // Drain the loop so GTK has laid the page out before anything asks it for a width: `present()`
             // only queues the map, and headless nothing else runs between here and the pixels. Without this
