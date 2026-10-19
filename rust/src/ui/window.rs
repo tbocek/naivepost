@@ -150,6 +150,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // spec/03-shell.md §1: "One window, title Naivepost, default 1240×740" — the size the window opens
     // at, not a floor (the content's own minimum is what limits shrinking; see tests/suite/window_shrinks.rs).
     window.set_default_size(1240, 740);
+    // §1's other half of that sentence: "One window, title \"Naivepost\"". Without it GTK titles the
+    // window from the application id, which read "naivepost" in the title bar and the task switcher.
+    window.set_title(Some(crate::shell::WINDOW_TITLE));
     // §7's launch lines wait until there is a log to put them in.
     note_startup(&[]);
 
@@ -294,7 +297,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     );
 
     // S4 at startup: the row is drawn for the page the window opened on, not left blank until a tab
-    // is clicked. Same read and same painter as the switch handler, so the two can never disagree.
+    // is clicked. Same read and same painter as the switch handler, so the two can never disagree. The
+    // header's project name/path is drawn by the same repaint (`paint_readouts`), so a switch and this
+    // startup call leave the same text.
     {
         let (tree, cut, narration) = session_reads();
         paint_readouts(
@@ -509,6 +514,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     header.pack_start(&save_);
     wire_save(&save_, &bar, &status, &session);
 
+    // §1's badge **4**, the project name/path, in the header's centre slot between Save and the tab row.
+    // Installed, published and drawn by one call (`window_doors`); every switch repaints it beside the
+    // readouts.
+    super::window_doors::install_project_title(&header);
+
     // **8** sits at the RIGHT end of the bar, next to where Settings goes — `pack_end`, not
     // `pack_start`, so it does not join New and Save.
     let rescan_ = gtk::Button::from_icon_name("view-refresh-symbolic");
@@ -549,14 +559,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     box_.append(&header);
     box_.append(&switcher);
     box_.set_widget_name("page-tabs");
-    box_.append(&stack);
-    stack.set_vexpand(true);
-    box_.append(&run_row);
-    box_.append(&readout_row);
-    // The log goes under the run bar, as §1 lists them. A `gtk::Paned` divider (the "two halves of a
-    // draggable divider" line) is the window's own item, not F0.5's bookkeeping, so the box layout
-    // stays and the expander simply takes its height back when collapsed.
-    box_.append(&log);
+    // §1's draggable divider: the page stack above, the bottom bar below. Built in `window_divider`.
+    super::window_divider::install(&box_, stack.upcast_ref(), run_row.upcast_ref(), readout_row.upcast_ref(), log.upcast_ref());
 
     window.set_content(Some(&box_));
 
@@ -1462,7 +1466,7 @@ pub const CAPTIONS_PASS_LABEL: &str = "\u{2710} Captions";
 // The §1 widget doors live in `window_doors` (window.rs is past its size budget); these are the same names,
 // re-exported under the paths every other module and test already reaches them through.
 pub use crate::ui::window_doors::{
-    state, tab_tooltip, tab_dimmed, tab_button, inputs_readout, outputs_readout, outputs_folder_button, mark_narration_owed, tab_info_button, save_button, save_tooltip, rescan_button, find_source_widget, open_button, session_handle, session_sources, run_queue, open_tooltip, progress_bar, log_expander, progress_tooltip, rescan_tooltip, add_sources_button, copy_into_project, bench_language, session_freq, running_step, marking_pass, set_marking_pass, new_button, new_tooltip, play_button, stop_button, lucky_button, play_tooltip, find_status,
+    state, tab_tooltip, tab_dimmed, tab_button, inputs_readout, outputs_readout, outputs_folder_button, mark_narration_owed, tab_info_button, save_button, save_tooltip, rescan_button, find_source_widget, open_button, session_handle, session_sources, run_queue, open_tooltip, progress_bar, log_expander, progress_tooltip, rescan_tooltip, add_sources_button, copy_into_project, bench_language, session_freq, running_step, marking_pass, set_marking_pass, new_button, new_tooltip, play_button, stop_button, lucky_button, play_tooltip, find_status, project_title, paint_project_title,
 
 };
 pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};

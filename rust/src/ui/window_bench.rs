@@ -493,6 +493,9 @@ pub(crate) fn paint_readouts(
         None => outputs_label.set_tooltip_text(None::<&str>),
     }
     outputs_folder.set_sensitive(tree.is_some());
+    // §1 badge **4**: the header's project name/path is redrawn at the same tick as the readouts
+    // ("show the page and its Inputs/Outputs readouts", F0.1 S4), at whatever stage its width allows.
+    ui::paint_project_title();
     // §1: "Outputs: folder button and count" — the button points at the page's own output folder,
     // which is the directory `Shell::outputs` just counted.
     if let Some(tree) = tree {

@@ -91,6 +91,56 @@ pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
         shell.borrow_mut().narration_pending.touched(std::time::Duration::from_secs(0));
     }
 }
+/// §1 badge **4** — the header's project name/path label, so a caller (a switch, an Open, a Save that
+/// renamed the folder) can redraw it without reaching into the header tree. Newest slot wins, the same
+/// rule every per-window door here uses: a process that built two windows shows the newest one's label.
+/// The header's project label, by its window. Re-exported where every other §1 door lives.
+pub fn project_title(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
+    let _ = window;
+    project_title_of()
+}
+
+/// Build §1 badge **4** — the header's project name/path label — into the header's centre slot, publish
+/// it as this window's title label, and draw it once so a freshly built window never opens blank. Every
+/// later repaint goes through [`paint_project_title`], which `window_bench::paint_readouts` calls beside
+/// the readouts on every switch.
+pub fn install_project_title(header: &adw::HeaderBar) {
+    let label = super::header_title::install(header);
+    push_project_title(&label);
+    paint_project_title();
+}
+
+/// Re-draw §1 badge **4** from the folder the window believes is open and the page its shell shows.
+/// Read through the same two slots every other door here uses, so a flow that moved the session or
+/// switched the page has nothing left to remember to do. With no folder published yet (a window built
+/// before any flow took one on) the launch's own session folder answers — the same fallback `save_target`
+/// uses — so the header never opens blank.
+pub fn paint_project_title() {
+    let Some(title) = project_title_of() else { return };
+    let dir = crate::ui::save_apply::open_dir()
+        .unwrap_or_else(|| crate::startup::session_dir(&std::env::current_dir().unwrap_or_default()));
+    let tab = ui::WINDOW_SHELLS
+        .with(|shells| shells.borrow().last().cloned())
+        .map(|shell| shell.borrow().page.label().to_string())
+        .unwrap_or_default();
+    super::header_title::paint(&title, &dir, &tab);
+}
+
+/// The same read, for a painter that has no window handle (the shared readout repaint in
+/// `window_bench::paint_readouts`).
+pub(crate) fn project_title_of() -> Option<gtk::Label> {
+    HEADER_TITLES.with(|titles| titles.borrow().last().cloned())
+}
+
+/// Publish this window's header label. Private to this module: only [`install_project_title`] hands one out.
+fn push_project_title(label: &gtk::Label) {
+    HEADER_TITLES.with(|titles| titles.borrow_mut().push(label.clone()));
+}
+
+thread_local! {
+    static HEADER_TITLES: RefCell<Vec<gtk::Label>> = const { RefCell::new(Vec::new()) };
+}
+
 /// §1's badge **6** — the header ⓘ (not the per-page copies), newest slot wins so a test reads the
 /// button this window built rather than one left over from an earlier window in the same process.
 pub fn tab_info_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {

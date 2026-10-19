@@ -242,10 +242,14 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_live_call_writes_the_page_the_
                 "then the verdict line: {said:?}"
             );
             assert!(
-                said[first + 2].starts_with(">>>   the reply begins: a terminal window"),
+                ui::log_level::body_of(&said[first + 2]).trim_start()
+                    .starts_with("the reply begins: a terminal window"),
                 "and the preview closes the call: {said:?}"
             );
-            let link = exchanges::link_line(&format!("{}/{}", exchanges::LLM_DIR, name));
+            // §1 draws each line as the message alone, so the link line is §7's wording without its
+            // `>>> ` marker; comparing through `body_of` keeps this about §7's recorder, not the marker.
+            let binding = exchanges::link_line(&format!("{}/{}", exchanges::LLM_DIR, name));
+            let link = ui::log_level::body_of(&binding).to_string();
             let links: Vec<usize> = said
                 .iter()
                 .enumerate()

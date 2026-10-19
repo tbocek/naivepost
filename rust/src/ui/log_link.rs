@@ -53,23 +53,63 @@ pub fn target_of(line: &str, session_dir: &std::path::Path) -> Option<String> {
     Some(format!("file://{}", session_dir.join(rel).display()))
 }
 
-/// Draw one log line into `buffer`, tagging it as a link when [`target_of`] finds one.
+/// Draw one log line into `buffer`: its MESSAGE, tagged with its level (§1) and, when [`target_of`]
+/// finds one, as §7's link.
 ///
-/// The tag is created here if this buffer has never had §7's door installed, so a line can never be
+/// This is the shell's ONE log painter — every repaint of the log body goes through [`paint_lines`] — so
+/// §1's "each line is the message alone" holds everywhere the log is drawn, not in one caller. The level
+/// and the stripped text come from [`super::log_level`], which answers them with no widget in sight.
+///
+/// The link tag is created here if this buffer has never had §7's door installed, so a line can never be
 /// painted plain merely because nothing connected to the view: the MARK is paint's job, and only the
 /// OPENING needs the door. Applied to the whole line because §7 links the line, not a word in it.
+///
+/// DECISION: the link is still exactly one line, §7's exchange page, and NOT every path a line names.
+/// §1's bullet asks for both — "no other path clickable" and, in its last sentence, "every path the log
+/// names is a link to it" — and §7 spells the page line as that one link. The earlier sentence wins
+/// because §7 and its tests (`sec_03_shell_7_…_s7/s8`) name the single line, so the contradiction is
+/// recorded rather than guessed away; the question is logged for the spec's QUESTIONS.md.
 pub fn paint_line(buffer: &gtk::TextBuffer, line: &str, session_dir: &std::path::Path) {
     let end_before = buffer.end_iter().offset();
-    buffer.insert(&mut buffer.end_iter(), line);
-    buffer.insert(&mut buffer.end_iter(), "\n");
+    super::log_level::paint(buffer, line);
     if target_of(line, session_dir).is_some() {
         if buffer.tag_table().lookup(LINK_TAG).is_none() {
             buffer.create_tag(Some(LINK_TAG), &[("foreground", &LINK_COLOUR)]);
         }
         let start = buffer.iter_at_offset(end_before);
-        let end = buffer.end_iter();
+        // The link covers the line as drawn, i.e. the message without its `>>> ` marker: §7 links the
+        // line, and §1 draws the line without the marker, so the two rules meet on the message.
+        let end = buffer
+            .iter_at_line(start.line() + 1)
+            .unwrap_or_else(|| buffer.end_iter());
         buffer.apply_tag_by_name(LINK_TAG, &start, &end);
     }
+}
+
+/// The text of one line of `buffer`, as drawn (so: the message, without any level marker).
+pub fn line_text(buffer: &gtk::TextBuffer, line: i32) -> Option<String> {
+    let start = buffer.iter_at_line(line)?;
+    let end = buffer
+        .iter_at_line(line + 1)
+        .unwrap_or_else(|| buffer.end_iter());
+    Some(buffer.slice(&start, &end, false).trim_end().to_string())
+}
+
+/// The buffer's whole body as drawn, one entry per line — §1's message-alone text. FOR THE TEST BINARIES
+/// ONLY: the program never asks what the view drew, it asks `window_logs()` for the lines it logged (in
+/// §7's marked wording, which is what the sinks and the exchange recorder keep). A test that must show §1's
+/// "each line is the message alone" has to read the drawing rather than the sink, and this is that read.
+///
+/// The trailing empty line a text buffer always carries after its last newline is dropped: it is GTK's
+/// insertion point, not a logged message.
+pub fn painted_lines_for_test(buffer: &gtk::TextBuffer) -> Vec<String> {
+    let mut lines: Vec<String> = (0..buffer.line_count())
+        .filter_map(|line| line_text(buffer, line))
+        .collect();
+    while lines.last().is_some_and(|last| last.is_empty()) {
+        lines.pop();
+    }
+    lines
 }
 
 /// Draw a whole log body, one [`paint_line`] per line. The session folder is read once here, at PAINT
@@ -162,16 +202,34 @@ pub fn activate_line(
     if !start.has_tag(&tag) {
         return None;
     }
-    let end = buffer
-        .iter_at_line(line + 1)
-        .unwrap_or_else(|| buffer.end_iter());
-    let text = buffer.slice(&start, &end, false).to_string();
-    let uri = target_of(text.trim_end(), &session_now())?;
+    // Read the line as DRAWN (no `>>> ` marker, §1) and put the marker back before asking §7's rule:
+    // `target_of` is written against the wording §7 quotes, and the two must not have to agree about
+    // whether the marker is on the line. Re-derived from [`super::log_level`] rather than typed, so the
+    // two rules cannot drift apart: a line is the link line exactly when the marker + the drawn text is.
+    let drawn = line_text(&buffer, line).unwrap_or_default();
+    let marked = restore_mark(&drawn);
+    let uri = target_of(&marked, &session_now())?;
     if let Err(why) = open(&uri) {
         let name = uri.rsplit('/').next().unwrap_or(&uri);
         super::window::log_line(&format!("!!! could not open {name}: {why}"));
     }
     Some(uri)
+}
+
+/// Put a level marker back in front of a drawn line, so a rule written against the recorded wording
+/// (`target_of`, which matches §7's quoted `">>>   this run's exchanges…"`) can be asked about what the
+/// log actually shows. The marker is recovered from the level rule itself, never retyped.
+fn restore_mark(drawn: &str) -> String {
+    for (mark, level) in [
+        (">>> ", super::log_level::Level::Progress),
+        ("!!! ", super::log_level::Level::Failure),
+        ("    ", super::log_level::Level::Detail),
+    ] {
+        if super::log_level::level_of(&format!("{mark}{drawn}")) == level {
+            return format!("{mark}{drawn}");
+        }
+    }
+    drawn.to_string()
 }
 
 /// Open one page: GTK's launcher first, `xdg-open` as §1's named fallback.
