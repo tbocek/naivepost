@@ -611,8 +611,10 @@ fn rows(scene: &Scene, thumb_px: u32) -> Rows {
 
 fn rows_of(fx_rows: usize, thumb_px: u32) -> Rows {
     let selection = cut_trim::RULER_H;
-    let effects = selection + SELECTION_BAND_PX;
-    let pictures = effects + fx_lane::lane_height_px(fx_rows);
+    // §06-effects#2: the lane begins under the selection band and its rows stack top to bottom; those two
+    // placements are `cut_band_rows`' sums, so the painter and anything reading the band agree on them.
+    let effects = crate::ui::cut_band_rows::lane_top_px(cut_trim::RULER_H, SELECTION_BAND_PX);
+    let pictures = crate::ui::cut_band_rows::pictures_top_px(effects, fx_rows as f64);
     Rows {
         selection,
         effects,
@@ -712,7 +714,7 @@ fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
 fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     for bar in fx_lane::lane_layout(&scene.fx) {
         let (from, to) = scene.fx[bar.index].spans();
-        let y = rows.effects + bar.row as f64 * fx_lane::lane_height_px(1);
+        let y = crate::ui::cut_band_rows::lane_row_top_px(rows.effects, bar.row);
         let (x0, width) = band_span_px(scene, from, to);
         if x0 >= tape || x0 + width < 0.0 {
             continue;
