@@ -20,6 +20,7 @@ use crate::checks;
 use crate::machine_store;
 use crate::model_list;
 use crate::settings::Conf;
+use super::settings_info;
 
 /// What a probe hands back for one row: the detail that goes on the ✓, or the reason that goes on ✗.
 pub type Answer = Result<String, String>;
@@ -475,10 +476,29 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
               row: i32,
               grid: &gtk::Grid| {
         if let Some(section) = section {
-            let title = gtk::Label::new(Some(section));
+            // §5: "Each section's ⓘ explains at length what the server is expected to speak." The
+            // heading, its ⓘ and (for the two optional servers) the word "optional" share one box in
+            // column 0, which is how spec/img/03-settings.png draws them: `Audio ⓘ optional`.
+            let head = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+            // An unknown heading gets no ⓘ and keeps its own text as the box name: no other section's
+            // name is borrowed for it.
+            let key = settings_info::section_key(section);
+            head.set_widget_name(&format!("settings-section-{}", key.unwrap_or(section)));
+            let title = gtk::Label::new(Some(section.strip_suffix(" (optional)").unwrap_or(section)));
             title.add_css_class("heading");
             title.set_halign(gtk::Align::Start);
-            grid.attach(&title, 0, row, 1, 1);
+            head.append(&title);
+            if let Some(key) = key {
+                if let Some(info) = settings_info::info_button(key) {
+                    head.append(&info);
+                }
+                if settings_info::is_optional(section) {
+                    let optional = gtk::Label::new(Some(settings_info::OPTIONAL_WORD));
+                    optional.add_css_class("dim-label");
+                    head.append(&optional);
+                }
+            }
+            grid.attach(&head, 0, row, 1, 1);
         }
         let caption = gtk::Label::new(Some(label));
         caption.set_halign(gtk::Align::Start);
