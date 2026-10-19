@@ -350,11 +350,14 @@ fn window_round() {
         RAN_ROW.store(true, Ordering::SeqCst);
         check_a_press(app);
         RAN_PRESS.store(true, Ordering::SeqCst);
+        check_the_row_is_one_line_right_aligned(app);
+        RAN_PLACEMENT.store(true, Ordering::SeqCst);
     });
 }
 
 static RAN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_PRESS: AtomicBool = AtomicBool::new(false);
+static RAN_PLACEMENT: AtomicBool = AtomicBool::new(false);
 
 /// The widget the page named `name`. `naivepost::ui` exports one accessor for §4's list, in the same
 /// shape as every other widget on the window (`rescan_button`, `play_button`, …) — see
@@ -419,6 +422,120 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 /// ffprobe. The tool leg is the caller's argument -- `source_probe::run_ffprobe` in the program, this
 /// closure here -- so the parse is exercised on the JSON ffprobe actually answers with, without any test
 /// starting a binary.
+/// §4's row is drawn in the order its controls are LISTED — "left to right on one line", with the
+/// track menu before ⚠. `row_controls` is that order as data; the widget test below measures it off a
+/// real window.
+#[test]
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_controls_are_listed_left_to_right() {
+    common::pin_private_cwd();
+    // A stamped multi-stream video: frames, streams to choose between, nothing to warn about.
+    let cam = row("cam_2026-08-08_19-55-15.mkv", true, 1);
+    assert_eq!(
+        sources::row_controls(&cam, 3),
+        vec![Control::Footage, Control::Narrator, Control::Name, Control::Tracks, Control::Separate, Control::Remove],
+        "{ITEM}: 🎥 🎤 name tracks 🗣 🗑"
+    );
+    // An unstamped single-stream audio file: no frames, nothing to choose, so no 🎥 and no menu.
+    let mic = row("mic.wav", false, 1);
+    assert_eq!(
+        sources::row_controls(&mic, 1),
+        vec![Control::Narrator, Control::Name, Control::Warning, Control::Separate, Control::Remove],
+        "{ITEM}: 🎤 name ⚠ 🗣 🗑"
+    );
+}
+
+/// §4's geometry, measured: the controls sit on ONE line, in §4's left-to-right order, and the file
+/// name takes the free width so what follows it ends at the row's right edge. A row that wrapped, or
+/// where a control was appended out of order, would render fine and be wrong here — the same reason
+/// `sec_05_cut_1_screen_layout.rs` reads numbers instead of looking at a picture.
+///
+/// The fixture's row is an unstamped video with one stream, so it carries 🎥 but no track menu (a menu
+/// needs a real ≥ 2-stream file for ffprobe): the order assertion covers the controls that appear.
+fn check_the_row_is_one_line_right_aligned(app: &adw::Application) {
+    let window = ui::build_window(app, &fixture(), "Prepare");
+    window.present();
+    // present() alone does not allocate until an iteration runs; without this every bound reads 0.
+    let context = glib::MainContext::default();
+    while context.pending() {
+        context.iteration(false);
+    }
+
+    let row_w: gtk::ListBoxRow = widget(&window, "source-row-0").expect("the fixture's source is one row");
+    let name: gtk::Label = widget(&window, "source-name-0").expect("the row shows its name");
+    let narrator: gtk::Button = widget(&window, "narrator-0").expect("every row has its narrator button");
+    let separate: gtk::ToggleButton = widget(&window, "separate-0").expect("every row can split the voice");
+    let remove: gtk::Button = widget(&window, "remove-0").expect("every row can leave the list");
+    // §4 gives this file 🎥 (a video) and ⚠ (no timestamp in `lecture.mkv`).
+    let footage: gtk::ToggleButton = widget(&window, "footage-0").expect("a video row has its footage toggle");
+    let warning = widget::<gtk::Image>(&window, "warning-0").expect("an unstamped name carries ⚠");
+
+    let bounds = |w: &gtk::Widget| {
+        let b = w.compute_bounds(&window).expect("the row is laid out");
+        println!(
+            "SOURCE ROW x={:.1} y={:.1} w={:.1} h={:.1}",
+            b.x(),
+            b.y(),
+            b.width(),
+            b.height()
+        );
+        b
+    };
+    let row_b = bounds(row_w.upcast_ref());
+    // Left to right exactly as §4 lists them: 🎥 🎤 name ⚠ 🗣 🗑.
+    let line: Vec<(&str, gtk::Widget)> = vec![
+        ("footage", footage.upcast()),
+        ("narrator", narrator.upcast()),
+        ("name", name.clone().upcast()),
+        ("warning", warning.upcast()),
+        ("separate", separate.upcast()),
+        ("remove", remove.upcast()),
+    ];
+    let mut previous_end = f32::MIN;
+    let mut last_end = f32::MIN;
+    for (what, w) in &line {
+        let b = bounds(w);
+        assert!(
+            b.x() >= previous_end,
+            "{ITEM}: {what} sits left of the control before it ({b:?})"
+        );
+        // ONE LINE: everything shares the row's vertical centre, so nothing wrapped onto a second.
+        let centre_delta = (b.y() + b.height() / 2.0 - (row_b.y() + row_b.height() / 2.0)).abs();
+        assert!(
+            centre_delta <= 6.0,
+            "{ITEM}: {what} is {:.1} px off the row's centre — the row wrapped",
+            centre_delta
+        );
+        previous_end = b.x() + b.width();
+        last_end = previous_end;
+    }
+    assert!(
+        row_b.height() <= 90.0,
+        "{ITEM}: the row is {} px tall — more than one line", row_b.height()
+    );
+    // The name takes the free width, so the controls after it are pushed to the row's right end.
+    let name_b = bounds(name.upcast_ref());    assert!(
+        name_b.width() > 60.0,
+        "{ITEM}: the name only got {:.1} px, so it does not take the free width",
+        name_b.width()
+    );
+    assert!(
+        row_b.x() + row_b.width() - last_end <= 60.0,
+        "{ITEM}: 🗑 ends {:.1} px short of the row's right edge — the controls follow the text, \
+         not the row's end",
+        row_b.x() + row_b.width() - last_end
+    );
+}
+
+#[test]
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_controls_sit_on_one_line_in_order() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_PLACEMENT.load(Ordering::SeqCst),
+        "{ITEM}: the row-placement check never ran"
+    );
+}
+
 #[test]
 fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_probe_reads_the_audio_streams_the_tool_reports() {
     common::pin_private_cwd();
