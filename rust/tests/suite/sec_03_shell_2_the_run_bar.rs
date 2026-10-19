@@ -131,6 +131,7 @@ fn sec_03_shell_2_the_run_bar_s1_idle_bar_runs_this_step_and_lets_the_gears_go()
     assert_eq!(drawn.tooltip, "Run this step \u{2014} or resume what is paused");
     assert!(!drawn.stop_sensitive, "nothing to end yet");
     assert!(drawn.lucky_sensitive, "an idle bar leaves I'm feeling lucky pressable");
+    assert!(!drawn.gears_turning, "§2: the gears are still when the bar is idle");
 }
 
 #[test]
@@ -146,6 +147,47 @@ fn sec_03_shell_2_the_run_bar_s1_a_busy_bar_turns_play_into_pause_and_greys_the_
     assert_eq!(drawn.tooltip, run::PAUSE_TOOLTIP);
     assert!(drawn.stop_sensitive, "\u{23f9} has the run to end");
     assert!(!drawn.lucky_sensitive, "§2: the gears are insensitive while a run is busy");
+}
+
+// ---------------------------------------------------------------------------
+// bullet: the gears' icon — "still when idle, turning while any run computes — a single step's too".
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sec_03_shell_2_the_run_bar_s2_the_gears_turn_while_a_single_step_runs() {
+    // One ▶ on one tab is enough to turn them: §2 says so in words, because the progress bar may have
+    // nothing countable for most of such a step and the bar would otherwise look idle.
+    let running = Some(run::Run {
+        step: run::Step::Prepare,
+        paused: false,
+        log_expanded: true,
+        sources: run::Snapshot::default(),
+    });
+    let drawn = run::controls(&running, None);
+    assert!(drawn.gears_turning, "§2: a single step's run turns the gears");
+    assert!(!drawn.lucky_sensitive, "and they stay out of reach for as long as it runs");
+
+    // A parked run still stands — ⏸ parks it, it does not finish it — so the gears keep turning.
+    let paused = Some(run::Run {
+        step: run::Step::Prepare,
+        paused: true,
+        log_expanded: true,
+        sources: run::Snapshot::default(),
+    });
+    assert!(
+        run::controls(&paused, None).gears_turning,
+        "§2: a run that is only parked is still computing work"
+    );
+
+    // A page transport playing counts as a run computing, with no run standing at all.
+    let playing = run::Transport { playing: true, started: true };
+    assert!(
+        run::controls(&None, Some(playing)).gears_turning,
+        "§2: the bar shows work going on for a playing preview too"
+    );
+
+    // Nothing running, nothing playing: still.
+    assert!(!run::controls(&None, None).gears_turning);
 }
 
 #[test]
@@ -257,11 +299,17 @@ fn widgets_round() {
         RAN_ORDER.store(true, std::sync::atomic::Ordering::SeqCst);
         check_the_press_gates_the_gears(app);
         RAN_GATE.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_gears_turn_for_a_bare_run(app);
+        RAN_TURN.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_stop_press_stops_the_turning(app);
+        RAN_STOP_TURN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 
 static RAN_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_GATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_TURN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_STOP_TURN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Point the settings this process reads at the fake server, as tests/suite/press_play_widgets.rs does.
 fn serve_audio(url: &str) {
@@ -467,5 +515,110 @@ fn sec_03_shell_2_the_run_bar_s2_the_bar_reads_play_lucky_stop_and_carries_the_s
 fn sec_03_shell_2_the_run_bar_s2_a_run_busy_greys_the_gears_and_keeps_the_standing_tooltip() {
     widgets_round();
     assert!(RAN_GATE.load(std::sync::atomic::Ordering::SeqCst), "the gears-gate check never ran");
+}
+
+// ---------------------------------------------------------------------------
+// the wire: a bare ▶ run (no lucky chain) turns the gears on the real button, ⏹ hands them back.
+// ---------------------------------------------------------------------------
+
+/// Stand one Prepare run up on this window the way a run stands mid-step, with no lucky chain involved:
+/// `runqueue::start_run` is what the ▶ handler calls, and it is what leaves `bar.running` set.
+fn stand_a_run(window: &adw::ApplicationWindow, model: &naivepost::project::Project) {
+    let bar = ui::run_bar(window).expect("the window carries a run bar");
+    let queue = ui::run_queue(window).expect("the window carries a queue");
+    runqueue::start_run(
+        &mut bar.borrow_mut(),
+        &mut queue.borrow_mut(),
+        &mut naivepost::exchanges::RunLog::new(),
+        run::Step::Prepare,
+        run::snapshot_sources(model),
+    );
+    repaint(window, &bar);
+}
+
+/// §2's icon rule through the widget: the paint that every run door calls puts `lucky-running` on the
+/// gears for a single step's run — the class `gears_css` animates, and the state the CSS keys on.
+fn check_the_gears_turn_for_a_bare_run(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    // A run left open by another check would already be turning the gears; start from an idle bar.
+    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
+    let bar = ui::run_bar(&window).expect("the window carries a run bar");
+    let gears = ui::lucky_button(&window).expect("the run bar carries the gears");
+    assert!(
+        !gears.has_css_class(naivepost::ui::lucky_run::RUNNING_CLASS),
+        "§2: at rest the gears are still"
+    );
+
+    stand_a_run(&window, &model);
+    assert!(
+        bar.borrow().running.is_some(),
+        "the run stands, so there is something to show as work"
+    );
+    assert!(
+        gears.has_css_class(naivepost::ui::lucky_run::RUNNING_CLASS),
+        "§2: a single step's run puts the turning class on the gears"
+    );
+
+    // The run ends: the same paint takes the class back down, so an idle bar never shows machinery.
+    bar.borrow_mut().stop_flag = false;
+    bar.borrow_mut().running = None;
+    repaint(&window, &bar);
+    assert!(
+        !gears.has_css_class(naivepost::ui::lucky_run::RUNNING_CLASS),
+        "§2: with the run gone the gears are still again"
+    );
+    assert!(gears.is_sensitive(), "and pressable again");
+    window.close();
+}
+
+/// §2's other half of the same sentence: "⏸ and ⏹ act on it" — the real ⏹ ends the run and stops the
+/// gears turning, through the button rather than the seam.
+fn check_the_stop_press_stops_the_turning(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
+    let bar = ui::run_bar(&window).expect("the window carries a run bar");
+    let gears = ui::lucky_button(&window).expect("the run bar carries the gears");
+
+    stand_a_run(&window, &model);
+    assert!(
+        gears.has_css_class(naivepost::ui::lucky_run::RUNNING_CLASS),
+        "the run stands, so the gears turn before the press"
+    );
+
+    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
+    assert_eq!(ui::state(&window).status, run::STOPPING, "S1: the press says what it is doing");
+    // A headless run's flow never clears its own stop flag, so the end is cleared the way a real run's
+    // end clears it, and the repaint after it is what the run's close performs.
+    bar.borrow_mut().stop_flag = false;
+    bar.borrow_mut().running = None;
+    repaint(&window, &bar);
+    assert!(
+        !gears.has_css_class(naivepost::ui::lucky_run::RUNNING_CLASS),
+        "§2: ⏹ acts on the run, so the gears stop turning with it"
+    );
+    assert!(gears.is_sensitive(), "§2: and the chain is reachable again");
+    window.close();
+}
+
+#[test]
+fn sec_03_shell_2_the_run_bar_s3_the_widget_turns_the_gears_for_a_bare_run() {
+    widgets_round();
+    assert!(
+        RAN_TURN.load(std::sync::atomic::Ordering::SeqCst),
+        "the turning-on-the-widget check never ran"
+    );
+}
+
+#[test]
+fn sec_03_shell_2_the_run_bar_s4_the_stop_press_stops_the_gears_turning() {
+    widgets_round();
+    assert!(
+        RAN_STOP_TURN.load(std::sync::atomic::Ordering::SeqCst),
+        "the ⏹-stops-the-turning check never ran"
+    );
 }
 
