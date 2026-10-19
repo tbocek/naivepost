@@ -23,6 +23,11 @@ pub mod run_close;
 /// §7's link line — the log's one clickable line, and the launcher that opens it. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod log_link;
+/// §1 — a log line's LEVEL and its message: the `>>> ` / `!!! ` / four-space markers decide the colour
+/// and leave the drawn text. The rule, with no widget in sight; `log_link` is what applies it.
+pub mod log_level;
+/// §1 badge **4** — the header's project name/path and the three stages it narrows through.
+pub mod header_title;
 pub mod log_paint;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_confirm;
@@ -194,6 +199,9 @@ mod window_narrate;
 /// §1's widget doors — the named lookups, readouts and tooltip readers. Split out of `window.rs`,
 /// which is past its size budget. Every name is re-exported through `window`.
 mod window_doors;
+/// §1 — the page and the bottom bar as two halves of a draggable divider. Split out of `window.rs`,
+/// which is past its size budget.
+mod window_divider;
 /// §F0.9 / §F0.10 / §F0.12 — the project dialogs: ＋ New, Open, Save, Rescan and Add sources, plus the
 /// import run they drive. Split out of `window.rs`, which is past its size budget. Its doors are
 /// re-exported through `window`.
@@ -352,6 +360,7 @@ pub use window::log_expander;
 pub use crate::ui::log_paint::log_view;
 pub use crate::ui::log_paint::note_exchange_line;
 pub use window::new_button;
+pub use window::project_title;
 pub use window::open_button;
 pub use window::open_folder;
 pub use window::open_from;

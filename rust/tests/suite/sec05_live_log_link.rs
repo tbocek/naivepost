@@ -105,10 +105,17 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s7_the_run_page_line_is_the_log_s_o
                 "the send line comes first: {said:?}"
             );
             assert!(
-                said[base + 1].starts_with(">>> Describe: ") && said[base + 1].contains("came back in"),
+                ui::log_level::body_of(&said[base + 1]).starts_with("Describe: ")
+                    && said[base + 1].contains("came back in"),
                 "then the verdict line: {said:?}"
             );
-            assert_eq!(said[base + 2], exchanges::link_line(page), "the link line keeps §7's wording");
+            // §1 draws the line as the MESSAGE alone ("no `>>> ` … prefix — the level shows by colour"),
+            // §7 spells the same line with its marker; the two agree once the marker is off.
+            assert_eq!(
+                said[base + 2],
+                ui::log_level::body_of(&exchanges::link_line(page)),
+                "the link line keeps §7's wording, drawn without its marker"
+            );
             assert_eq!(
                 tagged(&view),
                 vec![base as i32 + 2],

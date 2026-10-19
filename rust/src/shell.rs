@@ -82,6 +82,10 @@ impl Page {
 
 /// S2's refusal sentence for Cut — §1's exact wording, em dash included. The prototype carries it
 /// as the tab's `wait` text (gui/main.go:77) so a click and a hover say the same thing.
+/// The window's own title (§1: "One window, title \"Naivepost\""). Capitalised the way the spec spells
+/// it, unlike the app id `ch.bocek.naivepost` and the binary name, both lower-case.
+pub const WINDOW_TITLE: &str = "Naivepost";
+
 pub const CUT_LOCK: &str = "Add footage on the Prepare step first \u{2014} the cut is laid out from the recordings";
 
 /// The bottom bar's Inputs row for a Cut page with nothing to cut — `spec/inventory/cut.md` §A spells it
