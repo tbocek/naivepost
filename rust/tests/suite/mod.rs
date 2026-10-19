@@ -373,6 +373,7 @@ mod sec_03_shell_5_settings_dialog;
 mod sec_04_prepare_1_screen_split;
 mod sec_04_prepare_6;
 mod sec_05_cut_1_band_paints;
+mod sec_05_cut_1_screen_column;
 mod sec_05_cut_1_screen_layout;
 mod sec_05_cut_1_screen_screen;
 mod sec_05_cut_2_lanes;

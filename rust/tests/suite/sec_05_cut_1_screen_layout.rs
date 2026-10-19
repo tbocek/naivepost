@@ -21,6 +21,9 @@ static RAN_ORDER: AtomicBool = AtomicBool::new(false);
 static RAN_NO_GAP: AtomicBool = AtomicBool::new(false);
 static RAN_WIDTHS: AtomicBool = AtomicBool::new(false);
 static RAN_LANE: AtomicBool = AtomicBool::new(false);
+static RAN_VSPLIT: AtomicBool = AtomicBool::new(false);
+static RAN_HSPLIT: AtomicBool = AtomicBool::new(false);
+static RAN_BELOW: AtomicBool = AtomicBool::new(false);
 
 /// How far below the toolbar's bottom edge the tape may start. §A puts the tracks DIRECTLY under the
 /// toolbar; the arrangement bug left ~750 px of empty plate between them, so anything past this fails.
@@ -93,6 +96,11 @@ fn left_edge(widget: &gtk::Widget) -> (i32, i32) {
     (x as i32, y as i32)
 }
 
+/// How far a divider may sit from the number §A opens it at. The paned takes what GTK gives it after the
+// two panes' own minimums are honoured, so this is slack for the layout engine, not for a wrong constant:
+// the arrangement bug was 750 px off and every tolerance here is tens of pixels.
+const SPLIT_SLACK_PX: i32 = 12;
+
 /// A window on the Cut page over a session with footage, sized the way a real window is: a Cut-page
 /// layout collapses to one column without an explicit size before `present()`.
 fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
@@ -132,8 +140,9 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
-/// §A's order as numbers: `cut-top` above the toolbar, the toolbar above the tape, and the scrollbar
-/// last of everything the arrangement places.
+/// §A's order as numbers, read where each part now sits: the TOP/BOTTOM divider (`cut-page-split`) comes
+/// before the toolbar and holds the left/right one (`cut-top`) in its upper pane; below the divider, the
+/// toolbar comes before the tape, the band's stack before the trim strip, and the scrollbar is LAST.
 fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
     let window = cut_page(app);
     let toolbar = find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
@@ -143,11 +152,16 @@ fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
         names
             .iter()
             .position(|found| found == name)
-            .unwrap_or_else(|| panic!("`{name}` is not a direct child of the page box: {names:?}"))
+            .unwrap_or_else(|| panic!("`{name}` is not a direct child of the box that holds the toolbar: {names:?}"))
     };
-    assert!(
-        at("cut-top") < at("cut-toolbar"),
-        "the preview/form paned comes before the toolbar: {names:?}"
+    // `cut-top` is no longer beside the toolbar -- it is above the divider, in the box one level up.
+    let vsplit = find_named(&window, "cut-page-split")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+        .expect("§A's vertical paned (380) is on the page");
+    assert_eq!(
+        vsplit.start_child().map(|w| w.widget_name().to_string()),
+        Some("cut-top".to_string()),
+        "the preview/form paned sits in the upper pane, above the toolbar"
     );
     assert!(
         at("cut-toolbar") < at("track-layers"),
@@ -159,7 +173,7 @@ fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
     );
     let bar = at("track-scrollbar");
     // The effects lane is NOT in this list: §06-effects#2 packs it under the preview frame, so it
-    // travels inside `cut-top` with the picture rather than below the paned.
+    // travels inside `cut-top` with the picture rather than below the divider.
     for name in ["cut-toolbar", "track-layers", "track-strip", "camera-rows"] {
         assert!(at(name) < bar, "`{name}` sits above the scrollbar: {names:?}");
     }
@@ -192,11 +206,26 @@ fn check_the_preview_outranks_the_reading_column(app: &adw::Application) {
     let (preview_w, grid_w) = (preview.width(), grid.width());
     let (preview_x, _) = left_edge(&preview);
     let (frame_x, _) = left_edge(&frame);
-    println!("SEAT preview {preview_w} px at x={preview_x}, form column starts x={frame_x}, readings {grid_w} px");
+    let (preview_top, preview_bottom) = edges(&preview);
+    println!(
+        "SEAT preview {preview_w} x {} px at x={preview_x}, top y={preview_top}; form column starts x={frame_x}, readings {grid_w} px",
+        preview.height()
+    );
     assert!(
         preview_w >= naivepost::ui::window::PREVIEW_PANEL_W as i32 + 300,
         "the preview holds its pane, not its {} px minimum: {preview_w} px",
         naivepost::ui::window::PREVIEW_PANEL_W as i32
+    );
+    // §A's picture is "contain-fit, min height 160", and `spec/img/05-cut.png` draws it filling the upper
+    // pane -- not the 135 px thumbnail shape the panel is built at. The arrangement hands the pane's own
+    // height to it (`cut_preview_panel::grow_to`), so here the panel must stand at least that floor tall.
+    assert!(
+        preview.height() >= naivepost::ui::cut_page_layout::PREVIEW_FLOOR_H as i32,
+        "the preview fills its pane to \u{a7}A's floor ({} px), not its {} px thumbnail shape: {} px tall \
+         (top y={preview_top}, bottom {preview_bottom})",
+        naivepost::ui::cut_page_layout::PREVIEW_FLOOR_H,
+        naivepost::ui::window::PREVIEW_PANEL_H as i32,
+        preview.height()
     );
     assert!(
         frame_x >= preview_x + preview_w - 2,
@@ -245,6 +274,82 @@ fn check_the_lane_sits_under_the_frame(app: &adw::Application) {
     RAN_LANE.store(true, Ordering::SeqCst);
 }
 
+/// §A's `paned 660/380` pair, seen as two dividers on the realized page: `cut-page-split` splits the
+/// page top/bottom and opens with 380 px of upper part; its start child is `cut-top`, the left/right
+/// divider that opens with 660 px of preview. Before this the page had ONE paned and the bottom widgets
+/// were plain children of the page box, so there was no top/bottom divider to drag at all.
+fn check_the_page_has_both_dividers(app: &adw::Application) {
+    let window = cut_page(app);
+    let vsplit = find_named(&window, "cut-page-split")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+        .expect("§A's vertical paned (380) is on the page");
+    let hsplit = find_named(&window, "cut-top")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+        .expect("§A's horizontal paned (660) is on the page");
+    // The horizontal one sits in the vertical one's START pane -- above the divider, as §1 says.
+    let start = vsplit.start_child().expect("the vertical paned has a start pane");
+    assert_eq!(
+        start.widget_name(),
+        "cut-top",
+        "the top/bottom divider's start pane holds the left/right divider"
+    );
+    let top_pos = vsplit.position();
+    println!("VSPLIT cut-page-split position {top_pos} px (opens at {})", naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX);
+    assert!(
+        (top_pos - naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX).abs() <= SPLIT_SLACK_PX,
+        "the upper part opens {} px tall, not {} px",
+        top_pos,
+        naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX
+    );
+    let side_pos = hsplit.position();
+    println!("HSPLIT cut-top position {side_pos} px (opens at {})", naivepost::ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX);
+    assert!(
+        (side_pos - naivepost::ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX).abs() <= SPLIT_SLACK_PX,
+        "the preview opens {} px wide, not {} px",
+        side_pos,
+        naivepost::ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX
+    );
+    RAN_VSPLIT.store(true, Ordering::SeqCst);
+    RAN_HSPLIT.store(true, Ordering::SeqCst);
+}
+
+/// Everything §A puts BELOW the divider is on the far side of it: the toolbar starts at or under the
+/// top half's bottom edge, and the scrollbar is still the last thing in the pane that holds it.
+fn check_the_bottom_half_is_below_the_divider(app: &adw::Application) {
+    let window = cut_page(app);
+    let vsplit = find_named(&window, "cut-page-split")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+        .expect("§A's vertical paned (380) is on the page");
+    let top = vsplit.start_child().expect("the vertical paned has a start pane");
+    let toolbar = find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
+    let (_, top_bottom) = edges(&top);
+    let (toolbar_top, _) = edges(&toolbar);
+    println!("BELOW top pane bottom y={top_bottom} -> toolbar top y={toolbar_top}");
+    assert!(
+        toolbar_top >= top_bottom,
+        "the toolbar is below the top/bottom divider, not inside the upper pane: toolbar top {toolbar_top} vs pane bottom {top_bottom}"
+    );
+    // The pane below the divider keeps §A's order for itself: scrollbar LAST of what it holds.
+    let holder = page_box_of(&toolbar);
+    let names = child_names(&holder);
+    let bar_at = names
+        .iter()
+        .position(|name| name == "track-scrollbar")
+        .unwrap_or_else(|| panic!("the scrollbar shares the lower pane with the toolbar: {names:?}"));
+    assert_eq!(
+        bar_at,
+        names.len() - 1,
+        "badge **31** is the last thing in the lower pane: {names:?}"
+    );
+    for name in ["cut-toolbar", "track-layers", "track-strip", "camera-rows"] {
+        assert!(
+            names.iter().position(|found| found == name).is_some_and(|at| at < bar_at),
+            "`{name}` sits above the scrollbar in the lower pane: {names:?}"
+        );
+    }
+    RAN_BELOW.store(true, Ordering::SeqCst);
+}
+
 fn round() {
     common::one_app_round(|app| {
         println!("CHECK 1 the page's children are in \u{a7}A's order");
@@ -255,6 +360,10 @@ fn round() {
         check_the_preview_outranks_the_reading_column(app);
         println!("CHECK 4 the effects lane sits under the frame it marks");
         check_the_lane_sits_under_the_frame(app);
+        println!("CHECK 5 both dividers are there and open where \u{a7}A puts them");
+        check_the_page_has_both_dividers(app);
+        println!("CHECK 6 the toolbar, tracks and scrollbar are below the top/bottom divider");
+        check_the_bottom_half_is_below_the_divider(app);
     });
 }
 
@@ -284,4 +393,25 @@ fn sec_05_cut_1_screen_the_preview_gets_the_wide_half_of_the_top_row() {
     common::pin_private_cwd();
     round();
     assert!(RAN_WIDTHS.load(Ordering::SeqCst), "the preview-width check never ran");
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_page_is_split_top_and_bottom_by_a_draggable_divider() {
+    common::pin_private_cwd();
+    round();
+    assert!(RAN_VSPLIT.load(Ordering::SeqCst), "the top/bottom divider check never ran");
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_top_row_is_split_left_and_right_at_660_px() {
+    common::pin_private_cwd();
+    round();
+    assert!(RAN_HSPLIT.load(Ordering::SeqCst), "the left/right divider check never ran");
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_toolbar_tracks_and_scrollbar_sit_below_the_divider() {
+    common::pin_private_cwd();
+    round();
+    assert!(RAN_BELOW.load(Ordering::SeqCst), "the below-the-divider check never ran");
 }

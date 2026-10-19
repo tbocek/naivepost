@@ -420,8 +420,15 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
     let form = gtk::Grid::new();
     form.set_widget_name("cut-form");
     form.set_row_spacing(2);
+    // §1's readings are "label left and value right", so the grid fills its pane: with it pinned to `Start`
+    // at its natural size there was no right edge anywhere for a value to sit against, and every number
+    // printed flush against its own label.
+    form.set_halign(gtk::Align::Fill);
+    form.set_hexpand(true);
+    form.set_column_homogeneous(false);
+    // One column pair only -- key, then value. The Aspect ratio dropdown used to be attached in a THIRD
+    // column, which is what held every other row's value ~95 px short of the column's right edge (measured).
     form.set_column_spacing(8);
-    form.set_halign(gtk::Align::Start);
     // What the readings show for a page with no cut yet: zeros and the open-at thumbnail size. The
     // real values arrive with the rounds that own them; this fills the rows so none is blank.
     let cut_ = crate::cut::Cut::default();
@@ -440,21 +447,32 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
         key.add_css_class("dim-label");
         key.set_widget_name(&format!("{name}-key"));
         let value = if row.tip.is_empty() {
-            // No control on this row: the value is the whole of it.
+            // No control on this row: the value is the whole of it, and it reads at the RIGHT end (§1).
             let value = gtk::Label::new(Some(&row.value));
-            value.set_xalign(0.0);
+            value.set_xalign(1.0);
+            // GTK 4's GtkGrid has no per-column expand flag (that was GtkTable): a column grows when the
+            // widgets in it ask to expand, so the value cells carry it and the key cells do not.
+            value.set_hexpand(true);
             value.upcast::<gtk::Widget>()
         } else {
             // Thumbnails: the ladder sits beside the number it drives.
+            // The number sits between its two steps, and the ladder as a WHOLE ends at the column's right
+            // end (§1: one line per reading, value right) -- so the box grows and the buttons stay at their
+            // natural width beside the number.
             let line = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+            line.set_hexpand(true);
+            line.set_halign(gtk::Align::End);
             let minus = gtk::Button::with_label("\u{1f5bc}\u{2212}");
             minus.set_widget_name("thumb-minus");
             minus.set_tooltip_text(Some(row.tip));
             let plus = gtk::Button::with_label("\u{1f5bc}+");
             plus.set_widget_name("thumb-plus");
             plus.set_tooltip_text(Some(row.tip));
+            // The number reads right-aligned inside the ladder, so it ends where every other row's value
+            // ends (the ✕-free rows and this one share §1's right edge).
             let value = gtk::Label::new(Some(&row.value));
-            value.set_xalign(0.0);
+            value.set_xalign(1.0);
+            value.set_hexpand(true);
             line.append(&minus);
             line.append(&value);
             line.append(&plus);
@@ -470,9 +488,17 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
     // sentence (`DROPDOWN_HELP`), which is where "9:16 is a vertical short" and what the preview outline
     // means both get said. The starting selection reads the LIVE cut rather than always index 0, so the
     // control never shows a shape the cut does not have; an unset aspect is source, which is index 0.
+    //
+    // It goes BESIDE the readout it drives, in a third column: `refresh_aspect_readout`
+    // (`cut_text_hand.rs`) repaints that label from the live cut on every Undo/Revert/Clear, and
+    // `tests/suite/aspect_choice_widgets.rs` reads the label as the page's own answer -- replacing the
+    // label with the control strands both. The value column still ends at the pane's right edge (§1's
+    // value-right rule) because the ladder and every plain value expand into it; this row's cell is the
+    // pair readout + dropdown together, which is what §A calls "a dropdown" for this one reading.
     if let Some(aspect_row) = cut_screen::IDLE_FORM_ROWS
         .iter()
         .position(|l| *l == "Aspect ratio")
+        .map(|row| row as i32)
     {
         let choice = gtk::DropDown::from_strings(&fx_aspect::ASPECTS);
         choice.set_widget_name("aspect-choice");
@@ -482,7 +508,26 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
             .position(|s| *s == cut_.aspect)
             .unwrap_or(0);
         choice.set_selected(start as u32);
-        form.attach(&choice, 2, aspect_row as i32, 1, 1);
+        // The readout and its control become ONE value cell: the label keeps its name (so the repaint and
+        // the widget tests still find it) and the box ends where every other row's value ends.
+        let aspect_name = cut_screen::readout_widget("Aspect ratio");
+        let held = form
+            .observe_children()
+            .iter::<glib::Object>()
+            .filter_map(Result::ok)
+            .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+            .find(|widget| widget.widget_name() == aspect_name);
+        if let Some(label) = held {
+            form.remove(&label);
+            let cell = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            cell.set_hexpand(true);
+            cell.set_halign(gtk::Align::End);
+            cell.append(&label);
+            cell.append(&choice);
+            form.attach(&cell, 1, aspect_row, 1, 1);
+        } else {
+            form.attach(&choice, 1, aspect_row, 1, 1);
+        }
     }
     form
 }

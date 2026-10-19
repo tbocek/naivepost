@@ -106,6 +106,50 @@ pub fn install(page_box: &gtk::Box, previous: &gtk::Widget) -> gtk::Widget {
     preview.upcast()
 }
 
+/// Raise the panel's floor so the picture fills the upper pane instead of sitting as a 240x135 plate under
+/// empty plate. §A asks for exactly this ("GtkPicture contain-fit, min height 160"), and the panel is built
+/// at its thumbnail shape because nothing else ever tells it how big the pane is: `arrange` is the one place
+/// that knows. Only the FLOOR moves (`preview-camera-rect` already hexpands/vexpands and every overlay is
+/// measured against it), so a smaller pane still gets the old minimum and no test that reads the panel's
+/// classes or opacity sees anything but a bigger box.
+pub fn grow_to(preview: &gtk::Widget, width: f64, height: f64) {
+    let wide = width.max(crate::ui::window::PREVIEW_PANEL_W);
+    let tall = height
+        .max(crate::ui::cut_page_layout::PREVIEW_FLOOR_H)
+        .max(crate::ui::window::PREVIEW_PANEL_H);
+    preview.set_size_request(wide as i32, tall as i32);
+    // The child carries the same floor: it is what the picture and every overlay are measured against.
+    if let Some(rect) = preview
+        .downcast_ref::<gtk::Overlay>()
+        .and_then(|panel| panel.child())
+    {
+        rect.set_size_request(wide as i32, tall as i32);
+    }
+    // The painted surface is a MEASURED overlay (`set_measure_overlay`), so its own 135 px request would
+    // drag the panel's minimum back down and silently cancel this call; it states the same box now.
+    if let Some(frame) = preview
+        .downcast_ref::<gtk::Overlay>()
+        .map(|panel| panel.upcast_ref::<gtk::Widget>().clone())
+        .as_ref()
+        .and_then(|panel| overlay_child_named(panel, crate::ui::cut_preview_frame::FRAME_NAME))
+    {
+        frame.set_size_request(wide as i32, tall as i32);
+    }
+}
+
+/// One of an overlay's children by name, searched among ITS children only (a tree-wide walk could answer
+/// for another window's copy -- the reason every preview lookup here is scoped).
+fn overlay_child_named(panel: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    let mut node = panel.first_child();
+    while let Some(child) = node {
+        if child.widget_name() == name {
+            return Some(child);
+        }
+        node = child.next_sibling();
+    }
+    None
+}
+
 /// Bring the overlay stack to exactly the overlays this frame lists, then push their alphas and classes.
 pub(crate) fn sync_overlay_stack(
     stack: &gtk::Box,
