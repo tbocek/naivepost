@@ -82,9 +82,9 @@ pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
 
 // The §1 bench, tabs and readouts group lives in `window_bench` (window.rs is past its size budget);
 // these are the doors the rest of the page calls, kept at the paths they had.
-pub use crate::ui::window_bench::{label, paint_progress, set_bench_open_row};
+pub use crate::ui::window_bench::{label, paint_progress, paint_run_bar, set_bench_open_row};
 pub(crate) use crate::ui::window_bench::{
-    depth, has_label, paint_readouts, paint_readouts_for, paint_run_bar,
+    depth, has_label, paint_readouts, paint_readouts_for,
     paint_tabs, paint_tabs_for, refresh_cut_readouts, tab_buttons, LOG_OPEN_PX,
 };
 
@@ -328,6 +328,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     progress.set_widget_name("run-progress");
     progress.set_hexpand(true);
     progress.set_valign(gtk::Align::Center);
+    // §2: with nothing queued the bar keeps this standing tooltip; a track's counting replaces it
+    // while there is one, and leaves when the queue empties.
+    progress.set_tooltip_text(Some(runqueue::STANDING_TIP));
 
     // §1: "the log expander, its header carrying the status line". The header is a row of two: the
     // word "Log" so the control is never an unlabelled caret (at rest the status is empty), and the
@@ -380,13 +383,14 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let stop_ = gtk::Button::from_icon_name(run::STOP_ICON);
     stop_.set_widget_name("stop-button");
     stop_.set_tooltip_text(Some(run::STOP_TOOLTIP));
-    // The gears after ⏹: labelled rather than icon-only, because §03 names the control by its words and
-    // the spec's run-bar image shows the phrase on the button.
+    // The gears after ▶: labelled rather than icon-only, because §03 names the control by its words and
+    // the spec's run-bar image shows the phrase on the button. §2's order is ▶ , lucky , ⏹ .
     let lucky = gtk::Button::with_label(lucky::LUCKY_LABEL);
     lucky.set_widget_name("lucky-button");
     lucky.set_tooltip_text(Some(lucky::LUCKY_TOOLTIP));
     paint_run_bar(
         &play,
+        &lucky,
         &stop_,
         &bar.borrow(),
         shell.borrow().page,
@@ -396,8 +400,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     run_row.set_widget_name("run-bar");
     run_row.append(&play);
-    run_row.append(&stop_);
     run_row.append(&lucky);
+    run_row.append(&stop_);
     // F0.7's policy gear, right beside the "I'm feeling lucky" gears rather than in a toolbar of its own:
     // §03 puts both kinds of ⚙ on the same bar, and a second row of controls would read as a new area
     // of the window that no spec page drew.

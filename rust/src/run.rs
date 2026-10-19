@@ -432,6 +432,9 @@ pub struct Controls {
     pub icon: &'static str,
     pub tooltip: &'static str,
     pub stop_sensitive: bool,
+    /// §2: "I'm feeling lucky" is greyed while any run is busy — ⏸ and ⏹ are what act on it, so the
+    /// gears never start a second chain beside one already walking.
+    pub lucky_sensitive: bool,
 }
 
 pub fn controls(running: &Option<Run>, transport: Option<Transport>) -> Controls {
@@ -442,9 +445,13 @@ pub fn controls(running: &Option<Run>, transport: Option<Transport>) -> Controls
     let stop_sensitive = running.is_some()
         || busy
         || transport.is_some_and(|transport| transport.cued());
+    // A paused run is still a run, so the gears gate reads `running.is_some()` rather than `busy`:
+    // parking a run does not free the bar for a chain.
+    let run_alive = running.is_some() || transport.is_some_and(|transport| transport.playing);
     Controls {
         icon: if busy { PAUSE_ICON } else { PLAY_ICON },
         tooltip: if busy { PAUSE_TOOLTIP } else { PLAY_TOOLTIP },
         stop_sensitive,
+        lucky_sensitive: !run_alive,
     }
 }

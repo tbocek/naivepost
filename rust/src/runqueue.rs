@@ -42,6 +42,14 @@ pub const TRACK_FRAMES: usize = 1;
 pub const TRACK_DESCRIBE: usize = TRACK_STT;
 pub const TRACK_FIX: usize = TRACK_FRAMES;
 
+/// §2: the two tracks' lines are joined by a middle dot with TWO spaces on each side — the spec's
+/// `joined by "  ·  "` (spec/03-shell.md §2). One const so the joiner and its test cannot drift.
+pub const TRACK_JOIN: &str = "  \u{00B7}  ";
+/// §2: what the bar's tooltip says when nothing is queued — the standing text that stays until a
+/// track has counting of its own to put in its place.
+pub const STANDING_TIP: &str =
+    "The run: the job, which of the run's jobs it is, and the task it is on";
+
 /// One half of the bar: the job on it, the work it has left, and what the task at the head of the
 /// queue is doing this second.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -238,7 +246,7 @@ impl Queue {
                 tips.push(tip);
             }
         }
-        (lines.join(" · "), tips.join("; "))
+        (lines.join(TRACK_JOIN), tips.join("; "))
     }
 
     /// The short line alone — what the status line shows while a run works.

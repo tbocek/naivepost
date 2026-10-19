@@ -64,6 +64,11 @@ pub(crate) fn wire_play(
     let exchange_log = exchange_log.clone();
     let procs = procs.clone();
     play.connect_clicked(move |play| {
+        // §2: ▶'s paint also gates the gears, so this handler looks them up alongside the button it was
+        // handed. The run bar always draws a lucky-button; `expect` names that invariant rather than
+        // inventing a stand-in widget for a window that does not have one.
+        let lucky = ui::lucky_button(&ui::main_window())
+            .expect("the run bar draws its lucky-button (§2)");
         // §F0.2 S2 belongs to the page's preview, so this press asks the player what it holds.
         let transport = ui::preview_player(&ui::main_window()).transport;
         // F1.1 S1: Prepare refuses at its own start, BEFORE the bar is opened — a run that started
@@ -105,7 +110,7 @@ pub(crate) fn wire_play(
                 matches!(pressed, run::Pressed::ToggledPause { .. }),
                 "a bar with a run under way can only toggle its pause here"
             );
-            paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+            paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
             status.set_text(&bar.borrow().status);
             return;
         }
@@ -116,7 +121,7 @@ pub(crate) fn wire_play(
                 let held = ui::preview_player(&ui::main_window());
                 let toggled = run::Transport { playing: resume, started: true };
                 ui::set_preview_state(&ui::main_window(), held.cut_only, held.reviewing, toggled);
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, toggled);
+                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, toggled);
                 return;
             }
             // "▶ refuses without a cut", and narration off before it (§2 lists both for Narrate). The
@@ -125,7 +130,7 @@ pub(crate) fn wire_play(
             crate::tab_states::Play::Refused => {
                 if let Some(reason) = tab_play.1 {
                     status.set_text(reason);
-                    paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                    paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
                     return;
                 }
             }
@@ -135,7 +140,7 @@ pub(crate) fn wire_play(
             if let Some((log, sentence)) = prepare_run::refuse(&live) {
                 ui::log_line(&log);
                 status.set_text(&sentence);
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 return;
             }
         }
@@ -143,7 +148,7 @@ pub(crate) fn wire_play(
             if let Some(reason) = ui::refuse_narrate_run(&live) {
                 // S1 only: nothing was pulled, nothing was saved, no file was written or copied.
                 status.set_text(&reason);
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 return;
             }
         }
@@ -153,7 +158,7 @@ pub(crate) fn wire_play(
                 bar.borrow().running.is_some(),
                 transport.started,
                 |sentence| status.set_text(sentence),
-                || paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport),
+                || paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport),
             )
         {
             return;
@@ -167,7 +172,7 @@ pub(crate) fn wire_play(
             if let Some(reason) = crate::produce_flow::refuse(bar.borrow().running.is_some(), has_cut) {
                 // §F5.1 S1: refused before the bar opened — no ⏸ shows for a run that never began.
                 status.set_text(reason);
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 return;
             }
         }
@@ -180,7 +185,7 @@ pub(crate) fn wire_play(
             // preview paints ▶ (it owes a resume), and painting from `held.transport` would leave ⏸ up.
             let toggled = run::Transport { playing: resume, started: true };
             ui::set_preview_state(&ui::main_window(), held.cut_only, held.reviewing, toggled);
-            paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, toggled);
+            paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, toggled);
             return;
         }
         let mut refusal: Option<String> = None;
@@ -343,7 +348,7 @@ pub(crate) fn wire_play(
                 }
             }
             if !started {
-                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
                 status.set_text(refusal.as_deref().unwrap_or(""));
                 return;
             }
@@ -380,7 +385,7 @@ pub(crate) fn wire_play(
                 );
             }
         }
-        paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page,
+        paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page,
             ui::preview_player(&ui::main_window()).transport);
         status.set_text(&bar.borrow().status);
         // F0.5 S4: a single-step press closes what it opened (running off, the unload handed over,
@@ -451,6 +456,9 @@ pub(crate) fn wire_stop(
     let log_view = log_view.clone();
     let queue = queue.clone();
     stop_.connect_clicked(move |stop_| {
+        // §2: the repaint below gates the gears too, so ⏹ looks them up like ▶'s handler does.
+        let lucky = crate::ui::window_doors::lucky_button(&crate::ui::window::main_window())
+            .expect("the run bar draws its lucky-button (§2)");
         // F4.5 S6: while the Narrate preview is running, ⏹ belongs to the PREVIEW, not to a run. Stopping it
         // here stops both players and hands ▶ back to the step; only when no preview is going does the press
         // mean "end the long job", which is `run::RunBar::press_stop`'s rule unchanged.
@@ -460,6 +468,7 @@ pub(crate) fn wire_stop(
             // and ⏹ loses its sensitivity unless a run is under way.
             paint_run_bar(
                 &play,
+                &lucky,
                 stop_,
                 &bar.borrow(),
                 shell.borrow().page,
@@ -492,6 +501,7 @@ pub(crate) fn wire_stop(
         // Repaint both: stopping a run changes ▶'s face as well as ⏹'s sensitivity.
         paint_run_bar(
             &play,
+            &lucky,
             stop_,
             &bar.borrow(),
             shell.borrow().page,
