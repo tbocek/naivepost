@@ -28,7 +28,7 @@ pub fn status_text(window: &adw::ApplicationWindow) -> String {
 }
 
 /// Every list that carries rows, chained across all five pages so uniqueness is checked against the
-/// whole catalogue rather than one page (`tests/hands_off.rs`'s `row()` makes the same choice).
+/// whole catalogue rather than one page (`tests/suite/hands_off.rs`'s `row()` makes the same choice).
 pub fn all_rows() -> Vec<params::Param> {
     params::prepare()
         .into_iter()

@@ -1,0 +1,78 @@
+//! F1.10 S3's live half over a socket, one scenario per binary.
+//!
+//! `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and the working directory are process-wide, so a
+//! fixture that re-points them cannot share a test binary with another: the shared env would
+//! make the second pass read the first one's settings and project folder. One binary each,
+//! sharing the harness in `tests/suite/join_live_harness.rs`.
+#![allow(dead_code)]
+
+#[path = "join_live_harness.rs"]
+mod harness;
+
+use harness::*;
+#[path = "joined_answer.rs"]
+mod joined_answer;
+
+#[test]
+fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
+    // The listener is HELD for the whole scenario and answers every connection by closing it without
+    // writing a byte. Two reasons, both learned the hard way:
+    //
+    // * A released ephemeral port goes back to the OS pool, where another test binary on this machine can
+    //   take it -- and if what sits there is an answering fake LLM, the first dial gets an ANSWER,
+    //   `llm_retry_leg::has_answered` turns true, and the later death then reads as "gone away MID-CALL", so
+    //   §3's ladder IS spent: three asks where two were promised. That is how this check flaked under a
+    //   full-suite run while passing on its own.
+    // * Accept-and-close keeps the transport failure honest: no bytes ever arrive, so nothing can be read as
+    //   an answer, and §3's classification still sees a wire that never spoke (no rung of the 5 s-to-4 min
+    //   ladder is spent on a box nobody started).
+    // * The address is also FORGOTTEN by the answered-endpoints table before anything is dialled. `has_answered`
+    //   is process-wide and keyed by URL, and this port is ephemeral: another test program on this machine can
+    //   hold that number and have ANSWERED on it, which makes a death here read as "gone away mid-call" and
+    //   spends the ladder -- three asks where two were promised, the second half of the same race.
+    let dead = harness::FakeLlm::dead_listener();
+    let dead_port = dead.local_addr().expect("the dead port has an address").port();
+    // State the precondition this scenario ASSUMES, BEFORE any dial can record history: "a server this app has
+    // never had an answer from" is a claim about the process-wide answered-endpoints table
+    // (`llm_retry_leg::answered_once`), not about the port -- and the port is EPHEMERAL. An earlier scenario in
+    // this binary may have been ANSWERED on that number before releasing its listener, and another test program
+    // on this machine can be holding it now; either way `has_answered` says true, §3's ladder is spent on a box
+    // nobody started, and three asks appear where two were promised. That is how this check flaked under a
+    // full-suite run while passing alone.
+    naivepost::llm_retry_leg::forget_answer_for_test(&format!("http://127.0.0.1:{dead_port}"));
+    std::thread::spawn(move || {
+        for incoming in dead.incoming() {
+            // Dropping the stream here closes it immediately: the dialler's read ends with nothing.
+            drop(incoming.ok());
+        }
+    });
+    point_at(&format!("http://127.0.0.1:{dead_port}"));
+    let fixture = fixture("down");
+    let lines = press(&fixture.tree, &fixture.project);
+    // The count is ONE failed seam (2 rows) rather than one per seam because a transport death on a server
+    // that has never answered spends no ladder at all, and the pass stops asking once it has said the
+    // failure: §3's one retry, and `seam_retries` spends none of its retries on a wire that never answered.
+    assert!(
+        lines.iter().any(|line| line.contains("llm") && line.contains("not answering")),
+        "the failure names the server that is down: {lines:?}"
+    );
+    assert!(
+        lines.iter().any(|line| line.contains("nothing removed there")),
+        "the join ends with nothing removed: {lines:?}"
+    );
+    // §3 (F6.2) gives this branch ONE retry after 2 s, so the wire is dialled TWICE for this seam and never a
+    // third: a server this app has never had an answer from is not "gone away mid-call", so no rung of the 5 s-to-4
+    // min ladder is spent on a box nobody started. `seam_retries` counts refusals of ANSWERS and spends none of its
+    // retries on a dead wire, which is what keeps this bounded.
+    let rows = read(&fixture.tree.requests_tsv())
+        .lines()
+        .filter(|line| line.contains("chat"))
+        .count();
+    assert_eq!(rows, 2, "§3's short patience is one retry after 2 s: two asks, no ladder, no storm: {rows}");
+    let text = read(&fixture.tree.final_txt());
+    assert!(
+        text.contains("today") && text.contains("now"),
+        "a down server takes no words out: {text}"
+    );
+    assert!(fixture.tree.retakes_tsv().exists(), "retakes.tsv still written");
+}

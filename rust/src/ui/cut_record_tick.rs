@@ -232,7 +232,7 @@ impl RecordingPreviewPage for WindowPage {
     fn mix_now(&self, at: f64) -> Option<crate::cut_hear::Mix> {
         let cut = self.cut();
         // The mix is asked over THIS window's cut and its own preview volume, through the seam
-        // `tests/cut_hear_mix_widgets.rs` already drives; nothing here re-decides a part of the answer.
+        // `tests/suite/cut_hear_mix_widgets.rs` already drives; nothing here re-decides a part of the answer.
         Some(ui::apply_mix(&self.0, &cut.segs, &cut.lanes, &cut.fx, at))
     }
     fn root(&self) -> Option<std::path::PathBuf> {

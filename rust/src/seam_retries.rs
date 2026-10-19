@@ -12,7 +12,7 @@
 //! many words, a stretch that misses the join) — here a refusal is simply an event that costs another ask.
 //!
 //! Deliberately not in [`crate::params`]: §04#4 does not list this id among the eighteen it names, and
-//! `rust/tests/prepare_parameters.rs` pins that list by order, so a row inserted there would break
+//! `rust/tests/suite/prepare_parameters.rs` pins that list by order, so a row inserted there would break
 //! that assertion. The number lives with the rule that uses it, as every `P.*` value must; a reader who
 //! asks which family it belongs to gets the right answer anyway, since
 //! [`crate::params::family`] answers `Family::Machine` from the `P.machine.` prefix.

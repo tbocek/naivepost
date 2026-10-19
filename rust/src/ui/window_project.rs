@@ -262,6 +262,27 @@ fn ask_add_sources(
         // The same body a widget test drives, so the chooser and the seam cannot drift apart.
         add_files(&window, &files);
     });
+    // Built is not shown: without this the press did nothing at all — the chooser existed, unseen,
+    // and its response never came. Same call as every other native chooser in the app.
+    CHOOSERS_SHOWN.with(|shown| shown.set(shown.get() + 1));
+    chooser.show();
+}
+
+thread_local! {
+    /// How many times this thread has raised the Add sources chooser. A headless test can never
+    /// answer one, so "the press got as far as opening it" is only observable as a count — a widget
+    /// can outlive the borrow that made it, which rules out holding one in shared state.
+    static CHOOSERS_SHOWN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The door a widget test reads: how many Add sources choosers have been raised so far.
+pub fn add_chooser_shown_count() -> usize {
+    CHOOSERS_SHOWN.with(|shown| shown.get())
+}
+
+/// Zero the count, so a test asserts a delta of one rather than whatever earlier checks stacked up.
+pub fn reset_add_chooser_shown() {
+    CHOOSERS_SHOWN.with(|shown| shown.set(0));
 }
 
 /// The Save button's tooltip, §1's wording for badge **3**.
@@ -467,7 +488,7 @@ pub(crate) fn wire_open(
     open_.connect_clicked(move |_| {
         // The chooser cannot be answered in a headless test, so what a test asserts is that the press
         // got here and that every rule behind it lives in `open_project` (see
-        // `tests/open_project_widgets.rs`, which drives `open_folder` directly).
+        // `tests/suite/open_project_widgets.rs`, which drives `open_folder` directly).
         ask_open_project(&bar, &status, &session);
     });
 }

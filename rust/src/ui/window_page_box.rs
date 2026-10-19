@@ -22,6 +22,10 @@ use crate::cut_select;
 use crate::ui::cut_tracks;
 use crate::cut_trim;
 use crate::prepare;
+
+/// The height a page's own scroller offers before its content scrolls (§1's draggable divider: the page
+/// half can be dragged down to this and no further; below it the page would be unreadable).
+pub(crate) const PAGE_MIN_H: i32 = 360;
 use crate::project::Project;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
@@ -48,8 +52,19 @@ pub(crate) fn page_box(
     let view = adw::ToolbarView::new();
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    box_.set_margin_start(24);
-    box_.set_margin_end(24);
+    // The page's own content scrolls. Every page stacks tall parts (Prepare: sources list + frame
+    // controls + the prompt bench; Cut: preview paned + toolbar + tape; Narrate and Produce: their own
+    // surfaces), and a plain Box reports the SUM of their minimums as the window's floor — measured at
+    // 968 px tall, which is why the shell could not be shrunk (`tests/suite/window_shrinks.rs`). §1 wants "the
+    // page and bottom bar [as] two halves of a draggable divider": the divider can only give the page
+    // less room if the page can scroll inside what it is given.
+    let page_scroller = gtk::ScrolledWindow::new();
+    page_scroller.set_widget_name(&format!("page-scroll-{page}"));
+    page_scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    // The page keeps a usable height band rather than collapsing to nothing beside a huge log.
+    page_scroller.set_min_content_height(PAGE_MIN_H);
+    page_scroller.set_child(Some(&box_));
+    box_.set_margin_start(24);    box_.set_margin_end(24);
     box_.set_margin_top(24);
     box_.set_margin_bottom(24);
 
@@ -152,9 +167,17 @@ pub(crate) fn page_box(
         // widgets keep the names every flow's tests already find them by; what changed is that they are
         // grouped rather than stacked, and that the groups the earlier rounds had not reached (effects,
         // history, zoom) are now on the page at all.
+        //
+        // The six groups sit in ONE row — §A's single bar. Each group scrolls inside itself when the bar
+        // is narrower than the group (see `cut_tool_group`), so the row no longer pins the window's width;
+        // measured with `tests/suite/window_shrinks.rs`, an unscaled row of these groups asked for 2709 px and
+        // made the shell impossible to shrink.
         let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         toolbar.set_widget_name("cut-toolbar");
         toolbar.set_halign(gtk::Align::Start);
+        // Each group is appended straight onto the bar; `put_group` names the step so the six calls below
+        // read as one list.
+        let put_group = { |group: gtk::Box| toolbar.append(&group) };
         box_.insert_child_after(&toolbar, Some(&title_row));
         // Every control lands in the groups appended below; `previous` threads the placeholder bands
         // after the toolbar, exactly as it threaded them through the old stack of buttons.
@@ -166,12 +189,11 @@ pub(crate) fn page_box(
         // Transport starts live: ▶ Play the recording and the frame steps have a job the moment the page
         // opens, whatever the cut holds.
         let transport = cut_tool_group("transport", &cut_screen::TRANSPORT_BUTTONS, false);
-        toolbar.append(&transport);
+        put_group(transport);
 
         // Volume group (§1 item 9) — see F2.5 below for why one slider owns no copy of the number.
         let volume_group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         volume_group.set_widget_name("group-volume");
-        toolbar.append(&volume_group);
 
 
         // F2.5 S6: the preview volume. One control for one number — `cut_hear::PreviewVolume` is the
@@ -206,6 +228,7 @@ pub(crate) fn page_box(
         // `cut_hear_mix_widgets` panics inside `connect_activate` -- which aborts the process with a
         // SIGABRT rather than reporting a test failure.
         volume_group.append(&volume_row);
+        put_group(volume_group);
         // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
         // widget that is not yet inside the realized tree never fires (see the F2.1 note there).
 
@@ -264,7 +287,7 @@ pub(crate) fn page_box(
         // `refresh_insert_button`, on the same refresh path, lights it as soon as a line or a selection
         // exists and puts the word "Edit" on it while a card is held (F2.12 S1/S6).
         let verbs = cut_tool_group("verbs", &cut_screen::VERB_BUTTONS, true);
-        toolbar.append(&verbs);
+        put_group(verbs);
 
         // Effects dropdown (§1 item 17). A MenuButton whose popover holds the six effects §A lists. If a
         // popover cannot be built headless the fallback is a flat Box named `effect-menu` holding the
@@ -278,17 +301,17 @@ pub(crate) fn page_box(
         let effects = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         effects.set_widget_name("group-effects");
         effects.append(&effect_button);
-        toolbar.append(&effects);
+        put_group(effects);
 
         // History (§1 items 18-21) and zoom (item 22). Their sensitivity comes from
         // `cut_screen::history_buttons_enabled` through `refresh_history_buttons`, called from the
         // same refresh path the verbs use, so nothing here decides who is clickable.
         // History starts greyed: nothing to undo, redo, revert or clear on a page that has not been edited.
         let history = cut_tool_group("history", &cut_screen::HISTORY_BUTTONS, true);
-        toolbar.append(&history);
+        put_group(history);
         // Zoom starts live: −/+ act on any timeline immediately.
         let zoom = cut_tool_group("zoom", &cut_screen::ZOOM_BUTTONS, false);
-        toolbar.append(&zoom);
+        put_group(zoom);
 
         // Form column (§1's "Form column", §A's idle rows). Until a form is open for something being
         // placed or edited, this holds the eight readings: thumbnail size (with its −/+ ladder), aspect
@@ -474,7 +497,7 @@ pub(crate) fn page_box(
         box_.append(&folds_box);
     }
 
-    view.set_content(Some(&box_));
+    view.set_content(Some(&page_scroller));
     // The two widgets are handed back only for Prepare; every other page has none. `build_window`
     // wires that button directly rather than finding it by name, because a window whose four pages
     // each hold an "add-sources-button" makes `find_widget_by_name` return whichever one it reaches
@@ -498,13 +521,27 @@ pub(crate) fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insen
     let group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     group.set_widget_name(&format!("group-{name}"));
     group.set_halign(gtk::Align::Start);
+    // The group's controls sit in one inner row rather than directly on the named box. That row is what
+    // gets scrolled when the bar is narrower than the group (§A's own "as the window narrows" rule for
+    // the header): a `gtk::Box` has no scrollbars of its own, so a group that asks for more width than it
+    // is given would otherwise PIN the whole window — measured at 1255 px for `group-transport` alone,
+    // which is how the shell came to be unshrinkable (tests/suite/window_shrinks.rs). Keeping the named box as
+    // the outer widget means every test's `find_widget_by_name("group-transport")` still finds the group,
+    // and the buttons keep their own names inside it.
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    row.set_widget_name(&format!("group-{name}-row"));
     for tool in tools {
         let button = gtk::Button::with_label(tool.label);
         button.set_widget_name(tool.name);
         button.set_tooltip_text(Some(tool.tip));
         button.set_sensitive(!rests_insensitive);
-        group.append(&button);
+        row.append(&button);
     }
+    let scroller = gtk::ScrolledWindow::new();
+    scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+    scroller.set_propagate_natural_width(true);
+    scroller.set_child(Some(&row));
+    group.append(&scroller);
     group
 }
 

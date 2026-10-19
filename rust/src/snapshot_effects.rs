@@ -11,7 +11,7 @@ use crate::ui;
 /// Paint one of the effect screens onto `window`. Returns true when this module owned `screen`.
 pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &str) -> bool {
     // F3.5's screen is the drawing form OPEN, so the shot must drive the same doors the widgets use
-    // (`tests/svg_drawing_widgets.rs` fires exactly these) rather than poke state: a picture painted
+    // (`tests/suite/svg_drawing_widgets.rs` fires exactly these) rather than poke state: a picture painted
     // from a shortcut would not be the picture the app draws.
     if screen == "06-svg" {
         // A line exists and points at 81 s, so the heading reads `SVG at 1:21` -- spelled by
@@ -23,7 +23,7 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
         ui::svg_chosen(window, Some("assets/logo.svg"));
         ui::svg_drag_ended(window, (24.0, 24.0), (150.0, 96.0));
         // No Apply here: Apply closes the form, and the screen F3.5 names IS the form. The record it would
-        // write is proven by `tests/svg_drawing_widgets.rs`; the shot shows what the user is being asked.
+        // write is proven by `tests/suite/svg_drawing_widgets.rs`; the shot shows what the user is being asked.
         return true;
     }
 
@@ -38,7 +38,7 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
         ui::set_line_position(window, cut_line::LinePos { t: 81.0 });
         let said = ui::press_zoom_item(window);
         assert!(ui::zoom_armed(), "snapshot: 06-zoom could not arm -- {said}");
-        // A drawn box, fired through the panel's own gesture exactly as `tests/zoom_drag_widgets.rs` does:
+        // A drawn box, fired through the panel's own gesture exactly as `tests/suite/zoom_drag_widgets.rs` does:
         // begin at the press point, release with the OFFSET that signal carries.
         let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
         gesture.emit_by_name::<()>("drag-begin", &[&120.0f64, &90.0f64]);
@@ -50,7 +50,7 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
 
     // §F3.3's screen is the speed form OPEN (`spec/img/06-speed.png`): with only a line and no marked
     // band the answer is a stop at the line (§F3.2 S1), so the shot places a line and presses the
-    // dropdown row, which is what `tests/speed_form_widgets.rs` presses. Without this the shot was the
+    // dropdown row, which is what `tests/suite/speed_form_widgets.rs` presses. Without this the shot was the
     // bare Cut page. The spec's own caption for that image reads `Speed ×0.5 on a selected stretch`, so
     // it is §F3.3's hand form, and nothing about §F3.10's pass belongs in this shot.
     if screen == "06-speed" {
@@ -163,7 +163,7 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
         return true;
     }
 
-    // the dropdown row fires (`tests/volume_form_widgets.rs` presses exactly this) rather than poking state.
+    // the dropdown row fires (`tests/suite/volume_form_widgets.rs` presses exactly this) rather than poking state.
     if screen == "06-volume" {
         // A marked stretch, which is what §F3.6's own heading reads: the spec's picture says
         // `Volume 1:21 – 1:25`, four seconds, and a band is how a person gets exactly that (a bare line
@@ -172,13 +172,13 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
         ui::draw_selection(window, crate::cut_select::Surface::SelectionBand, None, 81.0, 85.0);
         let said = ui::press_volume_item(window);
         // No Apply here either: Apply closes the form, and the screen §F3.6 names IS the form. The record
-        // it would write, and that one ↶ takes back, is proven by `tests/volume_form_widgets.rs`.
+        // it would write, and that one ↶ takes back, is proven by `tests/suite/volume_form_widgets.rs`.
         let _ = said;
         return true;
     }
 
     // F3.7's screen is the label form OPEN (`spec/img/06-label.png`), so the shot drives the same door the
-    // dropdown row fires (`tests/label_form_widgets.rs` presses exactly this) rather than poking state.
+    // dropdown row fires (`tests/suite/label_form_widgets.rs` presses exactly this) rather than poking state.
     if screen == "06-label" {
         // A placed line 81 s in, so the heading names that moment -- spelled by `fx_label::form_title`,
         // never hardcoded here. The Name field shows empty because the name is the question the form asks:
@@ -188,7 +188,7 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
         ui::set_line_position(window, cut_line::LinePos { t: 81.0 });
         let said = ui::press_label_item(window);
         // No Apply here either: Apply closes the form, and the screen §F3.7 names IS the form. The mark it
-        // would write, and that one ↶ takes back, is proven by `tests/label_form_widgets.rs`.
+        // would write, and that one ↶ takes back, is proven by `tests/suite/label_form_widgets.rs`.
         let _ = said;
         return true;
     }
@@ -226,7 +226,7 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
 
     // its `cut/cut.json` carries `fx: []`, so every shot of the Cut page draws an empty lane. Seeded here
     // the way `05-fold` seeds its hole -- the shared fixture file untouched -- and driven through the same
-    // doors the widgets fire (`tests/band_hold_widgets.rs` presses exactly these) rather than by poking
+    // doors the widgets fire (`tests/suite/band_hold_widgets.rs` presses exactly these) rather than by poking
     // state: a lane painted from a shortcut would not be the lane the app draws.
     if screen == "06-lane" {
         // Wide bars, at the same 4 px/s the spec's own lane is drawn with: 50 s is 200 px, far past both

@@ -14,8 +14,10 @@ the machine unless an endpoint points at it.
 
     cd rust && just build          # cargo build --release -> rust/target/release/naivepost
 
-System libraries, by base image: Alpine 3.24 wants `gtk4.0-dev libadwaita-dev rust cargo gcc
-musl-dev`; Debian and Ubuntu want `libgtk-4-dev libadwaita-1-dev`. libc follows the toolchain and
+Every tab, row and transport icon is a named `-symbolic` icon looked up in the desktop's icon
+theme — `gui/icons/` ships the app icon only. The list is spelled once as `icons::NAMED_SYMBOLIC_ICONS`
+and `tests/suite/icon_theme_symbols.rs` fails if a widget asks for a name outside it, or if a tree
+cannot resolve one; the AppImage carries `adwaita-icon-theme` inside for this reason. libc follows the toolchain and
 not a flag, so do not add a `just` `os()` branch to pick one — the same recipe links musl on
 Alpine and glibc on a Debian host. Cross-compiling (a glibc host wanting a musl binary, or the
 reverse) needs a second toolchain this image does not have: `rustc` comes from apk and there is
@@ -29,6 +31,10 @@ A project is a folder ending in `.naivepost`; a path inside it is stored as `pro
 root-relative path, absolute nowhere else. With no argument the last opened project is used, and
 the desktop can hand a folder over directly (`*.naivepost` is registered as a MIME package).
 `./target/release/naivepost --help` prints both modes without needing a display.
+
+The window opens at 1240x740 (spec §1) and shrinks down to about 792x538: every page scrolls inside
+its own half of the divider, so nothing in the shell pins the window's size. `tests/suite/window_shrinks.rs`
+is what keeps that true.
 
 The GUI needs a display, which this devcontainer has none of. In here every screen is rendered
 headless instead:
@@ -81,8 +87,10 @@ from; `rust/session.naivepost` is a fuller one with `prepare/` as well.
 
     cd rust && just test > /tmp/test.log 2>&1     # ~3-4 min; then read the summary in the file
 
-Several tests build real GTK widgets, so they run under xvfb. Current state: **483**
-`test result: ok` lines, **3104 passed**, **0 failed**. Lint: `cargo clippy --all-targets
+Several tests build real GTK widgets, so they run under xvfb. All test files build into one
+binary, `tests/all.rs`, and `just test` runs each file in a process of its own; `just test f1_13`
+runs only the files whose name contains `f1_13`. Current state: **482** `test result: ok` lines
+(the unit tests, then one per test file), **3104 passed**, **0 failed**. Lint: `cargo clippy --all-targets
 --quiet` from `rust/`.
 
 ## What the spec covers

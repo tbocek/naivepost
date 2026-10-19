@@ -112,7 +112,7 @@ pub fn step(page: Page) -> Step {
 /// stay untagged and are still transcribed."
 ///
 /// Deliberately not a [`crate::params`] row: §04#4 does not name this id among the parameters it
-/// lists (and `rust/tests/prepare_parameters.rs` pins that list by ORDER), nor does §07#4 (whose
+/// lists (and `rust/tests/suite/prepare_parameters.rs` pins that list by ORDER), nor does §07#4 (whose
 /// foreign-row whitelist `narrate_parameters.rs` / `narrate_screen_widgets.rs` check). The value
 /// lives with the rule that reads it, as every `P.*` value must;
 /// [`crate::params::family`] still answers `Family::Policy` from the prefix.

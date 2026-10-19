@@ -168,20 +168,90 @@ fn rust_names(dir: &Path) -> Vec<String> {
     names
 }
 
-/// The `path = "tests/<name>.rs"` entries Cargo was told about — the ones that build as their own test
-/// binary. Everything else under `rust/tests` is a shared module pulled in by a path attribute.
-fn registered_tests(cargo_toml: &str) -> Vec<String> {
-    let mut names: Vec<String> = cargo_toml
+/// The `mod <name>;` lines of `tests/suite/mod.rs`: the test files of the one test binary,
+/// `tests/all.rs`. Every other file in `tests/suite` is a shared module pulled in by a path attribute.
+fn suite_tests(mod_rs: &str) -> Vec<String> {
+    let mut names: Vec<String> = mod_rs
         .lines()
-        .filter_map(|line| {
-            let start = line.find(r#"path = "tests/"#)? + r#"path = "tests/"#.len();
-            let rest = &line[start..];
-            let end = rest.find(".rs\"")?;
-            Some(rest[..end].to_string())
-        })
+        .filter_map(|line| line.strip_prefix("mod ")?.strip_suffix(';').map(str::to_string))
         .collect();
     names.sort();
     names
+}
+
+/// `[[test]]` tables in a `Cargo.toml`. The spec forbids one — every test file is a module of the one
+/// binary — so a target means a file was added without its `mod` line and now relinks as its own program.
+fn test_targets(cargo_toml: &str) -> usize {
+    cargo_toml
+        .lines()
+        .filter(|line| line.trim() == "[[test]]")
+        .count()
+}
+
+/// `.rs` names that some file in `dir` pulls in with `#[path = "<name>.rs"]`, sorted and de-duplicated:
+/// the shared harnesses and fixtures that build INSIDE the listed test files instead of beside them.
+fn path_included(dir: &Path) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for stem in rust_names(dir) {
+        let text = read(&dir.join(format!("{stem}.rs")));
+        let mut rest = text.as_str();
+        while let Some(at) = rest.find("#[path = \"") {
+            rest = &rest[at + "#[path = \"".len()..];
+            match rest.find('"') {
+                Some(end) => {
+                    names.insert(rest[..end].trim_end_matches(".rs").to_string());
+                }
+                None => break,
+            }
+        }
+    }
+    names.into_iter().collect()
+}
+
+/// The test-tree rules AGENT.md states, checked against the folder rather than repeated from the prose:
+/// one binary, no `[[test]]` target, and every file under `tests/suite` either listed by
+/// `tests/suite/mod.rs` or pulled in by a `#[path]` attribute. A layout written down drifts; this line
+/// cannot, because it is computed from what is there.
+fn test_tree_rules(root: &Path) -> String {
+    let all_rs = read(&root.join("rust/tests/all.rs"));
+    let binary = if root.join("rust/tests/all.rs").is_file() {
+        if all_rs.contains("mod suite;") {
+            "tests/all.rs is the one test binary".to_string()
+        } else {
+            "tests/all.rs does not declare mod suite;".to_string()
+        }
+    } else {
+        "tests/all.rs is missing".to_string()
+    };
+    let targets = test_targets(&read(&root.join("rust/Cargo.toml")));
+    let cargo = if targets == 0 {
+        "Cargo.toml declares no [[test]] target".to_string()
+    } else {
+        format!("Cargo.toml declares {targets} [[test]] targets, which the spec forbids")
+    };
+    let suite = root.join("rust/tests/suite");
+    let listed = suite_tests(&read(&suite.join("mod.rs")));
+    let included = path_included(&suite);
+    let unaccounted: Vec<String> = rust_names(&suite)
+        .into_iter()
+        .filter(|name| name != "mod" && name != "all")
+        .filter(|name| !listed.contains(name) && !included.contains(name))
+        .collect();
+    let shared = rust_names(&suite)
+        .into_iter()
+        .filter(|name| name != "mod" && name != "all")
+        .filter(|name| !listed.contains(name) && included.contains(name))
+        .count();
+    let tail = if unaccounted.is_empty() {
+        "all of them included by some test file".to_string()
+    } else {
+        format!("these tests/suite files nothing builds: {}", unaccounted.join(", "))
+    };
+    format!(
+        "rust/tests: {binary}, declaring the suite; {cargo}; {} test files listed in \
+         tests/suite/mod.rs, {shared} shared modules pulled in by a #[path] attribute, {tail}",
+        listed.len()
+    )
 }
 
 /// How the checkout's own two trees are organised, counted from what is there rather than asserted.
@@ -192,11 +262,11 @@ pub fn organisation(root: &Path) -> Vec<String> {
         .iter()
         .filter(|name| declared.contains(&format!("pub mod {name};")))
         .count();
-    let registered = registered_tests(&read(&root.join("rust/Cargo.toml")));
-    let all_tests = rust_names(&root.join("rust/tests"));
+    let listed = suite_tests(&read(&root.join("rust/tests/suite/mod.rs")));
+    let all_tests = rust_names(&root.join("rust/tests/suite"));
     let shared = all_tests
         .iter()
-        .filter(|name| !registered.contains(name))
+        .filter(|name| *name != "mod" && !listed.contains(name))
         .count();
     vec![
         format!(
@@ -205,12 +275,13 @@ pub fn organisation(root: &Path) -> Vec<String> {
             orphanless
         ),
         format!(
-            "rust/tests: {} integration test binaries registered in Cargo.toml, {} shared modules pulled \
-             in by a path attribute instead (one file per spec flow, named flow_step_case like \
-             f1_13_s5_\u{2026})",
-            registered.len(),
+            "rust/tests: one test binary, tests/all.rs, holding {} test files as modules of tests/suite, \
+             {} shared modules pulled in by a path attribute instead (one file per spec flow, named \
+             flow_step_case like f1_13_s5_\u{2026})",
+            listed.len(),
             shared
         ),
+        test_tree_rules(root),
     ]
 }
 

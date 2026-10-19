@@ -31,7 +31,7 @@ pub const FIX_STEP: &str = "fix";
 /// the block.
 ///
 /// §10's row for this id is deliberately absent from [`crate::params::prepare`]: §04#4 does not name
-/// it among the parameters it lists, and `rust/tests/prepare_parameters.rs` pins that list by ORDER,
+/// it among the parameters it lists, and `rust/tests/suite/prepare_parameters.rs` pins that list by ORDER,
 /// so a row inserted here would break that assertion. The number lives with the rule that reads it, as
 /// every `P.*` value must; [`crate::params::family`] still answers `Family::Machine` from the prefix.
 pub const BLOCK_TRIES: u32 = 2;

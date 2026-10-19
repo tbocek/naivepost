@@ -42,7 +42,6 @@ use crate::ui::policy_form;
 use crate::startup;
 use crate::narration::{self, Narration};
 use crate::shell::{Move, Outcome, Page, Refresh, Shell};
-use crate::PAGES;
 
 /// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
 /// The page-specific wording §1 mentions lives in `Shell::outputs`' own doc — the button itself is
@@ -148,7 +147,9 @@ pub struct UiState {
 pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &str) -> adw::ApplicationWindow {
 
     let window = adw::ApplicationWindow::new(app);
-    window.set_default_size(1400, 900);
+    // spec/03-shell.md §1: "One window, title Naivepost, default 1240×740" — the size the window opens
+    // at, not a floor (the content's own minimum is what limits shrinking; see tests/suite/window_shrinks.rs).
+    window.set_default_size(1240, 740);
     // §7's launch lines wait until there is a log to put them in.
     note_startup(&[]);
 
@@ -214,9 +215,12 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
 
     let stack = adw::ViewStack::new();
     let mut prepare_add: Option<(gtk::Button, gtk::CheckButton)> = None;
-    for name in PAGES {
+    for page in Page::all() {
+        let name = page.label();
         let (child, add_, copy_) = page_box(name, project, &session, &status, &window);
-        stack.add_titled(&child, Some(name), name);
+        // The tab row draws each page's icon; a page added without one gets libadwaita's
+        // "image-missing" glyph.
+        stack.add_titled_with_icon(&child, Some(name), name, page.icon());
         if let (Some(add_), Some(copy_)) = (add_, copy_) {
             prepare_add = Some((add_, copy_));
         }
@@ -335,7 +339,19 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     log_view.set_vexpand(true);
     // §10 lists the log's heights only in prose ("log heights 220/110") and gives no `P.` id, so the
     // numbers go on the widget with this note rather than as invented parameter rows.
-    log_view.set_height_request(LOG_OPEN_PX);
+    //
+    // "the page and bottom bar are two halves of a draggable divider").
+    // A TextView is not scrollable by itself: without its own scroller it reports the whole document's
+    // height as its minimum, which would pin the window tall again the moment the log had lines in it.
+    let log_scroller = gtk::ScrolledWindow::new();
+    log_scroller.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    // 220 px is the OPEN height the scroller offers, not a floor on the window: a ScrolledWindow's
+    // minimum is what `min_content_height` sets only while its content asks for more, and here the
+    // content is a text view that vexpands, so the shell can be dragged under 220 px and the log
+    // scrolls. That is what makes the run bar + log stop pinning the window's height.
+    log_scroller.set_min_content_height(LOG_OPEN_PX);
+    log_scroller.set_child(Some(&log_view));
+    log_scroller.set_child(Some(&log_view));
 
     let log_header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     log_header.set_widget_name("log-header");
@@ -347,7 +363,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let log = gtk::Expander::new(Some("Log"));
     log.set_widget_name("log-expander");
     log.set_label_widget(Some(&log_header));
-    log.set_child(Some(&log_view));
+    log.set_child(Some(&log_scroller));
     log.set_expanded(false);
 
     // §2's run bar: ▶ at the left of the row above the log, ⏹ next to it (F0.3), then the "I'm
@@ -1454,7 +1470,10 @@ pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};
 // The project dialogs (＋ New / Open / Save / Rescan / Add sources) live in `window_project`
 // (window.rs is past its size budget); these are the same names, re-exported under the paths every
 // other module and test already reaches them through.
-pub use crate::ui::window_project::{add_files, new_project_confirm, open_folder, open_from};
+pub use crate::ui::window_project::{
+    add_files, add_chooser_shown_count, reset_add_chooser_shown, new_project_confirm, open_folder,
+    open_from,
+};
 pub(crate) use crate::ui::window_project::{
     wire_add, wire_new, wire_open, wire_rescan, remember_opened,
     NEW_TIP, OPEN_TIP, RESCAN_TIP, SAVE_TIP, SETTINGS_TIP,

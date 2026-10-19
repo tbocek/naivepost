@@ -33,7 +33,7 @@ pub fn stage() -> Option<crate::layout::Tree> {
 /// press ENDS here on §S1's own gate before any ask is built — with no transcript staged the page answers
 /// "run Describe first" and no wire is touched, which is the honest refusal a picture can show. The web-offer
 /// question this flow also touches (no browser → no `web_search`/`web_read`, §2's line said once) is pinned
-/// where the request bytes are visible, `tests/sec_05_cut_8_suggest_wired.rs`, not in a picture.
+/// where the request bytes are visible, `tests/suite/sec_05_cut_8_suggest_wired.rs`, not in a picture.
 pub fn press_through_page(window: &adw::ApplicationWindow, busy: bool) -> String {
     let landed = crate::ui::cut_suggest_model_run::press(window, busy);
     crate::ui::window::set_status_line(window, &landed.said);

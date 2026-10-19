@@ -7,7 +7,7 @@
 //!
 //! It lives in its own file because `params.rs` is at its size budget; nothing here owns a number. Every function
 //! reads the constant or the function the rule actually uses, so a change to the rule moves the row by itself and
-//! a row that stops matching its home fails `tests/produce_parameters.rs`.
+//! a row that stops matching its home fails `tests/suite/produce_parameters.rs`.
 //!
 //! No GTK, and nothing computed: like the rest of `params`, this only spells what lives elsewhere.
 

@@ -11,8 +11,20 @@ use super::window;
 
 /// The log's text view, for a reader that has the window but not the expander: an expander keeps its
 /// body behind an internal widget, so every caller reaches it this way and none should re-derive it.
+///
+/// The expander's child is the log's OWN scroller (the text view cannot be the direct child: uncapped,
+/// it reported the whole document's height as the window's minimum and the shell could not be shrunk —
+/// see `tests/suite/window_shrinks.rs`), so the walk goes expander → scroller → text view.
 pub fn log_view(window: &adw::ApplicationWindow) -> Option<gtk::TextView> {
-    window::log_expander(window)?.child()?.downcast().ok()
+    let child = window::log_expander(window)?.child()?;
+    if let Some(view) = child.downcast_ref::<gtk::TextView>() {
+        return Some(view.clone());
+    }
+    child
+        .downcast_ref::<gtk::ScrolledWindow>()?
+        .child()?
+        .downcast()
+        .ok()
 }
 
 /// A §7 exchange line written into the shell's log: the door §7's recorder writes its two per-call lines

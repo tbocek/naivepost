@@ -1,6 +1,6 @@
 //! F6.2 §3's live half: the patience every chat ask rides.
 //!
-//! [`crate::llm_retry`] holds §3's rules as pure functions and `tests/llm_retries_f6_2.rs` pins them; this is
+//! [`crate::llm_retry`] holds §3's rules as pure functions and `tests/suite/llm_retries_f6_2.rs` pins them; this is
 //! the door that puts them on the wire. Before it, every chat ask dialled once and failed on the first error, so
 //! a container restart cost the step even though the ladder exists to sit through exactly that. Now an LLM ask
 //! goes through [`chat`]: a call that died in transit waits 5 s → 20 s → 1 min → 2 min → 4 min and asks the

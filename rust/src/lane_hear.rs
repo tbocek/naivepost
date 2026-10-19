@@ -12,7 +12,7 @@
 //! Same decision as [`crate::play_back`], for the same reason: no media library is linked (Cargo.toml has
 //! no gstreamer/mpv/vlc dependency), so a lane is a subprocess of the box's own player, resolved through
 //! [`play_back::player_program`] — Settings first, then `NAIVEPOST_PLAYER`, then the bare name. A test
-//! points that same seam at a fake script (the shape `tests/f2_1_recording_play_widgets.rs` uses), so no
+//! points that same seam at a fake script (the shape `tests/suite/f2_1_recording_play_widgets.rs` uses), so no
 //! test ever asks a helper for its answer and no program path asks a test.
 //!
 //! # Why `-s` and `--volume` are the whole sync story

@@ -79,7 +79,7 @@ pub fn place_progress(last_closed_end: f64, shown: f64) -> f64 {
 ///
 /// Deliberately not a [`crate::params`] row and not a field on [`crate::project::Policy`]: §05's own §6
 /// does not name a fallback denominator among the parameters the Cut page is tuned by, and
-/// `rust/tests/cut_parameters_used.rs` pins that section's row list. The value lives with the rule that
+/// `rust/tests/suite/cut_parameters_used.rs` pins that section's row list. The value lives with the rule that
 /// reads it, as every `P.*` value must; [`crate::params::family`] still answers `Family::Eng` from the
 /// prefix — the same choice made for `P.machine.seamRetries` and `P.policy.narratorSlots`.
 pub const SUGGEST_FALLBACK_SEGMENTS: usize = 20;

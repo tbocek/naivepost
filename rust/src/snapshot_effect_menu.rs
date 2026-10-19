@@ -29,7 +29,7 @@ const MENU_SHOT_W: i32 = 180;
 /// [`fx_lane::MENU_ORDER`]; the labels are `cut_screen::EFFECT_ITEMS`'s.
 ///
 /// Public because `snapshot::run` → `snapshot_effects::paint` calls it for the `06-effect-menu` screen (that is
-/// the program's path), and `tests/sec_06_effects_2_staging.rs` calls it to prove the same door the shot uses.
+/// the program's path), and `tests/suite/sec_06_effects_2_staging.rs` calls it to prove the same door the shot uses.
 pub fn stage(window: &adw::ApplicationWindow) -> Vec<String> {
     let button = menu_button(window, "effect-button");
     // The same state a click produces: `MenuButton::set_open` is what the button's own toggle does, so the
@@ -180,7 +180,7 @@ pub fn effect_button() -> gtk::MenuButton {
     menu_button(&ui::window::main_window(), "effect-button")
 }
 
-/// Find this window's `MenuButton` by name. The same walk `tests/effect_menu_record_widgets.rs` uses: the
+/// Find this window's `MenuButton` by name. The same walk `tests/suite/effect_menu_record_widgets.rs` uses: the
 /// toolbar's effect trigger is a `MenuButton`, so the plain-Button lookup in `tests/common` cannot reach it.
 fn menu_button(window: &adw::ApplicationWindow, name: &str) -> gtk::MenuButton {
     fn walk(node: &gtk::Widget, name: &str, out: &mut Option<gtk::MenuButton>) -> bool {
