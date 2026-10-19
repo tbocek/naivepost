@@ -426,6 +426,15 @@ const SLOT_TIP: &str = "How many requests this model is given at once. Match the
     slots for this model \u{2014} llama.cpp's --parallel, for one. More than it has only queues them on \
     the server instead of here; two models on one GPU share it however this is set.";
 
+/// §5's line between two sections: a horizontal rule across every cell column, named for the section
+/// it introduces ("the sections … divided by separator lines"). Writing, the first section, gets none.
+fn divider(grid: &gtk::Grid, row: i32, section: &str, cells: u32) {
+    let key = settings_info::section_key(section).unwrap_or(section);
+    let line = gtk::Separator::new(gtk::Orientation::Horizontal);
+    line.set_widget_name(&format!("settings-separator-{key}"));
+    grid.attach(&line, 0, row, cells as i32, 1);
+}
+
 /// Build the dialog. `provider` answers each row; see [`no_probe`] for what a build without one says.
 pub fn build(parent: Option<&gtk::Window>, provider: Provider) -> adw::Window {
     build_owned(parent, provider).window.clone()
@@ -461,6 +470,18 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     let grid = gtk::Grid::new();
     grid.set_row_spacing(6);
     grid.set_column_spacing(8);
+    // §5's five columns — section | label | box | ✓/✗ | Test — with the Slots spin INSERTED between
+    // the box and its badge, which makes six cells. Every row attaches its badge at `COL_BADGE` and
+    // its Test button at `COL_TEST` whether or not it has a spin, so those two read as one column down
+    // the whole dialog; a spin-less row simply leaves `COL_SPIN` empty.
+    const COL_SECTION: i32 = 0;
+    const COL_LABEL: i32 = 1;
+    const COL_BOX: i32 = 2;
+    const COL_SPIN: i32 = 3;
+    const COL_BADGE: i32 = 4;
+    const COL_TEST: i32 = 5;
+    /// Cells in one row, which is how wide a section divider spans.
+    const CELLS: u32 = 6;
     let mut row = 0;
 
     // Five columns: section | label | value | badge | Test. The section label appears once per
@@ -498,11 +519,12 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
                     head.append(&optional);
                 }
             }
-            grid.attach(&head, 0, row, 1, 1);
+            grid.attach(&head, COL_SECTION, row, 1, 1);
         }
+        // §5: the field label is right-aligned, so every one of them ends on the same edge.
         let caption = gtk::Label::new(Some(label));
-        caption.set_halign(gtk::Align::Start);
-        grid.attach(&caption, 1, row, 1, 1);
+        caption.set_halign(gtk::Align::End);
+        grid.attach(&caption, COL_LABEL, row, 1, 1);
 
         let entry = gtk::Entry::new();
         entry.set_widget_name(&format!("entry-{entry_key}"));
@@ -511,11 +533,10 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         if secret {
             entry.set_visibility(false);
         }
-        grid.attach(&entry, 2, row, 1, 1);
+        grid.attach(&entry, COL_BOX, row, 1, 1);
 
         // §5's Slots spin sits between the box and its mark. Seven of them exist, one per model box;
         // the image block has no model box of its own, so its count rides the sd SERVER row.
-        let mut column = 3;
         if let Some(slot_key) = slot_key {
             let spin = gtk::SpinButton::with_range(
                 f64::from(machine_store::SLOT_MIN),
@@ -524,21 +545,19 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
             );
             spin.set_widget_name(&format!("slots-{slot_key}"));
             spin.set_tooltip_text(Some(SLOT_TIP));
-            grid.attach(&spin, column, row, 1, 1);
-            column += 1;
+            grid.attach(&spin, COL_SPIN, row, 1, 1);
         }
 
         let badge = gtk::Label::new(None);
         badge.set_widget_name(&format!("badge-{entry_key}"));
         badge.set_width_chars(2);
-        grid.attach(&badge, column, row, 1, 1);
-        column += 1;
+        grid.attach(&badge, COL_BADGE, row, 1, 1);
 
         if let Some(test_key) = test_key {
             let test = gtk::Button::with_label("Test");
             test.set_widget_name(&format!("test-{test_key}-button"));
             test.set_tooltip_text(Some(tip));
-            grid.attach(&test, column, row, 1, 1);
+            grid.attach(&test, COL_TEST, row, 1, 1);
         }
     };
 
@@ -604,19 +623,20 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     let fetch = gtk::Button::with_label("Fetch models");
     fetch.set_widget_name("fetch-models-button");
     fetch.set_tooltip_text(Some("List the models this server serves"));
-    grid.attach(&fetch, 1, row, 1, 1);
+    grid.attach(&fetch, COL_LABEL, row, 1, 1);
     let list = gtk::DropDown::from_strings(&[]);
     list.set_widget_name("model-list");
-    grid.attach(&list, 2, row, 1, 1);
+    grid.attach(&list, COL_BOX, row, 1, 1);
     let use_choice = gtk::Button::with_label("Use");
     use_choice.set_widget_name("use-model-button");
     use_choice.set_tooltip_text(Some("Copy the chosen id into Model"));
-    grid.attach(&use_choice, 3, row, 1, 1);
+    // §5 puts Use in the Test column — it is this line's action button, beside every other row's Test.
+    grid.attach(&use_choice, COL_TEST, row, 1, 1);
     // These two verdicts are not `add(...)` rows, so their badges are made here. Without a named
     // badge widget `Dialog::report` has nowhere to paint and a failed listing would show up only in
-    // the log — §5 wants the ✓/✗ with its verdict as tooltip on the dialog itself. Both marks take the
-    // cell every other row's mark sits in (the Test buttons' column): this row has no Test button, so the
-    // pair shares that one cell side by side, in the order the controls they report on sit in.
+    // the log — §5 wants the ✓/✗ with its verdict as tooltip on the dialog itself. Both marks take
+    // the badge cell every other row's mark sits in, side by side in the order the controls they
+    // report on sit in: this row has no Test button, so the pair cannot share that cell with one.
     let marks = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     marks.set_halign(gtk::Align::Center);
     for key in [FETCH_KEY, USE_KEY] {
@@ -626,10 +646,12 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         badge.set_valign(gtk::Align::Center);
         marks.append(&badge);
     }
-    grid.attach(&marks, 6, row, 1, 1);
+    grid.attach(&marks, COL_BADGE, row, 1, 1);
     row += 1;
 
     // Cutting.
+    divider(&grid, row, "Cutting", CELLS);
+    row += 1;
     add(
         Some("Cutting"),
         "ffmpeg",
@@ -658,6 +680,8 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     row += 1;
 
     // Audio (optional): the endpoint, then one row per model box.
+    divider(&grid, row, "Audio (optional)", CELLS);
+    row += 1;
     add(
         Some("Audio (optional)"),
         "Server",
@@ -710,6 +734,8 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     row += 1;
 
     // Drawing (optional).
+    divider(&grid, row, "Drawing (optional)", CELLS);
+    row += 1;
     add(
         Some("Drawing (optional)"),
         "Server",
@@ -730,6 +756,8 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     let all = gtk::Button::with_label("Test All");
     all.set_widget_name("test-all-button");
     all.set_tooltip_text(Some("Run every test above and report each one"));
+    // §5: Test All sits at the bottom right, under the sections and above the log.
+    all.set_halign(gtk::Align::End);
     root.append(&all);
 
     let log_expander = gtk::Expander::new(Some("Log"));
