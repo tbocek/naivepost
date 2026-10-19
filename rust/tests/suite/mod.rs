@@ -117,6 +117,9 @@ mod f0_4_lucky_press_widgets;
 mod f0_4_lucky_steps;
 mod f0_5_bookkeeping_live;
 mod f0_6_open_at_start_launch;
+/// F0.7's three doors (debounce, the next ▶, the policy form) — the wait as a number and the two
+/// widget paths that demand a derivation.
+mod f0_7_derive_doors;
 mod f0_7_s2_a_down_llm_is_reported_and_names_the_model;
 mod f0_7_s2_a_live_policy_call_carries_the_prompt_and_both_tools;
 mod f0_7_s2_a_live_set_policy_answer_lands_as_model_with_its_because;
