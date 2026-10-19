@@ -233,9 +233,14 @@ pub(crate) fn hand_over_unload(kind: crate::services::Kind) {
 /// means the log is open ACROSS the hand-overs, not only in the moment before the first step runs.
 /// `paint_closed`'s mirror: every run's own lines reach the expander before anything folds it.
 pub(crate) fn paint_chain_step(handles: &super::lucky_run::Handles) {    let main = window::main_window();
-    if let (Some(play), Some(stop_)) = (window::play_button(&main), window::stop_button(&main)) {
+    if let (Some(play), Some(lucky), Some(stop_)) = (
+        window::play_button(&main),
+        window::lucky_button(&main),
+        window::stop_button(&main),
+    ) {
         window::paint_run_bar(
             &play,
+            &lucky,
             &stop_,
             &handles.bar.borrow(),
             window::state(&main).page,
@@ -330,14 +335,18 @@ fn paint_closed(
     // audio housekeeping line above all -- are shown rather than dropped by a repaint of an empty buffer.
     let kept = log.is_expanded();
     let main = window::main_window();
-    let (Some(play), Some(stop_)) = (window::play_button(&main), window::stop_button(&main)) else {
+    let (Some(play), Some(lucky), Some(stop_)) = (
+        window::play_button(&main),
+        window::lucky_button(&main),
+        window::stop_button(&main),
+    ) else {
         return;
     };
     // A closed run leaves `run::controls` to pick the idle face and grey ⏹ -- one rule, so this cannot
     // disagree with what ▶'s own handler paints. The transport is the player's real one, read the same
     // way both handlers read it, so a started preview keeps ⏸ up after the run ends.
     let transport = window::preview_player(&main).transport;
-    window::paint_run_bar(&play, &stop_, &bar.borrow(), window::state(&main).page, transport);
+    window::paint_run_bar(&play, &lucky, &stop_, &bar.borrow(), window::state(&main).page, transport);
     if kept {
         let buffer = log_view.buffer();
         buffer.set_text("");

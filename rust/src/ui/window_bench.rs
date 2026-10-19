@@ -525,8 +525,9 @@ pub(crate) fn paint_readouts(
 /// The run bar's icon and tooltip are the whole of what F0.2 puts on screen. `transport` is the
 /// visible page's preview, which only Cut and Narrate have — [`run::transport_for`] answers `None`
 /// for the other two, and that is why their ▶ runs the step while a preview plays.
-pub(crate) fn paint_run_bar(
+pub fn paint_run_bar(
     play: &gtk::Button,
+    lucky: &gtk::Button,
     stop_: &gtk::Button,
     bar: &run::RunBar,
     page: Page,
@@ -538,6 +539,8 @@ pub(crate) fn paint_run_bar(
     // ⏹ is sensitive whenever there is something to end — a run, a playing preview, or one parked
     // part way through. `controls` already decides that; this only draws it.
     stop_.set_sensitive(drawn.stop_sensitive);
+    // §2: the gears are insensitive while a run is busy; the turning itself is `lucky_run`'s CSS class.
+    lucky.set_sensitive(drawn.lucky_sensitive);
 }
 
 /// §10's prose log heights: 220 px open, 110 px collapsed. No `P.` id exists for them, so they are
