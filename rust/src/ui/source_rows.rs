@@ -138,6 +138,11 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
     label.set_xalign(0.0);
     box_.append(&label);
 
+    if let Some(face) = sources::tracks_face(&source, count) {
+        let menu = track_menu(rows, index, &tracks, &face, sources::tracks_dimmed(any_track_out));
+        box_.append(&menu);
+    }
+
     if let Some(tip) = sources::warning(&source) {
         // §4's ⚠: a name with no stamp starts where the session does, which is a guess worth saying.
         // No ROW_KEY — the warning explains itself, and the legend belongs to the four symbols.
@@ -145,11 +150,6 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
         warn.set_widget_name(&format!("warning-{index}"));
         warn.set_tooltip_text(Some(tip));
         box_.append(&warn);
-    }
-
-    if let Some(face) = sources::tracks_face(&source, count) {
-        let menu = track_menu(rows, index, &tracks, &face, sources::tracks_dimmed(any_track_out));
-        box_.append(&menu);
     }
 
     // 🗣 split-the-voice toggle. Greyed on a split product (§4), never dropped: a row without it would
