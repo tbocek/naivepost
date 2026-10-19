@@ -375,6 +375,24 @@ fn widgets_round() {
             RAN_INFO.store(true, Ordering::SeqCst);
             check_a_spin_written_here_is_the_number_the_door_holds(app);
             RAN_SPIN.store(true, Ordering::SeqCst);
+            // §5's layout statements, all measured off the one open dialog.
+            let window = open_window(app);
+            ui::open_settings(&window, silent());
+            lay_out();
+            check_the_sections_are_divided_by_lines(&window);
+            RAN_DIVIDER.store(true, Ordering::SeqCst);
+            check_the_field_labels_are_right_aligned(&window);
+            RAN_LABELS.store(true, Ordering::SeqCst);
+            check_the_spin_sits_between_box_and_badge(&window);
+            RAN_BETWEEN.store(true, Ordering::SeqCst);
+            check_the_badges_and_tests_share_one_column(&window);
+            RAN_COLUMN.store(true, Ordering::SeqCst);
+            check_the_writing_last_line_uses_its_columns(&window);
+            RAN_FETCH_ROW.store(true, Ordering::SeqCst);
+            check_test_all_is_bottom_right_and_the_log_is_last(&window);
+            RAN_TEST_ALL.store(true, Ordering::SeqCst);
+            close_dialog();
+            window.close();
             app.quit();
         });
         app.run_with_args::<String>(&[]);
@@ -385,6 +403,70 @@ fn widgets_round() {
 static RAN_OPEN: AtomicBool = AtomicBool::new(false);
 static RAN_INFO: AtomicBool = AtomicBool::new(false);
 static RAN_SPIN: AtomicBool = AtomicBool::new(false);
+static RAN_DIVIDER: AtomicBool = AtomicBool::new(false);
+static RAN_LABELS: AtomicBool = AtomicBool::new(false);
+static RAN_BETWEEN: AtomicBool = AtomicBool::new(false);
+static RAN_COLUMN: AtomicBool = AtomicBool::new(false);
+static RAN_FETCH_ROW: AtomicBool = AtomicBool::new(false);
+static RAN_TEST_ALL: AtomicBool = AtomicBool::new(false);
+
+/// The open dialog's window — its own top level, so bounds are taken against it.
+fn dialog() -> adw::Window {
+    ui::settings::open_settings_window().expect("{ITEM}: no settings dialog is open")
+}
+
+/// Let GTK lay the dialog out. `present()` alone does not allocate until an iteration runs, so without
+/// this every bound below would read 0.
+fn lay_out() {
+    let context = glib::MainContext::default();
+    while context.pending() {
+        context.iteration(false);
+    }
+}
+
+/// A widget inside the open dialog, by name, or a failure naming what was missing.
+fn need(name: &str) -> gtk::Widget {
+    in_dialog(name).unwrap_or_else(|| panic!("{ITEM}: the dialog has no {name}"))
+}
+
+/// Bounds of one dialog widget, printed so the log carries the numbers a check decided on.
+fn bounds(widget: &gtk::Widget, what: &str) -> gtk::graphene::Rect {
+    let b = widget
+        .compute_bounds(&dialog())
+        .unwrap_or_else(|| panic!("{ITEM}: {what} is not laid out"));
+    println!("SETTINGS GRID {what} x={:.1} y={:.1} w={:.1} h={:.1}", b.x(), b.y(), b.width(), b.height());
+    b
+}
+
+/// The LEFT edge of a dialog widget, printed so the log carries it.
+fn left(widget: &gtk::Widget, what: &str) -> f32 {
+    bounds(widget, what).x()
+}
+
+/// Vertical centre, which is how "on one line" is asked of two widgets.
+fn centre(b: &gtk::graphene::Rect) -> f32 {
+    b.y() + b.height() / 2.0
+}
+
+/// Find the field caption showing `text` (the label column's right-aligned captions).
+fn caption_showing(text: &str) -> gtk::Label {
+    fn walk(root: &gtk::Widget, text: &str) -> Option<gtk::Label> {
+        if let Some(label) = root.downcast_ref::<gtk::Label>() {
+            if label.text() == text {
+                return Some(label.clone());
+            }
+        }
+        for child in root.observe_children().iter::<glib::Object>() {
+            let Ok(child) = child else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            if let Some(found) = walk(&widget, text) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    walk(dialog().upcast_ref(), text).unwrap_or_else(|| panic!("{ITEM}: no field label {text:?}"))
+}
 
 fn pin_config_home(tag: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!("np-sec035-{}-{tag}", std::process::id()));
@@ -573,4 +655,240 @@ fn sec_03_shell_5_settings_dialog_s4_a_spin_written_in_the_dialog_is_the_number_
     common::pin_private_cwd();
     widgets_round();
     assert!(RAN_SPIN.load(Ordering::SeqCst), "{ITEM} s4: the spin check never ran");
+}
+
+// ---------------------------------------------------------------------------
+// s6 — §5's layout of the dialog itself: "One window 'Settings', top to bottom: the sections …
+// divided by separator lines; then Test All at the bottom right; then the log (collapsed) last.
+// The sections share one grid of five columns …". Measured off a real dialog for the same reason
+// `sources_list.rs` measures its rows: a grid that renders and is misaligned renders fine.
+// ---------------------------------------------------------------------------
+
+/// A line above each section but the first, spanning the dialog, sitting between the sections it divides.
+fn check_the_sections_are_divided_by_lines(window: &adw::ApplicationWindow) {
+    let _ = window;
+    assert!(
+        in_dialog("settings-separator-writing").is_none(),
+        "{ITEM} s6: Writing is the first section; nothing divides it from the title"
+    );
+    // Each divider introduces its section: below the previous section's heading, above its own.
+    let order = ["writing", "cutting", "audio", "drawing"];
+    for index in 1..order.len() {
+        let here = order[index];
+        let before = order[index - 1];
+        let line = need(&format!("settings-separator-{here}"));
+        let separator = line
+            .clone()
+            .downcast::<gtk::Separator>()
+            .unwrap_or_else(|_| panic!("{ITEM} s6: settings-separator-{here} is not a Separator"));
+        assert_eq!(
+            separator.orientation(),
+            gtk::Orientation::Horizontal,
+            "{ITEM} s6: the {here} divider is horizontal"
+        );
+        let b = bounds(&line, &format!("separator-{here}"));
+        assert!(b.width() > 400.0, "{ITEM} s6: the {here} divider spans {:.1} px, not the dialog", b.width());
+        let previous = bounds(&need(&format!("settings-section-{before}")), &format!("section-{before}"));
+        let own = bounds(&need(&format!("settings-section-{here}")), &format!("section-{here}"));
+        assert!(
+            b.y() > previous.y() && b.y() < own.y(),
+            "{ITEM} s6: the {here} divider sits between the sections, not at {:.1}",
+            b.y()
+        );
+    }
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s6_the_sections_are_divided_by_separator_lines() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(RAN_DIVIDER.load(Ordering::SeqCst), "{ITEM} s6: the divider check never ran");
+}
+
+/// §5: the field label column is right-aligned — every caption ends on the same edge.
+fn check_the_field_labels_are_right_aligned(window: &adw::ApplicationWindow) {
+    let _ = window;
+    let mut edges: Vec<f32> = vec![];
+    for text in ["Server", "API key", "Model", "Vision", "ffmpeg", "firefox"] {
+        let label = caption_showing(text);
+        assert_eq!(
+            label.halign(),
+            gtk::Align::End,
+            "{ITEM} s6: the {text:?} caption is not right-aligned"
+        );
+        let b = bounds(label.upcast_ref(), &format!("caption-{text}"));
+        edges.push(b.x() + b.width());
+    }
+    let widest = edges.iter().cloned().fold(f32::MIN, f32::max);
+    for edge in &edges {
+        assert!(
+            (widest - edge).abs() <= 1.0,
+            "{ITEM} s6: captions end at {:?} — they do not share one right edge", edges
+        );
+    }
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s6_the_field_labels_are_right_aligned() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(RAN_LABELS.load(Ordering::SeqCst), "{ITEM} s6: the label check never ran");
+}
+
+/// §5's Slots spin goes "right after every model box, between the box and its ✓/✗ badge", and the
+/// Test button after the badge — all four on one line.
+fn check_the_spin_sits_between_box_and_badge(window: &adw::ApplicationWindow) {
+    let _ = window;
+    for key in naivepost::machine_store::SLOT_KEYS {
+        let entry = bounds(need(&format!("entry-{key}")).upcast_ref(), &format!("entry-{key}"));
+        let spin = bounds(need(&format!("slots-{key}")).upcast_ref(), &format!("slots-{key}"));
+        let badge = bounds(need(&format!("badge-{key}")).upcast_ref(), &format!("badge-{key}"));
+        let test = bounds(
+            need(&format!("test-{key}-button")).upcast_ref(),
+            &format!("test-{key}-button"),
+        );
+        assert!(
+            entry.x() + entry.width() <= spin.x() + 1.0
+                && spin.x() + spin.width() <= badge.x() + 1.0
+                && badge.x() + badge.width() <= test.x() + 1.0,
+            "{ITEM} s6: {key}'s order is not box → spin → badge → Test ({entry:?} {spin:?} {badge:?} {test:?})"
+        );
+        for (what, other) in [("spin", spin), ("badge", badge), ("test", test)] {
+            assert!(
+                (centre(&other) - centre(&entry)).abs() <= 6.0,
+                "{ITEM} s6: {key}'s {what} is not on the same line as its box"
+            );
+        }
+    }
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s6_the_slots_spin_sits_between_the_box_and_its_badge() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(RAN_BETWEEN.load(Ordering::SeqCst), "{ITEM} s6: the spin-order check never ran");
+}
+
+/// One grid, so a row without a spin still lands its badge and its Test button where a row with one
+/// does — otherwise the marks would step sideways down the dialog.
+fn check_the_badges_and_tests_share_one_column(window: &adw::ApplicationWindow) {
+    let _ = window;
+    for prefix in ["badge", "test"] {
+        // `llm-vision`, `ffmpeg` and `firefox` have no spin; the others do — both kinds must land on
+        // the same x, which is what makes §5's five columns one set of columns.
+        let keys = ["llm", "llm-vision", "ffmpeg", "firefox", "audio", "sd"];
+        let xs: Vec<f32> = keys
+            .iter()
+            .map(|key| {
+                let name = if prefix == "badge" {
+                    format!("badge-{key}")
+                } else {
+                    format!("test-{key}-button")
+                };
+                bounds(need(&name).upcast_ref(), &name).x()
+            })
+            .collect();
+        // Rows without a spin (`llm-vision`, `ffmpeg`, `firefox`) must land on the same x as the spin
+        // rows, which is what makes the column one column rather than two.
+        let left = xs.iter().cloned().fold(f32::MAX, f32::min);
+        for (key, x) in keys.iter().zip(&xs) {
+            assert!(
+                (x - left).abs() <= 1.0,
+                "{ITEM} s6: {prefix} of {key} sits at {x}, others at {left}: {xs:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s6_the_badges_and_the_test_buttons_share_one_column() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(RAN_COLUMN.load(Ordering::SeqCst), "{ITEM} s6: the shared-column check never ran");
+}
+
+/// §5's Writing last line: Fetch models in the label column, the dropdown in the box column, Use in
+/// the Test column.
+fn check_the_writing_last_line_uses_its_columns(window: &adw::ApplicationWindow) {
+    let _ = window;
+    let server = bounds(need("entry-server").upcast_ref(), "entry-server");
+    // A right-aligned caption starts wherever its text happens to begin; the column's own left edge is
+    // the widest thing in it, which here is the Fetch models button (§5 puts that button in this column).
+    let label_x = left(caption_showing("Server").upcast_ref(), "caption-Server");
+    let fetch = bounds(need("fetch-models-button").upcast_ref(), "fetch-models-button");
+    let list = bounds(need("model-list").upcast_ref(), "model-list");
+    let use_button = bounds(need("use-model-button").upcast_ref(), "use-model-button");
+    let test_x = bounds(need("test-llm-button").upcast_ref(), "test-llm-button").x();
+    assert!(
+        fetch.x() <= label_x + 1.0 && fetch.x() + fetch.width() <= server.x(),
+        "{ITEM} s6: Fetch models is not inside the label column ({fetch:?}, caption at {label_x}, box at {})",
+        server.x()
+    );
+    assert!(
+        (list.x() - server.x()).abs() <= 1.0,
+        "{ITEM} s6: the model dropdown is not in the box column ({list:?} vs {server:?})"
+    );
+    assert!(
+        (use_button.x() - test_x).abs() <= 1.0,
+        "{ITEM} s6: Use is not in the Test column ({use_button:?} vs Test at {test_x})"
+    );
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s6_the_writing_last_line_puts_fetch_the_dropdown_and_use_in_their_columns() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(
+        RAN_FETCH_ROW.load(Ordering::SeqCst),
+        "{ITEM} s6: the Fetch-row check never ran"
+    );
+}
+
+/// "then Test All at the bottom right; then the log (collapsed) last."
+fn check_test_all_is_bottom_right_and_the_log_is_last(window: &adw::ApplicationWindow) {
+    let _ = window;
+    let top = dialog();
+    let dialog_b = bounds(top.upcast_ref(), "dialog");
+    let all = need("test-all-button");
+    let all_b = bounds(all.upcast_ref(), "test-all-button");
+    assert!(
+        dialog_b.x() + dialog_b.width() - (all_b.x() + all_b.width()) <= 30.0,
+        "{ITEM} s6: Test All ends {:.1} px short of the right edge — it belongs at the bottom right",
+        dialog_b.x() + dialog_b.width() - (all_b.x() + all_b.width())
+    );
+    let expander = need("settings-log-expander");
+    let expander_b = bounds(expander.upcast_ref(), "settings-log-expander");
+    let drawing = bounds(need("settings-section-drawing").upcast_ref(), "section-drawing");
+    assert!(
+        all_b.y() > drawing.y() && all_b.y() < expander_b.y(),
+        "{ITEM} s6: Test All is not between the sections and the log ({} / {} / {})",
+        drawing.y(),
+        all_b.y(),
+        expander_b.y()
+    );
+    let expander_widget = expander
+        .clone()
+        .downcast::<gtk::Expander>()
+        .expect("{ITEM} s6: settings-log-expander is an Expander");
+    assert!(
+        !expander_widget.is_expanded(),
+        "{ITEM} s6: §5 opens the dialog's log collapsed"
+    );
+    // Last: the root box's final child is the expander.
+    let root = expander.parent().expect("{ITEM} s6: the expander sits in the dialog's root box");
+    assert_eq!(
+        root.last_child().as_ref(),
+        Some(expander.upcast_ref()),
+        "{ITEM} s6: the log is not the last thing in the dialog"
+    );
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s6_test_all_is_at_the_bottom_right_and_the_log_is_last_and_collapsed() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(
+        RAN_TEST_ALL.load(Ordering::SeqCst),
+        "{ITEM} s6: the Test All / log check never ran"
+    );
 }
