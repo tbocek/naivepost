@@ -2,7 +2,7 @@
 //!
 //! [`crate::run::RunBar::press_stop`] holds the precedence (S1 → S2 → S3) and answers with what
 //! should happen: stop playback, set the flag, cancel the context, kill these pids. That half is
-//! pure state and is tested in `tests/press_stop.rs`. What it cannot do from inside a data struct is
+//! pure state and is tested in `tests/suite/press_stop.rs`. What it cannot do from inside a data struct is
 //! reach the operating system, so the three effects that leave the process live here:
 //!
 //! - **signal** the children S3 names (§S3 "kill registered subprocesses"),

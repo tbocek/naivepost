@@ -1,0 +1,319 @@
+//! F2.6 — the wire: a real drag on `select-surface` selects what it was drawn on, and the real ✕
+//! clears it, both landing in the same state tests/suite/cut_select_band.rs asserts from the logic side.
+//!
+//! One application, one `connect_activate`, exactly one `#[test]`: these checks mutate process-shared
+//! state (this window's selection slot and readout), so they run once and report through flags the test
+//! asserts on — the shape tests/suite/cut_hear_mix_widgets.rs uses.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use adw::prelude::*;
+use naivepost::cut_hear;
+use naivepost::cut_select::{self, Scope, Surface};
+use naivepost::ui;
+use crate::common;
+use common::{cut_window_with_footage as cut_window, settle};
+
+static RAN_DRAG: AtomicBool = AtomicBool::new(false);
+static RAN_SOUND: AtomicBool = AtomicBool::new(false);
+static RAN_BANDS: AtomicBool = AtomicBool::new(false);
+static RAN_FX_LANE: AtomicBool = AtomicBool::new(false);
+
+/// A window sitting on the Cut page, built fresh per check so one check's band cannot leak into
+/// another's assertions; the newest window is the one every accessor reads.
+/// Let GTK finish laying out and mapping what was just shown. gtk4-rs 0.11 exposes no free
+/// `events_pending`, so pump the GLib main context directly.
+
+/// The page's pixels-per-second for the placeholder surface — read from the wiring's own constant, so
+/// the seconds asserted here are the seconds the handler computed, not ones back-solved by hand.
+const PPS: f64 = ui::SELECT_SURFACE_PPS;
+
+/// F2.6 S1 + S2 + S3: a real drag draws a band scoped to its ground, the readout follows it live, and
+/// the real cross clears it.
+fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
+    let window = cut_window(app);
+
+    // Nothing selected at first: the cross is insensitive, so it cannot pretend there is something to
+    // clear, and the readout shows the unclicked face rather than a zero-length span.
+    let cross = ui::clear_selection_button(&window).expect("the Cut page carries clear-selection");
+    assert!(cross.is_mapped(), "the cross is drawn on the visible Cut page");
+    assert!(!cross.is_sensitive(), "with no band there is nothing to clear");
+    assert!(ui::selection(&window).is_none(), "a fresh window holds no band");
+    assert_eq!(
+        ui::selection_readout(&window)
+            .expect("the Cut page carries selection-readout")
+            .text()
+            .as_str(),
+        cut_select::READOUT_NONE,
+        "the empty readout is the module's own unclicked text"
+    );
+
+    // The drag surface is really there and really carries a gesture.
+    let area = ui::select_surface(&window).expect("the Cut page carries select-surface");
+    println!(
+        "LAYOUT select-surface width={} height={} mapped={}",
+        area.width(),
+        area.height(),
+        area.is_mapped()
+    );
+    assert!(area.is_mapped(), "the drag surface is mapped");
+    assert!(area.width() > 40, "surface wide enough to drag on, got {} px", area.width());
+    assert!(area.height() >= 48, "surface tall enough, got {} px", area.height());
+    let gesture = ui::selection_gesture(&window).expect("the surface carries a drag gesture");
+
+    // Fire the drag the way the toolkit does. The handler converts x to session seconds at PPS, so a
+    // drag out to 160 px means 40 s -- and the assertion below compares against the rule itself, not
+    // against a number typed twice.
+    gesture.emit_by_name::<()>("drag-begin", &[&0.0f64, &0.0f64]);
+    gesture.emit_by_name::<()>("drag-update", &[&160.0f64, &0.0f64]);
+    gesture.emit_by_name::<()>("drag-end", &[&160.0f64, &0.0f64]);
+    settle();
+
+    let expected = cut_select::draw(Surface::Ruler, None, 0.0, 160.0 / PPS)
+        .expect("the rule itself accepts this surface and span");
+    let band = ui::selection(&window).expect("the drag drew a band");
+    assert_eq!(
+        band, expected,
+        "the widget path returns exactly what cut_select::draw returns for the same surface and seconds"
+    );
+    assert!(
+        matches!(band.scope, Scope::Footage { row } if row == cut_select::ANY_ROW),
+        "a drag on ruler ground selects the whole timeline's footage, not one camera's"
+    );
+
+    // S3: the readout followed the band, in the page's own clock form.
+    let readout = ui::selection_readout(&window).expect("readout present").text().to_string();
+    println!("READOUT {readout}");
+    assert!(
+        readout.starts_with(cut_select::READOUT_PREFIX),
+        "the readout is labelled, got {readout}"
+    );
+    assert!(
+        readout.contains(&cut_hear::scene_clock(band.start))
+            && readout.contains(&cut_hear::scene_clock(band.end)),
+        "the readout carries the band's own from/to, got {readout}"
+    );
+    assert_ne!(readout, cut_select::READOUT_NONE, "a band replaces the empty text");
+
+    // And the cross woke up because there is now something to clear.
+    assert!(cross.is_sensitive(), "holding a band makes the cross live");
+
+    // S2: press the real cross.
+    cross.emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert!(ui::selection(&window).is_none(), "the cross cleared the band");
+    assert!(
+        !cross.is_sensitive(),
+        "and the cross went insensitive again -- the sensitivity tracks the state"
+    );
+    let after = ui::selection_readout(&window).expect("readout present").text().to_string();
+    assert_eq!(after, cut_select::READOUT_NONE, "the readout fell back to the empty text");
+
+    window.close();
+}
+
+/// F2.6 S4: a SOUND-scoped band greys Add/Split/Remove and re-aims Copy and Insert at sound --
+/// through the page's seam, checking the same `Verbs` fields the logic tests check.
+fn check_a_sound_selection_reaches_the_verb_state(app: &adw::Application) {
+    let window = cut_window(app);
+    let recording = "2026-09-16 17-26-20";
+
+    // Sixty seconds of a lane's sound -- long past P.policy.minSceneSeconds, so the grey-out that
+    // follows is scope alone and not a length floor quietly doing the work.
+    let band = ui::draw_selection(
+        &window,
+        Surface::Lane,
+        Some(recording),
+        10.0,
+        70.0,
+    )
+    .expect("a drag on a lane selects that recording's sound");
+    assert_eq!(
+        band.scope,
+        Scope::Sound { recording: recording.to_string() },
+        "the band is scoped to the one recording it was drawn on"
+    );
+    // P.policy.minSceneSeconds = 1.0 is well under this band, so S4's grey-out is about scope.
+    assert!(band.length() >= cut_select::MIN_SCENE_SECONDS);
+
+    let verbs = ui::selection_verbs(&window);
+    assert!(!verbs.add, "a sound selection greys Add");
+    assert!(!verbs.split, "a sound selection greys Split");
+    assert!(!verbs.remove, "a sound selection greys Remove");
+    assert!(verbs.copy, "Copy still works -- it takes the sound");
+    assert_eq!(
+        verbs.insert,
+        cut_select::InsertAim::Sound,
+        "and Insert aims at sound, not between the footage"
+    );
+
+    // Clear it and the verbs come back: the state is live, not latched.
+    assert!(ui::clear_selection(&window), "there was something to clear");
+    let after = ui::selection_verbs(&window);
+    assert!(!after.add, "with nothing selected Add stays off -- it needs a band");
+    assert!(!after.copy, "and Copy has nothing to take");
+    assert_eq!(
+        after.insert,
+        cut_select::InsertAim::Footage,
+        "Insert falls back to footage with no sound selection"
+    );
+
+    window.close();
+}
+
+fn window_round() {
+    common::one_app_round(|app| {
+        check_a_real_drag_selects_and_the_cross_clears(app);
+        RAN_DRAG.store(true, Ordering::SeqCst);
+        check_a_sound_selection_reaches_the_verb_state(app);
+        RAN_SOUND.store(true, Ordering::SeqCst);
+        check_a_real_drag_scopes_to_the_surface_under_the_pointer(app);
+        RAN_BANDS.store(true, Ordering::SeqCst);
+        check_a_press_on_the_effects_lane_puts_a_held_effect_down(app);
+        RAN_FX_LANE.store(true, Ordering::SeqCst);
+    });
+}
+
+#[test]
+fn f2_6_s1_and_s2_a_drag_selects_and_the_cross_clears_through_real_widgets() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(RAN_DRAG.load(Ordering::SeqCst), "the drag-and-cross check never ran");
+    assert!(RAN_SOUND.load(Ordering::SeqCst), "the sound-scope verb check never ran");
+    assert!(
+        RAN_BANDS.load(Ordering::SeqCst),
+        "the per-band scope check never ran"
+    );
+    assert!(
+        RAN_FX_LANE.load(Ordering::SeqCst),
+        "the effects-lane put-down check never ran"
+    );
+}
+
+/// F2.6 S1: drive the REAL `gtk::GestureDrag` that `wire_select_surface` attaches to
+/// `select-surface`, pressing at a y inside each band, and check the state the logic tests check --
+/// `ui::selection()`'s `Scope`, `ui::pressed_surface()`, and the `selection-readout` label's text.
+/// Every band here is driven through the widget; none is faked with a direct call.
+fn check_a_real_drag_scopes_to_the_surface_under_the_pointer(app: &adw::Application) {
+    let window = cut_window(app);
+    settle();
+    let gesture = ui::selection_gesture(&window).expect("the page wired a drag gesture");
+    // The band table the wiring itself uses, so the ys below are taken from the same numbers rather than
+    // from a copy that could drift away from it.
+    let bands = cut_select::PLACEHOLDER_BANDS;
+    // (label, press y, expected surface, expected scope) -- one per reachable band on the placeholder.
+    let cases: [(&str, f64, Surface, Scope); 2] = [
+        (
+            "ruler",
+            4.0,
+            Surface::Ruler,
+            Scope::Footage {
+                row: cut_select::ANY_ROW,
+            },
+        ),
+        (
+            "picture row 0",
+            bands.first_picture + bands.row_height / 2.0,
+            Surface::PictureRow(0),
+            Scope::Footage { row: 0 },
+        ),
+        // NOTE: the `Lane` band is NOT driven here. On the placeholder geometry one camera row spans
+        // 8..40 and the effects lane sits at 40..48 of a 48 px box, so there is no y between the last
+        // row's wave and the fx band -- every y below row 0 falls in FxLane instead. `Lane` becomes
+        // reachable only when F2.8/F2.10/F2.11 draw real rows/fx bands; until then it is proven by
+        // f2_6_s1_surface_at_maps_each_y_band_to_its_surface on the logic side, not through the widget.
+    ];
+    for (label, press_y, want_surface, want_scope) in cases {
+        // A clean slate per case: the previous band must not be what the assertion lands on.
+        ui::clear_selection(&window);
+        assert!(ui::selection(&window).is_none(), "{label}: start cleared");
+
+        // drag-begin carries (sequence, x, y) on gtk::GestureDrag; the handler reads the y only, to
+        // decide the scope once, then drag-update's x becomes the band's end.
+        gesture.emit_by_name::<()>("drag-begin", &[&0.0f64, &press_y]);
+        gesture.emit_by_name::<()>("drag-update", &[&120.0f64, &press_y]);
+
+        assert_eq!(
+            ui::pressed_surface(&window),
+            Some(want_surface),
+            "{label}: the press remembered the ground it started on"
+        );
+        let band = ui::selection(&window).unwrap_or_else(|| panic!("{label}: the drag drew no band"));
+        assert_eq!(
+            band.scope, want_scope,
+            "{label}: the band's scope matches the ground under the pointer"
+        );
+        // And the readout shows it, not the empty face.
+        let readout = ui::selection_readout(&window)
+            .expect("readout present")
+            .text()
+            .to_string();
+        assert!(
+            readout.starts_with(cut_select::READOUT_PREFIX),
+            "{label}: readout keeps the prefix: {readout}"
+        );
+        assert_ne!(
+            readout,
+            cut_select::READOUT_NONE,
+            "{label}: a live band shows live seconds, not the empty text"
+        );
+    }
+    window.close();
+}
+
+/// F2.6 S1: a press inside the effects-lane band puts the HELD effect down and takes NO selection --
+/// the band that was there before the press survives untouched, byte for byte.
+fn check_a_press_on_the_effects_lane_puts_a_held_effect_down(app: &adw::Application) {
+    let window = cut_window(app);
+    settle();
+    let gesture = ui::selection_gesture(&window).expect("the page wired a drag gesture");
+    let bands = cut_select::PLACEHOLDER_BANDS;
+
+    // Lay down something to protect: a ruler-ground band, whose exact span we remember.
+    gesture.emit_by_name::<()>("drag-begin", &[&0.0f64, &4.0]);
+    gesture.emit_by_name::<()>("drag-update", &[&96.0f64, &4.0]);
+    let before = ui::selection(&window).expect("a band exists before the fx press");
+    let before_scope = before.scope.clone();
+
+    // An effect in hand, as the drag rounds would leave it.
+    let held = naivepost::cut::Fx {
+        kind: "zoom".to_string(),
+        t: 12.5,
+        ..Default::default()
+    };
+    ui::set_held_effect(Some(held.clone()));
+    assert_eq!(ui::held_effect(), Some(held), "the seam put the effect in hand");
+
+    // Press inside the fx band (fx = 40..48 on the placeholder).
+    let fx_y = bands.fx.0 + (bands.fx.1 - bands.fx.0) / 2.0;
+    gesture.emit_by_name::<()>("drag-begin", &[&0.0f64, &fx_y]);
+    gesture.emit_by_name::<()>("drag-update", &[&140.0f64, &fx_y]);
+
+    assert_eq!(
+        ui::pressed_surface(&window),
+        Some(Surface::FxLane),
+        "the press landed on the effects lane"
+    );
+    assert_eq!(
+        ui::held_effect(),
+        None,
+        "the lane released the held effect -- that is all it does"
+    );
+    let after = ui::selection(&window).expect("the earlier band survived the fx press");
+    assert_eq!(
+        (after.start, after.end, after.scope.clone()),
+        (before.start, before.end, before_scope.clone()),
+        "the fx press changed nothing about the selection -- it refuses a selection"
+    );
+    // And a second press with nothing in hand changes nothing either way.
+    gesture.emit_by_name::<()>("drag-begin", &[&0.0f64, &fx_y]);
+    gesture.emit_by_name::<()>("drag-update", &[&180.0f64, &fx_y]);
+    assert_eq!(ui::held_effect(), None, "still nothing in hand");
+    let again = ui::selection(&window).expect("band still there");
+    assert_eq!(
+        (again.start, again.end, again.scope),
+        (before.start, before.end, before_scope),
+        "an empty-hand fx press leaves the selection exactly where it was"
+    );
+    window.close();
+}

@@ -1,7 +1,7 @@
 //! F6.3 §4's live half: the stall watch put around a real request.
 //!
 //! [`crate::llm_liveness`] holds §4's rules as pure state — `Watch`, `Poll`, `blame` — and
-//! `tests/llm_liveness_f6_3.rs` pins them with moments handed in as arguments. What pure state cannot do is sit
+//! `tests/suite/llm_liveness_f6_3.rs` pins them with moments handed in as arguments. What pure state cannot do is sit
 //! next to a blocked socket read, which is exactly where §4's rule has to live: "no byte for P.eng.llmStallMinutes"
 //! is a statement about a call that is *right now* producing nothing. This module is the ticker that makes that
 //! true on the wire.

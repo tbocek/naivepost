@@ -17,7 +17,7 @@
 //! this shot records is the page AFTER the three inserts — five segments, the over card sitting on the footage
 //! it took, the lane's violet span on its own row — with S1's refusal as the last word on the status row. The
 //! form column itself (§G's radios, Seconds entry and sound tick) is `insert-form`, pinned widget by widget by
-//! `tests/insert_form_widgets.rs`; leaving a fourth one open here would hide the readout column §1 puts beside
+//! `tests/suite/insert_form_widgets.rs`; leaving a fourth one open here would hide the readout column §1 puts beside
 //! it and show none of the strip. Every mark is still placed through the real doors — the chooser seam
 //! (`insert_chosen_with_length`, the call the chooser's callback makes), §G's mode radio clicked, and Apply's
 //! own press — so each returned sentence names the file, the mode and the cut's new length as a real press
@@ -79,7 +79,7 @@ fn card_path(dir: &Path, name: &str) -> std::path::PathBuf {
 }
 
 /// Click a radio the form drew, found under this window's own `insert-form` holder — the same walk
-/// `tests/insert_form_widgets.rs` does, because a tree-wide name lookup can land on another window's form.
+/// `tests/suite/insert_form_widgets.rs` does, because a tree-wide name lookup can land on another window's form.
 fn pick_mode(window: &adw::ApplicationWindow, name: &str) {
     fn find(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
         if root.widget_name() == name {

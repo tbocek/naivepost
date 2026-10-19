@@ -137,6 +137,12 @@ pub(crate) fn bench_box(
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_child(Some(&editor));
     scroller.set_vexpand(true);
+    // The prompt's own height band. Left uncapped the text view reported its FULL document height as the
+    // page's minimum — the shipped prompts run to hundreds of lines, and that alone pinned the shell at
+    // ~970 px tall so the window could not be shrunk (`tests/suite/window_shrinks.rs`). Inside this scroller
+    // the editor scrolls between these bounds instead of stretching the page.
+    scroller.set_min_content_height(BENCH_MIN_H);
+    scroller.set_max_content_height(BENCH_MAX_H);
 
     // The box's contents are set when the row changes, never from its own `changed` handler: typing
     // stores text and storing must not retype the buffer out from under the cursor.
@@ -534,6 +540,11 @@ pub(crate) fn paint_run_bar(
 /// §10's prose log heights: 220 px open, 110 px collapsed. No `P.` id exists for them, so they are
 /// bare constants here with the note rather than invented parameter rows.
 pub(crate) const LOG_OPEN_PX: i32 = 220;
+/// The prompt bench's height band: enough lines to read a paragraph of prompt without scrolling, and
+/// capped so a long shipped prompt scrolls inside the bench instead of pushing the page taller (see
+/// `bench_box`).
+pub(crate) const BENCH_MIN_H: i32 = 160;
+pub(crate) const BENCH_MAX_H: i32 = 420;
 
 /// Draw F0.5's two widgets from the bookkeeping state: the bar's fraction and tooltip come from the
 /// queue, the expander's openness from the run's `log_expanded`, and its body from the lines logged

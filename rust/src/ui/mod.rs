@@ -337,6 +337,8 @@ pub use window::step_frames_of;
 pub use window::step_the_line;
 pub use window::Step;
 pub use window::add_files;
+pub use window::add_chooser_shown_count;
+pub use window::reset_add_chooser_shown;
 pub use window::add_sources_button;
 pub use window::bench_language;
 pub use window::running_step;
@@ -373,7 +375,7 @@ pub use window::stop_button;
 pub use window::press_play_cut;
 pub use window::press_review_cuts;
 // F3.12: the clamp seam, so a test can run "effects held to the cut as applied" by name and read the same
-// cut state `tests/cut_clamped_to_cut.rs` checks.
+// cut state `tests/suite/cut_clamped_to_cut.rs` checks.
 pub use window::clamp_effects_to_cut;
 pub use window::press_play_recording;
 pub use window::play_cut_button;
@@ -475,7 +477,7 @@ pub use window::speeds_pass_button;
 pub use window::refresh_speeds_gate;
 pub use window::set_speeds_pass;
 // F3.11 Decorations proposed by the model: the pass's seams, so a test can fire ✨ Decorations by name and read
-// the same cut state the logic test in `tests/cut_effects_proposed.rs` checks. The pass itself is
+// the same cut state the logic test in `tests/suite/cut_effects_proposed.rs` checks. The pass itself is
 // `cut_effects_pass`.
 pub use window::decorations_pass_button;
 pub use cut_effects_pass::run_effects_pass;

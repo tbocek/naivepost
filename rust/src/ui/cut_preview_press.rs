@@ -6,8 +6,8 @@
 //! ([`crate::fx_text::press_without_travel_toggles_play`]'s own reason). So a click that lands inside an overlay's
 //! box is answered here rather than falling through to the zoom flow's after-S5 answer, which would otherwise be the
 //! only thing listening (§F3.1's paragraph after S5 owns a press clear of every box, and keeps it: this module only
-//! claims presses that fall on a text or svg box, so `tests/zoom_drag_widgets.rs` and
-//! `tests/f3_1_press_on_the_preview.rs` see exactly what they saw before).
+//! claims presses that fall on a text or svg box, so `tests/suite/zoom_drag_widgets.rs` and
+//! `tests/suite/f3_1_press_on_the_preview.rs` see exactly what they saw before).
 //!
 //! No rule is composed here. Which seconds an overlay covers and whether it is drawn come from [`crate::fx_lane`],
 //! where its box is comes from [`crate::ui::cut_preview_caption`], and playing or pausing goes through the same door

@@ -120,6 +120,13 @@ pub fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
         if let Some(icons) = icons_for_launch(&exe, &root) {
             startup_lines.push(format!(">>> icons from {}", icons.display()));
         }
+        // The other half of the same bullet: the tree beside the binary is the APP icon's tree, and
+        // every tab and control is drawn from a theme GTK finds through the XDG data dirs. When a
+        // package carries its own theme it sits in the same place, so it is named here too — a broken
+        // icon is otherwise invisible in the log and unexplainable afterwards.
+        for theme in icons::bundled_themes(&exe, &root) {
+            startup_lines.push(format!(">>> icon theme {}", theme.display()));
+        }
     }
     // What the loaded project had to say (§8's legacy-`out_dir` line among them) reads as part of the
     // launch's own words, so it goes in before this module's last two lines.

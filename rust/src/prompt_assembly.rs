@@ -9,7 +9,7 @@
 //! never chooses segments has no use for THE CUT, and a job with no web tools offered has no use
 //! for TOOLS — telling it about either invites it to reason about something it cannot act on. The
 //! trade is that the table can drift from the shipped wording, which is what the tests in
-//! `tests/prompt_assembly.rs` are for: they check each row against the real headings in
+//! `tests/suite/prompt_assembly.rs` are for: they check each row against the real headings in
 //! `spec/prompts/system.md`.
 //!
 //! Nothing here reads a file. The caller brings the system text and the job's wording (both read by

@@ -12,7 +12,7 @@
 //! Two places the spec overrides the prototype, both noted where they apply:
 //! - The prototype emits **no** end line when nothing got tallied (`chainEnd` returns early on an
 //!   empty `chainRan`). §S6 requires the line with N = 4 even then, so we emit it.
-//! - A single step run through ▶ never gets an "all done" sentence (`tests/press_play.rs:344` pins
+//! - A single step run through ▶ never gets an "all done" sentence (`tests/suite/press_play.rs:344` pins
 //!   that for F0.2); the chain is the only thing allowed to say "all done", so that rule lives here
 //!   and nowhere else.
 

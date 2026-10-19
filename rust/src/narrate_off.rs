@@ -115,7 +115,7 @@ pub fn skips(step: crate::run::Step, no_narration: bool) -> Option<String> {
 }
 
 /// F4.8's last node ("☑ again: everything written is still there"): does the page come back
-/// with its contents? Yes — and `tests/narrate_off_page.rs` proves it rather than trusting the
+/// with its contents? Yes — and `tests/suite/narrate_off_page.rs` proves it rather than trusting the
 /// wording, by writing a record, flipping the tick off and on again, and comparing every byte.
 pub fn page_returns(no_narration: bool) -> bool {
     !no_narration

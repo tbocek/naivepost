@@ -44,7 +44,7 @@ thread_local! {
 /// The TEST-FACING door for "the page has been edited". Every mutating press in the app records through
 /// [`record_edit`], which publishes, records and refreshes in one step; this is the narrower seam a test
 /// uses when it wants to say "treat what is on screen as an edit" without going through a widget -- which
-/// is why `tests/cut_screen_toolbar_widgets.rs` calls it after a Split. It pushes unconditionally
+/// is why `tests/suite/cut_screen_toolbar_widgets.rs` calls it after a Split. It pushes unconditionally
 /// (`History::push`), where the app-side door asks first whether anything actually changed.
 ///
 /// A real ＋ Add lights Undo WITHOUT any call to this function: `report_verb`'s Applied branch calls

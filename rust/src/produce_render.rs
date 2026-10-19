@@ -325,7 +325,7 @@ pub fn no_clip_log() -> &'static str {
 // ---- S3's fitting: the render's half of F4.3 --------------------------------------
 
 /// P.eng.narrationLeadSeconds (§10: 0.3): where a clip's first line may start from. The id is deliberately
-/// **not** in [`crate::params`] yet — `tests/narrate_parameters.rs`'s s6 and `tests/narrate_screen_widgets.rs`
+/// **not** in [`crate::params`] yet — `tests/suite/narrate_parameters.rs`'s s6 and `tests/suite/narrate_screen_widgets.rs`
 /// both assert its absence, because the row belongs with the rule that reads it; when a parameters round
 /// moves these rows into the catalogue it deletes this comment and the constant together.
 pub const LEAD_SECONDS: f64 = 0.3;

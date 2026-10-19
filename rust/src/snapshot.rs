@@ -310,7 +310,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // The shot therefore ends on the BUSY face: the bar's ▶ drawn as ⏸ with tooltip "Pause", because
         // `run::controls` calls a page transport that is playing busy (§2). A paused-but-started preview
         // would read as ▶ again (`Transport::cued`) -- that is F0.2 S2's other face, pinned by
-        // tests/press_play_widgets.rs instead of by a picture.
+        // tests/suite/press_play_widgets.rs instead of by a picture.
         if screen == "03-runbar-busy" {
             // Seeded BEFORE the tab switch: the Cut page draws its strip from this window's cut slot,
             // and `run()` seeds it after `build_window` (see the note there).
@@ -389,7 +389,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // §F2.9's screen is the Cut page AFTER the whole flow ran: ⧉ Copy took a stretch in hand, ⇲ Lane gave
         // it a row of its own, ⧉ Paste spliced the footage copy back as a `copy:` card, and a sound copy was
         // laid over the kept footage in one piece per stretch — plus S2's refusal, with the line in a hole.
-        // Driven through the same doors the buttons fire (`tests/cut_copy_paste_lane_widgets.rs` presses these
+        // Driven through the same doors the buttons fire (`tests/suite/cut_copy_paste_lane_widgets.rs` presses these
         // exact ones), never by poking state: what is on screen is what the verbs wrote.
         if screen == "05-copy" {
             // The session filmed 10-130 as one take that does NOT start at 0:00 — the case the paste has to get
@@ -485,7 +485,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // §F2.14's own picture: what the Cut page is left with after a Suggest press — §S1's first
         // refusal sentence on the status row beside the landed suggestion whose every edge came from the
         // app's snap points. Both come from the doors ▶ fires (`refuse_suggest_run`, `press_landed`),
-        // never by poking state; the other three refusals live in `tests/f2_14_guard_order.rs`.
+        // never by poking state; the other three refusals live in `tests/suite/f2_14_guard_order.rs`.
         if screen == "05-suggest" {
             let staged = crate::snapshot_suggest::stage();
             // The tape the landed scenes sit on. Without a declared session the strip has no seconds to lay
@@ -506,7 +506,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // fresh scratch one with no transcript, so §S1's word gate answers before any ask is built and no
             // socket is dialled -- which is the honest thing a snapshot can show. The web-offer half of this
             // flow (no browser means no `web_search`/`web_read`, §2's reason line said once) is pinned where the
-            // bytes are visible, in `tests/sec_05_cut_8_suggest_wired.rs`.
+            // bytes are visible, in `tests/suite/sec_05_cut_8_suggest_wired.rs`.
             let pressed = crate::snapshot_suggest::press_through_page(&window, false);
             println!("snapshot: 05-suggest press said: {pressed}");
             // Then the walk-back's landing: literal seconds in, app-chosen edges out, no socket dialled.

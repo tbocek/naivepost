@@ -643,7 +643,7 @@ pub fn session_tree() -> crate::layout::Tree {
 
 /// The page's model leg: the REAL `youtube` call, always. Nothing here consults a scripted answer — a test
 /// replaces the SERVER, not the work, by pointing the settings' address at a local fake LLM (the same seam
-/// `tests/produce_upload_wire.rs` proves), so every green test goes through the request, the tools and the
+/// `tests/suite/produce_upload_wire.rs` proves), so every green test goes through the request, the tools and the
 /// prose fallback a live server drives. The closure returns the reply text `upload_half` reads.
 pub fn upload_ask(
     tree: &crate::layout::Tree,

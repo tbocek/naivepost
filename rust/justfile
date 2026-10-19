@@ -14,9 +14,29 @@ build:
     cargo build --release
     @echo '-> target/release/naivepost'
 
-# Tests, on a virtual display: several tests build real widgets.
-test:
-    xvfb-run -a env GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory cargo test
+# Tests, on a virtual display: several tests build real widgets. Every test file is a module of ONE
+# binary (tests/all.rs), so a change relinks once; each file still runs in a process of its own, because
+# a widget test starts a whole application and leaves process-wide state behind for the next file.
+# `just test f1_13` runs only the files whose name contains f1_13.
+test filter="":
+    xvfb-run -a env GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory just _files "{{filter}}"
+
+_files filter:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    [ -n "{{filter}}" ] || cargo test --lib --bins || exit
+    bin=$(cargo test --test all --no-run --message-format=json-render-diagnostics | sed -n 's|.*"name":"all".*"executable":"\([^"]*\)".*|\1|p')
+    [ -n "$bin" ] || exit 1
+    files=$(sed -n 's/^mod \(.*\);$/\1/p' tests/suite/mod.rs | grep -F -- "{{filter}}") || { echo "no test file in tests/suite/mod.rs matches {{filter}}"; exit 1; }
+    failed=()
+    for file in $files; do
+        echo "     Running tests/suite/$file.rs"
+        "$bin" "suite::$file::" || failed+=("$file")
+    done
+    if [ ${#failed[@]} -gt 0 ]; then
+        echo "FAILED test files (${#failed[@]}): ${failed[*]}"
+        exit 101
+    fi
 
 # just snapshot 03-window -> shots/03-window.png
 snapshot screen:

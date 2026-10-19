@@ -363,7 +363,7 @@ pub fn preview_panel(window: &adw::ApplicationWindow) -> Option<gtk::Widget> {
 ///
 /// `marked` is `None` on purpose: no live marking seam reaches the Cut page yet, which is the same reason
 /// `press_zoom_item` prints `arm_tail(None)`. A marked stretch outranking the line is proven logic-side in
-/// `tests/cut_zoom_by_hand.rs::f3_1_s3_defaults`.
+/// `tests/suite/cut_zoom_by_hand.rs::f3_1_s3_defaults`.
 pub fn zoom_drag_ended_with_source(
     window: &adw::ApplicationWindow,
     from: (f64, f64),
