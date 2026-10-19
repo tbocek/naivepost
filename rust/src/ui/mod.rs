@@ -8,6 +8,8 @@ pub mod wave_snap;
 /// `window.rs`, which is past its size budget.
 pub mod bench_paint;
 pub mod settings;
+/// §03-shell#5 -- each Settings section's ⓘ: what that section's server is expected to speak.
+pub mod settings_info;
 /// F0.1 §S2/§S4 and §2 — the narration autosave timer, the bar's idle pulse and the run line that goes
 /// to the status row. Split out of `window.rs`, which is at its size budget.
 pub mod shell_beats;
