@@ -38,8 +38,6 @@ fn main() -> ExitCode {
              \x20 naivepost --stack\n\
              \x20     Print the stack this binary was built on: toolkit, the services it delegates\n\
              \x20     to, and the display it can see.\n\
-             \x20 naivepost --rules\n\
-             \x20     Print the rules AGENT.md holds this code to, and where each one lives.\n\
              \n\
              Both need a display; headless runs use `just snapshot <screen>` from rust/, which wraps\n\
              the call in xvfb-run with GSK_RENDERER=cairo.\n\
@@ -86,16 +84,6 @@ fn main() -> ExitCode {
     // before any display is asked for, so it works in the headless container it describes.
     if args.iter().any(|a| a == "--stack") {
         for line in naivepost::stack_facts::lines() {
-            println!("{line}");
-        }
-        return ExitCode::SUCCESS;
-    }
-
-
-    // The rules AGENT.md holds this code to, printed from the doors that enforce them: answered here,
-    // before any display is asked for, so it works in the headless container the other doors do.
-    if args.iter().any(|a| a == "--rules") {
-        for line in naivepost::code_rules::lines() {
             println!("{line}");
         }
         return ExitCode::SUCCESS;

@@ -248,9 +248,6 @@ pub mod tree_roles;
 /// The stack this binary was built on: toolkit, delegated services, display (AGENT.md).
 pub mod stack_facts;
 
-/// The rules AGENT.md says the code holds to, checked from live doors.
-pub mod code_rules;
-
 pub mod llm_liveness;
 pub mod llm_watch_leg;
 pub mod llm_repair_leg;
