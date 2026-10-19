@@ -254,6 +254,62 @@ fn test_tree_rules(root: &Path) -> String {
     )
 }
 
+/// The token after `--project` in a justfile, i.e. the project folder a recipe renders from.
+fn project_token(justfile: &str) -> Option<String> {
+    let (_, rest) = justfile.split_once("--project")?;
+    rest.split_whitespace().next().map(str::to_string)
+}
+
+/// DECISION: answers the Layout sentence "`just test` runs each file in a process of its own" by reading
+/// the recipe that does it (`rust/justfile`) instead of restating the prose — a recipe edited tomorrow
+/// changes this answer, so it cannot drift the way a copied sentence would. The claim holds only when the
+/// loop that starts the binary once per file with a `suite::<file>::` filter is there AND the xvfb wrapper
+/// the recipe documents is spelled in it.
+pub fn test_runner_rules(root: &Path) -> String {
+    let justfile = read(&root.join("rust/justfile"));
+    let listed = suite_tests(&read(&root.join("rust/tests/suite/mod.rs")));
+    let per_file_loop = justfile.contains("for file in $files") && justfile.contains("\"suite::$file::\"");
+    let wrapped = justfile.contains("xvfb-run") && justfile.contains("GSK_RENDERER=cairo");
+    if per_file_loop && wrapped {
+        format!(
+            "rust/justfile: just test runs each of the {} test files in a process of its own \
+             (xvfb-run, GSK_RENDERER=cairo)",
+            listed.len()
+        )
+    } else {
+        "rust/justfile: just test does not run each test file in a process of its own \
+         (no per-file loop, or no xvfb-run wrapper)"
+            .to_string()
+    }
+}
+
+/// DECISION: answers the Layout sentence "the fixture at `rust/fixtures/demo.naivepost` is what snapshots
+/// render from" off the snapshot recipe's own `--project` argument. The recipe is spelled relative to
+/// `rust/`, so the marker is looked for under `rust/` too — which is where the recipe itself opens the
+/// project — while the answer prints the path on the checkout root, the spelling the layout uses. Whether
+/// the project's `naivepost.json` is really there is part of the answer, so a fixture renamed out from
+/// under the recipe shows up here.
+pub fn snapshot_source(root: &Path) -> String {
+    match project_token(&read(&root.join("rust/justfile"))) {
+        Some(token) => {
+            let spelled = if token.starts_with("rust/") {
+                token.clone()
+            } else {
+                format!("rust/{token}")
+            };
+            let marker = if root.join(&spelled).join("naivepost.json").is_file() {
+                "naivepost.json is there"
+            } else {
+                "naivepost.json is NOT THERE"
+            };
+            format!(
+                "rust/justfile: snapshots render from {spelled} (the snapshot recipe's --project), {marker}"
+            )
+        }
+        None => "rust/justfile: no snapshot recipe --project to read".to_string(),
+    }
+}
+
 /// How the checkout's own two trees are organised, counted from what is there rather than asserted.
 pub fn organisation(root: &Path) -> Vec<String> {
     let modules = rust_names(&root.join("rust/src"));
@@ -301,6 +357,8 @@ pub fn lines(root: &Path) -> Vec<String> {
         })
         .collect();
     out.extend(organisation(root));
+    out.push(test_runner_rules(root));
+    out.push(snapshot_source(root));
     let absent = missing(root);
     out.push(if absent.is_empty() {
         "layout: every place the spec names is present".to_string()

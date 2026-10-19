@@ -250,6 +250,21 @@ fn unaccounted_suite_files(root: &Path) -> Vec<String> {
         .collect()
 }
 
+/// Run a `just` recipe from `rust/`, returning its exit status and combined output.
+fn run_just(args: &[&str]) -> (bool, String) {
+    let output = Command::new("just")
+        .args(args)
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("the project's `just` runner is on PATH");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (output.status.success(), text)
+}
+
 /// `.rs` stems directly in a folder, sorted.
 fn suite_stems(dir: &Path) -> Vec<String> {
     let mut stems: Vec<String> = std::fs::read_dir(dir)
@@ -513,6 +528,150 @@ fn sec_agent_layout_s6_a_root_without_the_trees_says_so() {
     assert!(
         printed.contains("NOT PRESENT"),
         "each absent place is marked, not skipped:\n{printed}"
+    );
+    let _ = std::fs::remove_dir_all(&nowhere);
+}
+
+/// The scratch root S6 and the two tests below each make their own of: an empty folder stands for a tree
+/// with no justfile and no test list, which is how the negative branches get checked without touching this
+/// checkout.
+fn scratch_root(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "naivepost-layout-{}-{}",
+        tag,
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch root");
+    dir
+}
+
+/// S9: the spec's words — "`just test` runs each file in a process of its own". Checked by running the real
+/// recipe over a filter that matches two files, so what is asserted is the loop the recipe actually has,
+/// not a copy of its text.
+#[test]
+fn sec_agent_layout_s9_just_test_runs_each_file_in_its_own_process() {
+    let root = root();
+    let mod_rs =
+        std::fs::read_to_string(root.join("rust/tests/suite/mod.rs")).expect("suite/mod.rs reads");
+    let listed: Vec<String> = mod_rs
+        .lines()
+        .filter_map(|line| line.strip_prefix("mod ")?.strip_suffix(';').map(str::to_string))
+        .collect();
+    let expected: Vec<&String> = listed.iter().filter(|name| name.contains("align_bare")).collect();
+    assert!(
+        expected.len() >= 2,
+        "the filter picks at least align_bare_share and align_bare_warn, got {expected:?}"
+    );
+
+    let justfile = std::fs::read_to_string(root.join("rust/justfile")).expect("justfile reads");
+    for claim in ["for file in $files", "\"suite::$file::\""] {
+        assert!(
+            justfile.contains(claim),
+            "the recipe holds the per-file loop ({claim}):\n{justfile}"
+        );
+    }
+
+    // The recipe itself, filtered to those files: one header per file, nothing else's, each block green.
+    let (ok, out) = run_just(&["test", "align_bare"]);
+    assert!(ok, "`just test align_bare` exits 0:\n{out}");
+    let headers: Vec<&str> = out
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("Running tests/suite/").map(|rest| rest.trim_end_matches(".rs")))
+        .collect();
+    for name in &expected {
+        assert_eq!(
+            headers.iter().filter(|h| **h == **name).count(),
+            1,
+            "{name} gets exactly one per-file run: {headers:?}\n{out}"
+        );
+    }
+    for header in &headers {
+        assert!(
+            expected.iter().any(|name| name.as_str() == *header),
+            "the filter ran {header}, which its name does not match: {headers:?}"
+        );
+    }
+    assert_eq!(
+        out.matches("test result: ok.").count(),
+        expected.len(),
+        "each per-file process reports its own green result: {headers:?}\n{out}"
+    );
+
+    // A filter matching nothing says so instead of passing quietly.
+    let (none_ok, none_out) = run_just(&["test", "zzz_no_such_test_file"]);
+    assert!(
+        !none_ok && none_out.contains("no test file in tests/suite/mod.rs matches"),
+        "an unmatched filter fails with the recipe's own sentence: exit {} \n{none_out}",
+        if none_ok { "ok" } else { "non-zero" }
+    );
+
+    // The program answers the same rule, and prints it through the door.
+    let rules = layout_manifest::test_runner_rules(&root);
+    assert!(
+        rules.contains(&format!("each of the {} test files", listed.len())),
+        "the answer counts the files tests/suite/mod.rs lists ({}):\n{rules}",
+        listed.len()
+    );
+    assert!(
+        rules.contains("xvfb-run") && rules.contains("GSK_RENDERER=cairo"),
+        "the answer names the wrapper the recipe uses:\n{rules}"
+    );
+    let printed = run(&["--layout"], &root);
+    assert!(
+        printed.contains(&rules),
+        "`--layout` prints the test-runner rule; missing:\n{rules}\ngot:\n{printed}"
+    );
+
+    let nowhere = scratch_root("runner");
+    assert!(
+        layout_manifest::test_runner_rules(&nowhere).contains("does not run each test file"),
+        "a root with no justfile says the rule does not hold there"
+    );
+    let _ = std::fs::remove_dir_all(&nowhere);
+}
+
+/// S10: the spec's words — "the fixture at `rust/fixtures/demo.naivepost` is what snapshots render from".
+/// The claim is read off the snapshot recipe's own `--project`, so a recipe pointing elsewhere cannot pass.
+#[test]
+fn sec_agent_layout_s10_the_snapshot_recipe_renders_from_the_fixture() {
+    let root = root();
+    let justfile = std::fs::read_to_string(root.join("rust/justfile")).expect("justfile reads");
+    let token = justfile
+        .split_once("--project")
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+        .expect("the snapshot recipe passes --project")
+        .to_string();
+    let spelled = format!("rust/{token}");
+    let fixture = place("rust/fixtures/demo.naivepost");
+    let where_it_is =
+        layout_manifest::found(&fixture, &root).expect("the fixture place resolves, as S3 checks");
+    assert_eq!(
+        spelled, where_it_is,
+        "the recipe renders from the fixture the layout names, not somewhere else"
+    );
+    assert!(
+        root.join(&spelled).join("naivepost.json").is_file(),
+        "{} holds the project file snapshots read",
+        spelled
+    );
+
+    let line = layout_manifest::snapshot_source(&root);
+    assert!(
+        line.contains("rust/fixtures/demo.naivepost") && line.contains("naivepost.json is there"),
+        "the answer names the fixture and says its project file is present:\n{line}"
+    );
+    let printed = run(&["--layout"], &root);
+    assert!(
+        printed.contains(&line),
+        "`--layout` prints the snapshot source; missing:\n{line}\ngot:\n{printed}"
+    );
+
+    let nowhere = scratch_root("snapshot-source");
+    assert_eq!(
+        layout_manifest::snapshot_source(&nowhere),
+        "rust/justfile: no snapshot recipe --project to read",
+        "a root with no justfile has no recipe to read"
     );
     let _ = std::fs::remove_dir_all(&nowhere);
 }
