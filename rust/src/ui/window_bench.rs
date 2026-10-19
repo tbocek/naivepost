@@ -146,7 +146,7 @@ pub(crate) fn bench_box(
 
     // The box's contents are set when the row changes, never from its own `changed` handler: typing
     // stores text and storing must not retype the buffer out from under the cursor.
-    let guard = Rc::new(RefCell::new(false));
+    let guard = Rc::new(std::cell::Cell::new(false));
     paint_bench(
         &row,
         &title,
@@ -224,7 +224,7 @@ pub(crate) fn bench_box(
     let reset_for_text = reset;
     let row_for_text = row;
     buffer.connect_changed(move |buffer| {
-        if *guard.borrow() {
+        if guard.get() {
             return;
         }
         let (start, end) = (buffer.bounds().0, buffer.bounds().1);
@@ -290,7 +290,7 @@ fn paint_bench(
     picker: &gtk::DropDown,
     reset: &gtk::Button,
     editor: &gtk::TextView,
-    guard: &Rc<RefCell<bool>>,
+    guard: &Rc<std::cell::Cell<bool>>,
     session: &Rc<RefCell<Project>>,
     paths: &Option<crate::settings::Paths>,
 ) {
@@ -302,12 +302,12 @@ fn paint_bench(
 
     // The text is set here and only here, with the store handler parked: writing into a buffer
     // fires `changed`, and a `changed` that stores would repaint the buffer again.
-    *guard.borrow_mut() = true;
+    guard.set(true);
     let buffer = editor.buffer();
     // With no config folder there is nothing this machine could hold, so the box shows the shipped
     // wording — which is what `bench::text` answers for a row nobody has touched.
     buffer.set_text(&bench::text(paths.as_ref().unwrap_or(&NO_SETTINGS), &session.borrow(), held.row()));
-    *guard.borrow_mut() = false;
+    guard.set(false);
 }
 
 /// The mark and Reset, both live only while this machine holds the row's wording (§1).

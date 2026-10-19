@@ -554,7 +554,7 @@ pub(crate) fn wire_lucky(
     bar: &Rc<RefCell<run::RunBar>>,
     shell: &Rc<RefCell<Shell>>,
     stack: &adw::ViewStack,
-    guard: &Rc<RefCell<bool>>,
+    guard: &Rc<std::cell::Cell<bool>>,
     status: &gtk::Label,
     progress: &gtk::ProgressBar,
     log: &gtk::Expander,

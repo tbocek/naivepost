@@ -300,13 +300,26 @@ fn check_run_bar_order_and_idle_state(app: &adw::Application) {
     window.present();
 
     let run_row = common::widget_in(&window, "run-bar").expect("the shell has a run bar");
-    let names = child_names(&run_row);
+    // §1 now puts the controls inside their own scroller within that row ("what no longer fits scrolls"
+    // instead of holding the window wide), so §2's order is read where the buttons actually live; the
+    // progress bar stays in the OUTER row, beside the readouts, and is checked there.
+    let names = child_names(
+        &common::widget_in(&window, "run-controls-inner")
+            .expect("the run bar's controls sit in their scrolling box"),
+    );
     let at = |name: &str| names.iter().position(|n| n == name).expect(name);
     assert!(
         at("play-button") < at("lucky-button") && at("lucky-button") < at("stop-button"),
         "§2's run bar reads \u{25b6} , I'm feeling lucky , \u{23f9} : {names:?}"
     );
-    assert!(at("stop-button") < at("run-progress"), "and the progress bar follows: {names:?}");
+    assert!(
+        child_names(&run_row)
+            .iter()
+            .position(|n| n == "run-progress")
+            .is_some(),
+        "and the progress bar follows in the row: {:?}",
+        child_names(&run_row)
+    );
 
     let gears = ui::lucky_button(&window).expect("the run bar carries the gears");
     assert!(gears.is_sensitive(), "at rest the gears are pressable");

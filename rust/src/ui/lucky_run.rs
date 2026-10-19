@@ -56,7 +56,7 @@ pub struct Handles {
     pub bar: Rc<RefCell<RunBar>>,
     pub shell: Rc<RefCell<Shell>>,
     pub stack: adw::ViewStack,
-    pub guard: Rc<RefCell<bool>>,
+    pub guard: Rc<std::cell::Cell<bool>>,
     pub status: gtk::Label,
     pub progress: gtk::ProgressBar,
     pub log: gtk::Expander,
@@ -152,9 +152,9 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
                 }
                 started_step = true;
                 // F0.1's synchronous move: the step's work belongs to the widgets of its own page.
-                *handles.guard.borrow_mut() = true;
+                handles.guard.set(true);
                 handles.stack.set_visible_child_name(page.label());
-                *handles.guard.borrow_mut() = false;
+                handles.guard.set(false);
                 handles.shell.borrow_mut().page = page;
                 window::log_line(&lucky::step_line(name));
                 let outcome = run_step(page, handles, &asked);

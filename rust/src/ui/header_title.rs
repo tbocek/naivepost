@@ -59,11 +59,20 @@ pub fn label_for(dir: &Path, tab: &str, fit: Fit) -> String {
 /// which is what makes it the thing that pins the window's minimum width.
 pub const TITLE_MIN_CHARS: i32 = 1;
 
-/// Build §1's badge **4** and put it in the header. `adw::HeaderBar` centres whatever is not packed at
-/// either end, and `set_title_widget` IS that centre slot, so the label goes there rather than into a box
-/// where the tab row would be pushed aside. Installed here rather than by the caller so the name, the
-/// dimming and the ellipsis cannot be half-done.
+/// Build §1's badge **4** and pack it into the header after Save. §1: "project name/path packed after
+/// Save", with the tab row taking the centre slot — so this goes on the bar's start side, where it sits
+/// right behind New/Open/Save and gives way from its own end as the window narrows. Installed here rather
+/// than by the caller so the name, the dimming and the ellipsis cannot be half-done.
 pub fn install(header: &adw::HeaderBar) -> gtk::Label {
+    let label = build_label();
+    // §1 packs badge **4** after Save, so it belongs on the bar's start side rather than in the centre.
+    header.pack_start(&label);
+    label
+}
+
+/// The label itself, without a place in the bar: one construction so the name, the dimming and the
+/// ellipsis cannot be half-done whichever side the caller packs it on.
+fn build_label() -> gtk::Label {
     let label = gtk::Label::new(None);
     label.set_widget_name(WIDGET_NAME);
     label.add_css_class("dim-label");
@@ -76,8 +85,9 @@ pub fn install(header: &adw::HeaderBar) -> gtk::Label {
     label.set_width_chars(1);
     label.set_single_line_mode(true);
     label.set_hexpand(true);
-    label.set_halign(gtk::Align::Center);
-    header.set_title_widget(Some(&label.clone().upcast::<gtk::Widget>()));
+    // Packed after Save, not centred: the path starts where §1's screenshot puts it and gives way from
+    // its own end as the bar narrows.
+    label.set_halign(gtk::Align::Start);
     label
 }
 
