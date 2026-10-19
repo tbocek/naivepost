@@ -539,8 +539,17 @@ pub fn paint_run_bar(
     // ⏹ is sensitive whenever there is something to end — a run, a playing preview, or one parked
     // part way through. `controls` already decides that; this only draws it.
     stop_.set_sensitive(drawn.stop_sensitive);
-    // §2: the gears are insensitive while a run is busy; the turning itself is `lucky_run`'s CSS class.
+    // §2: the gears are insensitive while a run is busy; ⏸ and ⏹ are what act on that run.
     lucky.set_sensitive(drawn.lucky_sensitive);
+    // §2: the gears turn while ANY run computes, a single ▶ step included, so the bar says work is going
+    // on even when the progress bar has nothing to count. Owning the class here (not only in `lucky_run`)
+    // is what makes that true: `lucky_run` also toggles it around a chain, and both agree -- ON exactly
+    // while a run stands -- so the two never fight.
+    if drawn.gears_turning {
+        lucky.add_css_class(crate::ui::lucky_run::RUNNING_CLASS);
+    } else {
+        lucky.remove_css_class(crate::ui::lucky_run::RUNNING_CLASS);
+    }
 }
 
 /// §10's prose log heights: 220 px open, 110 px collapsed. No `P.` id exists for them, so they are

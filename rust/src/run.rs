@@ -435,6 +435,10 @@ pub struct Controls {
     /// §2: "I'm feeling lucky" is greyed while any run is busy — ⏸ and ⏹ are what act on it, so the
     /// gears never start a second chain beside one already walking.
     pub lucky_sensitive: bool,
+    /// §2: the gears are "still when idle, turning while any run computes — a single step's too", so the
+    /// bar shows work is going on even when the progress bar has nothing to count. Same test as the
+    /// greying, drawn the other way round: ON for exactly as long as a run stands.
+    pub gears_turning: bool,
 }
 
 pub fn controls(running: &Option<Run>, transport: Option<Transport>) -> Controls {
@@ -453,5 +457,6 @@ pub fn controls(running: &Option<Run>, transport: Option<Transport>) -> Controls
         tooltip: if busy { PAUSE_TOOLTIP } else { PLAY_TOOLTIP },
         stop_sensitive,
         lucky_sensitive: !run_alive,
+        gears_turning: run_alive,
     }
 }
