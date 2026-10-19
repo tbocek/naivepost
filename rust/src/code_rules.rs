@@ -9,7 +9,7 @@
 //! round-trip through [`crate::layout`] in a scratch folder this call makes and removes.
 //!
 //! One door uses it: `naivepost --rules` in `main`, answered before any display is asked for, so it
-//! works in the headless container the same way `--stack` and `--layout` do. Every computation is
+//! works in the headless container the same way `--stack` does. Every computation is
 //! panic-free: a rule whose evidence cannot be gathered says so on its line instead of failing.
 
 use std::path::Path;

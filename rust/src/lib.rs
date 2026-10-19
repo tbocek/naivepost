@@ -248,9 +248,6 @@ pub mod tree_roles;
 /// The stack this binary was built on: toolkit, delegated services, display (AGENT.md).
 pub mod stack_facts;
 
-/// Where this checkout's pieces live: spec, app code, tests, fixture (AGENT.md).
-pub mod layout_manifest;
-
 /// The rules AGENT.md says the code holds to, checked from live doors.
 pub mod code_rules;
 

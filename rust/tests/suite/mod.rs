@@ -426,7 +426,6 @@ mod sec_12_decisions_5_offer;
 mod sec_12_decisions_5_results;
 mod sec_12_decisions_cut_and_effects;
 mod sec_12_decisions_narrate_and_produce;
-mod sec_agent_layout;
 mod sec_agent_rules_the_code_holds_to;
 mod sec_agent_stack;
 mod sec_agent_which_tree_is_which;
