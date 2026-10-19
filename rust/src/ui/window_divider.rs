@@ -19,7 +19,11 @@ use gtk4 as gtk;
 /// STARTING position, never a floor — the user's drag replaces it and nothing reads it back.
 const START_PAGE_PX: i32 = 480;
 
-/// Build §1's divider into `into`: the page stack above, the bottom bar (run bar, readouts, log) below.
+/// Build §1's divider into `into`: the page stack above, the bottom bar below. §1's order for that bar is
+/// "one row holding the run bar and, to its right in the same row, the visible tab's Inputs readout,
+/// then the Outputs folder button, then the Outputs readout; UNDER that row the log expander" — so the
+/// readouts are part of the run bar's row rather than a strip of their own, and only two children go on
+/// `bottom`.
 pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, readout_row: &gtk::Widget, log: &gtk::Widget) {
     let divider = gtk::Paned::new(gtk::Orientation::Vertical);
     divider.set_widget_name("main-divider");
@@ -30,8 +34,15 @@ pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, reado
     page.set_vexpand(true);
     let bottom = gtk::Box::new(gtk::Orientation::Vertical, 0);
     bottom.set_widget_name("bottom-bar");
+    // The readouts join the run bar's row at its right end. They keep their own name and their own box:
+    // what changed is only WHERE that box sits, so every door that finds a readout by name still works.
+    // `run-bar`'s first child is the scroller holding the controls (`window_run_scroller`), which is what
+    // stops the buttons from pinning the window's width; this item's test walks into it by name.
+    run_row
+        .downcast_ref::<gtk::Box>()
+        .expect("the run bar is a horizontal box")
+        .append(readout_row);
     bottom.append(run_row);
-    bottom.append(readout_row);
     bottom.append(log);
     divider.set_end_child(Some(&bottom));
     into.append(&divider);

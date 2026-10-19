@@ -73,6 +73,23 @@ pub(crate) fn apply(
             &cut.segs,
             &mut narration.entries,
         );
+        // The stack shows the page, so the shell's answer has to reach it or the window keeps drawing the
+        // page that just lost its base. `lucky_run` moves the stack the same way when a run hands over:
+        // the guard is GTK's own re-entrancy latch, the one `wire_switching` uses for a bounce.
+        // The shell's own switch door is already on the stack when a rescan moves it: `set_visible_child_name`
+        // fires `notify::visible-child`, and that handler reads the shell. Going through the same latch
+        // `wire_switching` uses for its bounce keeps that handler from re-entering while `apply` holds the
+        // shell borrowed -- which would panic in `Shell::switch` instead of moving the page.
+        let latch = window::switch_latch();
+        if let Some(stack) = window::view_stack(&window::main_window()) {
+            if let Some(latch) = latch.as_ref() {
+                latch.set(true);
+            }
+            stack.set_visible_child_name(shell.borrow().page.label());
+            if let Some(latch) = latch.as_ref() {
+                latch.set(false);
+            }
+        }
         window::paint_tabs_for(&window::main_window(), scanned);
     }
 

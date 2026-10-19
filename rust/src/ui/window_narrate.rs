@@ -73,6 +73,13 @@ pub(crate) fn narrate_bar_busy() -> bool {
 /// This session's project folder, resolved the way every other flow resolves it, so "this project" means
 /// one thing app-wide. `None` when no project is open.
 pub fn narrate_session_tree() -> Option<layout::Tree> {
+    // This window's own folder first. Falling back to `narrate_preview_media::session_tree()` alone
+    // resolves the session from the process cwd, which is what the LAST window pinned -- so a closing
+    // window with another window in front of it (or a test that built its folder elsewhere) flushed the
+    // typed lines into some other project's narration.json and this window's file stayed unwritten.
+    if let Some(Some(tree)) = crate::ui::window_line_step::last_session_tree() {
+        return Some(tree);
+    }
     crate::narrate_preview_media::session_tree()
 }
 

@@ -255,7 +255,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // The tab row is a click; the stack is where that click is decided. `guard` keeps the bounce's
     // own write-back from re-entering this handler, which would otherwise recurse through two more
     // notify signals (the prototype does the same with tabGuard, gui/main.go:1209-1224).
-    let guard = Rc::new(RefCell::new(false));
+    let guard = Rc::new(std::cell::Cell::new(false));
+    WINDOW_SWITCH_LATCH.with(|latch| *latch.borrow_mut() = Some(Rc::clone(&guard)));
 
     // §1's badges **14** and **15**: the visible tab's `Inputs:` readout, then its `Outputs:`
     // count with the folder button beside it. They are built before the switch is wired because a
@@ -397,18 +398,21 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         live_transport(),
     );
 
-    let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    run_row.set_widget_name("run-bar");
-    run_row.append(&play);
-    run_row.append(&lucky);
-    run_row.append(&stop_);
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    // §1: this box is what scrolls. The scroller around it (`window_run_scroller`) carries the name
+    // `run-controls`, and the box inside it carries `run-controls-inner`, so a door or a test that wants
+    // ▶ / 🎲 / ⏹ finds the buttons' own row without guessing which of the two wrappers it walked into.
+    controls.set_widget_name("run-controls-inner");
+    controls.append(&play);
+    controls.append(&lucky);
+    controls.append(&stop_);
     // F0.7's policy gear, right beside the "I'm feeling lucky" gears rather than in a toolbar of its own:
     // §03 puts both kinds of ⚙ on the same bar, and a second row of controls would read as a new area
     // of the window that no spec page drew.
     let policy_button = gtk::Button::from_icon_name("emblem-system-symbolic");
     policy_button.set_widget_name("policy-button");
     policy_button.set_tooltip_text(Some(policy_form::OPEN_TIP));
-    run_row.append(&policy_button);
+    controls.append(&policy_button);
     wire_policy(&policy_button, &window);
     // F3.9's ✐ Captions lives on THIS bar, not on the Cut toolbar: §05 #1-screen pins that toolbar to six
     // declared groups (`cut_screen::TOOLBAR_GROUPS`), and F3.9 names no §1 item, so its control cannot join
@@ -421,7 +425,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     captions.set_tooltip_text(Some(
         "ask the model for captions over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
     ));
-    run_row.append(&captions);
+    controls.append(&captions);
     refresh_captions_gate(&window);
     wire_captions_pass(&captions, &window);
     // F3.10's ⏩ Speeds beside it, for the same reason: one call after the cut asking which stretches run
@@ -432,7 +436,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     speeds.set_tooltip_text(Some(
         "ask the model which clips run fast \u{2014} \u{21b6} Undo takes the pass back",
     ));
-    run_row.append(&speeds);
+    controls.append(&speeds);
     refresh_speeds_gate(&window);
     wire_speeds_pass(&speeds, &window);
     // F3.11's ✨ Decorations beside those two, for the same reason: one call after the cut asking for zooms,
@@ -444,9 +448,18 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     decorations.set_tooltip_text(Some(
         "ask the model for zooms, a stop and some volume over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
     ));
-    run_row.append(&decorations);
+    controls.append(&decorations);
     refresh_decorations_gate(&window);
     wire_decorations_pass(&decorations, &window);
+    // §2's bar reads ▶ , I'm feeling lucky , ⏹ , then the progress bar taking the row's free width --
+    // it stays in the OUTER row, beside the readouts, so shrinking squeezes the buttons and not the bar.
+    // §1: the run bar's controls live in a box of their own (`run-controls-inner`), which
+    // `window_divider::install` puts inside a scroller named `run-controls` so a narrow window scrolls them
+    // sideways instead of holding the shell wide. The row keeps its name and its children; only their
+    // parent moved.
+    let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    run_row.set_widget_name("run-bar");
+    run_row.append(&super::window_run_scroller::wrap_controls(controls.upcast::<gtk::Widget>()).upcast::<gtk::Widget>());
     run_row.append(&progress);
 
     wire_play(
@@ -561,8 +574,13 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     }
 
     box_.append(&header);
-    box_.append(&switcher);
-    box_.set_widget_name("page-tabs");
+    // §1 badge **5**: the tab row is the header bar's TITLE widget, in its centre — "not a row of its own
+    // under the header". `adw::HeaderBar` centres whatever is not packed at an end, so this is where the
+    // four tabs belong; the project label went to the start side with badge 4.
+    switcher.set_widget_name("page-tabs");
+    switcher.set_hexpand(false);
+    switcher.set_halign(gtk::Align::Center);
+    header.set_title_widget(Some(&switcher.clone().upcast::<gtk::Widget>()));
     // §1's draggable divider: the page stack above, the bottom bar below. Built in `window_divider`.
     super::window_divider::install(&box_, stack.upcast_ref(), run_row.upcast_ref(), readout_row.upcast_ref(), log.upcast_ref());
 
@@ -727,9 +745,23 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     {
         let closing = window.clone();
         window.connect_close_request(move |_| {
+            // One beat of the main loop FIRST, so a box that was just typed in has been painted and its
+            // `changed` handler has already run: `set_text` during a repaint fires `changed`, and
+            // `note_typing` ignores text equal to the entry's own, so a beat missed here means the close
+            // has nothing to flush. `iteration(false)` is a non-blocking main-loop step -- the same
+            // primitive `tests/common::settle` runs -- so this is a wait for a condition already queued,
+            // not a fixed sleep.
+            let pending = glib::MainContext::default();
+            while pending.iteration(false) {}
             flush_line_on_close(&closing);
             // §F4.7 (**Text**): closing the window flushes a half-typed line too, not only a tab switch.
             crate::ui::narrate_text::flush_owed(&closing);
+            // The same flush against the WINDOW'S OWN held record. `flush_owed` reads the page's state,
+            // which is process-global and belongs to whichever Narrate page was refreshed last; this
+            // window's copy is the one its switch would write on a tab leave (S3), so closing without it
+            // loses exactly the lines this window was shown. Whichever copy holds the typed text wins --
+            // a switch always carries both together (`carry_into_held_record`).
+            flush_held_narration_on_close(&closing);
             // §2 S6: and the project itself, which is what an interrupted session would lose — resolved
             // through this window's own folder rather than the process cwd, which a moved session or a
             // test that pinned its cwd can point somewhere else entirely.
@@ -928,7 +960,7 @@ fn wire_switching(
     switcher: &adw::ViewSwitcher,
     status: &gtk::Label,
     shell: &Rc<RefCell<Shell>>,
-    guard: &Rc<RefCell<bool>>,
+    guard: &Rc<std::cell::Cell<bool>>,
     project: &Project,
     inputs_readout: &gtk::Label,
     outputs_folder: &gtk::Button,
@@ -946,7 +978,7 @@ fn wire_switching(
     let outputs_readout = outputs_readout.clone();
     let held_narration = held_narration.clone();
     stack.connect_visible_child_name_notify(move |stack| {
-        if *guard.borrow() {
+        if guard.get() {
             return;
         }
         let shown = stack.visible_child_name().unwrap_or_default().to_string();
@@ -1014,9 +1046,9 @@ fn wire_switching(
 
         if let Outcome::Bounced { .. } = outcome {
             // S2: the page did not move.
-            *guard.borrow_mut() = true;
+            guard.set(true);
             stack.set_visible_child_name(shell.borrow().page.label());
-            *guard.borrow_mut() = false;
+            guard.set(false);
         }
     });
 }
@@ -1092,9 +1124,12 @@ thread_local! {
     /// actually showing, instead of a copy the caller happens to have.
     pub(crate) static WINDOW_SHELLS: std::cell::RefCell<Vec<Rc<RefCell<Shell>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// The newest window's re-entrancy latch, the one `wire_switching` guards its bounce with. A flow
+    /// that moves the stack itself (a rescan sending a vanished page back to Prepare) sets it while it
+    /// writes, so the notify handler does not read the shell mid-borrow.
+    pub(crate) static WINDOW_SWITCH_LATCH: std::cell::RefCell<Option<Rc<std::cell::Cell<bool>>>> =
+        const { std::cell::RefCell::new(None) };
 }
-
-
 
 thread_local! {
     /// The live project handle `build_window` created, published so a test can read what Open put in
@@ -1162,74 +1197,20 @@ fn wire_verb_button(
 /// is what the button wires below use, so no copy of a verb door lives in two files.
 use crate::ui::cut_verb_press::{press_add, press_remove, press_split};
 
-/// F3.12 S1–S5: hold this window's effects to the cut as it will actually play, and say what went.
-///
-/// The rule lives in [`crate::cut_clamp`]; this seam only reads the page, runs the pass over the newest
-/// review cut (the scenes AFTER snapping, dead-air removal, mark removal and coalescing — which is the whole
-/// reason the pass exists), and writes back what survives. It is reached from the Cut page through
-/// [`crate::ui::cut_verb_press::report_verb`], so every verb that rewrites the segment list clamps the
-/// effect list against it in the same step; `suggest::apply` runs the same function on the model's own
-/// answer.
-///
-/// A no-op writes NOTHING at all — not even a status-free history entry: `record_edit` feeds
-/// `History::note_change`, but a clamp that changed nothing must not consume an Undo step or repaint the lane.
-pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
-    let before = newest_review_cut();
-    let clamped = crate::cut_clamp::clamp_to_cut(&before);
-    // Nothing dropped and nothing trimmed: the effects already sit inside the footage the cut keeps.
-    if clamped.dropped == 0 && clamped.kept == before.fx {
-        return "nothing to clamp \u{2014} every effect sits inside the footage the cut keeps".to_string();
-    }
-    let mut cut_ = before.clone();
-    cut_.fx = clamped.kept.clone();
-    // Through `record_edit`, NEVER `publish_cut` alone: one ↶ takes the clamp back exactly as it takes any
-    // other edit back (§F3.12's "same Undo step as the segments").
-    record_edit(window, &cut_);
-    refresh_effects_lane(window);
-    let said = if clamped.dropped > 0 {
-        // S5's line goes to the log, where the count is read with the rest of the run; the status line says
-        // the same thing shorter. §12 entry 19: the count alone was not something the user could act on, so
-        // `dropped_log` names which effects went after it (capped, so a caption run cannot bury the log).
-        if let Some(line) = crate::cut_clamp_line::dropped_log(&clamped) {
-            log_line(&line);
-        }
-        // §12 entry 19's half: the count says how many; this row says WHICH, in the words the effect
-        // dropdown uses, so a person can find them on the lane and move them inside the cut.
-        if let Some(names) = crate::cut_clamp_line::dropped_names(&clamped) {
-            log_line(&names);
-        }
-        // §9 (`A stop at a dropped second SHOULD be refused when placed`): the count says how
-        // many went; a stop among them also owes its own reason, because "dropped" is not what
-        // happened to it — there was no frame to hold, so it could not be placed at all.
-        for unholdable in crate::cut_clamp::refused_stops(&clamped) {
-            log_line(&crate::effect_overlap::no_frame(unholdable));
-        }
-        format!(
-            "effects clamped to the cut \u{2014} {} dropped",
-            clamped.dropped
-        )
-    } else {
-        format!(
-            "effects trimmed to the cut \u{2014} {} kept",
-            cut_.fx.len()
-        )
-    };
-    if let Some(status_line) = find_status(window.upcast_ref()) {
-        status_line.set_text(&said);
-    }
-    said
+// Closing writes this window's OWN held narration, which lives in `window_close` (window.rs is past its
+// size budget) beside the other close-time flushes.
+fn flush_held_narration_on_close(window: &adw::ApplicationWindow) {
+    crate::ui::window_close::flush_held_narration(window)
 }
 
+// F3.12's clamp seam lives in `window_review` (window.rs is past its size budget). This is the same
+// name at its old path: `ui::clamp_effects_to_cut` for `cut_verb_press::report_verb` and the tests, and
+// the re-export in `ui/mod.rs` still resolves through here.
+pub use crate::ui::window_review::clamp_effects_to_cut;
 /// Write this window's cut's segment list, keeping everything else about the cut (lanes, shifts, rows,
-/// folds) exactly as it was — the write side of [`newest_review_cut`], used by the verb doors.
-pub(crate) fn set_review_segs(window: &adw::ApplicationWindow, segs: &[cut::Seg]) {
-    let _ = window;
-    REVIEW_CUTS.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            slot.borrow_mut().segs = segs.to_vec();
-        }
-    });
-}
+/// folds) exactly as it was. It lives beside the clamp seam in `window_review`; this keeps the path
+/// `cut_verb_press` calls.
+pub(crate) use crate::ui::window_review::set_review_segs;
 
 // What the hand holds and which picture row this window watches (the effect / clip / edge slots, the
 // pick that fills them, the watched-row read and write) live in `window_holds` (window.rs is past its
@@ -1247,7 +1228,6 @@ thread_local! {
 }
 
 // --- F2.8: trim and move on the track strip -------------------------------------------------------------
-
 
 pub use crate::ui::cut_view::{band_clip_boxes_for_test, strip_clip_boxes_for_test, strip_pps};
 
@@ -1271,10 +1251,8 @@ pub use crate::ui::cut_view::{band_clip_boxes_for_test, strip_clip_boxes_for_tes
 
 
 
+
 // --- F2.9: copy, paste and lane --------------------------------------------------------------------------
-
-
-
 
 
 
@@ -1474,6 +1452,9 @@ pub use crate::ui::window_doors::{
 
 };
 pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};
+// `view_stack` and `switch_latch` are the same doors, reached by `rescan_apply` as `window::view_stack`
+// and `window::switch_latch` when a rescan moves a vanished page back to Prepare.
+pub use crate::ui::window_doors::{switch_latch, view_stack};
 
 // The project dialogs (＋ New / Open / Save / Rescan / Add sources) live in `window_project`
 // (window.rs is past its size budget); these are the same names, re-exported under the paths every

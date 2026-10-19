@@ -158,7 +158,7 @@ fn chain_close_says_it_too() {
         bar: Rc::new(RefCell::new(RunBar::default())),
         shell: Rc::new(RefCell::new(naivepost::shell::Shell::default())),
         stack: adw::ViewStack::new(),
-        guard: Rc::new(RefCell::new(false)),
+        guard: Rc::new(std::cell::Cell::new(false)),
         status: gtk::Label::new(None),
         progress: gtk::ProgressBar::new(),
         log: gtk::Expander::new(None),

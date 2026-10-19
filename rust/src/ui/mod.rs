@@ -181,6 +181,7 @@ mod window_trim_strip;
 /// §02's run bar — the ▶ ⏹ 🎲 ▶✂ presses and their wires. Split out of `window.rs`, which is past its
 /// size budget. Its doors are re-exported through `window`.
 mod window_run_press;
+mod window_run_scroller;
 /// F2.12 Insert — the form's half: its holder, what is open, the plan drawn and Apply. Split out of
 /// `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
 mod window_insert;
@@ -223,6 +224,11 @@ mod window_save;
 /// `window.rs`, which is past its size budget. Its door is re-exported through `window`.
 mod window_effect_item;
 mod window_surfaces;
+/// F3.12's review-cut doors (the clamp seam and the segment write), split out of `window.rs`, which
+/// is past its size budget. Their names are re-exported through `window`.
+mod window_review;
+/// §1 S9: the narration write a close owes, split out of `window.rs`, which is past its size budget.
+mod window_close;
 /// §F3.9/§F3.10/§F3.11 — the ✐ Captions, ⏩ Speeds and ✨ Decorations run-bar jobs and their gates. Split
 /// out of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
 mod cut_pass_gates;

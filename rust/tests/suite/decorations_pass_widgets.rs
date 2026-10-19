@@ -59,6 +59,36 @@ fn lane_bar_names(window: &adw::ApplicationWindow) -> Vec<String> {
 }
 
 /// Index of a named widget among its own siblings, so the ROW ORDER can be asserted, not just presence.
+/// Whether `first` comes before `second` in the run bar, whether or not they share a box: §1 puts the
+/// controls inside a scroller that is itself a child of the row holding the progress bar, so "earlier on
+/// the bar" means an ancestor of `first` appears among `second`'s preceding siblings.
+fn same_row_or_earlier(window: &adw::ApplicationWindow, first: &str, second: &str) -> bool {
+    let earlier = widget_in(window, first).expect(first);
+    let later = widget_in(window, second).expect(second);
+    // Walk up from `first` until an ancestor shares a parent with `second`; compare those two positions.
+    let mut node = earlier.parent();
+    while let Some(current) = node {
+        if current.parent() == later.parent() {
+            let mut cursor = current.parent().and_then(|p| p.first_child());
+            let (mut at_current, mut at_later) = (usize::MAX, usize::MAX);
+            let mut index = 0usize;
+            while let Some(child) = cursor {
+                if gtk::Widget::eq(&child, &current) {
+                    at_current = index;
+                }
+                if gtk::Widget::eq(&child, &later) {
+                    at_later = index;
+                }
+                index += 1;
+                cursor = child.next_sibling();
+            }
+            return at_current < at_later;
+        }
+        node = current.parent();
+    }
+    false
+}
+
 fn sibling_row(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
     let target = widget_in(window, name)?;
     let parent = target.parent()?;
@@ -118,8 +148,13 @@ fn decorations_round(app: &adw::Application) {
         "✨ Decorations comes straight after ⏩ Speeds in the job row -- got {deco_row} vs {speed_row}"
     );
     if let Some(progress_row) = sibling_row(&window, "run-progress") {
+        // §1 now wraps the controls in their own scroller, so the buttons and the progress bar are no
+        // longer siblings of one box: the bar sits in the OUTER row while the buttons sit one level down.
+        // The order is then read from each widget's own parent chain -- a button inside the scroller still
+        // comes before the bar that follows the scroller.
+        let deco_before = same_row_or_earlier(&window, "decorations-pass-button", "run-progress");
         assert!(
-            deco_row < progress_row,
+            deco_before,
             "✨ Decorations sits BEFORE the progress bar -- got {deco_row} vs {progress_row}"
         );
     }

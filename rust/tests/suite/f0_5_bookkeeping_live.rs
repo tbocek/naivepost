@@ -620,7 +620,7 @@ fn handles() -> naivepost::ui::lucky_run::Handles {
         bar: Rc::new(RefCell::new(RunBar::default())),
         shell: Rc::new(RefCell::new(naivepost::shell::Shell::default())),
         stack: adw::ViewStack::new(),
-        guard: Rc::new(RefCell::new(false)),
+        guard: Rc::new(std::cell::Cell::new(false)),
         status: gtk4::Label::new(None),
         progress: gtk4::ProgressBar::new(),
         log: gtk4::Expander::new(None),

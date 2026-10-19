@@ -71,10 +71,10 @@ fn s1_title_and_default_size(app: &adw::Application) {
     window.close();
 }
 
-/// S2: the header's numbered badges, in the order §1 reads them. New/Open/Save pack from the left edge;
-/// Rescan, Settings and ⓘ pack from the right edge inward, so ⓘ lands innermost of that group and the
-/// bar reads ⓘ ⚙ ⟳ on screen. Badge 4 sits in the header's centre slot, which is what `adw::HeaderBar`
-/// keeps for a title widget — anything packed at an end would push the tab row aside.
+/// S2: the header's numbered badges, in the order §1 reads them. New/Open/Save pack from the left edge
+/// and badge 4 (the project name/path) is packed AFTER Save, so it opens the start side's run too; the
+/// tab row is the bar's TITLE widget, in its centre. Rescan, Settings and ⓘ pack from the right edge
+/// inward, so ⓘ lands innermost of that group and the bar reads ⓘ ⚙ ⟳ on screen.
 fn s2_header_badges_in_order(app: &adw::Application) {
     let window = window(app, "Prepare");
     let header = header_of(&window);
@@ -82,6 +82,11 @@ fn s2_header_badges_in_order(app: &adw::Application) {
     for name in ["new-button", "open-button", "save-button"] {
         assert!(left.iter().any(|n| n == name), "New, Open, Save pack from the left: {left:?}");
     }
+    assert_eq!(
+        position_of(&left, "project-title"),
+        position_of(&left, "save-button") + 1,
+        "§1 badge 4 is \"packed after Save\", not centred: {left:?}"
+    );
     assert!(
         position_of(&left, "new-button") < position_of(&left, "open-button"),
         "New comes before Open, as §1's **1** **2**: {left:?}"
@@ -90,8 +95,13 @@ fn s2_header_badges_in_order(app: &adw::Application) {
         position_of(&left, "open-button") < position_of(&left, "save-button"),
         "Open comes before Save, as §1's **2** **3**: {left:?}"
     );
-    let title = header.title_widget().expect("§1 badge 4: the project name/path label");
-    assert_eq!(title.widget_name(), "project-title", "badge 4 is named for a test to find");
+    // Badge 5: the tab row IS the title widget, in the header's centre -- not a row under the header.
+    let title = header.title_widget().expect("§1 badge 5: the tab row is the header's title widget");
+    assert_eq!(title.widget_name(), "page-tabs", "the header's centre slot holds the tab row");
+    assert!(
+        common::widget_in(&window, "page-tabs").is_some(),
+        "and it is still reachable by name from the window tree"
+    );
     let right = packed_names(&header, "end");
     for name in ["rescan-button", "settings-button", "tab-info-button"] {
         assert!(
@@ -163,26 +173,61 @@ fn s4b_tab_row_icons(app: &adw::Application) {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// S5: the bottom of the window reads run bar, then the Inputs/Outputs readouts, then the log expander
-/// with the status line in its header; the log body is read-only monospace.
+/// S5: the bottom of the window, as §1 now reads it — ONE row holding the run bar and, to its right in
+/// the same row, the Inputs readout then the Outputs folder button then the Outputs readout; UNDER that
+/// row the log expander, its header carrying the status line at the header's RIGHT end. The log body is
+/// read-only monospace.
 fn s5_bottom_bar_order(app: &adw::Application) {
     let root = scratch_root("bottom");
     let window = window(app, "Prepare");
     let bottom = common::widget_in(&window, "bottom-bar").expect("the divider's bottom half");
     let names = child_names(&bottom);
-    let run = position_of(&names, "run-bar");
-    let readouts = position_of(&names, "readout-row");
-    let log = position_of(&names, "log-expander");
-    assert!(
-        run < readouts && readouts < log,
-        "§1's order: run bar, then the Inputs/Outputs readouts, then the log expander: {names:?}"
+    assert_eq!(
+        names,
+        vec!["run-bar".to_string(), "log-expander".to_string()],
+        "§1: the run bar's row on top, the log expander under it — the readouts are NOT a row of their own: {names:?}"
     );
+    // Inside that one row: the controls (inside their scroller, §1's "what no longer fits scrolls") and
+    // then the readouts at its right end.
+    let run = common::widget_in(&window, "run-bar").expect("the run bar row");
+    let run_names = child_names(&run);
+    assert!(
+        run_names.contains(&"run-controls".to_string()) && position_of(&run_names, "run-controls") < position_of(&run_names, "readout-row"),
+        "§1: the controls scroll sideways inside the row, with the readouts to their right: {run_names:?}"
+    );
+    let controls = common::widget_in(&window, "run-controls-inner").expect("the run bar's controls");
+    // §2's order lives inside the scroller now: ▶ , I'm feeling lucky , ⏹ , then the gear and the passes.
+    let control_names = child_names(&controls);
+    assert!(
+        position_of(&control_names, "play-button") < position_of(&control_names, "lucky-button")
+            && position_of(&control_names, "lucky-button") < position_of(&control_names, "stop-button"),
+        "§2's run bar still reads ▶ , I'm feeling lucky , ⏹ inside its scroller: {control_names:?}"
+    );
+    let progress = position_of(&run_names, "run-progress");
+    let readouts = position_of(&run_names, "readout-row");
+    assert!(
+        progress < readouts && readouts != usize::MAX,
+        "§1: the progress bar and the readouts share the row, the bar first: {run_names:?}"
+    );
+    let readout_row = common::widget_in(&window, "readout-row").expect("the readouts share the run row");
+    assert_eq!(
+        child_names(&readout_row),
+        vec![
+            "inputs-readout".to_string(),
+            "outputs-folder-button".to_string(),
+            "outputs-readout".to_string()
+        ],
+        "§1's order inside that row: Inputs readout, Outputs folder button, Outputs readout"
+    );
+    let log = position_of(&names, "log-expander");
+    assert!(position_of(&names, "run-bar") < log, "the log expander sits under the row: {names:?}");
     let expander: gtk::Expander = ui::log_expander(&window).expect("the shell carries a log expander");
     let header = expander.label_widget().expect("the expander's header carries the status line");
     let header_names = child_names(&header);
-    assert!(
-        header_names.contains(&"status-line".to_string()),
-        "§1: the log expander, its header carrying the status line: {header_names:?}"
+    assert_eq!(
+        header_names.last().map(String::as_str),
+        Some("status-line"),
+        "§1: the status line is at the expander header's RIGHT end: {header_names:?}"
     );
     let view = ui::log_view(&window).expect("the expander holds the log body");
     assert!(!view.is_editable(), "§1: the log is read-only");
@@ -289,6 +334,122 @@ fn s7_draggable_divider(app: &adw::Application) {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// S8: "A page whose prerequisites vanish while open switches silently to Prepare" — reached through the
+/// real Rescan button, the one door §1 gives this flow. The Cut page is unlocked only while a source is
+/// marked footage; the planted footage file is NOT on disk, so the scan drops that row, the page's own
+/// prerequisite is gone, and `rescan_apply::apply` moves the window to Prepare in silence (F0.1 S2's
+/// bounce is only for a click). Asserted through `ui::state`, the same state the logic test reads.
+fn s8_a_page_whose_prerequisites_vanish_moves_to_prepare(app: &adw::Application) {
+    use naivepost::project::{self, Project};
+    use naivepost::rescan::RESCANNED;
+    let root = scratch_root("vanished");
+    // The session folder the window will resolve from the cwd, with a project naming one footage row
+    // whose file does not exist -- that is the prerequisite about to vanish.
+    let session = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
+    std::fs::create_dir_all(&session).expect("session folder");
+    project::save(
+        &Project {
+            sources: vec![common::footage("project:sources/gone.mkv")],
+            ..Default::default()
+        },
+        &session,
+    )
+    .expect("the session project is written");
+    let model = project::load(&session).expect("it loads back");
+    let window = ui::build_window(app, &model, "Cut");
+    window.present();
+    hold_last_window(window.clone());
+    settle();
+    assert_eq!(ui::state(&window).page, Page::Cut, "the check starts on the page that will lose its base");
+
+    // The press: the header's Rescan, fired the way GTK fires a click.
+    let rescan = common::widget_in(&window, "rescan-button")
+        .expect("the header bar has a Rescan button")
+        .downcast::<gtk::Button>()
+        .expect("Rescan is a button");
+    rescan.emit_by_name::<()>("clicked", &[]);
+    settle();
+
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Prepare,
+        "§1: a page whose prerequisites vanished while open goes to Prepare by itself"
+    );
+    assert_eq!(
+        ui::state(&window).status,
+        RESCANNED,
+        "and it says the scan happened, not a lock reason -- this was no bounce"
+    );
+    window.close();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// S9: "Closing the window flushes the narration autosave, red line, project and prompts, then closes;
+/// NO PROMPT." A half-typed narration line is owed when the window comes down; the close hook writes it
+/// and asks nothing -- no dialog opens, no top level appears. Prompt edits need no such flush: prompt
+/// wording is read from the shipped files (`prompts::shipped_text`) and there is no owed-write door for
+/// it anywhere in `src/`, which is why the close hook calls the four that do exist and no more.
+fn s9_closing_flushes_without_asking(app: &adw::Application) {
+    use naivepost::cut::{self, Cut, Seg};
+    use naivepost::layout::Tree;
+    use naivepost::narration::{self, Entry, Narration};
+    use naivepost::project::{self, Project, Source};
+    let root = scratch_root("closeflush");
+    let session = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
+    std::fs::create_dir_all(&session).expect("session folder");
+    let model = Project {
+        sources: vec![Source { path: "project:sources/lecture.mkv".into(), footage: true, ..Default::default() }],
+        ..Default::default()
+    };
+    project::save(&model, &session).expect("session written");
+    let tree = Tree::new(&session).expect("a .naivepost folder is a project");
+    cut::save(&Cut { segs: vec![Seg { s: 5.0, e: 12.0, ..Default::default() }], ..Default::default() }, &tree)
+        .expect("a cut clip, so the row is drawn");
+    narration::save(
+        &Narration { entries: vec![Entry { s: 5.0, e: 12.0, text: "before".into(), ..Default::default() }], silent: vec![] },
+        &tree,
+    )
+    .expect("narration on disk");
+    let window = ui::build_window(app, &model, "Narrate");
+    window.present();
+    hold_last_window(window.clone());
+    settle();
+    ui::set_state(naivepost::ui::NarrateState { entries: vec![Entry { s: 5.0, e: 12.0, text: "before".into(), ..Default::default() }], ..Default::default() });
+    ui::refresh(&window);
+    // Type into the row's live box: that marks the narration owed without waiting for the autosave beat.
+    let typed = "written on the way out";
+    // The row's OWN live box is what a person types into, so the test types into that box and lets the
+    // box's `changed` handler mark the write owed (`wire_row_boxes` -> `note_typing`) -- the same path a
+    // click on the page takes. Calling `note_typing` directly would prove only the seam, not the widget.
+    let box_widget = common::widget_in(&window, "line-text-0").expect("the row's editable box");
+    let entry = box_widget
+        .downcast_ref::<gtk::Entry>()
+        .expect("the row's box is an editable entry");
+    entry.set_text(typed);
+    settle();
+    assert_eq!(
+        entry.text(),
+        typed,
+        "the row's live box holds what was typed into it"
+    );
+    let file = tree.narration_json();
+    assert!(
+        !std::fs::read_to_string(&file).unwrap_or_default().contains(typed),
+        "the edit is owed, not yet on disk"
+    );
+    let windows_before = app.windows().len();
+    window.close();
+    // A close is only a close once GTK has run it through the main loop: the same `settle()` the tests
+    // above use after every `window.close()`.
+    settle();
+    assert!(
+        std::fs::read_to_string(&file).unwrap_or_default().contains(typed),
+        "§1: closing flushes what is owed before it closes"
+    );
+    assert_eq!(app.windows().len(), windows_before - 1, "§1: …then closes, with no prompt of its own");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// The header bar of a built window: `build_window` puts it first in the window's top box.
 fn header_of(window: &adw::ApplicationWindow) -> adw::HeaderBar {
     let content = window.content().expect("the window has content");
@@ -307,7 +468,7 @@ fn packed_names(header: &adw::HeaderBar, end: &str) -> Vec<String> {
     collect_names(header.upcast_ref(), &mut all);
     all.dedup();
     let side: &[&str] = match end {
-        "start" => &["new-button", "open-button", "save-button"],
+        "start" => &["new-button", "open-button", "save-button", "project-title"],
         _ => &["tab-info-button", "settings-button", "rescan-button"],
     };
     all.into_iter().filter(|name| side.contains(&name.as_str())).collect()
@@ -355,6 +516,8 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
             s5_bottom_bar_order(app);
             s6b_log_messages_and_levels(app);
             s7_draggable_divider(app);
+            s8_a_page_whose_prerequisites_vanish_moves_to_prepare(app);
+            s9_closing_flushes_without_asking(app);
             RAN.store(true, Ordering::SeqCst);
             app.quit();
         });

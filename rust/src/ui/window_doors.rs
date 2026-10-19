@@ -100,7 +100,7 @@ pub fn project_title(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
     project_title_of()
 }
 
-/// Build §1 badge **4** — the header's project name/path label — into the header's centre slot, publish
+/// Build §1 badge **4** — the header's project name/path label, packed after Save — publish
 /// it as this window's title label, and draw it once so a freshly built window never opens blank. Every
 /// later repaint goes through [`paint_project_title`], which `window_bench::paint_readouts` calls beside
 /// the readouts on every switch.
@@ -362,6 +362,30 @@ pub(crate) fn find_widget_by_name(root: &gtk::Widget, name: &str) -> Option<gtk:
     }
     None
 }
+/// The window's page stack, so a flow that moved the shell can move what is on screen too. Found by
+/// type rather than by name: the stack is the divider's top half and carries no widget name of its own.
+pub fn view_stack(window: &adw::ApplicationWindow) -> Option<adw::ViewStack> {
+    fn find(node: &gtk::Widget) -> Option<adw::ViewStack> {
+        if let Some(stack) = node.downcast_ref::<adw::ViewStack>() {
+            return Some(stack.clone());
+        }
+        for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+            let Ok(child) = child.downcast::<gtk::Widget>() else { continue };
+            if let Some(stack) = find(&child) {
+                return Some(stack);
+            }
+        }
+        None
+    }
+    find(window.upcast_ref())
+}
+
+/// The newest window's re-entrancy latch (`wire_switching`'s own), so a flow that moves the stack
+/// itself can hold off the notify handler exactly as a bounce does. `None` only before any window exists.
+pub fn switch_latch() -> Option<Rc<std::cell::Cell<bool>>> {
+    ui::WINDOW_SWITCH_LATCH.with(|latch| latch.borrow().clone())
+}
+
 /// The status line, named rather than searched for by text: an empty label is the ordinary state and
 /// would match any label in the tree. Public so a widget test can read the sentence a press printed —
 /// the page's one output channel, and the thing F2.7 pins.
