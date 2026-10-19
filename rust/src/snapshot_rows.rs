@@ -60,6 +60,18 @@ pub const CAM2_FILE_SECOND: f64 = -14.0;
 /// recording, so its name must be neither camera's: `cut_cameras::row_spans` keeps a span whose base the cut
 /// already accounts for, and a lane named after a camera would swallow that camera's row.
 pub const MIC: &str = "mic-lav";
+
+/// Width the shot's preview keeps (the panel's own opening width; the tape is beside it, not under it).
+pub const PREVIEW_SHOT_W: f64 = 240.0;
+/// Height the shot's preview is pinned to. `grow_to` floors a request at `PREVIEW_FLOOR_H` (160) and
+/// `PREVIEW_PANEL_H` (135), so this is the smallest box the panel will accept.
+pub const PREVIEW_SHOT_H: f64 = 160.0;
+/// The tape's box: short enough that the rows below it -- what this screen exists to show -- come near the top.
+pub const SHOT_TRACKS_W: i32 = 1200;
+pub const SHOT_TRACKS_H: i32 = 170;
+/// Where the shot parks the page's vertical divider. §A opens it 380 px down, which suits the ~900 px-tall
+/// window §1 describes; here it has to sit just above the tape for the rows to be reachable.
+pub const SHOT_SPLIT_POS: i32 = 380;
 /// The line's second: inside the overlap, so the watch sentence is owed (badge **7**) and the preview has a
 /// kept scene to convert a second for.
 pub const LINE_T: f64 = 25.0;
@@ -114,9 +126,80 @@ fn figure() -> cut::Cut {
     }
 }
 
+/// The rows a shot must bring into view: `camera-row-1` and `camera-row-2`, by name.
+pub const SHOT_ROWS: [&str; 2] = ["camera-row-1", "camera-row-2"];
+
+/// A row's top edge in the window's own coordinates, or `None` when no widget carries that name.
+fn row_top(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
+    let widget = find_widget_by_name(window.upcast_ref(), name)?;
+    let native = widget.native()?;
+    #[allow(deprecated)] // the shot's own walk; gtk 4.12's replacement needs a surface node
+    widget
+        .translate_coordinates(&native, 0.0, 0.0)
+        .map(|(_, y)| y as i32)
+}
+
+/// True when the band `shot_top`..`shot_top + shot_height` reaches every one of [`SHOT_ROWS`] in `window`:
+/// each row's own top, translated to the native, lies inside it. This is the geometric form of "the shot covers
+/// F2.10's picture" — the PNG is painted at the window's height while the rows sit further down a page ~1015 px
+/// tall, so what the spec's picture needs — both plates in one reachable frame together, row 1 above row 2 — is
+/// a fact about the page, not about the file. False if either named row is missing: an absent row is not covered.
+/// Called by `snapshot::run`'s `05-rows` arm, which refuses the shot when it does not hold.
+pub fn shot_covers(window: &adw::ApplicationWindow, shot_top: i32, shot_height: i32) -> bool {
+    let bottom = shot_top + shot_height;
+    SHOT_ROWS
+        .iter()
+        .all(|name| row_top(window, name).is_some_and(|top| top >= shot_top && top < bottom))
+}
+
+/// Both rows' top edges, in the window's own coordinates, in [`SHOT_ROWS`] order. `i32::MAX` for a row no widget
+/// carries that name -- an absent row is not a measurable one. The band the `05-rows` shot measures itself
+/// against starts here; see [`shot_covers`].
+pub fn row_tops(window: &adw::ApplicationWindow) -> [i32; 2] {
+    [
+        row_top(window, SHOT_ROWS[0]).unwrap_or(i32::MAX),
+        row_top(window, SHOT_ROWS[1]).unwrap_or(i32::MAX),
+    ]
+}
+
+/// Row 1 above row 2, which is **1** over **2** in `spec/img/05-rows.png`. `None` when either row is absent.
+/// Checked by `snapshot::run`'s `05-rows` arm alongside [`shot_covers`].
+pub fn rows_in_order(window: &adw::ApplicationWindow) -> Option<bool> {
+    let first = row_top(window, SHOT_ROWS[0])?;
+    let second = row_top(window, SHOT_ROWS[1])?;
+    Some(first < second)
+}
+
 /// Stage the two-camera figure onto `window` and hand back what it staged, newest last, for the caller's
 /// `snapshot:` line. Called from `snapshot::run` for `05-rows`.
 pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
+    // The rows are the LAST thing on a Cut page ~1015 px tall, while a headless window clamps to ~790 px of plate
+    // however large the ask (measured: asks of 800, 1500 and 2400 all came back the same), so no size request
+    // lifts them into the PNG. What shortens the page is what sits ABOVE the rows -- the preview pane, the tape,
+    // and where the page's divider sits -- and the gate on the result is [`shot_covers`], which measures the
+    // rows' positions rather than the file's height.
+    if let Some(panel) = ui::find_source_widget(window, "preview-panel") {
+        crate::ui::cut_preview_panel::grow_to(&panel, PREVIEW_SHOT_W, PREVIEW_SHOT_H);
+    }
+    // The reading column keeps §A's opening width, so the preview beside it stays a picture and not a 240 px
+    // sliver: `cut_page_layout::arrange` only seats the handle, and headless GTK settles a paned at its minima.
+    if let Some(top) = find_widget_by_name(window.upcast_ref(), "cut-top")
+        .and_then(|widget| widget.downcast::<gtk::Paned>().ok())
+    {
+        top.set_position(crate::ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX);
+    }
+    // The tape gets a short box: left alone it takes every pixel of the lower pane.
+    if let Some(layers) = find_widget_by_name(window.upcast_ref(), "track-layers") {
+        layers.set_size_request(SHOT_TRACKS_W, SHOT_TRACKS_H);
+    }
+    // And the divider moves up. `arrange` opens it at §A's 380 px AND hands the leftover to the upper pane
+    // (`resize_start_child`), so shrinking the widgets inside the panes is not enough -- GTK keeps 380 px above
+    // the line whatever lives there. This is the drag a user would make.
+    if let Some(paned) = find_widget_by_name(window.upcast_ref(), "cut-page-split")
+        .and_then(|widget| widget.downcast::<gtk::Paned>().ok())
+    {
+        paned.set_position(SHOT_SPLIT_POS);
+    }
     // Declared BEFORE the seed: `set_session_recordings` marks the session as declared, so the seed below
     // cannot trade these spans for what its segments imply (`ui::cut_folds::SESSION_DECLARED`).
     ui::set_session_recordings(&recordings());

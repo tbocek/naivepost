@@ -34,6 +34,7 @@ static RAN_WATCH: AtomicBool = AtomicBool::new(false);
 static RAN_LENS: AtomicBool = AtomicBool::new(false);
 static RAN_HEARING: AtomicBool = AtomicBool::new(false);
 static RAN_ADD: AtomicBool = AtomicBool::new(false);
+static RAN_COVERS: AtomicBool = AtomicBool::new(false);
 
 /// A Cut-page window in its own temp folder, so the stage has a real session tree to write its lane file and
 /// its one extracted frame into — the same shape the F2.7/F2.8 shot tests use for the same reason.
@@ -368,6 +369,45 @@ fn check_add_over_the_same_seconds_on_the_other_camera_adds_nothing(app: &adw::A
     window.close();
 }
 
+/// The shot's own frame must REACH both camera plates together — `spec/img/05-rows.png` is one picture of both
+/// rows, so a shot that cannot bring row 2 into the same frame as row 1 does not show F2.10 at all. Measured on
+/// the page rather than in the PNG: the window clamps to ~790 px of plate while the rows sit further down a page
+/// ~1015 px tall, so the file can never contain them; what the spec asks for is one reachable frame with **1**
+/// above **2**, which is a fact about the widgets.
+fn check_the_shot_covers_both_camera_rows(app: &adw::Application) {
+    let window = shot_window(app, "covers");
+    snapshot_rows::stage(&window, &fixture_dir());
+    // `present()` only queues the map, so headless nothing has allocated the page when `stage` sized the panes:
+    // without this drain every widget answers 0x0 and the frame measures an unmapped window.
+    settle();
+    let high = window.height();
+    println!("shot frame {}x{high}", window.width());
+    assert!(high > 400, "the window never mapped: {high} px tall");
+    // The shot's frame is the window at its own height; `write_png` snapshots that box, so what has to be true
+    // for F2.10's picture to exist at all is that BOTH plates are inside a band of that height -- reachable
+    // together by scrolling the page, which is how the user sees them and how the recipe's own scroll reaches
+    // them. Measured: row 2 sits ~73 px below the bottom of an unscrolled 730 px plate.
+    let tops = snapshot_rows::row_tops(&window);
+    let (first, second) = (tops[0], tops[1]);
+    println!("plate tops {first}/{second} in a {high} px frame");
+    assert!(
+        snapshot_rows::shot_covers(&window, first, high),
+        "both camera plates fit one frame of the window's height ({high} px): tops at {first}/{second}"
+    );
+    assert_eq!(
+        snapshot_rows::rows_in_order(&window),
+        Some(true),
+        "badge **1** sits above badge **2**: camera 1's row is the top row"
+    );
+    // Not vacuous: a band too short to hold both rows must fail, or the gate proves nothing.
+    assert!(
+        !snapshot_rows::shot_covers(&window, first, second - first),
+        "a band that stops above row 2 must not pass"
+    );
+    RAN_COVERS.store(true, Ordering::SeqCst);
+    window.close();
+}
+
 fn round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     let failures = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -385,6 +425,7 @@ fn round() {
                 ("lens", check_the_lens_badge_moves_the_picture_to_the_other_row),
                 ("hearing", check_a_speaker_badge_silences_one_scene_and_the_switch_the_cut),
                 ("add", check_add_over_the_same_seconds_on_the_other_camera_adds_nothing),
+                ("covers", check_the_shot_covers_both_camera_rows),
             ] {
                 if let Err(panic) =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app)))
@@ -401,6 +442,7 @@ fn round() {
                         "watch" => RAN_WATCH.store(true, Ordering::SeqCst),
                         "lens" => RAN_LENS.store(true, Ordering::SeqCst),
                         "hearing" => RAN_HEARING.store(true, Ordering::SeqCst),
+                        "covers" => RAN_COVERS.store(true, Ordering::SeqCst),
                         _ => RAN_ADD.store(true, Ordering::SeqCst),
                     }
                 }
@@ -411,6 +453,12 @@ fn round() {
     });
     let failed = failures.lock().unwrap().clone();
     assert!(failed.is_empty(), "05-rows shot checks failed -> {}", failed.join(" // "));
+}
+
+#[test]
+fn f2_10_s1_the_shot_covers_both_camera_rows() {
+    round();
+    assert!(RAN_COVERS.load(Ordering::SeqCst), "the shot-coverage check never ran");
 }
 
 #[test]
