@@ -808,6 +808,19 @@ pub fn cut() -> Vec<Param> {
             "cut_play_back::RATE_SEEK_GAP_MS",
         ),
         param("preview.thumbBatch", ui::cut_tracks::THUMB_BATCH.to_string(), "ui::cut_tracks::THUMB_BATCH"),
+        // §1's two Cut-page dividers (inventory §A's `paned 660/380`). §10 gives them no `P.` id, so each
+        // takes a bare prefix the way `preview.thumbBatch` above does; both are what the page opens at,
+        // not what it must stay at — either divider is draggable.
+        param(
+            "cut.panedTopPx",
+            ui::cut_page_layout::SELF_SPLIT_TOP_PX.to_string(),
+            "ui::cut_page_layout::SELF_SPLIT_TOP_PX",
+        ),
+        param(
+            "cut.panedPreviewPx",
+            ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX.to_string(),
+            "ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX",
+        ),
         // --- engineering: pixel reaches, band heights, zoom, undo, the wave cache ------------------
         // §6 lists these as a family and §10 gives them no `P.` ids of their own (§I's implicit constants),
         // so each is spelled after §D's name for it — as `machine.jpegQuality` does for the JPEG quality.
