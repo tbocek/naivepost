@@ -191,6 +191,7 @@ mod f3_11_s4_live_effects_answer_is_cached;
 mod f3_11_s5_live_effects_two_rounds_then_the_give_up_line;
 mod f3_1_press_on_the_preview;
 mod f3_4_caption_on_the_preview;
+mod f3_4_s3_words_span_the_column;
 mod f3_5_svg_raster_made;
 mod f3_6_gain_reaches_sound;
 mod f3_8_band_gesture_widgets;

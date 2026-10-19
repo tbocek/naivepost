@@ -115,7 +115,9 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     // start a new line inside those three; a one-line `gtk::Entry` ends the field on Enter, which would leave
     // no way to break a line at all. A later refactor that "simplifies" this to an Entry silently breaks the
     // multi-line rule, so the type itself is the documentation.
-    let words_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    // §S3 asks for "the column's full width", so the key sits ABOVE the box instead of beside it: in a row with
+    // a label the box only ever got what the label left over (and a fixed 220 px at that).
+    let words_row = gtk::Box::new(gtk::Orientation::Vertical, 2);
     let words_key = gtk::Label::new(Some(fx_text::FORM_FIELDS[0]));
     words_key.set_xalign(0.0);
     let words_view = gtk::TextView::new();
@@ -123,7 +125,10 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     words_view.set_wrap_mode(gtk::WrapMode::WordChar);
     words_view.set_tooltip_text(Some(fx_text::WORDS_HELP));
     // Three rows of roughly 18 px each; the exact pixel height is a layout matter, the ROW COUNT is the rule.
-    words_view.set_size_request(220, 18 * fx_text::WORDS_ROWS as i32);
+    // Width is deliberately not asked for: the box takes the column's own (§S3).
+    words_view.set_size_request(-1, 18 * fx_text::WORDS_ROWS as i32);
+    words_view.set_hexpand(true);
+    words_view.set_halign(gtk::Align::Fill);
     if !fx.text.is_empty() {
         words_view.buffer().insert_at_cursor(&fx.text);
     }
@@ -132,8 +137,12 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     // Horizontal scroll stays OFF the window's side (the TextView wraps), vertical only, so three rows of
     // typed text never widen the form column.
     scroller.set_policy(gtk::PolicyType::External, gtk::PolicyType::Automatic);
+    scroller.set_hexpand(true);
+    scroller.set_halign(gtk::Align::Fill);
     words_row.append(&words_key);
     words_row.append(&scroller);
+    words_row.set_hexpand(true);
+    words_row.set_halign(gtk::Align::Fill);
 
     let length = zoom_field_row(
         fx_text::FORM_FIELDS[1],
