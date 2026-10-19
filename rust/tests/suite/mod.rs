@@ -146,6 +146,8 @@ mod f1_7_describe_press_widgets;
 mod f1_7_describe_run;
 mod f1_8_fix_session;
 mod f1_8_press_widgets;
+mod f2_10_row_order;
+mod f2_10_row_top_to_bottom;
 mod f2_10_rows_shot;
 mod f2_12_s5_modes_paint_differently;
 mod f2_12_s6_hold_card_widgets;

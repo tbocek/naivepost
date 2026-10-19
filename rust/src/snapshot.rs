@@ -926,6 +926,28 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // before the map like every other screen's, so the band needs the playhead placed here too.
             if screen == "05-rows" {
                 ui::set_playhead(&window, crate::snapshot_rows::LINE_T);
+                // F2.10's picture is BOTH camera plates in one frame, so the shot says whether it reaches them
+                // and refuses to write a PNG that does not: `write_png` paints at the window's own height while
+                // the rows are the last thing on a page ~1015 px tall, so "covered" here means both tops inside
+                // one band of that height, row 1 above row 2 -- badges **1** over **2** of `spec/img/05-rows.png`.
+                let tops = crate::snapshot_rows::row_tops(&window);
+                let (first, second) = (tops[0], tops[1]);
+                let covers = crate::snapshot_rows::shot_covers(&window, first, window.height());
+                let ordered = crate::snapshot_rows::rows_in_order(&window) == Some(true);
+                println!(
+                    "snapshot: 05-rows | rows y={first}/{second}, frame {}x{}, covers both: {covers}, row 1 on top: {ordered}",
+                    window.width(),
+                    window.height()
+                );
+                if !(covers && ordered) {
+                    let why = format!(
+                        "05-rows shot does not cover both camera rows (y={first} / {second}, frame {}x{}, row 1 on top: {ordered})",
+                        window.width(),
+                        window.height()
+                    );
+                    eprintln!("snapshot: {why}");
+                    OUT.with(|e| *e.borrow_mut() = Some(why));
+                }
             }
             crate::ui::cut_view::repaint_page(&window);
             // Badge 1 again, now that the panel has a real allocation: `refresh` measured a 0x0 plate on
