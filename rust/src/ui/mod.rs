@@ -157,6 +157,7 @@ pub mod cut_select_press;
 /// F3.8 S1/S2/S3 — the effects-lane bar's own drag gesture: when a press is a click, when it picks the band
 /// up, and how far the hand may take it. Split out of `window.rs`, which is past its size budget.
 pub mod cut_band_press;
+pub mod cut_band_rows;
 /// F2.7: the page's half of Add / Split / Remove / ⌦ — the four doors, what each writes, the snap-list
 /// gather and the ✕ dispatch. Split out of `window.rs`, which is past its size budget.
 pub mod cut_verb_press;
