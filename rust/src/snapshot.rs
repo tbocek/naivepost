@@ -906,6 +906,53 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 crate::ui::cut_preview_frame::repaint(&window);
             }
         }
+
+/// What an open caption form shares the Cut page's column with BELOW it: its own `Apply`/`Cancel` row and the
+/// `Kept as you type — ↶ Undo takes the whole edit back.` footer, which `spec/img/06-text.png` shows and a shot at §1's
+/// fixed height cuts off, plus the page's own bottom band (the run bar and the `Log` row) that §06#3 packs under the
+/// column. Measured once here, at the height the fixture's column needs to show the whole form with room to spare:
+/// the form is ~250 px of heading, three-row words box, Length, the two fades and Curve, and the ~50 px of buttons
+/// and note under them; the band below is the same ~110 px `05-cut` shows. Rounding up is safe — an overshoot only
+/// leaves white space, where an undershoot hides the row the screen exists to show.
+const FORM_UNDER_PX: i32 = 380;
+
+            // `06-text`'s subject is the caption form BESIDE the preview, and §1's fixed window height is what clips
+            // it: the Apply/Cancel row and the `Kept as you type — ↶ Undo takes the whole edit back.` footer fell
+            // below the fold, where `spec/img/06-text.png` shows both. §1 grows the window where a subject is too
+            // WIDE (a speeds or decorations shot asks 2400 px) and says a shot is worth growing rather than losing
+            // what it came to show; this is the same exception down the other axis, and the ask is measured at the
+            // page's own column rather than guessed: the Cut page's paned asks for its preview and its form column
+            // together, and `set_size_request` (not a default size, which is an `adw::ApplicationWindow`'s FLOOR and
+            // grew nothing here) is what actually moves the window to what the column wants.
+            if screen == "06-text" {
+                // Where the caption form's own box actually ends. The FORM'S MEASURED BOTTOM IS UNUSABLE HERE, and
+                // the numbers say why: the `text-form-<tab>` holder resolves to a box whose bottom sits at 291 px on
+                // a page whose column reaches 723 px, because `show_text_form` fills the FIRST holder that name finds
+                // in the walk and the Cut page's column keeps several (the `zoom-form` / `speed-form` / `text-form` /
+                // `svg-form` / `volume-form` / `label-form` rule, all built by `page_box` in order). The column's own
+                // bottom is the honest number — it is what the page packs the form into — so the ask is the column
+                // short of §1's fixed height plus what the shot has to show below the column (`FORM_UNDER_PX`).
+                let column_bottom = ui::find_source_widget(&window, "cut-page-split")
+                    .and_then(|w| w.downcast::<gtk::Paned>().ok())
+                    .and_then(|split| split.end_child())
+                    .and_then(|end| end.compute_bounds(&window).map(|r| (r.y() + r.height()) as i32))
+                    .unwrap_or(0);
+                let window_bottom = window
+                    .compute_bounds(&window)
+                    .map(|r| (r.y() + r.height()) as i32)
+                    .unwrap_or(0);
+                let short = (column_bottom + FORM_UNDER_PX - window_bottom).max(0);
+                if short > 0 {
+                    let want_h = window.default_height() + short;
+                    window.set_size_request(window.default_width().max(crate::shell::WINDOW_MIN_W), want_h);
+                    window.set_default_size(window.default_width(), want_h);
+                    crate::snapshot_face::pump_context(16);
+                }
+                println!(
+                    "snapshot: 06-text | column bottom {column_bottom}, window bottom {window_bottom}, grew {short} px to {} px",
+                    window.default_height()
+                );
+            }
             // The red line too: §1 puts it on its own layer at the second the preview stands on, and a shot
             // that never placed one showed no line at all (badges 30). Placed through the page's own door,
             // then repainted, exactly as a click on the tape would.
@@ -1136,8 +1183,9 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // own (`subject` is not the shell) keep that dialog's size.
         if subject.is_none() {
             let want_w = window.default_width().max(crate::shell::WINDOW_MIN_W);
-            window.set_size_request(want_w, crate::shell::WINDOW_MIN_H);
-            window.set_default_size(want_w, crate::shell::WINDOW_MIN_H);
+            let want_h = window.default_height().max(crate::shell::WINDOW_MIN_H);
+            window.set_size_request(want_w, want_h);
+            window.set_default_size(want_w, want_h);
             crate::snapshot_face::pump_context(32);
         }
         // One more cycle after the map: the map happens before the first frame is drawn. The paint

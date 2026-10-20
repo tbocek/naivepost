@@ -102,6 +102,15 @@ pub fn drag_counts(width_px: f64, height_px: f64) -> bool {
     width_px >= DRAG_MIN_PX && height_px >= DRAG_MIN_PX
 }
 
+/// The same floor read the other way round, for a gesture that moves an ALREADY-DRAWN box rather than drawing one:
+/// §F3.4 S5 slides a caption straight up or drags ONE of its edges, so exactly one axis travels and the other is
+/// still. "Was this release a drag at all?" is therefore answered by either axis clearing `DRAG_MIN_PX` — while
+/// §F3.1's question ("did this describe a rectangle?") keeps [`drag_counts`]' both-axes rule. Two questions, one
+/// threshold, spelled once each so neither flow can drift from the number §10 lists as `effects.dragMinPx`.
+pub fn travel_one_axis(dx_px: f64, dy_px: f64) -> bool {
+    dx_px >= DRAG_MIN_PX || dy_px >= DRAG_MIN_PX
+}
+
 /// F3.1 S2: a rectangle in preview pixels — the box as drawn, before it becomes fractions of the source.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {

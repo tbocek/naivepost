@@ -99,6 +99,24 @@ pub fn drawn_box() -> Option<(f64, f64, f64, f64)> {
     DRAWN_BOX.with(|slot| slot.get())
 }
 
+thread_local! {
+    /// Whether the §F3.4 S5 snap lines are being shown: set while a hand drags a placed caption's box, so the frame
+    /// draws the six lines `fx_text::snap_lines_px` names (see [`paint_paused`]). A thread-local like `DRAWN_BOX`,
+    /// for the same reason: the draw func gets only the widget, and this is per-window state the gesture sets.
+    static EDIT_SNAP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Say that a caption box is being dragged: the frame then draws the snap targets under its outline. No repaint
+/// here — the caller (`wire_zoom_drag`'s update leg) repaints once for both this and the box itself.
+pub fn note_edit(active: bool) {
+    EDIT_SNAP.with(|slot| slot.set(active));
+}
+
+/// Are the snap lines on? The door a check reads rather than the thread-local.
+pub fn edit_snap_on() -> bool {
+    EDIT_SNAP.with(|slot| slot.get())
+}
+
 /// This window's preview surface is a fixed 240 x 135 ([`crate::ui::window::PREVIEW_PANEL_W`] x
 /// [`crate::ui::window::PREVIEW_PANEL_H`]), so a box the drag drew in its pixels is already in the panel's own
 /// px: this is the door the drag calls with them. The corners arrive in whatever order the hand moved them, so
@@ -376,6 +394,20 @@ pub fn paint_paused(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
     // camera's own framing still reads around it (§2 puts the still on the footage's transform, not above the crop).
     if let Some(still) = stop_px(&frame.cut.fx, frame.t, fit) {
         paint_still(cr, still, crate::ui::cut_picture::frame_shown().as_deref());
+    }
+    // §F3.4 S5's snap is invisible unless the lines it snaps TO are shown: while a placed caption's box is being
+    // dragged, the frame draws the six lines `fx_text::snap_lines_px` names — asked through that door, never
+    // redrawn from a list this file remembers. Under the overlays, so the box's own outline stays on top of them.
+    if edit_snap_on() {
+        let violet = fx_lane::HELD_OUTLINE;
+        cr.set_source_rgba(violet[0], violet[1], violet[2], 0.45);
+        cr.set_line_width(1.0);
+        cr.set_dash(&[3.0, 3.0], 0.0);
+        for (x, y, w, h) in crate::fx_text::snap_lines_px(fit) {
+            cr.rectangle(x, y, w, h);
+        }
+        let _ = cr.fill();
+        cr.set_dash(&[], 0.0);
     }
     // "outside the camera rect dimmed black 0.45": four bands, never a wash over the whole panel.
     cr.set_source_rgba(0.0, 0.0, 0.0, seen.held.dim_alpha);
