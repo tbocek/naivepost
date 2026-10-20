@@ -163,6 +163,82 @@ fn f0_8_s4_the_default_name_is_todays_date_and_the_next_free_one() {
     fs::remove_dir_all(&root).unwrap();
 }
 
+/// S4 answered: a name typed WITHOUT the suffix gets it, and the blank project is written there. The
+/// sheet's whole point is that the person types a name, so this is the path the dialog's callback takes.
+#[test]
+fn f0_8_s4_a_typed_name_gets_the_suffix_and_the_project_written() {
+    let root = temp_dir("answer-typed");
+    std::fs::create_dir_all(&root).unwrap();
+    // `elsewhere/talk` is what a save sheet hands back when the folder was browsed to and the name typed.
+    let answer = new_project::answer(&root, Some(&root.join("elsewhere/talk")));
+    let new_project::Answer::Created(created) = answer else {
+        panic!("a free typed name creates: {answer:?}")
+    };
+    assert_eq!(created.path, root.join("elsewhere/talk.naivepost"), "the suffix was appended");
+    assert!(created.path.join(project::PROJECT_FILE).is_file(), "S6 saved it");
+    assert_eq!(created.base, "talk.naivepost");
+    assert_eq!(created.status, format!("new project \u{2014} {}", created.base));
+    assert_eq!(
+        created.log,
+        format!(">>> new project {} -- the session is empty; outputs on disk are untouched", created.path.display())
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// S4: `.naivepost` is added once. A person who types the suffix (or accepts the default, which already
+/// carries it) must not get `talk.naivepost.naivepost`.
+#[test]
+fn f0_8_s4_a_name_that_already_has_the_suffix_is_not_doubled() {
+    let root = temp_dir("answer-suffix");
+    std::fs::create_dir_all(&root).unwrap();
+    let answer = new_project::answer(&root, Some(&root.join("talk.naivepost")));
+    let new_project::Answer::Created(created) = answer else {
+        panic!("a free typed name creates: {answer:?}")
+    };
+    assert_eq!(created.path, root.join("talk.naivepost"), "no doubled suffix");
+    assert!(created.path.join(project::PROJECT_FILE).is_file());
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// S5 through the same door: a name whose folder is a project already is refused, and the project in
+/// the way keeps every byte it had — refusing is not the same as overwriting.
+#[test]
+fn f0_8_s5_a_typed_name_holding_a_project_is_refused() {
+    let root = temp_dir("answer-taken");
+    let taken = root.join("jan.naivepost");
+    project_folder(&taken);
+    let before = fs::read(taken.join(project::PROJECT_FILE)).unwrap();
+
+    let answer = new_project::answer(&root, Some(&root.join("jan")));
+    let new_project::Answer::Refused(reason) = answer else {
+        panic!("a name holding a project is refused: {answer:?}")
+    };
+    assert!(
+        reason.contains("jan.naivepost is a project already \u{2014} open it, or pick another name"),
+        "{reason}"
+    );
+    let after = fs::read(taken.join(project::PROJECT_FILE)).unwrap();
+    assert_eq!(before, after, "the project that was there is untouched");
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// S4 dismissed: closing the sheet asks for nothing, so nothing on disk moves — no folder, no file,
+/// not even an empty one where the default name would have gone.
+#[test]
+fn f0_8_s4_a_dismissed_dialog_changes_nothing() {
+    let root = temp_dir("answer-dismissed");
+    std::fs::create_dir_all(&root).unwrap();
+    let before: Vec<std::path::PathBuf> = std::fs::read_dir(&root)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .collect();
+    assert!(before.is_empty(), "the folder starts empty");
+    assert_eq!(new_project::answer(&root, None), new_project::Answer::Dismissed);
+    assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "a dismissal wrote nothing");
+    std::fs::remove_dir_all(&root).ok();
+}
+
 #[test]
 fn f0_8_s5_a_project_already_at_that_name_is_refused_and_left_alone() {
     // S5: the name is taken by a project, so it is opened rather than written over — and "left
@@ -171,8 +247,7 @@ fn f0_8_s5_a_project_already_at_that_name_is_refused_and_left_alone() {
     let taken = project_folder(&root.join("taken.naivepost"));
 
     let err = new_project::create(&root, &root, "taken")
-        .err()
-        .expect("a project already at that name is refused");
+        .expect_err("a project already at that name is refused");
     assert_eq!(
         err,
         "taken.naivepost is a project already \u{2014} open it, or pick another name"

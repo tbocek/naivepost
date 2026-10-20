@@ -119,6 +119,40 @@ pub struct Created {
     pub chooser: Option<PathBuf>,
 }
 
+/// How S4's answer reads: the sheet was closed, a project was made, or the name was taken.
+///
+/// The three arms exist so the window has one door to draw ([`crate::ui::window_project::name_chosen`])
+/// rather than re-deciding what a chooser's `Result` means at the call site.
+#[derive(Debug, PartialEq)]
+pub enum Answer {
+    /// The dialog was dismissed. Nothing was asked for, so nothing changes — not even the status line.
+    Dismissed,
+    Created(Box<Created>),
+    Refused(String),
+}
+
+/// S4's answer, as a rule rather than a callback: the path the person typed or picked (01 §1 — a
+/// project IS a folder, so what the sheet hands back is the project itself), or `None` when the sheet
+/// was closed.
+///
+/// The `.naivepost` appending happens inside [`create`], on this path, and NOT by asking the dialog to
+/// fill it in: a typed name and a browsed folder then run through the same one rule, instead of the
+/// suffix being a hint the sheet may or may not honour. That is also what makes S5 fire on a typed
+/// name — the refusal is about the folder the name points at, which only exists once the name is taken
+/// as given.
+pub fn answer(root: &Path, chosen: Option<&Path>) -> Answer {
+    let Some(path) = chosen else {
+        return Answer::Dismissed;
+    };
+    // Split the named folder into where it goes and what it is called; `create` puts the suffix back on.
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let named = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    match create(root, &dir, &named) {
+        Ok(created) => Answer::Created(Box::new(created)),
+        Err(reason) => Answer::Refused(reason),
+    }
+}
+
 /// S5 + S6: refuse a name that is a project already, else write the blank session there.
 ///
 /// Only `naivepost.json` is created; each step makes its own folder when it first writes, and the

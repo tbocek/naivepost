@@ -82,44 +82,84 @@ pub(crate) fn wire_new(new_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, statu
     });
 }
 
+/// S4's sheet: where the new project goes AND what it is called, with the name editable.
+///
+/// A save-style dialog, not `select_folder`: a folder picker only ever hands back a folder that already
+/// exists and never shows an editable name, so S4's default name, its `.naivepost` appending and its
+/// `-2`/`-3` walk would be computed and thrown away, and S5's refusal could only fire on a folder that
+/// happened to be a project under its own name. The save sheet is the one that puts a name in a text
+/// box the person can overwrite, and the path it returns is the project they named.
+///
+/// "Create" as the accept label because "Save" would promise a file and a project is a folder (01 §1);
+/// F0.8 does not name the button, so this is the app's decision.
+pub fn new_project_dialog(dir: &Path, day: &str) -> gtk::FileDialog {
+    let dialog = gtk::FileDialog::builder()
+        .title(new_project::TITLE)
+        .accept_label("Create")
+        .build();
+    dialog.set_initial_folder(Some(&gio::File::for_path(dir)));
+    dialog.set_initial_name(Some(&new_project::free_name(dir, day)));
+    dialog
+}
+
+/// S4 answered, however it was answered — by the sheet below or by a test handing over the same path.
+/// Every arm of [`new_project::answer`] gets exactly one sentence here: create and apply (S6), say the
+/// refusal (S5), or, for a dismissal, change nothing at all.
+pub fn name_chosen(
+    root: &Path,
+    chosen: Option<&Path>,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+) {
+    match new_project::answer(root, chosen) {
+        // S6: apply it, not just announce it — log, session swap, remembered pair, status.
+        new_project::Answer::Created(created) => {
+            crate::ui::new_apply::apply(&created, session, status)
+        }
+        // S5: the name stays the project that is there; nothing is half-applied and nothing is logged.
+        new_project::Answer::Refused(reason) => status.set_text(&reason),
+        new_project::Answer::Dismissed => {}
+    }
+}
+
 /// S4: ask where the new project goes and what it is called. The name's date is taken here because
 /// [`new_project`] is handed the day rather than reading a clock, which is what keeps its tests off
-/// today; the folder chooser is the desktop's own sheet, so the folder it hands back *is* the new
-/// project, and S5's refusal or S6's sentence goes on the status line.
+/// today; the sheet's answer goes through [`name_chosen`], the same door a test uses.
 fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path, session: &Rc<RefCell<Project>>) {
     // `%F` is the ISO date, which is what the spec's default name is.
     let day = glib::DateTime::now_local()
         .and_then(|today| today.format("%F").map(|day| day.to_string()))
         .unwrap_or_else(|_| "new-project".to_string());
     let dir = open.parent().map(Path::to_path_buf).unwrap_or_else(|| root.to_path_buf());
-    let dialog = gtk::FileDialog::builder()
-        .title(new_project::TITLE)
-        .accept_label("New project")
-        .build();
-    dialog.set_initial_folder(Some(&gio::File::for_path(&dir)));
-    dialog.set_initial_name(Some(&new_project::free_name(&dir, &day)));
+    let dialog = new_project_dialog(&dir, &day);
+    LAST_ASK.with(|asked| *asked.borrow_mut() = Some(dialog.clone()));
 
     let status = status.clone();
     let root = root.to_path_buf();
     let session = session.clone();
-    dialog.select_folder(
+    dialog.save(
         None::<&gtk::Window>,
         None::<&gio::Cancellable>,
         move |chosen: Result<gio::File, glib::Error>| {
-            let Ok(file) = chosen else {
-                return; // dismissed: nothing was asked for, so nothing changed
-            };
-            // The folder the chooser hands back *is* the project (01 §1), and its own name is what
-            // S5 checked and S6 says in the status line.
-            let path = file.path().unwrap_or_default();
-            let named = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            match new_project::create(&root, &path, &named) {
-                // S6: apply it, not just announce it — log, session swap, remembered pair, status.
-                Ok(created) => crate::ui::new_apply::apply(&created, &session, &status),
-                Err(reason) => status.set_text(&reason),
-            }
+            // An error is a dismissal (GTK reports cancel that way): nothing was asked for.
+            let picked = chosen.ok().and_then(|file| file.path());
+            name_chosen(&root, picked.as_deref(), &status, &session);
         },
     );
+}
+
+/// What the last ＋ New press asked for. The desktop's sheet cannot be typed into in a headless run, so
+/// this is how a check sees the title and the default name the press put up — the same handles the
+/// press set, not a copy built for the test.
+pub fn last_ask() -> Option<gtk::FileDialog> {
+    LAST_ASK.with(|asked| asked.borrow().clone())
+}
+
+thread_local! {
+    /// The naming sheet the last press opened, for [`last_ask`]. Thread-local like the rest of this
+    /// window's state: it belongs to the session, not to the process's arguments.
+    static LAST_ASK: std::cell::RefCell<Option<gtk::FileDialog>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Prepare's own two widgets (F0.12): the button that adds files, and the tick that decides whether
