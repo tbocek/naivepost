@@ -989,8 +989,9 @@ fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
 
 /// The drag-a-box gesture over the picture. The box is kept as FRACTIONS of the plate, not pixels:
 /// `screen::place_words` is resolution-independent, so a saved mark survives being shown at another
-/// size. A press with almost no travel is a look, not a box — §A floors a box at 28 px and the plate
-/// is ~320 px wide, so 0.02 is that same floor expressed as a fraction.
+/// size. Each corner first goes through [`screen::snap`] against [`screen::overlay_snap_targets`] — the
+/// plate's edges and middles plus every box already on it (§A: "boxes snap to the picture's and each
+/// other's edges and middles") — and a drag that ends smaller than §A's 28 px floor is a look, not a box.
 fn install_words_gesture(window: &adw::ApplicationWindow) {
     let Some(picture) = widget_in(window, "thumbnail-picture") else {
         return;
@@ -1012,11 +1013,18 @@ fn install_words_gesture(window: &adw::ApplicationWindow) {
         let (start_x, start_y) = start.get();
         let wide = f64::from(plate.width()).max(1.0);
         let high = f64::from(plate.height()).max(1.0);
-        let x0 = start_x.min(start_x + offset_x).max(0.0) / wide;
-        let y0 = start_y.min(start_y + offset_y).max(0.0) / high;
-        let wf = offset_x.abs() / wide;
-        let hf = offset_y.abs() / high;
-        if wf < 0.02 || hf < 0.02 {
+        // The targets are read when the drag ENDS, not when it was wired: whatever boxes the page holds at
+        // that moment are the ones this box may line up with.
+        let (xs, ys) = screen::overlay_snap_targets(wide, high, &read_state().texts);
+        let near_x = screen::snap(start_x, &xs);
+        let near_y = screen::snap(start_y, &ys);
+        let far_x = screen::snap(start_x + offset_x, &xs);
+        let far_y = screen::snap(start_y + offset_y, &ys);
+        let x0 = near_x.min(far_x).max(0.0) / wide;
+        let y0 = near_y.min(far_y).max(0.0) / high;
+        let wf = (far_x - near_x).abs() / wide;
+        let hf = (far_y - near_y).abs() / high;
+        if screen::box_is_too_small(wf * wide, hf * high) {
             return;
         }
         crate::ui::produce_words::open_place(
@@ -1027,7 +1035,23 @@ fn install_words_gesture(window: &adw::ApplicationWindow) {
             hf.min(1.0),
         );
     });
-    picture.add_controller(gesture);
+    picture.add_controller(gesture.clone());
+    WORDS_GESTURE.with(|held| *held.borrow_mut() = Some(gesture));
+}
+
+thread_local! {
+    /// The picture's drag controller, kept so a test can fire a real drag the way `ui::zoom_gesture`
+    /// lets `zoom_drag_widgets.rs` fire the Cut panel's. Nothing in the program asks for it — hence
+    /// [`words_gesture_for_test`]'s name.
+    static WORDS_GESTURE: std::cell::RefCell<Option<gtk::GestureDrag>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+/// The thumbnail picture's drag gesture, for a test that drives the overlay editor through the real
+/// widget (`emit_by_name("drag-begin"/"drag-end")`). Program code never calls this.
+pub fn words_gesture_for_test(_window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
+    WORDS_GESTURE.with(|held| held.borrow().clone())
 }
 
 /// Store one typed box's whole text, under the widget's own name. Verbatim: §1 gives no trimming, case

@@ -15,8 +15,10 @@ use gtk4 as gtk;
 
 use crate::ui::produce_page;
 
-/// The dialog's title, spelled as `spec/inventory/produce.md` §A gives it.
-const DIALOG_TITLE: &str = "Words on the thumbnail";
+/// The dialog's title, spelled as `spec/inventory/produce.md` §A gives it. Public because §A states the
+/// shape a test pins (heading, explanation, box, Remove/Cancel/Save) through the real dialog: the check
+/// reads this constant rather than retyping the wording and drifting from it.
+pub const DIALOG_TITLE: &str = "Words on the thumbnail";
 
 // The dialog this module has open, if any. An `adw::MessageDialog` is its OWN top-level window rather
 // than a child of the page, so it is not reachable by walking the page's content tree; holding it

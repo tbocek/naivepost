@@ -221,6 +221,7 @@ mod f4_5_transport_widgets;
 mod f4_5_wire_picture_play_and_stop;
 mod f5_1_s4_the_render_speak_leg_dials_audio_cpp;
 mod f5_5_video_tag_live;
+mod f5_7_s5_the_words_box_snaps;
 mod fix_call;
 mod fix_transcripts;
 mod fix_tries;
