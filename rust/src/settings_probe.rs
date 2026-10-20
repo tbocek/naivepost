@@ -157,8 +157,14 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
 ///
 /// With no project open there is nowhere to append `requests.tsv`, so the leg is called directly
 /// and the row dropped — a down server is still worth knowing about before a project exists.
-/// `GET` one server for a settings probe: the audio.cpp model rows and the aligner row read its
+/// `GET` one server for a settings probe and return its body: the audio.cpp model rows read its
 /// catalogue, and the sd row's fallback reads it too. Same leg, same cancel context as [`ask`].
+///
+/// A non-2xx is a FAILURE here, not a body. The leg keeps the status beside the body (§1's upload rule
+/// needs both), but every settings row asks "is this service there, and does it speak my API", and a 404
+/// from an OpenAI-shaped tenant asked for `/sdcpp/v1/capabilities` would otherwise read as a capabilities
+/// reply that merely names no weights. §5 makes the sd row draw exactly that distinction ("not sd-server"
+/// vs "nothing answered"), so it has to be made where the call is made.
 pub fn get(
     tree: &Option<crate::layout::Tree>,
     server: Server,
@@ -167,7 +173,18 @@ pub fn get(
     model: &str,
     body: Option<&str>,
 ) -> Result<String, String> {
-    ask_job(tree, server, endpoint, kind, None, model, body, None)
+    let base = crate::server_leg::base_row(server, model, kind.method(), "", "settings", "");
+    let cancelled = crate::cancel_leg::cancel_check_now();
+    // A budget only bites when nothing else bounds the call: `send_budget` falls back to §1's table,
+    // and the recorded path goes through `call`, which carries no per-call ceiling of its own.
+    let reply = match tree {
+        Some(tree) => crate::server_leg::call(tree, &base, server, endpoint, kind, None, body, &cancelled).1,
+        None => crate::server_leg::send_budget(server, endpoint, kind, None, body, None, &cancelled),
+    }?;
+    if !reply.ok() {
+        return Err(format!("{} answered {}", kind.path(None), reply.status));
+    }
+    Ok(reply.body)
 }
 
 /// A chat completion from the settings dialog: the LLM and vision rows (§5 — one completion, `max_tokens`
