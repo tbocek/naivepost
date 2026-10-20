@@ -41,6 +41,13 @@ pub(crate) const SOURCES_MIN_H: i32 = 120;
 /// The tallest the User Context paragraph may stand at before it scrolls inside itself (§1: the page fits
 /// §1's minimum window height with nothing scrolling as a whole; two or three lines carry the note).
 const CONTEXT_MAX_H: i32 = 64;
+/// The prompt bench's own ceiling. Same reason as [`CONTEXT_MAX_H`], at the other end of the page: an
+/// uncapped `max_content_height` makes a GtkScrolledWindow report the WHOLE prompt as its minimum height
+/// (measured 2536 px), which climbs through `prepare-split`, Prepare's page box and `AdwViewStack` into
+/// `main-divider`'s start-half minimum — so every tab was allocated ~2731 px inside an 890 px window and
+/// each page's content was painted above the top of the window. Propagate + a near-window ceiling keeps §1's
+/// "one text box filling the rest of column": vexpand still fills the band, the box still scrolls its text.
+pub(crate) const BENCH_MAX_H: i32 = 900;
 use crate::project::Project;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
@@ -207,7 +214,7 @@ pub(crate) fn page_box(
 
         // §1's badges **2**-**5**: the prompt bench, one heading row over one text box. The rows it
         // offers and every sentence on it come from `bench`; the box only forwards what is typed.
-        let (heading, editor) = bench_box(session, &bench_paths());
+        let (heading, bench_scroller) = bench_box(session, &bench_paths());
         let right = gtk::Box::new(gtk::Orientation::Vertical, 6);
         right.set_widget_name("prepare-right");
         right.set_vexpand(true);
@@ -220,7 +227,7 @@ pub(crate) fn page_box(
         // hundred-line prompt from setting the page's minimum. It must FILL the column — §1 wants "one
         // text box filling the rest of the column" — and inside a Paned half, expand alone does not
         // stretch a child across the paned's allocation; `fill` does.
-        right.append(&editor_scroller(&editor));
+        right.append(&editor_scroller(&bench_scroller));
 
         // The divider itself. `shrink_*_child(true)` on BOTH halves is what keeps the window
         // shrinkable: a Paned that refuses to shrink forces each column's own minimum width on the
@@ -877,34 +884,27 @@ pub(crate) fn sources_list(session: &Rc<RefCell<Project>>, status: &gtk::Label) 
     list.upcast()
 }
 
-/// The bench's text view wrapped in the scroller that gives it a height band. `bench_box` returns the
-/// text view itself (every flow finds `bench-text` by name and reads its buffer); this walks up to the
-/// `ScrolledWindow` it sits in so the column can size the SCROLLER rather than the document.
-fn editor_scroller(editor: &gtk::TextView) -> gtk::Widget {
-    let scroller = editor
-        .parent()
-        .and_then(|scroller| scroller.downcast::<gtk::ScrolledWindow>().ok());
-    match scroller {
-        Some(scroller) => {
-            // §1 wants the box to FILL the column, so the band that bounds it is lifted to "no ceiling"
-            // and only its 160 px floor survives: a Paned half gives what it has, and a max height there
-            // would leave blank plate under a prompt that has more to show.
-            scroller.set_max_content_height(-1);
-            scroller.set_vexpand(true);
-            scroller.set_vexpand_set(true);
-            // Width too. An `Automatic` horizontal policy makes a ScrolledWindow's minimum WIDTH zero,
-            // so in a narrow Paned half it would rather shed width than show a bar — which is what left
-            // the bench column unreadably thin. The box wraps its own text; it never needs to scroll
-            // sideways.
-            scroller.set_hscrollbar_policy(gtk::PolicyType::Never);
-            scroller.set_hexpand(true);
-            scroller.set_hexpand_set(true);
-            scroller.upcast::<gtk::Widget>()
-        }
-        // Built without its scroller (no caller does today): the view alone still belongs on the page.
-        None => editor.clone().upcast(),
-    }
+/// The bench's scroller, sized for the column. `bench_box` hands back the SCROLLER the text view lives in
+/// (the view keeps its own name inside it, so every flow still finds `bench-text`), and this sets the bands
+/// the column needs rather than the document's.
+fn editor_scroller(scroller: &gtk::ScrolledWindow) -> gtk::Widget {
+    // §1 wants the box to FILL the column, which is what the two `vexpand` lines below do; the height
+    // band comes from [`BENCH_MAX_H`] for the reason spelled out there (an uncapped ceiling made the
+    // prompt's full height the shell's minimum). Only the floor survives here.
+    scroller.set_propagate_natural_height(true);
+    scroller.set_max_content_height(BENCH_MAX_H);
+    scroller.set_vexpand(true);
+    scroller.set_vexpand_set(true);
+    // Width too. An `Automatic` horizontal policy makes a ScrolledWindow's minimum WIDTH zero,
+    // so in a narrow Paned half it would rather shed width than show a bar — which is what left
+    // the bench column unreadably thin. The box wraps its own text; it never needs to scroll
+    // sideways.
+    scroller.set_hscrollbar_policy(gtk::PolicyType::Never);
+    scroller.set_hexpand(true);
+    scroller.set_hexpand_set(true);
+    scroller.clone().upcast::<gtk::Widget>()
 }
+
 
 /// §1's badge **8**: the two frame controls under the list. Freq is a dropdown of the stops
 /// ([`prepare::FREQ_STOPS`]) and Language an entry with the warning as its tooltip; both write

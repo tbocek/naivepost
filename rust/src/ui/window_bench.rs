@@ -71,7 +71,7 @@ fn bench_open_row(count: usize) -> usize {
 pub(crate) fn bench_box(
     session: &Rc<RefCell<Project>>,
     paths: &Option<crate::settings::Paths>,
-) -> (gtk::Box, gtk::TextView) {
+) -> (gtk::Box, gtk::ScrolledWindow) {
     let mut bench_state = bench::Bench::new();
     // The snapshot seam above; `select` ignores an index off the end, so this is a no-op unless a
     // caller asked for a specific row.
@@ -267,10 +267,14 @@ pub(crate) fn bench_box(
         }
     });
 
-    // The heading and the box are returned together; `page_box` stacks them in §1's order. The
-    // scroller is dropped with its child still inside: GTK keeps what it was added to.
-    drop(scroller);
-    (heading, editor)
+    // The heading and the box are returned together; `page_box` stacks them in §1's order. What comes back as
+    // the "box" is the SCROLLER, not the text view: dropping this scroller with its child still inside (as this
+    // did) left the bare `gtk::TextView` in Prepare's column, and a text view reports its whole document as its
+    // minimum height -- measured 2536 px for the shipped prompt -- which climbed through `prepare-split`,
+    // Prepare's page box and `AdwViewStack` into `main-divider`'s start-half minimum, so every tab was laid out
+    // ~2731 px tall inside an 890 px window and each page's content was painted above the top of the window.
+    // The view keeps its own name inside the scroller, so every flow that finds `bench-text` still does.
+    (heading, scroller)
 }
 
 /// Where this machine keeps an edited prompt (§1's ✎). `None` — no config home at all — leaves the
