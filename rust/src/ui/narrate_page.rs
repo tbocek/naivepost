@@ -215,10 +215,16 @@ pub fn build() -> gtk::Widget {
     // checked box over a page whose state says `narration_off`.
     tick.set_active(narrate_off::tick_checked(session_no_narration()));
     upper.append(&tick);
-    // §07-narrate#3-data: the page seeds itself from the project's own files (see
-    // `narrate_seed::seed_from_disk`, which says what may overwrite what a flow published).
+    // §1 (**22**): the row's bracketed halves ("⚠ N clip(s) unwritten, N line(s) off the cut", "· no
+    // timeline") are arithmetic over the session files — a clip with no entry and not deliberately silent
+    // waits to be written, a line on video the cut dropped is off it (§07 §B) — and a flow publishes the rows,
+    // the cut and the voice but never that arithmetic. So the page derives it at the same moment it learns
+    // what the project holds, through the same door (`narrate_seed::seed_from_disk` says what may overwrite
+    // what a flow published), and a caller that published counts of its own keeps them.
     if let Some(tree) = crate::ui::window::narrate_session_tree() {
-        set_state(crate::ui::narrate_seed::seed_from_disk(&tree, read_state()));
+        let mut seeded = crate::ui::narrate_seed::seed_from_disk(&tree, read_state());
+        crate::ui::narrate_inputs_tally::fill_defaults(&mut seeded, Some(&tree));
+        set_state(seeded);
     }
 
     // **2** the preview: one fixed 16:9 frame, the same pinned-height trick the Cut page's
@@ -416,6 +422,17 @@ pub fn build() -> gtk::Widget {
     outputs.set_xalign(0.0);
     readouts.append(&inputs);
     readouts.append(&outputs);
+    // §A.8 ("Outputs: folder button …"): the page's Outputs row gets the button §1's picture draws beside
+    // it. §1's sentence about what the folder HOLDS lives once, on the `narrate-outputs` label above, so
+    // the button's own tooltip says only what pressing it DOES — otherwise the readout reads as a
+    // duplicate of a tooltip. The shell's window-level Outputs row (`outputs-folder-button`) keeps its
+    // path-naming tooltip, painted per tab by `window_bench::paint_readouts`; this is the page's own copy.
+    let outputs_folder = gtk::Button::from_icon_name("folder-symbolic");
+    outputs_folder.set_widget_name("narrate-outputs-folder");
+    outputs_folder.set_tooltip_text(Some(narrate_screen::OUTPUTS_FOLDER_TIP));
+    outputs_folder.set_valign(gtk::Align::Center);
+    outputs_folder.set_halign(gtk::Align::Start);
+    readouts.append(&outputs_folder);
 
     let right = gtk::Box::new(gtk::Orientation::Vertical, 6);
     right.set_hexpand(true);
@@ -546,58 +563,15 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
             )
     });
     for (index, entry) in ordered.clone() {
-        let row = gtk::ListBoxRow::new();
-        row.set_widget_name(&format!("narrate-line-{index}"));
-        let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let session_second = entry.s + entry.at;
-        // §A.5-1: the row's time is an ENTRY, not a label — typing a second in it is how a line is
-        // moved, and `press_line_move` reads this widget on Enter. Seven chars holds "mm:ss.s" and no
-        // more: an entry with no max width asks for a natural width past what it can ever hold and takes
-        // the row from the status label beside it.
-        let time = gtk::Entry::new();
-        time.set_widget_name(&format!("line-time-{index}"));
-        time.set_width_chars(7);
-        time.set_max_width_chars(7);
-        time.set_hexpand(false);
-        time.set_text(&narrate_screen::time_field(session_second));
-        time.set_tooltip_text(Some(crate::ui::narrate_lines::TIME_FIELD_TIP));
-        box_.append(&time);
-        let status = gtk::Label::new(Some(&narrate_screen::status_line(narrate_screen::status(
-            entry, false,
-        ))));
-        status.set_widget_name(&format!("line-status-{index}"));
-        box_.append(&status);
-        let warning = gtk::Label::new(Some(
-            &narrate_screen::fit_warning(fit_for(entry, &ordered, &s.voice)).unwrap_or_default(),
-        ));
-        warning.set_widget_name(&format!("line-warning-{index}"));
-        if narrate_screen::row_is_red(fit_for(entry, &ordered, &s.voice)) {
-            warning.add_css_class("error");
-        }
-        box_.append(&warning);
-        for (suffix, label, tip) in [
-            ("speak", "\u{25b6}", "speak this line"),
-            ("reroll", "\u{27f3}", "a new take, same words"),
-            ("remove", "\u{1f5d1}", "remove this line"),
-        ] {
-            let button = gtk::Button::with_label(label);
-            button.set_widget_name(&format!("line-{suffix}-{index}"));
-            button.set_tooltip_text(Some(tip));
-            box_.append(&button);
-        }
-        let below = gtk::Button::from_icon_name(narrate_screen::ADD_LINE_ICON);
-        below.set_widget_name(&format!("line-add-below-{index}"));
-        below.set_tooltip_text(Some("Add a line below this one"));
-        box_.append(&below);
-        let text = gtk::Entry::new();
-        text.set_widget_name(&format!("line-text-{index}"));
-        // §A.5 calls the box monospace: an `Entry` has no such property, so the CSS class carries it.
-        text.add_css_class("monospace");
-        text.set_text(&narrate_screen::write_box(entry));
-        text.set_tooltip_text(Some(&narrate_screen::row_tooltip()));
-        text.set_hexpand(true);
-        box_.append(&text);
-        row.set_child(Some(&box_));
+        // §1's row shape lives in `narrate_row` (header line with the four buttons at its right end, the
+        // text box full width under it, the warning last); this loop only supplies the numbers the page owns:
+        // the session second the time field shows and the fit the render's ladder answered for this line.
+        let row = crate::ui::narrate_row::build(
+            index,
+            entry,
+            entry.s + entry.at,
+            fit_for(entry, &ordered, &s.voice),
+        );
         list.append(&row);
     }
 }
