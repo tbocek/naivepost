@@ -122,6 +122,8 @@ pub mod cut_suggest_press;
 /// Split out of `window.rs`, which is past its size budget.
 pub mod cut_suggest_progress;
 pub mod cut_form_frame;
+/// §F3.8 S5: the one closing row every effect form ends with — Apply, Cancel, and the note under them.
+pub mod cut_form_buttons;
 pub mod cut_picture;
 pub mod cut_stop_frame;
 /// §06-effects#2-the-lane-and-the-preview — the preview panel's painted frame: the dim outside the camera

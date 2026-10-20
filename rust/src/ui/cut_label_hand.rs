@@ -140,20 +140,9 @@ pub(crate) fn show_label_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     // The spec's picture carries only a ✕ in the corner; every other effect form pairs an explicit Apply with a
     // Cancel, and §F3.7's TAG node needs a deliberate "mark it" — so both buttons are here, named like the
     // volume form's.
-    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let apply = gtk::Button::with_label("Apply");
-    apply.set_widget_name("label-apply-button");
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.set_widget_name("label-cancel-button");
-    buttons.append(&apply);
-    buttons.append(&cancel);
+    let buttons = super::cut_form_buttons::form_buttons_row("label");
 
-    let footer = gtk::Label::new(Some(
-        "Kept as you type \u{2014} \u{21b6} Undo takes the whole edit back.",
-    ));
-    footer.set_xalign(0.0);
-    footer.add_css_class("dim-label");
-    footer.set_widget_name("label-form-footer");
+    let footer = super::cut_form_buttons::form_note("label");
 
     holder.append(&heading);
     holder.append(&row);

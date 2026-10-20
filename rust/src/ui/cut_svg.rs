@@ -376,20 +376,9 @@ pub(crate) fn show_svg_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     raster_note.set_wrap(true);
     raster_note.set_widget_name("svg-preview-raster-note");
 
-    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let apply = gtk::Button::with_label("Apply");
-    apply.set_widget_name("svg-apply-button");
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.set_widget_name("svg-cancel-button");
-    buttons.append(&apply);
-    buttons.append(&cancel);
+    let buttons = super::cut_form_buttons::form_buttons_row("svg");
 
-    let footer = gtk::Label::new(Some(
-        "Kept as you type \u{2014} \u{21b6} Undo takes the whole edit back.",
-    ));
-    footer.set_xalign(0.0);
-    footer.add_css_class("dim-label");
-    footer.set_widget_name("svg-form-footer");
+    let footer = super::cut_form_buttons::form_note("svg");
 
     holder.append(&heading);
     holder.append(&file_row);

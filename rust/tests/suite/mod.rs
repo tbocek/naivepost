@@ -196,6 +196,7 @@ mod f3_5_svg_raster_made;
 mod f3_6_gain_reaches_sound;
 mod f3_8_band_gesture_widgets;
 mod f3_8_esc_drops_the_hold_and_disarms;
+mod f3_8_s5_apply_and_cancel_share_one_row_in_every_form;
 mod f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire;
 mod f3_9_s3_a_live_captions_answer_is_cached;
 mod f3_9_s3_a_live_captions_ask_carries_the_clips_message_to_the_llm;

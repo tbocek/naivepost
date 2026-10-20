@@ -583,17 +583,9 @@ pub fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
     curve_row.append(&curve_key);
     curve_row.append(&curve_value);
 
-    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let apply = gtk::Button::with_label("Apply");
-    apply.set_widget_name("zoom-apply-button");
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.set_widget_name("zoom-cancel-button");
-    buttons.append(&apply);
-    buttons.append(&cancel);
-
-    let footer = gtk::Label::new(Some(fx_zoom::FORM_FOOTER));
-    footer.set_widget_name("zoom-form-footer");
-    footer.set_xalign(0.0);
+    let buttons = super::cut_form_buttons::form_buttons_row("zoom");
+    let (apply, cancel) = super::cut_form_buttons::row_buttons(&buttons);
+    let footer = super::cut_form_buttons::form_note("zoom");
 
     // Handlers go on BEFORE the widgets are parented. GTK fires `toggled` from its own `set_active(true)`
     // above, so wiring after that call but before appending means the construction-time signal finds no
