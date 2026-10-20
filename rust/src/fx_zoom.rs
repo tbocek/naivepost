@@ -608,7 +608,10 @@ pub fn settled_after(fx: &[Fx], t: f64) -> Camera {
 
 /// F3.1: a zoom's own rect, clamped as it is read (§A.1's clamp covers a hand-edited file as well as a fresh
 /// drag) and falling back to the whole source where a fraction was left out.
-fn rect_of(effect: &Fx) -> Camera {
+/// F3.1: the record's own clamped rectangle. Public because [`zoom_box_edit_on_release`] reads a placed zoom's box
+/// through exactly the door `camera_at` reads it, so a drag always grabs what the panel drew rather than a second
+/// reading of the same four fractions.
+pub fn rect_of(effect: &Fx) -> Camera {
     let (hf, cx, cy) = clamp_rect(
         effect.hf.unwrap_or(SETTLED.hf),
         effect.cx.unwrap_or(SETTLED.cx),

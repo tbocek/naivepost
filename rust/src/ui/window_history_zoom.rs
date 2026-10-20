@@ -484,7 +484,23 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
                 (sx + dx, sy + dy),
             ) {
                 Some(said) => said,
-                None => zoom_drag_ended(&win_end, (sx, sy), (sx + dx, sy + dy)),
+                // Then the CAMERA: a release that started inside a placed zoom's rectangle moves or sizes that
+                // camera (§F3.8 S3, `a box or camera rect dragged on the picture`). Asked after the caption door
+                // and before `zoom_drag_ended` because the two disagree about exactly one press: this one takes a
+                // release that BEGAN on a zoom's box, and F3.1's framing question is about a release that drew a
+                // NEW rectangle clear of every box. A press with no travel is refused by this door, so it still
+                // reaches `zoom_drag_ended`, which is where §F3.1's play/pause toggle and re-framing press live --
+                // F3.1's rules are untouched by the extra arm.
+                None => match crate::ui::cut_zoom_hand::zoom_box_edit_on_release(
+                    &win_end,
+                    at,
+                    fit,
+                    (sx, sy),
+                    (sx + dx, sy + dy),
+                ) {
+                    Some(said) => said,
+                    None => zoom_drag_ended(&win_end, (sx, sy), (sx + dx, sy + dy)),
+                },
             }
         };
         if let Some(status_line) = ui::find_status(win_end.upcast_ref()) {

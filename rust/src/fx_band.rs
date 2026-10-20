@@ -175,6 +175,19 @@ pub fn nudged(fx: &Fx, delta: f64) -> (f64, f64) {
     (effect_rules::nudge(fx.t, delta), fx.dur)
 }
 
+/// F3.8 S2 (`Hold drops when the line walks > 1/24 s off the band`): does THIS window's hold still stand at
+/// `line_t`? True while the line is inside the band, and for one frame's slack on either side of it —
+/// [`HOLD_RELEASE_SECONDS`] before the start, [`HOLD_RELEASE_SECONDS`] after the end. The slack exists because the
+/// clock keeps running while something is in hand: a held band whose edge crosses the line by a single frame must
+/// not vanish from under the pointer mid-drag, or the hand is left dragging nothing. Past a frame outside, the hold
+/// is genuinely behind the viewer and drops.
+///
+/// This is also why the pick-up path cannot release itself: §S1 puts the line ON the band's start, which is inside
+/// `[band_t, band_t + band_dur]`, so the rule agrees the hold stands.
+pub fn hold_survives(line_t: f64, band_t: f64, band_dur: f64) -> bool {
+    !hold_drops(band_t, band_dur, line_t)
+}
+
 /// F3.8 S2 (`Hold drops when the line walks > 1/24 s off the band`): is the hand still holding? False anywhere
 /// inside the band, and false within [`HOLD_RELEASE_SECONDS`] of either edge; true only beyond that slack.
 pub fn hold_drops(t: f64, dur: f64, line: f64) -> bool {

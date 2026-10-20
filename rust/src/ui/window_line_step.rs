@@ -11,6 +11,7 @@ use gtk4 as gtk;
 use crate::cut_delete;
 use crate::cut_line;
 use crate::cut_play_leg;
+use crate::fx_band;
 use crate::ui::cut_picture;
 use crate::ui::window as ui;
 use crate::ui::window_insert::place_known;
@@ -117,6 +118,21 @@ pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos
     if place_known() && !ui::preview_player(window).transport.playing {
         crate::ui::cut_volume_hear::apply_paused_gain(window, pos.t);
     }
+    release_held_effect_off_band(window, pos.t);
+}
+
+/// F3.8 S2 (`Hold drops when the line walks > 1/24 s off the band`): the one door every line move passes through,
+/// so a scrub, a click on the tape and an arrow key all release a hold the same way. [`fx_band::hold_survives`]
+/// owns the rule; this only asks it of THIS window's hand and, on a miss, puts the record down the way Esc does —
+/// clear the hold, redraw the lane without its held outline, and say §A.9's one word.
+pub fn release_held_effect_off_band(window: &adw::ApplicationWindow, line_t: f64) {
+    let Some(held) = ui::held_effect() else { return };
+    if fx_band::hold_survives(line_t, held.t, held.dur) {
+        return;
+    }
+    ui::set_held_effect(None);
+    ui::refresh_effects_lane(window);
+    ui::log_line(fx_band::CANCELLED);
 }
 
 /// A user moved the line: store it and let [`cut_line::LineWriter`] decide whether that is worth a
@@ -128,7 +144,7 @@ pub fn move_line_and_save(window: &adw::ApplicationWindow, pos: cut_line::LinePo
     // A root DOES reach the page (`line_root`), so a move writes through the writer, which keeps its own
     // one-second rule. With no root the rate rule still holds via the throttle stamp alone.
     let root = line_root(window);
-    ui::LINE_STATES.with(|slots| {
+    let wrote = ui::LINE_STATES.with(|slots| {
         let Some(slot) = slots.borrow().last().cloned() else {
             return false;
         };
@@ -143,7 +159,11 @@ pub fn move_line_and_save(window: &adw::ApplicationWindow, pos: cut_line::LinePo
         };
         slot.borrow_mut().1.note_move(pos, &root, now_ms);
         true
-    })
+    });
+    // F3.8 S2: this is the OTHER store path (§S4's click on the tape and the frame steps come through here, not
+    // through `set_line_position`), so a scrubbed line releases a hold exactly as a placed one does.
+    release_held_effect_off_band(window, pos.t);
+    wrote
 }
 
 /// F2.4 S4: the close path. Writes the line through the one-second rate limit — `LineWriter::flush`

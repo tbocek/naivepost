@@ -207,7 +207,9 @@ mod window_history_zoom;
 /// size budget; its doors are re-exported through `window`.
 mod window_line_step;
 mod window_holds;
-mod window_logs;
+// F3.8 S5: `say_kept` in `cut_form_buttons` logs the kept reading through the same window log the forms' Apply
+// sentences use, so the module that draws the footer also writes what the debounced commit says.
+pub(crate) mod window_logs;
 mod window_narrate;
 /// §1's widget doors — the named lookups, readouts and tooltip readers. Split out of `window.rs`,
 /// which is past its size budget. Every name is re-exported through `window`.

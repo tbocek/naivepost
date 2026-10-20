@@ -15,9 +15,10 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::cut::Cut;
+use crate::fx_text;
 use crate::fx_zoom::{self, Camera};
 use crate::ui::cut_preview_frame;
-use crate::ui::window::{self, review_cut_of, selection, set_held_effect};
+use crate::ui::window::{self, record_edit, review_cut_of, selection, set_held_effect};
 
 /// What a press on the paused preview did, as the page is supposed to report it.
 #[derive(Debug, Clone, PartialEq)]
@@ -124,6 +125,104 @@ pub fn box_under_pointer(cut_: &Cut, at: f64, fit: (f64, f64), at_px: (f64, f64)
     framed_boxes(cut_, at, fit).into_iter().find(|(_, box_)| {
         at_px.0 >= box_.0 && at_px.0 <= box_.0 + box_.2 && at_px.1 >= box_.1 && at_px.1 <= box_.1 + box_.3
     }).map(|(index, _)| index)
+}
+
+/// F3.8 S3 (`A box or camera rect dragged on the picture ends with "<label> moved — ↶ Undo takes it back" or
+/// "<label> resized — …"`): the release of a drag that started ON a placed zoom's rectangle. Text captions have
+/// [`crate::ui::cut_preview_press::box_edit_on_release`]; this is the same gesture for the camera, whose fractions
+/// are three numbers (`cx`, `cy`, `hf`) rather than a box's four, so it needs its own door rather than a shared one.
+///
+/// `None` for every press that is not this one: anything armed (the arm owns the press), a held lane effect (F3.8's
+/// hold owns it), or travel under [`fx_zoom::DRAG_MIN_PX`] on both axes — a press without travel is §F3.1's framing
+/// question or the picture's play/pause toggle, and neither is answered here.
+///
+/// The press's own pixel decides MOVE against RESIZE, through [`fx_text::grab_edge`] with its `EDGE_GRIP_PX` (8 px)
+/// reach: a press near one of the rectangle's four lines sizes that line, one in the interior slides the whole
+/// frame. A camera is a centre and a height, so:
+///  - MOVE shifts the centre by the travel, both axes at once, exactly as the hand moved;
+///  - a TOP or BOTTOM edge drag sizes `hf` (the rectangle is a full-width slice: its width IS its height) and keeps
+///    the opposite edge where it was, which moves the centre by half the change — that is what "drag the bottom, the
+///    top stays" means on a camera;
+///  - a LEFT or RIGHT edge has nothing to size. The slice always spans the source's width, so a horizontal pull
+///    slides the centre sideways, which is the only move that axis has.
+///
+/// The three fractions go through [`fx_zoom::clamp_rect`] — the same floor and ceiling the form applies with, so a
+/// drag cannot produce a camera the form would refuse. The write is [`ui::record_edit`] on a copy of the page's cut
+/// with ONE record replaced, which is Apply's own door: one ↶ takes this gesture back alone.
+pub fn zoom_box_edit_on_release(
+    window: &adw::ApplicationWindow,
+    at: f64,
+    fit: (f64, f64),
+    from: (f64, f64),
+    to: (f64, f64),
+) -> Option<String> {
+    if zoom_armed() || window::held_effect().is_some() {
+        return None;
+    }
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    if !fx_zoom::travel_one_axis(dx.abs(), dy.abs()) {
+        return None;
+    }
+    let cut_ = review_cut_of(window);
+    let index = box_under_pointer(&cut_, at, fit, from)?;
+    let record = cut_.fx.get(index)?;
+    let box_px = cut_preview_frame::camera_rect_px(&fx_zoom::rect_of(record), fit);
+    let camera = fx_zoom::rect_of(record);
+    let edge = fx_text::grab_edge(box_px, from);
+    let moved = match edge {
+        // Vertical edges are the slice's top and bottom: they are the only lines that size it.
+        Some(fx_text::Edge::Top) | Some(fx_text::Edge::Bottom) => {
+            let was_y = box_px.1;
+            let was_bottom = box_px.1 + box_px.3;
+            let target = match edge {
+                Some(fx_text::Edge::Top) => to.1,
+                _ => to.1,
+            };
+            let kept = match edge {
+                // Dragging the top leaves the BOTTOM pinned, and vice versa; a slice flipped past its own opposite
+                // edge is clamped back to the frame it started in rather than turning inside out.
+                Some(fx_text::Edge::Top) => target.max(0.0).min(was_bottom),
+                _ => target.max(was_y).min(fit.1),
+            };
+            let height = (kept - match edge {
+                Some(fx_text::Edge::Top) => was_bottom,
+                _ => was_y,
+            })
+            .abs();
+            let hf = (height / fit.1).max(0.0);
+            // The pinned edge stays put, so the centre is exactly half of the new height away from it.
+            let cy = (kept + match edge {
+                Some(fx_text::Edge::Top) => was_bottom,
+                _ => was_y,
+            }) / (2.0 * fit.1);
+            fx_zoom::clamp_rect(hf, camera.cx, cy)
+        }
+        // A horizontal edge of a full-width slice has no width to take: sliding sideways is what x can do.
+        Some(_) => fx_zoom::clamp_rect(camera.hf, camera.cx + dx / fit.0, camera.cy),
+        None => fx_zoom::clamp_rect(
+            camera.hf,
+            camera.cx + dx / fit.0,
+            camera.cy + dy / fit.1,
+        ),
+    };
+    let (hf, cx, cy) = moved;
+    let mut edited = cut_.clone();
+    let mut changed = record.clone();
+    changed.hf = Some(hf);
+    changed.cx = Some(cx);
+    changed.cy = Some(cy);
+    edited.fx[index] = changed;
+    record_edit(window, &edited);
+    crate::ui::refresh_effects_lane(window);
+    let label = crate::fx_record::label_of(crate::cut::EffectKind::Zoom);
+    let said = match edge {
+        Some(fx_text::Edge::Top) | Some(fx_text::Edge::Bottom) => {
+            crate::fx_band::resized(label)
+        }
+        _ => crate::fx_band::moved(label),
+    };
+    crate::ui::window_logs::log_line(&said);
+    Some(said)
 }
 
 /// §F3.1's plate is the ZOOM's; the sound-debt plate is `fx_lane::plate_for`'s, and the two are kept apart
