@@ -351,6 +351,27 @@ pub fn box_is_too_small(w_px: f64, h_px: f64) -> bool {
     w_px < OVERLAY_MIN_PX || h_px < OVERLAY_MIN_PX
 }
 
+/// §A's snap targets for one drag: the picture's own edges and middles plus EVERY box already on it, in the
+/// plate's pixels (§A states its numbers in pixels, and a mark stores fractions, so the conversion happens
+/// here at the size the plate actually has). `(x targets, y targets)` — feed each to [`snap`].
+pub fn overlay_snap_targets(
+    plate_w: f64,
+    plate_h: f64,
+    marks: &[crate::project::TextMark],
+) -> (Vec<f64>, Vec<f64>) {
+    let mut xs = vec![0.0, plate_w / 2.0, plate_w];
+    let mut ys = vec![0.0, plate_h / 2.0, plate_h];
+    for mark in marks {
+        xs.push((mark.cx - mark.wf / 2.0) * plate_w);
+        xs.push(mark.cx * plate_w);
+        xs.push((mark.cx + mark.wf / 2.0) * plate_w);
+        ys.push((mark.cy - mark.hf / 2.0) * plate_h);
+        ys.push(mark.cy * plate_h);
+        ys.push((mark.cy + mark.hf / 2.0) * plate_h);
+    }
+    (xs, ys)
+}
+
 /// A drag lands on the nearest snap target — a picture edge or middle, or another box's edge — when it came
 /// within [`OVERLAY_SNAP_PX`] of one; otherwise it stays where the hand left it. §A's snapping rule, in the
 /// page's own pixels.
