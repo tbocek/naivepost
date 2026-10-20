@@ -1,10 +1,14 @@
-//! §7's link line as the log's ONE clickable line.
+//! Which log lines are clickable, and what clicking one opens.
 //!
-//! §1 of the same chapter is explicit about which log line may be clicked: "Only one log line is a
-//! link — the per-run model exchange page, opened in a browser (GTK's file launcher, `xdg-open`
-//! fallback); no other path clickable." So this module answers exactly two questions — which line is
-//! the link, and where does it point — and opens it through GTK's launcher with a subprocess fallback.
-//! Everything else the log prints stays plain text, including lines that mention a path.
+//! Two rules meet here. §7 names the per-run model exchange page as the log's link line and spells its
+//! wording; §1 closes its own log bullet with "New: every path the log names is a link to it", which is
+//! the rewrite's rule over the prototype's "only one log line is a link" (the same `Prototype:`/`New:`
+//! pairing the chapter uses elsewhere, where `New:` replaces what came before it). So a line is clickable
+//! when it is §7's page line — tagged whole, exactly as §7's tests pin it — or when it NAMES a path, in
+//! which case the tag covers just that path's span and clicking opens the first path the line names. The
+//! reading rule (what counts as a path, and where a token points) lives in [`super::log_paths`], free of
+//! widgets; this module owns only the marking and the opening, through GTK's launcher with an `xdg-open`
+//! fallback.
 //!
 //! Split out of `window.rs`, which is past its size budget; the shell only calls [`install`] once and
 //! [`paint_line`] per line.
@@ -53,8 +57,8 @@ pub fn target_of(line: &str, session_dir: &std::path::Path) -> Option<String> {
     Some(format!("file://{}", session_dir.join(rel).display()))
 }
 
-/// Draw one log line into `buffer`: its MESSAGE, tagged with its level (§1) and, when [`target_of`]
-/// finds one, as §7's link.
+/// Draw one log line into `buffer`: its MESSAGE, tagged with its level (§1) and, when the line names
+/// something to open, as a link.
 ///
 /// This is the shell's ONE log painter — every repaint of the log body goes through [`paint_lines`] — so
 /// §1's "each line is the message alone" holds everywhere the log is drawn, not in one caller. The level
@@ -64,24 +68,32 @@ pub fn target_of(line: &str, session_dir: &std::path::Path) -> Option<String> {
 /// painted plain merely because nothing connected to the view: the MARK is paint's job, and only the
 /// OPENING needs the door. Applied to the whole line because §7 links the line, not a word in it.
 ///
-/// DECISION: the link is still exactly one line, §7's exchange page, and NOT every path a line names.
-/// §1's bullet asks for both — "no other path clickable" and, in its last sentence, "every path the log
-/// names is a link to it" — and §7 spells the page line as that one link. The earlier sentence wins
-/// because §7 and its tests (`sec_03_shell_7_…_s7/s8`) name the single line, so the contradiction is
-/// recorded rather than guessed away; the question is logged for the spec's QUESTIONS.md.
+/// §7's page line is tagged WHOLE, as its own tests (`sec_03_shell_7_…_s7/s8`, which read back exactly one
+/// tagged line for a run's three) pin it: its path is the tail of the line, so tagging the token span and
+/// tagging the line would differ by the words "this run's exchanges, images included:" — and §7 links the
+/// LINE, not a word in it. Every other line that names a path is tagged over the path's own span, which is
+/// what §1's "every path the log names is a link to it" asks for while leaving the rest of the sentence as
+/// plain text.
 pub fn paint_line(buffer: &gtk::TextBuffer, line: &str, session_dir: &std::path::Path) {
     let end_before = buffer.end_iter().offset();
     super::log_level::paint(buffer, line);
+    if buffer.tag_table().lookup(LINK_TAG).is_none() {
+        buffer.create_tag(Some(LINK_TAG), &[("foreground", &LINK_COLOUR)]);
+    }
+    let drawn = super::log_level::body_of(line);
     if target_of(line, session_dir).is_some() {
-        if buffer.tag_table().lookup(LINK_TAG).is_none() {
-            buffer.create_tag(Some(LINK_TAG), &[("foreground", &LINK_COLOUR)]);
-        }
         let start = buffer.iter_at_offset(end_before);
         // The link covers the line as drawn, i.e. the message without its `>>> ` marker: §7 links the
         // line, and §1 draws the line without the marker, so the two rules meet on the message.
         let end = buffer
             .iter_at_line(start.line() + 1)
             .unwrap_or_else(|| buffer.end_iter());
+        buffer.apply_tag_by_name(LINK_TAG, &start, &end);
+        return;
+    }
+    for (from, to) in super::log_paths::path_spans(drawn) {
+        let start = buffer.iter_at_offset(end_before + from as i32);
+        let end = buffer.iter_at_offset(end_before + to as i32);
         buffer.apply_tag_by_name(LINK_TAG, &start, &end);
     }
 }
@@ -168,7 +180,12 @@ pub fn install_with(view: &gtk::TextView, open: Opener) {
             return glib::Propagation::Proceed;
         }
         let buffer = key_view.buffer();
-        let caret = gtk::TextMark::new(Some("insert"), false);
+        // The view's OWN insert mark: the caret a click, a tab to the view, or `buffer.place_cursor`
+        // leaves behind. A freshly built unnamed mark reads offset 0 whatever the buffer holds, which would
+        // answer "no link" for every line but the first.
+        let Some(caret) = buffer.mark("insert") else {
+            return glib::Propagation::Proceed;
+        };
         let line = buffer.iter_at_mark(&caret).line();
         let held = std::rc::Rc::clone(&key_opener);
         match activate_line(&key_view, line, &|uri| held(uri)) {
@@ -179,14 +196,19 @@ pub fn install_with(view: &gtk::TextView, open: Opener) {
     view.add_controller(keys);
 }
 
-/// Open §7's page if `line` of `view`'s buffer is THE link line, and report what was opened.
+/// Open a log line, and report what was opened.
 ///
-/// The single door every activation goes through — the click handler, the Enter handler, and a test that
-/// cannot synthesise a mouse press. Its rule: a line is the link line exactly when it carries
-/// [`LINK_TAG`], which only [`paint_line`] puts there; nothing is opened for any other line, so §1's "no
-/// other path clickable" holds even if some other line names a file. The target comes from the CURRENT
-/// session folder on every call and is never stored, so Save as (F0.10) moving the folder mid-session
-/// cannot leave the link pointing at a folder that no longer exists.
+/// The single door every activation goes through — the Enter handler and a test that cannot synthesise a
+/// mouse press. Two rules, in this order:
+///
+/// * §7's page line opens its run's `llm/` page. That branch is unchanged, so `target_of` keeps §7's
+///   meaning ("is this THE page line") and §7's tests stay green for the right reason.
+/// * any other line that NAMES a path ([`super::log_paths::paths_of`]) opens its first named path — §1's
+///   "every path the log names is a link to it". The activation door carries a LINE and no caret column,
+///   so a line naming several paths opens the first one it names; which one that was is on screen, tagged.
+///
+/// A target is derived from the CURRENT session folder on every call and never stored, so Save as (F0.10)
+/// moving the folder mid-session cannot leave a link pointing at a folder that no longer exists.
 ///
 /// A failure to open is logged, not returned: §7 says recording never fails the call, and neither may
 /// opening what was recorded. The `Some(uri)` still comes back, because the click WAS the link's.
@@ -208,7 +230,16 @@ pub fn activate_line(
     // two rules cannot drift apart: a line is the link line exactly when the marker + the drawn text is.
     let drawn = line_text(&buffer, line).unwrap_or_default();
     let marked = restore_mark(&drawn);
-    let uri = target_of(&marked, &session_now())?;
+    let session = session_now();
+    let uri = match target_of(&marked, &session) {
+        Some(page) => page,
+        None => {
+            // Not §7's page line: then whatever path it names, if any. A line with no path in it is plain
+            // text and nothing opens, which is what keeps an unrelated "h264/vp9" sentence inert.
+            let first = super::log_paths::paths_of(&drawn).into_iter().next()?;
+            super::log_paths::resolve(&first, &session)
+        }
+    };
     if let Err(why) = open(&uri) {
         let name = uri.rsplit('/').next().unwrap_or(&uri);
         super::window::log_line(&format!("!!! could not open {name}: {why}"));
