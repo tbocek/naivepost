@@ -38,6 +38,10 @@ pub mod produce_snapshot;
 /// §08-produce#1-screen — the render legs the Produce page hands to `produce_exec`. Split out of
 /// `produce_page.rs`, which is past its size budget.
 pub mod produce_page_rows;
+/// §08-produce#1-screen — where each encoder setting's label+control PAIR lands in the settings grid
+/// ("label + control pairs … left to right and then down, several to a line"). Split out of
+/// `produce_page`, which is at its size budget.
+pub mod produce_page_layout;
 /// §F5.1 S4 / §F5.2 S2 — the render's speak leg, over the real audio.cpp address. Reuses the Narrate
 /// page's own speak door rather than a second copy of it.
 pub mod produce_speak_leg;

@@ -15,6 +15,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::produce_screen as screen;
+use crate::ui::produce_page_layout as layout;
 use crate::ui::produce_page_rows::{session_tree, words_half};
 use crate::project::{Codec, Container, Subtitles};
 
@@ -172,6 +173,9 @@ fn text_box(name: &str, lines: i32, tip: &str) -> gtk::TextView {
 /// **6** Thumbnail ⤓ ↻ · **7** the thumbnail picture.
 fn build_left_column() -> gtk::Box {
     let left = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    // Named for the same reason as `produce-right`: §1 lists this column's parts in order and a geometry
+    // test has to walk exactly this box.
+    left.set_widget_name("produce-left");
     left.set_hexpand(true);
 
     // **1** the Images heading and ＋ Add image…, on one row as §A draws them.
@@ -242,120 +246,14 @@ to resize, the middle to move, and press its \u{270e} to reword or remove it.",
     left
 }
 
-/// The settings grid: one labelled control per row, drawn from `settings_rows_shown` so the
-/// Game-audio row is ABSENT when narration is off (§F4.8), each widget named by `row_widget`.
-/// Build the settings rows with the values the page currently holds already IN them. Doing it here, at
-/// creation, is what lets `refresh` rebuild the grid whole without a repaint ever landing on a control
-/// that shows a default instead of the state — and it needs no guard, because nothing is wired yet.
-fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
-    let s = read_state();
-    for name in screen::settings_rows_shown(s.narration_off) {
-        let name: &str = name;
-        // The label is what §A prints left of the control; every branch attaches it at column 0 and its
-        // control at column 1, so hiding or showing a row moves both halves together.
-        match name {
-            "Game audio" => {
-                grid.attach(&setting_label("Game audio"), 0, row, 1, 1);
-                let scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.02);
-                scale.set_widget_name(&row_widget("Game audio"));
-                scale.set_draw_value(false);
-                scale.set_hexpand(true);
-                scale.set_value(s.game_volume);
-                scale.set_tooltip_text(Some(screen::tooltip("Game audio")));
-                grid.attach(&scale, 1, row, 2, 1);
-            }
-            "Quality (CRF)" => {
-                grid.attach(&setting_label("Quality (CRF)"), 0, row, 1, 1);
-                let scale = gtk::Scale::with_range(
-                    gtk::Orientation::Horizontal,
-                    screen::CRF_MIN as f64,
-                    screen::CRF_MAX as f64,
-                    1.0,
-                );
-                scale.set_widget_name(&row_widget("Quality (CRF)"));
-                scale.set_hexpand(true);
-                scale.set_value(s.crf);
-                scale.set_tooltip_text(Some(screen::tooltip("Quality (CRF)")));
-                grid.attach(&scale, 1, row, 2, 1);
-            }
-            "Frame timing" | "Channels" | "Frame edges" => {
-                // Three tick rows: the tick carries §A's own word, not the row's name.
-                let (tick_label, widget) = match name {
-                    "Frame timing" => (screen::VFR_TICK, "tick-peak-rate-vfr"),
-                    "Channels" => (screen::MONO_TICK, "tick-mono"),
-                    _ => (screen::EDGES_TICK, "tick-blurred"),
-                };
-                let tick = gtk::CheckButton::with_label(tick_label);
-                tick.set_widget_name(widget);
-                tick.set_active(match name {
-                    "Frame timing" => s.vfr,
-                    "Channels" => s.mono,
-                    _ => s.blurred_edges,
-                });
-                tick.set_tooltip_text(Some(screen::tooltip(name)));
-                grid.attach(&tick, 1, row, 2, 1);
-            }
-            "Translate" => {
-                grid.attach(&setting_label("Translate"), 0, row, 1, 1);
-                // One tick per offered language, built from `translate_options` so the session's own
-                // language never appears as a row at all.
-                let ticks = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                // The row is ONE `setting-*` control holding its per-language ticks, so counting the
-                // drawn `setting-*` names counts Translate as a row like every other one.
-                ticks.set_widget_name(&row_widget("Translate"));
-                for language in screen::translate_options(&s.session_language) {
-                    let tick = gtk::CheckButton::with_label(language);
-                    tick.set_widget_name(&format!("translate-tick-{language}"));
-                    tick.set_active(s.translate.iter().any(|t| t == language));
-                    tick.set_tooltip_text(Some(screen::tooltip("Translate")));
-                    ticks.append(&tick);
-                }
-                grid.attach(&ticks, 1, row, 2, 1);
-            }
-            other => {
-                grid.attach(&setting_label(other), 0, row, 1, 1);
-                let choices = screen::options(name).unwrap_or(&[]);
-                let picker = gtk::DropDown::from_strings(choices);
-                picker.set_widget_name(&row_widget(name));
-                if let Some(at) = screen::options(name)
-                    .and_then(|list| list.iter().position(|v| *v == held_choice(&s, name)))
-                {
-                    picker.set_selected(at as u32);
-                }
-                picker.set_tooltip_text(Some(screen::tooltip(name)));
-                grid.attach(&picker, 1, row, 2, 1);
-            }
-        }
-        row += 1;
-    }
-    row
-}
-
-/// The value the page holds for one dropdown row, so `build_settings` can seed the picker.
-fn held_choice<'a>(s: &'a ProduceState, row: &str) -> &'a str {
-    match row {
-        "Container" => s.container.as_str(),
-        "Codec" => s.codec.as_str(),
-        "Preset" => s.preset.as_str(),
-        "Resolution" => s.resolution.as_str(),
-        "Frame rate" => s.frame_rate.as_str(),
-        "Audio" => s.audio.as_str(),
-        "Subtitles" => s.subtitles.as_str(),
-        _ => "",
-    }
-}
-
-fn setting_label(text: &str) -> gtk::Label {
-    let label = gtk::Label::new(Some(&format!("{text}:")));
-    label.set_xalign(1.0);
-    label.add_css_class("dim-label");
-    label
-}
-
 /// **8** Title + ↻ suggest · **9** YouTube description · **10** Transcode ⤓ ↻ ·
-/// **11**–**14** the encoder settings scroller · **15** the Inputs readout.
+/// **11**–**14** the encoder settings scroller (its rows are built by
+/// [`crate::ui::produce_page_layout`] with the pairing rule §A asks for) · **15** the Inputs readout.
 fn build_right_column() -> gtk::Box {
     let right = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    // Named so a test can measure the column §1 describes ("Right column (at least 360 px wide)") rather
+    // than guess at it from a grandchild's bounds.
+    right.set_widget_name("produce-right");
     // §A: the written column has a minimum of 360 px, so the paned cannot starve it.
     right.set_size_request(360, -1);
     right.set_hexpand(true);
@@ -386,6 +284,13 @@ fn build_right_column() -> gtk::Box {
         "What goes under the video on YouTube",
     ));
 
+    // §1's separator between what a person WRITES and how the video is ENCODED: "the YouTube description
+    // heading and box, a separator, then the encoder settings". Named because the spec lists it as one of
+    // the page's widgets, so a test can point at it.
+    let written_split = gtk::Separator::new(gtk::Orientation::Horizontal);
+    written_split.set_widget_name("produce-written-split");
+    right.append(&written_split);
+
     // **10** Transcode with ⤓ save and ↻ encode again.
     let transcode_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     transcode_row.append(&heading("Transcode", ""));
@@ -404,7 +309,19 @@ fn build_right_column() -> gtk::Box {
 
     // **11**–**14** the thirteen settings rows, in a scroller as §A puts them.
     let scroller = gtk::ScrolledWindow::new();
+    // `Automatic` on BOTH axes: the grid lays out several label+control pairs to a line (§A), so its natural
+    // width is wider than a narrow window's right column, and with an `External` horizontal policy it simply
+    // ran off the edge instead of scrolling. Automatic gives it a bar when the column is squeezed and full
+    // width whenever the column has room — which is what makes the pairing measurable at all.
     scroller.set_policy(gtk::PolicyType::External, gtk::PolicyType::Automatic);
+    // The grid lays its pairs out several to a line (§A), so it is wider than the column it sits in; give it
+    // room to lay itself out at that width and scroll to read, rather than being squeezed.
+    scroller.set_min_content_width(GRID_MIN_W_PX);
+    // And room to be TALL: the page hosts this scroller inside `page-scroll-Produce`, whose own scroller
+    // shrinks anything that expands (see `window_page_box`'s comment on why pages scroll), so with only
+    // `vexpand` the grid got one row's height and six of its lines were invisible. §1 asks for the encoder
+    // settings "in a scroller", so the grid's own height is what scrolls, not what the shell leaves over.
+    scroller.set_min_content_height(GRID_MIN_H_PX);
     scroller.set_vexpand(true);
     let grid = gtk::Grid::new();
     grid.set_widget_name("encoder-settings");
@@ -413,7 +330,7 @@ fn build_right_column() -> gtk::Box {
     // Built un-wired here: `wire` attaches every control after `set_content`, because a handler put on
     // a widget that is not yet in the realized tree never fires (the same reason the Cut page attaches its
     // gestures after `set_content`).
-    build_settings(&grid, 0);
+    layout::build_settings(&grid, 0);
     scroller.set_child(Some(&grid));
     right.append(&scroller);
 
@@ -436,18 +353,46 @@ fn build_right_column() -> gtk::Box {
     right
 }
 
+/// How wide the encoder grid needs to be to draw its pairs several to a line: three label+dropdown pairs at
+/// their natural widths. Below this GTK squeezes the grid into the column and every pair stacks on its own
+/// line, which is what §A's "several to a line" forbids.
+const GRID_MIN_W_PX: i32 = 760;
+
+/// How tall the encoder scroller has to be to show the lines §A groups: five rows of controls plus their
+/// spacing. Shorter and the last pairs hide behind the scroller's own bar instead of being drawn.
+const GRID_MIN_H_PX: i32 = 240;
+
+/// §1's Produce split, opened at HALF: half of the 1240 px window §1 opens at, less the page's own 24 px
+/// margins on both sides ((1240 − 48) / 2). The same arithmetic Prepare uses, stated here rather than
+/// imported because it is THIS page's §1 clause, not Prepare's — and a shared constant would let one page's
+/// window move the other's handle. A starting position only: dragging the handle replaces it.
+const PRODUCE_HALF_PX: i32 = 596;
+
 /// The page: horizontal paned, images/thumbnail left, written column and settings right (§A).
 pub fn build() -> gtk::Widget {
     install_page_css_once();
     let split = gtk::Paned::new(gtk::Orientation::Horizontal);
-    split.set_position(560);
+    split.set_widget_name("produce-split");
     split.set_wide_handle(true);
-    split.set_start_child(Some(&build_left_column()));
-    split.set_end_child(Some(&build_right_column()));
-    // Publish the root before drawing: the empty-images note is drawn by `draw_slots`, which finds its
-    // holder through ROOT, and at build time `wire` has not stored it yet.
+    // §1: "split left and right by a draggable divider opened at HALF", not at 560 px. `shrink_*_child(true)`
+    // on BOTH halves is what keeps the window shrinkable — a Paned that refuses to shrink forces each
+    // column's own minimum width on the window, and `tests/suite/window_shrinks.rs` pins the shell's 1024 px
+    // floor (the same reason `prepare-split` does this).
+    split.set_shrink_start_child(true);
+    split.set_shrink_end_child(true);
+    let left = build_left_column();
+    let right = build_right_column();
+    // Both halves must TAKE the width the paned hands them, or the handle sits wherever their natural widths
+    // leave it and "at half" is only true by accident.
+    left.set_hexpand(true);
+    right.set_hexpand(true);
+    split.set_start_child(Some(&left));
+    split.set_end_child(Some(&right));
     ROOT.with(|held| *held.borrow_mut() = Some(split.clone().upcast()));
     draw_into(&read_state());
+    // Set after the children exist and after `draw_into`: the slot row is what gives the left column its
+    // natural width, and a position set before that is measured against an empty column.
+    split.set_position(PRODUCE_HALF_PX);
     split.upcast()
 }
 
@@ -544,7 +489,7 @@ fn rebuild_settings(window: &adw::ApplicationWindow, _s: &ProduceState) {
     while let Some(child) = grid.first_child() {
         grid.remove(&child);
     }
-    build_settings(&grid, 0);
+    layout::build_settings(&grid, 0);
     // The fresh controls carry no handlers until this runs: rebuilding the grid would otherwise leave
     // every row decorative.
     wire_settings(window);

@@ -1,0 +1,439 @@
+//! §08-produce.md **§1 Screen** — the Produce page's GEOMETRY, measured off a real window.
+//!
+//! §1 says where the parts sit: "split left and right by a draggable divider opened at half: two columns
+//! side by side, not one above the other. Left column, top to bottom: the Images heading (\"Add image…\"
+//! at its right end), the images row, Edit instruction, Negative prompt, the Thumbnail heading (⤓ and ↻
+//! at its right end), the thumbnail. Right column (at least 360 px wide), top to bottom: the Title
+//! heading (↻ at its right end), the title entry, the YouTube description heading and box, a separator,
+//! then the encoder settings under their Transcode heading (⤓ and ↻ at its right end), in a scroller."
+//! And §A adds that the encoder settings are "laid out as label + control pairs in this order, left to
+//! right and then down, several to a line".
+//!
+//! Every check reads NUMBERS out of the realized tree — `compute_bounds`, `start_child`/`end_child`,
+//! parent walks — because a page that merely renders can be wrong: before this item the same page opened
+//! its divider at 560 px, stacked every encoder setting on its own line, and had no separator at all.
+//! Same reasoning as `sec_04_prepare_1_screen_split.rs`.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use adw::prelude::*;
+use gtk4 as gtk;
+use naivepost::ui;
+
+use crate::common;
+
+const ITEM: &str = "sec_08_produce_1_screen";
+
+/// How far the handle may miss "half" before it stops being opened at half: the paned's own position is a
+/// request GTK answers within each column's minimum, so this pins the clause without pinning GTK's rounding.
+const HALF_TOLERANCE_PX: f32 = 40.0;
+
+/// Two controls count as sharing a line when their y-ranges overlap by more than this: enough to join a
+/// label with its own control, small enough that rows on neighbouring grid lines never merge.
+const SAME_LINE_PX: f32 = 12.0;
+
+static RAN_SPLIT: AtomicBool = AtomicBool::new(false);
+static RAN_ORDER: AtomicBool = AtomicBool::new(false);
+static RAN_PAIRS: AtomicBool = AtomicBool::new(false);
+
+fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
+    let model = naivepost::project::load(&common::fixture_dir()).expect("the fixture loads");
+    let window = ui::build_window(app, &model, naivepost::shell::Page::Produce.label());
+    // Sized before `present()`: a headless window laid out at its natural size would hand the paned a
+    // different width than §1's, and the handle's position is the thing being measured.
+    window.set_default_size(1280, 800);
+    window.present();
+    // GTK allocates children on an idle after `present()`; wait for the layout fact itself rather than a
+    // guessed number of turns — the settings grid having an allocation means the whole page has been laid out.
+    let probe = widget(&window, "encoder-settings");
+    common::wait_until(
+        "the Produce page laid itself out (`encoder-settings` still 0 px wide)",
+        || {
+            probe
+                .compute_bounds(window.upcast_ref::<gtk::Widget>())
+                .map(|b| b.width() > 0.0)
+                .unwrap_or(false)
+        },
+    );
+    window
+}
+
+fn widget(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
+    ui::find_source_widget(window, name).unwrap_or_else(|| panic!("{ITEM}: no widget named {name}"))
+}
+
+/// Bounds against the window, printed so the log carries the numbers a check decided on.
+fn bounds(window: &adw::ApplicationWindow, what: &str) -> gtk::graphene::Rect {
+    let w = widget(window, what);
+    let b = w
+        .compute_bounds(window.upcast_ref::<gtk::Widget>())
+        .unwrap_or_else(|| panic!("{ITEM}: {what} is not laid out"));
+    println!(
+        "PRODUCE {what} x={:.1} y={:.1} w={:.1} h={:.1}",
+        b.x(),
+        b.y(),
+        b.width(),
+        b.height()
+    );
+    b
+}
+
+/// §1's first sentence: a horizontal `gtk::Paned` (that is the draggable divider, and horizontal is what
+/// rules out "one above the other"), opened at HALF, with the right column keeping §A's 360 px floor.
+fn check_the_page_is_split_in_two(window: &adw::ApplicationWindow) {
+    let split = widget(window, "produce-split");
+    let paned = split
+        .clone()
+        .downcast::<gtk::Paned>()
+        .expect("{ITEM}: produce-split is a Paned, which is what makes the divider draggable");
+    assert_eq!(
+        paned.orientation(),
+        gtk::Orientation::Horizontal,
+        "{ITEM}: the divider splits left and right, not top and bottom"
+    );
+    let start = paned.start_child().expect("{ITEM}: the paned has a start child");
+    let end = paned.end_child().expect("{ITEM}: the paned has an end child");
+    assert_eq!(start.widget_name(), "produce-left", "{ITEM}: the LEFT column is the paned's start half");
+    assert_eq!(end.widget_name(), "produce-right", "{ITEM}: the RIGHT column is the paned's end half");
+
+    let split_box = bounds(window, "produce-split");
+    let left = bounds(window, "produce-left");
+    let right = bounds(window, "produce-right");
+    // SIDE BY SIDE: same top edge, and the left column ends where the right one begins.
+    assert!(
+        (left.y() - right.y()).abs() <= 2.0,
+        "{ITEM}: the columns are not side by side — left at y={:.1}, right at y={:.1}",
+        left.y(),
+        right.y()
+    );
+    assert!(
+        left.x() + left.width() <= right.x() + 2.0,
+        "{ITEM}: the left column overlaps or follows the right one ({left:?} vs {right:?})"
+    );
+    // OPENED AT HALF, read BOTH ways: the position the page asked for, and the split the measurement shows.
+    // The handle is a few px wide, so the left column's right edge lands just past the halfway mark; both
+    // readings are allowed `HALF_TOLERANCE_PX` of that.
+    let half = split_box.width() / 2.0;
+    println!(
+        "SPLIT position={} paned width={:.1} half={:.1} measured boundary={:.1}",
+        paned.position(),
+        split_box.width(),
+        half,
+        left.x() + left.width()
+    );
+    assert!(
+        (paned.position() as f32 - half).abs() <= HALF_TOLERANCE_PX,
+        "{ITEM}: the divider opens at HALF — position {} against a paned {:.1} px wide (half {:.1})",
+        paned.position(),
+        split_box.width(),
+        half
+    );
+    assert!(
+        ((left.x() + left.width()) - (split_box.x() + half)).abs() <= HALF_TOLERANCE_PX,
+        "{ITEM}: the boundary between the columns sits at the paned's middle: left ends {:.1}, paned middle {:.1}",
+        left.x() + left.width(),
+        split_box.x() + half
+    );
+    // §A: "Right column (at least 360 px wide)".
+    assert!(
+        right.width() >= 360.0,
+        "{ITEM}: §A gives the written column a 360 px minimum: measured {:.1}",
+        right.width()
+    );
+    RAN_SPLIT.store(true, Ordering::SeqCst);
+}
+
+/// The names and headings one column holds, in the order they actually appear top to bottom. Headings are
+/// unnamed `gtk::Label`s wearing the `heading` class, so they are picked up by walking the column's own
+/// children in order — which is also what proves they belong to THIS column and not its sibling. Two of
+/// §1's parts are ROWS rather than widgets with a name ("the Images heading (\"Add image…\" at its right
+/// end)"), so a row counts under the named control it carries.
+fn column_order(window: &adw::ApplicationWindow, column: &str) -> Vec<String> {
+    let mut found: Vec<(f32, String)> = Vec::new();
+    let root = widget(window, column);
+    let mut cursor = root.first_child();
+    while let Some(child) = cursor {
+        // A heading is a bare `gtk::Label` wearing the `heading` class; anything else counts under its own
+        // name, and a nameless row (the heading-plus-button rows §1 describes) under the first NAMED control
+        // inside it. The default GtkLabel name is not a name, so it must be filtered before the class test.
+        let named = |node: &gtk::Widget| {
+            let name = node.widget_name();
+            (!name.is_empty() && !name.starts_with("Gtk")).then(|| name.to_string())
+        };
+        let entry = if child.has_css_class("heading") {
+            child
+                .downcast_ref::<gtk::Label>()
+                .and_then(|l| l.text().into())
+                .map(|t| format!("heading:{t}"))
+        } else if let Some(name) = named(&child) {
+            Some(name)
+        } else if child.is::<gtk::ScrolledWindow>() {
+            // §A puts the encoder settings in a scroller; that is a part of the column's order, not a wrapper
+            // to be seen through.
+            Some("scroller".to_string())
+        } else {
+            // A bare row: named for the first control inside it that has a name. Only a horizontal box is
+            // treated as a row — a vertical wrapper (the scroller holding the settings grid) is not one.
+            let is_row = child
+                .downcast_ref::<gtk::Box>()
+                .is_some_and(|b| b.orientation() == gtk::Orientation::Horizontal);
+            is_row
+                .then(|| first_named_row_child(&child))
+                .flatten()
+                .map(|inner| format!("row:{inner}"))
+        };
+        if let Some(entry) = entry {
+            let y = child
+                .compute_bounds(window.upcast_ref::<gtk::Widget>())
+                .map(|b| b.y())
+                .unwrap_or(0.0);
+            found.push((y, entry));
+        }
+        cursor = child.next_sibling();
+    }
+    found.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    found.into_iter().map(|(_, entry)| entry).collect()
+}
+
+/// The first named descendant of a heading-plus-button row, which is how such a row gets a stable label in
+/// the order list (`add-image-button`, `title-suggest`, …).
+fn first_named_row_child(node: &gtk::Widget) -> Option<String> {
+    if node.widget_name().is_empty() || node.widget_name().starts_with("Gtk") {
+        let mut cursor = node.first_child();
+        while let Some(child) = cursor {
+            if let Some(found) = first_named_row_child(&child) {
+                return Some(found);
+            }
+            cursor = child.next_sibling();
+        }
+        None
+    } else {
+        Some(node.widget_name().to_string())
+    }
+}
+
+fn assert_order(found: &[String], want: &[&str], column: &str) {
+    println!("{column} column, top to bottom: {found:?}");
+    let positions: Vec<usize> = want
+        .iter()
+        .map(|part| {
+            found
+                .iter()
+                .position(|entry| entry == part)
+                .unwrap_or_else(|| panic!("{ITEM}: {column} column never drew {part}: {found:?}"))
+        })
+        .collect();
+    for index in 1..positions.len() {
+        assert!(
+            positions[index] > positions[index - 1],
+            "{ITEM}: {column} column order is wrong — {} comes before {}: {found:?}",
+            want[index - 1],
+            want[index]
+        );
+    }
+}
+
+/// §1's two lists, top to bottom, plus the two clauses that name a container: the separator BELOW the
+/// description box, and the encoder grid inside a scroller.
+fn check_both_columns_hold_spec_order(window: &adw::ApplicationWindow) {
+    let left = column_order(window, "produce-left");
+    assert_order(
+        &left,
+        &[
+            "row:add-image-button",
+            "publish-images",
+            "heading:Edit instruction",
+            "edit-instruction",
+            "heading:Negative prompt",
+            "negative-prompt",
+            "row:thumbnail-export",
+            "thumbnail-picture",
+        ],
+        "left",
+    );
+    let right = column_order(window, "produce-right");
+    assert_order(
+        &right,
+        &[
+            "row:title-suggest",
+            "title-entry",
+            "heading:YouTube description",
+            "description-box",
+            "produce-written-split",
+            "row:transcode-save",
+            // The grid is inside its scroller, so it never appears among the column's own children; §A asks
+            // for exactly that ("the encoder settings … in a scroller"), and the check below proves it.
+            "scroller",
+        ],
+        "right",
+    );
+    // The separator sits BELOW the description box, which is what "…, a separator, then the encoder
+    // settings" means on screen; the order list above already ranks them, this prints the gap.
+    let box_bottom = {
+        let b = bounds(window, "description-box");
+        b.y() + b.height()
+    };
+    let separator_top = bounds(window, "produce-written-split").y();
+    println!("description box bottom {box_bottom:.1}; separator top {separator_top:.1}");
+    assert!(
+        separator_top >= box_bottom - 1.0,
+        "{ITEM}: the separator is below the YouTube description box: {separator_top:.1} vs {box_bottom:.1}"
+    );
+    // §A puts the encoder settings "in a scroller": walk up from the grid for a ScrolledWindow.
+    let mut node = widget(window, "encoder-settings").parent();
+    let mut in_scroller = false;
+    while let Some(current) = node {
+        if current.is::<gtk::ScrolledWindow>() {
+            in_scroller = true;
+            break;
+        }
+        node = current.parent();
+    }
+    assert!(in_scroller, "{ITEM}: the encoder settings live inside a ScrolledWindow (§A)");
+    RAN_ORDER.store(true, Ordering::SeqCst);
+}
+
+/// Every named setting control under `node`, with its measured top and left. A `Grid`'s children ARE the
+/// cells, so this walks one level plus whatever a cell itself holds (the Translate row's tick box).
+fn collect_controls(
+    window: &adw::ApplicationWindow,
+    node: &gtk::Widget,
+    origin: gtk::graphene::Rect,
+    out: &mut Vec<(f32, f32, String)>,
+) {
+    let name = node.widget_name();
+    if name.starts_with("setting-") || name.starts_with("tick-") {
+        if let Some(b) = node.compute_bounds(window.upcast_ref::<gtk::Widget>()) {
+            out.push((b.y() - origin.y(), b.x() - origin.x(), name.to_string()));
+        }
+        return;
+    }
+    let mut cursor = node.first_child();
+    while let Some(child) = cursor {
+        collect_controls(window, &child, origin, out);
+        cursor = child.next_sibling();
+    }
+}
+
+/// The name a row's CONTROL wears on the page, spelled the way `produce_page` spells it: the three tick
+/// rows have their own names (§A words them), every other row follows `setting-<row>`.
+fn control_name(row: &str) -> String {
+    match row {
+        "Frame timing" => "tick-peak-rate-vfr".to_string(),
+        "Channels" => "tick-mono".to_string(),
+        "Frame edges" => "tick-blurred".to_string(),
+        other => ui::produce_page::row_widget(other),
+    }
+}
+
+/// §A's "label + control pairs … left to right and then down, SEVERAL TO A LINE": group the drawn
+/// controls into lines by their measured y, print the grouping, and read the lines back as SETTINGS_ROWS.
+fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
+    // The grid's scroller is `EXTERNAL` on the horizontal axis (the page scrolls as a whole), so its content
+    // takes the full natural width of every pair and runs past the window: the measured x of a late row lands
+    // at 2700 px. Only the RELATIVE positions mean anything, so measure against the grid itself.
+    let grid = widget(window, "encoder-settings");
+    let origin = grid
+        .compute_bounds(window.upcast_ref::<gtk::Widget>())
+        .expect("{ITEM}: the encoder grid is laid out");
+    println!("grid origin x={:.1} y={:.1}", origin.x(), origin.y());
+    let mut placed: Vec<(f32, f32, String)> = Vec::new();
+    collect_controls(window, &grid, origin, &mut placed);
+    assert!(
+        placed.len() >= naivepost::produce_screen::SETTINGS_ROWS.len(),
+        "{ITEM}: every settings row draws a named control: {}",
+        placed.len()
+    );
+    // GROUP INTO LINES by y overlap, topmost first, left to right within a line. A control joins the
+    // current line when its top is within `SAME_LINE_PX` of that line's tallest top.
+    placed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+    let mut lines: Vec<Vec<(f32, f32, String)>> = Vec::new();
+    for control in placed {
+        match lines.last_mut() {
+            Some(line) => {
+                let line_top = line.iter().map(|c| c.0).fold(f32::NEG_INFINITY, f32::max);
+                if (control.0 - line_top).abs() <= SAME_LINE_PX {
+                    line.push(control);
+                } else {
+                    lines.push(vec![control]);
+                }
+            }
+            None => lines.push(vec![control]),
+        }
+    }
+    for (index, line) in lines.iter().enumerate() {
+        let names: Vec<&str> = line.iter().map(|c| c.2.as_str()).collect();
+        let ys: Vec<f32> = line.iter().map(|c| c.0).collect();
+        let xs: Vec<f32> = line.iter().map(|c| c.1).collect();
+        println!("encoder line {}: {names:?} y={ys:?} x={xs:?}", index + 1);
+    }
+    // SEVERAL TO A LINE: at least one line carries more than one pair. One-per-line would fail here.
+    let widest = lines.iter().map(Vec::len).max().unwrap_or(0);
+    assert!(
+        widest > 1,
+        "{ITEM}: §A lays the settings \"several to a line\"; every control sits on a line of its own: {:?}",
+        lines.iter().map(|l| l.len()).collect::<Vec<_>>()
+    );
+    // THREE PAIRS TO A LINE is what `spec/img/08-produce.png` draws; a fourth would mean the budget leaked.
+    assert!(
+        widest <= 3,
+        "{ITEM}: no encoder line holds more than three pairs: {widest} in {:?}",
+        lines.iter().map(|l| l.len()).collect::<Vec<_>>()
+    );
+    // LEFT TO RIGHT AND THEN DOWN: reading the lines in order reproduces §A's row order exactly.
+    let read_back: Vec<String> = lines.iter().flat_map(|l| l.iter().map(|c| c.2.clone())).collect();
+    println!("read back: {read_back:?}");
+    let expected: Vec<String> = naivepost::produce_screen::SETTINGS_ROWS
+        .iter()
+        .map(|row| control_name(row))
+        .collect();
+    assert_eq!(
+        read_back, expected,
+        "{ITEM}: the encoder grid does not read as §A's rows, left to right and then down"
+    );
+    RAN_PAIRS.store(true, Ordering::SeqCst);
+}
+
+/// §08-produce#1-screen §1, measured. ONE application for the whole file: GTK and libadwaita bind to the
+/// first thread that initialises them and cargo runs a binary's tests on different threads, so all three
+/// checks are stages of one `connect_activate` (`common::one_app_round`, whose `Once` makes the second and
+/// third call free). Each check closes its own window; `run_with_args` returns when the last one goes.
+fn layout_round() {
+    common::one_app_round(|app| {
+        let window = produce_window(app);
+        check_the_page_is_split_in_two(&window);
+        window.close();
+        common::settle();
+
+        let window = produce_window(app);
+        check_both_columns_hold_spec_order(&window);
+        window.close();
+        common::settle();
+
+        let window = produce_window(app);
+        check_encoder_pairs_share_lines(&window);
+        window.close();
+        common::settle();
+    });
+}
+
+#[test]
+fn sec_08_produce_1_screen_s1_the_page_is_split_in_two_side_by_side() {
+    common::pin_private_cwd();
+    layout_round();
+    assert!(RAN_SPLIT.load(Ordering::SeqCst), "{ITEM} s1: the split check never ran");
+}
+
+#[test]
+fn sec_08_produce_1_screen_s1_both_columns_hold_spec_order_top_to_bottom() {
+    common::pin_private_cwd();
+    layout_round();
+    assert!(RAN_ORDER.load(Ordering::SeqCst), "{ITEM} s1: the column-order check never ran");
+}
+
+#[test]
+fn sec_08_produce_1_screen_s1_encoder_pairs_share_lines_in_order() {
+    common::pin_private_cwd();
+    layout_round();
+    assert!(RAN_PAIRS.load(Ordering::SeqCst), "{ITEM} s1: the encoder-pairs check never ran");
+}

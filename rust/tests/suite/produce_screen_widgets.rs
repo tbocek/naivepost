@@ -153,7 +153,7 @@ fn produce_round(_app: &adw::Application) {
         .parent()
         .and_then(|left| left.parent())
         .expect("the paned holds the two columns");
-    assert_eq!(right.widget_name(), "GtkPaned", "the split is a paned");
+    assert_eq!(right.widget_name(), "produce-split", "the split is the page's named paned");
     RAN_PLATE.store(true, Ordering::SeqCst);
     window.close();
     settle();
