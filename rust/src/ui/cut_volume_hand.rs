@@ -184,18 +184,9 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     // The spec's picture carries only a ✕ in the corner; every other effect form pairs an explicit Apply with
     // a Cancel, and §F3.6's OK node needs a deliberate "put it on" — so both buttons are here, named like the
     // speed form's.
-    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let apply = gtk::Button::with_label("Apply");
-    apply.set_widget_name("volume-apply-button");
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.set_widget_name("volume-cancel-button");
-    buttons.append(&apply);
-    buttons.append(&cancel);
+    let buttons = super::cut_form_buttons::form_buttons_row("volume");
 
-    let footer = gtk::Label::new(Some(crate::fx_band::KEPT_AS_YOU_TYPE));
-    footer.set_xalign(0.0);
-    footer.add_css_class("dim-label");
-    footer.set_widget_name("volume-form-footer");
+    let footer = super::cut_form_buttons::form_note("volume");
 
     holder.append(&heading);
     holder.append(&top);

@@ -174,20 +174,9 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     curve_row.append(&curve_key);
     curve_row.append(&curve_value);
 
-    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let apply = gtk::Button::with_label("Apply");
-    apply.set_widget_name("text-apply-button");
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.set_widget_name("text-cancel-button");
-    buttons.append(&apply);
-    buttons.append(&cancel);
+    let buttons = super::cut_form_buttons::form_buttons_row("text");
 
-    let footer = gtk::Label::new(Some(
-        "Kept as you type \u{2014} \u{21b6} Undo takes the whole edit back.",
-    ));
-    footer.set_xalign(0.0);
-    footer.add_css_class("dim-label");
-    footer.set_widget_name("text-form-footer");
+    let footer = super::cut_form_buttons::form_note("text");
 
     holder.append(&heading);
     holder.append(&words_row);

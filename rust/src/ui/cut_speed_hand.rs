@@ -190,20 +190,10 @@ pub(crate) fn show_speed_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     curve_row.append(&curve_key);
     curve_row.append(&curve_value);
 
-    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let apply = gtk::Button::with_label("Apply");
-    apply.set_widget_name("speed-apply-button");
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.set_widget_name("speed-cancel-button");
-    buttons.append(&apply);
-    buttons.append(&cancel);
+    let buttons = super::cut_form_buttons::form_buttons_row("speed");
 
-    let footer = gtk::Label::new(Some(
-        "Kept as you type \u{2014} \u{21b6} Undo takes the whole edit back.",
-    ));
-    footer.set_xalign(0.0);
-    footer.add_css_class("dim-label");
-    footer.set_widget_name("speed-form-footer");
+    let footer = super::cut_form_buttons::form_note("speed");
+
 
     holder.append(&heading);
     holder.append(&rate_row);
