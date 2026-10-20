@@ -128,8 +128,12 @@ pub(crate) fn page_box(
 
         let add_ = gtk::Button::with_label(ADD_LABEL);
         add_.set_widget_name("add-sources-button");
+        // §4 names both tooltips outright, so they are drawn here from `sources`' strings (the same
+        // constants the tests pin) rather than being left defined and unused.
+        add_.set_tooltip_text(Some(sources::ADD_TIP));
         let copy_ = gtk::CheckButton::with_label(COPY_LABEL);
         copy_.set_widget_name("copy-into-project");
+        copy_.set_tooltip_text(Some(sources::COPY_TIP));
         // Tick on: the default is to bring the files inside the project, so the folder stays one
         // thing to move (F0.12 S2).
         copy_.set_active(!project.reference_sources);

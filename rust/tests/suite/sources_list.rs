@@ -352,12 +352,78 @@ fn window_round() {
         RAN_PRESS.store(true, Ordering::SeqCst);
         check_the_row_is_one_line_right_aligned(app);
         RAN_PLACEMENT.store(true, Ordering::SeqCst);
+        check_the_tooltips_are_on_the_widgets(app);
+        RAN_TIPS.store(true, Ordering::SeqCst);
     });
 }
 
 static RAN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_PRESS: AtomicBool = AtomicBool::new(false);
 static RAN_PLACEMENT: AtomicBool = AtomicBool::new(false);
+static RAN_TIPS: AtomicBool = AtomicBool::new(false);
+
+/// §4's tooltips, read off the widgets that carry them. A tooltip is invisible in a screenshot and only
+/// exists once it is ATTACHED, so this asserts the property on the real widget rather than on the
+/// constant (`…_the_strings_are_the_specs` already pins the wording itself).
+fn check_the_tooltips_are_on_the_widgets(app: &adw::Application) {
+    let window = ui::build_window(app, &fixture(), "Prepare");
+    window.present();
+
+    let tip_of = |name: &str| -> Option<String> {
+        widget::<gtk::Widget>(&window, name).and_then(|w| w.tooltip_text().map(|t| t.to_string()))
+    };
+
+    // **1** Add source files… — §4 gives both its label and its tooltip.
+    let add_: gtk::Button = widget(&window, "add-sources-button").expect("Prepare has the add button");
+    assert_eq!(add_.label().as_deref(), Some("Add source files\u{2026}"), "{ITEM}: badge 1's label");
+    assert_eq!(
+        add_.tooltip_text().as_deref(),
+        Some(sources::ADD_TIP),
+        "{ITEM}: badge 1 carries \"Add recordings or footage \u{2014} several at once\""
+    );
+    assert!(
+        sources::ADD_TIP.contains("Add recordings or footage"),
+        "{ITEM}: the sentence is the spec's"
+    );
+
+    // **2** copy into project — the long copy/reference sentence, whole.
+    let copy_: gtk::CheckButton =
+        widget(&window, "copy-into-project").expect("Prepare has the copy tick");
+    assert_eq!(copy_.label().as_deref(), Some("copy into project"), "{ITEM}: badge 2's label");
+    let copy_tip = copy_.tooltip_text().unwrap_or_default().to_string();
+    assert_eq!(copy_tip, sources::COPY_TIP, "{ITEM}: badge 2 carries the copy/reference sentence");
+    assert!(copy_tip.contains("sources/"), "{ITEM}: it names where a copy goes: {copy_tip}");
+    assert!(
+        copy_tip.contains("the session breaks if it moves"),
+        "{ITEM}: and what referencing costs: {copy_tip}"
+    );
+
+    // The list itself (§4's own tooltip), pinned on the widget now.
+    assert_eq!(
+        tip_of("sources-list").as_deref(),
+        Some(sources::LIST_TIP),
+        "{ITEM}: the list says what happens to every file in it"
+    );
+
+    // The four symbol controls end their tooltip with the row's four-line legend; the track button and ⚠
+    // do not (\"§4 says so outright\").
+    for name in ["footage-0", "narrator-0", "separate-0", "remove-0"] {
+        let tip = tip_of(name).unwrap_or_else(|| panic!("{ITEM}: {name} has no tooltip"));
+        assert!(
+            tip.ends_with(sources::ROW_KEY),
+            "{ITEM}: {name}'s tooltip must end with the four-symbol legend: {tip}"
+        );
+    }
+    // `lecture.mkv` carries no timestamp, so the fixture's row shows the warning -- and its tooltip
+    // explains renaming or dragging into place, without the legend.
+    let warn = tip_of("warning-0").expect("{ITEM}: an unstamped name gets its warning");
+    assert_eq!(warn, sources::WARN_TIP, "{ITEM}: the warning explains itself");
+    assert!(
+        !warn.contains("The symbols on every row"),
+        "{ITEM}: the warning does not carry the legend: {warn}"
+    );
+    window.close();
+}
 
 /// The widget the page named `name`. `naivepost::ui` exports one accessor for §4's list, in the same
 /// shape as every other widget on the window (`rescan_button`, `play_button`, …) — see
@@ -523,6 +589,16 @@ fn check_the_row_is_one_line_right_aligned(app: &adw::Application) {
         "{ITEM}: 🗑 ends {:.1} px short of the row's right edge — the controls follow the text, \
          not the row's end",
         row_b.x() + row_b.width() - last_end
+    );
+}
+
+#[test]
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_tooltips_are_on_the_widgets_the_spec_names() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_TIPS.load(Ordering::SeqCst),
+        "{ITEM}: the tooltip check never ran"
     );
 }
 
