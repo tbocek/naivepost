@@ -122,6 +122,10 @@ fn start_lane_with(
 
 /// Stop one lane's pipeline. Answers whether there was one. SIGTERM like every other leg here, so the
 /// player tears its own pipeline down instead of leaving the file half-held for the next start.
+///
+/// The signal goes out and the slot is released without waiting for the child to die (nothing here `wait`s on
+/// it), so a caller that stops one lane and starts another under a different name finds no live entry the
+/// moment it returns -- but the old process can still be alive for a few milliseconds afterwards.
 pub fn stop_lane(name: &str) -> bool {
     let mut slot = held().lock().expect("the lane pipeline slot");
     match slot.remove(name) {

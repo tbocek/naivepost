@@ -401,6 +401,8 @@ mod sec_06_effects_2_lane_preview_wired;
 mod sec_06_effects_2_lane_rows_order;
 mod sec_06_effects_2_staging;
 mod sec_06_effects_2_text_staging;
+mod sec_06_effects_3_flows_order;
+mod sec_06_effects_3_flows_wired;
 mod sec_06_effects_4_render;
 mod sec_06_effects_6_parameters;
 mod sec_06_effects_6_parameters_used_wire;
