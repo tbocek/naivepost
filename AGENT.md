@@ -27,8 +27,11 @@ prototype `spec/` was written from: read it for observed behaviour; new work goe
   screen or flow; `spec/prompts/` the shipped prompt wording, `spec/inventory/`
   per-screen widget lists, `spec/12-decisions.md` decisions already taken — do not
   re-litigate what is written there.
-- `rust/src` app code, one module per concern; `rust/tests` integration tests, one
-  file per spec flow, names like `f1_13_s5_…` = flow, step, case; the fixture at
+- `rust/src` app code, one module per concern; `rust/tests` integration tests in
+  ONE test binary, `tests/all.rs`: each test file is a module in `tests/suite/` (a new
+  file needs its `mod <name>;` line in `tests/suite/mod.rs`, never a `[[test]]` in
+  Cargo.toml), one file per spec flow, names like `f1_13_s5_…` = flow, step, case;
+  `just test` runs each file in a process of its own; the fixture at
   `rust/fixtures/demo.naivepost` is what snapshots render from.
 - `Readme.md` the app's behaviour as it works today; `assets/`, `docs/` icons.
 
@@ -38,6 +41,7 @@ prototype `spec/` was written from: read it for observed behaviour; new work goe
                                # (GTK 4 app: runs on a host with a display, not in this container)
     just test                  # xvfb-run, GSK_RENDERER=cairo; several tests build real widgets;
                                # ~4 min: run it once into a file, then grep/tail the file
+    just test f1_13            # only the test files whose name contains f1_13
     just snapshot 05-cut       # -> rust/shots/05-cut.png; one name per spec screen (03-window,
                                # 04-prepare, 05-cut, ...); compare each with spec/img/<same name>
 
@@ -116,7 +120,7 @@ prototype `spec/` was written from: read it for observed behaviour; new work goe
   `clear_narrate_bar` under the `F4.1` header in `src/ui/window.rs`; ▶ refuses pre-press
   (`narrate_asked`) and FORWARDS at the end of `play.connect_clicked`, with `refuse_narrate_run_with_busy`
   because that forward lands after `runqueue::start_run` already put this press's own run in the bar.
-  Tests: `tests/narrate_write_and_speak.rs`, `tests/narrate_run_widgets.rs`.
+  Tests: `tests/suite/narrate_write_and_speak.rs`, `tests/suite/narrate_run_widgets.rs`.
 - F4.3/F4.4/F4.8 narrate rows: `narrate_screen::mirror_fit` runs the render's own
   `produce_render::fit` ladder over a clip's lines together, so a row never promises a remedy the render
   would not apply; `narrate_tts::speak_line` works through refusal order reference → health/clone →

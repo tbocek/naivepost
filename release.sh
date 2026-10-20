@@ -35,10 +35,14 @@
 # on PATH; bundling a full ffmpeg is a licensing question this script does not
 # answer) and the four model servers, which are the user's to run. Also left to
 # the host, by linuxdeploy's standard exclude list: glibc, libstdc++, GL/EGL,
-# X11/Wayland client libraries, fontconfig, freetype, harfbuzz, fribidi -- and
-# an icon theme (adwaita-icon-theme) for the few symbolic icons GTK does not
-# carry itself. Checked by running the AppImage on a Debian testing container
-# with exactly those and nothing else: the window comes up, all icons drawn.
+# X11/Wayland client libraries, fontconfig, freetype, harfbuzz, fribidi.
+#
+# The icon theme IS bundled (adwaita-icon-theme, copied into the AppDir below):
+# every tab, row and transport control asks GTK for a `-symbolic` name, and none
+# of those 39 names ship in gui/icons, which holds the app icon only. Left to the
+# host they resolve to nothing on a machine without an icon theme, and GTK draws
+# the broken-icon placeholder in every button. Checked by running the AppImage on
+# a Debian testing container with no icon theme installed and none reachable.
 
 set -euo pipefail
 
@@ -119,6 +123,7 @@ apt-get install -y -qq --no-install-recommends \
   libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
   gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-gl gstreamer1.0-tools \
+  adwaita-icon-theme gtk-update-icon-cache \
   gstreamer1.0-gtk4 || true
 # The video sink is a Rust plugin (gst-plugins-rs) and not every release
 # packages it. Without it the preview is a black square, so this is a hard
@@ -149,6 +154,23 @@ install -Dm755 "/tmp/$APP" "$D/usr/bin/$APP"
 # first, or cp renames the tree to usr/share instead of putting it inside.
 mkdir -p "$D/usr/share"
 cp -r gui/icons "$D/usr/share/"
+# The symbolic icons the interface asks the theme for (see the header). GTK looks
+# them up in $XDG_DATA_DIRS/icons, and the runtime hook the gtk plugin writes puts
+# "$APPDIR/usr/share" at the FRONT of that variable, so a theme copied here is what
+# the app draws with -- no env var of our own needed, and nothing about it depends on
+# what the host has. The caches are rebuilt here: a copied tree carries the build
+# machine's absolute paths in its index.
+mkdir -p "$D/usr/share/icons"
+cp -r /usr/share/icons/Adwaita "$D/usr/share/icons/"
+gtk-update-icon-cache -q -t -f "$D/usr/share/icons/Adwaita"
+# Gtk's own "no such icon" picture, `gtk-fallback-symbolic`, lives in libgtk-4-common's
+# hicolor tree, which nothing here depends on: without it a missing name is blank
+# rather than the broken-icon picture, which is how the release read. Merged into the
+# AppDir's hicolor so both trees stay in one place.
+if [ -d /usr/share/icons/hicolor ]; then
+  cp -r /usr/share/icons/hicolor/. "$D/usr/share/icons/hicolor/" 2>/dev/null || true
+fi
+gtk-update-icon-cache -q -t -f "$D/usr/share/icons/hicolor"
 ln -s ../share/icons "$D/usr/bin/icons"
 install -Dm644 "gui/icons/hicolor/scalable/apps/$APPID.svg" "$D/$APPID.svg"
 # linuxdeploy looks the desktop file's icon up in the sized directories only,
@@ -227,4 +249,4 @@ $ENGINE run --rm \
 
 echo
 echo "built: $OUT/$APP-$VERSION-x86_64.AppImage"
-echo "it needs ffmpeg and ffprobe on PATH, an icon theme, and the four servers running (Settings names them)."
+echo "it needs ffmpeg and ffprobe on PATH and the four servers running (Settings names them); the icon theme is inside."
