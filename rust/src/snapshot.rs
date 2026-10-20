@@ -1104,8 +1104,23 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // this by name (`snapshot_effect_menu::note_shot_sidecar`), so no screen is hardcoded here.
         let menu_only = crate::snapshot_effect_menu::shot_sidecar_wanted();
         // …and when the spec's own picture IS the menu, the menu is the SUBJECT of this shot, decided through
-        // the module's door rather than a name hardcoded here.
+        // the module's door rather than a name hardcoded here. Which screens hand their asked filename to a
+        // subject of their own -- and which sidecar each subject was staged under -- is `snapshot_subjects`'s
+        // table, so this step asks two questions of one place instead of matching names itself.
         let menu_subject = crate::snapshot_effect_menu::is_menu_subject(&screen);
+        // Where the WINDOW shot goes: the asked name as ever, except when the screen's SUBJECT is something the
+        // spec pictures on its own (a popover, the lane, the framed frame) -- then the subject holds `<name>.png`
+        // and the page sits beside it as `<name>-page.png`. The sidecar is named `-page`, not `-window`, so that it
+        // sorts BEFORE the asked filename (`-` 0x2D < `.` 0x2E): a viewer comparing this screen with its spec picture
+        // takes the last PNG written, and that must be the subject the spec drew, not the page behind it.
+        let page_out = if crate::snapshot_subjects::subject_takes_the_name(&screen) {
+            out.with_extension("page.png")
+        } else {
+            out.clone()
+        };
+        // The closure below runs after `run`'s body has handed `screen` over, so it carries its own copy for the
+        // one question it still has to ask of the screen name (which sidecar holds this shot's subject).
+        let screen_for_frame = screen.clone();
         // The glyph goes beside the window shot as `<name>-face.png`; the whole page stays at `<name>.png`
         // so every snapshot keeps writing exactly one file under the name it was asked for -- except where the
         // spec pictures a SUBJECT instead of the page (a dialog, this screen's popover): then the subject takes
@@ -1144,22 +1159,40 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 }
             } else if menu_subject {
                 // §2's picture for this screen is the popover's six rows, so THEY take `<name>.png` and the page
-                // they were staged on goes beside it as `<name>-window.png`. A popover lives on its own surface,
-                // so it can only be painted from the dropdown's box, never out of the window's render node.
-                // The flag decides which subject this shot records, so exactly one branch of this pair ever runs.
+                // they were staged on goes beside it as `<name>-page.png` (named to sort before the subject). A
+                // popover lives on its own surface, so it can only be painted from the dropdown's box, never out of
+                // the window's render node. The flag decides which subject this shot records, so exactly one branch
+                // of this pair ever runs.
                 let button = crate::snapshot_effect_menu::effect_button();
                 if let Err(err) = crate::snapshot_effect_menu::write_png(&button, &out) {
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
-                let page_out = out.with_extension("window.png");
+                let page_out = out.with_extension("page.png");
                 if let Err(err) = write_png(&painted, &page_out) {
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
-            } else if let Err(err) = write_png(&painted, &out) {
+            } else if let Err(err) = write_png(&painted, &page_out) {
                 eprintln!("snapshot: {err}");
                 OUT.with(|e| *e.borrow_mut() = Some(err));
+            }
+            // A subject staged into its own file (the lane at 1240 px, the framed preview) takes the ASKED name,
+            // because that file IS what the spec drew; the window shot above moves beside it. It is a RENAME and
+            // not a second paint: staging drew it through the program's own painter (`cut_tracks::paint_at`,
+            // `snapshot_preview_frame::write_png`) from the cut the widgets were seeded with, so painting it again
+            // here would be a second answer to one question.
+            if let Some(sidecar) = crate::snapshot_subjects::subject_sidecar(&screen_for_frame) {
+                // The rename is only this screen's business: staging wrote the sidecar for every Cut-page shot, and
+                // on those the window already holds the asked name -- renaming over it would replace the page with
+                // a strip. `page_out != out` is exactly "a subject took the asked name here".
+                let staged = out.with_extension(format!("{sidecar}.png"));
+                if page_out == out {
+                    // Ordinary page screen: nothing to move; the sidecar stays beside the shot under its own name.
+                } else if let Err(err) = std::fs::rename(&staged, &out) {
+                    eprintln!("snapshot: the {sidecar} image could not take {}: {err}", out.display());
+                    OUT.with(|e| *e.borrow_mut() = Some(format!("{sidecar}: {err}")));
+                }
             }
             if menu_only && !menu_subject {
                 // Staged by another screen (the flag is set from staging, not by name): the six labelled rows go
