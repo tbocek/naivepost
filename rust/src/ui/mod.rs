@@ -31,6 +31,9 @@ pub mod log_level;
 /// §1 badge **4** — the header's project name/path and the three stages it narrows through.
 pub mod header_title;
 pub mod log_paint;
+/// Which words in a log line name a path, and where each points: §1's "every path the log names is a link
+/// to it", as arithmetic with no widget and no session folder in sight. `log_link` marks and opens.
+pub mod log_paths;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_confirm;
 pub mod produce_page;
