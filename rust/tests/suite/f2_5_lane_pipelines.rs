@@ -53,7 +53,8 @@ impl Stage {
         common::write_script(
             &player,
             format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\ntrap 'exit 0' TERM INT\ni=0; while [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done\n",
+                "#!/bin/sh\n: > '{}'\nprintf '%s\\n' \"$@\" > '{}'\ntrap 'exit 0' TERM INT\ni=0; while [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done\n",
+                root.join("lane-started").display(),
                 root.join("lane-argv.txt").display()
             ),
         )
@@ -91,6 +92,13 @@ impl Stage {
     fn argv_once(&self) -> Option<Vec<String>> {
         let text = std::fs::read_to_string(self.root.join("lane-argv.txt")).ok()?;
         Some(text.lines().map(str::to_string).collect())
+    }
+
+    /// The fake player's own "I started" mark, written before it touches the argv log. Unlike that log it is
+    /// never re-written, so one stage can tell its own child from a lane an earlier test left alive under the
+    /// same name in the process-wide pid table.
+    fn started(&self) -> bool {
+        self.root.join("lane-started").exists()
     }
 }
 
@@ -385,8 +393,12 @@ fn f2_5_s2_the_footages_own_sound_moves_by_property_not_by_stopping() {
 #[test]
 fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
     let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let stage = Stage::new("s1", &["tick-mic.wav"]);
-    let name = "tick-mic.wav";
+    // A name no other test in this binary uses, staged under that same name: `lane_pid` answers for the
+    // process-wide table, so a lane an earlier test left stopping under a shared name could satisfy the pid
+    // wait below without ever having written THIS stage's argv (and an unstaged name would make `lane_file`
+    // refuse the start outright).
+    let name = "tick-mic-s1.wav";
+    let stage = Stage::new("s1", &[name]);
     let mic = lane(name);
     let segs = [Seg { s: 30.0, e: 40.0, ..Default::default() }];
     // The scene hears the lane, so the mix for the second the line reaches (38.1) is a Seek at the lane's
@@ -414,8 +426,10 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
     // The pid is remembered the instant `spawn` returns, so this is not a wait for the child: it is the one tick
     // that lets a lane an earlier test in this binary left behind settle its stop (`stop_lane` signals and
     // forgets without waiting for the process to die). A live entry under another name is what made this assert
-    // flake on a loaded machine.
-    common::wait_until("the tick to start the lane's player", || lane_hear::lane_pid(name).is_some());
+    // flake on a loaded machine — so the wait also accepts THIS stage's own marker, which only its child writes.
+    common::wait_until("the tick to start the lane's player", || {
+        lane_hear::lane_pid(name).is_some() || stage.started()
+    });
     let argv = stage.argv().expect("the tick started the lane's player");
     assert_eq!(
         argv.get(2).map(String::as_str),

@@ -115,6 +115,48 @@ fn video_card(dir: &Path) -> std::path::PathBuf {
     path
 }
 
+/// A card that brings a sound of its own: a VIDEO file with an audio stream, written into the shot's own session
+/// folder. §S4's tick is drawn only "when there is a sound to answer for", and `cut_insert::sound_open` refuses
+/// it outright for a bare audio file (`Kind::Audio`) or a LANE — so the file must be video-shaped AND decodable,
+/// which is what ffmpeg can build here from a silent WAV. The door asks the FILE with ffprobe
+/// (`window_insert::file_has_sound`), so a stub of bytes answers "no sound" and no tick appears.
+fn sound_card(dir: &Path) -> std::path::PathBuf {
+    let assets = dir.join("assets");
+    let _ = std::fs::create_dir_all(&assets);
+    let wav = assets.join("sting-src.wav");
+    // Rewritten every run so an older, shorter copy cannot survive into the shot.
+    if crate::snapshot::write_silence_wav(&wav, 8000, 8000 * 3).is_err() {
+        std::fs::write(&wav, b"staged silent sting").expect("a staged wav");
+    }
+    let path = assets.join("sting-card.mp4");
+    if !path.is_file() {
+        let _ = crate::subprocess::run(
+            "ffmpeg",
+            &[
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=320x240:d=3:r=10",
+                "-i",
+                &wav.to_string_lossy(),
+                "-shortest",
+                "-pix_fmt",
+                "yuv420p",
+                &path.to_string_lossy(),
+            ],
+            |_| {},
+        );
+    }
+    if path.is_file() {
+        path
+    } else {
+        // No ffmpeg on this machine: fall back to the bare WAV. The form still opens on it; only the tick is
+        // then absent, because §S4 answers nothing for a file that is all sound.
+        wav
+    }
+}
+
 /// A card with a moving moment of its own, written next to the seeded badges. §5's "card length = last moving
 /// moment, offered as the insert's length" is what this stage shows: `insert_chosen_with_length` asked with no
 /// length answers it from the FILE, because ffprobe reads an SVG as one frame and cannot. The animation ends at
@@ -225,9 +267,11 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     said.push(ui::close_insert_form(window));
     ui::seed_review_cut(window, &staged);
 
-    // 4. §5's own length: the SAME card as stage 1, but asked with no length, so nothing but the file can say how
-    // long it runs. Its Seconds entry reads 1.6 -- the animation's last moving moment -- where every stage above
-    // was handed an explicit number, and the log line says both that number and the default it beat.
+    // 4. §5's own length AND §S4's sound tick: the SAME card as stage 1 asked with no length (nothing but the
+    // file can say how long it runs -- its Seconds entry reads 1.6, the animation's last moving moment, where
+    // every stage above was handed an explicit number), then re-opened on a card that BRINGS A SOUND so the tick
+    // row is drawn with §S4's spliced sentence. The form this last press leaves open is what `05-insert-form`
+    // paints, so nothing after it closes it.
     ui::seed_review_cut(window, &staged);
     ui::note_place(true);
     ui::clear_selection(window);
@@ -241,6 +285,19 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
         shown,
         cut_insert::DEFAULT_SECONDS
     ));
+    // The tick-bearing form: same line, same BETWEEN mode, a file with an audio stream of its own. Found the
+    // way every other widget in this shot is found — under THIS window's own drawing holder, because one
+    // unscoped name exists once per tab and a tree-wide walk can land on another tab's empty box.
+    ui::set_line_position(window, LinePos { t: 15.0 });
+    let stung = ui::insert_chosen_with_length(window, &sound_card(dir), 15.0, Some(3.0));
+    let tick_drawn = crate::ui::window::find_widget_by_name(window.upcast_ref(), "insert-sound-tick").is_some();
+    // The shot's own proof: the tick is on screen or it is not, and a missing one says so in the log rather
+    // than leaving a screenshot to be read for it.
+    assert!(
+        tick_drawn,
+        "\u{a7}S4's sound tick was not drawn for a card that brings a sound of its own"
+    );
+    said.push(format!("{stung}; sound tick drawn"));
 
     // The form this stage drew is what `05-insert-form` paints (§G's whole form column: the declared field, the
     // three radios, the Seconds entry at the card's own second, Cancel + Insert it), so it stays open here and

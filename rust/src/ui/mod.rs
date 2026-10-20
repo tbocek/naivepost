@@ -170,9 +170,6 @@ pub mod cut_band_rows;
 /// F2.7: the page's half of Add / Split / Remove / ⌦ — the four doors, what each writes, the snap-list
 /// gather and the ✕ dispatch. Split out of `window.rs`, which is past its size budget.
 pub mod cut_verb_press;
-/// F2.12 Insert — the page's half: ⧉ Insert's door, the chooser, the form and Apply. Split out of
-/// `window.rs`, which is past its size budget.
-mod cut_insert_form;
 /// §05-cut#1-screen — the effects lane's rows, their CSS and the preview panel redrawn from them. Split out
 /// of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
 mod cut_lane_rows;
@@ -410,7 +407,7 @@ pub use window::review_cuts_button;
 pub use window::seed_review_cut;
 /// F2.7: the write-to-cut.json door, so a check can start from a file on disk (every editing press already
 /// uses it; this only makes it reachable from outside `ui`).
-pub use cut_insert_form::save_seed_for_test;
+pub use window_insert::save_seed_for_test;
 pub use window::play_recording_button;
 pub use window::set_preview_volume;
 pub use window::preview_volume;
@@ -470,10 +467,11 @@ pub use window::delete_key_controller;
 pub use window::line_click_gesture;
 pub use window::held_effect;
 // F2.12: the insert button's wire, the form's seams and its read-back for tests.
-pub use cut_insert_form::{
-    close_insert_form, insert_chosen, insert_chosen_with_length, insert_open, note_place,
-    press_insert, press_insert_apply, refresh_insert_button,
+pub use window_insert::{
+    close_insert_form, insert_chosen, insert_chosen_with_length, insert_open, place_known,
+    press_insert, press_insert_apply, refresh_insert_button, visible_insert_form,
 };
+pub use window::note_place;
 pub use window::press_effect_item;
 pub use window::press_zoom;
 pub use window::press_zoom_item;

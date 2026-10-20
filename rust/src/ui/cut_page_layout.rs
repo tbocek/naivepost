@@ -115,8 +115,10 @@ const IDLE_ROWS_MIN_HEIGHT: i32 = 200;
 /// The width §1's reading column asks for before the preview starts losing pixels to it.
 pub const FORM_COLUMN_MIN_W: i32 = 300;
 /// … and the height band the scroller between the pinned heading and footer is sized to. Left uncapped
-/// it asked for the whole page's height, which is what pushed the tracks ~750 px below the preview.
-const IDLE_ROWS_CAP_H: i32 = 460;
+/// it asked for the whole page's height, which is what pushed the tracks ~750 px below the preview. Measured
+/// on `05-insert-form`: at 460 the form body filled the frame and its footer ("Insert it" + "Cancel") fell
+/// below the painted window; 300 keeps heading, body and footer all on screen.
+const IDLE_ROWS_CAP_H: i32 = 300;
 
 /// Re-order the Cut page's children into §A's shape. Called once, at the end of `window.rs`'s Cut
 /// arm, after every part has been built. A name that is absent (a page built without that part) is

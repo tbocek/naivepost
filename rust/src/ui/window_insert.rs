@@ -208,7 +208,11 @@ pub(crate) fn show_insert_form(
     cancel.set_widget_name("insert-cancel-button");
     buttons.append(&apply);
     buttons.append(&cancel);
-    holder.append(&buttons);
+    // §05#1's PINNED footer, not the end of the scrolling body: a footer inside `cut-form-scroller` fell
+    // below the painted frame and the step that places the insert was never on screen.
+    cut_form_frame::set_footer(window, Some(&buttons));
+    // §S4: the form replaces the idle readings while it is open.
+    cut_form_frame::set_readings(window, false);
 
     INSERT_OPEN.with(|cell| {
         *cell.borrow_mut() = Some(InsertOpen {
@@ -292,6 +296,9 @@ pub fn close_insert_form(window: &adw::ApplicationWindow) -> String {
     if let Some(holder) = insert_form_box(window) {
         holder.set_visible(false);
     }
+    // The pinned parts go back the way they came: no buttons in the footer, the idle readings visible again.
+    cut_form_frame::set_footer(window, None);
+    cut_form_frame::set_readings(window, true);
     "the insert was cancelled".to_string()
 }
 
@@ -357,6 +364,8 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
             if let Some(holder) = insert_form_box(window) {
                 holder.set_visible(false);
             }
+            cut_form_frame::set_footer(window, None);
+            cut_form_frame::set_readings(window, true);
             match said {
                 // The card's own note first: what the parameters did, then where the card landed.
                 Some(note) => format!("{note} \u{2014} {}", placed.status),
@@ -495,13 +504,29 @@ pub fn insert_chosen_with_length(
     // against. `None` — a still, an unreadable file, a machine with no ffprobe — falls back to
     // `P.policy.insertDefaultSeconds`, which is the whole point of the fallback rather than a failure.
     let probed = crate::ui::cut_card_preview::probe_card_seconds(window, &raw);
+    // S4's first tick question — "does the FILE bring a sound of its own?" — is a fact about the file, so it is
+    // measured with the same probe §4's track menu measures its stream count with. A missing tool or an
+    // unparsable answer reads as no sound, which is what `audio_streams` already decides for a row's menu.
+    let file_has_sound = file_has_sound(&raw);
+    // §S4's tick is a question about SOUND, and an audio file IS all sound: `sound_open` reads the two flags as
+    // "does anything have to be answered for", so a bare WAV must arrive with its own flag set or the door
+    // answers nothing (which is what `Kind::Audio` alone cannot say on its own).
+    let carries_sound = file_has_sound || cut_insert::kind(&raw) == cut_insert::Kind::Audio;
     // S3's order: a selection's seconds beat the file's, and the file's beat the default. For a card "the file's
     // own length" is its last moving moment (§5), which no probe can answer — ffprobe reads an SVG as one frame.
     // `offer_seconds` is that door; it reads the document only when there is nothing else to ask.
     let file_seconds = file_seconds
         .or(probed)
         .or_else(|| crate::produce_cards::offer_seconds(&raw));
-    let plan = cut_insert::form_plan(&raw, band.as_ref(), file_seconds, animated, false, false, false);
+    let plan = cut_insert::form_plan(
+        &raw,
+        band.as_ref(),
+        file_seconds,
+        animated,
+        false,
+        carries_sound,
+        false,
+    );
     // The card's holes are read off the document; a non-SVG gets no fields and the door ignores the argument.
     let mut fields: Vec<cut_insert::Field> = Vec::new();
     if plan.kind == cut_insert::Kind::Svg {
@@ -525,6 +550,19 @@ pub fn insert_chosen_with_length(
         plan.seconds,
         mode_word(plan.mode)
     )
+}
+
+/// Whether the file brings a sound of its own (§S4's tick question). ffprobe through the project's own leg,
+/// so the command reaches the log like every other tool call; any failure reads as "no sound", which is the
+/// same reading §4 gives a source row whose probe fails.
+fn file_has_sound(path: &str) -> bool {
+    let ffprobe = crate::services::ffprobe_for("", crate::ui::cut_card_preview::FFPROBE);
+    let asked = ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path];
+    let answer = crate::source_probe::run_ffprobe(&ffprobe, &asked).unwrap_or_default();
+    // One line per audio stream (`csv=p=0`), so a non-empty answer is the file's own sound. Parsed here rather
+    // than through `source_probe::audio_streams`, which asks for JSON and fails on an older ffprobe that prints
+    // no `streams` object at all — a silent failure would hide §S4's tick from every machine but this one.
+    !answer.trim().is_empty()
 }
 
 /// Whether an SVG animates, read off the document: a `@keyframes` block or an `<animate>` tag. An SVG with
@@ -568,7 +606,7 @@ pub fn refresh_insert_button(window: &adw::ApplicationWindow) {
 /// Whether this session has been told where its red line stands. Read back by
 /// [`refresh_insert_button`] and by [`press_insert`]: `false` is a page that has never had a line placed,
 /// which is what makes S1's refusal reachable.
-pub(crate) fn place_known() -> bool {
+pub fn place_known() -> bool {
     ui::INSERT_PLACE_KNOWN.with(|cell| cell.borrow().unwrap_or(false))
 }
 
