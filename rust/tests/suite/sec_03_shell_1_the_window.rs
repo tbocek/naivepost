@@ -5,7 +5,8 @@
 //! greyed-not-disabled tab, a read-only monospace log body). What this file newly pins, because it was
 //! NOT true before this round, is: the window's TITLE, the header's project name/path with its three
 //! narrowing stages, the log drawing the MESSAGE alone with the level as a colour, and the page and the
-//! bottom bar being two halves of a draggable `gtk::Paned`.
+//! bottom bar being two halves of a draggable `gtk::Paned`. Its minimum size (1240×900, opened at and never
+//! smaller, with nothing scrolling as a whole at it) is `tests/suite/window_shrinks.rs`.
 //!
 //! Shape follows `sec05_live_log_link.rs` / `switch_tab_widgets.rs`: GTK comes up once per binary
 //! inside ONE `adw::Application::run_with_args`, and every widget scenario runs inside that one
@@ -47,15 +48,14 @@ fn window(app: &adw::Application, page: &str) -> adw::ApplicationWindow {
     release_last_window();
     let model = naivepost::project::load(&fixture_dir()).expect("the snapshot fixture loads");
     let window = ui::build_window(app, &model, page);
-    window.set_default_size(1240, 740);
+    window.set_default_size(shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
     window.present();
     hold_last_window(window.clone());
     settle();
     window
 }
 
-/// S1: "One window, title \"Naivepost\", default 1240×740." The floor (shrinkable to 1024×640 or less
-/// on every tab) is `tests/suite/window_shrinks.rs`'s measurement; this is the other half of the line.
+/// §1's own picture of this window is `spec/img/03-window.png`, shot at the minimum size.
 fn s1_title_and_default_size(app: &adw::Application) {
     let window = window(app, "Prepare");
     assert_eq!(
@@ -65,8 +65,18 @@ fn s1_title_and_default_size(app: &adw::Application) {
     );
     assert_eq!(
         (window.default_width(), window.default_height()),
-        (1240, 740),
-        "§1: 1240×740 is the size it OPENS at, not a floor"
+        (shell::WINDOW_MIN_W, shell::WINDOW_MIN_H),
+        "§1: 1240×900 is the size it OPENS at"
+    );
+    // …and its FLOOR: `build_window` requests that size, so the window manager cannot take the shell below
+    // it. Measured on the window itself, which is what the WM reads; no page may push it higher either.
+    assert_eq!(
+        (
+            window.measure(gtk::Orientation::Horizontal, -1).0,
+            window.measure(gtk::Orientation::Vertical, -1).0
+        ),
+        (shell::WINDOW_MIN_W, shell::WINDOW_MIN_H),
+        "§1: the window 'cannot be made smaller' than 1240×900"
     );
     window.close();
 }

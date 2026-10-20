@@ -24,7 +24,9 @@ use crate::cut_trim;
 use crate::prepare;
 
 /// The height a page's own scroller offers before its content scrolls (§1's draggable divider: the page
-/// half can be dragged down to this and no further; below it the page would be unreadable).
+/// half can be dragged down to this and no further; below it the page would be unreadable). At §1's
+/// minimum the pages fit their band outright, so this decides only how far the shell's divider may be
+/// dragged onto the page before the page starts scrolling inside what is left.
 pub(crate) const PAGE_MIN_H: i32 = 360;
 
 /// §1's Prepare split, opened at half: half of the 1240 px window §1 opens at, less the page's own
@@ -35,6 +37,10 @@ pub(crate) const PREPARE_HALF_PX: i32 = 596;
 /// The shortest band the sources list may be squeezed into before its own scrollbar appears (§1:
 /// the list scrolls while the add row above and the Freq row below stay put).
 pub(crate) const SOURCES_MIN_H: i32 = 120;
+
+/// The tallest the User Context paragraph may stand at before it scrolls inside itself (§1: the page fits
+/// §1's minimum window height with nothing scrolling as a whole; two or three lines carry the note).
+const CONTEXT_MAX_H: i32 = 64;
 use crate::project::Project;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
@@ -67,9 +73,25 @@ pub(crate) fn page_box(
     // 968 px tall, which is why the shell could not be shrunk (`tests/suite/window_shrinks.rs`). §1 wants "the
     // page and bottom bar [as] two halves of a draggable divider": the divider can only give the page
     // less room if the page can scroll inside what it is given.
+    //
+    // At §1's MINIMUM size this scroller has nothing to scroll — `window_shrinks.rs` measures zero travel on
+    // every tab — so it is no longer the thing that keeps the window shrinkable; each part whose content can
+    // outgrow its band (the sources list, the prompt bench, the Cut form column, Produce's settings grid,
+    // Narrate's line rows) carries its own scroller for that. It stays because a person who drags the
+    // shell's divider down onto the page still gets a readable page instead of crushed widgets, and because
+    // `src/snapshot_rows.rs` drives it to shoot rows that sit below the painted band.
     let page_scroller = gtk::ScrolledWindow::new();
     page_scroller.set_widget_name(&format!("page-scroll-{page}"));
-    page_scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    // The vertical bar is `never`, not `automatic`: an automatic bar lets a scroller answer a 0 px minimum
+    // height, which is what used to hide a page taller than the window — it scrolled as a whole behind the
+    // shell's back. §1 fixes the window's MINIMUM at the size every page fits (§10's window row), so no page
+    // may be taller than the band it is given; if one is, it now overflows visibly and
+    // `tests/suite/window_shrinks.rs` measures the fact (zero travel on every tab).
+    //
+    // The HORIZONTAL policy stays `automatic` and is set below together with its own rule: the pages' two-
+    // column paneds hand a narrow column a width smaller than some rows ask for, and those parts scroll
+    // sideways inside themselves. That axis never hid a whole-page overflow, so it keeps its behaviour.
+    page_scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
     // The page keeps a usable height band rather than collapsing to nothing beside a huge log.
     page_scroller.set_min_content_height(PAGE_MIN_H);
     // Width too: without it the scroller reports a 0 px natural width and its child is laid out at
@@ -81,7 +103,7 @@ pub(crate) fn page_box(
     page_scroller.set_hscrollbar_policy(gtk::PolicyType::Never);
     // `propagate_natural_width` was tried and REMOVED: it makes the scroller report the page's full
     // natural width as its own minimum, which is exactly what `tests/suite/window_shrinks.rs` forbids
-    // (every page must let the window down to 1024x640). The page fits its width because the parts that
+    // (the window may never be pushed wider than §1's 1240 px minimum). The page fits its width because the parts that
     // could overflow scroll inside themselves — the sources list, the bench box, the Cut tool groups.
     page_scroller.set_child(Some(&box_));
     box_.set_margin_start(24);    box_.set_margin_end(24);
@@ -174,6 +196,11 @@ pub(crate) fn page_box(
         // choices from a list rather than free text — an interval off the stops would be sent to the
         // model as a claim about frames that were never picked.
         left.append(&frame_controls(session));
+        // §1's minimum window height has to hold the whole page, so the column ends with a spacer that takes
+        // any height left over instead of letting the list stretch past the band.
+        let left_filler = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        left_filler.set_vexpand(true);
+        left.append(&left_filler);
         // Same as the right column: the Paned's child claims the width, not the widgets inside it.
         left.set_hexpand(true);
         left.set_hexpand_set(true);
@@ -197,7 +224,7 @@ pub(crate) fn page_box(
 
         // The divider itself. `shrink_*_child(true)` on BOTH halves is what keeps the window
         // shrinkable: a Paned that refuses to shrink forces each column's own minimum width on the
-        // window, and §1 lets the window down to 1024 px wide.
+        // window, and §1's minimum makes 1240 px the narrowest the window can ever be.
         let split = gtk::Paned::new(gtk::Orientation::Horizontal);
         split.set_widget_name("prepare-split");
         split.set_wide_handle(false);
@@ -211,6 +238,11 @@ pub(crate) fn page_box(
         split.set_start_child(Some(&left));
         split.set_end_child(Some(&right));
         box_.append(&split);
+        // §1: at the window's minimum size every control a page names is on screen and NOTHING scrolls as a
+        // whole. The two columns above have their own scrollers (the sources list, the prompt bench), so the
+        // split itself must be the part that takes the leftover height — without this GTK settles it at the
+        // columns' natural heights and Prepare overflowed its band by ~200 px.
+        split.set_vexpand(true);
         split.set_position(PREPARE_HALF_PX);
 
         prepare = Some((add_, copy_));
@@ -220,18 +252,34 @@ pub(crate) fn page_box(
     context.set_wrap(true);
     context.set_xalign(0.0);
     context.add_css_class("body");
-    box_.append(&context);
+    // §1's minimum size is the size every page fits, so a page must not grow past the band it is given:
+    // this paragraph scrolls inside its own box instead of pushing everything below it down the column
+    // (a long User Context once made Prepare taller than §1's 900 px and the whole page scrolled).
+    let context_box = gtk::ScrolledWindow::new();
+    context_box.set_widget_name("context-scroll");
+    context_box.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    context_box.set_propagate_natural_height(true);
+    context_box.set_max_content_height(CONTEXT_MAX_H);
+    context_box.set_child(Some(&context));
+    box_.append(&context_box);
 
     // §07-narrate#1-screen: the Narrate page is one surface built by its own module, appended where
     // every other page puts its content. Its handlers go on in `build_window`, after `set_content`.
     if page == Page::Narrate.label() {
-        box_.append(&crate::ui::narrate_page::build());
+        let narrate = crate::ui::narrate_page::build();
+        // Same as Produce: the page's split is its whole content and must take the band's leftover height.
+        narrate.set_vexpand(true);
+        box_.append(&narrate);
     }
 
     // §08-produce#1-screen: like Narrate, the Produce page is one surface from its own module, so the
     // tab holds §A's fifteen widgets rather than a stub.
     if page == Page::Produce.label() {
-        box_.append(&crate::ui::produce_page::build());
+        let produce = crate::ui::produce_page::build();
+        // The split is the whole Produce page, so it must take the band's leftover height; without this GTK
+        // settles it at the two columns' natural heights and the shot showed empty plate under them.
+        produce.set_vexpand(true);
+        box_.append(&produce);
     }
 
 
@@ -247,13 +295,19 @@ pub(crate) fn page_box(
         // grouped rather than stacked, and that the groups the earlier rounds had not reached (effects,
         // history, zoom) are now on the page at all.
         //
-        // The six groups sit in ONE row — §A's single bar. Each group scrolls inside itself when the bar
-        // is narrower than the group (see `cut_tool_group`), so the row no longer pins the window's width;
-        // measured with `tests/suite/window_shrinks.rs`, an unscaled row of these groups asked for 2709 px and
+        // The six groups sit in ONE row — §A's single bar. Each group fills its share of the bar and
+        // scrolls inside itself when the bar is narrower than the group (see `cut_tool_group`), so the
+        // row no longer pins the window's width; measured with `tests/suite/window_shrinks.rs`, an
+        // unscaled row of these groups asked for 2709 px and
         // made the shell impossible to shrink.
         let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         toolbar.set_widget_name("cut-toolbar");
-        toolbar.set_halign(gtk::Align::Start);
+        // Fill, not Start: with `halign(Start)` the bar asked only for the sum of its groups and every
+        // pixel of the page beside it was dead plate (measured: a 1200 px window left a whole
+        // `group-zoom` of empty plate after the bar). With Fill the slack lands inside the groups,
+        // which is where §1 wants it: the verb buttons stay on the bar instead of past its edge.
+        toolbar.set_halign(gtk::Align::Fill);
+        toolbar.set_hexpand(true);
         // Each group is appended straight onto the bar; `put_group` names the step so the six calls below
         // read as one list.
         let put_group = { |group: gtk::Box| toolbar.append(&group) };
@@ -599,7 +653,15 @@ pub(crate) fn page_box(
 pub(crate) fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insensitive: bool) -> gtk::Box {
     let group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     group.set_widget_name(&format!("group-{name}"));
-    group.set_halign(gtk::Align::Start);
+    // Fill + hexpand, not `halign(Start)`: the bar distributes its slack over the six groups, and a group
+    // pinned to its start put every spare pixel AFTER its own buttons, so the row finished ~35 px short of
+    // the bar's right edge (measured at 1260 px: `group-zoom` ended at 1236 with dead plate after it).
+    // The inner `ScrolledWindow` (a `GtkScrollable`, which stretches its content) keeps that slack OUT of
+    // the buttons themselves, so each control keeps its natural width inside whatever share it is given.
+    group.set_halign(gtk::Align::Fill);
+    // Each group gets a share of the bar's slack, and its own scroll thumb appears only when the bar is
+    // narrower than the group (the shrink case `tests/suite/window_shrinks.rs` measures).
+    group.set_hexpand(true);
     // The group's controls sit in one inner row rather than directly on the named box. That row is what
     // gets scrolled when the bar is narrower than the group (§A's own "as the window narrows" rule for
     // the header): a `gtk::Box` has no scrollbars of its own, so a group that asks for more width than it
@@ -617,6 +679,10 @@ pub(crate) fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insen
         row.append(&button);
     }
     let scroller = gtk::ScrolledWindow::new();
+    // ONE scrollbar policy for both axes: `Automatic` horizontally shows a thumb only when the row outgrows
+    // the share the bar gave the group, and `Never` vertically because a toolbar row never scrolls sideways
+    // into a second line. Asking for the natural width too (`propagate_natural_width`) is what lets a group
+    // the bar has room for take exactly what its buttons want instead of sitting under-wide.
     scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
     scroller.set_propagate_natural_width(true);
     scroller.set_child(Some(&row));

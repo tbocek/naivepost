@@ -196,7 +196,7 @@ fn check_the_button_wears_the_pause_label(app: &adw::Application) {
     let (window, _root) = cut_window(app, "label");
     let button = ui::play_recording_button(&window).expect("▶");
     assert!(
-        button.label().is_some_and(|l| l.contains("Play the recording")),
+        button.label().is_some_and(|l| l.starts_with('\u{25b6}')),
         "at rest it says ▶: {:?}",
         button.label()
     );
@@ -210,7 +210,7 @@ fn check_the_button_wears_the_pause_label(app: &adw::Application) {
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(
-        button.label().is_some_and(|l| l.contains("Play the recording")),
+        button.label().is_some_and(|l| l.starts_with('\u{25b6}')),
         "paused, it says ▶ again: {:?}",
         button.label()
     );

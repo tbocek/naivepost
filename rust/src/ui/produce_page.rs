@@ -243,6 +243,12 @@ to resize, the middle to move, and press its \u{270e} to reword or remove it.",
     let chips = gtk::Box::new(gtk::Orientation::Vertical, 2);
     chips.set_widget_name("thumbnail-word-chips");
     left.append(&chips);
+    // §1's Produce page must fit §1's minimum window height with nothing scrolling as a whole
+    // (`tests/suite/window_shrinks.rs` measures zero travel), so the column ends with a spacer that soaks up
+    // whatever height is left rather than letting the last box stretch past the band.
+    let filler = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    filler.set_vexpand(true);
+    left.append(&filler);
     left
 }
 
@@ -376,7 +382,7 @@ pub fn build() -> gtk::Widget {
     split.set_wide_handle(true);
     // §1: "split left and right by a draggable divider opened at HALF", not at 560 px. `shrink_*_child(true)`
     // on BOTH halves is what keeps the window shrinkable — a Paned that refuses to shrink forces each
-    // column's own minimum width on the window, and `tests/suite/window_shrinks.rs` pins the shell's 1024 px
+    // column's own minimum width on the window, and `tests/suite/window_shrinks.rs` pins the shell's 1240 px
     // floor (the same reason `prepare-split` does this).
     split.set_shrink_start_child(true);
     split.set_shrink_end_child(true);

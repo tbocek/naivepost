@@ -8,7 +8,7 @@
 //!
 //! Both halves shrink (`shrink_start_child` / `shrink_end_child`), which is what keeps the window's floor
 //! the pages' own minimum instead of the sum of the two — `tests/suite/window_shrinks.rs` measures that
-//! at 1024×640 or less on every tab. The page's own scroller is what stops the top half becoming
+//! at exactly §1's 1240×900 minimum on every tab. The page's own scroller is what stops the top half becoming
 //! unreadable when the handle is dragged down.
 
 use adw::prelude::*;

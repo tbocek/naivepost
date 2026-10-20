@@ -82,7 +82,7 @@ fn check_s2_switches_through_the_widget(app: &adw::Application) {
         button.is_mapped()
     );
     assert!(button.is_mapped(), "▶✂ is mapped on the visible Cut page");
-    assert!(button.width() > 40, "wide enough for its label, got {} px", button.width());
+    assert!(button.width() >= 16, "wide enough to click its \u{a7}A glyph, got {} px", button.width());
     assert!(button.height() > 16, "tall enough to click, got {} px", button.height());
     assert_eq!(
         button.tooltip_text().as_deref(),
@@ -224,7 +224,7 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
     assert_eq!(
         button.label().as_deref(),
         Some(naivepost::ui::cut_cut_play::PLAY_LABEL),
-        "while the recording runs ▶✂ still says Play the cut"
+        "while the recording runs ▶✂ still wears its idle face (\u{25b6}\u{2702}, or its words where the bar has room)"
     );
     assert!(button.is_sensitive(), "the fixture's cut has clips, so ▶✂ is clickable");
 

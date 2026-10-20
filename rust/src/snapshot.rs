@@ -647,10 +647,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // form is part of the Cut page and cannot be reparented out of it (GTK refuses a child that already
             // has a parent), so the PAGE must reach a readable width for its rows not to collapse. The stage ran
             // above, in the `05-insert` arm's own door -- which leaves THIS form open on purpose.
-            "05-insert-form" => {
-                window.set_default_size(760, 900);
-                None
-            }
+            "05-insert-form" => None,
             // §08's second image is the ✎ dialog, not the page behind it, so the dialog is the subject
             // here -- same reason `03-settings` paints its own window. Opened the way the chip opens it,
             // with the mark's own words already in the box.
@@ -842,46 +839,29 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             _ => None,
         };
         if subject.is_none() {
-            // Render-only: a snapshot window is never resized by a user, and the Cut page collapses into one
-            // unreadable narrow column when nothing asks for width. `05-cut` reaches a wide layout today only
-            // because its fold/camera-row refreshes happen to widen it; the `06-*` screens never do. A
+            // Render-only: a snapshot window is never resized by a user. §1 now says "Every screenshot is
+            // taken at the minimum size", and `build_window` opens at exactly that (1240×900), so the shell
+            // needs no ask of its own any more — what it still asks for is WIDER than the minimum, for screens
+            // whose subject is laid out along the page's width. A
             // default size before `present()` is enough to inspect the page -- no shell relayout.
             if screen_page(&screen) == Some("Cut") || screen_page(&screen) == Some("Narrate") {
-                // 1280x800 rather than the Cut page's 1240x900: at 900 the Narrate shot renders ~3000 px
-                // tall and every control reads as a hairline. This is closer to §1's own screenshot ratio.
-                // The two pass screens (`06-speeds`, `06-decorations`) are the exception, and this is the ONE
-                // place their width is asked for: their subject is an effects bar laid out along SECONDS, and in
-                // a narrow column two clips' worth of bars crowd into the leftmost tenth of the tape, where
-                // neither a colour nor a gap reads off the shot. So they keep 2400 instead of being pulled back.
-                // `05-insert-form` keeps its own smaller size, asked where its subject is chosen above.
+                // Wider than §1's minimum only for the three pass screens: their subject is an effects bar
+                // laid out along SECONDS, and in a 1240 px column two clips' worth of bars crowd into the
+                // leftmost tenth of the tape, where neither a colour nor a gap reads off the shot. The height
+                // is always §1's minimum — nothing shoots taller than the size §1 fixes.
                 let wide = matches!(screen.as_str(), "06-speeds" | "06-decorations" | "06-flows");
-                if screen != "05-insert-form" {
-                    window.set_default_size(if wide { 2400 } else { 1280 }, 800);
-                }
+                window.set_default_size(if wide { 2400 } else { 1280 }, crate::shell::WINDOW_MIN_H);
             }
-            // §04-prepare#1-screen: the Prepare page is TWO COLUMNS side by side behind a draggable
-            // divider opened at half. Headless the window is never resized, so without a request it gets its
-            // minimum width and each Paned half gets a sliver — the shot then shows a bench cut off mid-word
-            // while the reference (`spec/img/04-prepare.png`) is the full 1240x740 window §1 opens at.
-            // Asking for §1's own default size is what makes the two pictures comparable.
-            if screen_page(&screen) == Some("Prepare") {
-                window.set_default_size(1240, 740);
-            }
-            // §08-produce#1-screen: the same reason. The page is TWO COLUMNS behind a divider opened at half
-            // and its right column stacks a title, an eight-line description and five lines of encoder pairs,
-            // so headless it renders into a window that shows none of it — `spec/img/08-produce.png` is the full
-            // window §1 opens at, and only a comparable one shows both columns and every setting row.
-            if screen_page(&screen) == Some("Produce") {
-                window.set_default_size(1280, 980);
-                // …and the shell's own page/bottom-bar divider opened further down than its 480 px opening.
-                // The Produce page's right column is title + eight-line description + five lines of encoder
-                // pairs, well over that band, and `page-scroll-Produce` shrinks rather than grows, so at the
-                // default opening the shot cut off at the first encoder row. Headless nothing drags this
-                // divider, so asking here is how the shot gets the whole page §1 describes.
-                if let Some(main_divider) = ui::find_source_widget(&window, "main-divider")
+            if subject.is_none() {
+                // The shell's own page/bottom-bar divider, opened to what §1's minimum leaves the page after
+                // the header, the run bar row and an open log band. Left at its 480 px opening the bottom half
+                // keeps a share the page then does not need, and headless nothing drags this handle — so asking
+                // here is how the shot gets the split a person would leave it at. `snapshot_rows::stage` moves
+                // it again for the two screens whose subject sits at the very bottom of the Cut page.
+                if let Some(divider) = ui::find_source_widget(&window, "main-divider")
                     .and_then(|w| w.downcast::<gtk::Paned>().ok())
                 {
-                    main_divider.set_position(860);
+                    divider.set_position(crate::shell::PAGE_BAND_PX);
                 }
             }
             window.present();
@@ -1101,6 +1081,17 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         let out = out.clone();
         let app = app.clone();
         let face_out = face_out.clone();
+        // §1: "Every screenshot is taken at the minimum size." Headless GTK clamps a window to its own
+        // content's minimum and never honours a smaller ask after the map, so the only way the PNG comes out
+        // at 1240×900 (or at the one wider width some screens above ask for) is to clamp it here, once the
+        // layout has settled and just before the pixels are taken. Screens whose subject is a dialog of their
+        // own (`subject` is not the shell) keep that dialog's size.
+        if subject.is_none() {
+            let want_w = window.default_width().max(crate::shell::WINDOW_MIN_W);
+            window.set_size_request(want_w, crate::shell::WINDOW_MIN_H);
+            window.set_default_size(want_w, crate::shell::WINDOW_MIN_H);
+            crate::snapshot_face::pump_context(32);
+        }
         // One more cycle after the map: the map happens before the first frame is drawn. The paint
         // and the quit are synchronous here, so no second mapped window is ever waited on.
         glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {

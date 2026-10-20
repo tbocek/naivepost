@@ -17,12 +17,15 @@ use crate::ui::window_insert::place_known;
 use crate::ui::window_selection::{clear_selection, nudge_held_effect};
 use crate::ui::window_trim_strip::note_place;
 
-/// `line-step-back-five` reads as "five" while saying nothing about which way.
+/// `line-step-back-five` reads as "five" while saying nothing about which way. The label is §A group 1's
+/// glyph and the sentence lives in the tooltip (`cut_screen::FRAME_TIP`), because these four share ONE row
+/// with fifteen other controls: at a 1260 px window the words cost ~600 px, which is what pushed Copy,
+/// Paste, Insert and Lane (§1 items **13**-**16**) inside their group's scroller and off the visible bar.
 pub(crate) const LINE_STEP_BUTTONS: [(&str, &str, i64); 4] = [
-    ("line-step-back-five", "\u{2039}\u{2039} f  step back 5 frames", -5),
-    ("line-step-back", "\u{2039} f  step back 1 frame", -1),
-    ("line-step-forward", "f \u{203a}  step forward 1 frame", 1),
-    ("line-step-forward-five", "f \u{203a}\u{203a}  step forward 5 frames", 5),
+    ("line-step-back-five", "\u{2039}\u{2039} f", -5),
+    ("line-step-back", "\u{2039} f", -1),
+    ("line-step-forward", "f \u{203a}", 1),
+    ("line-step-forward-five", "f \u{203a}\u{203a}", 5),
 ];
 
 /// The reason ▶ had nothing to play. Spec silent on a session with no filmed stretch; §0 asks for a

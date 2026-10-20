@@ -147,9 +147,12 @@ pub struct UiState {
 pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &str) -> adw::ApplicationWindow {
 
     let window = adw::ApplicationWindow::new(app);
-    // spec/03-shell.md §1: "One window, title Naivepost, default 1240×740" — the size the window opens
-    // at, not a floor (the content's own minimum is what limits shrinking; see tests/suite/window_shrinks.rs).
-    window.set_default_size(1240, 740);
+    // spec/03-shell.md §1: "Its minimum size is 1240×900: it opens at that size and cannot be made
+    // smaller." The default is that size, and the size REQUEST is what makes it a floor: GTK 4 refuses to
+    // shrink a window under its own minimum, so `set_size_request` here is the whole of "cannot be made
+    // smaller" (`tests/suite/window_shrinks.rs` measures that no page pushes it higher).
+    window.set_default_size(crate::shell::WINDOW_MIN_W, crate::shell::WINDOW_MIN_H);
+    window.set_size_request(crate::shell::WINDOW_MIN_W, crate::shell::WINDOW_MIN_H);
     // §1's other half of that sentence: "One window, title \"Naivepost\"". Without it GTK titles the
     // window from the application id, which read "naivepost" in the title bar and the task switcher.
     window.set_title(Some(crate::shell::WINDOW_TITLE));

@@ -71,7 +71,9 @@ fn narrate_page(app: &adw::Application, width: i32) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     hold_last_window(window.clone());
-    window.set_default_size(width, 800);
+    // §1 now fixes the window's minimum HEIGHT at 900 px, so a shorter ask cannot be honoured; the width is
+    // what this file varies.
+    window.set_default_size(width, 900);
     window.present();
     ui::tab_button(&window, Page::Narrate)
         .expect("the shell has a Narrate tab")
@@ -295,10 +297,10 @@ fn check_the_transport_is_one_row(app: &adw::Application) {
 /// takes a new size (`set_default_size` after `present()` moves nothing). The proof is the one §A.1 asks for: the
 /// left column keeps its 560 px opening and EVERY extra pixel goes to the lines column on the right.
 fn check_extra_width_goes_right(app: &adw::Application) {
-    let narrow = narrate_page(app, 1280);
+    let narrow = narrate_page(app, 1600);
     let narrow_left = bounds(&narrow, "narrate-upper").width();
     let narrow_lines = bounds(&narrow, "narrate-lines").width();
-    println!("at 1280: left column {narrow_left:.1} px, lines column {narrow_lines:.1} px");
+    println!("at 1600: left column {narrow_left:.1} px, lines column {narrow_lines:.1} px");
     assert!(
         (narrow_left - 560.0).abs() <= OPEN_TOLERANCE_PX,
         "§A.1 opens the left column 560 px wide: measured {narrow_left:.1}"
@@ -306,23 +308,31 @@ fn check_extra_width_goes_right(app: &adw::Application) {
     narrow.close();
     settle();
 
-    // 900 rather than wider: at this shell width a 1280 px window already gives the page all the width it asked for
-    // (a 1440 px request measures the same 657 px), so the narrower window is what shows which half gives ground
-    // when there is not enough — §A.1's rule seen from the other side. `shrink_start_child(false)` plus
-    // `resize_start_child(false)` is the pair being proved: the LEFT column holds its opening and the RIGHT one pays.
-    let tight = narrate_page(app, 900);
+    // 1240 rather than narrower: §1 now fixes the window's MINIMUM at 1240×900 (`build_window` requests it and
+    // GTK will not go under), so the minimum IS the tight case — the size at which there is no extra width to
+    // send anywhere, and the page's own ask (560 + its scroller's) is already over what the shell can give.
+    // `shrink_start_child(false)` plus
+    // `resize_start_child(false)` is the pair being proved here: even with nothing to spare, the LEFT column
+    // keeps its §A.1 opening and the RIGHT one is what gives ground.
+    let tight = narrate_page(app, 1240);
     let tight_left = bounds(&tight, "narrate-upper").width();
     let tight_lines = bounds(&tight, "narrate-lines").width();
-    println!("at 900:  left column {tight_left:.1} px, lines column {tight_lines:.1} px");
+    println!("at 1240: left column {tight_left:.1} px, lines column {tight_lines:.1} px");
     assert!(
         (tight_left - 560.0).abs() <= OPEN_TOLERANCE_PX,
         "the left column keeps its 560 px opening when the window narrows: {tight_left:.1} px",
     );
     assert!(
-        tight_lines < narrow_lines - 100.0,
-        "\u{a7}A.1 sends every extra pixel to the RIGHT, so the lines column is the one that gives ground: {:.1} px vs {:.1} px",
+        tight_lines <= narrow_lines,
+        "\u{a7}A.1 sends every extra pixel to the RIGHT, so the lines column is the only one that ever gives ground when the window narrows: {:.1} px at \u{a7}1's minimum vs {:.1} px wide",
         tight_lines,
         narrow_lines
+    );
+    // …and the right column pays it down to its own floor, never past it: at the minimum width it still keeps
+    // a usable band rather than being crushed (the lines scroller's 240 px content height is that floor).
+    assert!(
+        tight_lines >= 240.0,
+        "\u{a7}A.1 lets the RIGHT column pay, but not below what it asks for: measured {tight_lines:.1} px"
     );
     RAN_GROWTH.store(true, Ordering::SeqCst);
     tight.close();

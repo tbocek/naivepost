@@ -1,11 +1,15 @@
-//! The window must be SHRINKABLE: a GTK4 window cannot go below its content's minimum size, so a
-//! single hard `set_size_request` anywhere in the tree pins the whole shell, and the user's complaint
-//! — "I cannot make the window smaller" — is exactly that floor meeting the screen. spec/03-shell.md §1
-//! gives the DEFAULT (1240×740); nothing in the spec gives a page the right to demand more than that.
+//! The window has a MINIMUM, not a shrink target: spec/03-shell.md §1 says "Its minimum size is 1240×900:
+//! it opens at that size and cannot be made smaller, and at that size every control and lane a page names
+//! is on screen at once. No page scrolls as a whole." A GTK4 window cannot go below its content's minimum
+//! size either, so a hard `set_size_request` in a PAGE would silently widen or lengthen the shell past the
+//! spec's number — which is what this measures now, together with the other half of the sentence: at the
+//! minimum the page's own scroller must have nothing left to scroll.
 //!
-//! So this measures what the user actually hits: the window's own minimum width and height on every
-//! page, plus the per-widget minimums that hold it there (printed with `--nocapture`, because when this
-//! fails the useful half of the message is WHICH widget pins the floor).
+//! So this prints, on every page: the window's own floor (must be EXACTLY §1's 1240×900 — no lower, since
+//! `build_window` requests it, and no higher, since no page may hold the shell open wider or taller), and
+//! the travel of `page-scroll-‹tab›` (zero means everything the page names is on screen at that size).
+//! Per-widget minimums are printed with `--nocapture`, because when this fails the useful half of the
+//! message is WHICH widget moved the floor.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -100,8 +104,20 @@ fn bottom_box(window: &adw::ApplicationWindow) -> gtk::Widget {
     find_run_row(window.upcast_ref()).expect("the shell has a run bar inside its bottom box")
 }
 
-/// The four tabs, each measured after being shown. Bounds: 1024×640, comfortably inside the spec's
-/// 1240×740 default — a window whose floor exceeded its own default size is the bug this test exists for.
+/// Travel left in the visible tab's own page scroller: `upper - page_size`. Zero means the whole page fits
+/// in what the shell gave it, which is §1's "every control and lane a page names is on screen at once";
+/// anything over it is page content sitting off-screen behind a scrollbar.
+fn page_travel(window: &adw::ApplicationWindow, page: Page) -> f64 {
+    let name = format!("page-scroll-{}", page.label());
+    let scroller = common::widget_in(window, &name)
+        .unwrap_or_else(|| panic!("the shell wraps {page:?}'s content in a named `{name}` scroller"))
+        .downcast::<gtk::ScrolledWindow>()
+        .expect("the page's wrapper is a gtk::ScrolledWindow");
+    let adjustment = scroller.vadjustment();
+    (adjustment.upper() - adjustment.page_size()).max(0.0)
+}
+
+/// The four tabs, each measured after being shown, against §1's minimum.
 fn check_every_page_shrinks(app: &adw::Application) {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
@@ -113,30 +129,44 @@ fn check_every_page_shrinks(app: &adw::Application) {
             .emit_clicked();
         lay_out(&window);
         let (min_w, min_h) = window_floor(&window);
+        let travel = page_travel(&window, page);
         let mut held: Vec<(String, i32, i32)> = Vec::new();
         floors(&visible_page(&window), &mut held);
         floors(&bottom_box(&window), &mut held);
         held.sort_by_key(|(_, w, h)| -(w.max(h)));
         eprintln!(
-            "{page:?}: window minimum {min_w}x{min_h}\n  widest/tallest holders:\n{}",
+            "{page:?}: window minimum {min_w}x{min_h}, page scroll travel {travel:.0} px\n  widest/tallest holders:\n{}",
             held.iter()
                 .take(12)
                 .map(|(name, w, h)| format!("    {name}: min {w}x{h}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         );
-        assert!(
-            min_w <= 1024,
-            "the {page:?} page pins the window's minimum WIDTH at {min_w} px, above the 1024 px a \
-             person must be able to shrink to (spec/03-shell.md §1 defaults the window to 1240x740): \
+        // §1: the floor IS the spec's number. Below it would mean `build_window` stopped asking for it;
+        // above it means this page holds the shell wider or taller than the size §1 fixes.
+        assert_eq!(
+            min_w,
+            naivepost::shell::WINDOW_MIN_W,
+            "the {page:?} page moves the window's minimum WIDTH off §1's 1240 px (measured {min_w}): \
              the top holders are {:?}",
             &held[..held.len().min(6)]
         );
-        assert!(
-            min_h <= 640,
-            "the {page:?} page pins the window's minimum HEIGHT at {min_h} px, above the 640 px a \
-             person must be able to shrink to (spec/03-shell.md §1 defaults the window to 1240x740): \
+        assert_eq!(
+            min_h,
+            naivepost::shell::WINDOW_MIN_H,
+            "the {page:?} page moves the window's minimum HEIGHT off §1's 900 px (measured {min_h}): \
              the top holders are {:?}",
+            &held[..held.len().min(6)]
+        );
+        assert_eq!(
+            (window.default_width(), window.default_height()),
+            (naivepost::shell::WINDOW_MIN_W, naivepost::shell::WINDOW_MIN_H),
+            "§1: the window OPENS at its minimum"
+        );
+        assert!(
+            travel <= 1.0,
+            "§1: at the minimum size every control and lane a page names is on screen at once, but \
+             {page:?}'s own scroller still has {travel:.0} px to scroll: the tallest holders are {:?}",
             &held[..held.len().min(6)]
         );
     }
@@ -144,7 +174,7 @@ fn check_every_page_shrinks(app: &adw::Application) {
 }
 
 #[test]
-fn every_page_leaves_the_window_shrinkable() {
+fn sec_03_shell_1_the_window_the_window_opens_at_its_minimum_and_no_page_scrolls_as_a_whole() {
     common::pin_private_cwd();
     common::one_app_round(|app| {
         check_every_page_shrinks(app);

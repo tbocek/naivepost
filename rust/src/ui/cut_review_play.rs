@@ -18,7 +18,7 @@ use adw::prelude::*;
 
 use crate::{cut, cut_play_leg, cut_review, cut_screen, preview, ui};
 use crate::ui::window::find_status;/// §A group 1's shipped label, spelled from the toolbar row so the two cannot drift.
-pub const PLAY_LABEL: &str = "\u{25b6}\u{2702}\u{2702} Review every cut";
+pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_REVIEW;
 /// §F2.3's one rule for the three buttons: "each wears ⏸ only while its own thing runs … exactly one is
 /// lit". So the pause face appears here ONLY while a review is the running preview, and ▶/▶✂ give theirs
 /// back at the same moment (each module reads the player rather than remembering).
