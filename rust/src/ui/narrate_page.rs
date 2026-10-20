@@ -148,26 +148,63 @@ fn install_page_css_once() {
     PAGE_CSS_LOADED.with(|cell| cell.set(true));
 }
 
+/// The preview plate: the left column's 560 px at 16:9, so 560 * 9 / 16 = 315. One pair of numbers for the frame
+/// and for where §A.1's second divider opens (`narrate-left-split`), so changing the frame moves the handle.
+pub(crate) const PREVIEW_FRAME_W_PX: i32 = 560;
+pub(crate) const PREVIEW_FRAME_H_PX: i32 = 315;
+
+/// One row of buttons in a page column, measured on this page's own transport and take rows.
+pub(crate) const TRANSPORT_ROW_PX: i32 = 34;
+
+/// The Narration tick's row, which sits inside the upper half and so belongs in the divider's opening.
+pub(crate) const TICK_ROW_PX: i32 = 27;
+
+/// The gap both halves of the left column put between their rows.
+pub(crate) const COLUMN_GAP_PX: i32 = 8;
+
+
 /// Build the whole page. Called from `page_box` once per window for the Narrate tab.
 pub fn build() -> gtk::Widget {
     install_page_css_once();
     let split = gtk::Paned::new(gtk::Orientation::Horizontal);
     // §A.1: 560 px to the left pair, the window's extra width going to the lines.
     split.set_position(560);
-    split.set_resize_start_child(true);
+    // NOT `true`: §1 opens the left column at 560 px and sends every extra window pixel to the RIGHT ("extra
+    // window width goes to the right"), so the lines column is what grows. With `true` the paned handed the growth
+    // to the left pair and the rows were starved of width.
+    split.set_resize_start_child(false);
     split.set_shrink_start_child(false);
     split.set_wide_handle(true);
 
-    let left = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    // Fills the paned's 560 px rather than hugging its children: with `false` here nothing in the column
-    // asked for width, so GTK gave the column its natural (~140 px) size and every control below was cut
-    // off at the fold.
-    left.set_hexpand(true);
-    // §A.1's 560 px stated as a REQUEST as well as a paned position: the take band sizes its lane off the
-    // width its scroller actually got (`narrate_band::note_lane_size`), and a position is only a suggestion
-    // next to a child's own minimum.
-    left.set_size_request(560, -1);
-    left.set_halign(gtk::Align::Fill);
+    // §1's "Left column, split top and bottom by a second draggable divider (opened with the upper part 420 px
+    // tall)": ABOVE it, top to bottom, the Narration tick, the preview and the transport row; BELOW it, the voice
+    // picker and everything after it. The two halves carry `left`'s own width flags — this fills the paned's 560 px
+    // rather than hugging its children (`false` here gave the column its natural ~140 px and cut every control off
+    // at the fold), and §A.1's 560 px is stated as a REQUEST as well as a paned position because the take band
+    // sizes its lane off the width its scroller actually got (`narrate_band::note_lane_size`) and a position is
+    // only a suggestion next to a child's own minimum.
+    let upper = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    upper.set_widget_name("narrate-upper");
+    let lower = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    lower.set_widget_name("narrate-lower");
+    for half in [&upper, &lower] {
+        half.set_hexpand(true);
+        half.set_size_request(560, -1);
+        half.set_halign(gtk::Align::Fill);
+    }
+    let vsplit = gtk::Paned::new(gtk::Orientation::Vertical);
+    vsplit.set_widget_name("narrate-left-split");
+    // §A.1's opening, as ONE formula over the rows it has to clear rather than a second magic number: the tick
+    // (`TICK_ROW_PX`) + a gap + the frame (`PREVIEW_FRAME_H_PX`, the column at 16:9) + a gap + the transport row
+    // (`TRANSPORT_ROW_PX`) = 392, which is where `spec/img/07-narrate.png` draws the handle — just under the
+    // transport, with the voice picker the first row below it. A headless window is never dragged, so this is also
+    // where the shot's handle sits.
+    vsplit.set_position(PREVIEW_FRAME_H_PX + TRANSPORT_ROW_PX + TICK_ROW_PX + 2 * COLUMN_GAP_PX);
+    vsplit.set_wide_handle(true);
+    vsplit.set_shrink_start_child(true);
+    vsplit.set_resize_start_child(true);
+    vsplit.set_start_child(Some(&upper));
+    vsplit.set_end_child(Some(&lower));
 
     // **1** the Narration tick.
     let tick = gtk::CheckButton::with_label(narrate_off::TICK_LABEL);
@@ -177,7 +214,7 @@ pub fn build() -> gtk::Widget {
     // saved with narration off opens UNTICKED (and greys on the first refresh) instead of drawing a
     // checked box over a page whose state says `narration_off`.
     tick.set_active(narrate_off::tick_checked(session_no_narration()));
-    left.append(&tick);
+    upper.append(&tick);
     // §07-narrate#3-data: the page seeds itself from the project's own files (see
     // `narrate_seed::seed_from_disk`, which says what may overwrite what a flow published).
     if let Some(tree) = crate::ui::window::narrate_session_tree() {
@@ -188,7 +225,10 @@ pub fn build() -> gtk::Widget {
     // `preview-panel` uses so GTK cannot collapse it against an expanding sibling.
     let preview = gtk::Box::new(gtk::Orientation::Vertical, 0);
     preview.set_widget_name("narrate-preview");
-    preview.set_size_request(240, 135);
+    // The plate is the column's width at 16:9 (560 → 315), which is what §A.1's picture draws and what the second
+    // divider opens past. NOT `vexpand`: the box's height here is its SIZE, and an expanding frame soaked up the
+    // upper half's whole allocation, grew to ~400 px (measured) and pushed the transport row under the fold.
+    preview.set_size_request(PREVIEW_FRAME_W_PX, PREVIEW_FRAME_H_PX);
     // NOT `Start`: the frame is a fixed-size box inside a column that is itself only as wide as its widest
     // child, so `Start` left it at its minimum width and the whole left column collapsed to ~140 px while
     // the picture became an invisible sliver. `Fill` makes the column take the paned's 560 px and the
@@ -197,12 +237,11 @@ pub fn build() -> gtk::Widget {
     preview.set_tooltip_text(Some("The finished frame with the narration mixed over the cut's sound"));
     let picture = gtk::DrawingArea::new();
     picture.set_widget_name("narrate-picture");
-    // NOT `vexpand`, and it needs a size of its own as well: the box's 135 px is a MINIMUM, not a cap, so
-    // an expanding child soaked up the paned's whole height and the "16:9 frame" rendered ~1170 px tall.
-    // Dropping the expansion alone was not enough either — with no natural height and no request, GTK gave
-    // the area 2 px inside the 135 px box. The explicit request makes the plate the frame it claims to be.
+    // NOT `vexpand`, and it needs a size of its own as well: an expanding child soaked up the paned's whole height
+    // and the "16:9 frame" rendered ~1170 px tall; with no natural height and no request, GTK gave the area 2 px
+    // inside its box. The explicit request makes the plate the frame it claims to be.
     picture.set_vexpand(false);
-    picture.set_size_request(240, 135);
+    picture.set_size_request(PREVIEW_FRAME_W_PX, PREVIEW_FRAME_H_PX);
     // The plate the frame is cut out of: a bare `DrawingArea` paints nothing until a
     // `connect_draw` handler exists (there is none anywhere in `src/`), so headless and live alike the
     // frame was invisible. CSS gives it the dark 16:9 field with a stroke, which is what §2's image shows.
@@ -217,12 +256,15 @@ pub fn build() -> gtk::Widget {
     });
     picture.add_controller(picture_click);
     preview.append(&picture);
-    left.append(&preview);
+    upper.append(&preview);
 
     // **3** back 3 s · ▶ · forward 3 s, then **4** ＋ a line at this second.
     let transport = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     transport.set_widget_name("narrate-transport");
-    transport.set_halign(gtk::Align::Start);
+    transport.set_halign(gtk::Align::Fill);
+    // NOT `Start`: the row has to fill the column so the slider after the buttons gets the slack. §1's Preview
+    // bullet puts the slider, the clock and the volume on THIS row (`spec/img/07-narrate.png` draws badges 3-6 on
+    // one line under the frame), and pinned to the start the row squeezed into a few pixels.
     for (name, label, tip) in [
         (
             "narrate-back-3s",
@@ -241,11 +283,9 @@ pub fn build() -> gtk::Widget {
     add_line.set_widget_name("narrate-add-line");
     add_line.set_tooltip_text(Some("Add a line at this second"));
     transport.append(&add_line);
-    left.append(&transport);
 
-    // **5** the slider over the cut's own clock + the two-face clock.
-    let scrub = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    scrub.set_widget_name("narrate-scrub-row");
+    // **5** the slider over the cut's own clock + the two-face clock, and **6** the shared volume — all on the
+    // transport row, in §1's left-to-right order, which is what `spec/img/07-narrate.png` draws.
     let slider = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.1);
     slider.set_draw_value(false);
     slider.set_widget_name("narrate-slider");
@@ -255,25 +295,26 @@ pub fn build() -> gtk::Widget {
     slider.set_tooltip_text(Some(
         "The cut's own clock \u{2014} what the edit removed is not on this bar",
     ));
-    scrub.append(&slider);
+    transport.append(&slider);
     let clock = gtk::Label::new(Some(&narrate_screen::clock_line(0.0, 0.0, 0.0)));
     clock.set_widget_name("narrate-clock");
     clock.set_xalign(0.0);
-    scrub.append(&clock);
-    left.append(&scrub);
+    transport.append(&clock);
 
-    // **6** the shared volume.
     let volume = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.01);
     volume.set_draw_value(false);
     volume.set_value(0.8);
     volume.set_widget_name("narrate-volume");
+    // A width of its own: on a shared row with an expanding slider, a bare scale collapses to its handle.
+    volume.set_size_request(90, -1);
     volume.set_tooltip_text(Some("Preview volume, shared with the Cut page"));
-    left.append(&volume);
+    transport.append(&volume);
+    upper.append(&transport);
 
     // **7** the voice picker: unlabelled; its rows, its shown row and what a pick does all live in
     // `narrate_picker`.
     let picker = narrate_picker::build();
-    left.append(&picker);
+    lower.append(&picker);
 
     // **8** the take band's ＋ − ▶ and **9** Add file….
     let take_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -298,13 +339,13 @@ pub fn build() -> gtk::Widget {
     add_file.set_widget_name("voice-add-file");
     add_file.set_tooltip_text(Some(&narrate_screen::add_file_tip()));
     take_row.append(&add_file);
-    left.append(&take_row);
+    lower.append(&take_row);
 
     // **10** the take band itself: the lane inside its own horizontal scroller, painted by
     // `narrate_band` (envelope, ruler, takes, red ▶-start bar, live selection, playhead).
     let (band_scroller, band) = crate::ui::narrate_band::build_band();
     band.set_tooltip_text(Some(narrate_screen::band_status(&[])));
-    left.append(&band_scroller);
+    lower.append(&band_scroller);
 
     // **11** the sample sentence, **12** its ▶ ⏹ ⟳, **13** the pitch slider.
     let sample = gtk::Entry::new();
@@ -313,7 +354,7 @@ pub fn build() -> gtk::Widget {
     sample.set_tooltip_text(Some("Spoken in the selected voice"));
     // The entry takes the width of its row, so the buttons and the pitch control after it keep their own.
     sample.set_hexpand(true);
-    left.append(&sample);
+    lower.append(&sample);
 
     let sample_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     sample_row.set_widget_name("sample-row");
@@ -333,11 +374,11 @@ pub fn build() -> gtk::Widget {
     }
     // **13** pitch: the labelled row (`pitch:` · slider · the shift's number), built by
     // [`crate::ui::narrate_pitch`] on the sample line, as spec/img/07-narrate.png draws badges 11–13 together.
-    // Appended BEFORE `left.append(&sample_row)` and before the buttons are wired by name, so the one row holds
+    // Appended BEFORE `lower.append(&sample_row)` and before the buttons are wired by name, so the one row holds
     // sentence · ▶ ⏹ ⟳ · pitch in the picture's order. Seeded from the state above, so control and state agree
     // on `narrate/pitch.txt`'s shift from the first paint.
     sample_row.append(&crate::ui::narrate_pitch::build_row(read_state().pitch));
-    left.append(&sample_row);
+    lower.append(&sample_row);
 
     // **14–21** the lines column: one row per entry, sorted by clip then offset.
     let scroller = gtk::ScrolledWindow::new();
@@ -381,7 +422,7 @@ pub fn build() -> gtk::Widget {
     right.append(&scroller);
     right.append(&readouts);
 
-    split.set_start_child(Some(&left));
+    split.set_start_child(Some(&vsplit));
     split.set_end_child(Some(&right));
     upcast_widget(split)
 }
