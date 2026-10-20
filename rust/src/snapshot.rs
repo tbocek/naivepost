@@ -864,6 +864,23 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             if screen_page(&screen) == Some("Prepare") {
                 window.set_default_size(1240, 740);
             }
+            // §08-produce#1-screen: the same reason. The page is TWO COLUMNS behind a divider opened at half
+            // and its right column stacks a title, an eight-line description and five lines of encoder pairs,
+            // so headless it renders into a window that shows none of it — `spec/img/08-produce.png` is the full
+            // window §1 opens at, and only a comparable one shows both columns and every setting row.
+            if screen_page(&screen) == Some("Produce") {
+                window.set_default_size(1280, 980);
+                // …and the shell's own page/bottom-bar divider opened further down than its 480 px opening.
+                // The Produce page's right column is title + eight-line description + five lines of encoder
+                // pairs, well over that band, and `page-scroll-Produce` shrinks rather than grows, so at the
+                // default opening the shot cut off at the first encoder row. Headless nothing drags this
+                // divider, so asking here is how the shot gets the whole page §1 describes.
+                if let Some(main_divider) = ui::find_source_widget(&window, "main-divider")
+                    .and_then(|w| w.downcast::<gtk::Paned>().ok())
+                {
+                    main_divider.set_position(860);
+                }
+            }
             window.present();
         }
         // §1's tape is as wide as the page, so a snapshot has to ask for its picture AFTER GTK laid the page
