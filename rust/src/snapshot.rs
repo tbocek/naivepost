@@ -882,12 +882,15 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 context.iteration(false);
             }
         }
-        if screen_page(&screen) == Some("Cut") {
+            if screen_page(&screen) == Some("Cut") {
             // §A's preview is "contain-fit, min height 160" and `spec/img/05-cut.png` draws it filling the
             // upper pane; `arrange` sized the panel from the OPENING (380 px), but the shot's window is only
             // 800 px tall and the tape below needs more than the leftover, so GTK shrank that pane back to
             // 314 px. Now that the page has real allocations, hand the panel the pane it actually got -- the
             // same door, with the number the layout answers instead of the number §A opened at.
+            // NOT for `05-rows`: its own staging (`snapshot_rows::stage`) shrinks this pane on purpose -- the
+            // two camera rows are the subject of that picture and they sit BELOW everything here, so re-growing
+            // the preview pushes them back out of the ~890 px a headless window ever paints.
             if let (Some(panel), Some(split)) = (
                 ui::find_source_widget(&window, "preview-panel"),
                 ui::find_source_widget(&window, "cut-page-split")
@@ -950,6 +953,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // before the map like every other screen's, so the band needs the playhead placed here too.
             if screen == "05-rows" {
                 ui::set_playhead(&window, crate::snapshot_rows::LINE_T);
+
                 // F2.10's picture is BOTH camera plates in one frame, so the shot says whether it reaches them
                 // and refuses to write a PNG that does not: `write_png` paints at the window's own height while
                 // the rows are the last thing on a page ~1015 px tall, so "covered" here means both tops inside

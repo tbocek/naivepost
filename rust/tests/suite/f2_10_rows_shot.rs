@@ -35,6 +35,7 @@ static RAN_LENS: AtomicBool = AtomicBool::new(false);
 static RAN_HEARING: AtomicBool = AtomicBool::new(false);
 static RAN_ADD: AtomicBool = AtomicBool::new(false);
 static RAN_COVERS: AtomicBool = AtomicBool::new(false);
+static RAN_BENCH: AtomicBool = AtomicBool::new(false);
 
 /// A Cut-page window in its own temp folder, so the stage has a real session tree to write its lane file and
 /// its one extracted frame into — the same shape the F2.7/F2.8 shot tests use for the same reason.
@@ -408,6 +409,39 @@ fn check_the_shot_covers_both_camera_rows(app: &adw::Application) {
     window.close();
 }
 
+/// F2.10's picture only exists if the shell keeps its honest height: a bare `gtk::TextView` in Prepare's
+/// column reports its whole prompt as the page minimum (measured 2536 px), which climbs into the view stack
+/// and pushes every other tab's content above the top of the window — measured before this fix, the camera
+/// rows sat at y=-1188/-1150 in an 890 px frame, painted nowhere. Two facts pin that: the bench text view is
+/// inside a scroller (so the document cannot set the minimum), and after staging both camera plates lie
+/// inside the pixels the PNG captures.
+fn check_the_bench_stays_scrolled_and_the_rows_are_painted(app: &adw::Application) {
+    let window = shot_window(app, "painted");
+    snapshot_rows::stage(&window, &fixture_dir());
+    settle();
+    let bench = find_named(&window, "bench-text");
+    assert!(
+        bench
+            .parent()
+            .and_then(|p| p.downcast::<gtk::ScrolledWindow>().ok())
+            .is_some(),
+        "F2.10 needs the shell to keep its height: `bench-text` must sit inside a ScrolledWindow so the \
+         prompt's own height cannot become the window's minimum (it is a {:?})",
+        bench.parent().map(|p| p.widget_name().to_string())
+    );
+    let high = window.height();
+    assert!(high > 400, "the window never mapped: {high} px tall");
+    let tops = snapshot_rows::row_tops(&window);
+    for (label, top) in [("row 1", tops[0]), ("row 2", tops[1])] {
+        assert!(
+            top >= 0 && top < high,
+            "{label} is inside the painted {high} px frame: its top is at {top}"
+        );
+    }
+    RAN_BENCH.store(true, Ordering::SeqCst);
+    window.close();
+}
+
 fn round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     let failures = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -426,6 +460,7 @@ fn round() {
                 ("hearing", check_a_speaker_badge_silences_one_scene_and_the_switch_the_cut),
                 ("add", check_add_over_the_same_seconds_on_the_other_camera_adds_nothing),
                 ("covers", check_the_shot_covers_both_camera_rows),
+                ("bench", check_the_bench_stays_scrolled_and_the_rows_are_painted),
             ] {
                 if let Err(panic) =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app)))
@@ -443,6 +478,7 @@ fn round() {
                         "lens" => RAN_LENS.store(true, Ordering::SeqCst),
                         "hearing" => RAN_HEARING.store(true, Ordering::SeqCst),
                         "covers" => RAN_COVERS.store(true, Ordering::SeqCst),
+                        "bench" => { let _ = (); }
                         _ => RAN_ADD.store(true, Ordering::SeqCst),
                     }
                 }
@@ -486,6 +522,15 @@ fn f2_10_s1_the_lens_badge_names_the_row_the_scene_is_shown_from() {
 fn f2_10_s2_a_speaker_badge_silences_one_scene_and_the_gutter_switch_the_whole_cut() {
     round();
     assert!(RAN_HEARING.load(Ordering::SeqCst), "the hearing check never ran");
+}
+
+#[test]
+fn f2_10_s5_the_bench_stays_scrolled_and_both_rows_are_painted() {
+    round();
+    assert!(
+        RAN_BENCH.load(Ordering::SeqCst),
+        "the bench-scroller / painted-rows check never ran"
+    );
 }
 
 #[test]
