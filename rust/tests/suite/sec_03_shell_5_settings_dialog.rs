@@ -9,8 +9,11 @@
 //! The conf lives in a throwaway `$XDG_CONFIG_HOME` named for this binary and pid, so no check reads
 //! another run's leftovers and none writes the real `$HOME`.
 
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -391,6 +394,18 @@ fn widgets_round() {
             RAN_FETCH_ROW.store(true, Ordering::SeqCst);
             check_test_all_is_bottom_right_and_the_log_is_last(&window);
             RAN_TEST_ALL.store(true, Ordering::SeqCst);
+            // §5's Drawing row, over the wire: the same dialog, but answering from the provider a real
+            // session installs (`window_policy.rs` passes exactly this one when the gear is pressed).
+            close_dialog();
+            install_live_conf();
+            ui::open_settings(&window, naivepost::settings_probe::live_provider());
+            lay_out();
+            check_the_drawing_test_button_follows_its_badge(&window);
+            RAN_SD_ORDER.store(true, Ordering::SeqCst);
+            check_the_drawing_row_tests_sd_server(&window);
+            RAN_SD_OK.store(true, Ordering::SeqCst);
+            check_a_port_that_is_not_sd_server_is_called_out(&window);
+            RAN_SD_BAD.store(true, Ordering::SeqCst);
             close_dialog();
             window.close();
             app.quit();
@@ -409,6 +424,27 @@ static RAN_BETWEEN: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMN: AtomicBool = AtomicBool::new(false);
 static RAN_FETCH_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_TEST_ALL: AtomicBool = AtomicBool::new(false);
+
+/// A conf with a model id, written into this round's throwaway config home before the live dialog opens.
+/// §5 refuses a completion with no model id, and the dialog seeds its boxes from the file, so it has to
+/// be down BEFORE `open_settings` — same order `four_servers_probe_widgets.rs` uses.
+fn install_live_conf() {
+    let paths = naivepost::settings::from_environment().expect("{ITEM} s7: a pinned XDG_CONFIG_HOME");
+    let mut conf = naivepost::settings::Conf::default();
+    conf.model = "sd-test-model".to_string();
+    naivepost::settings::save(&paths, &conf).expect("{ITEM} s7: the conf writes");
+}
+
+/// The s7 rounds. GTK's main loop may only be run by the thread that starts it, and only ONCE per
+/// process — so these checks join `widgets_round`, the one application this binary runs, instead of
+/// starting a second one (a second `run_with_args` returns at once and nothing runs).
+fn live_round() {
+    widgets_round();
+}
+
+static RAN_SD_OK: AtomicBool = AtomicBool::new(false);
+static RAN_SD_BAD: AtomicBool = AtomicBool::new(false);
+static RAN_SD_ORDER: AtomicBool = AtomicBool::new(false);
 
 /// The open dialog's window — its own top level, so bounds are taken against it.
 fn dialog() -> adw::Window {
@@ -515,6 +551,109 @@ fn close_dialog() {
         dialog.close();
         settle();
     }
+}
+
+/// A loopback fake answering ONE answer per path, so a row that asks for something off-table gets a 404
+/// rather than another path's healthy reply. Same shape as `four_servers_probe_widgets.rs`'s; copied here
+/// because that one is private to its own test file and this item's sd cases need three different tables.
+struct Live {
+    port: u16,
+    hits: mpsc::Receiver<String>,
+}
+
+impl Live {
+    fn start(routes: &[(&str, &str)]) -> Live {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
+        let port = listener.local_addr().expect("a local address").port();
+        let (sender, hits) = mpsc::channel();
+        let table: Vec<(String, String)> = routes
+            .iter()
+            .map(|(path, body)| (path.to_string(), body.to_string()))
+            .collect();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                let sender = sender.clone();
+                let table = table.clone();
+                std::thread::spawn(move || {
+                    if let Some(path) = answer(stream, &table) {
+                        let _ = sender.send(path);
+                    }
+                });
+            }
+        });
+        Live { port, hits }
+    }
+
+    fn url(&self) -> String {
+        format!("http://127.0.0.1:{}", self.port)
+    }
+
+    /// The paths this server was asked for, in order, waiting up to 3 s each for them to arrive.
+    fn asked(&self, want: usize) -> Vec<String> {
+        let mut got = Vec::new();
+        for _ in 0..want {
+            match self.hits.recv_timeout(Duration::from_secs(3)) {
+                Ok(path) => got.push(path),
+                Err(_) => break,
+            }
+        }
+        got
+    }
+}
+
+/// Serve one request from the path table; report the path that was asked for. An unknown path answers
+/// 404, which is what lets a refusal case tell "answered /v1/models, not the sdcpp API" from "dead".
+fn answer(stream: std::net::TcpStream, table: &[(String, String)]) -> Option<String> {
+    let peer = stream.try_clone().ok()?;
+    let mut reader = BufReader::new(peer);
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line).ok()?;
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/")
+        .to_string();
+    let mut declared = 0usize;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).ok()? == 0 {
+            break;
+        }
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = trimmed.split_once(':') {
+            if name.eq_ignore_ascii_case("content-length") {
+                declared = value.trim().parse().unwrap_or(0);
+            }
+        }
+    }
+    let mut raw = vec![0u8; declared];
+    if declared > 0 {
+        let _ = reader.read_exact(&mut raw);
+    }
+    let known = table.iter().any(|(known, _)| *known == path);
+    // The leg keeps a non-2xx body (`http_status_as_error(false)` upstream), so an off-table path has to
+    // answer like a real server with nothing to say: empty, not a JSON error object. A body there would
+    // parse as a capabilities reply that merely names no weights -- a DIFFERENT verdict from "this port
+    // does not speak sd-server's API", which is the distinction this case exists to check.
+    let body = table
+        .iter()
+        .find(|(known, _)| *known == path)
+        .map(|(_, body)| body.clone())
+        .unwrap_or_default();
+    let status = if known { 200 } else { 404 };
+    let reason = if known { "OK" } else { "Not Found" };
+    let reply = format!(
+        "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {len}\r\nconnection: close\r\n\r\n{body}",
+        len = body.len()
+    );
+    let mut writer = stream;
+    let _ = writer.write_all(reply.as_bytes());
+    let _ = writer.flush();
+    Some(path)
 }
 
 /// §5's entry point: the header's Settings gear opens the dialog, and closing it lands the write.
@@ -890,5 +1029,145 @@ fn sec_03_shell_5_settings_dialog_s6_test_all_is_at_the_bottom_right_and_the_log
     assert!(
         RAN_TEST_ALL.load(Ordering::SeqCst),
         "{ITEM} s6: the Test All / log check never ran"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// s7 — §5's Drawing section, tested through its own Test button (F0.13's sd.cpp row).
+//
+// The gap this closes is a wiring one: a Test button exists only once the Drawing row passes a test
+// key, and the sd verdict (`<weights> is loaded and can draw`, or the OpenAI-shaped call-out) has to be
+// reachable by a press rather than only by a unit call. So these go out over a loopback socket through
+// the provider a real session installs (`settings_probe::live_provider`), exactly as `window_policy.rs`
+// installs it when the gear is pressed.
+// ---------------------------------------------------------------------------
+
+/// Press the Drawing row's own Test with `url` typed in its box, and hand back the badge's mark and
+/// tooltip — the state that press changes. The 600 ms save beat is left un-armed on purpose: a check that
+/// ran the main loop for it would write into whatever `$XDG_CONFIG_HOME` this process points at.
+fn press_sd(window: &adw::ApplicationWindow, url: &str) -> (String, String) {
+    // The button must EXIST under §5's name: that is the wire the completion check said was missing.
+    let test = ui::test_button(window, "sd")
+        .expect("{ITEM} s7: the Drawing row carries a Test button named test-sd-button");
+    ui::entry(window, "sd")
+        .expect("{ITEM} s7: the Drawing row has its value box")
+        .set_text(url);
+    test.emit_clicked();
+    let badge = ui::badge(window, "sd").expect("{ITEM} s7: the Drawing row has a badge-sd");
+    (badge.text().to_string(), badge.tooltip_text().unwrap_or_default().to_string())
+}
+
+/// F0.13 through the widget: the Drawing row's Test dials sd-server's OWN capabilities endpoint and
+/// says which weights are loaded — nothing asked of the OpenAI-shaped API on the way.
+fn check_the_drawing_row_tests_sd_server(window: &adw::ApplicationWindow) {
+    let server = Live::start(&[(
+        "/sdcpp/v1/capabilities",
+        r#"{"weights":"sd-v1.safetensors","modes":["txt2img","img2img"]}"#,
+    )]);
+    let before = ui::window_logs().len();
+    let (mark, verdict) = press_sd(window, &server.url());
+    assert_eq!(
+        server.asked(1),
+        vec!["/sdcpp/v1/capabilities".to_string()],
+        "{ITEM} s7: the Drawing row probes sd-server's own API and nothing else"
+    );
+    assert_eq!(mark, "\u{2713}", "{ITEM} s7: loaded weights mark \u{2713}, got {verdict:?}");
+    assert!(
+        verdict.contains("sd-v1.safetensors is loaded and can draw"),
+        "{ITEM} s7: the verdict names the weights the server reported: {verdict}"
+    );
+    // §5 mirrors each test into the main log as "settings: …", naming this row.
+    let mirrored: Vec<String> = ui::window_logs()[before..].to_vec();
+    assert!(
+        mirrored
+            .iter()
+            .any(|line| line.starts_with(checks::LOG_PREFIX) && line.contains("sd.cpp")),
+        "{ITEM} s7: the press is mirrored into the main log: {mirrored:?}"
+    );
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s7_the_drawing_row_tests_sd_server_through_its_own_button() {
+    common::pin_private_cwd();
+    live_round();
+    assert!(
+        RAN_SD_OK.load(Ordering::SeqCst),
+        "{ITEM} s7: the sd.cpp pass case never ran"
+    );
+}
+
+/// F0.13's other two sd answers, both through the same button: a port that answers `/v1/models` but not
+/// the sdcpp API is called out as not sd-server (it needs a different fix), and a port where nothing
+/// listens says so plainly. Each asserts its own badge, so neither reads another case's state.
+fn check_a_port_that_is_not_sd_server_is_called_out(window: &adw::ApplicationWindow) {
+    // Only the OpenAI-shaped route answers; sd-server's own path comes back 404 from the fake.
+    let openai = Live::start(&[("/v1/models", r#"{"data":[{"id":"gpt-ish"}]}"#)]);
+    let (mark, verdict) = press_sd(window, &openai.url());
+    assert_eq!(mark, "\u{2717}", "{ITEM} s7: an OpenAI-shaped port is a failure, got {verdict}");
+    assert!(
+        verdict.contains("not sd-server"),
+        "{ITEM} s7: the reason names what the port actually is: {verdict}"
+    );
+    // Both calls really went out: sd-server's API first, then the listing that identifies the tenant.
+    let asked = openai.asked(2);
+    assert!(
+        asked.contains(&"/sdcpp/v1/capabilities".to_string()),
+        "{ITEM} s7: the row tried sd-server's own API before calling it out: {asked:?}"
+    );
+    assert!(
+        asked.contains(&"/v1/models".to_string()),
+        "{ITEM} s7: and read /v1/models to tell an OpenAI-shaped server from a dead one: {asked:?}"
+    );
+
+    // Nothing listening at all: a closed port, read off a listener that is then dropped.
+    let dark_port = {
+        let probe_socket = std::net::TcpListener::bind("127.0.0.1:0").expect("a free port");
+        probe_socket.local_addr().expect("its address").port()
+    };
+    let (mark, verdict) = press_sd(window, &format!("http://127.0.0.1:{dark_port}"));
+    assert_eq!(mark, "\u{2717}", "{ITEM} s7: a dead sd port is a failure");
+    assert!(
+        verdict.contains("/sdcpp/v1/capabilities"),
+        "{ITEM} s7: the reason says what did not answer: {verdict}"
+    );
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s7_an_openai_shaped_port_is_called_out_as_not_sd_server() {
+    common::pin_private_cwd();
+    live_round();
+    assert!(
+        RAN_SD_BAD.load(Ordering::SeqCst),
+        "{ITEM} s7: the sd.cpp refusal cases never ran"
+    );
+}
+
+/// §5's column order on the Drawing row too: box, Slots spin, ✓/✗ badge, Test — the Test button sits in
+/// the Test column after the badge, not beside the box.
+fn check_the_drawing_test_button_follows_its_badge(_window: &adw::ApplicationWindow) {
+    // Read off the open dialog itself (`need` walks it), which is the one this round just opened live.
+    let entry = bounds(need("entry-sd").upcast_ref(), "entry-sd");
+    let spin = bounds(need("slots-sd").upcast_ref(), "slots-sd");
+    let badge = bounds(need("badge-sd").upcast_ref(), "badge-sd");
+    let test = bounds(need("test-sd-button").upcast_ref(), "test-sd-button");
+    assert!(
+        entry.x() + entry.width() <= spin.x() + 1.0
+            && spin.x() + spin.width() <= badge.x() + 1.0
+            && badge.x() + badge.width() <= test.x() + 1.0,
+        "{ITEM} s7: the Drawing row is not box \u{2192} spin \u{2192} badge \u{2192} Test ({entry:?} {spin:?} {badge:?} {test:?})"
+    );
+    assert!(
+        (centre(&test) - centre(&entry)).abs() <= 6.0,
+        "{ITEM} s7: the Drawing row's Test is not on the same line as its box"
+    );
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s7_the_drawing_test_button_sits_after_the_slots_spin() {
+    common::pin_private_cwd();
+    live_round();
+    assert!(
+        RAN_SD_ORDER.load(Ordering::SeqCst),
+        "{ITEM} s7: the Drawing row's column-order check never ran"
     );
 }
