@@ -109,7 +109,7 @@ fn check_the_four_step_buttons_move_the_line(app: &adw::Application) {
     let before = ui::line_position(&window).t;
     let back_five = ui::line_step_button(&window, "line-step-back-five")
         .expect("back-five button");
-    assert_eq!(back_five.label().unwrap().as_str(), "\u{2039}\u{2039} f",
+    assert_eq!(back_five.label().unwrap().as_str(), "\u{2039}\u{2039}",
         "the shift variant is the one wired to that name (\u{a7}A group 1's glyph; the sentence is the tooltip)");
     assert_eq!(
         back_five.tooltip_text().as_deref(),

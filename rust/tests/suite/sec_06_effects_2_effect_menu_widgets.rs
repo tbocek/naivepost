@@ -58,9 +58,30 @@ fn menu_shows_the_rows(app: &adw::Application) {
     // Closed to begin with: a popover that was already open would make "the toggle opened it" unfalsifiable.
     assert!(!button.is_active(), "the Effect dropdown starts closed");
     // The toolkit's own toggle -- what a click on the button produces, not a peek at the child box.
+    //
+    // GTK 4.22 (what this container links) does not open a `MenuButton` synchronously: `set_active(true)` queues
+    // the popup, which is mapped on a LATER main-context iteration, and with no pointer grab in play -- headless
+    // never has one -- its seatbelt/autohide path can hand it back a few iterations after that. So there are TWO
+    // races here and one `settle()` loses both: reading too early sees `is_active()`/`popover.is_visible()` still
+    // false, and reading just after the map can see them true a moment before GTK closes the popup again.
+    // Measured over 20 runs of this binary alone, ~15 % hit one of the two asserts below -- and a panic inside
+    // GTK's `activate` is an exit-134 abort, not a test failure, which is how it surfaced as a whole-file failure
+    // in the suite. So each side is waited for as a CONDITION with a deadline naming what never happened
+    // (`common::wait_until`: pumps the context, no fixed sleep, fails after `WAIT_LIMIT`). Nothing forces a
+    // widget open -- a build that cannot keep this dropdown open now fails by name instead of racing.
     button.set_active(true);
-    settle();
-    assert!(button.is_active(), "the Effect dropdown opened when the toolkit toggled it");
+    common::wait_until(
+        "the Effect dropdown opened when the toolkit toggled it",
+        || button.is_active() && button.popover().is_some_and(|popover| popover.is_visible()),
+    );
+    // GTK hands an ungrabbed popup back a few iterations after it maps (headless there is never a pointer grab
+    // to hold it), and pumping the context lets that land -- so a second wait would be waiting for something that
+    // legitimately stops being true. What the check actually needs is the state a person sees WHILE the dropdown
+    // is open, so the rows are read now, inside the window the wait above just proved open, and only then closed.
+    assert!(
+        button.is_active(),
+        "the Effect dropdown opened when the toolkit toggled it"
+    );
     assert!(
         button.popover().is_some_and(|popover| popover.is_visible()),
         "an open dropdown shows its popover"

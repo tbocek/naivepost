@@ -113,6 +113,8 @@ fn check_every_control_sits_on_the_bar(app: &adw::Application) {
         bar_bounds.x(),
         bar_right
     );
+        let mut natural_by_group: std::collections::BTreeMap<String, i32> =
+            std::collections::BTreeMap::new();
     let mut clipped: Vec<String> = Vec::new();
     // `compute_bounds` answers in NATIVE coordinates, which is what "inside the bar" has to mean here; a
     // widget's own x/y getters answer against its parent and would compare two different frames.
@@ -123,6 +125,44 @@ fn check_every_control_sits_on_the_bar(app: &adw::Application) {
             .compute_bounds(window.upcast_ref::<gtk::Widget>())
             .unwrap_or_else(|| panic!("`{name}` ({what}) has no bounds -- never laid out"));
         let right = bounds.x() + bounds.width();
+        // The group's own viewport: a control can sit inside the BAR and still paint clipped, because
+        // each group is a ScrolledWindow whose row may be wider than the share the bar gave it.
+        let mut owner: Option<gtk::Widget> = Some(widget.clone().upcast());
+        let mut group_name = String::from("-");
+        let mut group_left = f64::NAN;
+        let mut group_right = f64::NAN;
+        let mut row_width = 0;
+        let mut natural = 0;
+        while let Some(node) = owner {
+            let gname = node.widget_name().to_string();
+            if gname.starts_with("group-") && !gname.ends_with("-row") {
+                // The VIEWPORT is the scroller inside the named box, not the box: its own width is the
+                // hole the buttons show through, and the row it holds may be wider than that -- which is
+                // exactly what paints a control clipped while it still sits inside the BAR.
+                let scroll = node
+                    .downcast_ref::<gtk::Box>()
+                    .and_then(|b| b.first_child())
+                    .unwrap_or_else(|| node.clone());
+                let sb = scroll
+                    .compute_bounds(window.upcast_ref::<gtk::Widget>())
+                    .unwrap_or(bounds);
+                group_name = gname;
+                group_left = f64::from(sb.x());
+                group_right = f64::from(sb.x() + sb.width());
+                row_width = scroll
+                    .downcast_ref::<gtk::ScrolledWindow>()
+                    .and_then(|s| s.child())
+                    .map(|c| c.width())
+                    .unwrap_or(0);
+                natural = scroll
+                    .measure(gtk::Orientation::Horizontal, -1)
+                    .1;
+                break;
+            }
+            owner = node.parent();
+        }
+        println!("GROUP {name} -> {group_name} viewport={group_left:.0}..{group_right:.0} row={row_width} natural={natural}");
+        natural_by_group.insert(group_name.clone(), natural);
         println!(
             "CTRL {name}: x={:.0} right={:.0} w={} mapped={} visible={}",
             bounds.x(),
@@ -138,8 +178,26 @@ fn check_every_control_sits_on_the_bar(app: &adw::Application) {
                 "{name} ({what}) ends at {:.0}, past the bar's right edge {:.0}",
                 right, bar_right
             ));
+        } else if f64::from(right) > group_right + 1.0 {
+            // The check `spec/img/05-cut.png` actually asks for: a control inside the BAR but past its own
+            // group's viewport is PAINTED clipped -- the scroller shows the hole, not the row.
+            clipped.push(format!(
+                "{name} ({what}) ends at {right:.0}, past {group_name}'s viewport {group_left:.0}..{group_right:.0}",
+            ));
         }
     }
+    let sum: i32 = natural_by_group.values().sum();
+    // The bar's own arithmetic at §1's floor: five 4 px gaps between the six groups. This is the number
+    // that decides whether every \u{a7}1 control can sit inside its own group, so it is asserted, not just
+    // printed — a wider label or fatter padding that pushes it past the bar clips a control again.
+    let needed = sum + 5 * 4;
+    println!("SUM natural={sum} + spacing={} = {} against bar {}", 5 * 4, needed, bar.width());
+    assert!(
+        needed <= bar.width(),
+        "\u{a7}A's one row needs {needed} px (six groups' natural widths + their gaps) but the bar is {} px \
+wide at \u{a7}1's floor: some group scrolls and hides its controls — {natural_by_group:?}",
+        bar.width()
+    );
     assert!(
         clipped.is_empty(),
         "{} of {} \u{a7}1 controls are NOT on the visible toolbar row: {}",
@@ -193,6 +251,25 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
             .is_some_and(|tip| tip.contains("cuts and all")),
         "and its tooltip says what it plays"
     );
+    // The four frame steps too: \u{a7}A group 1 gives them the arrows, and the word "f" would only widen
+    // the row (the sentence is `FRAME_TIP`).
+    for (name, glyph) in [
+        ("line-step-back-five", "\u{2039}\u{2039}"),
+        ("line-step-back", "\u{2039}"),
+        ("line-step-forward", "\u{203a}"),
+        ("line-step-forward-five", "\u{203a}\u{203a}"),
+    ] {
+        let step = &naivepost::cut_screen::TRANSPORT_BUTTONS
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("\u{a7}1 item 8 names `{name}`"));
+        assert_eq!(step.label, glyph, "`{name}` wears the bare arrow \u{a7}A draws");
+        assert!(
+            step.tip.contains("frame"),
+            "`{name}` leaves which way and how far to the tooltip: {:?}",
+            step.tip
+        );
+    }
     RAN_GLYPHS.store(true, Ordering::SeqCst);
     window.close();
 }

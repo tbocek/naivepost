@@ -181,6 +181,15 @@ fn check_s2_cues_the_real_player_program_at_the_red_line(app: &adw::Application)
         .expect("▶")
         .emit_by_name::<()>("clicked", &[]);
     settle();
+    // The cue is written by the fake player ASYNCHRONOUSLY (`printf >> log` inside a spawned shell), so one
+    // `settle()` can read the log before that line has landed -- which showed up as `the cue names the red line:
+    // []` about once in fifteen full-suite runs, and a panic inside GTK's activate aborts the whole binary
+    // (exit 134) rather than reporting one failed test. So the wait is for the CONDITION with a deadline naming
+    // what never happened; the assert below still pins the exact second, unchanged.
+    common::wait_until(
+        "the fake player logged ▶'s cue at the red line",
+        || cue_argv_of(&root).iter().any(|arg| arg == "-s"),
+    );
     let args = cue_argv_of(&root);
     let at = args.iter().position(|arg| arg == "-s").and_then(|i| args.get(i + 1));
     assert_eq!(at.map(String::as_str), Some("42.5"), "the cue names the red line: {args:?}");
