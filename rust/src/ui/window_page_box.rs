@@ -470,7 +470,7 @@ pub(crate) fn page_box(
         // placed or edited, this holds the eight readings: thumbnail size (with its −/+ ladder), aspect
         // ratio, playhead, selection, cut, cut at 1×, source, segments — each value label named off
         // `cut_screen::readout_widget(label)` so the label is spelled once and the name follows.
-        let form = cut_form_frame::frame(&cut_form_column().upcast::<gtk::Widget>());
+        let (form, insert_footer) = cut_form_frame::frame_parts(&cut_form_column().upcast::<gtk::Widget>());
         box_.insert_child_after(&form, Some(&previous));
         previous = form.upcast();
 
@@ -483,6 +483,10 @@ pub(crate) fn page_box(
         insert_form.set_widget_name("insert-form");
         insert_form.set_visible(false);
         box_.insert_child_after(&insert_form, Some(&previous));
+        // The footer that finishes an insert, directly under its own form: §05#1 pins the buttons that place
+        // what a form proposes, and inside the scrolling body they fell below the painted frame.
+        box_.insert_child_after(&insert_footer, Some(&insert_form.clone().upcast::<gtk::Widget>()));
+        previous = insert_footer.upcast();
 
         // F3.1 S4: the zoom's own form, built the same way and right after the insert form's slot so
         // neither disturbs the other. Hidden until a drag lands a box; `show_zoom_form` fills it from an

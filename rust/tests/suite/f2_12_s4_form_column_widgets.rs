@@ -231,27 +231,30 @@ fn check_the_buttons_are_the_forms_own_and_in_order(app: &adw::Application) {
     open_form(&window);
     // The column's pinned footer exists and is shown while a form is open; §1 also wants the form's own buttons
     // IN it, which HEAD does not do -- see the note below on where those buttons actually live.
+    // The column still pins a footer (§1); for an INSERT the buttons go into the insert's own footer below the
+    // frame, so the frame's is what §A's idle column keeps hidden while this form is open.
     let footer = find_named(&window, "cut-form-footer").expect("the column pins a footer");
-    assert!(footer.is_visible(), "an open form pins its footer");
+    let insert_footer =
+        find_named(&window, "insert-form-footer").expect("the insert has its own pinned footer");
+    assert!(
+        footer.is_visible() || insert_footer.is_visible(),
+        "an open form pins the footer its buttons sit in"
+    );
     let apply = find_named(&window, "insert-apply-button")
         .and_then(|w| w.downcast::<gtk::Button>().ok())
         .expect("the form carries its apply button");
     let cancel = find_named(&window, "insert-cancel-button")
         .and_then(|w| w.downcast::<gtk::Button>().ok())
         .expect("the form carries its cancel button");
-    // At HEAD the buttons are the FORM's own: built with their handlers inside the insert holder and shown
-    // while it is open. They are NOT moved into the column's pinned footer (no `set_footer` exists in
-    // `cut_form_frame.rs`), which is part of the F2.12 finding reported this round -- §1 asks for "every form
-    // ends with its own buttons" in a pinned footer, and what the page draws is the pair inside the form.
+    // The buttons are the FORM's own and now sit in the PAGE's pinned footer for the insert — `insert-form-footer`,
+    // the box placed directly under the insert holder (the frame's `cut-form-footer` would sit ABOVE this form,
+    // so it cannot finish it). `proves` them here only that they are the form's pair and in §1's order;
+    // `f2_12_s4_footer_widgets.rs` is where the footer's own wiring is pinned.
     let form = find_named(&window, "insert-form").expect("the form holder");
     assert!(form.is_visible(), "the form that owns these buttons is open");
     assert!(apply.is_visible(), "\"Insert it\" is drawn with the form");
     assert!(cancel.is_visible(), "and \"Cancel\" beside it");
-    assert!(
-        holds(&form, apply.upcast_ref()) && holds(&form, cancel.upcast_ref()),
-        "both buttons belong to the insert form, so closing the form takes them away"
-    );
-    let order: Vec<String> = form
+    let order: Vec<String> = insert_footer
         .observe_children()
         .iter::<glib::Object>()
         .flatten()
@@ -265,10 +268,12 @@ fn check_the_buttons_are_the_forms_own_and_in_order(app: &adw::Application) {
                 .collect::<Vec<_>>()
         })
         .collect();
+    // The order is read off the FOOTER the buttons now sit in (the form body no longer ends with them):
+    // §1's left-to-right pair, "Insert it" then "Cancel".
     let at = order
         .iter()
         .position(|n| n == "insert-apply-button")
-        .expect("the form drew its apply button");
+        .unwrap_or_else(|| panic!("the pinned footer drew no apply button: {order:?}"));
     assert_eq!(
         order.get(at + 1).map(String::as_str),
         Some("insert-cancel-button"),
@@ -278,10 +283,6 @@ fn check_the_buttons_are_the_forms_own_and_in_order(app: &adw::Application) {
         apply.label().unwrap_or_default().as_str(),
         "Insert it",
         "an insert's apply button says \"Insert it\" (§1)"
-    );
-    assert!(
-        holds(&form, apply.upcast_ref()) && holds(&form, cancel.upcast_ref()),
-        "both buttons belong to the insert form, so closing the form takes them away"
     );
     RAN_BUTTONS.store(true, Ordering::SeqCst);
     window.close();

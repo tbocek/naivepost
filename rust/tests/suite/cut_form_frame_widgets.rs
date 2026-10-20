@@ -113,9 +113,14 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
         "the heading names what is being placed: {:?}",
         title.text()
     );
+    // An insert's buttons sit in the INSERT's own pinned footer (`insert-form-footer`, the box under its form);
+    // the frame's `cut-form-footer` is what every other form pins, so exactly one of the two is shown.
+    let column_footer = find_named(&window, "cut-form-footer").expect("the column pins a footer");
+    let insert_footer = find_named(&window, "insert-form-footer")
+        .expect("the insert has its own pinned footer for its buttons");
     assert!(
-        find_named(&window, "cut-form-footer").expect("the footer").is_visible(),
-        "an open form pins its button footer"
+        column_footer.is_visible() || insert_footer.is_visible(),
+        "an open form pins the footer its buttons sit in"
     );
 
     // The cross, fired the way GTK fires a click.
