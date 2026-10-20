@@ -14,6 +14,12 @@ use crate::ui;
 
 use crate::snapshot_face::seed_snapshot_frame;
 
+/// The staged zoom's camera, as fractions of the source frame: off-centre left and tighter than the whole frame,
+/// which is what gives §2's picture a crop with surround to dim (see the note where they are written).
+const ZOOM_CX: f64 = 0.34;
+const ZOOM_CY: f64 = 0.42;
+const ZOOM_HF: f64 = 0.62;
+
 /// Paint the preview mid-zoom-and-caption onto `window`. Returns true when this module owned `screen`.
 /// `out` is the PNG this run writes; §2's own frame image goes beside it as `<name>-frame.png`.
 pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, screen: &str) -> bool {
@@ -33,14 +39,19 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
                 // under `fx_lane::PLATE_MIN_PX` of width `fx_lane::room_px` answers "no room", the debt plate
                 // hides, and §06's own caption for this screen — "the caption is fitted into its box" — needs
                 // that plate in the shot. Off-centre so the rect reads as a crop, not as a border.
+                // `hf` is the height FRACTION of the SOURCE, and §2's picture crops a head-and-shoulders shot out
+                // of the left half of the frame (the lecturer stands left of centre there), so the centre sits left
+                // of the middle and well under half the height. At hf 0.6 the rect filled nearly the whole plate,
+                // almost nothing outside it was left to dim, and the shot read as a border, not as a crop. Named
+                // because the caption's box below is measured against this rect, not against a remembered pixel.
                 cut::Fx {
                     kind: "zoom".to_string(),
                     t: 78.0,
                     dur: 12.0,
                     trans: 2.0,
-                    cx: Some(0.42),
-                    cy: Some(0.55),
-                    hf: Some(0.6),
+                    cx: Some(ZOOM_CX),
+                    cy: Some(ZOOM_CY),
+                    hf: Some(ZOOM_HF),
                     ..Default::default()
                 },
                 // A speed whose sound runs to the scene's end: the one answer that draws the dashed debt
@@ -113,11 +124,39 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
         // painted at alpha 0 in the very shot §06 shows it visible in. Landing it a second earlier puts the
         // whole fade BEFORE the spec's second, so 1:22 sees the finished caption — the drag still decides the
         // seconds, as it does for a hand.
+        // The box is dragged in the PANEL's px, not the shot's — `text_drag_ended` measures against
+        // `PREVIEW_PANEL_W/H` (240 x 135 headless) and stores fractions of it, so these numbers are panel px.
+        // They land the caption low inside the camera rect (§F3.4 puts a caption on the OUTPUT frame; §2's picture
+        // shows the words inside the crop, across its lower third), wide and shallow so the sentence fits on one
+        // line as it does there — a narrow box wraps it to two and the second line falls outside the rect.
         ui::set_line_position(window, cut_line::LinePos { t: 81.0 });
         ui::note_place(true);
         let landed = ui::press_text_item(window);
         let _ = landed;
-        ui::text_drag_ended(window, (60.0, 96.0), (180.0, 118.0));
+        ui::text_drag_ended(window, (40.0, 50.0), (128.0, 61.0));
+        // The drag landed the box on the FORM, and Apply is what copies it onto the record — so the form's own
+        // box has to be moved before Apply: a click (and any drag that GTK's headless panel cannot measure) leaves
+        // §F3.4 S2's default lower third (cx 0.5, cy 0.78) on the form, which at a tight camera rect falls BELOW
+        // the crop and gets dimmed with everything outside it. §2's picture shows the words inside the crop, low
+        // across it, so the box goes there through `nudge_text_box` (§F3.4 S5's own door), where its 10 px snap to
+        // the finished frame's centre line is what lands it ON that line — as it would for a hand.
+        // The box the caption Apply writes: `text_drag_ended` only puts the dragged rectangle on the FORM, and
+        // Apply copies the form's box onto the record, so the box is set here through §F3.4 S5's own nudge door.
+        // Two numbers, both asked of the doors rather than guessed: the default lower third (cx 0.5, cy 0.78) lands
+        // BELOW a tight camera rect, where the painter dims the words with everything outside the crop, while §2's
+        // picture shows them inside it, in its own lower third — 70% of the way down the CROP, not the frame.
+        let caption_cy = ZOOM_CY - ZOOM_HF / 2.0 + 0.7 * ZOOM_HF;
+        let panel_px_per_fraction = crate::ui::cut_zoom_hand::PREVIEW_PANEL_H;
+        let moved_box = ui::nudge_text_box(
+            window,
+            (
+                0.0,
+                (caption_cy - crate::fx_text::LOWER_THIRD.cy) * panel_px_per_fraction + 11.0,
+            ),
+        );
+        println!("snapshot: 06-preview | caption box: {moved_box}");
+        let after = ui::review_cut_of(window);
+        println!("snapshot: 06-preview | staged cut: {} records", after.fx.len());
         if let Some(view) = crate::ui::window::find_widget_by_name(window.upcast_ref(), "text-field-words")
             .and_then(|w| w.downcast::<gtk::TextView>().ok())
         {
