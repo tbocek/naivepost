@@ -75,17 +75,22 @@ impl Stage {
     }
 
     /// What the fake player wrote down, one argument per line. `None` when it was never started at all.
+    ///
+    /// Waits for the FILE to appear rather than guessing how long a freshly spawned shell script needs:
+    /// on a loaded machine (the suite runs test programs side by side) a fixed 2 s poll budget can run
+    /// out before the child writes, which made this assert fail at random. [`common::wait_until`] checks
+    /// the condition itself against a wall-clock deadline and names what never happened.
     fn argv(&self) -> Option<Vec<String>> {
-        // The fake player writes its argv from a process that was only just spawned, so the file can lag the
-        // start by a few milliseconds. Polling briefly is what keeps this a check of WHAT was asked rather
-        // than of how fast a shell script happens to be.
-        for _ in 0..100 {
-            if let Ok(text) = std::fs::read_to_string(self.root.join("lane-argv.txt")) {
-                return Some(text.lines().map(str::to_string).collect());
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        None
+        let written = self.root.join("lane-argv.txt");
+        common::wait_until("the fake player wrote down its argv", || written.exists());
+        self.argv_once()
+    }
+
+    /// [`Stage::argv`] WITHOUT waiting — for a check whose claim is that nothing was ever spawned. There
+    /// the pid table is the proof (a pid is recorded the instant `spawn` returns), so no wait belongs here.
+    fn argv_once(&self) -> Option<Vec<String>> {
+        let text = std::fs::read_to_string(self.root.join("lane-argv.txt")).ok()?;
+        Some(text.lines().map(str::to_string).collect())
     }
 }
 
@@ -217,18 +222,23 @@ fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
     );
 
     lane_hear::apply_for_test(&mix, &lanes, &stage.root, naivepost::cut_hear::MAX_GAIN, &|_| {}, stage.player());
-    assert!(
-        stage.argv().is_none(),
-        "the fake player was never started — \"never started when silenced\" means NO process at all, \
-         not a quiet one"
-    );
-    assert_eq!(lane_hear::lane_pid(hushed), None, "and no pid was remembered");
+    // The pid table is the PROOF: `start_lane` remembers a pid the instant `spawn` returns, so no entry
+    // means no process — a synchronous claim that needs no waiting. (The old form polled the argv file for
+    // 2 s and called a timeout "proof nothing happened", which fails the other way on a loaded machine.)
     assert!(
         !lane_hear::lane_pids_for_test()
             .into_iter()
             .any(|(name, _)| name == hushed || name == gone),
         "the live table names neither of them"
     );
+    // The file is only the echo of that claim, read once: had anything been spawned, the pid above would
+    // already have caught it.
+    assert!(
+        stage.argv_once().is_none(),
+        "the fake player was never started -- \"never started when silenced\" means NO process at all, \
+         not a quiet one"
+    );
+    assert_eq!(lane_hear::lane_pid(hushed), None, "and no pid was remembered");
 }
 
 /// F2.5 S4 (`a lane started under a scene boundary is seeked, with a stop at it`): the lane falls silent AT
@@ -321,6 +331,9 @@ fn f2_5_s7_a_pause_leaves_no_lane_holding_sound() {
 /// that the second time it is nothing at all.
 #[test]
 fn f2_5_s2_the_footages_own_sound_moves_by_property_not_by_stopping() {
+    // The volume stamp is process-wide like the lane table, and `f2_5_s1_the_tick_drives_the_mix…` clears
+    // it too while holding this lock: without it two threads rewrite one stamp and either can lose.
+    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let tape = ["lecture.mkv".to_string()];
     // The stamp is process-wide and shared with every other test in this binary, so each ask below starts
     // from a clean one: the rule under test is what a REPEAT costs, not what an earlier test left behind.
