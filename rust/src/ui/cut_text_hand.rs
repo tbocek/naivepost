@@ -14,6 +14,7 @@ use crate::cut;
 use crate::cut_screen;
 use crate::cut_speed;
 use crate::fx_aspect;
+use crate::fx_band;
 use crate::fx_record;
 use crate::fx_text;
 use crate::fx_zoom;
@@ -150,18 +151,24 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         "text-field-length",
         &trim_seconds(fx.dur),
     );
-    let fade_in = zoom_field_row(
+    // The two fades share ONE row, as `spec/img/06-text.png` draws them: `Fade in (s) [0.3]  Fade out (s) [0.3]`
+    // side by side rather than stacked. §S3's ORDER is untouched — Length, then Fade in, then Fade out, then Curve,
+    // each field still its own named entry under one holder row (`caption_text_widgets` reads that order off the
+    // holder's children) — only their layout differs, and it is text-local: `zoom_field_row` stays as the zoom and
+    // speed forms want it.
+    let fades = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    fades.append(&zoom_field_row(
         fx_text::FORM_FIELDS[2],
         fx_text::FADES_HELP,
         "text-field-fade-in",
         &trim_seconds(fx.trans),
-    );
-    let fade_out = zoom_field_row(
+    ));
+    fades.append(&zoom_field_row(
         fx_text::FORM_FIELDS[3],
         fx_text::FADES_HELP,
         "text-field-fade-out",
         &trim_seconds(fx.tout),
-    );
+    ));
     // Curve: one choice today, shown as a label rather than a dropdown with nothing in it — the same shape and
     // the same words the zoom and speed forms use, because `fx_text::apply` feeds this through
     // `fx_zoom::curve_stored` and all three forms must offer what that function understands.
@@ -181,8 +188,7 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     holder.append(&heading);
     holder.append(&words_row);
     holder.append(&length);
-    holder.append(&fade_in);
-    holder.append(&fade_out);
+    holder.append(&fades);
     holder.append(&curve_row);
     holder.append(&buttons);
     holder.append(&footer);
@@ -489,13 +495,36 @@ pub fn text_drag_ended(
 /// F3.4 S5: move the caption box by `delta` px on the preview. [`fx_text::move_box`] against the pinned panel
 /// frame is what supplies the rules — the `SNAP_PX` (10 px) snap to the finished frame's left/centre/right
 /// and top/middle/bottom lines, and the fact that a MOVED box offers all three of its own lines to snap with.
-// `window` stays in the signature: every sibling seam in this module takes it, and the caller passes it.
-#[expect(unused_variables, reason = "the seam keeps one shape across the page; only the form state moves here")]
-pub fn nudge_text_box(window: &adw::ApplicationWindow, delta: (f64, f64)) -> String {
+///
+/// `target` decides WHICH box moves, and that is the whole difference between an edit and a draft:
+///  - `None` — the form's own box, the one a just-landed caption carries before Apply. Nothing is on the cut yet,
+///    so nothing is recorded; the sentence names the new fractions because the person is still choosing them.
+///  - `Some(index)` — a text record already on the cut. The change is written through `record_edit`, the same door
+///    Apply uses, so one ↶ takes this move back on its own (§F3.8 S3), and the sentence is `fx_band::moved`'s.
+pub fn nudge_text_box(
+    window: &adw::ApplicationWindow,
+    target: Option<usize>,
+    delta: (f64, f64),
+) -> String {
+    let frame = (PREVIEW_PANEL_W, PREVIEW_PANEL_H);
+    if let Some(index) = target {
+        return match placed_text_box(window, index) {
+            Some(mut record) => {
+                let moved = fx_text::move_box(record_box(&record), delta, frame);
+                record.cx = Some(moved.cx);
+                record.cy = Some(moved.cy);
+                write_text_record(window, index, &record);
+                let said = fx_band::moved(fx_record::label_of(cut::EffectKind::Text));
+                log_line(&said);
+                said
+            }
+            None => no_box_to_move(),
+        };
+    }
     let Some(mut form) = text_form_open() else {
-        return "no caption box to move \u{2014} press \u{275d} Text and land one first".to_string();
+        return no_box_to_move();
     };
-    let moved = fx_text::move_box(form.on, delta, (PREVIEW_PANEL_W, PREVIEW_PANEL_H));
+    let moved = fx_text::move_box(form.on, delta, frame);
     form.on = moved;
     set_text_form(Some(form.clone()));
     let said = format!(
@@ -506,18 +535,75 @@ pub fn nudge_text_box(window: &adw::ApplicationWindow, delta: (f64, f64)) -> Str
     said
 }
 
+/// §S5's refusal when there is nothing in hand and nothing placed to grab.
+fn no_box_to_move() -> String {
+    "no caption box to move \u{2014} press \u{275d} Text and land one first".to_string()
+}
+
+/// The resize twin of [`no_box_to_move`] — a different missing thing, so a different sentence, exactly as the two
+/// doors are separate gestures.
+fn no_box_to_resize() -> String {
+    "no caption box to resize \u{2014} press \u{275d} Text and land one first".to_string()
+}
+
+/// The record at `index`, if it is a text one — the only kind §F3.4 gives a preview box to.
+fn placed_text_box(window: &adw::ApplicationWindow, index: usize) -> Option<cut::Fx> {
+    let record = review_cut_of(window).fx.into_iter().nth(index)?;
+    (record.kind == "text").then_some(record)
+}
+
+/// A text record's box. `Fx::centre` already answers the lower third for a record that stores no box (§06#1's
+/// legacy line), which is the same default a freshly landed caption gets, so a placed caption without a stored box
+/// still grabs where it draws.
+fn record_box(record: &cut::Fx) -> fx_text::Box_ {
+    let (cx, cy) = record.centre();
+    fx_text::Box_ { cx, cy, wf: record.wf.unwrap_or(fx_text::LOWER_THIRD.wf), hf: record.hf.unwrap_or(fx_text::LOWER_THIRD.hf) }
+}
+
+/// Put `record` back at `index` on the page's cut and take the history step. Built from `review_cut_of` with ONE
+/// entry replaced, then handed to `record_edit` — the door Apply uses, so the undo lands the move as its own step
+/// rather than folding it into the caption's placement.
+fn write_text_record(window: &adw::ApplicationWindow, index: usize, record: &cut::Fx) {
+    let mut edited = review_cut_of(window);
+    if let Some(slot) = edited.fx.get_mut(index) {
+        *slot = record.clone();
+    }
+    record_edit(window, &edited);
+    refresh_effects_lane(window);
+}
+
 /// F3.4 S5: drag one edge of the caption box to `to_px`. [`fx_text::resize_box`] gives the rules — the dragged
 /// edge offers ONLY itself to snap with (pulling a side to the centre must not be second-guessed into moving the
 /// middle there), the axes stay independent, and the axis never goes under `MIN_BOX_PX` (16 px) so a caption
 /// cannot be shrunk into nothing and lost.
-#[expect(unused_variables, reason = "the seam keeps one shape across the page; only the form state moves here")]
+///
+/// `target` is [`nudge_text_box`]'s question asked of a resize: `None` sizes the draft on the form, `Some(index)`
+/// sizes a record already on the cut and writes it through `record_edit`, so ↶ takes the resize back alone.
 pub fn drag_text_edge(
     window: &adw::ApplicationWindow,
+    target: Option<usize>,
     edge: fx_text::Edge,
     to_px: f64,
 ) -> String {
+    let frame = (PREVIEW_PANEL_W, PREVIEW_PANEL_H);
+    if let Some(index) = target {
+        return match placed_text_box(window, index) {
+            Some(mut record) => {
+                let resized = fx_text::resize_box(record_box(&record), edge, to_px, frame);
+                record.cx = Some(resized.cx);
+                record.cy = Some(resized.cy);
+                record.wf = Some(resized.wf);
+                record.hf = Some(resized.hf);
+                write_text_record(window, index, &record);
+                let said = fx_band::resized(fx_record::label_of(cut::EffectKind::Text));
+                log_line(&said);
+                said
+            }
+            None => no_box_to_resize(),
+        };
+    }
     let Some(mut form) = text_form_open() else {
-        return "no caption box to resize \u{2014} press \u{275d} Text and land one first".to_string();
+        return no_box_to_resize();
     };
     let resized = fx_text::resize_box(form.on, edge, to_px, (PREVIEW_PANEL_W, PREVIEW_PANEL_H));
     form.on = resized;

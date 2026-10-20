@@ -465,7 +465,7 @@ fn f3_4_s5_a_moved_box_snaps_and_a_resized_edge_moves_one_axis_only(app: &adw::A
         fx_text::SNAP_PX,
         (mid - (top + dy)).abs()
     );
-    let _ = ui::nudge_text_box(&window, (0.0, dy));
+    let _ = ui::nudge_text_box(&window, None, (0.0, dy));
     let moved = ui::text_form_open()
         .expect("the form is still open after a nudge")
         .on;
@@ -481,7 +481,7 @@ fn f3_4_s5_a_moved_box_snaps_and_a_resized_edge_moves_one_axis_only(app: &adw::A
 
     // Right edge pulled to 200 px: 200 is not within SNAP_PX of any frame line (120 / 240), so the hand's
     // position stands and the width is exactly what was drawn.
-    let _ = ui::drag_text_edge(&window, fx_text::Edge::Right, 200.0);
+    let _ = ui::drag_text_edge(&window, None, fx_text::Edge::Right, 200.0);
     let widened = ui::text_form_open().expect("still open").on;
     let want_wf = (200.0 - x) / frame_w;
     assert!(
@@ -497,7 +497,7 @@ fn f3_4_s5_a_moved_box_snaps_and_a_resized_edge_moves_one_axis_only(app: &adw::A
     );
 
     // Pulled past the left edge of the box: the floor holds it at MIN_BOX_PX wide, still one axis only.
-    let _ = ui::drag_text_edge(&window, fx_text::Edge::Right, 10.0);
+    let _ = ui::drag_text_edge(&window, None, fx_text::Edge::Right, 10.0);
     let floored = ui::text_form_open().expect("still open").on;
     assert!(
         (floored.wf - fx_text::MIN_BOX_PX / frame_w).abs() < 1e-9,

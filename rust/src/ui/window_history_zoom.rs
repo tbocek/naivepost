@@ -423,6 +423,27 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
     let win_update = window.clone();
     gesture.connect_drag_update(move |_g, dx, dy| {
         let (sx, sy) = start_update.get();
+        // §F3.4 S5: while a hand drags a PLACED caption's box, show where it will land and the six lines it may
+        // snap to. Asked before the armed dispatch because this is the one left-button gesture on the panel; the
+        // door answers `None` for every other press (anything armed or held, no travel, no box under the pointer),
+        // so an armed drag still gets only the box the flow that owns it draws.
+        let at = ui::paste_line(&win_update);
+        let fit = crate::ui::cut_preview_frame::fit_size_of(
+            &win_update,
+            ui::PREVIEW_PANEL_W,
+            ui::PREVIEW_PANEL_H,
+        );
+        if let Some(box_) = crate::ui::cut_preview_press::box_edit_preview(
+            &win_update,
+            at,
+            fit,
+            (sx, sy),
+            (sx + dx, sy + dy),
+        ) {
+            crate::ui::cut_preview_frame::note_edit(true);
+            crate::ui::cut_preview_frame::note_box(Some(box_), &win_update);
+            return;
+        }
         crate::ui::cut_preview_frame::note_box(Some((sx, sy, dx, dy)), &win_update);
     });
     let win_end = window.clone();
@@ -445,11 +466,31 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
         } else if text_armed() {
             text_drag_ended(&win_end, (sx, sy), (sx + dx, sy + dy))
         } else {
-            zoom_drag_ended(&win_end, (sx, sy), (sx + dx, sy + dy))
+            // §F3.4 S5 (`a box moves … and resizes`) ahead of the framing fallback: a release that started ON a
+            // placed caption's box edits that caption, and only a release clear of every box is F3.1's framing
+            // question. The door refuses anything armed or held, and any press without travel (that is the
+            // play/pause toggle), so nothing above or below it changes its answer.
+            let at = ui::paste_line(&win_end);
+            let fit = crate::ui::cut_preview_frame::fit_size_of(
+                &win_end,
+                ui::PREVIEW_PANEL_W,
+                ui::PREVIEW_PANEL_H,
+            );
+            match crate::ui::cut_preview_press::box_edit_on_release(
+                &win_end,
+                at,
+                fit,
+                (sx, sy),
+                (sx + dx, sy + dy),
+            ) {
+                Some(said) => said,
+                None => zoom_drag_ended(&win_end, (sx, sy), (sx + dx, sy + dy)),
+            }
         };
         if let Some(status_line) = ui::find_status(win_end.upcast_ref()) {
             status_line.set_text(&say);
         }
+        crate::ui::cut_preview_frame::note_edit(false);
         crate::ui::cut_preview_frame::note_box(None, &win_end);
     });
     panel.add_controller(gesture.clone());

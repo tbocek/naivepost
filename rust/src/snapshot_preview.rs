@@ -149,6 +149,7 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
         let panel_px_per_fraction = crate::ui::cut_zoom_hand::PREVIEW_PANEL_H;
         let moved_box = ui::nudge_text_box(
             window,
+            None,
             (
                 0.0,
                 (caption_cy - crate::fx_text::LOWER_THIRD.cy) * panel_px_per_fraction + 11.0,

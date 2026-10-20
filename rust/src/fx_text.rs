@@ -560,3 +560,42 @@ pub fn resize_box(from: Box_, edge: Edge, to_px: f64, frame: (f64, f64)) -> Box_
 pub fn press_without_travel_toggles_play() -> bool {
     true
 }
+
+/// F3.4 S5 (a box `moves … and resizes`): how close to an edge a press has to land for it to size that edge rather
+/// than move the box. §10 gives the preview's box no `P.` row of its own, so the number belongs to the rule that
+/// uses it, and it sits deliberately UNDER [`SNAP_PX`] (10 px): a press near an edge must decide "which edge" before
+/// snapping decides "where", or grabbing a 20 px-tall caption would resize whatever the snap fancied.
+pub const EDGE_GRIP_PX: f64 = 8.0;
+
+/// F3.4 S5: which edge of `box_px` a press at `at_px` has hold of — `Some(edge)` when one of them is nearer than
+/// [`EDGE_GRIP_PX`] (the nearest wins, so a press in a corner takes the axis it is closest to), `None` when the press
+/// is in the interior, which is a MOVE of the whole box.
+pub fn grab_edge(box_px: (f64, f64, f64, f64), at_px: (f64, f64)) -> Option<Edge> {
+    let (x, y, w, h) = box_px;
+    let gaps = [
+        ((Edge::Left), (at_px.0 - x).abs()),
+        ((Edge::Right), (at_px.0 - (x + w)).abs()),
+        ((Edge::Top), (at_px.1 - y).abs()),
+        ((Edge::Bottom), (at_px.1 - (y + h)).abs()),
+    ];
+    gaps
+        .iter()
+        .filter(|(_, gap)| *gap <= EDGE_GRIP_PX)
+        .min_by(|(_, a), (_, b)| a.total_cmp(b))
+        .map(|(edge, _)| *edge)
+}
+
+/// F3.4 S5 (`snapping within 10 px to the finished frame's left edge, centre, right edge (and top, middle,
+/// bottom)`): those six lines as thin rectangles in the frame's own px — the door the painter draws the snap targets
+/// from and a check measures, so the lines shown are [`frame_lines`]'s and can never be a second list kept by hand.
+/// Each is 1 px wide (or tall) and spans the frame on the other axis, which is what makes a centre line visible over
+/// a bright picture without hiding the caption behind it.
+pub fn snap_lines_px(frame: (f64, f64)) -> Vec<(f64, f64, f64, f64)> {
+    let vertical = frame_lines(frame.0);
+    let horizontal = frame_lines(frame.1);
+    vertical
+        .iter()
+        .map(|x| (*x - 0.5, 0.0, 1.0, frame.1))
+        .chain(horizontal.iter().map(|y| (0.0, *y - 0.5, frame.0, 1.0)))
+        .collect()
+}
