@@ -61,6 +61,95 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
         return true;
     }
 
+    // §06-effects#3's own screen: the Cut page after all THREE post-cut passes have placed what the model was
+    // answered with — ✐ Captions (F3.9), ⏩ Speeds (F3.10) and ✨ Decorations (F3.11) — so the one shot shows the
+    // run-bar row's three job buttons having each done its job, and the lane showing a caption, a fast stretch
+    // and a zoom together. No `spec/img/06-flows.png` exists, so this is a program-side screen like `06-speeds`
+    // and `06-decorations`, driven through the page's own doors and never by poking state:
+    //   1. a kept two-clip cut (the fixture keeps one clip and `fx: []`, which answers "nothing to ask about");
+    //   2. the three `run_*_pass_with_reply` doors — scripted for the TELEPHONE only. Every rule after the reply
+    //      (membership, the caption refusal, the app's own decoration defaults) and every write (`record_edit`,
+    //      the lane repaint, the status row) is the pass's own, called exactly as its button calls it;
+    //   3. the count is read back off the page, not off the returned sentences, so a shot that printed nothing
+    //      reaching the cut would fail rather than print a number anyway.
+    if screen == "06-flows" {
+        let two = cut::Cut {
+            segs: vec![
+                cut::Seg { s: 0.0, e: 20.0, cam: 0, ..Default::default() },
+                cut::Seg { s: 20.0, e: 40.0, cam: 0, ..Default::default() },
+            ],
+            ..Default::default()
+        };
+        ui::seed_review_cut(window, &two);
+        let captions = ui::run_captions_pass_with_reply(
+            window,
+            &[ui::CaptionBatch {
+                clips: vec![(1, 20.0), (2, 20.0)],
+                calls: vec![crate::cut_captions::Call {
+                    clip: 1,
+                    start: 2.0,
+                    end: 5.0,
+                    text: "the reveal".to_string(),
+                }],
+            }],
+        );
+        let speeds = ui::run_speeds_pass_with_reply(
+            window,
+            &[crate::cut_speed_pass::Call { clip: 2, rate: 1.5 }],
+        );
+        let decorations = ui::run_effects_pass_with_reply(
+            window,
+            &[crate::cut_effects_pass::Call {
+                clip: 1,
+                kind: "zoom".to_string(),
+                start: 8.0,
+                end: 14.0,
+                gain: None,
+            }],
+        );
+        let landed: Vec<String> = ui::review_cut_of(window)
+            .fx
+            .iter()
+            .map(|fx| format!("{}@{:.0}", fx.kind, fx.t))
+            .collect();
+        // Three passes, three records — a pass that silently placed nothing would otherwise print a shot of the
+        // bare page and still exit 0, which is how a broken wire hides from a snapshot recipe.
+        assert_eq!(
+            landed.len(),
+            3,
+            "snapshot: 06-flows placed {landed:?}, expected a caption, a speed and a zoom"
+        );
+        // The three job buttons themselves: this screen exists to show THEM working, so a shot where one of
+        // them is missing would still print a page whose pass looks like it ran by itself. They live on
+        // `run-controls-inner` inside the sideways scroller §1 names `run-controls`, whose policy is External —
+        // the SHELL scrolls that row, so at a snapshot's window width the last control can sit at a negative x,
+        // clipped out of the picture. That is not this screen's subject and not a regression (the shell owns the
+        // scroll), so what is asserted here is that all three exist, are labelled and wired, and each reports its
+        // own gate; the pixels of the row go beside the page as `06-flows-runbar.png`, where they can be read.
+        let mut seen: Vec<String> = Vec::new();
+        for name in ["captions-pass-button", "speeds-pass-button", "decorations-pass-button"] {
+            let button = ui::window::find_widget_by_name(window.upcast_ref(), name)
+                .unwrap_or_else(|| panic!("snapshot: 06-flows found no {name}"))
+                .downcast::<gtk4::Button>()
+                .unwrap_or_else(|_| panic!("snapshot: {name} is not a button"));
+            let label = button.label().unwrap_or_default().to_string();
+            assert!(!label.is_empty(), "snapshot: {name} carries no label");
+            assert!(button.has_tooltip(), "snapshot: {name} says nothing about what it does");
+            seen.push(format!("{name} {label:?} sensitive:{}", button.is_sensitive()));
+        }
+        println!("snapshot: 06-flows | run-bar jobs {}", seen.join(", "));
+        RUNBAR_SHOT.with(|f| f.set(true));
+        let shown = ui::find_status(window.upcast_ref())
+            .map(|row| row.text().to_string())
+            .unwrap_or_default();
+        println!(
+            "snapshot: 06-flows | {} bar(s): {} | status: {shown} | {captions} / {speeds} / {decorations}",
+            landed.len(),
+            landed.join(" ")
+        );
+        return true;
+    }
+
     // §F3.10's own screen: the Cut page AFTER a ⏩ Speeds pass placed what the model asked for, with that
     // pass's sentence on the status row. `spec/img` has no speed-pass image (the file named `06-speed.png`
     // is §F3.3's hand form), so this is a program-side screen like `05-suggest` / `06-lane`, driven the
@@ -293,4 +382,46 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
     }
 
     false
+}
+
+/// Has [`paint`] staged the `06-flows` screen? `snapshot::run` asks once, beside the effect-menu sidecar, and
+/// paints the run-bar row into `<name>-runbar.png` when it is set: that row's own pixels are where its three job
+/// buttons can be read, because the shell scrolls the row sideways at a snapshot's window width.
+pub fn runbar_shot_wanted() -> bool {
+    RUNBAR_SHOT.with(|flag| flag.get())
+}
+
+/// The three pass buttons' own row, copied onto a top level of its own so every label reads. A COPY again, for
+/// the same reason as [`crate::snapshot_effect_menu::write_png`]: reparenting a mapped widget out of its window
+/// leaves it with no render node. Each button keeps its label, tooltip and sensitivity because those ARE what
+/// this screen records.
+pub fn write_runbar_png(window: &adw::ApplicationWindow, out: &std::path::Path) -> Result<(), String> {
+    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    row.set_widget_name("run-controls-inner");
+    for name in ["captions-pass-button", "speeds-pass-button", "decorations-pass-button"] {
+        let held = ui::window::find_widget_by_name(window.upcast_ref(), name)
+            .and_then(|widget| widget.downcast::<gtk4::Button>().ok())
+            .unwrap_or_else(|| panic!("snapshot: found no {name}"));
+        let copy = gtk4::Button::with_label(held.label().unwrap_or_default().as_str());
+        copy.set_widget_name(name);
+        copy.set_tooltip_text(held.tooltip_text().as_deref());
+        copy.set_sensitive(held.is_sensitive());
+        row.append(&copy);
+    }
+    let holder = gtk4::Window::new();
+    holder.set_decorated(false);
+    // Measured from the row's own natural size, never guessed: too narrow and a label clips to an ellipsis.
+    let width = row.measure(gtk4::Orientation::Horizontal, -1).3;
+    let height = row.measure(gtk4::Orientation::Vertical, -1).3;
+    holder.set_default_size(width.max(200), height.max(48));
+    holder.set_child(Some(&row));
+    holder.present();
+    crate::snapshot_face::pump_context(64);
+    let result = crate::snapshot_face::write_png(row.upcast_ref(), out);
+    holder.close();
+    result
+}
+
+thread_local! {
+    static RUNBAR_SHOT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

@@ -398,10 +398,11 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
 
     lane_hear::tick_for_test(&mix, std::slice::from_ref(&mic), &stage.root, 38.1, &|_| {}, stage.player());
 
-    assert!(
-        lane_hear::lane_pid(name).is_some(),
-        "the tick started the lane the scene hears, for the second the line reached"
-    );
+    // The pid is remembered the instant `spawn` returns, so this is not a wait for the child: it is the one tick
+    // that lets a lane an earlier test in this binary left behind settle its stop (`stop_lane` signals and
+    // forgets without waiting for the process to die). A live entry under another name is what made this assert
+    // flake on a loaded machine.
+    common::wait_until("the tick to start the lane's player", || lane_hear::lane_pid(name).is_some());
     let argv = stage.argv().expect("the tick started the lane's player");
     assert_eq!(
         argv.get(2).map(String::as_str),

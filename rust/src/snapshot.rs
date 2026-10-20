@@ -57,7 +57,10 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         | "06-speeds"
         // §F3.11's, the same: driven through the page's own decorations-pass door.
         | "06-decorations"
-        | "06-lane" | "06-svg" | "06-effect-menu" => Some("Cut"),
+        | "06-lane" | "06-svg" | "06-effect-menu"
+        // §06-effects#3's own screen: the Cut page after all three post-cut passes have placed what they were
+        // answered with (F3.9 + F3.10 + F3.11 on one lane). No `spec/img` counterpart.
+        | "06-flows" => Some("Cut"),
         // §06-effects#5's own screen: the INSERT FORM with a card's own seconds already in it. No `spec/img`
         // counterpart, so `spec/inventory/cut.md` §G is again the widget reference (heading, declared field,
         // three radios, Seconds, Cancel + Insert it).
@@ -851,7 +854,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 // a narrow column two clips' worth of bars crowd into the leftmost tenth of the tape, where
                 // neither a colour nor a gap reads off the shot. So they keep 2400 instead of being pulled back.
                 // `05-insert-form` keeps its own smaller size, asked where its subject is chosen above.
-                let wide = matches!(screen.as_str(), "06-speeds" | "06-decorations");
+                let wide = matches!(screen.as_str(), "06-speeds" | "06-decorations" | "06-flows");
                 if screen != "05-insert-form" {
                     window.set_default_size(if wide { 2400 } else { 1280 }, 800);
                 }
@@ -1126,6 +1129,16 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 let menu_out = out.with_extension("menu.png");
                 let button = crate::snapshot_effect_menu::effect_button();
                 if let Err(err) = crate::snapshot_effect_menu::write_png(&button, &menu_out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
+            }
+            if crate::snapshot_effects::runbar_shot_wanted() {
+                // §06-effects#3's three job buttons, whose row the shell scrolls sideways at this window width,
+                // painted on their own where each label reads. Same sidecar precedent as the effect menu above.
+                let runbar_out = out.with_extension("runbar.png");
+                let window = ui::window::main_window();
+                if let Err(err) = crate::snapshot_effects::write_runbar_png(&window, &runbar_out) {
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }

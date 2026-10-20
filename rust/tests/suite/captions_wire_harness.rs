@@ -69,6 +69,13 @@ impl FakeLlm {
         listener.local_addr().expect("a local address").port()
     }
 
+    /// Anything the fake received within a short grace period, `None` when nothing arrived. The negative form a
+    /// refused press needs: a pass is synchronous, so by the time its press returned a request WOULD already be
+    /// queued; the brief wait only covers a late byte on the socket.
+    pub fn seen_within(&self, for_: Duration) -> Option<Seen> {
+        self.received.recv_timeout(for_).ok()
+    }
+
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}", self.port)
     }
