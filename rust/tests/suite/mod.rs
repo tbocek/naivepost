@@ -404,6 +404,7 @@ mod sec_06_effects_2_effect_menu_widgets;
 mod sec_06_effects_2_lane_painted;
 mod sec_06_effects_2_lane_preview_wired;
 mod sec_06_effects_2_lane_rows_order;
+mod sec_06_effects_2_shot_subjects;
 mod sec_06_effects_2_staging;
 mod sec_06_effects_2_text_staging;
 mod sec_06_effects_3_flows_order;

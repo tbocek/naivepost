@@ -110,6 +110,58 @@ pub(crate) fn seed_snapshot_frame(dir: &std::path::Path, base: &str, second: f64
     let _ = surface.write_to_png(&mut file);
 }
 
+/// The staged frame's own size: the shape of §06's preview image (960 x 540), so `fit_size` is a no-op and the
+/// still's box can be told from the whole frame. Not a tuning value -- it is the size the shot is compared at.
+//
+// PUBLIC because this is the INPUT the `06-preview` shot paints over, and §00-principles §5 says to measure the
+// artifact: a check that wants to prove "the still's pixels differ from the dimmed surround" has to know what the
+// picture underneath was, and deriving it from these same consts is the one source of truth for that.
+pub const STRUCTURED_FRAME_W: i32 = 960;
+pub const STRUCTURED_FRAME_H: i32 = 540;
+/// The three full-width bands and the one off-centre block. These are staged INPUT pixels for a headless shot:
+/// nothing decodes video in this container, so the picture behind the preview has to be written here. A FLAT
+/// colour ([`seed_snapshot_frame`]) cannot show a camera crop -- every fraction of it is the same colour as all
+/// the rest -- so these numbers exist to make a crop distinguishable: three bands of clearly different lightness
+/// plus one bright block that only exists in the upper-left half of the frame.
+pub const BAND_SKY: (f64, f64, f64) = (0.78, 0.86, 0.94);
+pub const BAND_MID: (f64, f64, f64) = (0.42, 0.5, 0.44);
+pub const BAND_LOWER: (f64, f64, f64) = (0.12, 0.14, 0.18);
+pub const BLOCK_BRIGHT: (f64, f64, f64) = (0.98, 0.82, 0.2);
+
+/// Write a frame with STRUCTURE where Prepare would have extracted one, and hand back the path.
+///
+/// Same contract as [`seed_snapshot_frame`] -- into `tree.frames_dir(base)`, a real extracted frame wins if one is
+/// already there, `None` when nothing could be written -- but at [`STRUCTURED_FRAME_W`] x [`STRUCTURED_FRAME_H`]
+/// and banded, because the `06-preview` screen has to show a stop's STILL, which `cut_preview_frame::stop_px`
+/// frames as the camera's FRACTION of the footage. Over a flat frame that fraction is indistinguishable from the
+/// whole picture, which is how the shot came out claiming a still while showing none.
+pub fn seed_structured_frame(dir: &std::path::Path, base: &str, second: f64) -> Option<std::path::PathBuf> {
+    let tree = layout::Tree::new(dir).ok()?;
+    let folder = tree.frames_dir(base);
+    std::fs::create_dir_all(&folder).ok()?;
+    let path = folder.join(format!("{}.jpg", crate::clock::frame_name(second)));
+    if path.exists() {
+        return Some(path);
+    }
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, STRUCTURED_FRAME_W, STRUCTURED_FRAME_H).ok()?;
+    {
+        let cr = cairo::Context::new(&surface).ok()?;
+        let (w, h) = (STRUCTURED_FRAME_W as f64, STRUCTURED_FRAME_H as f64);
+        for (band, (r, g, b)) in [BAND_SKY, BAND_MID, BAND_LOWER].iter().enumerate() {
+            cr.set_source_rgb(*r, *g, *b);
+            cr.rectangle(0.0, band as f64 * h / 3.0, w, h / 3.0 + 1.0);
+            let _ = cr.fill();
+        }
+        // One block that exists in no other part of the frame: inside the sky band, left of centre.
+        cr.set_source_rgb(BLOCK_BRIGHT.0, BLOCK_BRIGHT.1, BLOCK_BRIGHT.2);
+        cr.rectangle(w * 0.1, h * 0.08, w * 0.22, h * 0.2);
+        let _ = cr.fill();
+    }
+    let mut file = std::fs::File::create(&path).ok()?;
+    surface.write_to_png(&mut file).ok()?;
+    Some(path)
+}
+
 /// Paint `widget` into a PNG. Called once the first frame is ready.
 ///
 /// A cairo surface, not `gsk::Renderer::render_texture`: that one needs a realized

@@ -9,8 +9,9 @@
 //! of the spec's own shape and writes that file — no widget is built, and every colour, row and caption comes from
 //! the same painters the widgets use.
 //!
-//! The sidecar precedent is `snapshot_effect_menu`: the window still gets `<name>.png`, and the subject the spec
-//! pictures goes beside it under `<name>-lane.png`.
+//! The sidecar precedent is `snapshot_effect_menu`, and it now reads the other way for BOTH of them: the subject
+//! the spec pictures takes `<name>.png` (that file IS what §2 drew) and the window shot goes beside it as
+//! `<name>-page.png`.
 
 use std::path::Path;
 
@@ -25,6 +26,15 @@ const SHOT_W: i32 = 1240;
 /// the same 4 px/s the Cut page uses (`crate::ui::window::SELECT_SURFACE_PPS`) — so the bars here are the bars
 /// there, and the staging in `snapshot_effects::paint` (50 s = 200 px) lands in the same place.
 pub const PPS: f64 = 4.0;
+
+/// Is this screen's SUBJECT the lane itself? §06-effects#2's first picture (`spec/img/06-lane.png`) is the lane
+/// at 1240 x 200 -- ruler, kept bars, the effects lane with its washes, the picture rows -- not a Cut-page window,
+/// so the lane takes `<name>.png` and the page goes beside it. The door is the same shape as
+/// [`crate::snapshot_effect_menu::is_menu_subject`] for the same reason: `snapshot::run` asks, rather than matching
+/// a screen name against a hardcoded list of its own.
+pub fn is_lane_subject(screen: &str) -> bool {
+    screen == "06-lane"
+}
 
 /// Paint the lane scene into `<out>` at [`SHOT_W`] wide and as tall as its own rows. Returns the log sentence.
 pub fn write_png(cut: &Cut, out: &Path) -> Result<String, String> {

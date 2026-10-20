@@ -140,17 +140,19 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
         // painters (dim, stroked rect, caption, stop's still) so each of them actually reads, beside the window
         // shot as `<name>-frame.png`. Paused, because the spec's picture is the red line standing on a second.
         let still = ui::cut_picture::frame_shown();
-        // A headless shot seeds ONE frame file, a flat colour — so the still is drawn large, the way §2's own
-        // image shows it filling the held region. A real session's frames are the video's size, and then the
-        // still is the camera's fraction of them, exactly as `stop_px` frames it.
-        let full_frame = crate::ui::cut_picture::plate_shape(window).0
-            <= crate::ui::window::PREVIEW_PANEL_W as i32;
+        // §2's second image is the FRAME, not the page: painted on its own at 960x540 through the preview's own
+        // painters (dim, stroked rect, caption, stop's still) so each of them actually reads.
+        // The still has to be shown at the camera's OWN box -- "rendered from the scene's own camera, fitted on
+        // the footage's transform" -- which only means anything if the frame behind it has structure: over a flat
+        // staged colour a crop of it and all of it are the same pixels. So this screen stages the structured frame
+        // (three bands + one bright block) and paints THAT; `frame_shown()` stays the fallback for when nothing
+        // could be written, so the shot still lands rather than going out blank.
+        let picture = crate::snapshot_face::seed_structured_frame(dir, "session-tape", 82.0).or_else(|| still.clone());
         match crate::snapshot_preview_frame::write_png(
             &staged_with_caption(window),
             82.0,
-            still.as_deref(),
+            picture.as_deref(),
             false,
-            full_frame,
             &out.with_extension("frame.png"),
         ) {
             Ok(said) => println!("snapshot: 06-preview | {said}"),

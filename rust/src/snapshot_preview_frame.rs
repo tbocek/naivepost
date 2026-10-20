@@ -24,6 +24,15 @@ use crate::ui::cut_preview_frame::{self, Held};
 const FRAME_W: f64 = 960.0;
 const FRAME_H: f64 = 540.0;
 
+/// Is this screen's SUBJECT the framed preview? §06-effects#2's second picture (`spec/img/06-preview.png`) is the
+/// frame during the zoom and the caption -- record, dimmed surround, stroked camera rect, fitted caption, a stop's
+/// still -- not the page with a blue plate in it, so the frame takes `<name>.png` and the page goes beside it.
+/// Same door shape as [`crate::snapshot_effect_menu::is_menu_subject`] and
+/// [`crate::snapshot_lane::is_lane_subject`]: `snapshot::run` asks each subject module instead of naming screens.
+pub fn is_frame_subject(screen: &str) -> bool {
+    screen == "06-preview"
+}
+
 /// Paint the paused preview of `cut` at second `t` into `out`, with `frame` as the picture behind it. Returns the
 /// log sentence naming what was drawn, so a wrong staging shows up in the run's output rather than as a blank PNG.
 ///
@@ -35,7 +44,6 @@ pub fn write_png(
     t: f64,
     frame: Option<&Path>,
     playing: bool,
-    still_fills: bool,
     out: &Path,
 ) -> Result<String, String> {
     let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, FRAME_W as i32, FRAME_H as i32)
@@ -43,7 +51,7 @@ pub fn write_png(
     let mut drawn = String::new();
     {
         let cr = cairo::Context::new(&surface).map_err(|why| format!("the preview context: {why}"))?;
-        draw(&cr, cut, t, frame, playing, still_fills, &mut drawn);
+        draw(&cr, cut, t, frame, playing, &mut drawn);
     }
     let mut file = std::fs::File::create(out).map_err(|why| format!("{}: {why}", out.display()))?;
     surface
@@ -59,7 +67,6 @@ pub fn draw(
     t: f64,
     frame: Option<&Path>,
     playing: bool,
-    still_fills: bool,
     said: &mut String,
 ) {
     // The recorded picture first, contain-fitted exactly as the panel's `GtkPicture` fits it: every fraction the
@@ -105,10 +112,11 @@ pub fn draw(
     let seen = cut_preview_frame::observe(&frame_state, None);
     // The stop's still, BEFORE the paused half's dim: §2 puts it on the footage's transform (it is part of the
     // picture, held while the clock runs) and the dim belongs to the camera crop, so the still has to sit under
-    // it exactly as a filmed frame does. `stop_px` is the one door to the borrowed box.
+    // it exactly as a filmed frame does. `stop_px` is the one door to the borrowed box -- and it is drawn AT that
+    // box, never stretched over the whole fit: the staged frame now carries structure, so a cropped still reads as
+    // a crop, which is the difference §2's "fitted on the footage's transform" is about.
     if let Some(still) = cut_preview_frame::stop_px(&cut.fx, t, fit) {
-        let box_ = if still_fills { (0.0, 0.0, fit.0, fit.1) } else { still };
-        cut_preview_frame::paint_still(cr, box_, frame);
+        cut_preview_frame::paint_still(cr, still, frame);
     }
     if playing {
         cut_preview_frame::paint_playing(cr, &frame_state, &seen);
