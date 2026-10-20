@@ -169,15 +169,36 @@ pub struct Held {
 pub fn describe(window: &adw::ApplicationWindow, fit: (f64, f64), held: &Held) -> Frame {
     let cut = crate::ui::review_cut_of(window);
     let line = crate::ui::line_position(window).t;
+    describe_at(
+        &cut,
+        line,
+        crate::ui::preview_player(window).transport.playing,
+        crate::ui::zoom_armed(),
+        fit,
+        held,
+    )
+}
+
+/// [`describe`] with the four page answers handed in instead of read from a window — the same struct, one fewer
+/// door into window state. Split out so `snapshot_preview_frame` can paint §2's frame from a staged cut with
+/// nothing mapped, which is what its `-frame.png` sidecar needs; the window keeps answering all four itself.
+pub fn describe_at(
+    cut: &Cut,
+    line: f64,
+    playing: bool,
+    camera_down: bool,
+    fit: (f64, f64),
+    held: &Held,
+) -> Frame {
     Frame {
         t: line,
         held: held.index,
         drawing_box: held.box_px.is_some(),
         box_px: held.box_px,
-        playing: crate::ui::preview_player(window).transport.playing,
-        camera_down: crate::ui::zoom_armed(),
+        playing,
+        camera_down,
         fit,
-        cut,
+        cut: cut.clone(),
     }
 }
 
@@ -350,6 +371,12 @@ pub fn paint(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
 pub fn paint_paused(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
     let fit = frame.fit;
     let (x, y, w, h) = camera_rect_px(&seen.camera, fit);
+    // A stop standing at the line's second holds its frame while the clock runs, and the paused half used to show
+    // none of that: the same borrowed box and the same inked still as the playing half, under the dim so the
+    // camera's own framing still reads around it (§2 puts the still on the footage's transform, not above the crop).
+    if let Some(still) = stop_px(&frame.cut.fx, frame.t, fit) {
+        paint_still(cr, still, crate::ui::cut_picture::frame_shown().as_deref());
+    }
     // "outside the camera rect dimmed black 0.45": four bands, never a wash over the whole panel.
     cr.set_source_rgba(0.0, 0.0, 0.0, seen.held.dim_alpha);
     for band in playing_mask_px(&seen.camera, fit) {
@@ -387,13 +414,50 @@ pub fn paint_paused(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
     }
 }
 
+/// A stop's still, INKED: the frame already on the panel, cropped to `box_` and laid down opaque.
+///
+/// §2 renders a stop's still "from the scene's own camera, fitted on the footage's transform", and the preview
+/// must not go and extract a second frame to do it — the picture the person is looking at IS the held frame, so
+/// this paints that file into the box [`stop_px`] borrowed from the camera. No file, no decode, or a zero box:
+/// nothing is painted and nothing is said here (§8 keeps that in [`crate::ui::cut_stop_frame`], and a stop the
+/// preview cannot show stays on the lane regardless).
+pub fn paint_still(
+    cr: &cairo::Context,
+    box_: (f64, f64, f64, f64),
+    frame_path: Option<&std::path::Path>,
+) {
+    let (x, y, w, h) = box_;
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let Some(path) = frame_path else { return };
+    let Ok(pixbuf) = gtk::gdk_pixbuf::Pixbuf::from_file(path) else {
+        return;
+    };
+    let Some(surface) = raster_surface(&pixbuf) else { return };
+    // Same scaling trick the svg overlay uses: translate/scale so the surface lands exactly on the borrowed box.
+    let _ = cr.save();
+    cr.translate(x, y);
+    cr.scale(w / surface.width() as f64, h / surface.height() as f64);
+    let _ = cr.set_source_surface(&surface, 0.0, 0.0);
+    let _ = cr.paint();
+    let _ = cr.restore();
+}
+
 /// The playing half: the mask over what the finished frame hides, nothing else of the paused furniture.
 /// A camera at the settled framing hides nothing, so there is no mask to lay down.
-fn paint_playing(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
+///
+/// PUBLIC because the `06-preview` screen shows a stop's still and a caption, and §2 describes BOTH on the
+/// playing half ("Playing: only the black mask over what the finished frame hides, plus titles; … A stop's still").
+/// The staging paints that half on its own surface rather than hoping a headless window's own draw func runs
+/// before the pixels are taken — `snapshot_preview` holds the cut, the fitted box and the frame file already.
+pub fn paint_playing(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
     if let Some(still) = stop_px(&frame.cut.fx, frame.t, frame.fit) {
         // A stop's still is drawn even when nothing is hidden: §2 renders it "from the scene's own camera,
-        // fitted on the footage's transform", and [`stop_px`] is the only door to that borrowed box. Stroked
-        // solid — a dash here would mean "unfinished", and a placed stop is not.
+        // fitted on the footage's transform", and [`stop_px`] is the only door to that borrowed box. Ink first,
+        // then the outline on top of it — stroked solid, because a dash here would mean "unfinished" and a
+        // placed stop is not.
+        paint_still(cr, still, crate::ui::cut_picture::frame_shown().as_deref());
         draw_box_outline(cr, still, false, [1.0, 1.0, 1.0], 1.0);
     }
     if seen.camera.hf >= fx_zoom::SETTLED.hf {

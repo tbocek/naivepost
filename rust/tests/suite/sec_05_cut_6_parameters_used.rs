@@ -353,9 +353,20 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
     close(at((19.0 * pps) as i32, y_pictures), THUMB_PLACEHOLDER, "the lane's grey plate, uninked");
 }
 
-/// [`cut_colours::SPEED_TINT`] as it lands on the effect lane, printed from the painted surface: §D writes
-/// rgba(0.92,0.42,0.6,0.15), and what arrives is stronger than that alpha over the lane's grey would give.
-const SPEED_WASH_ON_EFFECT_ROW: (u8, u8, u8) = (238, 161, 189);
+/// The speed bar's rose as it lands on the effect lane, printed from the painted surface: §D writes
+/// rgba(0.92,0.42,0.6,0.15), and what arrives is stronger than that alpha over the lane's grey would give — the
+/// lane paints every kind through `cut_lane_paint::paint_bar`, which lays the colour at `fx_lane::bar_wash_alpha`
+/// (inventory/effects.md §A.2 spells one speed bar out as `fill RGBA(0.92,0.42,0.6,0.4)`), over the band ground.
+/// Recomputed here rather than hard-coded so the row follows the wash rule instead of a snapshot of it:
+/// 0.4 x (0.92,0.42,0.6) + 0.6 x GROUND(0.95,0.95,0.95) = (239,188,206).
+const SPEED_WASH_ON_EFFECT_ROW: (u8, u8, u8) = (
+    (0.92 * naivepost::fx_lane::WASH_ALPHA * 255.0
+        + 0.95 * (1.0 - naivepost::fx_lane::WASH_ALPHA) * 255.0) as u8,
+    (0.42 * naivepost::fx_lane::WASH_ALPHA * 255.0
+        + 0.95 * (1.0 - naivepost::fx_lane::WASH_ALPHA) * 255.0) as u8,
+    (0.6 * naivepost::fx_lane::WASH_ALPHA * 255.0
+        + 0.95 * (1.0 - naivepost::fx_lane::WASH_ALPHA) * 255.0) as u8,
+);
 
 /// The picture row's plate, read back from the painted surface. At 8 px/s a camera is far narrower than one
 /// thumbnail, so the thumbnails rule draws one placeholder box for it — §D's `thumbnail.placeholder`, which

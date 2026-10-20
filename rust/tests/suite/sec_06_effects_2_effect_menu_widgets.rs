@@ -149,6 +149,25 @@ fn menu_shows_the_rows(app: &adw::Application) {
 }
 
 #[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s2_the_menu_shot_takes_the_pictures_own_name() {
+    // `spec/img/06-effect-menu.png` is a picture of the POPOVER, not of the page behind it, so this screen's
+    // `<name>.png` must be the popover too and the staged page has to go beside it (`snapshot::run`'s
+    // `menu_subject` branch). The door is asked by screen name, so the check is exactly that: the one screen whose
+    // spec picture is the menu is the one whose PNG is the menu -- every other screen keeps the page at its own
+    // name. No window needed: this is the wiring between the screen list and the frame-taking step.
+    assert!(
+        naivepost::snapshot_effect_menu::is_menu_subject("06-effect-menu"),
+        "the screen whose spec picture is the popover must paint the popover under its own name"
+    );
+    for other in ["06-lane", "05-cut"] {
+        assert!(
+            !naivepost::snapshot_effect_menu::is_menu_subject(other),
+            "{other}'s picture is a page, so its `<name>.png` must stay the page"
+        );
+    }
+}
+
+#[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s1_the_effect_menu_shows_the_six_rows_in_its_order() {
     // Pin cwd to our own temp root BEFORE anything builds: the page resolves the session through
     // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray folder into the repo.

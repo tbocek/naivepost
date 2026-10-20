@@ -600,8 +600,8 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // another staging block fits in (see `snapshot_insert` for the same split). They ran here, in the
         // order they ran inside `run`: after every Cut-page arm had laid its strip out, before the subject is
         // chosen and the window is sized and mapped.
-        crate::snapshot_effects::paint(&window, &dir, &screen);
-        crate::snapshot_preview::paint(&window, &dir, &screen);
+        crate::snapshot_effects::paint(&window, &dir, &out, &screen);
+        crate::snapshot_preview::paint(&window, &dir, &out, &screen);
         crate::snapshot_narrate::stage(&window, &dir, &screen);
         crate::snapshot_produce::paint(&window, &screen);
         // F2.7's three pictures stage their own subject too, through the doors the ＋ / | / － buttons fire
@@ -1103,8 +1103,13 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // separate surface and is therefore absent from the window's render node. The staging step asked for
         // this by name (`snapshot_effect_menu::note_shot_sidecar`), so no screen is hardcoded here.
         let menu_only = crate::snapshot_effect_menu::shot_sidecar_wanted();
+        // …and when the spec's own picture IS the menu, the menu is the SUBJECT of this shot, decided through
+        // the module's door rather than a name hardcoded here.
+        let menu_subject = crate::snapshot_effect_menu::is_menu_subject(&screen);
         // The glyph goes beside the window shot as `<name>-face.png`; the whole page stays at `<name>.png`
-        // so every snapshot keeps writing exactly one file under the name it was asked for.
+        // so every snapshot keeps writing exactly one file under the name it was asked for -- except where the
+        // spec pictures a SUBJECT instead of the page (a dialog, this screen's popover): then the subject takes
+        // the asked name and the page goes beside it. `03-policy-form`'s `subject` arm is that precedent.
         let face_out = out.with_extension("face.png");
         let out = out.clone();
         let app = app.clone();
@@ -1137,14 +1142,28 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
+            } else if menu_subject {
+                // §2's picture for this screen is the popover's six rows, so THEY take `<name>.png` and the page
+                // they were staged on goes beside it as `<name>-window.png`. A popover lives on its own surface,
+                // so it can only be painted from the dropdown's box, never out of the window's render node.
+                // The flag decides which subject this shot records, so exactly one branch of this pair ever runs.
+                let button = crate::snapshot_effect_menu::effect_button();
+                if let Err(err) = crate::snapshot_effect_menu::write_png(&button, &out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
+                let page_out = out.with_extension("window.png");
+                if let Err(err) = write_png(&painted, &page_out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
             } else if let Err(err) = write_png(&painted, &out) {
                 eprintln!("snapshot: {err}");
                 OUT.with(|e| *e.borrow_mut() = Some(err));
             }
-            if menu_only {
-                // The menu rows beside the page: the page shot above still lands at `<name>.png` (every snapshot
-                // writes exactly one file under the name it was asked for is the rule for the WINDOW), and the
-                // subject this screen exists to record -- the six labelled rows -- goes to `<name>-menu.png`.
+            if menu_only && !menu_subject {
+                // Staged by another screen (the flag is set from staging, not by name): the six labelled rows go
+                // beside that page shot as `<name>-menu.png`, because no window shot can hold a popover.
                 let menu_out = out.with_extension("menu.png");
                 let button = crate::snapshot_effect_menu::effect_button();
                 if let Err(err) = crate::snapshot_effect_menu::write_png(&button, &menu_out) {

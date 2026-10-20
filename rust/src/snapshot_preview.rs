@@ -15,7 +15,8 @@ use crate::ui;
 use crate::snapshot_face::seed_snapshot_frame;
 
 /// Paint the preview mid-zoom-and-caption onto `window`. Returns true when this module owned `screen`.
-pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -> bool {
+/// `out` is the PNG this run writes; §2's own frame image goes beside it as `<name>-frame.png`.
+pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, screen: &str) -> bool {
             // §06-effects#2's own screen (`spec/img/06-preview.png`): the preview DURING a zoom and a caption at
             // 1:22 — the camera rect framing the lecturer, the caption fitted into its box, the plate a delayed
             // sound earns. The fixture cannot show any of it (its `cut/cut.json` has `fx: []`), so the two records
@@ -65,6 +66,20 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
                     tout: 0.0,
                     rate: 0.5,
                     snd: "own".to_string(),
+                    ..Default::default()
+                },
+                // And a STOP standing on the spec's own second (1:22), which is what §2's "a stop's still:
+                // rendered from the scene's own camera, fitted on the footage's transform" is about: the frame
+                // under the line becomes a held picture instead of a bare white outline. `rate: 0.0` IS the stop
+                // (§06#1: a stop is a speed whose rate is nought), and its seconds straddle 82.0 so the line falls
+                // inside it.
+                cut::Fx {
+                    kind: "speed".to_string(),
+                    t: 81.0,
+                    dur: 3.0,
+                    trans: 0.0,
+                    tout: 0.0,
+                    rate: 0.0,
                     ..Default::default()
                 },
             ],
@@ -121,9 +136,35 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         // The frame's own picture too: `cut_picture::refresh` is the only door that decides which recorded
         // second sits behind the dim, so without it the panel paints its rect over an empty plate.
         let _ = ui::cut_picture::refresh(window);
+        // §2's second image is the FRAME, not the page: painted on its own at 960x540 through the preview's own
+        // painters (dim, stroked rect, caption, stop's still) so each of them actually reads, beside the window
+        // shot as `<name>-frame.png`. Paused, because the spec's picture is the red line standing on a second.
+        let still = ui::cut_picture::frame_shown();
+        // A headless shot seeds ONE frame file, a flat colour — so the still is drawn large, the way §2's own
+        // image shows it filling the held region. A real session's frames are the video's size, and then the
+        // still is the camera's fraction of them, exactly as `stop_px` frames it.
+        let full_frame = crate::ui::cut_picture::plate_shape(window).0
+            <= crate::ui::window::PREVIEW_PANEL_W as i32;
+        match crate::snapshot_preview_frame::write_png(
+            &staged_with_caption(window),
+            82.0,
+            still.as_deref(),
+            false,
+            full_frame,
+            &out.with_extension("frame.png"),
+        ) {
+            Ok(said) => println!("snapshot: 06-preview | {said}"),
+            Err(why) => eprintln!("snapshot: 06-preview frame image | {why}"),
+        }
         crate::ui::cut_view::repaint_page(window);
         return true;
     }
 
     false
+}
+
+/// The cut the preview shot shows, read back from the window AFTER the caption was placed through ❝ Text's own
+/// doors — so the frame image carries the record the app wrote, not a second copy of the staging.
+fn staged_with_caption(window: &adw::ApplicationWindow) -> cut::Cut {
+    ui::review_cut_of(window)
 }

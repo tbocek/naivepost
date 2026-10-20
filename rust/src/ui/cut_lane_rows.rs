@@ -45,8 +45,12 @@ fn install_lane_css_once() {
         ("fx-kind-label", cut::EffectKind::Label, false),
     ] {
         let (r, g, b) = fx_lane::bar_colour(kind, staying);
+        // The SAME alpha the painted surface lays its wash on (`fx_lane::bar_wash_alpha`), not a second number
+        // of our own: §A.2 spells a bar as `fill RGBA(0.92,0.42,0.6,0.4)` — a wash over the pictures under the
+        // lane, not a block hiding them — and if CSS and cairo disagreed about it, one of the two would be lying.
+        let a = fx_lane::bar_wash_alpha(kind);
         css.push_str(&format!(
-            ".{class} {{ background-color: rgba({}, {}, {}, 0.85); }}\n",
+            ".{class} {{ background-color: rgba({}, {}, {}, {a}); }}\n",
             (r * 255.0).round() as i32,
             (g * 255.0).round() as i32,
             (b * 255.0).round() as i32
@@ -172,6 +176,15 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
             let width = cut_bar_width_px(cut_.fx[bar.index].dur);
             let drawn = width.max(48.0).round();
             bar_widget.set_size_request(drawn as i32, bar_widget.height().max(1));
+            // §2 / inventory §A: the bar's INK — the wash at `fx_lane::bar_wash_alpha`, the kind's mark and its
+            // short line (§A.8). Built once per record and re-armed each refresh with the numbers just computed
+            // for the box, so what is painted and what the grip/✕ rules read cannot disagree.
+            let slot_h = fx_lane::lane_height_px(rows.max(1)) / rows.max(1) as f64;
+            crate::ui::cut_lane_paint::attach(
+                &bar_widget,
+                bar.index,
+                &crate::ui::cut_lane_paint::view_for(&cut_.fx[bar.index], drawn, slot_h),
+            );
             crate::ui::cut_debt_tail::wear_tail(&bar_widget, &cut_, bar.index, t, &crate::ui::page_recordings());
             set_class(&bar_widget, "fx-kind-zoom-staying", bar.staying);
             if !bar.staying {

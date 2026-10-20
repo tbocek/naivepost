@@ -101,10 +101,13 @@ pub fn show_frame(window: &adw::ApplicationWindow, path: Option<&std::path::Path
 
 // The frame the panel was last given, or `None` when it was cleared. `preview_asked_for_test` reports what
 // the panel ASKED for its own footage; this reports what actually went up, which is the half a card pass has
-// to answer for because a card's frame is not one of the session's files.
-
+// to answer for because a card's frame is not one of the session's files. It is ALSO what a stop's still is
+// painted from (§06-effects#2: "a stop's still — rendered from the scene's own camera, fitted on the footage's
+// transform"): the preview never extracts a second frame, it re-uses the one already on the panel and crops it
+// into the box the borrowed camera says.
 thread_local! {
-    /// The frame last put on the panel by [`show_frame`]. See [`frame_shown_for_test`].
+    /// The frame last put on the panel by [`show_frame`]. Read back by [`frame_shown`] (the stop's still) and by
+    /// [`frame_shown_for_test`].
     static FRAME_SHOWN: std::cell::RefCell<Option<std::path::PathBuf>> =
         const { std::cell::RefCell::new(None) };
     /// The last frame request `refresh` made: which recording the panel asked, at which FILE second. See
@@ -115,6 +118,14 @@ thread_local! {
     /// The folder a snapshot named for that search. See [`snapshot_tree`].
     static SNAPSHOT_DIR: std::cell::RefCell<Option<std::path::PathBuf>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// The frame the panel is showing, as the file it came from — the program's own door. A `gtk::Picture` gives
+/// nothing back (a paintable cannot be compared to a path), so this is how anything that needs the frame the user
+/// is looking at asks for it: today, the stop's still in `cut_preview_frame`, which paints the held frame out of
+/// exactly this file rather than asking ffmpeg for another one.
+pub fn frame_shown() -> Option<std::path::PathBuf> {
+    FRAME_SHOWN.with(|slot| slot.borrow().clone())
 }
 
 /// The frame the panel is showing, as the file it came from. A `gtk::Picture` gives nothing back — a

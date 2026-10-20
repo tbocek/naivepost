@@ -173,6 +173,9 @@ pub mod cut_verb_press;
 /// §05-cut#1-screen — the effects lane's rows, their CSS and the preview panel redrawn from them. Split out
 /// of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
 mod cut_lane_rows;
+/// §06-effects#2-the-lane-and-the-preview — the ink ON a lane bar: the wash, the kind's mark and its short line,
+/// painted by one pure cairo function so a test can sample the pixels without a window.
+pub mod cut_lane_paint;
 /// §1's bench, the tab buttons and the readouts they repaint. Split out of `window.rs`, which is past its
 /// size budget. Its doors are re-exported through `window`.
 mod window_bench;

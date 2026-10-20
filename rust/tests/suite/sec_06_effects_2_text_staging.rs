@@ -50,6 +50,9 @@ fn staged_text_shot_has_its_form_open(app: &adw::Application) {
     let owned = naivepost::snapshot_effects::paint(
         &window,
         std::path::Path::new("/tmp/f3_4_text_staging"),
+        // The PNG this staging would write its sidecar beside; `06-text` writes none, so the path is only
+        // carried through the door (the lane screen is the one that puts a second image next to it).
+        std::path::Path::new("/tmp/f3_4_text_staging.png"),
         "06-text",
     );
     assert!(owned, "`snapshot_effects::paint` no longer owns the `06-text` screen");
