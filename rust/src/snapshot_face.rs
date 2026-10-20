@@ -140,9 +140,10 @@ pub fn seed_structured_frame(dir: &std::path::Path, base: &str, second: f64) -> 
     let folder = tree.frames_dir(base);
     std::fs::create_dir_all(&folder).ok()?;
     let path = folder.join(format!("{}.jpg", crate::clock::frame_name(second)));
-    if path.exists() {
-        return Some(path);
-    }
+    // The flat 160x90 stand-in (`seed_snapshot_frame`) may well have been written for this second already by the
+    // page staging above — and it is NOT structured, so a crop of it and all of it are the same pixels and §2's
+    // "still fitted on the footage's transform" would be invisible. So unlike that helper, this one OVERWRITES:
+    // what makes this frame the still's input is its structure, not its precedence on disk.
     let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, STRUCTURED_FRAME_W, STRUCTURED_FRAME_H).ok()?;
     {
         let cr = cairo::Context::new(&surface).ok()?;
