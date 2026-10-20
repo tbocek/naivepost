@@ -387,6 +387,7 @@ mod sec_05_cut_1_screen_column;
 mod sec_05_cut_1_screen_layout;
 mod sec_05_cut_1_screen_screen;
 mod sec_05_cut_1_screen_toolbar_fits;
+mod sec_05_cut_1_screen_toolbar_paints;
 mod sec_05_cut_2_lanes;
 mod sec_05_cut_2_zoom_ceiling;
 mod sec_05_cut_6_parameters_used;

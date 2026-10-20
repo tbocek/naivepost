@@ -13,6 +13,31 @@
 use crate::cut::Cut;
 use crate::{prepare, tools};
 
+/// Horizontal padding every Cut-toolbar button keeps, in px. Adwaita's default (~24 px per side) is what
+/// makes §A's one row of six groups wider than the bar at §1's 1240 px floor — measured with
+/// `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs`: the six groups' natural widths summed to 1646 px
+/// against a 1182 px bar, so GTK shrank each group and Copy/Paste/Insert/Lane painted inside their own
+/// scroller's clip. At 4 px the same six rows sum to 1079 and every §1 control sits inside its own group.
+/// The `min-width` is what makes 4 px safe: without it a one-glyph step button measures 10 px wide, under
+/// the 16 px click target `cut_line_place_step_widgets` asks for, so the glyph keeps a clickable square
+/// while the padding comes down.
+pub const BUTTON_PADDING_PX: u32 = 4;
+
+/// The click-target floor a toolbar button must keep, in px — the same number
+/// `cut_line_place_step_widgets` asserts, spelled here because this rule is what delivers it.
+pub const BUTTON_MIN_WIDTH_PX: u32 = 16;
+
+/// The toolbar's one CSS rule, installed process-wide by `ui::window_page_box`. `#cut-toolbar` scopes it to
+/// that bar so no other button in the shell changes size. Built from [`BUTTON_PADDING_PX`] so the number
+/// stays a single source rather than a literal buried in a string.
+pub fn toolbar_css() -> String {
+    format!(
+        "#cut-toolbar button {{ padding-left: {px}px; padding-right: {px}px; min-width: {min}px; }}",
+        px = BUTTON_PADDING_PX,
+        min = BUTTON_MIN_WIDTH_PX
+    )
+}
+
 /// The toolbar's groups, left to right (§1: transport, preview volume, verbs, effects dropdown,
 /// history, zoom). The window builds one box per entry in this order, which is what makes the order
 /// a fact a test can hold rather than a fact about how a file happens to read.
@@ -299,10 +324,10 @@ pub const TRANSPORT_BUTTONS: [Tool; 7] = [
         label: PLAY_GLYPH_REVIEW,
         tip: REVIEW_TIP,
     },
-    Tool { name: "line-step-back-five", label: "\u{2039}\u{2039} f", tip: FRAME_TIP },
-    Tool { name: "line-step-back", label: "\u{2039} f", tip: FRAME_TIP },
-    Tool { name: "line-step-forward", label: "f \u{203a}", tip: FRAME_TIP },
-    Tool { name: "line-step-forward-five", label: "f \u{203a}\u{203a}", tip: FRAME_TIP },
+    Tool { name: "line-step-back-five", label: "\u{2039}\u{2039}", tip: FRAME_TIP },
+    Tool { name: "line-step-back", label: "\u{2039}", tip: FRAME_TIP },
+    Tool { name: "line-step-forward", label: "\u{203a}", tip: FRAME_TIP },
+    Tool { name: "line-step-forward-five", label: "\u{203a}\u{203a}", tip: FRAME_TIP },
 ];
 
 /// Verbs, §1 items 10 → 15 in one row: ＋ Add, | Split, － Remove, ⧉ Copy, ⧉ Paste, Insert, ⇲ Lane.
@@ -328,7 +353,14 @@ pub const VERB_BUTTONS: [Tool; 7] = [
         tip: "drop exactly the selection \u{2014} the cut keeps everything else until you undo",
     },
     Tool { name: "copy-button", label: "\u{29c9} Copy", tip: "take the selection in hand \u{2014} a second at least; the band keeps showing it" },
-    Tool { name: "paste-button", label: "\u{29c9} Paste at the red line", tip: "put what is in hand where the red line is \u{2014} footage splices in, sound lays over kept footage" },
+    Tool {
+        name: "paste-button",
+        // §A group 4 spells the BUTTON "⧉ Paste" and keeps the rest of the sentence ("… where the red line
+        // is — Esc drops the copy") in the tooltip; the long form cost 150 px and scrolled Copy/Paste/Insert
+        // out of the bar's one row at §1's own window size.
+        label: "\u{29c9} Paste",
+        tip: "put what is in hand where the red line is \u{2014} footage splices in, sound lays over kept footage",
+    },
     INSERT_TOOL,
     Tool { name: "lane-button", label: "\u{21f2} Lane", tip: "give the copy a row of its own \u{2014} nothing is cut to it yet" },
 ];
@@ -377,7 +409,7 @@ suggestion, or to the cut this page opened with if you have not suggested yet",
     },
     Tool {
         name: "clear-cut-button",
-        label: "\u{2717} Clear",
+        label: "\u{2717}",
         tip: "Clear: take every kept stretch and every effect off the timeline, leaving the recordings \
 as they were loaded (\u{21b6} Undo brings them back)",
     },

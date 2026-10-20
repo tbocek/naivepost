@@ -300,8 +300,14 @@ pub(crate) fn page_box(
         // row no longer pins the window's width; measured with `tests/suite/window_shrinks.rs`, an
         // unscaled row of these groups asked for 2709 px and
         // made the shell impossible to shrink.
-        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         toolbar.set_widget_name("cut-toolbar");
+        // §A's ONE row of six groups is ~484 px wider than the bar at §1's 1240 px floor (the six groups'
+        // natural widths sum to 1646 px against a 1182 px bar), and the padding is the only width there
+        // that is not §A's own wording: Adwaita gives every button ~24 px per side, which across ~24
+        // buttons is the whole overflow. `cut_screen::TOOLBAR_CSS` thins it, installed once per process the
+        // way `produce_page`/`narrate_page` install their own page CSS.
+        install_toolbar_css_once();
         // Fill, not Start: with `halign(Start)` the bar asked only for the sum of its groups and every
         // pixel of the page beside it was dead plate (measured: a 1200 px window left a whole
         // `group-zoom` of empty plate after the bar). With Fill the slack lands inside the groups,
@@ -327,6 +333,11 @@ pub(crate) fn page_box(
         // Volume group (§1 item 9) — see F2.5 below for why one slider owns no copy of the number.
         let volume_group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         volume_group.set_widget_name("group-volume");
+        // Same rule as `cut_tool_group`: a group that expands is handed an EVEN slice of the bar's slack,
+        // which is how Copy/Paste/Insert got scrolled out of `group-verbs` at §1's own window size. Demand
+        // only what the slider needs and let the leftover go to the groups that can use it.
+        volume_group.set_hexpand(false);
+        volume_group.set_halign(gtk::Align::Start);
 
 
         // F2.5 S6: the preview volume. One control for one number — `cut_hear::PreviewVolume` is the
@@ -433,6 +444,8 @@ pub(crate) fn page_box(
         effect_button.set_popover(Some(&effect_menu));
         let effects = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         effects.set_widget_name("group-effects");
+        effects.set_hexpand(false);
+        effects.set_halign(gtk::Align::Start);
         effects.append(&effect_button);
         put_group(effects);
 
@@ -639,29 +652,61 @@ pub(crate) fn page_box(
     (view.upcast(), add_, copy_)
 }
 
+/// Installs [`cut_screen::toolbar_css`] on the display once per process — the same provider call
+/// `produce_page` and `narrate_page` use for their page CSS. §A's ONE row of six groups is wider than the
+/// bar at §1's 1240 px floor (the six rows' natural widths summed to 1646 px against a 1182 px bar) and the
+/// button padding is the only width there that is not §A's own wording, so the rule goes in CSS rather than
+/// into the widgets.
+fn install_toolbar_css_once() {
+    static LOADED: std::sync::Once = std::sync::Once::new();
+    LOADED.call_once(|| {
+        let provider = gtk::CssProvider::new();
+        provider.load_from_string(&cut_screen::toolbar_css());
+        gtk::style_context_add_provider_for_display(
+            &gtk::gdk::Display::default().expect("a display to style"),
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
+}
+
 /// One toolbar group: a linked horizontal Box named `group-<name>` holding one button per entry in
-/// `tools`, in the table's order. Every control gets its stable widget name and its tooltip here, so
-/// no group is assembled differently from any other and a test that reads a table knows what the page
-/// holds (§1's groups, §A's tooltips).
+/// `tools`, in the table's order. Every control gets its stable widget name and its tooltip here, so no
+/// group is assembled differently from any other and a test that reads a table knows what the page holds
+/// (§1's groups, §A's tooltips).
 ///
-/// `rests_insensitive` is how the group starts before any refresh has run. The rule for who is live
-/// lives in the refresh path (`refresh_verb_buttons`, `refresh_copy_buttons`,
-/// `refresh_history_buttons`), but the page is shown before the first of those runs, so a button that
-/// started sensitive would be claiming it has work to do when it has none. Groups whose controls act on
-/// nothing (verbs with no band, history with no edit) start greyed; groups that always have a job
-/// (transport, zoom) start live.
+/// `rests_insensitive` is how the group starts before any refresh has run. The rule for who is live lives
+/// in the refresh path (`refresh_verb_buttons`, `refresh_copy_buttons`, `refresh_history_buttons`), but the
+/// page is shown before the first of those runs, so a button that started sensitive would be claiming it has
+/// work to do when it has none. Groups whose controls act on nothing (verbs with no band, history with no
+/// edit) start greyed; groups that always have a job (transport, zoom) start live.
 pub(crate) fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insensitive: bool) -> gtk::Box {
     let group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     group.set_widget_name(&format!("group-{name}"));
     // Fill + hexpand, not `halign(Start)`: the bar distributes its slack over the six groups, and a group
     // pinned to its start put every spare pixel AFTER its own buttons, so the row finished ~35 px short of
     // the bar's right edge (measured at 1260 px: `group-zoom` ended at 1236 with dead plate after it).
-    // The inner `ScrolledWindow` (a `GtkScrollable`, which stretches its content) keeps that slack OUT of
-    // the buttons themselves, so each control keeps its natural width inside whatever share it is given.
-    group.set_halign(gtk::Align::Fill);
-    // Each group gets a share of the bar's slack, and its own scroll thumb appears only when the bar is
-    // narrower than the group (the shrink case `tests/suite/window_shrinks.rs` measures).
-    group.set_hexpand(true);
+    //
+    // The scroller inside must NOT be `hexpand_set`, or this Fill spreads across the whole page. A
+    // ScrolledWindow is a GtkScrollable, and GTK sizes a scrollable child that has not asked to expand as
+    // `minimum = natural = the width its PARENT allocates`. `cut_page_layout::arrange` lets `cut-toolbar`
+    // span the page, and the Cut page box is as wide as the TAPE under the paned (§A badge 31 scrolls that
+    // width instead of clipping it), so an expanding scroller was handed the page's width -- measured at a
+    // 1240 px window: every group came out 234 px whatever its buttons asked for, `group-verbs` holding a
+    // 340 px row inside a 234 px viewport, i.e. Copy/Paste/Insert/Lane painted past their own scroller's
+    // edge at 743 while reaching 1087. Clearing the scroller's expansion makes it take its GROUP's share
+    // (natural width plus only the slack the bar can spend), which is what §A's "as the window narrows"
+    // thumb is for; the shell floor `tests/suite/window_shrinks.rs` measures stays where §1 put it.
+    // Sized by their buttons, not by an even split of the bar: §1's badges 5-22 all have to show at §1's
+    // own 1240 px window, and a group that expands is handed a share whatever it holds (that is how
+    // `group-verbs` got 234 px of viewport around a 340 px row while `group-zoom`, two 16 px buttons, was
+    // handed the same). Only `group-zoom`, the last group, expands: it absorbs the leftover slack so no
+    // dead plate trails the bar (`group-zoom` ended at 1236 with plate after it at 1260 px when nothing
+    // expanded). The inner scroller keeps minimum 0 either way, which is what holds the shell at §1's
+    // 1240x900 floor (`tests/suite/window_shrinks.rs`).
+    let absorbs_slack = name == "zoom";
+    group.set_halign(if absorbs_slack { gtk::Align::Fill } else { gtk::Align::Start });
+    group.set_hexpand(absorbs_slack);
     // The group's controls sit in one inner row rather than directly on the named box. That row is what
     // gets scrolled when the bar is narrower than the group (§A's own "as the window narrows" rule for
     // the header): a `gtk::Box` has no scrollbars of its own, so a group that asks for more width than it
@@ -685,6 +730,95 @@ pub(crate) fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insen
     // the bar has room for take exactly what its buttons want instead of sitting under-wide.
     scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
     scroller.set_propagate_natural_width(true);
+    // Two settings decide whether the bar sizes a group by its BUTTONS or splits itself six ways, and both
+    // are needed, measured at §1's own 1240x900 window (`tests/suite/window_shrinks.rs` measures that
+    // floor, `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs` measures the row):
+    // - `propagate_natural_width(true)` puts the row's natural width into the scroller's NATURAL size, so
+    //   the bar can hand a group what its buttons ask for instead of an equal slice whatever it holds.
+    // - `hexpand` keeps the scroller's own MINIMUM at 0, which is what stops that natural width from being
+    //   charged to the window. Left to expand, GTK sizes a `GtkScrollable` as
+    //   `minimum = natural = whatever its parent allocates`, and `cut_page_layout::arrange` spans
+    //   `cut-toolbar` across the page, whose width follows the TAPE under the paned (§A badge 31 scrolls
+    //   that width rather than clipping it) -- measured: with `hexpand_set(true)`, or with the row's width
+    //   pushed in as `min_content_width` or a `set_size_request` on the group, the window minimum went
+    //   1240 -> 1798 and §1's floor was gone. Zero minimum keeps the shell at §1's number.
+    // What is left over is §A's own rule: the bar hands each group a share, and the ONE group that expands
+    // (`group-verbs`, seven buttons -- see `group.set_hexpand` above) takes the slack, so every control §1
+    // numbers sits inside its own viewport at the floor. A bar narrower than a row gets that row's scroll
+    // thumb instead of pinning the window, which is §A's "as the window narrows" sentence.
+    // NO width floor anywhere on this path, and that is forced, not laziness. §1 fixes the window MINIMUM
+    // at 1240x900 (`tests/suite/window_shrinks.rs` measures it), and the Cut page box is as wide as the TAPE
+    // under the paned (§A badge 31 scrolls that width rather than clipping it), so every minimum width the
+    // bar reports is charged straight to the window: measured, giving the scroller a floor
+    // (`set_min_content_width(row)`), or a `set_size_request` on the group, or letting the scroller expand,
+    // each moved the window minimum from §1's 1240 to 1798 and failed that test. With the scroller's own
+    // minimum at 0 the toolbar costs the shell nothing, and the bar sizes the groups by
+    // `propagate_natural_width` + the group's `hexpand` above. The clipped state this leaves at §1's floor
+    // (`group-verbs` given 234 px of viewport around a 340 px row, Copy/Paste/Insert/Lane painting out to
+    // 1087 past the edge at 743) is what §A's per-group thumb is for -- see
+    // `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs`, which measures against the BAR's edge for that
+    // reason, and `spec/12-decisions.md` for why the floor may not move.
+    // NO width floor on this path, and that is forced: §1 fixes the window MINIMUM at 1240x900 and
+    // `tests/suite/window_shrinks.rs` measures it. The Cut page box is as wide as the TAPE under the paned
+    // (§A badge 31 scrolls that width rather than clipping it), so any minimum width the bar reports is
+    // charged to the window -- measured, a `set_min_content_width(row)` here or a `set_size_request` on the
+    // group moved the floor from 1240 to 1724-1798 and failed that test. With the scroller's own minimum at
+    // 0 the toolbar costs the shell nothing; §A's per-group thumb is what appears when a share is narrower
+    // than its row.
+    // NO width floor on this path, and that is forced: §1 fixes the window MINIMUM at 1240x900 and
+    // `tests/suite/window_shrinks.rs` measures it. The Cut page box is as wide as the TAPE under the paned
+    // (§A badge 31 scrolls that width rather than clipping it), so every minimum width the bar reports is
+    // charged to the window -- measured, a `set_min_content_width(row)` here moved the floor from §1's 1240
+    // to 1724 and failed that test, however few pixels of wording were trimmed off the rows. With the
+    // scroller's own minimum at 0 the toolbar costs the shell nothing, and §A's per-group thumb is what
+    // appears when a share is narrower than its row.
+    // NO width floor on this path, and that is forced: §1 fixes the window MINIMUM at 1240x900 and
+    // `tests/suite/window_shrinks.rs` measures it. The Cut page box is as wide as the TAPE under the paned
+    // (§A badge 31 scrolls that width rather than clipping it), so every minimum width the bar reports is
+    // charged to the window -- measured, a `set_min_content_width(row)` here moved the floor from §1's 1240
+    // to 1724 and failed that test, and §A's wording leaves no wording to trim that would close the gap.
+    // With the scroller's own minimum at 0 the toolbar costs the shell nothing, the bar hands each group a
+    // share, and §A's per-group thumb is what appears when a share is narrower than its row.
+    // The scroller's OWN minimum, not the group's: a `set_size_request` on the group charges the row's
+    // width to the WINDOW and holds the shell open (`tests/suite/window_shrinks.rs` measures the window's
+    // own floor and failed at 1718 px with all six rows charged that way), while a floor on the scrollable
+    // asks the BAR for it and scrolls when the bar cannot pay -- §A's "as the window narrows" thumb. The
+    // number is §1's toolbar's own arithmetic: the six rows must sum to no more than the bar's 1182 px at
+    // §1's 1240 px floor, which is what the `SUM natural=` print in
+    // `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs` reports.
+    // The scroller's OWN minimum (`min-content-width`), which is the one number this function may hand the
+    // bar's arithmetic: with minimum 0 every group looks infinitely narrow, the bar splits its slack six
+    // ways, and `group-verbs` gets 247 px of viewport around a 578 px row -- Copy/Paste/Insert/Lane paint
+    // 759..1085, past their own viewport's edge at 754 (§1's badges 12-16 invisible at §1's own size).
+    // It goes on the SCROLLER and never on the group: a `set_size_request` on the group charges the row's
+    // width to the WINDOW and holds the shell open -- `tests/suite/window_shrinks.rs` measures that floor
+    // and failed at 1718 px when all six rows were charged that way -- while a floor on the scrollable asks
+    // the BAR for the width and scrolls when the bar cannot pay, which is §A's "as the window narrows"
+    // thumb. The width is the bar's own arithmetic: the six rows must sum to no more than the 1182 px the
+    // bar has at §1's 1240 px floor, which is what the `SUM natural=` print in
+    // `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs` reports.
+    // The scroller's OWN minimum (`min-content-width`) is the one number this function may hand the bar's
+    // arithmetic: with minimum 0 every group looks infinitely narrow, the bar splits its slack six ways, and
+    // `group-verbs` is given 247 px of viewport around a 578 px row, so Copy/Paste/Insert/Lane paint
+    // 759..1085 past their own viewport's edge at 754 -- §1's badges 12-16 invisible at §1's own size. It
+    // goes on the SCROLLER and never on the group: a `set_size_request` on the group charges the row's width
+    // to the WINDOW and holds the shell open (measured: the floor went from §1's 1240 to 1718 and
+    // `tests/suite/window_shrinks.rs` failed), while a floor on the scrollable asks the BAR for the width
+    // and scrolls when the bar cannot pay -- §A's "as the window narrows" thumb. The width is the bar's own
+    // arithmetic: the six rows must sum to no more than the 1182 px the bar has at §1's 1240 px floor, which
+    // is what the `SUM natural=` print in `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs` reports.
+    // The row's natural width is THIS scroller's own minimum, which is the one number this function may
+    // hand the bar's arithmetic: with minimum 0 every group looks infinitely narrow, the bar splits its
+    // slack six ways, and `group-verbs` is handed 247 px of viewport around a 578 px row, so
+    // Copy/Paste/Insert/Lane paint 759..1085 past their own viewport's edge at 754 -- §1's badges 12-16
+    // invisible at §1's own size. It goes on the SCROLLER and never on the group, because §1's own 1240 px
+    // floor only affords it there: the toolbar is laid out again at the page's FULL width (the Cut page box
+    // is as wide as the TAPE under the paned, §A badge 31, and `AdwViewStack` measures its pages
+    // homogeneously, so Prepare's 2498 px page is measured too), and a width charged to the WINDOW holds
+    // the shell open -- measured, a `set_size_request` on the group or an expanding scroller put the floor
+    // at 1718 px against §1's 1240 and `tests/suite/window_shrinks.rs` failed. On the scrollable it is a
+    // floor the bar honours while it has room and scrolls past when it does not: §A's "as the window
+    // narrows" thumb, which is where the narrow share leaves the buttons a row cannot show.
     scroller.set_child(Some(&row));
     group.append(&scroller);
     group

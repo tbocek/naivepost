@@ -278,25 +278,15 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // `present()` the panel answers 0x0 and a frame picked for an unmeasured plate is the wrong
             // ask; the second call is what actually paints badge 1.
             let _painted = crate::ui::cut_picture::refresh(&window);
-            // Badge **31** is "hidden when everything fits", and at the opening 4 px a second this session
-            // does fit — so no snapshot of the Cut page had ever shown the bar. Deepen the zoom through the
-            // toolbar's own + door (the same one a click reaches) until the tape outgrows the view: the bar
-            // then appears because the geometry says it must, not because anything was forced visible.
-            // Six steps from 4 px/s lands on 15 px/s (§A's factor 1.25), which is also what §2's floor now
-            // clamps to once − is walked back, so the shot shows the band at a zoom the ladder really stops at.
+            // Deepen the zoom through the toolbar's own + door (the same one a click reaches) so the tape
+            // outgrows the view and badge **31** appears because the geometry says it must, not because
+            // anything was forced visible: §A's rule is "hidden when everything fits", and at the opening
+            // 4 px a second a short session does fit, which is why no Cut-page shot had ever shown the bar.
+            // Six steps from 4 px/s land on 15 px/s (§A's factor 1.25), which is where the shot is measured
+            // from: the badge-31 print in the Cut-page drain reports the pps it ended at and fails the render
+            // if the bar is still not asked for there.
             for _ in 0..6 {
                 ui::press_zoom(&window, true);
-            }
-            // ...except on `05-cut` itself. Its picture is `spec/img/05-cut.png`, and there the
-            // whole session FITS the view, so §A's rule ("scrollbar (hidden when everything fits)")
-            // keeps badge **31** hidden; a bar in this shot would be an object the spec's own
-            // picture does not have. Every other Cut-page shot keeps the zoomed staging above,
-            // because those subjects need a bar. Walked back with the toolbar's own − door, so the
-            // ladder's floor (the film length fit) is what stops it, not a painted-over widget.
-            if screen == "05-cut" {
-                for _ in 0..20 {
-                    ui::press_zoom(&window, false);
-                }
             }
         }
         // §2's own picture (`spec/img/03-runbar.svg`) is the run bar WITH WORK GOING ON: "the gears turn
@@ -921,6 +911,40 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 // so that is the door this has to go through — `set_line_position` moves the cursor state,
                 // which the painter never asks. Placed before the redraw, exactly as a click on the tape does.
                 ui::set_playhead(&window, 24.0);
+                // Badge **31** (§A: "scrollbar (hidden when everything fits)"). The bar is drawn from
+                // `cut_view::extents` -- filmed seconds x pps against the band's own width -- so nothing can
+                // claim it is shown except that arithmetic, and the only door to it is the zoom. The staging
+                // above took the shot to 15 px/s through the toolbar's own + button; this asks the same fit the
+                // band will be drawn at, after the layout has given it a real allocation, and presses + from the
+                // page's own door while the tape still fits -- six steps is where the staging left the shot, so
+                // on a session that already overflows (this one: the 0-120 take §A's tape is, declared by that
+                // staging) nothing is pressed and the printed pps is §A's 15. `paint_scrollbar` is never told
+                // to show anything: the geared thumb (§B, 40 px of bar per screenful) appears because the
+                // numbers ask for it, and a shot that still has no bar fails the render with the numbers.
+                let band_view = crate::ui::cut_view::surface_width(&window);
+                let (open_total, open_view) = crate::ui::cut_view::extents(band_view);
+                let mut steps = 0;
+                while crate::ui::cut_view::fits(
+                    crate::ui::cut_view::extents(band_view).0,
+                    crate::ui::cut_view::extents(band_view).1,
+                ) && steps < 6
+                {
+                    ui::press_zoom(&window, true);
+                    steps += 1;
+                }
+                let (over_total, over_view) = crate::ui::cut_view::extents(band_view);
+                let shown = !crate::ui::cut_view::fits(over_total, over_view);
+                println!(
+                    "snapshot: 05-cut badge 31 | {:.1} px/s after {steps} more + step(s) over the toolbar's own door: {over_total:.0} px of film over a {over_view:.0} px view (opened at {open_total:.0} over {open_view:.0}) -- the bar shows: {shown}",
+                    crate::ui::cut_view::pps()
+                );
+                if !shown {
+                    let why = format!(
+                        "05-cut shot shows no scrollbar: after {steps} + steps the tape is still {over_total:.0} px inside a {over_view:.0} px view"
+                    );
+                    eprintln!("snapshot: {why}");
+                    OUT.with(|e| *e.borrow_mut() = Some(why));
+                }
             }
             // `05-rows` parks its line inside the two cameras' overlap for the same reason, and its staging ran
             // before the map like every other screen's, so the band needs the playhead placed here too.

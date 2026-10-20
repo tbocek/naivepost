@@ -26,7 +26,7 @@ use crate::timeline::Recording;
 /// headless container has no icon theme (the precedent F2.5's volume control sets).
 pub const COPY_LABEL: &str = "\u{29c9} Copy";
 pub const COPY_TIP: &str = "take the selection in hand \u{2014} a second at least; the band keeps showing it";
-pub const PASTE_LABEL: &str = "\u{29c9} Paste at the red line";
+pub const PASTE_LABEL: &str = "\u{29c9} Paste";
 pub const PASTE_TIP: &str = "put what is in hand where the red line is \u{2014} footage splices in, sound lays over kept footage";
 pub const LANE_LABEL: &str = "\u{21f2} Lane";
 pub const LANE_TIP: &str = "give the copy a row of its own \u{2014} nothing is cut to it yet";
