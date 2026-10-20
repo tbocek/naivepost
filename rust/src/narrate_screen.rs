@@ -976,8 +976,12 @@ pub fn inputs_readout(
     line
 }
 
-/// §1 (`Outputs: "narrate/ — narration.json, the voice reference and the synthesis cache"`). The folder button's
-/// tooltip, which names the three things the page owns without pretending to know how many files are in them yet.
+/// §1 (`Outputs: "narrate/ — narration.json, the voice reference and the synthesis cache"`). The page's
+/// Outputs READOUT: the wording that names the three things the page owns, stated once, here.
 pub fn outputs_readout() -> &'static str {
     "narrate/ \u{2014} narration.json, the voice reference and the synthesis cache"
 }
+
+/// The Outputs folder button's tooltip: what pressing it DOES. Deliberately NOT [`outputs_readout`], which
+/// is the readout's own line — repeating it on the button made the readout look like a copy of a tooltip.
+pub const OUTPUTS_FOLDER_TIP: &str = "Open the narration folder";

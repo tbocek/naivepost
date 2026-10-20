@@ -80,6 +80,9 @@ pub mod rescan_apply;
 pub mod source_rows;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
+/// §07-narrate#1-screen: one line row's shape (header line, full-width text box under it, warning last).
+/// Its own module because `narrate_page.rs` is past its size budget.
+pub mod narrate_row;
 /// §07-narrate#1-screen badge 13 — the pitch control as a labelled row (`pitch:` · slider · value).
 pub mod narrate_pitch;
 
@@ -88,6 +91,8 @@ pub mod narrate_pitch;
 pub mod narrate_page_speak;
 pub mod narrate_page_seek;
 pub mod narrate_inputs;
+/// §07-narrate#1-screen (**22**): the Inputs row's bracketed counts, derived from the session.
+pub mod narrate_inputs_tally;
 pub mod narrate_page_transport;
 /// §F4.6 — the take band and the sample plate: ＋ / － / ▶ on a take and ▶ / ⏹ / ⟳ on the sample
 /// sentence. Split out of `narrate_page.rs`, which is past its size budget; its doors are re-exported
