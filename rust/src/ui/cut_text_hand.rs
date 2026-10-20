@@ -271,12 +271,19 @@ thread_local! {
 
 /// Read one of the caption form's entries back from THIS window's tree.
 fn text_entry(name: &str) -> Option<gtk::Entry> {
-    LAST_TEXT_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
-    })
+    text_entry_of(&current_text_window().unwrap_or_default(), name)
+}
+
+/// The same lookup with the window passed in, which is what the debounced commit needs: by the time the pause runs
+/// out, the closure only has the window it was given.
+fn text_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
+    find_widget_by_name(window.upcast_ref(), name)
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+}
+
+/// The window that last drew a caption form, if any — the owner `text_form_owner` compares against.
+fn current_text_window() -> Option<adw::ApplicationWindow> {
+    LAST_TEXT_WINDOW.with(|cell| cell.borrow().clone())
 }
 
 /// Does THIS window own the live caption form? Two windows both holding one would put Apply's write into
@@ -413,6 +420,31 @@ fn wire_text_buttons(window: &adw::ApplicationWindow) {
             });
         }
     }
+    // F3.8 S5: the entries land on a pause, not per character. The commit re-reads THIS form's three number fields
+    // into the stored form (so Apply later reads back what was typed even if Apply is pressed between two bursts,
+    // and so a field that does not parse keeps what the form held, exactly as Apply's own `read` does) and prints the
+    // kept length. It deliberately does not touch the cut — see `wire_live_fields`.
+    crate::ui::cut_form_buttons::wire_live_fields(window, "text", |win| {
+        let Some(stored) = text_form_open() else { return };
+        let read = |name: &str, keep: f64| -> f64 {
+            text_entry_of(win, name)
+                .map(|entry| entry.text().trim().to_string())
+                .and_then(|text| text.parse::<f64>().ok())
+                .unwrap_or(keep)
+        };
+        let dur = read("text-field-length", stored.dur);
+        let form = fx_text::Form {
+            dur,
+            trans: read("text-field-fade-in", stored.trans),
+            tout: read("text-field-fade-out", stored.tout),
+            ..stored
+        };
+        set_text_form(Some(form));
+        crate::ui::cut_form_buttons::say_kept(
+            win,
+            &format!("{} \u{2014} kept as you type", trim_seconds(dur)),
+        );
+    });
 }
 
 /// Esc releases the caption arm / form, wired after `set_content` like every other control. Claims Escape only

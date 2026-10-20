@@ -259,6 +259,12 @@ fn speed_entry(name: &str) -> Option<gtk::Entry> {
     })
 }
 
+/// The same lookup with the window passed in: a debounced commit only has the window it was handed.
+fn speed_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
+    find_widget_by_name(window.upcast_ref(), name)
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+}
+
 /// Read one of the speed form's dropdowns back from THIS window's tree.
 fn speed_dropdown(name: &str) -> Option<gtk::DropDown> {
     LAST_SPEED_WINDOW.with(|cell| {
@@ -411,6 +417,29 @@ pub fn press_speed_esc(window: &adw::ApplicationWindow) -> Option<String> {
     Some(press_speed_cancel(window))
 }
 
+/// The debounced commit: re-read THIS window's speed form's number entries into its stored state and print the kept
+/// length. Form state only — the cut waits for Apply (§F3.8 S5, `wire_live_fields`).
+fn keep_speed_fields(window: &adw::ApplicationWindow) {
+    let Some(stored) = speed_form_open() else { return };
+    let read = |name: &str, keep: f64| -> f64 {
+        speed_entry_of(window, name)
+            .map(|entry| entry.text().trim().to_string())
+            .and_then(|text| text.parse::<f64>().ok())
+            .unwrap_or(keep)
+    };
+    let dur = read("speed-field-length", stored.dur);
+    set_speed_form(Some(cut_speed::Form {
+        dur,
+        trans: read("speed-field-fade-in", stored.trans),
+        tout: read("speed-field-fade-out", stored.tout),
+        ..stored
+    }));
+    super::cut_form_buttons::say_kept(
+        window,
+        &format!("{} \u{2014} kept as you type", trim_seconds(dur)),
+    );
+}
+
 /// Wire the form's two buttons BY NAME. Each forwards one press and prints what comes back; neither holds a rule.
 pub(crate) fn wire_speed_buttons(window: &adw::ApplicationWindow) {
     for (name, door) in [
@@ -431,6 +460,8 @@ pub(crate) fn wire_speed_buttons(window: &adw::ApplicationWindow) {
             });
         }
     }
+    // F3.8 S5: the same pause for this form's number fields as every other live form gets.
+    super::cut_form_buttons::wire_live_fields(window, "speed", keep_speed_fields);
 }
 
 /// Esc releases an open speed form, wired after `set_content` like every other control. Claims Escape only when

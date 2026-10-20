@@ -197,6 +197,7 @@ mod f3_4_text_box_preview_widgets;
 mod f3_5_svg_raster_made;
 mod f3_6_gain_reaches_sound;
 mod f3_8_band_gesture_widgets;
+mod f3_8_edit_and_release;
 mod f3_8_esc_drops_the_hold_and_disarms;
 mod f3_8_s5_apply_and_cancel_share_one_row_in_every_form;
 mod f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire;

@@ -612,6 +612,15 @@ pub fn place_known() -> bool {
 
 
 /// S1: ⧉ Insert's wire. The button forwards here and prints what comes back, so no rule sits in the callback.
+///
+/// F3.8 S1 (`Insert becomes ✎ Edit`): the label switch and this door are the two halves of that one sentence.
+/// `refresh_insert_button` already relabels the button to `cut_insert::edit_verb(true)` whenever an EFFECT is in
+/// hand (as well as a held card), so pressing a button that says "✎ Edit" must not open the insert chooser — it
+/// re-opens the record in hand's form (§S4). Checked before `press_insert` because §F2.12 S1 answers the placement
+/// question first thing inside it, and an Edit press has no placement question to answer.
 pub(crate) fn press_insert_from_button(window: &adw::ApplicationWindow) -> String {
+    if ui::held_effect().is_some() {
+        return ui::press_edit_effect(window);
+    }
     press_insert(window)
 }

@@ -202,6 +202,12 @@ fn label_entry(name: &str) -> Option<gtk::Entry> {
     })
 }
 
+/// The same lookup with the window passed in: a debounced commit only has the window it was handed.
+fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
+    find_widget_by_name(window.upcast_ref(), name)
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+}
+
 /// F3.7 S2/S4: Apply. Reads the two fields back, hands them to [`fx_label::apply`] (which refuses an empty
 /// name first and the 0.4 s floor second, then clips the name to the tag's budget), and puts the result on the
 /// cut as ONE edit.
@@ -267,6 +273,31 @@ pub fn press_label_esc(window: &adw::ApplicationWindow) -> Option<String> {
 }
 
 /// Wire the form's two buttons BY NAME. Each forwards one press and prints what comes back; neither holds a rule.
+/// The debounced commit: this label form's fields into its stored state, then the kept length on the status row.
+/// Form state only — the cut waits for Apply (§F3.8 S5, `wire_live_fields`).
+fn keep_label_fields(window: &adw::ApplicationWindow) {
+    let Some(stored) = label_form_open() else { return };
+    let read = |name: &str, keep: f64| -> f64 {
+        label_entry_of(window, name)
+            .map(|entry| entry.text().trim().to_string())
+            .and_then(|text| text.parse::<f64>().ok())
+            .unwrap_or(keep)
+    };
+    let dur = read("label-field-length", stored.dur);
+    let name = label_entry_of(window, "label-field-name")
+        .map(|entry| entry.text().to_string())
+        .unwrap_or_else(|| stored.name.clone());
+    set_label_form(Some(fx_label::Form {
+        dur,
+        name,
+        ..stored
+    }));
+    super::cut_form_buttons::say_kept(
+        window,
+        &format!("{} \u{2014} kept as you type", trim_seconds(dur)),
+    );
+}
+
 fn wire_label_buttons(window: &adw::ApplicationWindow) {
     for (name, door) in [("label-apply-button", true), ("label-cancel-button", false)] {
         if let Some(button) = line_step_button(window, name) {
@@ -283,6 +314,8 @@ fn wire_label_buttons(window: &adw::ApplicationWindow) {
             });
         }
     }
+    // F3.8 S5: the Name and Length entries land on a pause, like every other live form's.
+    super::cut_form_buttons::wire_live_fields(window, "label", keep_label_fields);
 }
 
 /// Esc releases an open label form, wired after `set_content` like every other control. Claims Escape only when
