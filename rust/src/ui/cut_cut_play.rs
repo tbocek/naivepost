@@ -10,7 +10,7 @@ use crate::ui::window::{live_player, log_line};
 use crate::{cut_play, tools, ui};
 
 /// The label the toolbar ships (§1's transport table): ▶✂ while nothing of ours runs.
-pub const PLAY_LABEL: &str = "\u{25b6}\u{2702} Play the cut";
+pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_CUT;
 /// Inventory §D's three-▶ rule: "each wears ⏸ only while its thing runs". The run bar's ▶ takes its icon
 /// from `run::controls`; this button belongs to the cut preview, so its face changes here and nowhere else.
 pub const PAUSE_LABEL: &str = "\u{23f8} Pause the cut";

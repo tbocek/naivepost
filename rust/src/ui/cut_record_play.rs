@@ -12,7 +12,7 @@ use crate::{layout, play_back, timeline, ui};
 use crate::ui::cut_folds;
 
 /// The label the toolbar ships (§1's transport table): ▶ while nothing of ours runs.
-pub const PLAY_LABEL: &str = "\u{25b6} Play the recording";
+pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_RECORDING;
 /// Inventory §D's three-▶ rule: "each wears ⏸ only while its thing runs". The run bar's ▶ gets its icon from
 /// `run::controls`; this button belongs to the preview, so its face changes here and nowhere else.
 pub const PAUSE_LABEL: &str = "\u{23f8} Pause the recording";

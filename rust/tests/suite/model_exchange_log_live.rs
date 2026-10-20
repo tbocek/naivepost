@@ -495,6 +495,8 @@ fn gtk_up() {
 /// which is why this is a slot and not a fresh window per case.
 fn log_window() -> adw::ApplicationWindow {
     gtk_up();
+    // A bare top level of this file's own, NOT the shell: §1's 1240×900 minimum belongs to the app window
+    // (`ui::build_window`), and nothing here reads a shell widget, so this one keeps its own small size.
     let window = adw::ApplicationWindow::builder().build();
     window.set_default_size(900, 600);
     window.present();

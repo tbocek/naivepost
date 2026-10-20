@@ -86,6 +86,19 @@ impl Page {
 /// it, unlike the app id `ch.bocek.naivepost` and the binary name, both lower-case.
 pub const WINDOW_TITLE: &str = "Naivepost";
 
+/// §1's window MINIMUM, width: "Its minimum size is 1240×900: it opens at that size and cannot be made
+/// smaller", echoed by §10's window row. The width at which every control a page names fits on screen.
+pub const WINDOW_MIN_W: i32 = 1240;
+
+/// §1's window MINIMUM, height — the other half of [`WINDOW_MIN_W`]. §10 gives this pair no `P.*` id, so
+/// it lives here as a bare constant rather than in `params.rs`.
+pub const WINDOW_MIN_H: i32 = 900;
+
+/// The page band at §1's minimum size: the window minus the header (~52 px), the run bar row (~53 px) and
+/// an open log band (220 px, `ui::window_bench::LOG_OPEN_PX`). It is where the shell's page/bottom-bar
+/// divider opens in a snapshot, because headless nothing drags that handle (`snapshot::run` sets it).
+pub const PAGE_BAND_PX: i32 = 560;
+
 pub const CUT_LOCK: &str = "Add footage on the Prepare step first \u{2014} the cut is laid out from the recordings";
 
 /// The bottom bar's Inputs row for a Cut page with nothing to cut — `spec/inventory/cut.md` §A spells it

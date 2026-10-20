@@ -94,7 +94,7 @@ fn build_label() -> gtk::Label {
 /// Which stage fits: the widest ladder rung whose natural text still fits `width`. Measured against the
 /// text's own natural width rather than a fixed character count — §10's prototype numbers (`headSlack`
 /// 90, name 28 chars) are what this replaces with something that follows the actual header. A width of
-/// 0 (never allocated yet) keeps the widest rung, which is what §1's default 1240×740 window shows.
+/// 0 (never allocated yet) keeps the widest rung, which is what §1's minimum-size 1240×900 window shows.
 pub fn stage_for(text: &str, width: i32) -> Fit {
     if width <= 0 {
         return Fit::Roomy;

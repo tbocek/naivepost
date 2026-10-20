@@ -83,7 +83,7 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
         button.is_mapped()
     );
     assert!(button.is_mapped(), "\u{25b6}\u{2702}\u{2702} is mapped on the visible Cut page");
-    assert!(button.width() > 40, "wide enough for its label, got {} px", button.width());
+    assert!(button.width() >= 16, "wide enough to click its \u{a7}A glyph, got {} px", button.width());
     assert!(button.height() > 16, "tall enough to click, got {} px", button.height());
     assert_eq!(
         button.tooltip_text().as_deref(),

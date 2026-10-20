@@ -3,7 +3,7 @@
 //! §1 puts the run bar and the Inputs/Outputs readouts in ONE row, and "what no longer fits scrolls …
 //! instead of holding the window wide". The run bar's row carries ▶ / 🎲 / ⏹ / ⚙ plus the three pass
 //! buttons with words on them, so its natural minimum is ~800 px; add the readouts' own 378 px and the
-//! row pins the shell above the 1024 px a person must be able to shrink to (`tests/suite/window_shrinks.rs`
+//! row pins the shell wider than §1's 1240 px minimum (`tests/suite/window_shrinks.rs`
 //! measures exactly that). So the controls scroll sideways inside the row while the readouts keep their
 //! place at its right end — the row's minimum becomes the scroller (0) plus the readouts, not the sum.
 //!

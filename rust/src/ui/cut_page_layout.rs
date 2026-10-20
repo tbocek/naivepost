@@ -38,6 +38,19 @@ const BELOW_PANED: [&str; 6] = [
     "fold-all-holder",
 ];
 
+/// Two halves of the page ask for their own width and must not be stretched across the band: §A's form
+/// column is seated by the left/right divider, and §1 puts the selection row's drag surface, ✕ and
+/// readout together as one small surface under the bar, not as a page-wide strip.
+const NO_FILL: [&str; 2] = ["cut-form-frame", "selection-row"];
+
+/// The toolbar spans the page's width, so `arrange` lets it stretch with the rest of the bottom half.
+/// §1 items **9**-**16** are the volume slider and the Copy/Paste/Insert/Lane controls, and
+/// `spec/img/05-cut.png` draws them across the whole bar; when that box was `halign(Start)` the bar
+/// stopped at the sum of its groups' natural widths and clipped them at its own edge (measured at a
+/// 1260 px window: `group-verbs` was given 244 px of a 675 px natural width, so Copy/Paste/Insert/Lane sat
+/// at x=769..1194 inside `group-verbs`' own scroller, off the visible bar).
+const TOOLBAR_SPANS_PAGE: bool = true;
+
 /// The two widgets that make up the paned's start half, in order: the preview panel and, immediately
 /// under it, the effects lane (§06-effects#2, `spec/img/06-lane.png`). They stay siblings because a
 /// whole set of readers -- and §06's own seat test -- find the lane as the frame's next sibling.
@@ -61,12 +74,17 @@ pub const SELF_SPLIT_PREVIEW_PX: i32 = 660;
 
 /// §A's opening height for the TOP/BOTTOM divider — "split top and bottom by a draggable divider
 /// (opened with the upper part 380 px tall)"; the other half of that `paned 660/380` pair.
+/// §A's opening height for the TOP/BOTTOM divider — "split top and bottom by a draggable divider
+/// (opened with the upper part 380 px tall)"; the other half of that `paned 660/380` pair.
 pub const SELF_SPLIT_TOP_PX: i32 = 380;
 
 /// The height the pane below the top/bottom divider asks for, so that divider can actually open at
 /// [`SELF_SPLIT_TOP_PX`] in a window sized like `spec/img/05-cut.png`. §A gives no number for it; this is
 /// §1's own parts added up -- the toolbar row, one picture row at the open-at thumbnail size with its wave
 /// strip (`thumbHt + 4` then 30), and the scrollbar.
+/// What the pane below the top/bottom divider would have asked for (§A gives no number; this was §1's parts
+/// added up). UNUSED now — see [`UPPER_PANE_MIN_H`] for why neither pane carries a request any more.
+#[allow(dead_code)]
 pub const LOWER_PANE_MIN_H: i32 = 196;
 
 /// What the pane ABOVE the top/bottom divider asks for, so the divider opens at [`SELF_SPLIT_TOP_PX`]
@@ -76,6 +94,10 @@ pub const LOWER_PANE_MIN_H: i32 = 196;
 /// selection band (22) and one effect row (26) the lane costs live among -- so the opening is reached by
 /// adding up what the page actually draws. Measured: the divider lands exactly on this number, so it is
 /// `SELF_SPLIT_TOP_PX` plus the 30 px GTK keeps for itself (handle and frame), not a bigger picture.
+/// What the pane ABOVE the top/bottom divider WOULD have asked for. UNUSED and kept as the record of why
+/// the openings are positions, not requests: this 410 px plus [`LOWER_PANE_MIN_H`] sums past §1's minimum
+/// page band (~700 px), which is how the Cut page ended up scrolling as a whole.
+#[allow(dead_code)]
 pub const UPPER_PANE_MIN_H: i32 = SELF_SPLIT_TOP_PX + 30;
 
 /// The FLOOR the picture gets in the upper pane: §A's "GtkPicture contain-fit, min height 160". The panel
@@ -268,17 +290,18 @@ pub fn arrange(page_box: &gtk::Box) {
     // The top half keeps its own shape (the picture's height plus the lane under it) and never shrinks
     // below it; the bottom half takes what is left, which is §A's note on the vertical paned.
     vsplit.set_resize_start_child(true);
+    // Both panes may shrink: see the note where the openings are settled by POSITION instead of by
+    // requests, so the two together still fit §1's minimum-height page band.
     vsplit.set_shrink_start_child(false);
     // `cut-top` asks for less than §A's 380 px on its own (the picture plus the lane came to ~304 px
     // measured), so BOTH panes must be allowed to grow into the leftover, or GTK settles the divider at
     // the start child's natural height and 380 is never reached. With these the position holds.
     split.set_vexpand(true);
     vsplit.set_position(SELF_SPLIT_TOP_PX);
-    // ...and the upper pane must ask for more than its own content: its natural height (the picture's
-    // 135 px minimum plus an empty lane) came to 304 px, and GTK settles a paned at its start child's
-    // natural height when nothing asks for more. A size request on a GtkPaned sizes its START pane, so the
-    // number goes here -- measured: the divider lands exactly on it (handle and frame included).
-    vsplit.set_size_request(-1, UPPER_PANE_MIN_H);
+    // ...and the upper pane used to ask for more than its own content (the old `UPPER_PANE_MIN_H`, 410 px) so
+    // GTK would settle the divider on §A's opening rather than on the picture's 304 px natural height. That
+    // request is GONE: at §1's minimum the page band cannot hold 410 + 196, and a page that overflows its band
+    // scrolls as a whole, which §1 forbids. The position above plus vexpand on both panes is what opens it now.
     let bottom = gtk::Box::new(gtk::Orientation::Vertical, 4);
     bottom.set_widget_name("cut-bottom");
     bottom.set_vexpand(true);
@@ -298,10 +321,11 @@ pub fn arrange(page_box: &gtk::Box) {
     for name in BELOW_PANED {
         if let Some(widget) = detached.iter().find(|w| w.widget_name() == name).cloned() {
             // §A's band is ONE surface spanning the page, so everything stacked into the bottom half
-            // fills the width it is given. `track-strip` comes from `window.rs` sized to `STRIP_WIDTH`
+            // fills the width it is given -- except [`NO_FILL`], which keeps its own shape. `track-strip`
+            // comes from `window.rs` sized to `STRIP_WIDTH`
             // (480) and `halign Start`, which is why it sat narrower than the band beside it; the strip
             // paints from `cut_view::view_px(...)` at draw time, so filling costs nothing it relied on.
-            widget.set_hexpand(true);
+            widget.set_hexpand(TOOLBAR_SPANS_PAGE || !NO_FILL.contains(&name));
             widget.set_halign(gtk::Align::Fill);
             bottom.append(&widget);
         }
@@ -309,12 +333,15 @@ pub fn arrange(page_box: &gtk::Box) {
     if let Some(bar) = detached.iter().find(|w| w.widget_name() == "track-scrollbar").cloned() {
         bottom.append(&bar);
     }
-    // The lower pane must ask for at least what §A's 380 px opening leaves it, or GTK settles the divider
-    // wherever the two panes' own natural heights happen to land (measured: 304 px, the top half's picture
-    // plus its lane) and the opening is never reached. The tape costs a row per camera AND a cut lane,
-    // which `fit_band_height` only settles on a later repaint, so the floor here is §1's own arithmetic:
-    // the toolbar row, one picture row at the open-at thumbnail size with its wave strip, and the scrollbar.
-    bottom.set_size_request(-1, LOWER_PANE_MIN_H);
+    // The lower pane used to carry a hard request ([`LOWER_PANE_MIN_H`]) so GTK would settle the divider on
+    // §A's opening instead of on the two panes' natural heights. That request is GONE: §1 fixes the window's
+    // MINIMUM at 1240×900 and says no page scrolls as a whole at that size, so the page band (~700 px after
+    // header, run bar and log) has to hold BOTH panes, and the old 410 + 196 pair summed past it — measured
+    // 101 px of travel in `page-scroll-Cut`. The openings are positions + vexpand now, so the floor stays at
+    // §1's number and `tests/suite/window_shrinks.rs` measures zero travel here.
+    bottom.set_vexpand(true);
+    vsplit.set_shrink_start_child(true);
+    vsplit.set_shrink_end_child(true);
     // Now the upper pane has real height (the window minus the divider's opening), hand it to the picture:
     // §A's preview is "contain-fit, min height 160", and the reference draws it filling the whole upper
     // pane, while the panel was built at its thumbnail shape (`PREVIEW_PANEL_H`, 135) and would otherwise

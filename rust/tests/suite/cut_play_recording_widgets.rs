@@ -73,8 +73,11 @@ fn check_button_exists_with_the_specs_tooltip(app: &adw::Application) {
         "the tooltip says what §F2.1 S2 says: {tip:?}"
     );
     assert!(
-        button.label().as_deref().is_some_and(|label| label.contains("Play the recording")),
-        "the button says what it plays: {:?}",
+        button
+            .label()
+            .as_deref()
+            .is_some_and(|label| label.starts_with('\u{25b6}')),
+        "the button wears \u{a7}A group 1's glyph (the sentence is the tooltip just asserted): {:?}",
         button.label()
     );
     window.close();
@@ -101,8 +104,8 @@ fn check_the_button_is_laid_out_on_the_page(app: &adw::Application) {
     );
     assert!(button.is_mapped(), "the button is mapped on the visible Cut page");
     assert!(
-        button.width() > 40,
-        "wide enough for \"▶ Play the recording\", got {} px",
+        button.width() >= 16,
+        "wide enough to click a \u{a7}A glyph, got {} px",
         button.width()
     );
     assert!(

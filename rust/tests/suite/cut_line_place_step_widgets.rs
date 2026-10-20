@@ -76,7 +76,7 @@ fn check_the_four_step_buttons_move_the_line(app: &adw::Application) {
         let button = ui::line_step_button(&window, name)
             .unwrap_or_else(|| panic!("the Cut page carries {name}"));
         assert!(button.is_mapped(), "{name} is mapped on the visible Cut page");
-        assert!(button.width() > 20, "{name} wide enough to click, got {} px", button.width());
+        assert!(button.width() >= 16, "{name} wide enough to click, got {} px", button.width());
         assert!(button.height() > 16, "{name} tall enough to click, got {} px", button.height());
         assert_eq!(
             button.tooltip_text().as_deref(),
@@ -109,8 +109,13 @@ fn check_the_four_step_buttons_move_the_line(app: &adw::Application) {
     let before = ui::line_position(&window).t;
     let back_five = ui::line_step_button(&window, "line-step-back-five")
         .expect("back-five button");
-    assert_eq!(back_five.label().unwrap().as_str(), "\u{2039}\u{2039} f  step back 5 frames",
-        "the shift variant is the one wired to that name");
+    assert_eq!(back_five.label().unwrap().as_str(), "\u{2039}\u{2039} f",
+        "the shift variant is the one wired to that name (\u{a7}A group 1's glyph; the sentence is the tooltip)");
+    assert_eq!(
+        back_five.tooltip_text().as_deref(),
+        Some(naivepost::cut_screen::FRAME_TIP),
+        "and the tip says which way and how far"
+    );
     back_five.emit_by_name::<()>("clicked", &[]);
     let back = ui::line_position(&window).t;
     assert!(

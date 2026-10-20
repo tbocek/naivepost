@@ -72,6 +72,38 @@ pub const SHOT_TRACKS_H: i32 = 170;
 /// Where the shot parks the page's vertical divider. §A opens it 380 px down, which suits the ~900 px-tall
 /// window §1 describes; here it has to sit just above the tape for the rows to be reachable.
 pub const SHOT_SPLIT_POS: i32 = 380;
+/// How tall the shot asks the window to be. A headless GTK clamps a window to ~790 px of plate however
+/// large the ask (measured: 800, 1500 and 2400 all came back the same), so the page cannot be made taller;
+/// what brings F2.10's two camera plates into the painted frame is everything ABOVE them getting shorter,
+/// which is what [`SHOT_SPLIT_POS`] and [`SHOT_UPPER_CAP_H`] do.
+pub const SHOT_WINDOW_H: i32 = 790;
+
+/// The ceiling the shot puts on the pane above the top/bottom divider. `arrange` opens that divider at §A's
+/// 380 px AND hands the leftover height to the upper pane, so in an 800 px window the picture pane swallows
+/// ~420 px and the camera rows land at y=1015/1053 -- below the last painted row of pixels, invisible in the
+/// PNG while still passing a bare "is its top inside the band" test.
+///
+/// It has to clear the preview's own floor: `grow_to` refuses a shorter box than
+/// [`crate::ui::cut_page_layout::PREVIEW_FLOOR_H`] (160) and the effects lane under the picture costs
+/// `fx_lane::lane_height_px(1)`, so a cap below ~190 px is simply ignored by the widgets inside it. Measured:
+/// 200 px pulls both rows from y=1015/1053 up to y=912/950, and [`SHOT_SCROLL_DOWN`] carries the rest.
+pub const SHOT_UPPER_CAP_H: i32 = 200;
+/// How far down the shot scrolls the page, past the preview pane and the tape, to bring both camera rows
+/// into the painted frame. Generous on purpose: `scroll_page` clamps it to the scroller's real travel, so an
+/// over-long ask lands on the bottom of the page rather than overshooting anything.
+pub const SHOT_SCROLL_DOWN: f64 = 900.0;
+/// Where the shot parks the SHELL's page/bottom-bar divider (§1's other draggable divider). Its opening is
+/// far below what this shot needs, and while the bottom bar keeps that share the page cannot scroll; see
+/// [`raise_shell_split`].
+pub const SHELL_PAGE_PX: i32 = 560;
+/// The placeholder strip's height in the shot. It was built taller than §A's ruler (18 px) plus one wave
+/// strip (30 px) because on the live page it stands in for a whole band; here the rows beneath it have to be
+/// reachable inside ~790 px of window, so the shot asks for what §A actually lists.
+pub const SHOT_STRIP_H: i32 = 52;
+/// The height the shot asks the window for. A headless GTK settles BELOW this ask (measured: an ask of 1200
+/// came back 1014 px, one of 800 came back 730), so the frame is smaller than asked either way; asking big is
+/// what gets the tallest honest frame, and the rest is done by [`raise_shell_split`] and [`scroll_page`].
+pub const SHOT_WINDOW_ASK_H: i32 = 1200;
 /// The line's second: inside the overlap, so the watch sentence is owed (badge **7**) and the preview has a
 /// kept scene to convert a second for.
 pub const LINE_T: f64 = 25.0;
@@ -130,7 +162,7 @@ fn figure() -> cut::Cut {
 pub const SHOT_ROWS: [&str; 2] = ["camera-row-1", "camera-row-2"];
 
 /// A row's top edge in the window's own coordinates, or `None` when no widget carries that name.
-fn row_top(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
+pub fn row_top(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
     let widget = find_widget_by_name(window.upcast_ref(), name)?;
     let native = widget.native()?;
     #[allow(deprecated)] // the shot's own walk; gtk 4.12's replacement needs a surface node
@@ -139,17 +171,151 @@ fn row_top(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
         .map(|(_, y)| y as i32)
 }
 
+/// The page's own scroll, driven through GTK's real scroll input: the shell wraps every page in
+/// `page-scroll-‹tab›`, so moving its vertical adjustment is what a wheel or a trackpad swipe does to it.
+///
+/// This is how the shot reaches F2.10's two camera plates. Headless GTK clamps the window to ~790 px of plate
+/// however large the ask (measured: 800, 1500 and 2400 all came back the same) while the Cut page is ~1015 px
+/// tall, so the rows sit below the painted pixels at rest; scrolling down is exactly what a person does to see
+/// them, and [`shot_covers`] then measures whether they really landed in the frame.
+///
+/// `dy` is asked of `gtk::Adjustment`, which CLAMPS into its own `[lower, upper - page_size]` band -- a band
+/// that only exists once the scroller has been laid out with its final height, so this pumps the context after
+/// writing rather than trusting one call before the map has happened.
+pub fn scroll_page(window: &adw::ApplicationWindow, dy: f64) {
+    let Some(scroller) = page_scroller(window) else {
+        return;
+    };
+    let adjustment = scroller.vadjustment();
+    let top = (adjustment.upper() - adjustment.page_size()).max(0.0);
+    adjustment.set_value((adjustment.value() + dy).clamp(0.0, top));
+    crate::snapshot_face::pump_context(32);
+}
+
+/// How far the page had scrolled when the shot was taken -- printed by `stage`, because "the rows are in the
+/// frame" is a claim about the scroll position as much as about the layout.
+pub fn scroll_value(window: &adw::ApplicationWindow) -> f64 {
+    let adjustment = page_scroller(window).map(|s| s.vadjustment());
+    let (value, upper, page) = match adjustment {
+        Some(a) => (a.value(), a.upper(), a.page_size()),
+        None => return 0.0,
+    };
+    // Printed with the band it is clamped to, so a scroll that lands on 0 says whether there was travel.
+    println!("scroll value {value:.0} of upper {upper:.0} page {page:.0}");
+    value
+}
+
+/// The page's travel: how much further it CAN scroll, i.e. `upper - page_size` of its own adjustment. Printed
+/// beside [`scroll_value`] so a shot that will not scroll says whether there was anything to scroll.
+pub fn scroll_travel(window: &adw::ApplicationWindow) -> f64 {
+    page_scroller(window).map_or(0.0, |scroller| {
+        let adjustment = scroller.vadjustment();
+        (adjustment.upper() - adjustment.page_size()).max(0.0)
+    })
+}
+
+/// Pull the shell's page/bottom-bar divider up to free height for the page. §1 makes them "two halves of a
+/// draggable divider", so this is a drag a user really makes — and headless nothing else makes it. It is the
+/// only lever that gives `page-scroll-Cut` real travel: while the bottom bar keeps its share, the scroller's
+/// `upper == page_size`, every scroll request lands on 0, and F2.10's rows stay out of the PNG.
+pub fn raise_shell_split(window: &adw::ApplicationWindow, page_px: i32) {
+    // Found by the run bar it sits above rather than by a name it does not carry (same route as the shrink test).
+    fn find_run_row(node: &gtk::Widget) -> Option<gtk::Widget> {
+        if node.widget_name() == "run-bar" {
+            return node.parent();
+        }
+        for child in node
+            .observe_children()
+            .iter::<glib::Object>()
+            .filter_map(Result::ok)
+        {
+            if let Some(widget) = child.downcast_ref::<gtk::Widget>() {
+                if let Some(found) = find_run_row(widget) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+    let Some(bottom) = find_run_row(window.upcast_ref()) else {
+        return;
+    };
+    // The divider is the Paned that holds the bottom box DIRECTLY -- walk up until a parent's own children
+    // include it, which is how the shell's divider and the page's own differ only by depth.
+    let mut candidate = bottom.parent();
+    while let Some(paned) = candidate {
+        let holds = paned
+            .observe_children()
+            .iter::<glib::Object>()
+            .filter_map(Result::ok)
+            .any(|child| child == bottom.clone().upcast::<glib::Object>());
+        if holds {
+            if let Some(split) = paned.downcast_ref::<gtk::Paned>() {
+                split.set_position(page_px);
+            }
+            break;
+        }
+        candidate = paned.parent();
+    }
+    crate::snapshot_face::pump_context(32);
+}
+
+/// The shell's scroller around the visible page, found by the name `window_page_box` gives it for this tab.
+fn page_scroller(window: &adw::ApplicationWindow) -> Option<gtk::ScrolledWindow> {
+    // Named per page (`page-scroll-Cut`), so the walk takes whichever one the Cut page carries.
+    ["page-scroll-Cut"]
+        .iter()
+        .find_map(|name| find_widget_by_name(window.upcast_ref(), name))
+        .and_then(|widget| widget.downcast::<gtk::ScrolledWindow>().ok())
+}
+
 /// True when the band `shot_top`..`shot_top + shot_height` reaches every one of [`SHOT_ROWS`] in `window`:
-/// each row's own top, translated to the native, lies inside it. This is the geometric form of "the shot covers
-/// F2.10's picture" — the PNG is painted at the window's height while the rows sit further down a page ~1015 px
-/// tall, so what the spec's picture needs — both plates in one reachable frame together, row 1 above row 2 — is
-/// a fact about the page, not about the file. False if either named row is missing: an absent row is not covered.
-/// Called by `snapshot::run`'s `05-rows` arm, which refuses the shot when it does not hold.
+/// each row's own top lies inside it AND inside the strip of page the shell's scroller is currently showing.
+/// The second clause is what F2.10's picture needs and a bare top-in-band test could not say: headless GTK
+/// settles the Cut page taller than the window, so rows at y=1015/1053 had their tops inside
+/// `shot_top..shot_top + height` while the PNG showed a page with no camera row in it at all -- they were
+/// scrolled out of `page-scroll-Cut`, where `write_png` cannot reach them. A row outside the scroller's
+/// viewport is not in the shot, and neither is an absent row. Called by `snapshot::run`'s `05-rows` arm and by
+/// `tests/suite/f2_10_rows_shot.rs`, which refuse the shot when this does not hold.
 pub fn shot_covers(window: &adw::ApplicationWindow, shot_top: i32, shot_height: i32) -> bool {
     let bottom = shot_top + shot_height;
-    SHOT_ROWS
-        .iter()
-        .all(|name| row_top(window, name).is_some_and(|top| top >= shot_top && top < bottom))
+    SHOT_ROWS.iter().all(|name| {
+        row_place(window, name)
+            .is_some_and(|(top, painted)| top >= shot_top && top < bottom && painted)
+    })
+}
+
+/// Row `name`'s own top and whether that top lies in the strip of page the shell's scroller is showing.
+/// `None` for an absent row: an absent row is not a measurable one.
+fn row_place(window: &adw::ApplicationWindow, name: &str) -> Option<(i32, bool)> {
+    let widget = find_widget_by_name(window.upcast_ref(), name)?;
+    let top = row_top(window, name)?;
+    // The scroller clips its child to its own box, so "painted" means the row's top has reached inside
+    // `page-scroll-Cut`'s allocation -- asked in the SCROLLER's coordinates, which is where a clipped widget
+    // actually lives. A page with no scroller (a bare test window) paints everything it is given.
+    let painted = match page_scroller(window) {
+        Some(scroller) => widget
+            .compute_bounds(scroller.upcast_ref::<gtk::Widget>())
+            .is_some_and(|rect| rect.y() >= 0.0 && rect.y() < scroller.height() as f32),
+        None => top >= 0,
+    };
+    Some((top, painted))
+}
+
+/// Every named widget on the page with its top edge, newest last -- printed by `stage` so a failing shot says
+/// WHICH part of the page is holding the camera rows down instead of leaving it to be guessed at.
+fn page_tops(window: &adw::ApplicationWindow) -> Vec<String> {
+    [
+        "preview-panel",
+        "cut-toolbar",
+        "track-layers",
+        "track-strip",
+        "selection-row",
+        "camera-rows",
+    ]
+    .iter()
+    .filter_map(|name| row_top(window, name).map(|top| format!("{name} y={top}")))
+    .collect()
 }
 
 /// Both rows' top edges, in the window's own coordinates, in [`SHOT_ROWS`] order. `i32::MAX` for a row no widget
@@ -180,6 +346,10 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     // rows' positions rather than the file's height.
     if let Some(panel) = ui::find_source_widget(window, "preview-panel") {
         crate::ui::cut_preview_panel::grow_to(&panel, PREVIEW_SHOT_W, PREVIEW_SHOT_H);
+        // The panel vexpands inside the paned, so its request alone does not stop the upper pane growing;
+        // the ceiling goes on the panel too and is what the cap below then holds.
+        panel.set_size_request(PREVIEW_SHOT_W as i32, PREVIEW_SHOT_H as i32);
+        panel.set_vexpand(false);
     }
     // The reading column keeps §A's opening width, so the preview beside it stays a picture and not a 240 px
     // sliver: `cut_page_layout::arrange` only seats the handle, and headless GTK settles a paned at its minima.
@@ -192,6 +362,11 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     if let Some(layers) = find_widget_by_name(window.upcast_ref(), "track-layers") {
         layers.set_size_request(SHOT_TRACKS_W, SHOT_TRACKS_H);
     }
+    // And the strip under it keeps only what the ruler and one wave strip cost. Left at its built request it
+    // asks for 170 px of its own, which is why the rows below stayed out of reach however far the divider moved.
+    if let Some(strip) = find_widget_by_name(window.upcast_ref(), "track-strip") {
+        strip.set_size_request(-1, SHOT_STRIP_H);
+    }
     // And the divider moves up. `arrange` opens it at §A's 380 px AND hands the leftover to the upper pane
     // (`resize_start_child`), so shrinking the widgets inside the panes is not enough -- GTK keeps 380 px above
     // the line whatever lives there. This is the drag a user would make.
@@ -199,6 +374,11 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
         .and_then(|widget| widget.downcast::<gtk::Paned>().ok())
     {
         paned.set_position(SHOT_SPLIT_POS);
+        // ...and the upper pane is capped, or the leftover height goes to the picture and the rows stay below
+        // the painted pixels however far the divider is dragged up. A `GtkPaned` SIZES ITS START PANE when a
+        // size request goes on the paned itself (that is how `arrange` opens the divider at §A's 380 px), so
+        // one request does both jobs. See [`SHOT_UPPER_CAP_H`].
+        paned.set_size_request(-1, SHOT_UPPER_CAP_H);
     }
     // Declared BEFORE the seed: `set_session_recordings` marks the session as declared, so the seed below
     // cannot trade these spans for what its segments imply (`ui::cut_folds::SESSION_DECLARED`).
@@ -235,6 +415,22 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ui::set_line_position(window, cut_line::LinePos { t: LINE_T });
     let watched = ui::press_watch_row(window, 1).unwrap_or_default();
     ui::refresh_camera_rows(window);
+    // ...and the page is SCROLLED DOWN to them. The window clamps at ~790 px of plate while the Cut page is
+    // ~1015 px tall, so at rest both plates sit below the painted pixels; scrolling is what a person does to
+    // see them and it is the only thing that puts them in the PNG. Through the shell's own scroller, not a
+    // state poke -- see [`scroll_page`].
+    // ...and the shell's page/bottom-bar divider is dragged DOWN to its §1 opening (see [`SHELL_PAGE_PX`]):
+    // the bottom bar keeps only its own band, which is what gives `page-scroll-Cut` any travel at all.
+    raise_shell_split(window, SHELL_PAGE_PX);
+    scroll_page(window, SHOT_SCROLL_DOWN);
+    // ...and BOTH levers again now that the map has happened. `stage` runs before `present()` in
+    // `snapshot::run`, so the first pass sizes widgets that had no allocation yet and the scroller answers
+    // `upper == page_size` -- no travel, every request landing on 0. Measured: after the map the same calls
+    // move the page 101 px and both camera plates land inside the painted band.
+    crate::snapshot_face::pump_context(64);
+    raise_shell_split(window, SHELL_PAGE_PX);
+    scroll_page(window, SHOT_SCROLL_DOWN);
+    ui::refresh_camera_rows(window);
 
     // Read the plates back off the page rather than recomputing them: the printed string is then the label the
     // PNG shows, and a wrong plate shows up in stdout next to the picture instead of as an unexplained pixel.
@@ -248,6 +444,12 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
         format!("plate 1 {}", plate("watch-row-1")),
         format!("plate 2 {}", plate("watch-row-2")),
         format!("line {:.2}", LINE_T),
+        format!(
+            "scrolled {:.0}/{:.0} px",
+            scroll_value(window),
+            scroll_travel(window)
+        ),
+        page_tops(window).join(" "),
         watched,
     ]
 }

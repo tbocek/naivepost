@@ -265,30 +265,44 @@ pub struct Tool {
     pub tip: &'static str,
 }
 
+/// The IDLE face of one of the three preview buttons: `ui::cut_*_play` paints these glyphs over the
+/// toolbar button's label, and keeps its own words for the ⏸ face a running preview wears (the bar has
+/// room for one sentence at a time, not three).
+pub const PLAY_GLYPH_RECORDING: &str = "\u{25b6}";
+/// ▶✂ — §A group 1's second glyph.
+pub const PLAY_GLYPH_CUT: &str = "\u{25b6}\u{2702}";
+/// ▶✂✂ — §A group 1's third glyph.
+pub const PLAY_GLYPH_REVIEW: &str = "\u{25b6}\u{2702}\u{2702}";
+
 /// Transport, in §1's order 5 → 6 → 7 → 8. The three play buttons keep the names F2.1/F2.2/F2.3
 /// gave them and their own tooltips; the four frame steps are §1 item 8 and share [`FRAME_TIP`].
-/// Labels and tips are the very strings `ui/window.rs` uses today — moved here so the ORDER is a fact
-/// a test can read rather than something only the assembly code knows.
+///
+/// The six glyphs are `spec/inventory/cut.md` §A group 1 spelled out (▶, ▶✂, ▶✂✂, ‹‹f, ‹f, f›, f››) and
+/// what `spec/img/05-cut.png` draws: the sentence lives in the tooltip, because the bar is ONE row of six
+/// groups and words here cost it ~1000 px — measured at a 1260 px window, the transport alone asked for
+/// 1255 px, so GTK clipped every later group inside its own scroller and Copy/Paste/Insert/Lane (§1 items
+/// **13**-**16**) fell off the visible bar. `ui::cut_*_play::PLAY_LABEL`/`PAUSE_LABEL` stay as they were:
+/// those are the faces a RUNNING preview paints over this one, not the idle label.
 pub const TRANSPORT_BUTTONS: [Tool; 7] = [
     Tool {
         name: "play-recording-button",
-        label: "\u{25b6} Play the recording",
+        label: PLAY_GLYPH_RECORDING,
         tip: "Play the recording from the red line \u{2014} every second of it, cuts and all",
     },
     Tool {
         name: "play-cut-button",
-        label: "\u{25b6}\u{2702} Play the cut",
+        label: PLAY_GLYPH_CUT,
         tip: PLAY_CUT_TIP,
     },
     Tool {
         name: "review-cuts-button",
-        label: "\u{25b6}\u{2702}\u{2702} Review every cut",
+        label: PLAY_GLYPH_REVIEW,
         tip: REVIEW_TIP,
     },
-    Tool { name: "line-step-back-five", label: "\u{2039}\u{2039} f  step back 5 frames", tip: FRAME_TIP },
-    Tool { name: "line-step-back", label: "\u{2039} f  step back 1 frame", tip: FRAME_TIP },
-    Tool { name: "line-step-forward", label: "f \u{203a}  step forward 1 frame", tip: FRAME_TIP },
-    Tool { name: "line-step-forward-five", label: "f \u{203a}\u{203a}  step forward 5 frames", tip: FRAME_TIP },
+    Tool { name: "line-step-back-five", label: "\u{2039}\u{2039} f", tip: FRAME_TIP },
+    Tool { name: "line-step-back", label: "\u{2039} f", tip: FRAME_TIP },
+    Tool { name: "line-step-forward", label: "f \u{203a}", tip: FRAME_TIP },
+    Tool { name: "line-step-forward-five", label: "f \u{203a}\u{203a}", tip: FRAME_TIP },
 ];
 
 /// Verbs, §1 items 10 → 15 in one row: ＋ Add, | Split, － Remove, ⧉ Copy, ⧉ Paste, Insert, ⇲ Lane.
