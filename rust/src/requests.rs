@@ -5,9 +5,9 @@
 //! Pure data. The clock is the one thing that cannot be pure here, so [`format_started`]
 //! takes its instant and its offset as arguments.
 
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -572,12 +572,49 @@ pub fn read_scenes(tree: &layout::Tree, source: &str) -> Result<Vec<SceneChange>
     Ok(out)
 }
 
-/// Write a file whole at §1's 0644, making its directory.
+/// Write a file WHOLE at §1's 0644, making its directory.
+///
+/// §5 of 04-prepare makes every stage's output file its resume marker, and a marker is a promise that
+/// the work behind it finished. `fs::write` straight onto the name cannot keep that promise: a ⏹ or a
+/// full disk halfway through leaves a truncated file on the real name, and the next ▶ reads the marker,
+/// believes it, and skips the stage whose output was never written. So the bytes go to `<name>.part`
+/// beside the destination — the same in-flight spelling §1 gives a source copy — are flushed and given
+/// their mode there, and only then renamed onto the name. A rename within one directory is atomic, so an
+/// observer sees either nothing or the whole file; anything that goes wrong removes the `.part` and
+/// leaves the previous contents standing.
 fn write_raw(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
     }
-    fs::write(path, bytes).map_err(|err| format!("{}: {err}", path.display()))?;
-    fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o644))
-        .map_err(|err| format!("{}: {err}", path.display()))
+    let part = part_beside(path);
+    let wrote = File::create(&part)
+        .and_then(|mut file| {
+            file.write_all(bytes)?;
+            // The bytes are on the disk before the name exists; a rename after this point cannot fail
+            // into half-written content.
+            file.flush()
+        })
+        .and_then(|()| {
+            fs::set_permissions(&part, std::os::unix::fs::PermissionsExt::from_mode(0o644))
+        });
+    if let Err(err) = wrote {
+        let _ = fs::remove_file(&part);
+        return Err(format!("{}: {err}", path.display()));
+    }
+    match fs::rename(&part, path) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = fs::remove_file(&part);
+            Err(format!("{}: {err}", path.display()))
+        }
+    }
+}
+
+/// `<name>.part` beside `path` — §1's in-flight spelling, applied to every file Prepare writes.
+fn part_beside(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    path.with_file_name(format!("{name}.part"))
 }

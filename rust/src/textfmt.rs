@@ -75,16 +75,37 @@ fn read_to_string(path: &Path) -> Result<Option<String>, String> {
 /// are read and written by whatever step owns them, at paths that outlive one project
 /// folder; the mode is set after the write for the same reason §1 gives — a new file's
 /// creation mode is masked by the umask.
+/// Write a row-oriented file WHOLE at §1's 0644, making its directory.
+///
+/// The same part-then-rename rule [`crate::requests`] applies to every file it writes, and for the same
+/// reason: these are the transcripts and marks a stage's resume marker vouches for, so a file truncated
+/// by a ⏹ or a full disk would be read by the next ▶ as finished work. The bytes land on `<name>.part`
+/// beside the destination, get their mode there, and only then are renamed onto the name — atomic within
+/// one directory, so a reader sees either nothing or the whole file, and a failure leaves the previous
+/// contents standing.
 pub(crate) fn write_rows(path: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|err| format!("{parent:?}: {err}"))?;
     }
-    fs::write(path, text).map_err(|err| format!("{}: {err}", path.display()))?;
-    std::fs::set_permissions(
-        path,
-        std::os::unix::fs::PermissionsExt::from_mode(0o644),
-    )
-    .map_err(|err| format!("{}: {err}", path.display()))
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let part = path.with_file_name(format!("{name}.part"));
+    let wrote = fs::write(&part, text).and_then(|()| {
+        fs::set_permissions(&part, std::os::unix::fs::PermissionsExt::from_mode(0o644))
+    });
+    if let Err(err) = wrote {
+        let _ = fs::remove_file(&part);
+        return Err(format!("{}: {err}", path.display()));
+    }
+    match fs::rename(&part, path) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = fs::remove_file(&part);
+            Err(format!("{}: {err}", path.display()))
+        }
+    }
 }
 
 /// One row per line of a TSV, blank lines skipped.
