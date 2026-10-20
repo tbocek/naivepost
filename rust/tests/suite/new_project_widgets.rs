@@ -19,12 +19,25 @@ fn window_round() {
         RAN_BUTTONS.store(true, std::sync::atomic::Ordering::SeqCst);
         check_the_run_refuses_new(app);
         RAN_S1.store(true, std::sync::atomic::Ordering::SeqCst);
+        naming_dialog_carries_the_default_name(app);
+        RAN_ASK.store(true, std::sync::atomic::Ordering::SeqCst);
         empty_session_goes_straight_to_naming(app);
+        press_asks_for_a_name_before_anything_changes(app);
+        RAN_PRESS_ASK.store(true, std::sync::atomic::Ordering::SeqCst);
         applied_new_project_moves_the_window(app);
+        typed_name_is_applied(app);
+        RAN_TYPED.store(true, std::sync::atomic::Ordering::SeqCst);
         already_there_is_not_applied(app);
+        refused_name_is_not_applied(app);
+        RAN_REFUSED.store(true, std::sync::atomic::Ordering::SeqCst);
         RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
+
+static RAN_ASK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_PRESS_ASK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_REFUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_TYPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_S1: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -280,6 +293,202 @@ fn empty_session_goes_straight_to_naming(app: &adw::Application) {
     std::fs::remove_dir_all(&root).ok();
 }
 
+/// S4's sheet, seen on the widget that shows it: the default name is there to be typed over, and the
+/// `-2`/`-3` walk already ran — with `2026-10-20.naivepost` and `2026-10-20-2.naivepost` taken, the box
+/// offers `-3`. The day is handed in rather than read from a clock, so no check depends on midnight.
+fn naming_dialog_carries_the_default_name(app: &adw::Application) {
+    let _ = app;
+    let root = common::temp_dir_tagged("ask-default");
+    for taken in ["2026-10-20.naivepost", "2026-10-20-2.naivepost"] {
+        std::fs::create_dir_all(root.join(taken)).unwrap();
+    }
+    let dialog = ui::window::new_project_dialog(&root, "2026-10-20");
+    assert_eq!(dialog.title().as_str(), new_project::TITLE, "S4's title");
+    assert_eq!(
+        dialog.initial_name().map(|name| name.to_string()),
+        Some("2026-10-20-3.naivepost".to_string()),
+        "the free-name walk and the suffix, on the name the person edits"
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn f0_8_s4_the_naming_dialog_carries_the_default_name_to_type_over() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_ASK.load(std::sync::atomic::Ordering::SeqCst),
+        "the default-name-on-the-sheet check never ran"
+    );
+}
+
+/// S4 through the real button on an empty session (S2 sends that straight to naming): the press put up
+/// the naming sheet, its default name skipped the date that was already taken, and nothing else moved.
+/// The desktop's sheet cannot be typed into headlessly, so what this proves is the ask and the default;
+/// [`f0_8_s5_a_name_holding_a_project_is_refused_through_the_window`] answers it through the same door
+/// the sheet's callback calls.
+fn press_asks_for_a_name_before_anything_changes(app: &adw::Application) {
+    // The day the program itself would use, read the same way it reads it.
+    let today = || {
+        glib::DateTime::now_local()
+            .and_then(|day| day.format("%F").map(|day| day.to_string()))
+            .unwrap_or_default()
+    };
+    // The window names its own folder from `std::env::current_dir()`, and the sheet it opens stands in
+    // that folder's PARENT (the default project lives under it), so the stand-in goes where the walk
+    // looks — otherwise the taken date is invisible to it.
+    let root = std::env::current_dir().expect("the test pins a private cwd");
+    let day = today();
+    let session = startup_session_of(&root);
+    std::fs::create_dir_all(&session).unwrap();
+    // Stand the default name out of the way so the free-name walk has something to skip.
+    let taken = root.join(format!("{day}.naivepost"));
+    std::fs::create_dir_all(&taken).unwrap();
+
+    let blank = session.join("blank.naivepost");
+    std::fs::create_dir_all(&blank).unwrap();
+    naivepost::project::save(&naivepost::project::Project::default(), &blank).unwrap();
+    let model = naivepost::project::load(&blank).expect("the blank session loads");
+    assert!(model.sources.is_empty(), "an empty session goes straight to naming");
+
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    ui::window::clear_logs_for_test();
+
+    ui::new_button(&window)
+        .expect("the header bar has a New button")
+        .emit_clicked();
+
+    let asked = ui::window::last_ask().expect("the press opened the naming sheet");
+    assert_eq!(asked.title().as_str(), new_project::TITLE, "S4's title");
+    let offered = asked
+        .initial_name()
+        .map(|name| name.to_string())
+        .expect("the sheet carries a name to type over");
+    // A run that crosses midnight may have moved the day on by one; either day proves the walk ran.
+    let days = [day.clone(), today()];
+    assert!(
+        offered.ends_with(".naivepost")
+            && days.iter().any(|d| !d.is_empty() && offered.starts_with(d.as_str())),
+        "the default name is today's date with the suffix: {offered}"
+    );
+    assert_ne!(offered, format!("{day}.naivepost"), "the taken date was skipped");
+    // And the press itself changed nothing: creating waits for the answer.
+    assert_eq!(ui::state(&window).status, "", "naming says nothing yet");
+    assert!(ui::session_sources(&window).is_empty(), "the session stayed empty");
+    assert!(ui::window_logs().is_empty(), "{:?}", ui::window_logs());
+    window.close();
+    std::fs::remove_dir_all(&blank).ok();
+    std::fs::remove_dir_all(&taken).ok();
+}
+
+/// Where the working session sits for this root — the folder `startup::session_dir` names, reached the
+/// way the window reaches it.
+fn startup_session_of(root: &Path) -> std::path::PathBuf {
+    naivepost::startup::session_dir(root)
+}
+
+#[test]
+fn f0_8_s4_the_press_asks_for_a_name_before_anything_changes() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_PRESS_ASK.load(std::sync::atomic::Ordering::SeqCst),
+        "the press-opens-the-naming-sheet check never ran"
+    );
+}
+
+#[test]
+fn f0_8_s5_a_name_holding_a_project_is_refused_through_the_window() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_REFUSED.load(std::sync::atomic::Ordering::SeqCst),
+        "the S5 refusal-through-the-window check never ran"
+    );
+}
+
+/// S5 answered through the window's own door: the status line says which project was in the way, the
+/// session keeps everything it had, and no log line pretends anything happened.
+fn refused_name_is_not_applied(app: &adw::Application) {
+    let fixture = fixture_dir();
+    let model = naivepost::project::load(&fixture).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    let before = ui::session_sources(&window);
+    assert!(!before.is_empty(), "the fixture has sources to keep");
+
+    let root = common::temp_dir_tagged("refused");
+    // What the sheet hands back when the person types `jan`: the folder the name points at, under the
+    // folder they were standing in.
+    let taken = root.join("jan.naivepost");
+    std::fs::create_dir_all(&taken).unwrap();
+    naivepost::project::save(&naivepost::project::Project::default(), &taken).unwrap();
+
+    let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
+    let session = ui::session_handle(&window);
+    ui::window::clear_logs_for_test();
+    ui::window::name_chosen(&root, Some(&taken), &status, &session);
+
+    assert_eq!(
+        ui::state(&window).status,
+        new_project::already_there("jan.naivepost"),
+        "S5's sentence reaches the status line from the answer"
+    );
+    assert_eq!(ui::session_sources(&window), before, "nothing half-applied");
+    assert!(ui::window_logs().is_empty(), "a refusal writes no log line: {:?}", ui::window_logs());
+    window.close();
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn f0_8_s6_a_typed_name_is_applied_through_the_window() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_TYPED.load(std::sync::atomic::Ordering::SeqCst),
+        "the typed-name S6 check never ran"
+    );
+}
+
+/// S6 answering a TYPED name (no suffix typed, a folder that does not exist yet): the blank project is
+/// written where the name pointed, applied to the session, logged and said.
+fn typed_name_is_applied(app: &adw::Application) {
+    let fixture = fixture_dir();
+    let model = naivepost::project::load(&fixture).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    assert!(!ui::session_sources(&window).is_empty(), "the fixture has sources to lose");
+
+    let root = common::temp_dir_tagged("typed");
+    let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
+    let session = ui::session_handle(&window);
+    ui::window::clear_logs_for_test();
+    // Typed as `fresh`, standing in `elsewhere`: the suffix is the rule's, not the sheet's.
+    let typed = root.join("elsewhere/fresh");
+    ui::window::name_chosen(&root, Some(&typed), &status, &session);
+
+    let written = root.join("elsewhere/fresh.naivepost");
+    assert!(
+        written.join(naivepost::project::PROJECT_FILE).is_file(),
+        "S6 wrote the blank project where the typed name pointed"
+    );
+    assert!(ui::session_sources(&window).is_empty(), "the blank project became the session");
+    assert_eq!(
+        ui::state(&window).status,
+        "new project \u{2014} fresh.naivepost",
+        "S6's status sentence"
+    );
+    assert!(
+        ui::window_logs().iter().any(|line| line.starts_with(">>> new project ")
+            && line.ends_with("-- the session is empty; outputs on disk are untouched")),
+        "the log carries S6's line verbatim: {:?}",
+        ui::window_logs()
+    );
+    window.close();
+    std::fs::remove_dir_all(&root).ok();
+}
+
 #[test]
 fn f0_8_s6_an_applied_new_project_moves_the_window() {
     common::pin_private_cwd();
@@ -384,14 +593,14 @@ fn already_there_is_not_applied(app: &adw::Application) {
     naivepost::project::save(&naivepost::project::Project::default(), &taken).unwrap();
 
     let refused = new_project::create(&root, &root, "jan")
-        .expect_err("a project already there is refused");
-    assert!(
+        .expect_err("a project already there is refused");    assert!(
         refused.contains("jan.naivepost is a project already \u{2014} open it, or pick another name"),
         "{refused}"
     );
-    // The refusal arm of the chooser's callback: the status says it, and the session is untouched.
+    // The refusal arm of the chooser's callback, through the window's own door (`name_chosen`), not by
+    // writing the status by hand: the status says it, and the session is untouched.
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
-    status.set_text(&refused);
+    ui::window::name_chosen(&root, Some(&taken), &status, &ui::session_handle(&window));
     assert_eq!(ui::state(&window).status, refused);
     assert_eq!(ui::session_sources(&window), before, "nothing half-applied");
     std::fs::remove_dir_all(&root).ok();

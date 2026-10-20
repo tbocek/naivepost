@@ -1460,8 +1460,8 @@ pub use crate::ui::window_doors::{switch_latch, view_stack};
 // (window.rs is past its size budget); these are the same names, re-exported under the paths every
 // other module and test already reaches them through.
 pub use crate::ui::window_project::{
-    add_files, add_chooser_shown_count, reset_add_chooser_shown, new_project_confirm, open_folder,
-    open_from,
+    add_files, add_chooser_shown_count, last_ask, name_chosen, new_project_confirm,
+    new_project_dialog, open_folder, open_from, reset_add_chooser_shown,
 };
 pub(crate) use crate::ui::window_project::{
     wire_add, wire_new, wire_open, wire_rescan, remember_opened,
