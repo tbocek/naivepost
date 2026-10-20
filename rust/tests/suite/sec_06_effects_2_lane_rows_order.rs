@@ -93,10 +93,12 @@ fn lane_top() -> f64 {
 
 /// The colour a bar actually leaves on the surface. `fill` paints it at alpha 0.6 with NOTHING under it but
 /// the band's own ground (`GROUND`, painted over the whole surface first), so cairo's `OVER` gives
-/// `0.6 * bar + 0.4 * ground` — the pure triple never appears in the bytes and must be blended the same way here.
-fn bar_ink(colour: (f64, f64, f64)) -> (u8, u8, u8) {
+/// `alpha * bar + (1 - alpha) * ground` — the pure triple never appears in the bytes and must be blended the same
+/// way here. The alpha is the lane's own wash (`fx_lane::bar_wash_alpha`), the number §A.2 spells for a speed bar
+/// and the one the shared bar painter lays every kind on, so this cannot drift from what is drawn.
+fn bar_ink(colour: (f64, f64, f64), alpha: f64) -> (u8, u8, u8) {
     let ground = naivepost::ui::cut_colours::GROUND;
-    let mix = |c: f64| ((c * 0.6 + ground.0 * 0.4) * 255.0).round() as u8;
+    let mix = |c: f64| ((c * alpha + ground.0 * (1.0 - alpha)) * 255.0).round() as u8;
     (mix(colour.0), mix(colour.1), mix(colour.2))
 }
 
@@ -105,12 +107,14 @@ fn bar_ink(colour: (f64, f64, f64)) -> (u8, u8, u8) {
 fn row_with(
     painted: &(Vec<u8>, usize, i32),
     colour: (f64, f64, f64),
+    kind: EffectKind,
     from: i32,
     to: i32,
     first: bool,
 ) -> Option<i32> {
     let (data, stride, _) = painted;
-    let want = bar_ink(colour);
+    // The wash alpha the painter lays this kind on, asked of the same door `cut_lane_paint::paint_bar` uses.
+    let want = bar_ink(colour, fx_lane::bar_wash_alpha(kind));
     let range = if first {
         Box::new(from.max(0)..to) as Box<dyn Iterator<Item = i32>>
     } else {
@@ -131,12 +135,12 @@ fn row_with(
     None
 }
 
-fn first_row_with(painted: &(Vec<u8>, usize, i32), colour: (f64, f64, f64), from: i32, to: i32) -> Option<i32> {
-    row_with(painted, colour, from, to, true)
+fn first_row_with(painted: &(Vec<u8>, usize, i32), colour: (f64, f64, f64), kind: EffectKind, from: i32, to: i32) -> Option<i32> {
+    row_with(painted, colour, kind, from, to, true)
 }
 
-fn last_row_with(painted: &(Vec<u8>, usize, i32), colour: (f64, f64, f64), from: i32, to: i32) -> Option<i32> {
-    row_with(painted, colour, from, to, false)
+fn last_row_with(painted: &(Vec<u8>, usize, i32), colour: (f64, f64, f64), kind: EffectKind, from: i32, to: i32) -> Option<i32> {
+    row_with(painted, colour, kind, from, to, false)
 }
 
 /// §2: the lane sits BETWEEN the selection band above and the picture rows below — in the arithmetic the
@@ -162,15 +166,15 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_the_lane_sits_between_the_select
     let painted_band = painted(&single);
     let zoom = fx_lane::bar_colour(EffectKind::Zoom, false);
     let lane_bottom = (top + row_h) as i32;
-    let in_lane = first_row_with(&painted_band, zoom, top as i32, lane_bottom);
+    let in_lane = first_row_with(&painted_band, zoom, EffectKind::Zoom, top as i32, lane_bottom);
     assert!(
         in_lane.is_some(),
         "the zoom bar is painted inside the lane's own rows [{top}, {lane_bottom})"
     );
     // Above the lane is the selection band; below it, the pictures. Neither may carry the bar's ink.
-    let above = first_row_with(&painted_band, zoom, naivepost::cut_trim::RULER_H as i32, top as i32);
+    let above = first_row_with(&painted_band, zoom, EffectKind::Zoom, naivepost::cut_trim::RULER_H as i32, top as i32);
     assert_eq!(above, None, "no bar ink in the selection band above the lane (found at {above:?})");
-    let below = first_row_with(&painted_band, zoom, lane_bottom, painted_band.2);
+    let below = first_row_with(&painted_band, zoom, EffectKind::Zoom, lane_bottom, painted_band.2);
     assert_eq!(below, None, "no bar ink in the picture rows below the lane (found at {below:?})");
 }
 
@@ -200,9 +204,9 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_the_topmost_row_is_the_smallest_
     let painted_band = painted(&pair);
     let zoom = fx_lane::bar_colour(EffectKind::Zoom, false);
     let text = fx_lane::bar_colour(EffectKind::Text, false);
-    let zoom_y = last_row_with(&painted_band, zoom, top as i32, (top + 2.0 * row_h) as i32)
+    let zoom_y = last_row_with(&painted_band, zoom, EffectKind::Zoom, top as i32, (top + 2.0 * row_h) as i32)
         .expect("the zoom bar is painted");
-    let text_y = first_row_with(&painted_band, text, top as i32, (top + 2.0 * row_h) as i32)
+    let text_y = first_row_with(&painted_band, text, EffectKind::Text, top as i32, (top + 2.0 * row_h) as i32)
         .expect("the text bar is painted");
     println!(
         "lane top {top}: zoom row y={zoom_y}, text row y={text_y}, second row starts {}",

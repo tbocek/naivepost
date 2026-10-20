@@ -122,6 +122,13 @@ pub fn shot_sidecar_wanted() -> bool {
     REQUESTED.with(|flag| flag.get())
 }
 
+/// Is this screen's SUBJECT the popover itself? §06-effects#2's picture (`spec/img/06-effect-menu.png`)
+/// shows the six labelled rows, not the page behind them, so the menu takes `<name>.png` and the page goes
+/// beside it -- the same reading `03-policy-form`'s `subject` arm already applies to a dialog it pictures.
+pub fn is_menu_subject(screen: &str) -> bool {
+    screen == "06-effect-menu"
+}
+
 thread_local! {
     static REQUESTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

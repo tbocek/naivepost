@@ -719,15 +719,17 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
         if x0 >= tape || x0 + width < 0.0 {
             continue;
         }
-        fill(
-            cr,
-            bar.colour,
-            x0,
-            y,
-            width.max(0.0),
-            fx_lane::lane_height_px(1),
-            0.6,
-        );
+        // The lane's ink is the SAME painter the Cut page's own bars wear (`cut_lane_paint`), not a second wash
+        // of this file's own: §A.8 gives every kind something to print on its bar, and a band that only tints
+        // cannot show it. Clipped to the bar's painted span so a bar running off the surface paints nothing past
+        // the tape.
+        let view = crate::ui::cut_lane_paint::view_for(&scene.fx[bar.index], width.max(1.0), fx_lane::lane_height_px(1));
+        let _ = cr.save();
+        cr.rectangle(x0, y, width.max(0.0), fx_lane::lane_height_px(1));
+        cr.clip();
+        cr.translate(x0, y);
+        crate::ui::cut_lane_paint::paint_bar(cr, &view);
+        let _ = cr.restore();
     }
 }
 

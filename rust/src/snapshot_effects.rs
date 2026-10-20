@@ -9,7 +9,9 @@ use crate::cut_line;
 use crate::ui;
 
 /// Paint one of the effect screens onto `window`. Returns true when this module owned `screen`.
-pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &str) -> bool {
+/// `out` is the PNG this run was asked to write (`shots/06-lane.png`): a screen whose subject cannot live inside
+/// a window shot puts its own file beside it there, the way `03-runbar-busy.face.png` does.
+pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::path::Path, screen: &str) -> bool {
     // F3.5's screen is the drawing form OPEN, so the shot must drive the same doors the widgets use
     // (`tests/suite/svg_drawing_widgets.rs` fires exactly these) rather than poke state: a picture painted
     // from a shortcut would not be the picture the app draws.
@@ -318,40 +320,11 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
     // doors the widgets fire (`tests/suite/band_hold_widgets.rs` presses exactly these) rather than by poking
     // state: a lane painted from a shortcut would not be the lane the app draws.
     if screen == "06-lane" {
-        // Wide bars, at the same 4 px/s the spec's own lane is drawn with: 50 s is 200 px, far past both
-        // `fx_band::GRIP_MIN_PX` (30) and `KILL_MIN_PX` (32), so the grips and the middle ✕ are drawn at a
-        // size the shot can actually be read at (a 10 s / 40 px bar renders, but as a 2 glyph sliver).
-        let lane_fx = vec![
-            cut::Fx {
-                kind: "zoom".to_string(),
-                t: 5.0,
-                dur: 50.0,
-                ..Default::default()
-            },
-            // A narrow one for contrast: 6 s is 24 px, under both thresholds, so it offers no grips and no ✕.
-            cut::Fx {
-                kind: "speed".to_string(),
-                t: 70.0,
-                dur: 60.0,
-                rate: 0.5,
-                ..Default::default()
-            },
-            cut::Fx {
-                kind: "label".to_string(),
-                t: 140.0,
-                dur: 6.0,
-                text: "intro".to_string(),
-                ..Default::default()
-            },
-        ];
-        let lane = cut::Cut {
-            segs: vec![
-                cut::Seg { s: 0.0, e: 30.0, cam: 0, ..Default::default() },
-                cut::Seg { s: 30.0, e: 60.0, cam: 0, ..Default::default() },
-            ],
-            fx: lane_fx,
-            ..Default::default()
-        };
+        // One staging for both images of this screen — the window shot and the 1240 x 200 lane beside it: §2's
+        // list (a zoom, a staying zoom, a ×0.5 scene-sound speed, a caption, a volume, a label) at the same
+        // 4 px/s the spec's own lane is drawn with, so every bar is wide enough to carry its mark, its caption
+        // and its grips/✕ (`fx_band::GRIP_MIN_PX` / `KILL_MIN_PX`). See `snapshot_lane::staged_cut`.
+        let lane = crate::snapshot_lane::staged_cut();
         ui::seed_review_cut(window, &lane);
         ui::set_line_position(window, cut_line::LinePos { t: 140.0 });
         // Pick the first band UP through the press seam (a middle grab, 20 px of travel), so the shot shows
@@ -373,6 +346,14 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, screen: &st
             end: 300.0,
         }]);
         ui::set_playhead(window, 5.0);
+        // The spec's OWN image for this item is the lane at 1240 x 200, not a strip in the middle of a window
+        // that clamps to ~790 px headless, so the same scene is painted beside the page shot into `<name>-lane.png`
+        // (the `snapshot_effect_menu` sidecar precedent). Painted through `cut_tracks::paint_at`, i.e. by the very
+        // painter the band widget uses, from the cut seeded above — so it cannot show ink the widgets do not draw.
+        match crate::snapshot_lane::write_png(&lane, &out.with_extension("lane-shot.png")) {
+            Ok(said) => println!("snapshot: 06-lane | {said}"),
+            Err(why) => eprintln!("snapshot: 06-lane lane image | {why}"),
+        }
         // Repaint through the page's own doors, exactly as a press's refresh does, so the plate, the dimming
         // and the zoom's rect are the app's answer to the state above rather than a half-painted frame.
         ui::cut_view::repaint_page(window);

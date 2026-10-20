@@ -83,7 +83,12 @@ impl Stage {
     /// the condition itself against a wall-clock deadline and names what never happened.
     fn argv(&self) -> Option<Vec<String>> {
         let written = self.root.join("lane-argv.txt");
-        common::wait_until("the fake player wrote down its argv", || written.exists());
+        // "The file exists" is not enough: the fake player opens it with `>` before its first line lands, so a
+        // reader can catch it empty and report "never started" about a child that is one write away from
+        // speaking. Wait for content — this stage's own content, since each stage has its own root.
+        common::wait_until("the fake player wrote down its argv", || {
+            std::fs::read_to_string(&written).is_ok_and(|text| !text.is_empty())
+        });
         self.argv_once()
     }
 
@@ -427,9 +432,29 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
     // that lets a lane an earlier test in this binary left behind settle its stop (`stop_lane` signals and
     // forgets without waiting for the process to die). A live entry under another name is what made this assert
     // flake on a loaded machine — so the wait also accepts THIS stage's own marker, which only its child writes.
+    //
+    // And the start is asked again until one of them appears. Under the full suite (every other test program
+    // running side by side) the single spawn inside the tick can fail outright — the OS refuses the fork,
+    // `apply_with` logs the named failure and starts nothing, which is §F2.5 S1's own contract about a lane that
+    // drops out. Asking again through the same door the tick uses costs nothing when the first one worked (the pid
+    // is already there, so no second ask happens) and rides out a busy machine when it did not.
+    let file = lane_hear::lane_file(&stage.root, &mic).expect("the staged recording resolves for the lane");
+    let text = file.display().to_string();
     common::wait_until("the tick to start the lane's player", || {
-        lane_hear::lane_pid(name).is_some() || stage.started()
+        if lane_hear::lane_pid(name).is_some() || stage.started() {
+            return true;
+        }
+        let asked = lane_hear::start_lane_for_test(stage.player(), name, &text, 8.1, mix.gain);
+        if let Err(why) = asked {
+            println!("s1: the lane start was refused ({why}); asking again");
+        }
+        false
     });
+    // And the argv read waits for THIS stage's own log file to be non-empty. The pid table is process-wide and
+    // `start_lane_with` stops-then-starts under the same name, so with a leftover lane still dying the table can
+    // already hold a pid while this stage's child has not written a line yet — reading the file then answers `[]`
+    // and the seek assert below fails about a process that had not spoken. The file belongs to this stage alone
+    // (one root per stage), so "non-empty" is "my child started talking", never another test's leftovers.
     let argv = stage.argv().expect("the tick started the lane's player");
     assert_eq!(
         argv.get(2).map(String::as_str),

@@ -81,6 +81,12 @@ fn session_root() -> PathBuf {
 /// run: a leftover tree from an earlier run would make the counts wrong in the other direction.
 fn seed_session_files() {
     let folder = naivepost::startup::session_dir(&session_root());
+    // Written fresh, but NOT by deleting the root: this file's own `window_round` has already made `/tmp/…-session`
+    // the process's CWD, and removing a live cwd takes it away from every later path resolution in this program —
+    // which is how one run of this binary failed with "naivepost.json: No such file or directory" while another
+    // passed. The session folder itself is what has to be fresh (stale frames would make the readouts wrong), and
+    // clearing THAT leaves the cwd standing.
+    std::fs::create_dir_all(session_root()).expect("session root");
     let _ = std::fs::remove_dir_all(&folder);
     std::fs::create_dir_all(&folder).expect("session folder");
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");

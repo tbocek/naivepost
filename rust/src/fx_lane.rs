@@ -42,6 +42,27 @@ pub fn staying_is_a_different_effect(kind: EffectKind) -> bool {
     matches!(kind, EffectKind::Zoom)
 }
 
+/// §06-effects#2-the-lane-and-the-preview (`// effects.washAlpha` — §10 gives this no `P.` id): the alpha a bar's
+/// colour is laid down at. inventory/effects.md §A.2 spells one speed bar out as `fill RGBA(0.92,0.42,0.6,0.4)`,
+/// and that 0.4 is the lane's rule rather than the speed's: a bar is a WASH over the pictures beneath it, not a
+/// block that hides them (the spec's own lane image reads exactly that way). One number here so the CSS class and
+/// the painted surface cannot disagree about how transparent a lane is.
+pub const WASH_ALPHA: f64 = 0.4;
+
+/// §06-effects#2-the-lane-and-the-preview (`// effects.labelTagAlpha`, inventory/effects.md §A.7: "grey-white tag
+/// (fill 0.22, tick, dashed line)"): a label changes nothing in the video, so its bar is paler than every real
+/// effect's — a solid block would read as though something happened there.
+pub const LABEL_TAG_ALPHA: f64 = 0.22;
+
+/// The alpha this kind's bar is washed on: the label's paler tag, everyone else's ordinary wash. The view asks
+/// THIS instead of carrying an alpha of its own, so both numbers stay in the module whose rule they are.
+pub fn bar_wash_alpha(kind: EffectKind) -> f64 {
+    match kind {
+        EffectKind::Label => LABEL_TAG_ALPHA,
+        _ => WASH_ALPHA,
+    }
+}
+
 // --- the Effect menu -----------------------------------------------------------------------------------------
 
 /// §06-effects#2-the-lane-and-the-preview — the Effect dropdown's rows, top to bottom, as
