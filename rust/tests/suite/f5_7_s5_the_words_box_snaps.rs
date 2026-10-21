@@ -95,7 +95,7 @@ fn plate_size(window: &adw::ApplicationWindow) -> (f64, f64) {
 /// Fire the picture's own drag the way the toolkit does: `drag-begin` carries the ABSOLUTE press and
 /// `drag-end` only the OFFSET from it (F2.8's rule, the same one `zoom_drag_widgets.rs` follows).
 fn drag(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) {
-    let gesture = ui::produce_page::words_gesture_for_test(window)
+    let gesture = ui::produce_words_press::words_gesture_for_test(window)
         .expect("the page wired a drag onto the thumbnail picture");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
     gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);

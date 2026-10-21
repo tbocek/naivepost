@@ -13,22 +13,26 @@ use gtk4 as gtk;
 use crate::produce_screen as screen;
 use crate::ui::produce_page::{read_state, row_widget, ProduceState};
 
-/// Grid columns one line holds. Chosen so three label+dropdown pairs fit (2 × 3) and a wide pair cannot
-/// squeeze a third onto its line: with the shipped rows this gives Container/Codec/Preset, then
-/// Resolution/Frame rate/Audio, then Subtitles/Translate, Quality (CRF)/Frame timing, Channels/Frame
-/// edges — the image's grouping — and `Game audio`, being a wide pair, wraps on its own without any
-/// special case for it.
-pub const LINE_COLUMNS: i32 = 6;
+/// Grid columns one line holds. TWO CELLS PER PAIR (label + control) × three pairs: that is what
+/// `spec/img/08-produce.png` draws inside its ~620 px right column — Container/Codec/Preset, then
+/// Resolution/Frame rate/Audio, then Subtitles/Translate, Quality (CRF)/Frame timing, Channels/Frame edges.
+///
+/// The budget used to be SIX columns with the wide controls spanning two, which asked for 760 px of grid and
+/// ran straight past the half-column the settings live in: items 11–14 were cut at the right edge and Preset
+/// never appeared. Four cells give the same grouping at a width the column actually has, and a fourth pair
+/// cannot squeeze onto a line because there is no room left for it.
+pub const LINE_COLUMNS: i32 = 4;
 
 /// Grid columns one row's LABEL costs. Every pair is label + control, so a pair's cost is this plus the
 /// control's own span.
 const LABEL_COLUMNS: i32 = 1;
 
-/// Grid columns a row's CONTROL spans: the wide controls need the room (§A draws their sliders across
-/// two cells), a dropdown fits one.
+/// Grid columns a row's CONTROL spans. A dropdown, a tick or the Translate tick row fits its one cell; only
+/// the two sliders need more room than that, and they are exactly the pairs the picture shows sharing a line
+/// with ONE other pair rather than with three.
 fn control_columns(row: &str) -> i32 {
     match row {
-        "Game audio" | "Quality (CRF)" | "Frame timing" | "Channels" | "Frame edges" | "Translate" => 2,
+        "Game audio" | "Quality (CRF)" => 2,
         _ => 1,
     }
 }

@@ -4,6 +4,7 @@
 //! block fits in; `set_setting_row` is the one place a §A row name maps to a state field.
 
 use crate::ui;
+use adw::prelude::*;
 
 /// Publish the shot's publish state onto `window`. Returns true when this module owned `screen`.
 pub(crate) fn paint(window: &adw::ApplicationWindow, screen: &str) -> bool {
@@ -53,7 +54,25 @@ architecture behind them.
         state.out_files = 9;
         state.out_bytes = 41 * 1024 * 1024;
         ui::produce_page::set_state(state);
+        // §1's opening size (the spec picture is 1272x992) and the shell's page band, opened to what §1's
+        // minimum leaves the page — the same ask `snapshot.rs` makes for every page shot.
+        window.set_default_size(1280, crate::shell::WINDOW_MIN_H);
+        if let Some(band) = ui::find_source_widget(window, "main-divider")
+            .and_then(|w| w.downcast::<adw::gtk::Paned>().ok())
+        {
+            band.set_position(crate::shell::PAGE_BAND_PX);
+        }
+        // Enter the Produce TAB the way a person does, and repaint AFTER the switch. `build_window` opens on
+        // the page the shell starts on, and an `AdwViewStack` lays out only its VISIBLE child: measured here,
+        // `produce-right` and `encoder-settings` answered 0 px until the Produce tab was actually clicked,
+        // which is why no staging of this page ever reached a picture. The refresh afterwards is what draws
+        // the shot's slots, boxes and rows into the now-visible columns.
+        ui::tab_button(window, crate::shell::Page::Produce)
+            .expect("the shell has a Produce tab")
+            .emit_clicked();
+        crate::snapshot_face::pump_context(16);
         ui::produce_page::refresh(window);
+        crate::snapshot_face::pump_context(16);
         return true;
     }
 

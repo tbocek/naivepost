@@ -35,6 +35,7 @@ const SAME_LINE_PX: f32 = 12.0;
 static RAN_SPLIT: AtomicBool = AtomicBool::new(false);
 static RAN_ORDER: AtomicBool = AtomicBool::new(false);
 static RAN_PAIRS: AtomicBool = AtomicBool::new(false);
+static RAN_FITS: AtomicBool = AtomicBool::new(false);
 
 fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&common::fixture_dir()).expect("the fixture loads");
@@ -165,6 +166,12 @@ fn column_order(window: &adw::ApplicationWindow, column: &str) -> Vec<String> {
                 .downcast_ref::<gtk::Label>()
                 .and_then(|l| l.text().into())
                 .map(|t| format!("heading:{t}"))
+        } else if child.is::<gtk::Overlay>() {
+            // The thumbnail's slot is the plate's overlay: §1 names that entry by the PLATE inside it
+            // (`thumbnail-picture`), so the wrapper never shows in the order — its child's name does.
+            // It comes BEFORE the named test because the wrapper carries a name of its own.
+            let inner = child.first_child().and_then(|c| named(&c));
+            Some(inner.unwrap_or_default())
         } else if let Some(name) = named(&child) {
             Some(name)
         } else if child.is::<gtk::ScrolledWindow>() {
@@ -174,6 +181,8 @@ fn column_order(window: &adw::ApplicationWindow, column: &str) -> Vec<String> {
         } else {
             // A bare row: named for the first control inside it that has a name. Only a horizontal box is
             // treated as a row — a vertical wrapper (the scroller holding the settings grid) is not one.
+            // An `Overlay` counts the same way: the thumbnail's slot is the plate's overlay, and §1 names
+            // that entry by the plate inside it (`thumbnail-picture`), not by the wrapper.
             let is_row = child
                 .downcast_ref::<gtk::Box>()
                 .is_some_and(|b| b.orientation() == gtk::Orientation::Horizontal);
@@ -394,6 +403,63 @@ fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
     RAN_PAIRS.store(true, Ordering::SeqCst);
 }
 
+/// One cell of the grid: what it is, and where it sits inside `produce-right`'s own x-range.
+fn collect_cells(
+    window: &adw::ApplicationWindow,
+    node: &gtk::Widget,
+    out: &mut Vec<(f32, f32, String)>,
+) {
+    let name = node.widget_name();
+    if name.starts_with("setting-") || name.starts_with("tick-") {
+        if let Some(b) = node.compute_bounds(window.upcast_ref::<gtk::Widget>()) {
+            out.push((b.x(), b.width(), name.to_string()));
+        }
+        return;
+    }
+    let mut cursor = node.first_child();
+    while let Some(child) = cursor {
+        collect_cells(window, &child, out);
+        cursor = child.next_sibling();
+    }
+}
+
+/// §A's settings must FIT their column. The grid used to ask for 760 px of width inside a ~596 px half,
+/// so the last items were cut at the right edge ("…Codec: h264 …P…", "Quality (CRF):" with no slider, and
+/// no Preset row at all) and the Title ↻ sat off-screen too. Every drawn control now has to land inside
+/// `produce-right`, which is the only reading of "several to a line" that a person can actually read.
+fn check_encoder_rows_fit_the_column(window: &adw::ApplicationWindow) {
+    let right = bounds(window, "produce-right");
+    let right_end = right.x() + right.width();
+    let grid = widget(window, "encoder-settings");
+    let mut cells: Vec<(f32, f32, String)> = Vec::new();
+    collect_cells(window, &grid, &mut cells);
+    assert!(
+        cells.len() >= naivepost::produce_screen::SETTINGS_ROWS.len(),
+        "{ITEM}: every settings row draws a named control: {}",
+        cells.len()
+    );
+    for (x, width, name) in &cells {
+        println!("FIT {name} x={x:.1} right edge={:.1} (column ends {:.1})", x + width, right_end);
+        assert!(
+            *x >= right.x() - 1.0 && x + width <= right_end + 1.0,
+            "{ITEM}: {name} is cut at the column's edge: {}..{} against {right:?}",
+            x,
+            x + width
+        );
+    }
+    // The two rows the clipped shot lost entirely, named rather than counted: Preset was never drawn, and
+    // the Title ↻ sat past the edge so item 8 read as a bare heading.
+    for name in [ui::produce_page::row_widget("Preset"), "title-suggest".to_string()] {
+        let b = bounds(window, &name);
+        assert!(b.width() > 0.0, "{ITEM}: {name} draws nothing");
+        assert!(
+            b.x() >= right.x() - 1.0 && b.x() + b.width() <= right_end + 1.0,
+            "{ITEM}: {name} sits outside the right column: {b:?} against {right:?}"
+        );
+    }
+    RAN_FITS.store(true, Ordering::SeqCst);
+}
+
 /// §08-produce#1-screen §1, measured. ONE application for the whole file: GTK and libadwaita bind to the
 /// first thread that initialises them and cargo runs a binary's tests on different threads, so all three
 /// checks are stages of one `connect_activate` (`common::one_app_round`, whose `Once` makes the second and
@@ -412,6 +478,11 @@ fn layout_round() {
 
         let window = produce_window(app);
         check_encoder_pairs_share_lines(&window);
+        window.close();
+        common::settle();
+
+        let window = produce_window(app);
+        check_encoder_rows_fit_the_column(&window);
         window.close();
         common::settle();
     });
@@ -436,4 +507,15 @@ fn sec_08_produce_1_screen_s1_encoder_pairs_share_lines_in_order() {
     common::pin_private_cwd();
     layout_round();
     assert!(RAN_PAIRS.load(Ordering::SeqCst), "{ITEM} s1: the encoder-pairs check never ran");
+}
+
+/// §A's "label + control pairs … several to a line" is only worth anything if the line fits the column.
+#[test]
+fn sec_08_produce_1_screen_s11_the_encoder_rows_fit_their_column() {
+    common::pin_private_cwd();
+    layout_round();
+    assert!(
+        RAN_FITS.load(Ordering::SeqCst),
+        "{ITEM} s11: the encoder-fit check never ran"
+    );
 }
