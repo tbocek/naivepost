@@ -20,20 +20,10 @@ use naivepost::params;
 use naivepost::speeds_ask;
 use serde_json::json;
 
-/// The SPEEDS document §`prompts/system.md`'s `speed` row specifies, in the chat envelope a real server
-/// answers with, so the ask reads it through the same reply parser a live server's bytes go through. The
-/// cache keeps the ANSWER text (§6 stores what the pass read, not the framing), which is why `bare` also
-/// prints the document on its own: that is the shape the slot holds.
+/// The answering shape for this job is a `set_clip_speed` CALL, not a `{"speeds": …}` document (§3's answer on
+/// this item: a call is the answer), so the fake answers in the tool shape the pass now insists on.
 fn speeds_json(speeds: &[(u32, f64)]) -> String {
-    envelope_of(&speeds_text(speeds))
-}
-
-/// The SPEEDS document alone — the shape a cached answer is kept in.
-fn speeds_text(speeds: &[(u32, f64)]) -> String {
-    json!({
-        "speeds": speeds.iter().map(|(clip, rate)| json!({ "clip": clip, "rate": rate })).collect::<Vec<_>>()
-    })
-    .to_string()
+    set_speeds_json(speeds)
 }
 
 /// Which clips carry a caption in this ask: clip 3, with its one caption — and the ask says so in its own

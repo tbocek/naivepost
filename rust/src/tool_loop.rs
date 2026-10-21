@@ -357,6 +357,14 @@ pub fn run(
             }
         };
 
+        // §2 S3's end signal is the `finish` CALL, not the absence of other calls: a model closes a job by
+        // asking for its work AND saying it is done, in one round (`add_caption(…) + finish`, `set_clip_speed(…)
+        // + finish`). Answering that round and then dialling again for an answer already given charges the step a
+        // request for nothing, and with the budget spent (§2 S4) it ends as "still calling tools" -- so a round
+        // that called `finish` ENDS the run, after its own calls were answered below. The flag on the Turn means
+        // the same thing and is honoured too, so a caller may set it either way.
+        let closed = turn.finish || turn.calls.iter().any(|call| call.name == Tool::Finish.name());
+
         if turn.calls.is_empty() {
             // `finish` is the flow's own end and says so here: a model that was nudged and then called it did
             // call it, so the run is not recorded as having needed asking.
@@ -422,7 +430,7 @@ pub fn run(
         }
         previous = turn.calls;
         silent_rounds = 0;
-        if turn.finish {
+        if closed {
             // A `finish` that arrived with calls still ends the flow — the tool ran and was answered, and the
             // model has said it is done. Its verdict on the WHOLE travelled in that result, so this run did
             // use §1's third home as well as the per-item one.

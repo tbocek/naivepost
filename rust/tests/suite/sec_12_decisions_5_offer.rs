@@ -51,7 +51,9 @@ fn offered_names(body: &str) -> Vec<String> {
 #[test]
 fn sec_12_decisions_5_gaps_this_audit_closed_s1_the_offer_names_the_read_tools() {
     let fixture = fixture("s1-speeds");
-    let llm = FakeLlm::start(vec![envelope_of(r#"{"speeds": []}"#)]);
+    // An empty ANSWER, in the shape this item's §3 answer makes the only one: a `finish` call and nothing else
+    // (a `{"speeds": []}` document is now unreadable and would spend an ask-again this test is not about).
+    let llm = FakeLlm::start(vec![finish_json()]);
     point_at(&llm.url());
     let asked = speeds_ask::ask(
         &fixture.tree,

@@ -40,7 +40,7 @@ fn f6_2_s3_d_a_live_all_reasoning_captions_answer_is_asked_again_repaired_and_la
             "{{\"choices\":[{{\"message\":{{\"reasoning_content\":\"{reasoning}\",\"content\":\"\"}}}}]}}",
             reasoning = "Let me consider every spoken line of this session."
         ),
-        caption_json(&[(1, &[(0.4, 1.6, "the network")])]),
+        add_captions_json(&[(1, 0.4, 1.6, "the network")]),
     ]);
     point_at(&llm.url());
     let asked = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &words, 0, &|| false);
@@ -69,10 +69,12 @@ fn f6_2_s3_d_a_live_all_reasoning_captions_answer_is_asked_again_repaired_and_la
         .expect("the repair carries its messages")
         .clone();
     let roles: Vec<&str> = messages.iter().filter_map(|m| m["role"].as_str()).collect();
+    // The model made NO call in the refused round, so it is not mid-round: §3's correction arrives as a `user`
+    // turn (`ask_again_for_calls` passes `tools_active = false`), not as a tool result beside an assistant call.
     assert_eq!(
         roles,
-        vec!["system", "user", "tool"],
-        "mid-round, so the correction arrives as a tool result and no blank assistant turn was added: {roles:?}"
+        vec!["system", "user", "user"],
+        "no call was made, so the correction is a user turn and no tool result was invented: {roles:?}"
     );
     let correction = messages[2]["content"][0]["text"]
         .as_str()
@@ -82,8 +84,9 @@ fn f6_2_s3_d_a_live_all_reasoning_captions_answer_is_asked_again_repaired_and_la
         "§3's correction opens the turn: {correction}"
     );
     assert!(
-        correction.contains(llm_retry::NO_ANSWER),
-        "and names WHICH repair it was, in the wording the model was tuned on: {correction}"
+        correction.contains("not a tool call"),
+        "and names WHICH repair it was — since §3's answer on this item the caption pass asks again for a CALL, \
+         so the correction quotes the no-call problem, not the old empty-content one: {correction}"
     );
     assert!(
         correction.ends_with("Return corrected strict JSON only."),

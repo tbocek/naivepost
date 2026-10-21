@@ -43,9 +43,11 @@ fn f6_2_s3_e_a_second_unusable_answer_ends_the_step_without_another_repair() {
     let seen = llm.drain();
     assert_eq!(seen.len(), 2, "the repair was spent once and not again: {}", seen.len());
     // And the reason still says what was wrong with the answer, so §F3.9's log line names a cause — and says
-    // it was asked again, which is the whole difference between this failure and a plain one.
+    // it was asked again, which is the whole difference between this failure and a plain one. Since §3's
+    // answer on this item the caption pass ends its ask-again with `no_calls_reason`, which already says the
+    // second round happened ("asked again and got a JSON document"); that IS the spent-repair sentence now.
     assert!(
-        asked.reason.contains("asked twice"),
+        asked.reason.contains("asked again"),
         "the step says the repair was spent: {}",
         asked.reason
     );

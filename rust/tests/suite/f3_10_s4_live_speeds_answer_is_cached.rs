@@ -13,7 +13,6 @@ use common::three_clips;
 use naivepost::cut_speed_pass::Call;
 use naivepost::requests;
 use naivepost::speeds_ask;
-use serde_json::json;
 
 /// The User Context, model id and first round every ask here uses, so the cache key the test names is the one
 /// the program computed.
@@ -34,18 +33,7 @@ fn captioned_batch() -> naivepost::tools::clips::Clips {
     batch
 }
 
-/// The SPEEDS document §`prompts/system.md`'s `speed` row specifies, in the chat envelope a real server
-/// answers with. The cache keeps the ANSWER text (§6 stores what the pass read, not the framing).
-fn speeds_json(speeds: &[(u32, f64)]) -> String {
-    envelope_of(
-        &json!({
-            "speeds": speeds.iter().map(|(clip, rate)| json!({ "clip": clip, "rate": rate })).collect::<Vec<_>>()
-        })
-        .to_string(),
-    )
-}
-
-/// The file this ask's answer belongs in — named by the program's own keying, not by a second hash recipe.
+/// Where `ask` keeps the answer it just got: its own key, under its own step folder (§6, §F3.10 S4).
 fn slot(fixture: &Fixture) -> std::path::PathBuf {
     speeds_ask::cache_file_for_test(&fixture.tree, CTX, &three_clips(), &captioned(), MODEL, ATTEMPT)
 }
@@ -73,8 +61,9 @@ fn kept(fixture: &Fixture, needle: &str) -> bool {
 fn f3_10_s4_live_speeds_answer_is_cached_so_the_next_identical_ask_opens_no_socket() {
     let fixture = fixture("s4-cached");
     // ONE scripted reply: were a later ask to reach this server it would be handed the same text and pass for
-    // the wrong reason. What proves an ask did NOT go out is that the fake never saw it.
-    let llm = FakeLlm::start(vec![speeds_json(&[(2, 3.0)])]);
+    // the wrong reason. What proves an ask did NOT go out is that the fake never saw it; the ask after the
+    // cache is deleted is answered by the fake repeating its last reply.
+    let llm = FakeLlm::start(vec![set_speeds_json(&[(2, 3.0)])]);
     point_at(&llm.url());
 
     let first = speeds_ask::ask(&fixture.tree, CTX, &three_clips(), &captioned(), ATTEMPT, &|| false);
@@ -84,11 +73,12 @@ fn f3_10_s4_live_speeds_answer_is_cached_so_the_next_identical_ask_opens_no_sock
     assert_eq!(seen.method, "POST", "a chat call is a POST");
     assert_eq!(seen.path, "/v1/chat/completions", "on the LLM's chat path");
 
-    // §6 keeps what the pass READ — the answer document — so a replay needs no envelope to unwrap and cannot
-    // double-count a reply. This is the file the ask's own key names, so the test reads the real slot.
+    // §6 keeps what the pass READ — the answer's CALLS — so a replay needs no envelope to unwrap and cannot
+    // double-count a reply. Since §3's answer on this item the answer IS a call list, so the slot holds the
+    // answering round's envelope carrying `set_clip_speed` (see `clip_rules_tools_leg::answering_envelope`).
+    // This is the file the ask's own key names, so the test reads the real slot.
     let kept = std::fs::read_to_string(slot(&fixture)).expect("the answer was cached under its own key");
-    assert!(kept.contains("\"speeds\""), "the slot holds the SPEEDS document: {kept}");
-    assert!(!kept.contains("\"choices\""), "the framing is not what got cached: {kept}");
+    assert!(kept.contains("set_clip_speed"), "the slot holds the call that answered: {kept}");
 
     // Same settings, same prompt, same round: the slot answers it. No socket, so the WIRE row count is
     // unchanged; §09 §10 does want a line for the hit, marked `cache` with no time on the wire.

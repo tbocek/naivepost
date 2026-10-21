@@ -14,7 +14,7 @@ use naivepost::captions_ask;
 fn sec_10_parameters_4_prompts_s9_captions_ask_is_thinking_off() {
     let fixture = fixture("msg");
     let (clips, words) = two_clips_with_words();
-    let llm = FakeLlm::start(vec![caption_json(&[(1, &[(0.4, 4.4, "The network is live.")])])]);
+    let llm = FakeLlm::start(vec![add_captions_json(&[(1, 0.4, 4.4, "The network is live.")])]);
     let addr = point_at(&llm.url());
 
     let asked = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &words, 1, &|| false);

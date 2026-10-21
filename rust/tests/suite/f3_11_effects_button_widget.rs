@@ -27,7 +27,7 @@ use serde_json::json;
 use crate::common;
 use common::{cut_page, release_last_window, settle, status_text, widget_in};
 
-use wire::{envelope_of, point_at, FakeLlm};
+use wire::{add_effects_json, point_at, FakeLlm};
 
 static RAN_LIVE_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_SKIP_SAID: AtomicBool = AtomicBool::new(false);
@@ -38,7 +38,7 @@ static RAN_UNDO: AtomicBool = AtomicBool::new(false);
 /// The EFFECTS document §`prompts/system.md`'s `effects` row specifies, in the chat envelope a real server
 /// answers with — the shape a live reply has, so the ask parses it the way it parses a server's bytes.
 fn effects_json(entries: &[serde_json::Value]) -> String {
-    envelope_of(&json!({ "fx": entries }).to_string())
+    add_effects_json(entries)
 }
 
 /// One `{clip, kind, start, end}` entry, gain left off unless given.

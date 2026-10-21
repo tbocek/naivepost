@@ -109,7 +109,7 @@ fn sec_10_parameters_4_prompts_s9_the_captions_repair_stays_thinking_off() {
     // the second is a real CAPTIONS document, so exactly one repair goes out.
     let llm = ScriptedLlm::start(vec![
         "{\"choices\":[{\"message\":{\"reasoning_content\":\"Let me weigh every line.\",\"content\":\"\"}}]}".to_string(),
-        caption_json(&[(1, &[(0.4, 1.6, "the network")])]),
+        add_captions_json(&[(1, 0.4, 1.6, "the network")]),
     ]);
     point_at(&llm.url());
 

@@ -235,8 +235,10 @@ pub fn parse_speeds(reply: &str) -> Vec<Call> {
     if !calls.is_empty() {
         return calls;
     }
-    // No tool call: read the content as the SPEEDS document. Anything unreadable is no calls, which the
-    // pass reads as "the model proposed nothing" — the same ending a `{"speeds":[]}` answer has.
+    // No tool call: read the content as the SPEEDS document. The slot's envelope is read by its `tool_calls`
+    // above, so prose here is either a tools-refused server's document or an unreadable answer -- and anything
+    // unreadable is no calls, which the pass reads as "the model proposed nothing", the same ending a
+    // `{"speeds":[]}` answer has.
     let Ok(content) = serde_json::from_str::<serde_json::Value>(answer.content.trim()) else {
         return Vec::new();
     };
@@ -406,14 +408,68 @@ pub fn ask_at_over(
         }
     };
     if reply.tool_calls.is_empty() {
-        // Round 1 answered in prose, which is the whole ask: one request, one timed row.
-        let text = reply.answer().to_string();
-        if !text.trim().is_empty() {
-            // Only an answer with words in it is cached: an empty one would make every later ask replay the
-            // nothing, and a step that could still be answered later would never be asked again.
-            llm_cache::store(tree, STEP, &parts, &stored_form(&text));
+        // A server that no longer gets a `tools` field (§2 S5 remembered its refusal, so the body went out
+        // without one) cannot be blamed for answering in prose: the document is the only shape left to it.
+        // The sole exception, and silent -- the refusal was already said once, on the round that earned it.
+        if crate::llm_tools_offer::tools_for(&endpoint.url, &offered).is_none() {
+            let text = reply.answer().to_string();
+            if !text.trim().is_empty() {
+                llm_cache::store(tree, STEP, &parts, &text);
+            }
+            return Asked { calls: parse_speeds(&text), failed: false, reason: String::new() };
         }
-        return Asked { calls: parse_speeds(&text), failed: false, reason: String::new() };
+        // §3's answered question on this item: the tools ARE on the wire, and a reply carrying a JSON document
+        // instead of calling `set_clip_speed` has not answered. Ask again, once, with the correction in the
+        // conversation (§3's repair); a second prose answer is this pass's failure, said by name.
+        let went_out = std::time::Instant::now();
+        let dial = |body: &str| {
+            crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, body, cancel, &crate::ui::window::log_line)
+                .map(|sent| (sent.content_type, sent.body))
+        };
+        let second = match crate::clip_rules_tools_leg::ask_again_for_calls(
+            STEP,
+            Tool::SetClipSpeed.name(),
+            two_messages(&system, &user),
+            &reply,
+            &crate::ui::window::log_line,
+            &|conversation| {
+                Ok(llm_request::body(
+                    STEP,
+                    &model,
+                    conversation,
+                    crate::prompts::mode_of(STEP),
+                    Some(&offered),
+                    true,
+                )?
+                .to_string())
+            },
+            &dial,
+        ) {
+            Ok(second) => second,
+            Err(reason) => return failed(reason),
+        };
+        // That retry was a request, and §09 §10 wants every request on the record; the repair leg owns the dial,
+        // so the row is written here (`chat` files rows only for what IT dials -- one line per request).
+        crate::clip_rules_tools_leg::record_repair_row(tree, base_row(&model), went_out);
+        let calls: Vec<Call> = second
+            .tool_calls
+            .iter()
+            .filter(|call| call.name == Tool::SetClipSpeed.name())
+            .filter_map(|call| {
+                let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
+                call_of_args(&args)
+            })
+            .collect();
+        // §6: the ANSWERING round's envelope is what is kept, so an unchanged batch costs no socket.
+        if crate::clip_rules_tools_leg::asks_for_anything(&second) {
+            llm_cache::store(
+                tree,
+                STEP,
+                &parts,
+                &crate::clip_rules_tools_leg::answering_envelope(&second).to_string(),
+            );
+        }
+        return Asked { calls, failed: false, reason: String::new() };
     }
     // The refusal a captioned clip earns comes back as the tool's own sentence, so it has to be REACHED. The batch
     // the loop answers its own calls from is filled with the captions here, so every rate the model asked for is
@@ -447,23 +503,21 @@ pub fn ask_at_over(
     for line in crate::clip_rules_tools_leg::answer_calls(&reply.tool_calls, &mut batch) {
         crate::ui::window::log_line(&line);
     }
+    // §6: the ANSWERING round's envelope is what is kept, so an unchanged batch costs no socket when the cut is
+    // asked again. The repair path above stores this same shape; a first reply that already called the tool must
+    // too, or the cache is only half a cache and the next identical ask dials the model a second time.
+    if crate::clip_rules_tools_leg::asks_for_anything(&reply) {
+        llm_cache::store(tree, STEP, &parts, &crate::clip_rules_tools_leg::answering_envelope(&reply).to_string());
+    }
     // A call this pass can already answer ENDS the ask: the model has its result and there is nothing to ask it
     // for, so no second request goes out (§F3.10 counts batches by rows in `requests.tsv`).
     Asked { calls: calls_out, failed: false, reason: String::new() }
 }
-/// The shape an answer is kept in: the call list for a tool answer, the plain document otherwise. See
-/// [`parse_speeds`], which reads both back.
-fn stored_form(answer: &str) -> String {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(answer.trim()) else {
-        return answer.trim().to_string();
-    };
-    let parsed = llm_request::parse_reply(&value);
-    if parsed.tool_calls.is_empty() && !parsed.content.trim().is_empty() {
-        return parsed.content.trim().to_string();
-    }
-    answer.trim().to_string()
-}
 
+/// `stored_form` is gone: since §3's answer on this item the answer IS a call list, so what a pass caches is
+/// the answering round's envelope (see [`crate::clip_rules_tools_leg::answering_envelope`]). [`parse_speeds`]
+/// still reads a bare document back -- that is the cache reader's and a tools-refused server's shape.
+///
 /// One ask's two messages, so the file its answer is cached in (`cache_file_for_test`) is named from the very
 /// texts the request is made of.
 fn messages(context: &str, clips: &[(u32, f64)], captioned: &[(u32, usize)]) -> (String, String) {
