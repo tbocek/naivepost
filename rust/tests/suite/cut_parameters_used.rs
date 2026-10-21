@@ -171,6 +171,8 @@ fn sec_05_cut_6_parameters_used_s4_the_engineering_group_is_the_constants_the_pa
         ("cut.colour.markOutRed", cut_colours::MARK_OUT_RED),
         ("cut.colour.edgeAmber", cut_colours::EDGE_AMBER),
         ("cut.colour.scrim", cut_colours::SCRIM),
+        ("cut.colour.gutterGround", cut_colours::GUTTER_GROUND),
+        ("cut.colour.gutterEdge", cut_colours::GUTTER_EDGE),
         ("cut.colour.speedTint", cut_colours::SPEED_TINT),
         ("cut.colour.playhead", cut_colours::PLAYHEAD_RGB),
     ] {

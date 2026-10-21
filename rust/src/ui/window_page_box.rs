@@ -363,11 +363,18 @@ pub(crate) fn page_box(
         volume.set_halign(gtk::Align::Start);
         volume.set_value(cut_hear::VOLUME_DEFAULT * 100.0);
         // The trough alone read as an anonymous blue line: only a hover tooltip said what it was, where
-        // the prototype's speaker glyph makes it obvious at a glance. A row with the word beside it puts
-        // that back without a theme dependency, and the 24 px floor keeps it reading as a control next to
-        // the ~34 px buttons instead of a hairline under them.
+        // the prototype's speaker glyph makes it obvious at a glance. §A group 2 asks for "icon + 0..100,
+        // 120 px, shared tooltip", so the icon is `cut_cameras::SPEAKER_GLYPH` — the app's OWN glyph, the one
+        // the row speaker badges already print, not a themed icon (no icon theme exists in the headless
+        // snapshot, which is why an earlier round left the slider standing alone). It goes AFTER the word
+        // label and BEFORE the slider: `cut_hear_mix_widgets` pins the row's first child as the word.
+        // Value text off: the number means nothing to a person where the tooltip says what the control does.
+        let volume_icon = gtk::Label::new(Some(crate::ui::cut_cameras::SPEAKER_GLYPH));
+        volume_icon.set_widget_name("preview-volume-icon");
+        volume_icon.set_tooltip_text(Some(cut_hear::VOLUME_TIP));
         let volume_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         volume_row.append(&gtk::Label::new(Some(cut_hear::VOLUME_LABEL)));
+        volume_row.append(&volume_icon);
         volume_row.append(&volume);
         volume_row.set_halign(gtk::Align::Start);
         volume_row.set_size_request(-1, 24);

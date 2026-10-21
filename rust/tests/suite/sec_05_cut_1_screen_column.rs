@@ -83,6 +83,21 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         ..Default::default()
     };
     naivepost::ui::seed_review_cut(&window, &seeded);
+    // §1 badge 29 is "the row's sound switch", and `refresh_camera_rows` draws one gutter switch per cut
+    // LANE (`cut_.lanes`), so the page needs a lane to have a switch at all. The demo fixture ships none, and
+    // the band's own left edge is measured from the fold badge (§B puts both in the same 30 px column).
+    let mut with_lane = seeded;
+    with_lane.lanes = vec![naivepost::cut::Lane {
+        name: "mic-lav".into(),
+        src: String::new(),
+        at: 0.0,
+        off: 0.0,
+        dur: 30.0,
+    }];
+    naivepost::ui::seed_review_cut(&window, &with_lane);
+    // A silent-everywhere lane would show its switch OFF; press the door the switch itself fires so the
+    // widget on screen carries the state the rule writes (and the wire is exercised by a real click below).
+    naivepost::ui::press_gutter_switch(&window, "mic-lav");
     settle();
     window
 }
@@ -250,6 +265,35 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
         );
     }
     println!("GUTTER rails inside track-layers: gutter-badges + gutter-switches");
+    // And the controls §B names are really ON that rail at the band's left edge, not packed beside it:
+    // badge 23 (the whole-cut fold badge) on `gutter-badges`, badge 29 (the row's sound switch) on
+    // `gutter-switches`. Positions come from the realized tree, so a holder that exists but draws nothing
+    // off-screen cannot pass this.
+    let band_left = span(&layers).0;
+    let badge = find_named(&window, "fold-all-button")
+        .expect("\u{a7}1 badge 23: the fold-all badge lives in the gutter");
+    let (badge_left, badge_right) = span(&badge);
+    println!("GUTTER badge 23 x={badge_left}..{badge_right}, band left {band_left}");
+    assert!(
+        badge_left >= band_left && badge_right <= band_left + naivepost::cut_screen::GUTTER_PX as i32,
+        "the fold-all badge sits inside the gutter's {} px: {badge_left}..{badge_right} vs band {band_left}",
+        naivepost::cut_screen::GUTTER_PX
+    );
+    let lane = "mic-lav";
+    let switch = find_named(&window, &format!("gutter-switch-{lane}"))
+        .unwrap_or_else(|| panic!("\u{a7}1 badge 29: `{lane}` has no gutter switch"));
+    // The real widget, fired the way the toolkit fires it: pressing the rail's switch must reach the
+    // hearing rule, which is what makes this the wire as well as the position check.
+    if let Ok(toggle) = switch.clone().downcast::<gtk::ToggleButton>() {
+        toggle.emit_by_name::<()>("toggled", &[]);
+        settle();
+    }
+    let (left, right) = span(&switch);
+    println!("GUTTER badge 29 {lane} x={left}..{right}, band left {band_left}");
+    assert!(
+        left >= band_left && right <= band_left + naivepost::cut_screen::GUTTER_PX as i32,
+        "`gutter-switch-{lane}` must be inside the gutter column: {left}..{right} vs band {band_left}"
+    );
     RAN_GUTTER.store(true, Ordering::SeqCst);
 }
 
