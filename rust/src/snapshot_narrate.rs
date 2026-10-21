@@ -141,11 +141,30 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         state.cut_at = 33.0;
         ui::set_state(state);
         ui::refresh(window);
-        // F4.1's bar face is part of this screen now: the run has written its clips, so the progress
-        // bar reads `writing N/M clips` rather than sitting idle. Driven through the same seam the
-        // run paints from (not a poke), with the reply empty because headless there is no model --
-        // only the stage text and fraction are wanted here, and the door's own status line is not.
-        ui::show_narrate_stage(window, 2, 4);
+        // The take this shot shows is written to `narrate/takes.json` as well as published, because
+        // `refresh` re-seeds the page's take list from that file on every repaint — a state-only take
+        // vanishes before the pixels (that is why this lane once drew no take at all). Same door `07-take`
+        // uses, so the band's own rule decides what survives.
+        if let Some(tree) = crate::ui::window::narrate_session_tree() {
+            if let Some(key) = crate::ui::narrate_seed::take_recording_key(&tree) {
+                let _ = crate::narrate_data::save_takes(
+                    &tree,
+                    &key,
+                    &[crate::narrate_data::Take { s: 1.0, e: 6.0 }],
+                );
+            }
+        }
+        // §1's picture is a page whose narration has been WRITTEN, so the run bar must not be mid-flight:
+        // an open "writing 2/4 clips" bar steals a row and pushes lines 3 and 4 below the fold. F4.1 S7's
+        // done wording goes on the status line and the bar closes through the same doors the run itself
+        // ends with, so the shot shows a state a real run produces rather than one the bench invented.
+        crate::ui::window::set_status_line(
+            window,
+            &crate::narrate_run::Outcome::Spoken { written: 4, spoken: 4 }.status(),
+        );
+        // The bar's own close door (F0.5 S4), reached the way the run reaches it.
+        crate::ui::run_close::close_last_narrate_run();
+        ui::refresh(window);
         return true;
     }
 

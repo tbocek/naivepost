@@ -141,6 +141,8 @@ fn sec_07_narrate_1_screen_take_band_ink_the_lane_inks_its_takes_and_its_wave() 
 }
 
 fn round(app: &adw::Application) {
+    // The lane's own geometry, from the module that owns it: every block below paints a 500×lane image and
+    // reads pixels below the ruler strip.
     let lane_h = narrate_screen::BAND_LANE_PX as i32;
     let ruler = narrate_screen::BAND_RULER_PX as i32;
 
@@ -148,13 +150,18 @@ fn round(app: &adw::Application) {
     {
         scratch_root("ink-take");
         let mut state = base_state();
-        state.takes = vec![(1.0, 6.0)];
+        // A LONG take (20 s of the 45 s reference) so the view needs no zooming: at the band's fit view
+        // `clamp_view` pins the offset to 0 and px/s is fixed by the fit, so in a 500 px image this take is
+        // ~222 px wide — far more than the ~24 px its word needs. Wheeling a zoom to get there was tried and
+        // cannot work from a test: `paint` maps with the live lane's px/s, which a test cannot know.
+        state.takes = vec![(5.0, 25.0)];
         ui::narrate_band::clear_hand();
         let window = narrate_page(app, state);
-        // A 5 s take only earns its label once the lane is wide enough to show it, and the lane spans the
-        // file it is drawn across — so this block first stands a real reference wav in its own session
-        // folder (§F4.6 S3's output; the bench seeds one the same way for `just snapshot 07-narrate`), then
-        // widens the view with the band's wheel controller, the door §1's "wheel zooms" describes.
+        // The band has seconds only over a recording it can measure (§A.7), and its px/s comes from that
+        // length, so stand a real 45 s reference wav in the session folder first (§F4.6 S3's output; the
+        // bench seeds one the same way for `just snapshot 07-narrate`). No wave is staged, so the lane also
+        // prints its "reading the recording…" sentence — grey (191,199,204), which fails the r >= 200 filter
+        // below and so cannot be mistaken for glyph ink.
         let tree = naivepost::ui::window::narrate_session_tree().expect("a session folder");
         write_wav(
             &naivepost::narrate_data::base_reference(&tree),
@@ -163,54 +170,28 @@ fn round(app: &adw::Application) {
         );
         ui::refresh(&window);
         settle();
-        let lane_widget = common::widget(&window, "take-band");
-        let wheel = {
-            // Walk the controller list rather than iterating it as a typed model: the list holds every
-            // controller kind, and `iter::<T>` asserts its item type on the first one it meets.
-            let held = lane_widget.observe_controllers();
-            (0..held.n_items())
-                .filter_map(|index| held.item(index))
-                .find(|item| {
-                    item.downcast_ref::<gtk::EventController>()
-                        .is_some_and(|c| c.name().is_some_and(|n| n == "wheel-take-band"))
-                })
-                .and_then(|item| item.downcast::<gtk::EventController>().ok())
-                .expect("the band carries its wheel controller")
-        };
-        for _ in 0..12 {
-            // The band's own px/s, read back off the view it actually holds: `px_per_second` caps at
-            // `narrate.bandMaxPps`, so a take can stop growing while the raw zoom keeps climbing, and a test
-            // that watched the zoom would keep wheeling past the cap without the label ever getting wider.
-            let (probe_seconds, probe_pps) = ui::narrate_band::painted_view_for_test();
-            let probe_width = ui::narrate_band::view_width_for_test().max(500.0);
-            let pps_probe = naivepost::narrate_band::px_per_second(
-                ui::narrate_band::zoom(),
-                probe_seconds.max(1.0),
-                probe_width,
-            );
-            let (_, probe_w) = naivepost::narrate_band::take_box((1.0, 6.0), 0.0, pps_probe, 4000.0);
-            if probe_w > 340.0 {
-                break;
-            }
-            // `scroll` answers gboolean (GTK asks whether the event was eaten), so emit it as a bool.
-            let _ = wheel.emit_by_name::<bool>("scroll", &[&0.0f64, &-50.0f64]);
-            settle();
-        }
-        let (seconds, _) = ui::narrate_band::painted_view_for_test();
-        assert!(seconds > 30.0, "the band is drawn across the 45 s reference: {seconds} s");
         let width = 500i32;
-        // The take's box as THIS image draws it: `paint` fits the recording across whatever width it is
-        // given, so px/s is the fit for this width and not the one the live lane happens to hold.
-        let pps = naivepost::narrate_band::px_per_second(ui::narrate_band::zoom(), seconds, width as f64);
-        // The box `paint` drew, asked of the rule with the numbers that paint used: offset 0 at this width.
-        let (left, w) = naivepost::narrate_band::take_box((1.0, 6.0), 0.0, pps, width as f64);
-        let label = naivepost::narrate_band::label_in((1.0, 6.0));
-        assert_eq!(label, "5.0s", "§1: labelled with its DURATION ALONE");
-        assert!(w > 34.0, "a take wider than 34 px earns its label: {w} px");
-        // Move the cue bar clear of the label before painting: `paint` draws it THROUGH the lane, and this
-        // state's playhead (5 s) falls inside the take, so it would land on the seconds §1 asks to read.
-        // Through the band's own door — the same one a click on the lane fires.
-        ui::narrate_band::set_red_bar(seconds - 1.0);
+        // Every geometry number comes from the band's own plan for THIS image: `painted_plan_for_test` paints
+        // a scratch surface at exactly this width, at offset 0 like any standalone surface, and returns the
+        // `Plan` `paint` built — so the box, the word and the cue column are the ones the ink used. Deriving
+        // them by hand is what made this check sample pixels holding no part of the take.
+        let plan = ui::narrate_band::painted_plan_for_test(width as f64, lane_h as f64);
+        let (left, w, drawn_label) = plan
+            .takes
+            .first()
+            .map(|held| (held.0, held.1, held.2.clone()))
+            .expect("the one take this state holds is in the paint plan");
+        assert!(
+            w >= 100.0,
+            "at fit this take is wide enough for its word — if this fails, the span is too short, not the \
+             ink: {w} px in a {width} px image"
+        );
+        assert_eq!(
+            naivepost::narrate_band::label_in((5.0, 25.0)),
+            "20.0s",
+            "§1: labelled with its DURATION ALONE"
+        );
+        assert_eq!(drawn_label, "20.0s", "and the plan drew exactly that word");
         let (px, pw, ph) = {
             let (px, pw, ph, _, _) =
                 ui::narrate_band::painted_pixels_for_test(width, lane_h).expect("the lane painted whole");
@@ -226,16 +207,14 @@ fn round(app: &adw::Application) {
             })
         });
         assert!(shaded, "the take is SHADED across its own seconds ({left}..{} px)", left + w);
-        // The label strip: §1's seconds have to survive the dark wash. Light ink is (240,242,247); the bug
-        // was near-black letters, which leave this strip with no bright pixel at all. What else paints light
-        // in those rows must be excluded, or a bare brightness count stands in for the label: the red ▶-start
-        // bar ((219,51,46), bright in one channel only) and the blue envelope columns (89,153,229 — its b
-        // leads r by ~140). Only near-white glyph ink survives both filters.
-        let bright = (((left + 3.0) as i32).max(0))..(((left + 40.0).min((width - 1) as f64)) as i32);
-        let bar = naivepost::narrate_band::second_to_px(5.0, 0.0, pps) as i32;
+        // The label strip: §1's seconds have to survive the dark wash, and the bug this pins was near-black
+        // letters, which leave it with no bright pixel at all. `paint` draws the word at `left + 3` on one
+        // baseline, so the box to read is that and nothing wider — sampling from the take's own left edge
+        // measured bare wash. Nothing else in those rows passes the strict near-white filter: the red ▶-start
+        // bar is (219,51,46) with r leading, and the waiting sentence is grey at 191.
+        let columns = (((left + 3.0) as i32).max(0))..(((left + 63.0).min((pw - 1) as f64)) as i32);
         let readable = (ruler + 3..ruler + 16)
-            .flat_map(|y| bright.clone().map(move |x| (x, y)))
-            .filter(|&(x, _)| (x - bar).abs() > 2)
+            .flat_map(|y| columns.clone().map(move |x| (x, y)))
             .filter(|&(x, y)| {
                 let (r, g, b) = rgb(&px, pw, x, y);
                 r >= 200 && g >= 200 && b >= 200 && b.abs_diff(r) <= 12
@@ -243,8 +222,8 @@ fn round(app: &adw::Application) {
             .count();
         assert!(
             readable >= 3,
-            "the take's seconds are inked LIGHT ENOUGH TO READ on the wash: {readable} bright pixels \
-             in the label strip of a {pw}×{ph} lane (take at {left}..{} px)",
+            "the take's seconds are inked LIGHT ENOUGH TO READ on the wash: {readable} bright pixels in the \
+             label strip of a {pw}×{ph} lane (take at {left}..{} px)",
             left + w
         );
         RAN_TAKE.store(true, Ordering::SeqCst);

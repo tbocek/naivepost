@@ -430,6 +430,7 @@ mod sec_07_narrate_1_screen;
 mod sec_07_narrate_1_screen_page_split;
 mod sec_07_narrate_1_screen_widgets;
 mod sec_07_narrate_1_screen_take_band_ink;
+mod sec_07_narrate_1_screen_take_band_widget;
 mod sec_07_narrate_3_data;
 mod sec_07_narrate_4_parameters_used_widgets;
 mod sec_07_narrate_5_rules;
