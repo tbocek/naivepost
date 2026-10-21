@@ -778,6 +778,18 @@ pub fn apply_mix(
         held_by_card,
         &|line| ui::log_line(line),
     );
+    // §06-effects#2 (`the two 1× sound answers cannot be previewed`, §9's `it SHOULD say "sound at 1× in the
+    // render only"`): a speed asking for its sound at 1× to the effect's or the scene's end needs a clock this
+    // preview does not have, so it plays the sound with the picture and says so. Asked of the MIX, which is where
+    // the question belongs — that way a speed reaching the cut by any door (this form, a loaded project, F3.10's
+    // speeds pass) gets the sentence, not only the one placed by hand. One line per entry: the notice is asked
+    // against what the last tick was told, exactly as the mute line above is.
+    crate::ui::preview_sound::report_sound_clock_change(
+        crate::ui::preview_sound::sound_clock_noticed(),
+        mix.sound_needs_two_clocks,
+        crate::ui::preview_sound::unpreviewable_snd_under(fx, t).unwrap_or(""),
+        &|line| ui::log_line(line),
+    );
     if let Some(player) = ui::live_player(window) {
         player.borrow_mut().footage_muted = mix.footage_muted;
     }

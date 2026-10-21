@@ -143,6 +143,8 @@ fn mix_of(name: &str, start: LaneStart, gain: f64) -> cut_hear::Mix {
         lane_starts: vec![(name.to_string(), start)],
         gain,
         rate: 1.0,
+        bed_silenced: false,
+        sound_needs_two_clocks: false,
     }
 }
 
@@ -222,6 +224,8 @@ fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
         ],
         gain: naivepost::cut_hear::MAX_GAIN,
         rate: 1.0,
+        bed_silenced: false,
+        sound_needs_two_clocks: false,
     };
 
     let plan = lane_hear::plan_lanes(&mix, &lanes, &BTreeMap::new(), naivepost::cut_hear::MAX_GAIN);
@@ -417,6 +421,8 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
         lane_starts: vec![(name.to_string(), LaneStart::Seek { from: 8.1, stop: 0.0 })],
         gain: 1.0,
         rate: 1.0,
+        bed_silenced: false,
+        sound_needs_two_clocks: false,
     };
     // The footage ask goes through `play_back`, whose "already asked" stamp is process-wide: cleared first,
     // and answered against nothing cued, so this step's ask is its own and not another test's answer.
