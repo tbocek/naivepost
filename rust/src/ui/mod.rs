@@ -469,6 +469,7 @@ pub use window::set_watched_row;
 pub use cut_cameras::{
     camera_rows_box, camera_watch, hand_preview_back, press_gutter_switch, press_lens_scene,
     press_speaker_badge, press_watch_row, preview_row, refresh_camera_rows, toggle_button,
+    SPEAKER_GLYPH,
 };
 // F2.10: the row list itself, rebuilt from the live cut by every refresh above.
 // F2.11: the fold badges and the two ✕, drawn as named widgets and forwarded by these seams.

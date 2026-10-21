@@ -891,11 +891,6 @@ pub fn cut() -> Vec<Param> {
             "ui::cut_colours::LANE_GROUND",
         ),
         colour(
-            "cut.colour.playhead",
-            ui::cut_colours::PLAYHEAD_RGB,
-            "ui::cut_colours::PLAYHEAD_RGB",
-        ),
-        colour(
             "cut.colour.gutterGround",
             ui::cut_colours::GUTTER_GROUND,
             "ui::cut_colours::GUTTER_GROUND",
@@ -904,6 +899,13 @@ pub fn cut() -> Vec<Param> {
             "cut.colour.gutterEdge",
             ui::cut_colours::GUTTER_EDGE,
             "ui::cut_colours::GUTTER_EDGE",
+        ),
+        // Last on purpose: §6's own sentence ends with the colours and `cut_parameters_used` pins
+        // `cut.colour.playhead` as the list's final row, so a new tint goes above it.
+        colour(
+            "cut.colour.playhead",
+            ui::cut_colours::PLAYHEAD_RGB,
+            "ui::cut_colours::PLAYHEAD_RGB",
         ),
     ]
 }

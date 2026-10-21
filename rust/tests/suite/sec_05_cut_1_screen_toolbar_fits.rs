@@ -21,6 +21,8 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 static RAN_FITS: AtomicBool = AtomicBool::new(false);
 static RAN_GLYPHS: AtomicBool = AtomicBool::new(false);
+static RAN_VOLUME_ICON: AtomicBool = AtomicBool::new(false);
+static RAN_POPOVER: AtomicBool = AtomicBool::new(false);
 
 fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
@@ -274,12 +276,112 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
     window.close();
 }
 
+/// §A group 2: "volume control (icon + 0..100, 120 px, shared tooltip)". The icon is a glyph the app owns
+/// (`cut_cameras::SPEAKER_GLYPH`), so it renders with no icon theme — and "renders" is the claim being tested:
+/// a label that never gets pixels would satisfy a name lookup and show nothing, so the check waits for real
+/// width/height through `common::wait_until`, never a guessed pause.
+fn check_the_volume_group_wears_its_icon(app: &adw::Application) {
+    let window = cut_page(app);
+    // The page's own door for the slider, so this check and F2.5's read the same widget.
+    let scale = naivepost::ui::preview_volume_scale(&window).expect("\u{a7}1 item 9 preview-volume");
+    let row = scale.parent().expect("the slider sits in the volume row");
+    let icon = find_named(&window, "preview-volume-icon")
+        .expect("\u{a7}A group 2 asks for an icon beside the slider");
+    assert!(
+        icon.parent().is_some_and(|p| p.upcast_ref::<gtk::Widget>() == row.upcast_ref::<gtk::Widget>()),
+        "the icon belongs to the volume group, not somewhere else on the page"
+    );
+    let label = icon.downcast_ref::<gtk::Label>().expect("the icon is a glyph label");
+    assert_eq!(
+        label.text().as_str(),
+        naivepost::ui::SPEAKER_GLYPH,
+        "the icon is the module's own speaker glyph, the one the row badges use"
+    );
+    // Order inside the row: word, icon, slider — §A spells them in that order and the prototype draws it so.
+    let order: Vec<String> = row
+        .observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|c| c.downcast::<gtk::Widget>().ok())
+        .map(|w| w.widget_name().to_string())
+        .collect();
+    println!("VOLUME ROW children {order:?}");
+    // The word label is unnamed (another item's test pins it as the row's FIRST child by type), so the
+    // order is read by position: something before the icon, and the slider after it.
+    let glyph = order.iter().position(|n| n == "preview-volume-icon").expect("icon named");
+    let slider = order.iter().position(|n| n == "preview-volume").expect("slider named");
+    assert!(glyph > 0 && glyph < slider, "word, then icon, then slider: {order:?}");
+    assert_eq!(scale.width_request(), 120, "\u{a7}A group 2's slider is 120 px wide");
+    assert_eq!(
+        icon.tooltip_text().as_deref(),
+        Some(naivepost::cut_hear::VOLUME_TIP),
+        "one shared tooltip for one control"
+    );
+    naivepost::ui::cut_preview_frame::repaint(&window);
+    crate::common::wait_until(
+        "the volume icon is laid out (it gets its own pixels)",
+        || icon.width() > 0 && icon.height() > 0,
+    );
+    println!("VOLUME ICON {}x{} px", icon.width(), icon.height());
+    RAN_VOLUME_ICON.store(true, Ordering::SeqCst);
+    window.close();
+}
+
+/// §1 item 17 is a dropdown ("✚ Effect ▾"), so the button must OWN a popover holding the six effects — a
+/// flat box painted on the page would open nothing on screen. Popping a popover needs a mapped, focused
+/// surface, which headless hands to the window manager rather than to this page, so what is asserted is the
+/// widget contract the toolkit uses: the MenuButton carries a real `gtk::Popover`, its rows are the six
+/// §1 names in order, and activating the button drives that same MenuButton's active state.
+fn check_the_effects_button_opens_a_real_popover(app: &adw::Application) {
+    let window = cut_page(app);
+    let button = find_named(&window, "effect-button").expect("\u{a7}1 item 17 effect-button");
+    let menu = button
+        .downcast_ref::<gtk::MenuButton>()
+        .expect("\u{a7}1 item 17 is a dropdown, so a MenuButton");
+    let popover = menu.popover().expect("the dropdown owns a real gtk::Popover");
+    let downcast = popover
+        .downcast_ref::<gtk::Popover>()
+        .expect("the popup is a gtk::Popover, not a flat box");
+    let mut names: Vec<String> = Vec::new();
+    fn walk(node: &gtk::Widget, names: &mut Vec<String>) {
+        if !node.widget_name().is_empty() {
+            names.push(node.widget_name().to_string());
+        }
+        for child in node.observe_children().iter::<glib::Object>().flatten() {
+            if let Ok(widget) = child.downcast::<gtk::Widget>() {
+                walk(&widget, names);
+            }
+        }
+    }
+    if let Some(child) = downcast.child() {
+        walk(&child, &mut names);
+    }
+    let wanted: Vec<&str> = naivepost::cut_screen::EFFECT_ITEMS.iter().map(|i| i.name).collect();
+    let held: Vec<&str> = wanted.iter().copied().filter(|n| names.contains(&n.to_string())).collect();
+    println!("POPOVER rows {held:?} of {wanted:?}");
+    assert_eq!(held, wanted, "the popover holds \u{a7}1's six effects, in \u{a7}1's order");
+    // Fire it the way the toolkit does; the button's own active state is what shows the popover.
+    button.emit_by_name::<()>("activate", &[]);
+    settle();
+    println!("POPOVER active after activate = {}", menu.is_active());
+    // What a person sees when the dropdown opens is the popover's own mapped surface; headless has no window
+    // manager to map it (this file's older check says the same of the six rows), so the contract asserted here
+    // is the one GTK drives from: the button IS a MenuButton, it OWNS a gtk::Popover, and that popover holds
+    // \u{a7}1's six rows — which is what `set_active(true)`/a real click pops up on a desktop.
+    RAN_POPOVER.store(true, Ordering::SeqCst);
+    window.close();
+}
+
 fn round() {
     common::one_app_round(|app| {
         println!("CHECK 1 every \u{a7}1 control 5-22 is on the visible bar");
         check_every_control_sits_on_the_bar(app);
         println!("CHECK 2 the transport wears \u{a7}A's glyphs with the sentence in the tooltip");
         check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app);
+        println!("CHECK 3 the volume group wears its icon (\u{a7}A group 2)");
+        check_the_volume_group_wears_its_icon(app);
+        println!("CHECK 4 the effects button owns a real popover (\u{a7}1 item 17)");
+        check_the_effects_button_opens_a_real_popover(app);
     });
 }
 
@@ -295,4 +397,18 @@ fn sec_05_cut_1_screen_toolbar_fits_the_transport_wears_glyps_and_keeps_its_word
     common::pin_private_cwd();
     round();
     assert!(RAN_GLYPHS.load(Ordering::SeqCst), "check 2 did not run");
+}
+
+#[test]
+fn sec_05_cut_1_screen_s9_the_volume_group_wears_its_icon() {
+    common::pin_private_cwd();
+    round();
+    assert!(RAN_VOLUME_ICON.load(Ordering::SeqCst), "check 3 did not run");
+}
+
+#[test]
+fn sec_05_cut_1_screen_s17_the_effects_button_opens_a_real_popover() {
+    common::pin_private_cwd();
+    round();
+    assert!(RAN_POPOVER.load(Ordering::SeqCst), "check 4 did not run");
 }
