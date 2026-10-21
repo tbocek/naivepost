@@ -223,6 +223,7 @@ pub mod snapshot;
 pub mod snapshot_effect_menu;
 pub mod snapshot_effects;
 pub mod snapshot_face;
+pub mod snapshot_sources;
 pub mod snapshot_insert;
 pub mod snapshot_lane;
 pub mod snapshot_narrate;

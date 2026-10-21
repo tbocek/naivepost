@@ -910,6 +910,38 @@ fn editor_scroller(scroller: &gtk::ScrolledWindow) -> gtk::Widget {
 }
 
 
+/// One of Freq's two stepper buttons (§4's badge **8`). `steps` is its direction along
+/// [`prepare::FREQ_STOPS`]: `-1` for `—`, `+1` for `+`. It reads the stop the dropdown is showing (falling
+/// back to the session's own interval before any choice exists), moves it through `prepare::freq_step`, and
+/// writes it back through BOTH doors — `prepare::set_freq` for the field and `set_selected` for the face —
+/// because a value that moved only one of them would show one interval and describe with another.
+fn freq_step_button(
+    name: &str,
+    icon: &str,
+    steps: i32,
+    session: &Rc<RefCell<Project>>,
+    freq: &gtk::DropDown,
+) -> gtk::Button {
+    let button = gtk::Button::from_icon_name(icon);
+    button.set_widget_name(name);
+    let held = session.clone();
+    let face = freq.clone();
+    button.connect_clicked(move |_| {
+        let shown = usize::try_from(face.selected())
+            .ok()
+            .and_then(|index| prepare::FREQ_STOPS.get(index).copied())
+            .unwrap_or(held.borrow().interval);
+        let next = prepare::freq_step(shown, steps);
+        if !prepare::set_freq(&mut held.borrow_mut(), next) {
+            return;
+        }
+        if let Some(index) = prepare::FREQ_STOPS.iter().position(|stop| *stop == next) {
+            face.set_selected(index as u32);
+        }
+    });
+    button
+}
+
 /// §1's badge **8**: the two frame controls under the list. Freq is a dropdown of the stops
 /// ([`prepare::FREQ_STOPS`]) and Language an entry with the warning as its tooltip; both write
 /// through to the session, so the page holds no rule of its own.
@@ -947,6 +979,19 @@ pub(crate) fn frame_controls(session: &Rc<RefCell<Project>>) -> gtk::Widget {
         prepare::set_freq(&mut held.borrow_mut(), secs);
     });
     row.append(&freq);
+
+    // §4's badge **8** as the prototype drew it: the value with `—` and `+` beside it, one linked control
+    // (`gui/main.go`'s `newFreqPick`: entry + `list-remove-symbolic` + `list-add-symbolic`). The dropdown
+    // picks a stop out of hand; these walk one stop at a time. Both write through `prepare::set_freq`, so
+    // the face and `Project::interval` cannot disagree about which stop is chosen.
+    let stepper = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    stepper.add_css_class("linked");
+    stepper.set_widget_name("freq-stepper");
+    row.remove(&freq);
+    stepper.append(&freq);
+    stepper.append(&freq_step_button("freq-down", "list-remove-symbolic", -1, session, &freq));
+    stepper.append(&freq_step_button("freq-up", "list-add-symbolic", 1, session, &freq));
+    row.append(&stepper);
 
     row.append(&label("Language"));
     let language = gtk::Entry::new();

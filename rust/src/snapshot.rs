@@ -129,7 +129,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 println!("snapshot: take band seeded = {band}");
             }
         }
-        let window = ui::build_window(app, &model, page);
+        // §4's rows must be in the session BEFORE the page is built: `sources_list` draws one row per source
+        // at build time, and a later repaint of a scroller whose band fits two rows still shows two rows. So
+        // this screen builds over the staged lecture day; every other screen builds from `--project`.
+        let staged_model = if screen == "03-sources" { crate::snapshot_sources::staged() } else { model.clone() };
+        let window = ui::build_window(app, &staged_model, page);
         // The strip paints from this window's cut slot, so a snapshot must show the cut that lives in
         // the project it was asked to render — not whatever the working-copy folder happens to hold.
         // `--project` is that project, so its `cut/cut.json` is seeded over `build_window`'s
@@ -736,6 +740,13 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 ui::note_exchange_line(&crate::exchanges::link_line("llm/prepare-page.html"));
                 None
             }
+            // §4's own picture is the LIST — eight stamped rows with their controls, not the empty scroller
+            // the shipped fixture's single source would draw. All of it lives in `snapshot_sources`, which
+            // stages the session and repaints through the page's own row painter.
+            "03-sources" => {
+                println!("snapshot: 03-sources rows = {}", crate::snapshot_sources::stage(&window));
+                None
+            }
             // §7's log lines, then the once-per-run link, in the expander a run would have opened. All
             // three go in through `ui::note_exchange_line`, the door §7's recorder writes through:
             // it pushes to the same sink every flow uses AND opens and fills the expander through
@@ -860,7 +871,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             }
             window.present();
         }
-        // §1's tape is as wide as the page, so a snapshot has to ask for its picture AFTER GTK laid the page
+    // §1's tape is as wide as the page, so a snapshot has to ask for its picture AFTER GTK laid the page
         // out: a `DrawingArea` clips its draw callback to its own allocation, and headless nothing repaints
         // between the map and the shot. One `queue_draw` after the layout is enough — it lands on the same
         // surface the band paints into, at the width the paned actually gave it.
@@ -875,6 +886,13 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                     context.iteration(false);
                 }
             }
+        }
+        // §4's picture is a CROP of one column (the list and the frame controls), which a whole-window shot
+        // cannot show: at §1's minimum the left half is 596 px behind a prompt bench, and most of the staged
+        // rows fall below the visible band. So this paints the column itself into the file the recipe asked
+        // for — same reasoning as `write_face_png` painting the ▶ alone -- after the layout drain above.
+        if screen == "03-sources" {
+            crate::snapshot_sources::widen_for_rows(&window);
         }
     if screen_page(&screen) == Some("Cut") || screen_page(&screen) == Some("Narrate") {
         // Drain the loop so GTK has laid the page out before anything asks it for a width: `present()`
