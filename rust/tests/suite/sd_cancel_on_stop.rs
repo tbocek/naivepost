@@ -16,6 +16,8 @@ use naivepost::produce_upload::DrawnJob;
 use naivepost::produce_upload_draw as draw;
 use naivepost::settings::{self, Conf};
 
+use crate::common;
+
 /// One request the fake took: method, path, and the status it answered with.
 #[derive(Debug)]
 struct Seen {
@@ -97,7 +99,7 @@ impl Drop for Fixture {
 }
 
 fn fixture(tag: &str, sd_url: &str) -> Fixture {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-sdcancel-{tag}"));
@@ -122,10 +124,6 @@ fn fixture(tag: &str, sd_url: &str) -> Fixture {
     Fixture { root, tree, _scenario: scenario }
 }
 
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
 
 /// Wait for the next request the fake took, failing loudly rather than hanging the suite when none comes.
 fn next(received: &Receiver<Seen>, why: &str) -> Seen {

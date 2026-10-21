@@ -24,6 +24,8 @@ use naivepost::produce_subtitles as subs;
 use naivepost::produce_translate_ask as ask_leg;
 use naivepost::settings::{self, Conf};
 
+use crate::common;
+
 /// What the fake saw, in order: one entry per request that reached it.
 #[derive(Debug, Clone)]
 struct Seen {
@@ -184,11 +186,6 @@ fn tool_calls(calls: &[(usize, &str)]) -> String {
     serde_json::json!({ "choices": [ { "message": { "content": "", "tool_calls": list } } ] }).to_string()
 }
 
-/// Held while a scenario's environment is being pointed at it. See [`fixture`].
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
 
 /// A cancel context that is never cancelled: this leg is not the one F0.3's stop is wired to yet, and the
 /// leg only ever asks the flag between reads.
@@ -214,7 +211,7 @@ impl Drop for Fixture {
 }
 
 fn fixture(tag: &str) -> Fixture {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         // Poisoned means a check panicked mid-scenario; the env is still ours to set.
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -265,7 +262,7 @@ const MODEL: &str = "translate-model";
 /// The scenario guard, taken a second time for the returned `Fixture`. `std::sync::Mutex` is not
 /// reentrant, so `fixture` releases its own guard and hands ownership to the caller instead.
 fn scenario_reacquire() -> std::sync::MutexGuard<'static, ()> {
-    scenario_lock()
+    common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

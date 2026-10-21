@@ -27,25 +27,10 @@ static RAN_GATE: AtomicBool = AtomicBool::new(false);
 static RAN_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_NO_ANSWER: AtomicBool = AtomicBool::new(false);
 
-/// Let the main context run what the widget emissions queued.
-
-/// Build a window sitting on the Cut tab with the given cut seeded, dropping the previous check's window first.
-/// Three kept runs of ten seconds each: clip 1 = 0–10, clip 2 = 10–20, clip 3 = 20–30, so every second the
-/// pass writes down is checkable by hand.
-fn three_clips() -> Cut {
-    let mut cut_ = Cut::default();
-    cut_.segs = vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-        Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
-    ];
-    cut_
-}
-
 /// The same three clips with one caption already over clip 3, which is what makes S2's refusal real rather than
 /// theoretical: the pass reads captions off the cut it was given, not off a list someone remembered to pass.
 fn three_clips_captioned() -> Cut {
-    let mut cut_ = three_clips();
+    let mut cut_ = common::three_clips_cut();
     cut_.fx.push(Fx {
         kind: "text".to_string(),
         t: 21.0,
@@ -60,7 +45,7 @@ fn three_clips_captioned() -> Cut {
 
 fn speeds_round(app: &adw::Application) {
     // --- (1) a real click answers, and invents nothing when no model was dialled -------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let before = ui::review_cut_of(&window).fx.len();
     let button = widget_in(&window, "speeds-pass-button").expect("⏩ Speeds is on the run-bar row");
     button
@@ -166,7 +151,7 @@ fn speeds_round(app: &adw::Application) {
     settle();
 
     // --- (4) the gate: speedPass off greys the control and refuses the press ---------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     ui::set_speeds_pass(&window, false);
     ui::refresh_speeds_gate(&window);
     let button = ui::speeds_pass_button(&window).expect("⏩ Speeds is on the run-bar row");
@@ -191,7 +176,7 @@ fn speeds_round(app: &adw::Application) {
     settle();
 
     // --- (5) ↶ takes the whole pass back --------------------------------------------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let said = ui::run_speeds_pass_with_reply(
         &window,
         &[Call { clip: 1, rate: 2.0 }, Call { clip: 2, rate: 3.0 }],
@@ -220,7 +205,7 @@ fn speeds_round(app: &adw::Application) {
     settle();
 
     // --- (6) two rounds then the failure line, and the run is NOT failed -------------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     // A clip number outside the batch faults the whole reply (§F3.10's red box), twice, then gives up.
     let said = ui::run_speeds_pass_with_reply(&window, &[Call { clip: 99, rate: 2.0 }]);
     assert_eq!(

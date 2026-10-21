@@ -25,10 +25,6 @@ use crate::common;
 
 const ITEM: &str = "sec_06_effects_4_render_how_each_effect_becomes_ffmpeg";
 
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
-
 /// A clip as the planner leaves it: 30 s of footage at the given rate, framed at HD unless a test says otherwise.
 fn clip(no: usize, rate: f64, on_screen: f64) -> Clip {
     Clip {
@@ -406,7 +402,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s8_the_filters_reach_t
         volume(7.0, 6.0, 2.0),
         Fx { kind: "label".into(), t: 27.0, dur: 1.0, text: "demo".into(), ..Default::default() },
     ];
-    let cut = Cut { segs: vec![seg(0.0, 30.0)], fx, aspect: "16:9".into(), ..Default::default() };
+    let cut = Cut { segs: vec![common::seg(0.0, 30.0)], fx, aspect: "16:9".into(), ..Default::default() };
     let plan = planned_with_stub(&tree, cut);
     // A speed split cuts the segment list (§4's first bullet), so the count is read back rather than assumed: what
     // matters is that SOME clip carries all of this and its argv reaches the tool.

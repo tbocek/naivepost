@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::cut::{Cut, Fx};
 use naivepost::ui;
 use serde_json::json;
 
@@ -34,22 +34,8 @@ static RAN_UNDO: AtomicBool = AtomicBool::new(false);
 
 /// Three kept runs of ten seconds each: clip 1 = 0–10, clip 2 = 10–20, clip 3 = 20–30, so every second the
 /// pass writes down is checkable by hand.
-fn three_clips() -> Cut {
-    Cut {
-        segs: vec![
-            Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-            Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
-        ],
-        ..Default::default()
-    }
-}
-
-/// The same three clips with one caption already over CLIP 2 (session second 11), which is what makes the
-/// refusal stage real: the pass reads captions off the cut it was given, not off a list someone remembered
-/// to pass.
 fn three_clips_captioned_on_clip2() -> Cut {
-    let mut cut_ = three_clips();
+    let mut cut_ = common::three_clips_cut();
     cut_.fx.push(Fx {
         kind: "text".to_string(),
         t: 11.0,
@@ -97,7 +83,7 @@ fn round(app: &adw::Application) {
     // --- (1) a real click telephones, and the rate it answers with lands on the cut ---------------
     let llm = FakeLlm::start(vec![speeds_json(&[(2, 1.5)])]);
     point_at(&llm.url());
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     press_speeds(&window);
 
     let placed = speeds(&window);
@@ -144,7 +130,7 @@ fn round(app: &adw::Application) {
     // --- (3) one ↶ takes the placed speed back ----------------------------------------------------
     let llm = FakeLlm::start(vec![speeds_json(&[(2, 1.5)])]);
     point_at(&llm.url());
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     press_speeds(&window);
     assert_eq!(speeds(&window).len(), 1, "the pass placed one speed to undo");
     ui::press_undo(&window);

@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::cut::{Cut, Fx};
 use naivepost::ui;
 use serde_json::json;
 
@@ -35,17 +35,6 @@ static RAN_UNDO: AtomicBool = AtomicBool::new(false);
 
 /// Three kept runs of ten seconds each: clip 1 = 0–10, clip 2 = 10–20, clip 3 = 20–30, so every second the
 /// pass writes down is checkable by hand.
-fn three_clips() -> Cut {
-    Cut {
-        segs: vec![
-            Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-            Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
-        ],
-        ..Default::default()
-    }
-}
-
 /// The EFFECTS document §`prompts/system.md`'s `effects` row specifies, in the chat envelope a real server
 /// answers with — the shape a live reply has, so the ask parses it the way it parses a server's bytes.
 fn effects_json(entries: &[serde_json::Value]) -> String {
@@ -67,7 +56,7 @@ fn fx_entry(clip: u32, kind: &str, start: f64, end: f64, gain: Option<f64>) -> s
 /// means a different key and an earlier stage's cached answer cannot answer here. Neither sits where this
 /// stage's decoration lands, so no §F3.11 refusal enters the stage by accident.
 fn three_clips_captioned() -> Cut {
-    let mut cut_ = three_clips();
+    let mut cut_ = common::three_clips_cut();
     for (t, words) in [(1.0, "a line already there"), (21.0, "another line kept")] {
         cut_.fx.push(Fx {
             kind: "text".to_string(),
@@ -120,7 +109,7 @@ fn round(app: &adw::Application) {
     // --- (1) a real click telephones, and the decoration it answers with lands on the cut ---------
     let llm = FakeLlm::start(vec![effects_json(&[fx_entry(2, "zoom", 1.0, 4.0, None)])]);
     point_at(&llm.url());
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     assert!(placed_of_kind(&window, "zoom").is_empty() && placed_of_kind(&window, "volume").is_empty(), "the seeded cut holds no decoration to confuse the count with");
     press_decorations(&window);
 
@@ -182,7 +171,7 @@ fn round(app: &adw::Application) {
     // dials rather than reading an earlier stage's answer out of the cache.
     let llm = FakeLlm::start(vec![effects_json(&[fx_entry(2, "stop", 1.0, 3.0, None)])]);
     point_at(&llm.url());
-    let mut captioned = three_clips();
+    let mut captioned = common::three_clips_cut();
     captioned.fx.push(Fx {
         kind: "text".to_string(),
         t: 11.0,

@@ -40,14 +40,13 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
     // A cut with two kept scenes on row 0: enough that Add has something to add over and Remove has
     // something to drop. Seeded through the same seam ▶✂✂ reads.
-    let mut seeded = cut::Cut::default();
-    seeded.segs = vec![common::seg_cam(0.0, 30.0, 0), common::seg_cam(30.0, 60.0, 0)];
+    let seeded = cut::Cut {
+        segs: vec![common::seg_cam(0.0, 30.0, 0), common::seg_cam(30.0, 60.0, 0)],
+        ..Default::default()
+    };
     ui::seed_review_cut(&window, &seeded);
     window
 }
-
-/// Let the main context run what the widget emissions queued, the way the other widget tests do.
-
 
 /// The three buttons exist, a real click on ＋ Add prints exactly what the rule returns, and ✕ still
 /// clears the band underneath them.

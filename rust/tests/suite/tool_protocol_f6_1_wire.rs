@@ -19,6 +19,8 @@ use naivepost::produce_upload_call as call;
 use naivepost::project::Publish;
 use naivepost::settings::{self, Conf};
 
+use crate::common;
+
 const MODEL: &str = "refusing-model";
 
 /// The wording a real llama.cpp-style server answers with. It has to contain "tool" because that is
@@ -175,11 +177,6 @@ fn refusal_body() -> String {
 
 // ---- the scenario -------------------------------------------------------------------------------
 
-/// Held while a scenario re-points the process-wide settings env.
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
 
 struct Fixture {
     root: PathBuf,
@@ -195,7 +192,7 @@ impl Drop for Fixture {
 
 /// Settings + data + project under one temp root, with the LLM address pointed at `address`.
 fn fixture(tag: &str, address: &str) -> Fixture {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-f61wire-{tag}"));

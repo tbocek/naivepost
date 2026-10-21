@@ -20,17 +20,14 @@ use naivepost::produce_upload as up;
 use naivepost::produce_upload_draw as draw;
 use naivepost::settings::{self, Conf};
 
+use crate::common;
+
 /// The picture every scripted draw hands back. Any bytes will do for the walk — it writes them and the print
 /// leg reads them — but a PNG header keeps a bad decode visible rather than silent.
 const PNG_BYTES: &[u8] = &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, b'r', b'g', b'b'];
 
 // ---- the fake sd.cpp -----------------------------------------------------------------------------
 
-/// Held while a scenario's environment points at its fake: `XDG_*` and the settings file are process-wide.
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
 
 struct Fixture {
     root: PathBuf,
@@ -47,7 +44,7 @@ impl Drop for Fixture {
 /// A scenario folder whose settings name this fake as the drawing server — the same seam a real settings edit
 /// uses, so the program's own submit/poll/save legs are the ones under test.
 fn fixture(tag: &str, sd_url: &str) -> Fixture {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-f53pic-{tag}"));

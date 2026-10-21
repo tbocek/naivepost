@@ -32,10 +32,6 @@ use naivepost::project::{Container, Produce, Publish, Source, Subtitles};
 
 const ITEM: &str = "f5_2";
 
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
-
 fn entry(s: f64, e: f64, at: f64, text: &str) -> Entry {
     Entry { s, e, at, text: text.to_string(), ..Default::default() }
 }
@@ -276,7 +272,7 @@ fn f5_2_s2_captions_only_speaks_nothing_and_warns_when_no_track() {
     // Captions only + "none in the video": the words exist nowhere but the sheet beside it.
     let (tree, run) = run_over(
         "s2-none",
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![entry(0.0, 5.0, 0.0, "a line")],
         Produce { subtitles: Subtitles::None, ..Default::default() },
         captions,
@@ -295,7 +291,7 @@ fn f5_2_s2_captions_only_speaks_nothing_and_warns_when_no_track() {
     // Same voice, a tracked subtitle: the words are in the file, so no warning.
     let (tree2, run2) = run_over(
         "s2-track",
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![entry(0.0, 5.0, 0.0, "a line")],
         Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
         captions,
@@ -314,7 +310,7 @@ fn f5_2_s2_a_line_with_no_wav_is_spoken_and_the_job_line_counts_up() {
     std::fs::write(&*SYNTHESIZED, b"a take from an earlier run").unwrap();
     let (tree, run) = run_over(
         "s2-speak",
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![
             entry(0.0, 4.0, 0.0, "already synthesized"),
             entry(5.0, 9.0, 0.0, "needs a voice"),
@@ -339,12 +335,12 @@ fn f5_2_s2_a_line_with_no_wav_is_spoken_and_the_job_line_counts_up() {
 
 #[test]
 fn f5_2_s3_a_missing_insert_is_skipped_and_named() {
-    let mut gone = seg(10.0, 20.0);
+    let mut gone = common::seg(10.0, 20.0);
     gone.ins = "media/gone.mp4".into();
     gone.dur = 10.0;
     let (tree, run) = run_over(
         "s3",
-        vec![seg(0.0, 10.0), gone, seg(20.0, 30.0)],
+        vec![common::seg(0.0, 10.0), gone, common::seg(20.0, 30.0)],
         vec![],
         Default::default(),
         "",
@@ -372,7 +368,7 @@ fn f5_2_s3_a_missing_insert_is_skipped_and_named() {
 fn f5_2_s4_final_srt_lands_in_the_scratch_folder() {
     let (tree, run) = run_over(
         "s4",
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![entry(0.0, 8.0, 0.0, "words worth reading")],
         Default::default(),
         "",
@@ -405,7 +401,7 @@ fn f5_2_s4_final_srt_lands_in_the_scratch_folder() {
 fn f5_2_s5_every_clip_gets_its_own_encode_command_logged_before_it_runs() {
     let (tree, run) = run_over(
         "s5",
-        vec![seg(0.0, 10.0), seg(10.0, 20.0), seg(20.0, 30.0)],
+        vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0), common::seg(20.0, 30.0)],
         vec![],
         Default::default(),
         "",
@@ -456,7 +452,7 @@ fn f5_2_s5_the_narration_sits_at_the_game_volume() {
     assert_eq!(row.spelled, "0.22");
     let (tree, run) = run_over(
         "s5-vol",
-        vec![seg(0.0, 12.0)],
+        vec![common::seg(0.0, 12.0)],
         vec![entry(0.0, 8.0, 0.0, "spoken over the bed")],
         Default::default(),
         "",
@@ -476,7 +472,7 @@ fn f5_2_s5_the_narration_sits_at_the_game_volume() {
 fn f5_2_s6_join_is_a_stream_copy() {
     let (tree, run) = run_over(
         "s6",
-        vec![seg(0.0, 10.0), seg(10.0, 20.0)],
+        vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0)],
         vec![],
         Default::default(),
         "",
@@ -559,7 +555,7 @@ fn f5_2_s5_a_probed_clip_at_another_size_is_named() {
     let _guard = serialise_probes().lock().unwrap_or_else(|e| e.into_inner());
     let (tree, run) = run_over(
         "s5-probe",
-        vec![seg(0.0, 10.0), seg(10.0, 20.0)],
+        vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0)],
         vec![],
         Default::default(),
         "",
@@ -603,7 +599,7 @@ fn f5_2_s5_a_clip_that_cannot_be_probed_claims_nothing() {
     let _guard = serialise_probes().lock().unwrap_or_else(|e| e.into_inner());
     let (tree, run) = run_over(
         "s5-noprobe",
-        vec![seg(0.0, 10.0), seg(10.0, 20.0)],
+        vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0)],
         vec![],
         Default::default(),
         "",
@@ -637,7 +633,7 @@ fn f5_2_s7_translation_is_asked_after_every_encode() {
     let cues = common::produce_cues_for_test(vec!["German".to_string()]);
     let (tree, run) = run_over(
         "s7",
-        vec![seg(0.0, 10.0), seg(10.0, 20.0)],
+        vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0)],
         vec![entry(0.0, 8.0, 0.0, "a line")],
         settings,
         "",
@@ -879,7 +875,7 @@ impl Press {
 fn f5_2_gap_s1_and_s3_a_press_reads_the_tree_and_draws_its_effects() {
     let press = Press::new(
         "gap-s1",
-        vec![seg(2.0, 12.0), seg(20.0, 28.0)],
+        vec![common::seg(2.0, 12.0), common::seg(20.0, 28.0)],
         vec![zoom_fx(3.0, 4.0)],
         vec![
             Entry { s: 0.0, e: 10.0, at: 0.5, text: "first clip's line".into(), ..Default::default() },
@@ -942,7 +938,7 @@ fn f5_2_gap_s1_and_s3_a_press_reads_the_tree_and_draws_its_effects() {
 fn f5_2_gap_s7_and_s4_a_press_writes_its_sidecars_and_deletes_the_named_stale() {
     let press = Press::new(
         "gap-s7",
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![],
         vec![Entry { s: 0.0, e: 5.0, at: 0.0, text: "what this run says".into(), ..Default::default() }],
         Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
@@ -1007,7 +1003,7 @@ fn f5_2_gap_s2_a_refused_line_is_said_and_the_render_goes_on() {
     std::fs::write(SYNTHESIZED.as_path(), b"a take of some length").expect("synthesize a take");
     let press = Press::new(
         "gap-s2",
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![],
         vec![
             Entry { s: 0.0, e: 4.0, at: 0.0, text: "already synthesized".into(), ..Default::default() },
@@ -1052,7 +1048,7 @@ fn f5_2_gap_s2_a_refused_line_is_said_and_the_render_goes_on() {
 fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
     let tracked = Produce { subtitles: Subtitles::TrackInFile, ..Default::default() };
     let cues = common::produce_cues_for_test(Vec::new());
-    let (tree, run) = run_over("s8", vec![seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], tracked, "");
+    let (tree, run) = run_over("s8", vec![common::seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], tracked, "");
     let spy = Spy::new();
     spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
     let mux = spy.last_with("loudnorm");
@@ -1071,7 +1067,7 @@ fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
     let (codec, choice) = screen::apply_container_rules(webm.container, webm.codec, webm.subtitles);
     assert_eq!(codec, naivepost::project::Codec::Vp9, "webm forces vp9");
     assert_eq!(choice, Subtitles::None, "webm forces 'none in the video'");
-    let (tree2, run2) = run_over("s8-webm", vec![seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], webm, "");
+    let (tree2, run2) = run_over("s8-webm", vec![common::seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], webm, "");
     let spy2 = Spy::new();
     spy2.run(&run2, &tree2, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
     let mux2 = spy2.last_with("loudnorm");
@@ -1091,7 +1087,7 @@ fn f5_2_s9_sidecars_exist_per_language_and_each_is_logged() {
     let cues = common::produce_cues_for_test(vec!["German".to_string()]);
     let (tree, run) = run_over(
         "s9",
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![entry(0.0, 8.0, 0.0, "words for the sheet")],
         settings,
         "",
@@ -1116,7 +1112,7 @@ fn f5_2_s9_sidecars_exist_per_language_and_each_is_logged() {
 fn f5_2_s10_a_stop_at_any_checkpoint_ends_the_run_without_the_stamp() {
     let (tree, run) = run_over(
         "s10",
-        vec![seg(0.0, 10.0), seg(10.0, 20.0)],
+        vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0)],
         vec![],
         Default::default(),
         "",
@@ -1146,7 +1142,7 @@ fn f5_2_s10_a_stop_at_any_checkpoint_ends_the_run_without_the_stamp() {
 fn f5_2_a_clean_run_reports_its_file_seconds_and_size() {
     let (tree, run) = run_over(
         "clean",
-        vec![seg(0.0, 10.0), seg(10.0, 20.0)],
+        vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0)],
         vec![],
         Default::default(),
         "",
@@ -1184,7 +1180,7 @@ fn f5_2_a_clean_run_reports_its_file_seconds_and_size() {
 fn run_with_lines(tag: &str, lines: Vec<Entry>, no_narration: bool) -> (Tree, flow::Run) {
     let (_root, tree) = common::tree_in(tag);
     let mut run = flow::snapshot(
-        Some(cut_of(vec![seg(0.0, 10.0)])),
+        Some(cut_of(vec![common::seg(0.0, 10.0)])),
         &tree,
         lines,
         Produce::default(),

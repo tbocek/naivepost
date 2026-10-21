@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::cut::Fx;
 use naivepost::cut_captions::{self, Call};
 use naivepost::tools::clips::CAPTION_MIN_SECONDS; // P.policy.captionMinSeconds
 use naivepost::ui;
@@ -29,21 +29,6 @@ static RAN_GATE_GREYS_BUTTON: AtomicBool = AtomicBool::new(false);
 static RAN_PARAMS_PINNED: AtomicBool = AtomicBool::new(false);
 static RAN_UNDO_TAKES_PASS: AtomicBool = AtomicBool::new(false);
 
-/// Let the main context run what the widget emissions queued.
-
-/// Build a window sitting on the Cut tab with the given cut seeded, dropping the previous check's window first.
-/// Three kept runs of ten seconds each: three clips the pass can be asked about, with clean arithmetic
-/// (clip 2 starts at 10.0 s, clip 3 at 20.0 s) so a placed caption's second is checkable by hand.
-fn three_clips() -> Cut {
-    let mut cut_ = Cut::default();
-    cut_.segs = vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-        Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
-    ];
-    cut_
-}
-
 fn batch_of_three() -> Vec<(u32, f64)> {
     vec![(1, 10.0), (2, 10.0), (3, 10.0)]
 }
@@ -54,7 +39,7 @@ fn captions_round(app: &adw::Application) {
     // --- (1) S5/S6: a real click places nothing when nothing was proposed, and says so -------------
     // The button exists, is wired and answers: that is the wire. With no model dialled the pass gets no calls,
     // so zero captions land and the cut is untouched — never invented words standing in for a proposal.
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let before = ui::review_cut_of(&window).fx.len();
     let button = widget_in(&window, "captions-pass-button").expect("✐ Captions is in the Cut toolbar");
     button
@@ -78,7 +63,7 @@ fn captions_round(app: &adw::Application) {
     settle();
 
     // --- (2) S5: a scripted reply lands through the SAME route, on the lane and in the cut --------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let good = vec![
         Call { clip: 1, start: 1.0, end: 3.0, text: "the reveal".into() },
         // A 0.2 s caption is under the floor: skipped silently while its neighbour still lands.
@@ -108,7 +93,7 @@ fn captions_round(app: &adw::Application) {
     settle();
 
     // --- (3) S4: a clip outside the batch loses the WHOLE reply, retried once, then skipped -------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let bad = vec![
         Call { clip: 1, start: 1.0, end: 3.0, text: "would have been fine".into() },
         Call { clip: 9, start: 0.0, end: 2.0, text: "outside the batch".into() },
@@ -145,7 +130,7 @@ fn captions_round(app: &adw::Application) {
     settle();
 
     // --- (4) the gate: captionsPass off greys the control and refuses the press -------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     ui::set_captions_pass(&window, false);
     ui::refresh_captions_gate(&window);
     let button = ui::captions_pass_button(&window).expect("✐ Captions is in the Cut toolbar");
@@ -168,7 +153,7 @@ fn captions_round(app: &adw::Application) {
     settle();
 
     // --- (5) ↶ takes the whole pass back ---------------------------------------------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let placed = vec![
         Call { clip: 1, start: 1.0, end: 3.0, text: "first line".into() },
         Call { clip: 2, start: 0.0, end: 4.0, text: "second line".into() },

@@ -253,6 +253,14 @@ pub fn seg_cam(s: f64, e: f64, cam: i32) -> naivepost::cut::Seg {
     }
 }
 
+/// Held while a scenario re-points the process-wide settings env and `cwd`. Poisoned means a check
+/// panicked mid-scenario; the env is still ours to set, so the guard is taken anyway rather than
+/// unwrapping into a second panic.
+pub fn scenario_lock() -> &'static std::sync::Mutex<()> {
+    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
+}
+
 /// The same clip with the camera layer explicitly down, which is how the lane tests state "no drawing".
 pub fn clip(s: f64, e: f64) -> Seg {
     Seg {
@@ -305,6 +313,34 @@ pub fn click(window: &adw::ApplicationWindow, name: &str) {
 /// inside a rounding error.
 pub fn three_clips() -> Vec<(u32, f64)> {
     vec![(1u32, 20.0), (2u32, 20.0), (3u32, 20.0)]
+}
+
+/// Three kept runs of ten seconds each — clip 1 = 0–10, clip 2 = 10–20, clip 3 = 20–30 — so every second a
+/// pass writes down is checkable by hand.
+pub fn three_clips_cut() -> naivepost::cut::Cut {
+    naivepost::cut::Cut {
+        segs: vec![
+            naivepost::cut::Seg {
+                s: 0.0,
+                e: 10.0,
+                cam: 0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 10.0,
+                e: 20.0,
+                cam: 0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 20.0,
+                e: 30.0,
+                cam: 0,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
 }
 /// A parameter row from the PREPARE and CUT pages only — where a test wants to prove an id is catalogued
 /// on exactly one of those two lists rather than anywhere in the catalogue.

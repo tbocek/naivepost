@@ -22,12 +22,8 @@ use naivepost::project::Publish;
 use naivepost::run::Snapshot as SourceSnapshot;
 use naivepost::settings::{self, Conf};
 
-/// Held while a scenario points the process-wide settings env at it (the same lock discipline the other
-/// wire tests keep: XDG_* and cwd belong to the whole process).
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
+use crate::common;
+
 
 struct Fixture {
     root: PathBuf,
@@ -44,7 +40,7 @@ impl Drop for Fixture {
 /// A scenario folder: settings (pointed at `sd_url`), data, and a `.naivepost` project with a two-segment
 /// 16:9 cut on disk. cwd is pinned inside it, because that is what the page resolves the session from.
 fn fixture(tag: &str, sd_url: &str) -> Fixture {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-f56media-{tag}"));

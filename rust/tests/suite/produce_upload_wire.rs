@@ -16,6 +16,8 @@ use naivepost::produce_upload_call as call;
 use naivepost::project::Publish;
 use naivepost::settings::{self, Conf};
 
+use crate::common;
+
 /// The model name every scenario asks with, so a check can assert it came back in the request.
 const MODEL: &str = "upload-model";
 
@@ -169,11 +171,6 @@ fn tool_calls(calls: &[(&str, serde_json::Value)]) -> String {
 
 // ---- the scenario -------------------------------------------------------------------------------
 
-/// Held while a scenario's environment is being pointed at it.
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
 
 /// A scenario's root plus its project tree, with the guard held for the whole check.
 struct Fixture {
@@ -190,7 +187,7 @@ impl Drop for Fixture {
 
 /// Build the folder one check dials from: settings (model + address), data, and a `.naivepost` project.
 fn fixture(tag: &str, address: &str) -> Fixture {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-f56wire-{tag}"));
