@@ -1400,6 +1400,12 @@ pub fn write_silence_wav(path: &Path, rate: u32, samples: u32) -> std::io::Resul
 /// Writing these is the state the app itself reaches by tagging a recording and building a reference; the
 /// bench only gets there without a camera or a long encode. Returns whether a band can be drawn, so a screen
 /// can say which face it took.
+/// The seconds the shot's Narrate files hold: long enough that the band fits them at a readable px/s and
+/// shows takes inside them, short enough to write in a blink.
+const SEED_SECONDS: u32 = 45;
+/// The rate they are written at — the decode's own, so `wave_build`'s fold is exact over them.
+const SAMPLE_RATE: u32 = crate::transcribe::SAMPLE_RATE as u32;
+
 pub fn seed_voice_reference(tree: &crate::layout::Tree) -> bool {
     let base = crate::narrate_data::base_reference(tree);
     let Some(folder) = base.parent() else { return false };
@@ -1412,11 +1418,11 @@ pub fn seed_voice_reference(tree: &crate::layout::Tree) -> bool {
         return false;
     }
     if crate::voice_ref::wav_header(&base).is_none() {
-        // 8 kHz is the smallest rate `voice_ref::wav_header` accepts, and 60 s is plenty of band to fit.
-        // 45 s, matching the recording `seed_narrator_recording` stands up below: the band spans whichever
-        // file it measures first (the reference, then the recording), and two different lengths made the
-        // drawn wave stop part-way across a ruler sized by the longer one.
-        if write_silence_wav(&base, 8_000, 45 * 8_000).is_err() {
+        // 45 s at the DECODE rate (`transcribe::SAMPLE_RATE`, 16 kHz): the band spans whichever file it
+        // measures first (the reference, then the recording), and two different lengths made the drawn wave
+        // stop part-way across a ruler sized by the longer one. The rate is the decode's because that is the
+        // rate `wave_build`'s fold assumes — see [`crate::snapshot_narrate::stage_envelope`].
+        if write_silence_wav(&base, SAMPLE_RATE, SEED_SECONDS * SAMPLE_RATE).is_err() {
             return false;
         }
     }
@@ -1428,8 +1434,9 @@ pub fn seed_voice_reference(tree: &crate::layout::Tree) -> bool {
     // same reason the arm re-writes `takes.json`: a snapshot shows the state the flow is standing in, and
     // §A.7's lane needs a recording under it whatever the invalidation did.
     if crate::voice_ref::wav_header(&base).is_none() {
-        let _ = write_silence_wav(&base, 8_000, 45 * 8_000);
+        let _ = write_silence_wav(&base, SAMPLE_RATE, SEED_SECONDS * SAMPLE_RATE);
     }
+    crate::snapshot_narrate::stage_seeded_envelopes(tree);
     crate::ui::narrate_band::recording_seconds().is_some()
 }
 
@@ -1459,10 +1466,10 @@ fn seed_narrator_recording(tree: &crate::layout::Tree) -> bool {
     if std::fs::create_dir_all(parent).is_err() {
         return false;
     }
-    // 45 s of silence at 8 kHz mono: long enough that the band fits it at a readable px/s and shows takes
-    // inside it, small enough to write in a blink (~360 KB).
+    // 45 s of silence at the decode rate mono: long enough that the band fits it at a readable px/s and shows
+    // takes inside it, small enough to write in a blink (~360 KB).
     let renamed = target.with_extension("wav");
-    if write_silence_wav(&renamed, 8_000, 45 * 8_000).is_err() {
+    if write_silence_wav(&renamed, SAMPLE_RATE, SEED_SECONDS * SAMPLE_RATE).is_err() {
         return false;
     }
     if renamed != target {

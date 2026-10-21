@@ -9,6 +9,49 @@ use crate::cut;
 use crate::layout;
 use crate::ui;
 
+/// The lane's envelope, staged so a shot of the band draws a wave without asking for ffmpeg.
+///
+/// The app's own walk is decode → fold → read (`decode_audio::ensure` → `wave_build::ensure` → `wave::read`),
+/// and the first leg runs the CONFIGURED ffmpeg — this machine's `FFMPEG` setting may name a path that is not
+/// there (the shipped `llm.conf` says `/opt/ffmpeg/ffmpeg`, the container has `/usr/bin/ffmpeg`), in which
+/// case the decode refuses and §1's "reading the recording…" stands where the wave should be. So the bench
+/// writes the two files the program's own writers would have produced — the 16 kHz decode marker and the wave
+/// cache folded from it by [`crate::wave_build::ensure`] — and the band then reads its envelope through
+/// `wave::read` exactly as it does live. Nothing here is painted fake; only the expensive leg is pre-made,
+/// which is the same thing every other snapshot arm does when it stages a file instead of encoding one.
+///
+/// The decode is written at [`crate::transcribe::SAMPLE_RATE`] because that is the rate the fold assumes:
+/// `wave_build::SAMPLES_PER_BUCKET` is `SAMPLE_RATE / PEAK_HZ`, exact at 80 samples per bucket.
+pub(crate) fn stage_envelope(tree: &crate::layout::Tree, source: &std::path::Path) -> bool {
+    if !source.is_file() {
+        return false;
+    }
+    let lane = format!("voice:{}", crate::narrate_data::take_base(source));
+    let decoded = tree.voice16k_wav(&lane);
+    let seconds = crate::ui::narrate_band::recording_seconds().unwrap_or(45.0).round().max(1.0);
+    let rate = crate::transcribe::SAMPLE_RATE;
+    if crate::snapshot::write_silence_wav(&decoded, rate as u32, (seconds * rate as f64) as u32).is_err() {
+        return false;
+    }
+    crate::wave_build::ensure(tree, &lane, source, &mut |_| {}).is_ok()
+}
+
+/// Stage the envelope for every file the shot's Narrate band may draw across — the built reference and the
+/// narrator-1 recording, in the order [`crate::ui::narrate_band`] tries them — and say what it managed. The
+/// app would build each through the CONFIGURED ffmpeg, which this machine may point at a path that is not
+/// there; staging instead lets the band read a genuine cache (see [`stage_envelope`]).
+pub(crate) fn stage_seeded_envelopes(tree: &crate::layout::Tree) -> bool {
+    let mut staged = vec![stage_envelope(tree, &crate::narrate_data::base_reference(tree))];
+    if let Ok(project) = crate::project::load(tree.dir()) {
+        if let Some(recording) = crate::narrate_band_face::recording_path(tree, &project, "narrator1") {
+            staged.push(stage_envelope(tree, &recording));
+        }
+    }
+    let staged = staged.iter().any(|ok| *ok);
+    println!("snapshot: band envelope staged = {staged}");
+    staged
+}
+
 /// Stage the shot's narration or take band onto `window`'s Narrate page, through the doors its widgets
 /// fire. Returns true when this module owned `screen`.
 pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -> bool {
