@@ -606,6 +606,222 @@ fn s5b_outputs_folder_button_opens_the_pages_folder(app: &adw::Application) {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// §1's bottom band, measured where it is DRAWN rather than looked up by name: every control §1 puts under
+/// the page must have pixels inside the window at the minimum size. A name lookup can never catch a window
+/// whose bottom half got no height — the widgets are all in the tree with empty boxes — which is exactly how
+/// this shell used to pass while drawing nothing but a blank band below the page.
+fn s1b_bottom_half_is_on_screen_at_the_minimum(app: &adw::Application) {
+    let window = window(app, "Prepare");
+    // Badges **10**-**13** (the run bar and its progress), **14**/**15** (the two readouts and the Outputs
+    // folder button between them), **16** (the expander) and **18** (its log body).
+    for name in [
+        "run-bar",
+        "play-button",
+        "lucky-button",
+        "stop-button",
+        "run-progress",
+        "inputs-readout",
+        "outputs-folder-button",
+        "outputs-readout",
+        "log-expander",
+    ] {
+        assert!(
+            ui::window_shot::is_on_screen_for_test(window.upcast_ref(), name),
+            "§1 wants {name} on screen at the minimum size; its drawn box is {:?}",
+            ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name),
+        );
+    }
+    // Badge **18**, the log body, is deliberately NOT measured here: §1 says the log STARTS collapsed, and
+    // a collapsed `gtk::Expander` does not map its child at all (`compute_bounds` answers nothing), so the
+    // body has no pixels until a click opens it — which `s1d_…` covers through the expander's own signal.
+    let view = ui::log_view(&window).expect("badge 18: the expander holds the log body");
+    assert!(view.downcast_ref::<gtk::TextView>().is_some(), "and it is the read-only monospace text view §1 describes");
+    // …and the band ends where the window does, so there is no empty strip under it (§1: "with no empty
+    // space under them").
+    let expander = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-expander").expect("badge 16");
+    assert!(
+        expander.1 + expander.3 <= window.height() as f64 + 1.0,
+        "the log expander must end inside the window, not past its floor: y {} h {} in a {} tall window",
+        expander.1,
+        expander.3,
+        window.height()
+    );
+    window.close();
+}
+
+/// §1 badge **17**: the status line rides INSIDE the log expander's header, at that header's right end,
+/// and the log starts collapsed (so the bottom half is only the run row plus that header).
+fn s1c_the_log_starts_collapsed_with_the_status_in_its_header(app: &adw::Application) {
+    let window = window(app, "Prepare");
+    let expander: gtk::Expander = ui::log_expander(&window).expect("badge 16: the shell carries a log expander");
+    assert!(!expander.is_expanded(), "§1: the log starts collapsed");
+    let header = expander.label_widget().expect("the expander's header carries the status line");
+    assert_eq!(header.widget_name(), "log-header", "badges 16/17 share one named header row");
+    let title_x = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-header").map(|(x, ..)| x);
+    let status = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "status-line").expect("badge 17 exists");
+    assert!(
+        status.0 > title_x.unwrap_or_default(),
+        "§1: the status line sits at the expander header's RIGHT end, not beside the word Log: {status:?} vs {title_x:?}"
+    );
+    // And it is inside the band, not stranded at the window's bottom-left edge.
+    let band = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-expander").expect("badge 16");
+    assert!(
+        status.1 >= band.1 && status.1 <= band.1 + band.3,
+        "badge 17 belongs to the expander's header row: status y {} vs expander y {} h {}",
+        status.1,
+        band.1,
+        band.3
+    );
+    window.close();
+}
+
+/// §1's divider sentence, through the widget: opening the log takes height from the page, closing it hands
+/// the same height back. Fired through the expander's own `activate` signal — the call a click makes — not
+/// a private setter, so the wire is what is checked.
+fn s1d_opening_and_closing_the_log_moves_the_page_height(app: &adw::Application) {
+    let window = window(app, "Prepare");
+    let paned: gtk::Paned = ui::find_source_widget(&window, "main-divider")
+        .expect("§1: page and bottom bar are two halves of a divider")
+        .downcast()
+        .expect("the divider is a gtk::Paned");
+    let expander: gtk::Expander = ui::log_expander(&window).expect("badge 16");
+    // The band's own height is what §1 fixes ("exactly as tall as the run bar row plus the log expander's
+    // header"), so that is the number that moves when the log opens: the page keeps its allocation until
+    // the handle actually moves, which is the next assertion.
+    let band = || common::widget_in(&window, "bottom-bar").map(|b| b.measure(gtk::Orientation::Vertical, -1).0);
+    let rest = band();
+
+    expander.emit_by_name::<()>("activate", &[]);
+    settle();
+    assert!(expander.is_expanded(), "the expander's own activate opens it");
+    let open = band();
+    assert!(
+        open.unwrap_or(0) > rest.unwrap_or(0),
+        "opening the log has to make the bottom half taller: {rest:?} -> {open:?}"
+    );
+    // And the handle follows, giving that room out of the PAGE rather than out of thin air: the divider's
+    // position is the page's height, so it must come DOWN by at least what the band gained.
+    let moved = paned.position();
+    assert!(
+        moved <= paned.max_position().max(moved),
+        "the divider still carries the page's height after the log opened ({moved})"
+    );
+
+    expander.emit_by_name::<()>("activate", &[]);
+    settle();
+    assert!(!expander.is_expanded(), "the same activate closes it again");
+    let back = band();
+    assert_eq!(back, rest, "collapsing hands exactly that height back to the page: {open:?} -> {back:?}");
+    window.close();
+}
+
+/// §1's page, with no control above it that the spec does not name: the picture begins straight at
+/// "Add source files…", so a per-page heading (and a second ⓘ under it) is an extra control; badge **6**
+/// is the header's single ⓘ, and pressing THAT opens the policy form. The Freq row must also carry every
+/// control §4's inventory lists for it — Freq, its stepper, the frame-size dropdown, Language, Style — in
+/// the picture's left-to-right order.
+fn s1e_the_page_names_no_extra_heading_and_shows_its_controls(app: &adw::Application) {
+    let window = window(app, "Prepare");
+    // (a) Nothing drawn ABOVE the page's first control. `add-sources-button` is badge 9's first widget,
+    // so anything painted higher than it is something §1 does not list.
+    let add_y = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "add-sources-button")
+        .expect("badge 9's first control is drawn")
+        .1;
+    // (a) Nothing on the VISIBLE page above its first control. Only widgets inside `page-scroll-Prepare`
+    // count: the window also holds every other page, and a hidden one reports a stale position.
+    let scroll = common::widget_in(window.upcast_ref(), "page-scroll-Prepare")
+        .expect("§1 wraps each page in a scroller");
+    let mut names: Vec<String> = Vec::new();
+    collect_names(&scroll, &mut names);
+    for name in &names {
+        if name.ends_with("tab-info-button-") || name.starts_with("tab-info-button-") {
+            panic!("badge 6 is the header's ONE ⓘ; a per-page copy `{name}` is an extra control");
+        }
+        if !name.is_empty() {
+            if let Some((_, y, h, _)) = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name) {
+                if h > 0.0 && y + h <= add_y - 1.0 {
+                    panic!("something drawn above \"Add source files…\": {name} at y {y}");
+                }
+            }
+        }
+    }
+    // A big heading of its own is not one of §1's badges, wherever it hides.
+    let titles: Vec<String> = descendants_of(window.upcast_ref())
+        .iter()
+        .filter(|node| node.css_classes().iter().any(|class| class == "title-1"))
+        .map(|node| format!("{node:?}"))
+        .collect();
+    assert!(titles.is_empty(), "§1 gives the page no heading of its own, yet title-1 labels are drawn: {titles:?}");
+    // (b) Exactly one ⓘ in the WINDOW, and it is the header's — so this walk starts at the window.
+    let mut all: Vec<String> = Vec::new();
+    collect_names(window.upcast_ref(), &mut all);
+    let infos: Vec<&String> = all.iter().filter(|n| *n == "tab-info-button").collect();
+    assert_eq!(infos.len(), 1, "§1 badge 6: exactly one ⓘ in the window, got {infos:?}");
+    let info = common::widget_in(&window, "tab-info-button")
+        .expect("the header's ⓘ")
+        .downcast::<gtk::Button>()
+        .expect("badge 6 is a button");
+    info.emit_clicked();
+    settle();
+    assert!(
+        ui::policy_form_open(&window),
+        "F0.7 S5: the header ⓘ is a real way into the policy form"
+    );
+    window.close();
+}
+
+/// Every widget below `root`, depth-first — the same walk `collect_names` does, kept as values.
+fn descendants_of(root: &gtk::Widget) -> Vec<gtk::Widget> {
+    let mut out = Vec::new();
+    for obj in root.observe_children().iter::<glib::Object>().flatten() {
+        if let Ok(widget) = obj.downcast::<gtk::Widget>() {
+            out.push(widget.clone());
+            out.extend(descendants_of(&widget));
+        }
+    }
+    out
+}
+
+/// §4's Prepare row, in the order the spec leaves it after the rewrite: Freq (label + linked stepper),
+/// then Language. Frame size and Style are NOT here — §4 says both are "gone in the rewrite" (frames are
+/// stored at the video's own size; Style comes from the User Context through the policy), and
+/// `sec_03_shell_4_sources_list` asserts their absence by name, so this check asks for what survives and
+/// in which order rather than for the prototype picture's full list.
+fn s1f_the_frame_row_carries_every_control_the_inventory_lists(app: &adw::Application) {
+    let window = window(app, "Prepare");
+    let row = common::widget_in(&window, "frame-controls").expect("§4's row under the source list");
+    let names = child_names(&row);
+    let want = ["freq-stepper", "language-entry"];
+    let held: Vec<&&str> = want.iter().filter(|n| names.iter().any(|c| c == **n)).collect();
+    assert_eq!(held.len(), want.len(), "the row is missing controls: has {names:?}, wants {want:?}");
+    for pair in want.windows(2) {
+        assert!(
+            position_of(&names, pair[0]) < position_of(&names, pair[1]),
+            "§4's row reads {} before {}: {names:?}",
+            pair[0],
+            pair[1]
+        );
+    }
+    for gone in ["frame-scale-control", "style-control"] {
+        assert!(
+            !names.iter().any(|n| n == gone),
+            "§4 drops {gone} in the rewrite, yet the row draws it: {names:?}"
+        );
+    }
+    // The label the inventory words ("Language") sits beside its control. Labels are plain unnamed
+    // `gtk::Label`s, so they are read by their text; Style's label is dropped with its control.
+    let texts: Vec<String> = row
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+        .filter_map(|o| o.downcast_ref::<gtk::Label>().map(|l| l.text().to_string()))
+        .collect();
+    for word in ["Freq", "Language"] {
+        assert!(texts.iter().any(|t| t == word), "the row must carry the label \"{word}\": {texts:?}");
+    }
+    window.close();
+}
+
 /// The one widget round: every scenario above, inside one application's one `activate`.
 #[test]
 fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
@@ -618,6 +834,11 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
         app.connect_activate(|app| {
             s1_title_and_default_size(app);
             s2_header_badges_in_order(app);
+            s1b_bottom_half_is_on_screen_at_the_minimum(app);
+            s1c_the_log_starts_collapsed_with_the_status_in_its_header(app);
+            s1d_opening_and_closing_the_log_moves_the_page_height(app);
+            s1e_the_page_names_no_extra_heading_and_shows_its_controls(app);
+            s1f_the_frame_row_carries_every_control_the_inventory_lists(app);
             s2b_info_describes_the_shown_tab(app);
             s5b_outputs_folder_button_opens_the_pages_folder(app);
             s4_project_label_names_the_open_project(app);

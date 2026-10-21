@@ -178,13 +178,13 @@ static SHOT_SIZE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::n
 pub(crate) fn set_shot_size(width: i32, height: i32) {
     // One slot is enough: a snapshot run renders exactly one screen, and the two numbers are packed so a
     // single atomic carries both.
-    SHOT_SIZE.store(((width << 16) | height) as i32, std::sync::atomic::Ordering::SeqCst);
+    SHOT_SIZE.store((width << 16) | height, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// The size `write_png` draws at: the ask above when there was one, else the widget's own box.
 fn shot_size(widget: &gtk::Widget) -> (u32, u32) {
     let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
-    let (width, height) = ((packed >> 16) as i32, (packed & 0xffff) as i32);
+    let (width, height) = (packed >> 16, packed & 0xffff);
     if width > 0 && height > 0 {
         return (width as u32, height as u32);
     }

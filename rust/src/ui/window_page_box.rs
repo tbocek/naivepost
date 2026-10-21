@@ -51,11 +51,10 @@ pub(crate) const BENCH_MAX_H: i32 = 900;
 use crate::project::Project;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
-use crate::ui::policy_form;
 use crate::ui::source_rows;
 use crate::ui::window_bench::{bench_box, bench_paths, label};
 use crate::ui::window_doors::find_widget_by_name;
-use crate::ui::window_policy::{main_window, wire_policy};
+use crate::ui::window_policy::main_window;
 use crate::ui::window_project::{ADD_LABEL, COPY_LABEL};
 use crate::ui::window_trim_strip::paint_track_strip;
 use crate::ui::window::{press_effect_item, session_reads, STRIP_HEIGHT, STRIP_WIDTH};
@@ -117,30 +116,10 @@ pub(crate) fn page_box(
     box_.set_margin_top(24);
     box_.set_margin_bottom(24);
 
-    let title = gtk::Label::new(Some(page));
-    title.add_css_class("title-1");
-    title.set_halign(gtk::Align::Start);
-
-    // F0.7 S5: each tab's ⓘ opens the policy form, beside the page title where a person looking for
-    // "why is the pipeline doing this?" would look. Every page gets one and they all call the same
-    // `press_policy`, so the form is reachable from here as well as from the run bar's ⚙ — two ways in,
-    // one implementation. The name carries the page because four widgets sharing `tab-info-button` in
-    // one window would make a lookup ambiguous (the reason `add-sources-button` is found by walking
-    // rather than by name elsewhere).
-    //
-    // §1 lists ⓘ once at position **6** of the header bar, not once per page, and F0.1 S4 owns keeping
-    // its tooltip synced to the visible tab ("current tab's label + help text"). That single header
-    // widget is F0.1's round; until it exists this per-page ⓘ is what makes the form reachable from a
-    // tab at all. When the header one lands, it calls the same `press_policy` and these become the
-    // per-page shortcuts rather than being replaced by a second mechanism.
+    // §1 badge **9** is the page's own first control, not a heading above it, so nothing is DRAWN here —
+    // but this empty row stays as `cut_page_layout::arrange`'s insertion anchor (it seats the vertical
+    // paned after its first child), and badge **6**'s ⓘ is the header's, built in `window.rs`.
     let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let info = gtk::Button::from_icon_name("help-about-symbolic");
-    info.set_widget_name(&format!("tab-info-button-{page}"));
-    info.set_tooltip_text(Some(policy_form::OPEN_TIP));
-    info.set_valign(gtk::Align::Center);
-    wire_policy(&info, window);
-    title_row.append(&title);
-    title_row.append(&info);
     box_.append(&title_row);
 
     // §1's badge **9** is the visible tab's own page, so the way in belongs to Prepare and to no
@@ -290,10 +269,10 @@ pub(crate) fn page_box(
     }
 
 
-    // F2.1: the Cut page's own transport, first under the title rather than last in the box. The
-    // page's content box is top-packed and does not stretch its children, so anything appended after
-    // the context paragraph sits below a tall label and reads as an unrelated control; the spec puts
-    // the transport at the head of the page, so it goes there.
+    // The Cut page's own children are re-seated by `cut_page_layout::arrange`, which reads the FIRST child of
+    // this box as the row above the paned. It used to be a per-page heading (title + ⓘ); §1 lists no such
+    // heading and its picture starts at the page's first control, so the toolbar is that first child now —
+    // the arrangement keeps working without a placeholder widget §1 does not name.
     if page == Page::Cut.label() {
         // §05-cut#1-screen: the toolbar is ONE row of six groups, in `cut_screen::TOOLBAR_GROUPS`'
         // order — transport, volume, verbs, effects, history, zoom — each group a linked Box filled from

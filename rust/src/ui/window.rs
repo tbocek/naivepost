@@ -562,10 +562,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // it is packed after Settings (each `pack_end` lands left of the previous one). It opens the
     // same policy form as the run bar's gear through [`press_policy`]; its tooltip follows
     // `Shell::info_tip`, which `paint_readouts` syncs on every switch and a bounce leaves on the page
-    // still shown (§1: "tooltip = current tab's label + help text", F0.1 S4's "sync ⓘ").
-    // The four per-page ⓘ buttons stay as shortcuts: `cut_policy_form_widgets` presses
-    // `tab-info-button-Cut`, and §1's badge **6** is the header's, pinned by
-    // `sec_03_shell_1_the_window` rather than enforced by deleting the copies.
+    // still shown (§1: "tooltip = current tab's label + help text", F0.1 S4's "sync ⓘ"). It is the only
+    // ⓘ in the window: §1 lists badge **6** once, in the header, and a per-page copy would be a control
+    // the spec does not name (and `spec/img/03-window.png` does not draw).
     let tab_info = gtk::Button::from_icon_name("help-about-symbolic");
     tab_info.set_widget_name("tab-info-button");
     tab_info.set_tooltip_text(Some(&shell.borrow().info_tip()));

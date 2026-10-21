@@ -29,8 +29,6 @@ static RAN_COLUMNS: AtomicBool = AtomicBool::new(false);
 static RAN_DERIVE: AtomicBool = AtomicBool::new(false);
 static RAN_TARGET: AtomicBool = AtomicBool::new(false);
 
-/// Let the main context run whatever the emissions queued.
-
 /// A window with the fixture loaded, on Prepare. Every check starts from no open form: the thread-local
 /// outlives a window, so a leftover would make the next press raise instead of build.
 fn fresh_window(app: &adw::Application) -> adw::ApplicationWindow {
@@ -243,7 +241,9 @@ fn check_a_hand_set_field_still_reads_user_after_a_later_derivation(app: &adw::A
     window.close();
 }
 
-/// The second way in: a tab's ⓘ reaches the same form as the gear, so the page is not the only door.
+/// The second way in: the header's ⓘ (badge **6**) reaches the same form as the gear, so the page is not
+/// the only door. §1 puts ⓘ once in the header bar and F0.1 S4 syncs its tooltip to the tab showing — so
+/// this presses THE header button, after moving to Cut, and asks for the same form.
 fn check_the_tab_info_button_opens_the_same_form(app: &adw::Application) {
     let window = fresh_window(app);
     ui::tab_button(&window, Page::Cut)
@@ -251,17 +251,17 @@ fn check_the_tab_info_button_opens_the_same_form(app: &adw::Application) {
         .emit_clicked();
     settle();
 
-    let info = button(&window, "tab-info-button-Cut");
+    let info = button(&window, "tab-info-button");
     assert_eq!(
         info.tooltip_text().as_deref(),
-        Some(naivepost::ui::policy_form::OPEN_TIP),
-        "ⓘ says the same thing about where it leads as ⚙ does"
+        Some(naivepost::shell::info_tip(Page::Cut).as_str()),
+        "F0.1 S4: the header ⓘ describes the tab now showing — its label plus that tab's help text"
     );
     info.emit_clicked();
     settle();
     assert!(
         ui::policy_form_open(&window),
-        "F0.7 S5: the tab's ⓘ opened the policy form too"
+        "F0.7 S5: the header ⓘ opened the policy form too"
     );
     assert!(form_widget("policy-form").is_some());
     window.close();
