@@ -46,7 +46,7 @@ use crate::shell::{Move, Outcome, Page, Refresh, Shell};
 /// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
 /// The page-specific wording §1 mentions lives in `Shell::outputs`' own doc — the button itself is
 /// one control for every page, so it gets one sentence here rather than four near-duplicates.
-const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
+pub(crate) const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
 
 pub const APP_ID: &str = "ch.bocek.naivepost";
 
@@ -279,6 +279,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     outputs_folder.set_widget_name("outputs-folder-button");
     outputs_folder.set_tooltip_text(Some(OUTPUTS_FOLDER_TIP));
     outputs_folder.set_valign(gtk::Align::Center);
+    // §1 badge **15**: the press opens the folder the row is naming, read at press time so a switch or a
+    // Save-as moves what opens (`window_outputs`).
+    super::window_outputs::wire(&outputs_folder);
     readout_row.append(&outputs_folder);
     let outputs_readout = gtk::Label::new(None);
     outputs_readout.set_widget_name("outputs-readout");
@@ -558,9 +561,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // §1's badge **6**: ⓘ, once, at header position 6 — read left to right the bar ends ⓘ ⚙ ⟳, so
     // it is packed after Settings (each `pack_end` lands left of the previous one). It opens the
     // same policy form as the run bar's gear through [`press_policy`]; its tooltip follows
-    // `Shell::help_page`, which a switch syncs and a bounce leaves on the page still shown. The
-    // four per-page ⓘ buttons stay for now: `cut_policy_form_widgets` presses
-    // `tab-info-button-Cut`, and §1's header-only layout is not yet enforced.
+    // `Shell::info_tip`, which `paint_readouts` syncs on every switch and a bounce leaves on the page
+    // still shown (§1: "tooltip = current tab's label + help text", F0.1 S4's "sync ⓘ").
+    // The four per-page ⓘ buttons stay as shortcuts: `cut_policy_form_widgets` presses
+    // `tab-info-button-Cut`, and §1's badge **6** is the header's, pinned by
+    // `sec_03_shell_1_the_window` rather than enforced by deleting the copies.
     let tab_info = gtk::Button::from_icon_name("help-about-symbolic");
     tab_info.set_widget_name("tab-info-button");
     tab_info.set_tooltip_text(Some(&shell.borrow().info_tip()));
@@ -1452,7 +1457,7 @@ pub const CAPTIONS_PASS_LABEL: &str = "\u{2710} Captions";
 // The §1 widget doors live in `window_doors` (window.rs is past its size budget); these are the same names,
 // re-exported under the paths every other module and test already reaches them through.
 pub use crate::ui::window_doors::{
-    state, tab_tooltip, tab_dimmed, tab_button, inputs_readout, outputs_readout, outputs_folder_button, mark_narration_owed, tab_info_button, save_button, save_tooltip, rescan_button, find_source_widget, open_button, session_handle, session_sources, run_queue, open_tooltip, progress_bar, log_expander, progress_tooltip, rescan_tooltip, add_sources_button, copy_into_project, bench_language, session_freq, running_step, marking_pass, set_marking_pass, new_button, new_tooltip, play_button, stop_button, lucky_button, play_tooltip, find_status, project_title, paint_project_title,
+    state, tab_tooltip, tab_dimmed, tab_button, inputs_readout, outputs_readout, outputs_folder_button, tab_info_parts, mark_narration_owed, tab_info_button, save_button, save_tooltip, rescan_button, find_source_widget, open_button, session_handle, session_sources, run_queue, open_tooltip, progress_bar, log_expander, progress_tooltip, rescan_tooltip, add_sources_button, copy_into_project, bench_language, session_freq, running_step, marking_pass, set_marking_pass, new_button, new_tooltip, play_button, stop_button, lucky_button, play_tooltip, find_status, project_title, paint_project_title,
 
 };
 pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};

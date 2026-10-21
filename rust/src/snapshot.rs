@@ -1216,6 +1216,13 @@ const FORM_UNDER_PX: i32 = 380;
             window.set_size_request(want_w, want_h);
             window.set_default_size(want_w, want_h);
             crate::snapshot_face::pump_context(32);
+            // §1's screenshot IS the window at 1240×900, so the PNG is asked for at that size whatever the
+            // headless window ended up ALLOCATED. `write_png` shoots the widget's own box, and under xvfb
+            // that box lands a hair under the floor (§1's numbers are the window's, frame and WM decoration
+            // excluded), so the shot used to come out 1230×890 — the same page, 10 px short on each axis,
+            // which is enough to shift what fits in the header and the run-bar row when it is compared
+            // pixel-for-pixel with `spec/img`.
+            crate::snapshot_face::set_shot_size(want_w, want_h);
         }
         // One more cycle after the map: the map happens before the first frame is drawn. The paint
         // and the quit are synchronous here, so no second mapped window is ever waited on.

@@ -192,6 +192,8 @@ pub mod cut_lane_paint;
 /// §1's bench, the tab buttons and the readouts they repaint. Split out of `window.rs`, which is past its
 /// size budget. Its doors are re-exported through `window`.
 mod window_bench;
+/// §1 badge **15** — the Outputs folder button's own rules (window.rs is past its size budget).
+pub(crate) mod window_outputs;
 /// §05-cut#1-screen — the selection band, the held effect and its live form, the preview's volume. Split
 /// out of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
 /// F0.7's policy doors and F0.13's gear: the ⚙/ⓘ form, its open slot, the User Context tracker and
@@ -413,6 +415,9 @@ pub use window::rescan_tooltip;
 pub use window::save_button;
 pub use window::save_tooltip;
 pub use window::state;
+/// §1's tab row / page stack, and the §1 badges 6/15 doors that read the ⓘ's tooltip, the Outputs
+/// folder button's tooltip, and this window's shell.
+pub use window::{switch_latch, tab_info_parts, view_stack};
 pub use window::stop_button;
 pub use window::press_play_cut;
 pub use window::press_review_cuts;
@@ -612,6 +617,11 @@ pub use window::APP_ID;
 pub use window::cut_bar_width_px;
 pub use window::drag_held_band;
 pub use window::live_form_answer_is_undo;
+/// §1 badge **15**: the Outputs folder button's own module (its press, its opener seam).
+pub use window_outputs::{
+    folder_for, folder_now, press as press_outputs_folder, wire as wire_outputs_folder,
+    wire_with as wire_outputs_folder_with, Opener as OutputsOpener,
+};
 pub use window::live_form_refused;
 pub use window::nudge_held_effect;
 pub use window::open_effect_form;

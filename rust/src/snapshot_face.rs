@@ -168,9 +168,34 @@ pub fn seed_structured_frame(dir: &std::path::Path, base: &str, second: f64) -> 
 /// A cairo surface, not `gsk::Renderer::render_texture`: that one needs a realized
 /// renderer, i.e. a native surface, and the headless run has none to offer. Any widget will do —
 /// the confirm dialog's screen paints the dialog, not the window behind it.
+/// §1 fixes every shell screenshot at the window's minimum size, so the PNG is written at that size even
+/// where the headless window's own allocation came out a little under it (under xvfb the allocated box is
+/// 1230×890 for a window whose floor is 1240×900). `write_png` asks the widget for its size; this is what
+/// it asks instead. Zero means "the widget's own size", which is what a dialog's shot wants.
+static SHOT_SIZE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// Ask for the shot at `width`×`height` pixels (0×0 restores "whatever the widget was allocated").
+pub(crate) fn set_shot_size(width: i32, height: i32) {
+    // One slot is enough: a snapshot run renders exactly one screen, and the two numbers are packed so a
+    // single atomic carries both.
+    SHOT_SIZE.store(((width << 16) | height) as i32, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The size `write_png` draws at: the ask above when there was one, else the widget's own box.
+fn shot_size(widget: &gtk::Widget) -> (u32, u32) {
+    let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
+    let (width, height) = ((packed >> 16) as i32, (packed & 0xffff) as i32);
+    if width > 0 && height > 0 {
+        return (width as u32, height as u32);
+    }
+    (
+        u32::try_from(widget.width()).unwrap_or(1).max(1),
+        u32::try_from(widget.height()).unwrap_or(1).max(1),
+    )
+}
+
 pub(crate) fn write_png(widget: &gtk::Widget, out: &Path) -> Result<(), String> {
-    let width = u32::try_from(widget.width()).unwrap_or(1).max(1);
-    let height = u32::try_from(widget.height()).unwrap_or(1).max(1);
+    let (width, height) = shot_size(widget);
 
     let paintable = gtk::WidgetPaintable::new(Some(widget.upcast_ref::<gtk::Widget>()));
     let snapshot = gtk::Snapshot::new();

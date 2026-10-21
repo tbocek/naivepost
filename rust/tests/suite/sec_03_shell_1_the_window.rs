@@ -509,6 +509,103 @@ fn position_of(names: &[String], name: &str) -> usize {
     names.iter().position(|n| n == name).unwrap_or(usize::MAX)
 }
 
+/// §1 badge **6**: the header ⓘ says the tab now showing — its label, then the help text that says what
+/// is on it — and follows the page when the page moves (F0.1 S4's "sync ⓘ"). Read through the door that
+/// splits the joined sentence, so the joining is one rule and not a glyph matching in the test.
+fn s2b_info_describes_the_shown_tab(app: &adw::Application) {
+    let window = window(app, "Prepare");
+    let (label, help) = ui::tab_info_parts(&window).expect("the header ⓘ carries “label — help”");
+    assert_eq!(label, Page::Prepare.label(), "\u{24d8} names the tab showing: {label:?}");
+    assert_eq!(help, Page::Prepare.tip(), "\u{24d8} carries that tab's help text: {help:?}");
+    // A switch syncs it: the same button, the new tab's two parts.
+    if let Some(stack) = ui::view_stack(&window) {
+        stack.set_visible_child_name("Cut");
+        settle();
+    }
+    let (label, help) = ui::tab_info_parts(&window).expect("the header \u{24d8} after the switch");
+    assert_eq!(label, Page::Cut.label(), "\u{24d8} followed the tab to its label: {label:?}");
+    assert_eq!(help, Page::Cut.tip(), "and to its help text: {help:?}");
+    window.close();
+}
+
+/// §1 badge **15**: the Outputs folder button OPENS the folder the row names — the shown page's own
+/// output directory, resolved at press time — and a switch changes which folder that is. The opener is
+/// injected so the test sees exactly which path a press asks for (a real launcher proves nothing about
+/// the path); everything else is the program's own wiring and the program's own resolution.
+fn s5b_outputs_folder_button_opens_the_pages_folder(app: &adw::Application) {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let root = scratch_root("outputsopen");
+    // §1's ladder runs through `layout::Tree`, which only accepts a folder ending in `.naivepost` — the
+    // name `startup::session_dir` already gives, so this is both a project folder and the one the window
+    // publishes as its session. It has to EXIST for a press to resolve it.
+    let session = root.join("outputs.naivepost");
+    std::fs::create_dir_all(&session).expect("a project folder exists");
+    // Which folder the row means is what an Open decides, and `open_apply::finish` is the program's own
+    // door for that (it moves the save target, the session tree and the readouts together). It needs the
+    // project that was opened, so the fixture stands in as the thing opened.
+    let model = naivepost::project::load(&fixture_dir()).expect("the snapshot fixture loads");
+    release_last_window();
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    hold_last_window(window.clone());
+    settle();
+    naivepost::ui::open_apply::move_row_for_test(&session, &model);
+
+    let folder = ui::outputs_folder_button(&window).expect("\u{00a7}1 badge 15: the Outputs row has its folder button");
+    // §6's other half of badge 15, through the widget: with a session open there IS a folder to show, so
+    // the row is live and a press means something. (The fixture folder this window was built from is not
+    // the launch's session folder, so `paint_readouts` leaves it inert here — as it does for any window
+    // opened on a folder that is not the session.)
+    folder.set_sensitive(true);
+    let asked: Rc<RefCell<Vec<std::path::PathBuf>>> = Rc::new(RefCell::new(Vec::new()));
+    let seen = asked.clone();
+    let opener: ui::OutputsOpener = Rc::new(move |path| {
+        seen.borrow_mut().push(path);
+    });
+    // Added beside the window's own handler: both read the same `folder_now`, so what this one records is
+    // what the program resolved, not what the test handed in.
+    ui::wire_outputs_folder_with(&folder, &opener);
+
+    // Prepare's own output folder, and nothing else: §1 puts the button beside the count of THAT row.
+    folder.emit_clicked();
+    assert_eq!(
+        asked.borrow().as_slice(),
+        [session.join("prepare")],
+        "a press asks for the shown page's output folder"
+    );
+    // The same button after a switch opens the page the row now counts — the folder is read at press
+    // time, which is the whole of "sync" for badge 15. The row's page is `Shell::page`, and a switch moves
+    // it — read through the same door the press reads rather than through a stack poke that bypasses S3-S5.
+    // The press resolves through the NEWEST window's shell, and a test binary has built several; so close
+    // every other window FIRST — the state a user is actually in (one window up) — then click.
+    release_last_window();
+    hold_last_window(window.clone());
+    settle();
+    ui::tab_button(&window, Page::Narrate)
+        .expect("the Narrate tab")
+        .emit_clicked();
+    settle();
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Narrate,
+        "the click did move the page: the button cannot be asked to follow a page that never moved"
+    );
+    assert_eq!(
+        ui::folder_now().as_deref(),
+        Some(session.join("narrate").as_path()),
+        "the resolution follows the page the window now shows"
+    );
+    folder.emit_clicked();
+    assert_eq!(
+        asked.borrow().last(),
+        Some(&session.join("narrate")),
+        "after a switch the SAME button opens the new page's folder"
+    );
+    window.close();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// The one widget round: every scenario above, inside one application's one `activate`.
 #[test]
 fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
@@ -521,6 +618,8 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
         app.connect_activate(|app| {
             s1_title_and_default_size(app);
             s2_header_badges_in_order(app);
+            s2b_info_describes_the_shown_tab(app);
+            s5b_outputs_folder_button_opens_the_pages_folder(app);
             s4_project_label_names_the_open_project(app);
             s4b_tab_row_icons(app);
             s5_bottom_bar_order(app);
