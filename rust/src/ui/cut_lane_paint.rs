@@ -135,6 +135,15 @@ const INK_SIZE: f64 = 11.0;
 const MARK_SIZE: f64 = 12.0;
 const INK: [f64; 3] = [1.0, 1.0, 1.0];
 
+/// Half the drawn ✕, in px — the glyph's arm reaches this far from the bar's middle. Not a `P.` value: §10 gives
+/// the kill only `killMin 32`, which is [`fx_band::KILL_MIN_PX`] and is reached through, never restated here. This
+/// is purely how big the mark looks inside a 26 px row, so it grows with the row and stops at 7 px.
+pub const CROSS_HALF_PX_MAX: f64 = 7.0;
+
+/// How far inside each end of the bar the grip tick is drawn, in px. The reach a press needs to count as a grip is
+/// [`cut_select::GRIP_PX`] (read through, not restated); this is only where the ink that SHOWS the grip sits.
+const GRIP_TICK_PX: f64 = 2.0;
+
 /// Paint one bar into `cr`, in its own pixels (0,0 at its top-left). Pure cairo over a [`BarView`]: no widget, no
 /// window, so a test can hand it an image surface and read the pixels back.
 ///
@@ -175,6 +184,9 @@ pub fn paint_bar(cr: &cairo::Context, view: &BarView) {
     // The mark at the left, then the caption after it. Under `fx_band::GRIP_MIN_PX` there is no room for both —
     // the same threshold the grip rule uses, so the ink cannot promise text the bar has no pixels for — and a bar
     // that narrow prints its glyph alone.
+    // The mark at the left, then the caption after it. Under `fx_band::GRIP_MIN_PX` there is no room for both —
+    // the same threshold the grip rule uses, so the ink cannot promise text the bar has no pixels for — and a bar
+    // that narrow prints its glyph alone.
     let mut x = 3.0;
     if !view.mark.is_empty() {
         draw_text(cr, view.mark, x, h, MARK_SIZE);
@@ -183,6 +195,46 @@ pub fn paint_bar(cr: &cairo::Context, view: &BarView) {
     if !view.text.is_empty() && w >= fx_band::GRIP_MIN_PX {
         draw_text(cr, &view.text, x, h, INK_SIZE);
     }
+
+    // F3.8 S1/S3 — the two press affordances a bar has to SHOW, gated by the same doors the press is answered
+    // against so the ink can never promise a target the rules refuse (or hide one it honours):
+    //   · end grips when the bar is ≥ `fx_band::GRIP_MIN_PX` wide — one tick inside each end;
+    //   · the ✕ in the bar's MIDDLE when it is ≥ `fx_band::KILL_MIN_PX` wide.
+    // They go on LAST of all, because both are marks meant to be read ON TOP of whatever the bar prints: an earlier
+    // round pinned that the middle pixel of a zoom bar is its wash (`sec_06_effects_2_lane_painted`, which samples
+    // `w/2, h/2`), and that claim now belongs to §A.9's kill — "the ✕ in the middle" IS what sits there once a bar
+    // is wide enough for one. That test names the off-centre spot it samples instead; `f3_8_kill_and_grip_ink`
+    // pins the cross being centred. A label is §A.7's tag beside a dashed line and carries no kill of its own.
+    if view.kind != EffectKind::Label {
+        if fx_band::grips_open(view.width) {
+            cr.set_source_rgba(r * 0.6, g * 0.6, b * 0.6, 1.0);
+            cr.set_line_width(1.0);
+            for edge in [GRIP_TICK_PX, w - GRIP_TICK_PX - 1.0] {
+                cr.move_to(edge, 2.0);
+                cr.line_to(edge, h - 2.0);
+            }
+            let _ = cr.stroke();
+        }
+        if fx_band::kill_open(view.width) {
+            draw_cross(cr, w / 2.0, h / 2.0, (h / 2.0 - 2.0).clamp(2.0, CROSS_HALF_PX_MAX));
+        }
+    }
+}
+
+/// The kill mark: two crossed strokes centred on (`cx`, `cy`). White over any wash (§A's bars are all mid-tone),
+/// round caps so the arms read as a glyph and not as a scratch. This is the ONLY place the cross is drawn: the
+/// widget lane puts a transparent button over this same middle, so the page and the cairo snapshot cannot show
+/// two different crosses.
+fn draw_cross(cr: &cairo::Context, cx: f64, cy: f64, half: f64) {
+    cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+    cr.set_line_width(1.5);
+    cr.set_line_cap(cairo::LineCap::Round);
+    cr.move_to(cx - half, cy - half);
+    cr.line_to(cx + half, cy + half);
+    cr.move_to(cx + half, cy - half);
+    cr.line_to(cx - half, cy + half);
+    let _ = cr.stroke();
+    cr.set_line_cap(cairo::LineCap::Butt);
 }
 
 /// How wide a label's tag is, in px. Not a `P.` value (§10 gives the lane none): §A.7 calls it a tag beside a
@@ -236,21 +288,28 @@ pub fn painted_surface_for_test(view: &BarView) -> Result<cairo::ImageSurface, c
 /// draw func is replaced each time rather than connected again — a second controller/draw func would answer one
 /// paint twice. The numbers come from the caller, which already computed them for the box, so the ink and the
 /// affordances can never disagree about the bar's size.
-pub fn attach(bar: &gtk::Box, index: usize, view: &BarView) {
+pub fn attach(bar: &gtk::Widget, index: usize, view: &BarView) {
     let name = format!("{PAINT_SUFFIX}-{index}");
     let surface = match bar.first_child().and_then(|node| find_named(node, &name)) {
         Some(found) => found,
         None => {
-            // Appended first so the ✕ stays the bar's LAST child: a GTK box lays children out in order, and the
-            // button has to keep its place at the bar's middle (a test that finds `fx-remove-<i>` by walking the
-            // bar would otherwise trip over the surface).
+            // The ink is the bar's MAIN child (the bar is a `gtk::Overlay`, so the ✕ can sit over the middle of
+            // this wash instead of after it), and it is set only while the overlay has no main child yet.
             let made = gtk::DrawingArea::new();
             made.set_widget_name(&name);
             // The ink is not a target: every press on a bar belongs to the bar's own drag gesture and to its ✕,
             // so this surface must never swallow one. A `DrawingArea` with no gesture controller takes no input,
             // and saying so keeps it true if a controller is ever added here.
             made.set_can_target(false);
-            bar.append(&made);
+            match bar.downcast_ref::<gtk::Overlay>() {
+                // gtk4-rs 0.11 spells the overlay's main child `child`/`set_child` (GTK 4.2 names).
+                Some(overlay) if overlay.child().is_none() => overlay.set_child(Some(&made)),
+                _ => {
+                    if let Some(holder) = bar.downcast_ref::<gtk::Box>() {
+                        holder.append(&made);
+                    }
+                }
+            }
             made
         }
     };

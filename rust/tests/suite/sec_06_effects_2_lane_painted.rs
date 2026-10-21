@@ -205,10 +205,14 @@ fn the_wash_and_the_ink_are_on_the_pixels() {
     let view = paint::view_for(&zoom, WIDE, ROW_H);
     let (bytes, stride, w, h) = painted(&view);
     let wash = expected_wash(EffectKind::Zoom, false);
+    // F3.8 S3 moved what sits at the bar's exact middle: a bar wide enough for a kill now wears its ✕ there
+    // (`fx_band::KILL_MIN_PX`), so the WASH is sampled a third of the way along the bar instead — clear of the
+    // mark and the caption at the left and of the cross in the middle.
+    let (wash_x, wash_y) = (w / 3, h - 3);
     assert!(
-        near(pixel(&bytes, stride, w / 2, h / 2), wash, 3),
-        "the bar is washed with its kind's colour at fx_lane::bar_wash_alpha, saw {:?}",
-        pixel(&bytes, stride, w / 2, h / 2)
+        near(pixel(&bytes, stride, wash_x, wash_y), wash, 3),
+        "the bar is washed with its kind's colour at fx_lane::bar_wash_alpha, saw {:?} at ({wash_x},{wash_y})",
+        pixel(&bytes, stride, wash_x, wash_y)
     );
     assert!(
         has_ink_other_than(&bytes, stride, w, h, wash, 40),
@@ -221,7 +225,7 @@ fn the_wash_and_the_ink_are_on_the_pixels() {
     let stayed = paint::view_for(&stays, WIDE, ROW_H);
     let (kept_bytes, kept_stride, _, _) = painted(&stayed);
     assert!(
-        near(pixel(&kept_bytes, kept_stride, w / 2, h / 2), expected_wash(EffectKind::Zoom, true), 3),
+        near(pixel(&kept_bytes, kept_stride, wash_x, wash_y), expected_wash(EffectKind::Zoom, true), 3),
         "a staying zoom is the orange bar"
     );
 

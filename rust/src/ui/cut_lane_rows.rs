@@ -64,6 +64,9 @@ fn install_lane_css_once() {
         (violet[2] * 255.0).round() as i32
     ));
     css.push_str(".drawing-box { border: 1px dashed #ffffff; }\n");
+    // F3.8 S3: the kill target is invisible — the cross a person sees is `cut_lane_paint`'s ink and this button is
+    // only the place that press lands on. Without this rule adwaita would draw a real button box over the glyph.
+    css.push_str(".fx-kill-target { background: none; border: none; box-shadow: none; outline: none; padding: 0; min-width: 0; min-height: 0; }\n");
     css.push_str(&super::cut_debt_tail::css());
     css.push_str(&super::cut_preview_frame::css());
     // F0.4 S2: the gears' turning rule, installed with the rest so one provider carries both.
@@ -156,14 +159,17 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         sync_lane_rows(&lane, rows.max(1));
         for bar in &bars {
             let Some(row_box) = lane_row_box(&lane, bar.row) else { continue };
-            let bar_widget = ensure_named_child(&row_box, &format!("fx-bar-{}", bar.index), |slot| {
-                let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-                box_.set_size_request(48, slot);
+            let bar_widget = ensure_bar(&row_box, &format!("fx-bar-{}", bar.index), |slot| {
+                // F3.8 S3: the bar is an OVERLAY, not a box, so its ✕ sits OVER the middle of the wash instead of
+                // after it — §A.9 puts the kill "in the middle", and a box laid the ink and then the button out
+                // side by side pushed the cross past the bar's right edge into its neighbour.
+                let overlay = gtk::Overlay::new();
+                overlay.set_size_request(48, slot);
                 // F3.8 S1/S2/S3: the bar's OWN drag gesture, attached once per bar widget for the same reason
                 // the ✕ is connected once — a refresh that added a second controller would answer one press
                 // twice. The rules it forwards to live in `fx_band`; this is only the wire.
-                crate::ui::cut_band_press::wire_bar(window, bar.index, &box_);
-                box_
+                crate::ui::cut_band_press::wire_bar(window, bar.index, overlay.as_ref());
+                overlay
             });
             // F3.8 S1/S3: the bar's DRAWN width comes from the record's own length, with 48 px only as a
             // FLOOR. The grip threshold (`fx_band::GRIP_MIN_PX` 30) and the ✕ threshold
@@ -181,11 +187,11 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
             // for the box, so what is painted and what the grip/✕ rules read cannot disagree.
             let slot_h = fx_lane::lane_height_px(rows.max(1)) / rows.max(1) as f64;
             crate::ui::cut_lane_paint::attach(
-                &bar_widget,
+                bar_widget.as_ref(),
                 bar.index,
                 &crate::ui::cut_lane_paint::view_for(&cut_.fx[bar.index], drawn, slot_h),
             );
-            crate::ui::cut_debt_tail::wear_tail(&bar_widget, &cut_, bar.index, t, &crate::ui::page_recordings());
+            crate::ui::cut_debt_tail::wear_tail(bar_widget.as_ref(), &cut_, bar.index, t, &crate::ui::page_recordings());
             set_class(&bar_widget, "fx-kind-zoom-staying", bar.staying);
             if !bar.staying {
                 set_class(&bar_widget, &format!("fx-kind-{}", spell_kind(bar.kind)), true);
@@ -201,9 +207,18 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
             // can never disagree about whether this bar has room for one.
             let kill_name = format!("fx-remove-{}", bar.index);
             if fx_band::kill_open(width) {
-                let kill = ensure_named_button(&bar_widget, &kill_name, |slot| {
-                    let mark = gtk::Button::with_label("\u{2715}");
-                    mark.set_size_request(slot.min(20), slot);
+                let kill = ensure_kill_target(&bar_widget, &kill_name, |slot| {
+                    // The cross a person SEES is `cut_lane_paint`'s ink; this button is the hit target centred
+                    // over that glyph and draws nothing of its own (empty label, no frame, transparent CSS class),
+                    // so the page and the cairo snapshot can never show two different crosses. Both are gated by
+                    // the same `fx_band::kill_open(width)` above, so neither can offer a kill the other refuses.
+                    let mark = gtk::Button::with_label("");
+                    mark.add_css_class("fx-kill-target");
+                    mark.set_halign(gtk::Align::Center);
+                    mark.set_valign(gtk::Align::Fill);
+                    mark.set_has_frame(false);
+                    mark.set_can_target(true);
+                    mark.set_size_request(fx_band::KILL_MIN_PX as i32, slot);
                     mark
                 });
                 kill.set_tooltip_text(Some(
@@ -228,13 +243,10 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                 .first_child()
                 .and_then(|node| walk_named(node, &kill_name))
             {
-                // Drop the ✕ from its holder (never a tree-wide search) when the bar has shrunk under the
-                // threshold; a stale ✕ would be a kill button nobody asked for.
-                if let Some(parent) = existing.parent() {
-                    if let Ok(parent_box) = parent.downcast::<gtk::Box>() {
-                        parent_box.remove(&existing);
-                    }
-                }
+                // Drop the ✕ from the bar that carries it (never a tree-wide search) when the bar has shrunk
+                // under the threshold; a stale ✕ would be a kill button nobody asked for. Its parent is the bar's
+                // Overlay, so this unparents rather than reaching for a Box that is not there.
+                existing.unparent();
             }
         }
         // A record that went away (an undo) takes its bar with it: drop any bar whose index is no longer
@@ -325,9 +337,14 @@ pub fn cut_bar_width_px(dur: f64) -> f64 {
     dur * ui::SELECT_SURFACE_PPS
 }
 
-/// Get the named child of `holder`, creating it with `make` when it is not there yet.
-fn ensure_named_child<F: FnOnce(i32) -> gtk::Box>(holder: &gtk::Box, name: &str, make: F) -> gtk::Box {
-    if let Some(found) = find_in_holder(holder.as_ref(), name) {
+/// F3.8 S3: the same build-once rule as [`ensure_bar`], for the bar itself, which is an Overlay (so its ✕
+/// can sit over the middle of its ink rather than beside it).
+fn ensure_bar<F: FnOnce(i32) -> gtk::Overlay>(holder: &gtk::Box, name: &str, make: F) -> gtk::Overlay {
+    if let Some(found) = holder
+        .first_child()
+        .and_then(|node| walk_named(node, name))
+        .and_then(|w| w.downcast::<gtk::Overlay>().ok())
+    {
         return found;
     }
     let made = make(holder.height().max(1));
@@ -336,19 +353,19 @@ fn ensure_named_child<F: FnOnce(i32) -> gtk::Box>(holder: &gtk::Box, name: &str,
     made
 }
 
-/// F3.8 S3: the same build-once rule as [`ensure_named_child`], for a widget that is not a box — the ✕ in a
-/// bar is a Button, and the two cannot share one helper without an upcast at every call site.
-fn ensure_named_button<F: FnOnce(i32) -> gtk::Button>(holder: &gtk::Box, name: &str, make: F) -> gtk::Button {
-    if let Some(found) = holder
+/// F3.8 S3: the same build-once rule for the kill target, whose parent is a bar's Overlay — `add_overlay`, not
+/// `append`, or GTK would treat it as a second main child.
+fn ensure_kill_target<F: FnOnce(i32) -> gtk::Button>(bar: &gtk::Overlay, name: &str, make: F) -> gtk::Button {
+    if let Some(found) = bar
         .first_child()
         .and_then(|node| walk_named(node, name))
         .and_then(|w| w.downcast::<gtk::Button>().ok())
     {
         return found;
     }
-    let made = make(holder.height().max(1));
+    let made = make(bar.size_request().1.max(1));
     made.set_widget_name(name);
-    holder.append(&made);
+    bar.add_overlay(&made);
     made
 }
 

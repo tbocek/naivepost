@@ -57,7 +57,7 @@ thread_local! {
 /// Attach ONE drag gesture to one effects-lane bar. Called once per bar widget, from the same build-once
 /// closure that creates it, so a refresh never stacks a second controller on the same box (the ✕ follows the
 /// identical rule). Left button only: the right button belongs to trim/move (F2.8).
-pub fn wire_bar(window: &adw::ApplicationWindow, index: usize, bar: &gtk::Box) {
+pub fn wire_bar(window: &adw::ApplicationWindow, index: usize, bar: &gtk::Widget) {
     let slot = BarSlot {
         window: window.clone(),
         index,
