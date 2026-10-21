@@ -41,18 +41,19 @@ headless instead:
 
     cd rust && just snapshot 05-cut        # -> rust/shots/05-cut.png
 
-The accepted screen names are the match arms in `src/snapshot.rs` — 39 of them:
-`03-log-link`, `03-new-confirm`, `03-policy-form`, `03-runbar`, `03-runbar-busy`,
+The accepted screen names are the match arms in `src/snapshot.rs` and its `snapshot_*` modules — 40 of
+them: `03-log-link`, `03-new-confirm`, `03-policy-form`, `03-runbar`, `03-runbar-busy`,
 `03-settings`, `03-sources`, `03-window`, `04-prepare`, `04-prepared`, `04-prompt-picker`,
 `05-add`, `05-copy`, `05-cut`, `05-fold`, `05-insert`, `05-insert-form`, `05-lanes`,
 `05-remove`, `05-rows`, `05-split`, `05-suggest`, `05-trim`, `05-words`, `06-decorations`,
-`06-effect-menu`, `06-label`, `06-lane`, `06-preview`, `06-speed`, `06-speeds`, `06-svg`,
-`06-text`, `06-volume`, `06-zoom`, `07-narrate`, `07-take`, `08-produce`, `08-words`.
-Twenty-nine of them stand for a picture in `spec/img/`; ten are program-side screens with
-no picture of their own (`03-log-link`, `04-prepared`, `05-copy`, `05-insert`,
-`05-insert-form`, `05-suggest`, `05-words`, `06-speeds`, `06-decorations`), each named
-after the flow it records. There is no `--do <widget>` flag; the worked states of a screen
-get their own name (`05-split`, `05-trim`, `06-svg`, `06-volume`, `06-label`, `08-words`).
+`06-effect-menu`, `06-flows`, `06-label`, `06-lane`, `06-preview`, `06-speed`, `06-speeds`,
+`06-svg`, `06-text`, `06-volume`, `06-zoom`, `07-narrate`, `07-take`, `08-produce`, `08-words`.
+Twenty-six of them stand for a picture in `spec/img/`; the rest are program-side screens named after
+the flow they record. There is no `--do <widget>` flag; the worked states of a screen get their own
+name (`05-split`, `05-trim`, `06-svg`, `06-volume`, `06-label`, `08-words`). Where §1 or §4 pictures a
+SUBJECT rather than a page (a popover, the picker list, the lane, the framed preview, §4's sources
+crop), that subject takes `<name>.png` and the page it was staged on goes beside it as
+`<name>-page.png`.
 
 Headless work needs `GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory`
 under `xvfb-run -a` — exactly what the `test` and `snapshot` recipes set, so prefer the recipes
@@ -89,9 +90,10 @@ from; `rust/session.naivepost` is a fuller one with `prepare/` as well.
 
 Several tests build real GTK widgets, so they run under xvfb. All test files build into one
 binary, `tests/all.rs`, and `just test` runs each file in a process of its own; `just test f1_13`
-runs only the files whose name contains `f1_13`. Current state: **482** `test result: ok` lines
-(the unit tests, then one per test file), **3104 passed**, **0 failed**. Lint: `cargo clippy --all-targets
---quiet` from `rust/`.
+runs only the files whose name contains `f1_13`. Current state: **518** `test result: ok` lines
+(the unit tests, then one per test file), **3266 passed**, **0 failed**. Lint: `cargo clippy --all-targets
+--quiet` from `rust/` — clean but for three pre-existing `non_snake_case` test names in
+`tests/suite/joins_flow.rs`.
 
 ## What the spec covers
 
@@ -99,53 +101,53 @@ runs only the files whose name contains `f1_13`. Current state: **482** `test re
 starting from the screen, then its flows as numbered steps, then the data and rules behind them.
 `spec/prompts/` the prompt wording, `spec/inventory/` per-screen widget lists, `spec/img/` the
 reference pictures, `spec/11-flow-index.md` all 68 flows, `spec/12-decisions.md` decisions
-already taken. 288 items are covered by named tests under `rust/tests` (names like
-`f1_13_s5_…` = flow, step, case). The root `Readme.md` describes the app's behaviour as it
-works today.
+already taken. **302 items** are covered by named tests under `rust/tests` (names like
+`f1_13_s5_…` = flow, step, case); one item is not done, listed below.
 
 ## Not done
 
-Blocked at the last ledger pass:
+One spec item is open:
 
-- **§12-decisions#narrate-and-produce** — no test names it; the other three sections of that
-  chapter are covered (`#prepare`, `#cut-and-effects`, `#1-the-five-homes`, `#5-gaps-…`).
-- **F4.6 Choose the voice and build the reference** — no test and no implementation of the
-  automatic reference. Only hand-picked takes work; the five `ref*` parameters are deliberately
-  absent from the catalogue because there is no rule behind them yet.
-- **F4.7 Edit lines** — no test. The widgets exist (`narrate-add-line`, per-row buttons) and some
-  rules are in (`narrate_screen::remove_line`, the 1 s "a line already starts here" window), but
-  the flow's own steps are untested.
-- **F0.3, F0.5, F1.10, F3.9** — blocked for missing visual review, not for missing code. Each
-  has passing step tests (`press_stop.rs`, `run_bookkeeping.rs`, `joins_widgets.rs`,
-  `cut_captions_proposed.rs`) and this pass did render and look at their screens.
-- **F2.2 Play the cut** — blocked at the ledger because the planner asked a question instead of
-  guessing. Its step tests exist and pass (20 hits in `rust/tests`), so this is an unanswered
-  spec question rather than missing work.
-- **F4.5** — was sent back for a redo with no code changed; its tests now pass
-  (`narrate_preview_cut.rs`, 12 cases).
-- **§08-produce#1-screen** — cleared this pass: the uncalled `last_entry_text` in
-  `src/ui/produce_words.rs` was deleted.
+- **§06-effects#3-flows** — waiting on the user's answer in `spec/QUESTIONS.md:5`: whether the
+  captions/speeds/decorations passes offer the F3.9–F3.11 tools on the wire (as `02-services.md`
+  §3.7 and each flow's "Tools:" line list them) or send no tools and parse one JSON reply, as §3's
+  lead-in sentence reads to the audit. `spec/QUESTIONS.md:11` already records that the prototype
+  sends no tools for these three passes. The code today parses one JSON reply.
 
 Gaps found by this pass and left open:
 
-- **Shipped prompt wording is not in the tree.** `prompts::shipped_file()` answers
-  `prompts/system.md` and friends, but no `prompts/` directory exists and nothing calls
-  `shipped_file()`. A fresh install therefore has no system prompt until the user supplies one
-  under `~/.config/naivepost/prompts/<key>.txt`; what gets sent is assembled by
-  `prompt_assembly::cut_system`/`user_message` from caller-supplied pieces. Needs a decision:
-  vendor `prompts/` into the repo and wire the loader, or declare prompts user-supplied-only.
-- **Snapshot shots: 39 distinct pictures among the 39 names, but four pairs and some bare
-  pages.** Measured by rendering every name and hashing the files: only four groups come out
-  byte-identical. `04-prepare` = `04-prompt-picker` (the same page state — a GtkDropDown pops
-  its rows as its own surface, so the open picker can never be captured); `03-window` =
-  `03-log-link` (both are the Prepare shell with the log expander open, which is what §1's
-  caption pictures); `03-runbar` = `03-sources` (both render the Prepare page at rest, while
-  `spec/img/03-sources.png` zooms the sources list and the frame controls — this one is a
-  real gap); and `f34-caption-held.png` = `f34_caption_held.png`, one glyph shot under two
-  spellings. The crops `03-runbar-busy.face.png` and `06-effect-menu.menu.png` are deliberate,
-  not duplicates. Beyond the hashes, several Cut-page names still render the bare page where
-  their `spec/img/` picture shows a landed effect or an open form (`05-add`, `05-lanes`,
-  `05-remove`, `05-trim`, `06-preview`), so a unique hash is not the same as a faithful shot.
-- `03-runbar.svg` has no snapshot name — it is a proposed-state drawing, not a renderable screen.
+- **Prompts are read from the source tree, not installed beside the binary.**
+  `prompts::shipped_file()`/`read_shipped()` walk up from the executable or the working directory
+  and accept `<root>/prompts/<key>.md` or `<root>/spec/prompts/<key>.md`, so a checkout does read
+  its shipped wording (that is what the bench shows and what `shipped_text` returns). Nothing
+  copies `spec/prompts/` next to an installed binary, so an install must ship them there or the
+  bench starts from the per-machine files under `~/.config/naivepost/prompts`. Needs a decision:
+  vendor the prompts into the package, or declare them user-supplied.
+- **Eight §10 parameter rows have no reader.** `params.rs` catalogues 70 ids, each naming the const
+  that holds its value; eight of those consts appear nowhere outside the catalogue and in no test:
+  `cut.panedTopPx`, `cut.panedPreviewPx`, `effects.renderZoomDepthCap`, `effects.renderZoomFps`,
+  `effects.renderTierShortSide` (the render-tier trio belongs to the §06 flows item above) plus
+  `effects.textAscent`, `effects.textLineHeight`, `effects.textMinPoints`. They are catalogued but
+  never read through it, not wrong.
+- **Snapshot fidelity.** All 40 accepted names render, and every one of the 26 `spec/img/*.png`
+  pictures has a twin in `rust/shots/`. Remaining differences are content, not layout: the spec
+  pictures show a lecture day (8 sources, thumbnails along the tape) while `fixtures/demo.naivepost`
+  carries one source and a two-clip cut; `05-add`, `05-trim` and `05-remove` are drawn as
+  before/after pairs in the spec while one snapshot writes one PNG (the after state plus the status
+  sentence it logged); `04-prompt-picker`'s page twin stays dark on purpose, because the light-theme
+  CSS pin is scoped to the picker subject alone. Fourteen names have no spec picture at all
+  (`03-log-link`, `03-policy-form`, `03-runbar`, `03-runbar-busy`, `04-prepared`, `05-copy`,
+  `05-insert`, `05-insert-form`, `05-suggest`, `05-words`, `06-flows`, `06-speeds`,
+  `06-decorations`, `06-svg`), and `03-runbar.svg` is a proposed-state drawing, not a screen.
+
+Checked this pass and found sound, so recorded rather than fixed: every format the spec names has
+both a reader and a writer (`naivepost.json`, `requests.tsv`, `cut/cut.json` — read at `cut.rs::load`,
+written only by `cut.rs::save`; `retakes.tsv`, `transcript.txt`/`.tsv`, `narration.json`,
+`takes.json`, `publish.json`, `scenes.tsv`, `voice_ref_base.wav`, `produce/final.stamp`, and the
+`final[.<code>].srt`/`.vtt` sidecars); the shell draws every screen (§1's four tabs, the settings
+window through `settings-button`, the log expander and the status line); and every header-bar and
+run-bar badge §1 numbers exists as a named widget. The inventory files describe controls by their
+visible label (＋ Add, ⇲ Lane, ✐ Captions) and never by widget name, so flow entry points cannot be
+checked mechanically against them — they were checked by rendering each screen instead.
 
 Nothing here commits anything; `git commit` is left to whoever wants it.
