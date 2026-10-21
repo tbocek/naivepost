@@ -77,26 +77,8 @@ fn long_tape() -> Vec<naivepost::timeline::Recording> {
     vec![naivepost::timeline::Recording { base: "marathon.mkv".into(), start: 0.0, end: 10800.0 }]
 }
 
-/// First widget in the tree with this name.
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
-
 fn bar(window: &adw::ApplicationWindow) -> gtk::Scrollbar {
-    find_named(window, BAR)
+    common::find_named(window, BAR)
         .and_then(|widget| widget.downcast::<gtk::Scrollbar>().ok())
         .expect("the Cut page builds its bands with a horizontal bar under them")
 }
@@ -137,7 +119,7 @@ fn check_the_bar_appears_when_the_session_stops_fitting(app: &adw::Application) 
         "{total} px of tape in a {view} px view needs a bar"
     );
     // And deepening the zoom with the toolbar's + keeps it shown: the tape only gets longer.
-    let zoom_in = find_named(&window, "zoom-in-button").expect("the transport row carries a zoom + button");
+    let zoom_in = common::find_named(&window, "zoom-in-button").expect("the transport row carries a zoom + button");
     for _ in 0..3 {
         zoom_in.emit_by_name::<()>("clicked", &[]);
         settle();

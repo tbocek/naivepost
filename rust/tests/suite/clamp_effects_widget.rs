@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{Cut, Seg};
+use naivepost::cut::Cut;
 use naivepost::cut_clamp::{self, MIN_SURVIVING_SECONDS};
 use naivepost::cut_select::Surface;
 use naivepost::ui;
@@ -31,16 +31,6 @@ static RAN_NOOP: AtomicBool = AtomicBool::new(false);
 /// Let the main context run what the widget emissions queued.
 
 /// Build a window sitting on the Cut tab with the given cut seeded, dropping the previous check's window first.
-/// A footage scene from `s` to `e` on camera row `cam`.
-fn seg(s: f64, e: f64, cam: i32) -> Seg {
-    Seg {
-        s,
-        e,
-        cam,
-        ..Default::default()
-    }
-}
-
 fn approx(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
 }
@@ -49,7 +39,7 @@ fn approx(a: f64, b: f64) -> bool {
 /// checkable by hand.
 fn three_clips() -> Cut {
     Cut {
-        segs: vec![seg(0.0, 10.0, 0), seg(10.0, 20.0, 0), seg(20.0, 30.0, 0)],
+        segs: vec![common::seg_cam(0.0, 10.0, 0), common::seg_cam(10.0, 20.0, 0), common::seg_cam(20.0, 30.0, 0)],
         ..Default::default()
     }
 }
@@ -118,7 +108,7 @@ fn clamp_round(app: &adw::Application) {
         "the floor named here is 1.0 s of surviving band"
     );
     let mut cut_ = Cut::default();
-    cut_.segs = vec![seg(0.0, 10.0, 0)];
+    cut_.segs = vec![common::seg_cam(0.0, 10.0, 0)];
     cut_.fx = vec![fx("zoom", 9.6, 0.5), fx("zoom", 7.5, 3.0)];
     let window = cut_page(app, &cut_);
     let said = ui::clamp_effects_to_cut(&window);
@@ -175,7 +165,7 @@ fn clamp_round(app: &adw::Application) {
     // No dropped, no trimmed: the seam returns its own line and leaves the cut byte-identical, with no
     // S5 line at all — a no-op must not consume an Undo step or log a zero count.
     let mut cut_ = Cut::default();
-    cut_.segs = vec![seg(0.0, 10.0, 0)];
+    cut_.segs = vec![common::seg_cam(0.0, 10.0, 0)];
     cut_.fx = vec![fx("zoom", 2.0, 5.0)];
     let window = cut_page(app, &cut_);
     let said = ui::clamp_effects_to_cut(&window);

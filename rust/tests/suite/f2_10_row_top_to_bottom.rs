@@ -50,7 +50,7 @@ fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
     window
 }
 
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
+fn find_named_panic(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
     fn walk(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
         if root.widget_name() == name {
             return Some(root.clone());
@@ -95,7 +95,7 @@ fn check_the_row_plates_run_row_one_at_the_top(app: &adw::Application) {
     println!("stage said: {}", said.join(" | "));
     settle();
 
-    let rows_box = find_named(&window, "camera-rows");
+    let rows_box = find_named_panic(&window, "camera-rows");
     let order: Vec<String> = rows_box
         .observe_children()
         .iter::<glib::Object>()
@@ -110,8 +110,8 @@ fn check_the_row_plates_run_row_one_at_the_top(app: &adw::Application) {
         "the first row box is the one a status calls row 1: {order:?}"
     );
 
-    let row1 = find_named(&window, "camera-row-1");
-    let row2 = find_named(&window, "camera-row-2");
+    let row1 = find_named_panic(&window, "camera-row-1");
+    let row2 = find_named_panic(&window, "camera-row-2");
     let (y1, y2) = (top_edge(&row1), top_edge(&row2));
     println!("ROW ORDER camera-row-1 top y={y1}, camera-row-2 top y={y2}");
     assert!(
@@ -155,11 +155,11 @@ fn check_clicking_the_top_plate_watches_the_top_row(app: &adw::Application) {
     println!("after clicking watch-row-2: watch={:?} status={line}", ui::preview_row(&window));
     assert_eq!(ui::preview_row(&window), 1, "the click watched the lower row");
     assert!(
-        find_named(&window, "camera-row-2").has_css_class("watched-row"),
+        find_named_panic(&window, "camera-row-2").has_css_class("watched-row"),
         "and the dashed outline moved onto it"
     );
     assert!(
-        !find_named(&window, "camera-row-1").has_css_class("watched-row"),
+        !find_named_panic(&window, "camera-row-1").has_css_class("watched-row"),
         "off the row it was on"
     );
     // The kept scene is shown from camera 1 while the preview now looks at camera 2, so §'s **7** is owed.
@@ -185,7 +185,7 @@ fn check_clicking_the_top_plate_watches_the_top_row(app: &adw::Application) {
         "▶ handed the watched row back to the cut (S3)"
     );
     assert!(
-        !find_named(&window, "camera-row-2").has_css_class("watched-row"),
+        !find_named_panic(&window, "camera-row-2").has_css_class("watched-row"),
         "and the outline went with it"
     );
     RAN_WIRE.store(true, Ordering::SeqCst);

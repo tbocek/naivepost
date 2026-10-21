@@ -29,22 +29,6 @@ static RAN_BELOW: AtomicBool = AtomicBool::new(false);
 /// toolbar; the arrangement bug left ~750 px of empty plate between them, so anything past this fails.
 const MAX_TOOLBAR_TO_TAPE_PX: i32 = 260;
 
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
 
 /// The page's own vertical box: the ancestor whose DIRECT children include the toolbar, which is where
 /// every part of the Cut page was appended. Reading children here rather than walking the whole tree is
@@ -145,7 +129,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
 /// toolbar comes before the tape, the band's stack before the trim strip, and the scrollbar is LAST.
 fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
     let window = cut_page(app);
-    let toolbar = find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
+    let toolbar = common::find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
     let page_box = page_box_of(&toolbar);
     let names = child_names(&page_box);
     let at = |name: &str| -> usize {
@@ -155,7 +139,7 @@ fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
             .unwrap_or_else(|| panic!("`{name}` is not a direct child of the box that holds the toolbar: {names:?}"))
     };
     // `cut-top` is no longer beside the toolbar -- it is above the divider, in the box one level up.
-    let vsplit = find_named(&window, "cut-page-split")
+    let vsplit = common::find_named(&window, "cut-page-split")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
         .expect("§A's vertical paned (380) is on the page");
     assert_eq!(
@@ -183,8 +167,8 @@ fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
 /// No wall of empty plate between the toolbar and the tape: the gap is a number read off the tree.
 fn check_no_gap_between_toolbar_and_tape(app: &adw::Application) {
     let window = cut_page(app);
-    let toolbar = find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
-    let layers = find_named(&window, "track-layers").expect("the band's layer stack is on the page");
+    let toolbar = common::find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
+    let layers = common::find_named(&window, "track-layers").expect("the band's layer stack is on the page");
     let (_, toolbar_bottom) = edges(&toolbar);
     let (tape_top, _) = edges(&layers);
     let gap = tape_top - toolbar_bottom;
@@ -200,9 +184,9 @@ fn check_no_gap_between_toolbar_and_tape(app: &adw::Application) {
 /// reading column sits BESIDE it rather than stacked under it, and the eight rows keep their own width.
 fn check_the_preview_outranks_the_reading_column(app: &adw::Application) {
     let window = cut_page(app);
-    let preview = find_named(&window, "preview-panel").expect("§A's preview panel is on the page");
-    let frame = find_named(&window, "cut-form-frame").expect("§A's form column is on the page");
-    let grid = find_named(&window, "cut-form").expect("the idle readings grid is in the column");
+    let preview = common::find_named(&window, "preview-panel").expect("§A's preview panel is on the page");
+    let frame = common::find_named(&window, "cut-form-frame").expect("§A's form column is on the page");
+    let grid = common::find_named(&window, "cut-form").expect("the idle readings grid is in the column");
     let (preview_w, grid_w) = (preview.width(), grid.width());
     let (preview_x, _) = left_edge(&preview);
     let (frame_x, _) = left_edge(&frame);
@@ -242,8 +226,8 @@ fn check_the_preview_outranks_the_reading_column(app: &adw::Application) {
 /// same parent, the child immediately after it, and BELOW it on screen (not beside it in the paned).
 fn check_the_lane_sits_under_the_frame(app: &adw::Application) {
     let window = cut_page(app);
-    let panel = find_named(&window, "preview-panel").expect("\u{a7}A's preview panel is on the page");
-    let lane = find_named(&window, "effects-lane").expect("the Cut page drew the effects lane");
+    let panel = common::find_named(&window, "preview-panel").expect("\u{a7}A's preview panel is on the page");
+    let lane = common::find_named(&window, "effects-lane").expect("the Cut page drew the effects lane");
     let parent = lane.parent().expect("the lane is packed somewhere");
     let mut order: Vec<String> = Vec::new();
     let mut child = parent.first_child();
@@ -280,10 +264,10 @@ fn check_the_lane_sits_under_the_frame(app: &adw::Application) {
 /// were plain children of the page box, so there was no top/bottom divider to drag at all.
 fn check_the_page_has_both_dividers(app: &adw::Application) {
     let window = cut_page(app);
-    let vsplit = find_named(&window, "cut-page-split")
+    let vsplit = common::find_named(&window, "cut-page-split")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
         .expect("§A's vertical paned (380) is on the page");
-    let hsplit = find_named(&window, "cut-top")
+    let hsplit = common::find_named(&window, "cut-top")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
         .expect("§A's horizontal paned (660) is on the page");
     // The horizontal one sits in the vertical one's START pane -- above the divider, as §1 says.
@@ -317,11 +301,11 @@ fn check_the_page_has_both_dividers(app: &adw::Application) {
 /// top half's bottom edge, and the scrollbar is still the last thing in the pane that holds it.
 fn check_the_bottom_half_is_below_the_divider(app: &adw::Application) {
     let window = cut_page(app);
-    let vsplit = find_named(&window, "cut-page-split")
+    let vsplit = common::find_named(&window, "cut-page-split")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
         .expect("§A's vertical paned (380) is on the page");
     let top = vsplit.start_child().expect("the vertical paned has a start pane");
-    let toolbar = find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
+    let toolbar = common::find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
     let (_, top_bottom) = edges(&top);
     let (toolbar_top, _) = edges(&toolbar);
     println!("BELOW top pane bottom y={top_bottom} -> toolbar top y={toolbar_top}");

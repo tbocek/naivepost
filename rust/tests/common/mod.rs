@@ -192,6 +192,28 @@ pub fn release_last_window() {
 
 /// Find a widget by the name its builder gave it, walking the whole tree below the window. Several
 /// widget tests need this and none of them reached for `gtk::WidgetExt::child` chains, so the walk lives
+/// here once; the files whose version differs keep their own.
+pub fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
+    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+        if widget.widget_name() == name {
+            return Some(widget.clone());
+        }
+        for child in widget.observe_children().iter::<glib::Object>() {
+            let Ok(child) = child else { continue };
+            let Some(child) = child.downcast_ref::<gtk::Widget>() else {
+                continue;
+            };
+            if let Some(found) = walk(child, name) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    walk(window.upcast_ref(), name)
+}
+
+/// Find a widget by the name its builder gave it, walking the whole tree below the window. Several
+/// widget tests need this and none of them reached for `gtk::WidgetExt::child` chains, so the walk lives
 /// here once; the three files whose version differs keep their own.
 pub fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
@@ -217,6 +239,16 @@ pub fn seg(s: f64, e: f64) -> Seg {
     Seg {
         s,
         e,
+        ..Default::default()
+    }
+}
+
+/// The same clip on an explicit camera row — the shape the lane and verb tests state a shot with.
+pub fn seg_cam(s: f64, e: f64, cam: i32) -> naivepost::cut::Seg {
+    naivepost::cut::Seg {
+        s,
+        e,
+        cam,
         ..Default::default()
     }
 }
@@ -845,5 +877,14 @@ pub fn wave(total: f64, spans: &[(f64, f64, u8)], hz: f64, room: u8) -> naivepos
     naivepost::wave::Wave {
         hz,
         chans: vec![peaks],
+    }
+}
+
+/// One model tool call with no result yet — the shape every tool-loop test hands to `tool_loop`.
+pub fn call(name: &str, args: &str) -> naivepost::exchanges::ToolCall {
+    naivepost::exchanges::ToolCall {
+        name: name.to_string(),
+        args: args.to_string(),
+        result: String::new(),
     }
 }

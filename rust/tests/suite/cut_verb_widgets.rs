@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{self, Seg};
+use naivepost::cut::{self};
 use naivepost::cut_select::{Scope, Surface};
 use naivepost::cut_verbs::{self, Outcome};
 use naivepost::shell::Page;
@@ -41,18 +41,9 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     // A cut with two kept scenes on row 0: enough that Add has something to add over and Remove has
     // something to drop. Seeded through the same seam ▶✂✂ reads.
     let mut seeded = cut::Cut::default();
-    seeded.segs = vec![seg(0.0, 30.0, 0), seg(30.0, 60.0, 0)];
+    seeded.segs = vec![common::seg_cam(0.0, 30.0, 0), common::seg_cam(30.0, 60.0, 0)];
     ui::seed_review_cut(&window, &seeded);
     window
-}
-
-fn seg(s: f64, e: f64, cam: i32) -> Seg {
-    Seg {
-        s,
-        e,
-        cam,
-        ..Default::default()
-    }
 }
 
 /// Let the main context run what the widget emissions queued, the way the other widget tests do.
@@ -88,7 +79,7 @@ fn check_the_verb_buttons_reach_the_rule(app: &adw::Application) {
     // Seed a FOOTAGE band through the F2.6 seam, exactly as a drag would leave it.
     let band = ui::draw_selection(&window, Surface::PictureRow(0), None, 10.0, 40.0)
         .expect("a drag on a picture row selects that row's footage");
-    let seeded_segs = vec![seg(0.0, 30.0, 0), seg(30.0, 60.0, 0)];
+    let seeded_segs = vec![common::seg_cam(0.0, 30.0, 0), common::seg_cam(30.0, 60.0, 0)];
 
     assert!(
         button(&window, "add-button").is_sensitive(),
@@ -168,7 +159,7 @@ fn check_delete_takes_the_effect_first(app: &adw::Application) {
     let window = cut_window(app);
     ui::draw_selection(&window, Surface::PictureRow(0), None, 10.0, 40.0)
         .expect("a band is up");
-    ui::set_held_clip(Some(seg(5.0, 9.0, 0)));
+    ui::set_held_clip(Some(common::seg_cam(5.0, 9.0, 0)));
     ui::set_held_effect(Some(cut::Fx {
         kind: "zoom".into(),
         t: 12.0,
@@ -193,7 +184,7 @@ fn check_delete_takes_the_effect_first(app: &adw::Application) {
     // holds ONE thing, so the card that was in it before the effect went there when the effect was picked up:
     // putting the effect down re-arms the card, which is the hand walking down ⌦'s order.
     ui::set_held_effect(None);
-    ui::set_held_clip(Some(seg(5.0, 9.0, 0)));
+    ui::set_held_clip(Some(common::seg_cam(5.0, 9.0, 0)));
     let second = ui::press_delete_key(&window);
     assert!(
         status_text(&window).starts_with("removed the card"),

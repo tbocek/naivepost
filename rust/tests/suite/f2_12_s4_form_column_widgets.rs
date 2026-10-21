@@ -76,23 +76,6 @@ fn write_card(name: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
-/// First widget in THIS window's tree carrying `name`.
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
 
 /// Is `needle` somewhere under `hay`? The parent chain is not public, so the search runs downwards instead.
 fn holds(hay: &gtk::Widget, needle: &gtk::Widget) -> bool {
@@ -119,7 +102,7 @@ fn open_form(window: &adw::ApplicationWindow) {
     // §1's pinned heading names what is being placed. It goes through `cut_form_frame::open_form_title`, which
     // spells its own wording ("insert <base>"), so that is the pair of facts asserted here rather than one
     // hand-written string.
-    let heading = find_named(window.upcast_ref(), "cut-form-title")
+    let heading = common::find_named(window.upcast_ref(), "cut-form-title")
         .and_then(|w| w.downcast::<gtk::Label>().ok())
         .expect("the heading carries a title");
     let words = heading.text().to_string();
@@ -134,9 +117,9 @@ fn open_form(window: &adw::ApplicationWindow) {
 fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
     let window = cut_page(app, "replaces");
     // Idle first: no heading, and the eight readings visible.
-    let heading = find_named(&window, "cut-form-heading").expect("the column pins a heading");
-    let footer = find_named(&window, "cut-form-footer").expect("the column pins a footer");
-    let readings = find_named(&window, "cut-form").expect("the idle readings are `cut-form`");
+    let heading = common::find_named(&window, "cut-form-heading").expect("the column pins a heading");
+    let footer = common::find_named(&window, "cut-form-footer").expect("the column pins a footer");
+    let readings = common::find_named(&window, "cut-form").expect("the idle readings are `cut-form`");
     assert!(!heading.is_visible(), "an idle column shows no heading (§1)");
     assert!(!footer.is_visible(), "and no footer");
     assert!(readings.is_visible(), "an idle column shows its readings");
@@ -144,14 +127,14 @@ fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
     open_form(&window);
 
     assert!(heading.is_visible(), "an open form pins its heading");
-    let form = find_named(&window, "insert-form").expect("the form holder");
+    let form = common::find_named(&window, "insert-form").expect("the form holder");
     // §1's seat is the form COLUMN: its pinned heading and footer come up for the open form, the column keeps
     // its scroller, and the insert holder -- which lives BESIDE that frame in the page box, where its owner's
     // door finds it by a walk from the window -- is drawn. Whether the eight readings step aside is NOT decided
     // by HEAD: `cut_form_frame::set_pinned` shows the heading and footer only and leaves `cut-form` alone (the
     // F2.12 finding reported this round), so the idle rows stay visible while a form is open.
     assert!(form.is_visible(), "the open form's holder is drawn");
-    let column = find_named(&window, "cut-form-frame").expect("the column's own frame");
+    let column = common::find_named(&window, "cut-form-frame").expect("the column's own frame");
     assert!(form.is_visible(), "the open form's holder is drawn");
     assert!(
         holds(&column, &heading),
@@ -165,7 +148,7 @@ fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
 fn check_the_form_rows_run_in_the_specs_order(app: &adw::Application) {
     let window = cut_page(app, "order");
     open_form(&window);
-    let holder = find_named(&window, "insert-form")
+    let holder = common::find_named(&window, "insert-form")
         .and_then(|w| w.downcast::<gtk::Box>().ok())
         .expect("the insert holder is a box");
     let names: Vec<String> = holder
@@ -179,7 +162,7 @@ fn check_the_form_rows_run_in_the_specs_order(app: &adw::Application) {
     // Where does each group first appear? A group's widgets may sit inside a row box, so ask the holder's
     // subtree for each name and take the TOP-MOST holder child that contains it.
     let position_of = |name: &str| -> usize {
-        let target = find_named(&window, name)
+        let target = common::find_named(&window, name)
             .unwrap_or_else(|| panic!("the form drew no {name}: {names:?}"));
         for (index, child) in holder
             .observe_children()
@@ -201,7 +184,7 @@ fn check_the_form_rows_run_in_the_specs_order(app: &adw::Application) {
     // The sound tick is drawn only when there is a sound to answer for (S4), and `insert_chosen_with_length`
     // passes the two sound answers as `false` -- so with this door no tick exists, and the order test asks for
     // it only if it was drawn. Pressing OVER makes the footage under the card the question; still no tick here.
-    let tick = match find_named(&window, "insert-sound-tick") {
+    let tick = match common::find_named(&window, "insert-sound-tick") {
         Some(_) => position_of("insert-sound-tick"),
         None => usize::MAX,
     };
@@ -233,24 +216,24 @@ fn check_the_buttons_are_the_forms_own_and_in_order(app: &adw::Application) {
     // IN it, which HEAD does not do -- see the note below on where those buttons actually live.
     // The column still pins a footer (§1); for an INSERT the buttons go into the insert's own footer below the
     // frame, so the frame's is what §A's idle column keeps hidden while this form is open.
-    let footer = find_named(&window, "cut-form-footer").expect("the column pins a footer");
+    let footer = common::find_named(&window, "cut-form-footer").expect("the column pins a footer");
     let insert_footer =
-        find_named(&window, "insert-form-footer").expect("the insert has its own pinned footer");
+        common::find_named(&window, "insert-form-footer").expect("the insert has its own pinned footer");
     assert!(
         footer.is_visible() || insert_footer.is_visible(),
         "an open form pins the footer its buttons sit in"
     );
-    let apply = find_named(&window, "insert-apply-button")
+    let apply = common::find_named(&window, "insert-apply-button")
         .and_then(|w| w.downcast::<gtk::Button>().ok())
         .expect("the form carries its apply button");
-    let cancel = find_named(&window, "insert-cancel-button")
+    let cancel = common::find_named(&window, "insert-cancel-button")
         .and_then(|w| w.downcast::<gtk::Button>().ok())
         .expect("the form carries its cancel button");
     // The buttons are the FORM's own and now sit in the PAGE's pinned footer for the insert — `insert-form-footer`,
     // the box placed directly under the insert holder (the frame's `cut-form-footer` would sit ABOVE this form,
     // so it cannot finish it). `proves` them here only that they are the form's pair and in §1's order;
     // `f2_12_s4_footer_widgets.rs` is where the footer's own wiring is pinned.
-    let form = find_named(&window, "insert-form").expect("the form holder");
+    let form = common::find_named(&window, "insert-form").expect("the form holder");
     assert!(form.is_visible(), "the form that owns these buttons is open");
     assert!(apply.is_visible(), "\"Insert it\" is drawn with the form");
     assert!(cancel.is_visible(), "and \"Cancel\" beside it");
@@ -292,21 +275,21 @@ fn check_the_buttons_are_the_forms_own_and_in_order(app: &adw::Application) {
 fn check_the_cross_goes_back_to_the_readings(app: &adw::Application) {
     let window = cut_page(app, "cross");
     open_form(&window);
-    let readings = find_named(&window, "cut-form").expect("the idle readings exist");
-    find_named(&window, "cut-form-close")
+    let readings = common::find_named(&window, "cut-form").expect("the idle readings exist");
+    common::find_named(&window, "cut-form-close")
         .expect("the heading carries a cross")
         .emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(ui::insert_open(&window).is_none(), "the cross closed the form");
     assert!(readings.is_visible(), "with nothing open the idle readings show again");
     assert!(
-        !find_named(&window, "cut-form-heading")
+        !common::find_named(&window, "cut-form-heading")
             .expect("the heading")
             .is_visible(),
         "and the heading is pinned away again"
     );
     assert!(
-        !find_named(&window, "cut-form-footer")
+        !common::find_named(&window, "cut-form-footer")
             .expect("the footer")
             .is_visible(),
         "and the footer with it: an idle column ends with no buttons"

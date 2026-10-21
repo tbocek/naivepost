@@ -17,7 +17,6 @@
 
 use std::path::{Path, PathBuf};
 
-use naivepost::exchanges::ToolCall;
 use naivepost::layout::Tree;
 use naivepost::request_timing::{self, Timer};
 use naivepost::requests::{self, Outcome, Request, Service};
@@ -124,10 +123,6 @@ fn long_page(body: &str) -> String {
     format!("<html><body><p>{body}</p><p>{}</p></body></html>", "x".repeat(250))
 }
 
-fn call(name: &str, args: &str) -> ToolCall {
-    ToolCall { name: name.to_string(), args: args.to_string(), result: String::new() }
-}
-
 /// The rows the run left in the open project's `requests.tsv`.
 fn rows() -> Vec<Request> {
     let tree = Tree::new(startup::session_dir(&std::env::current_dir().unwrap())).expect("session tree");
@@ -147,7 +142,7 @@ fn sec_02_services_1_the_four_servers_s25_a_web_search_lands_in_requests_tsv() {
     let answer = web_browser::dispatch(
         "narrate",
         &stub.to_string_lossy(),
-        &call("web_search", r#"{"broad":"tower height","medium":"ez tower","narrow":"634 m"}"#),
+        &common::call("web_search", r#"{"broad":"tower height","medium":"ez tower","narrow":"634 m"}"#),
     )
     .expect("web_search is answered by the browser leg");
     assert!(answer.contains("Results for"), "the model got the hit list: {answer}");
@@ -203,7 +198,7 @@ fn sec_02_services_1_the_four_servers_s25_a_web_search_lands_in_requests_tsv() {
     let none = web_browser::dispatch(
         "narrate",
         &stub.to_string_lossy(),
-        &call("web_search", r#"{"broad":"a","medium":"b","narrow":"c"}"#),
+        &common::call("web_search", r#"{"broad":"a","medium":"b","narrow":"c"}"#),
     )
     .expect("an empty ladder is still answered");
     assert!(none.starts_with("No results for any"), "{none}");
@@ -227,7 +222,7 @@ fn sec_02_services_1_the_four_servers_s26_a_page_read_lands_in_requests_tsv() {
     let answer = web_browser::dispatch(
         "publish",
         &stub.to_string_lossy(),
-        &call("web_read", r#"{"url":"https://tower.example/height"}"#),
+        &common::call("web_read", r#"{"url":"https://tower.example/height"}"#),
     )
     .expect("web_read is answered by the browser leg");
     assert!(answer.contains("634 metres"), "the page text reached the model: {answer}");
@@ -249,7 +244,7 @@ fn sec_02_services_1_the_four_servers_s26_a_page_read_lands_in_requests_tsv() {
     let refused = web_browser::dispatch(
         "publish",
         &stub.to_string_lossy(),
-        &call("web_read", r#"{"url":"https://walled.example/page"}"#),
+        &common::call("web_read", r#"{"url":"https://walled.example/page"}"#),
     )
     .expect("a walled page is still answered — as an error the model can act on");
     assert!(refused.starts_with("web_read failed:"), "{refused}");
@@ -279,7 +274,7 @@ fn sec_02_services_1_the_four_servers_s27_web_rows_join_the_service_tally() {
     web_browser::dispatch(
         "narrate",
         &stub.to_string_lossy(),
-        &call("web_search", r#"{"broad":"a","medium":"b","narrow":"c"}"#),
+        &common::call("web_search", r#"{"broad":"a","medium":"b","narrow":"c"}"#),
     )
     .expect("search answered");
     let page_stub = write_stub(&root, &long_page("The bridge spans 1600 metres."));
@@ -287,7 +282,7 @@ fn sec_02_services_1_the_four_servers_s27_web_rows_join_the_service_tally() {
     web_browser::dispatch(
         "narrate",
         &page_stub.to_string_lossy(),
-        &call("web_read", r#"{"url":"https://bridge.example/span"}"#),
+        &common::call("web_read", r#"{"url":"https://bridge.example/span"}"#),
     )
     .expect("read answered");
 

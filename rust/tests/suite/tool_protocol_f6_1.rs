@@ -19,11 +19,9 @@ use naivepost::roles;
 use naivepost::tool_loop as tool_loop;
 use naivepost::tools::{self, Tool};
 
-const ITEM: &str = "F6.1";
+use crate::common;
 
-fn call(name: &str, args: &str) -> ToolCall {
-    ToolCall { name: name.to_string(), args: args.to_string(), result: String::new() }
-}
+const ITEM: &str = "F6.1";
 
 /// A canned answer from the scripted model.
 fn turn(content: &str, calls: Vec<ToolCall>, finish: bool) -> tool_loop::Turn {
@@ -80,25 +78,25 @@ fn f6_1_s1_offer_the_jobs_tools_with_schemas() {
 fn f6_1_s2_round_log() {
     assert_eq!(ITEM, "F6.1");
     // ">>> <step>: round i of 8 — the model asked for name{args}" — em dash, arguments directly after the name.
-    let line = tool_loop::round_log("suggest", 2, &[call("get_lines", "{\"from\":1,\"to\":9}")], false);
+    let line = tool_loop::round_log("suggest", 2, &[common::call("get_lines", "{\"from\":1,\"to\":9}")], false);
     assert_eq!(line, ">>> suggest: round 2 of 8 \u{2014} the model asked for get_lines{\"from\":1,\"to\":9}");
     // The count is P.eng.llmToolRounds, not a literal 8 that could drift from it.
     assert!(line.contains(&format!("of {}", roles::TOOL_ROUNDS)), "{line}");
 
     // Several calls in one round are joined by ", ".
-    let two = tool_loop::round_log("narrate", 1, &[call("get_lines", "{}"), call("web_search", "{\"broad\":\"x\"}")], false);
+    let two = tool_loop::round_log("narrate", 1, &[common::call("get_lines", "{}"), common::call("web_search", "{\"broad\":\"x\"}")], false);
     assert_eq!(two, asked(1, "narrate", "get_lines{}, web_search{\"broad\":\"x\"}"));
 
     // The tell for a loop: the same set again is said instead of the arguments being repeated.
-    let repeat = tool_loop::round_log("suggest", 3, &[call("get_lines", "{}")], true);
+    let repeat = tool_loop::round_log("suggest", 3, &[common::call("get_lines", "{}")], true);
     assert!(repeat.contains("asks for the same thing again"), "{repeat}");
     assert!(!repeat.contains("the model asked for"), "{repeat}");
 
     // `same_calls` is progress-or-loop: an argument that moved is a different question.
-    let previous = vec![call("get_lines", "{\"from\":1}")];
-    assert!(tool_loop::same_calls(&previous, &[call("get_lines", "{\"from\":1}")]));
-    assert!(!tool_loop::same_calls(&previous, &[call("get_lines", "{\"from\":2}")]));
-    assert!(!tool_loop::same_calls(&previous, &[call("get_lines", "{\"from\":1}"), call("finish", "{}")]), "one more call is not the same set");
+    let previous = vec![common::call("get_lines", "{\"from\":1}")];
+    assert!(tool_loop::same_calls(&previous, &[common::call("get_lines", "{\"from\":1}")]));
+    assert!(!tool_loop::same_calls(&previous, &[common::call("get_lines", "{\"from\":2}")]));
+    assert!(!tool_loop::same_calls(&previous, &[common::call("get_lines", "{\"from\":1}"), common::call("finish", "{}")]), "one more call is not the same set");
     // An empty set is never compared against: a round that called nothing takes the S3 branch and never reaches
     // this check, so the comparison carries no special case for it.
     assert!(tool_loop::same_calls(&[], &[]), "never reached by the loop: a quiet round has already branched off");
@@ -145,7 +143,7 @@ fn f6_1_s3_finish_called_completes_the_flow() {
         "suggest",
         vec![],
         &[],
-        |_, _| Ok(turn("", vec![call("finish", "{}")], true)),
+        |_, _| Ok(turn("", vec![common::call("finish", "{}")], true)),
         |_| "ok".to_string(),
     );
     assert_eq!(run.outcome, tool_loop::Outcome::Finished { asked_finish: false });
@@ -208,7 +206,7 @@ fn f6_1_s3_a_quiet_round_is_asked_once_then_taken_as_finished() {
             if round == 1 {
                 return Ok(turn("", vec![], false));
             }
-            Ok(turn("", vec![call("finish", "{}")], true))
+            Ok(turn("", vec![common::call("finish", "{}")], true))
         },
         |_| String::new(),
     );
@@ -231,7 +229,7 @@ fn f6_1_s4_the_budget_is_spent_before_the_tools_run() {
         "narrate",
         vec![],
         &[],
-        |_, _| Ok(turn("", vec![call("get_lines", "{}")], false)),
+        |_, _| Ok(turn("", vec![common::call("get_lines", "{}")], false)),
         |_| {
             ran.set(ran.get() + 1);
             "the lines".to_string()
@@ -328,9 +326,9 @@ fn f6_1_s6_a_tool_that_fails_is_an_answer_not_a_failure() {
         move |_, _| {
             round += 1;
             if round == 1 {
-                return Ok(turn("", vec![call("web_read", "{\"url\":\"http://x\"}")], false));
+                return Ok(turn("", vec![common::call("web_read", "{\"url\":\"http://x\"}")], false));
             }
-            Ok(turn("fine, I will not need it", vec![call("finish", "{}")], true))
+            Ok(turn("fine, I will not need it", vec![common::call("finish", "{}")], true))
         },
         |_| String::new(), // the tool answers nothing: that is the failure
     );
@@ -356,7 +354,7 @@ fn f6_1_s6_a_tool_that_fails_is_an_answer_not_a_failure() {
 fn f6_1_s7_the_page_shows_every_call_and_result() {
     assert_eq!(ITEM, "F6.1");
     // The prototype's shapes: a call as text appended to the reply, a result only as the next round's message.
-    let note = tool_loop::call_note(&call("get_lines", "{\"from\":1}"));
+    let note = tool_loop::call_note(&common::call("get_lines", "{\"from\":1}"));
     assert_eq!(note, "[tool call get_lines({\"from\":1})]");
 
     let answered = ToolCall { name: "get_lines".to_string(), args: "{}".to_string(), result: "1\tword".to_string() };
@@ -374,9 +372,9 @@ fn f6_1_s7_the_page_shows_every_call_and_result() {
         move |_, _| {
             round += 1;
             if round == 1 {
-                return Ok(turn("thinking", vec![call("get_lines", "{\"a\":1}"), call("get_events", "{}")], false));
+                return Ok(turn("thinking", vec![common::call("get_lines", "{\"a\":1}"), common::call("get_events", "{}")], false));
             }
-            Ok(turn("done", vec![call("finish", "{}")], true))
+            Ok(turn("done", vec![common::call("finish", "{}")], true))
         },
         |_| "res".to_string(),
     );

@@ -19,7 +19,6 @@
 
 use naivepost::clip_rules_tools_leg::{self, Run};
 use naivepost::cut_suggest_passes;
-use naivepost::exchanges::ToolCall;
 use naivepost::policy::Pass;
 use naivepost::project::{Field, Origin, Policy};
 use naivepost::roles::Job;
@@ -27,6 +26,8 @@ use naivepost::tool_loop::{self, Turn};
 use naivepost::tools::clips::Clips;
 use naivepost::tools::Tool;
 use naivepost::{captions_ask, cut_speed_pass, effects_ask, speeds_ask, tools};
+
+use crate::common;
 
 /// A policy with the three pass switches set as named. Everything else keeps its default.
 fn policy(captions: bool, speeds: bool, decorations: bool) -> Policy {
@@ -48,11 +49,6 @@ fn batch() -> Clips {
 /// The three §3.7 job tools, exactly as the catalogue offers them.
 fn offered() -> Vec<Tool> {
     tools::offered(Job::ClipRules)
-}
-
-/// One tool call as the wire spells it.
-fn call(name: &str, args: &str) -> ToolCall {
-    ToolCall { name: name.to_string(), args: args.to_string(), result: String::new() }
 }
 
 /// Run one ask through the program's own loop with the answer already in hand — the shape all three cut
@@ -163,7 +159,7 @@ fn sec_06_effects_3_flows_s2_a_tool_call_round_and_one_json_reply_place_the_same
     let run = run_with(
         Turn {
             content: String::new(),
-            calls: vec![call("add_caption", args), call("finish", "{}")],
+            calls: vec![common::call("add_caption", args), common::call("finish", "{}")],
             finish: false,
         },
         &mut via_tools,
@@ -204,7 +200,7 @@ fn sec_06_effects_3_flows_s2_the_speed_and_decoration_tools_answer_their_own_wor
     run_with(
         Turn {
             content: String::new(),
-            calls: vec![call("set_clip_speed", r#"{"clip":2,"rate":2.0}"#), call("finish", "{}")],
+            calls: vec![common::call("set_clip_speed", r#"{"clip":2,"rate":2.0}"#), common::call("finish", "{}")],
             finish: false,
         },
         &mut via_tools,
@@ -224,9 +220,9 @@ fn sec_06_effects_3_flows_s2_the_speed_and_decoration_tools_answer_their_own_wor
         Turn {
             content: String::new(),
             calls: vec![
-                call("add_effect", r#"{"clip":1,"kind":"zoom","start":1.0,"end":3.0}"#),
-                call("add_effect", r#"{"clip":3,"kind":"volume","start":0.0,"end":4.0,"gain":0.5}"#),
-                call("finish", "{}"),
+                common::call("add_effect", r#"{"clip":1,"kind":"zoom","start":1.0,"end":3.0}"#),
+                common::call("add_effect", r#"{"clip":3,"kind":"volume","start":0.0,"end":4.0,"gain":0.5}"#),
+                common::call("finish", "{}"),
             ],
             finish: false,
         },
@@ -243,14 +239,14 @@ fn sec_06_effects_3_flows_s2_the_speed_and_decoration_tools_answer_their_own_wor
 
     // A call with no arguments is refused in words, not dropped: §2 S6 sends this text back to the model.
     for bare in ["add_caption", "set_clip_speed", "add_effect"] {
-        let answer = clip_rules_tools_leg::answer(&call(bare, "{}"), &mut batch());
+        let answer = clip_rules_tools_leg::answer(&common::call(bare, "{}"), &mut batch());
         assert!(
             answer.starts_with("{\"error\""),
             "{bare} with no arguments must answer with the tool's error shape: {answer}"
         );
     }
     // An unknown tool name is likewise an answer, not a crash.
-    let unknown = clip_rules_tools_leg::answer(&call("paint_the_picture", "{}"), &mut batch());
+    let unknown = clip_rules_tools_leg::answer(&common::call("paint_the_picture", "{}"), &mut batch());
     assert!(unknown.contains("is not one of this job's tools"), "{unknown}");
 }
 
@@ -266,7 +262,7 @@ fn sec_06_effects_3_flows_s2_a_prose_answer_is_not_asked_again_as_a_tool_round()
     let mut clips = batch();
     let run = clip_rules_tools_leg::run_over_batch_from(
         "captions",
-        &Turn { content: r#"{"clips":[]}"#.to_string(), calls: vec![call("finish", "{}")], finish: true },
+        &Turn { content: r#"{"clips":[]}"#.to_string(), calls: vec![common::call("finish", "{}")], finish: true },
         Vec::new(),
         &offered(),
         &mut clips,
@@ -298,7 +294,7 @@ fn sec_06_effects_3_flows_s2_a_prose_answer_is_not_asked_again_as_a_tool_round()
         &mut nudged_batch,
         &mut |_, _| {
             nudged += 1;
-            Ok(Turn { content: String::new(), calls: vec![call("finish", "{}")], finish: true })
+            Ok(Turn { content: String::new(), calls: vec![common::call("finish", "{}")], finish: true })
         },
     );
     assert_eq!(nudged, 1, "an unfinished prose answer costs one nudge round, no more: {nudged}");
@@ -316,7 +312,7 @@ fn sec_06_effects_3_flows_s2_a_prose_answer_is_not_asked_again_as_a_tool_round()
         "captions",
         &Turn {
             content: String::new(),
-            calls: vec![call("add_caption", r#"{"clip":1,"start":0.5,"end":3.0,"text":"one"}"#)],
+            calls: vec![common::call("add_caption", r#"{"clip":1,"start":0.5,"end":3.0,"text":"one"}"#)],
             finish: false,
         },
         Vec::new(),
@@ -340,13 +336,13 @@ fn sec_06_effects_3_flows_s2_a_prose_answer_is_not_asked_again_as_a_tool_round()
 /// `answer_calls` routes through the same `Clips` methods the loop does.
 #[test]
 fn sec_06_effects_3_flows_s2_one_door_answers_both_shapes() {
-    let calls = vec![call("add_caption", r#"{"clip":1,"start":0.4,"end":2.2,"text":"same door"}"#)];
+    let calls = vec![common::call("add_caption", r#"{"clip":1,"start":0.4,"end":2.2,"text":"same door"}"#)];
     let notes = clip_rules_tools_leg::answer_calls(&calls, &mut batch());
     assert_eq!(notes.len(), 1, "one note per call, in order");
     assert!(notes[0].contains("add_caption"), "the note names the call: {notes:?}");
     // A call for a clip outside the batch is the §3.1 error naming the batch size — the sentence §F3.9's
     // retry path feeds back to the model.
-    let outside = clip_rules_tools_leg::answer(&call("add_caption", r#"{"clip":9,"start":0.0,"end":2.0,"text":"x"}"#), &mut batch());
+    let outside = clip_rules_tools_leg::answer(&common::call("add_caption", r#"{"clip":9,"start":0.0,"end":2.0,"text":"x"}"#), &mut batch());
     assert!(outside.contains("clip 9 is not in this batch"), "{outside}");
     assert!(outside.contains("3 clip(s)"), "and it says how big the batch was: {outside}");
 }

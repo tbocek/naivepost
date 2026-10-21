@@ -30,22 +30,7 @@ static RAN_LINE: AtomicBool = AtomicBool::new(false);
 /// worth of slack still catches a wall of emptiness.
 const MAX_ROWS_TO_LANES_PX: i32 = 260;
 
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
+
 
 /// A widget's top and bottom edge relative to ITS OWN WINDOW's top-left — the frame two widgets on
 /// the same page must be compared in (see [`cut_page_with_a_lane`]'s note on stacked windows).
@@ -159,7 +144,7 @@ fn check_the_preview_holds_a_real_picture(app: &adw::Application) {
     assert!(shown, "the page's own refresh found and showed a frame");
     settle();
 
-    let picture = find_named(&window, "preview-picture").expect("badge 1's picture widget is on the page");
+    let picture = common::find_named(&window, "preview-picture").expect("badge 1's picture widget is on the page");
     let picture = picture
         .downcast::<gtk::Picture>()
         .expect("`preview-picture` is a gtk::Picture");
@@ -208,8 +193,8 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
     // `Rows::lane_top` says where lane 0 begins, and every painted pixel has to lie inside the band's
     // allocation — a lane drawn below it would be clipped away, which is what "detached at the bottom
     // of the page" looked like.
-    let layers = find_named(&window, "track-layers").expect("the band's layer stack is on the page");
-    let band = find_named(&window, "track-band").expect("the band's drawing area is on the page");
+    let layers = common::find_named(&window, "track-layers").expect("the band's layer stack is on the page");
+    let band = common::find_named(&window, "track-band").expect("the band's drawing area is on the page");
     let (band_top, band_bottom) = local(&layers);
     // The size request, not the allocation: `fit_band_height` grows the request and the allocation only
     // catches up on the next layout pass, so reading the allocation here races it — the same lane that
@@ -232,7 +217,7 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
     );
     // And the gap from the toolbar to the tape is still small — §A packs the tracks directly under it,
     // and the failure mode was ~750 px of empty plate between the two.
-    let toolbar = find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
+    let toolbar = common::find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
     let (_, toolbar_bottom) = local(&toolbar);
     let gap = band_top - toolbar_bottom;
     println!("GAP toolbar-bottom {toolbar_bottom} -> band-top {band_top} = {gap} px");
@@ -298,7 +283,7 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
 /// page's own zoom door `press_zoom`, which ends in `repaint_scrollbar` → `cut_view::refresh_page_scrollbar`.
 fn check_the_scrollbar_shows_and_hides(app: &adw::Application) {
     let window = cut_page_with_a_lane(app);
-    let bar = find_named(&window, "track-scrollbar")
+    let bar = common::find_named(&window, "track-scrollbar")
         .expect("badge 31 is on the page")
         .downcast::<gtk::Scrollbar>()
         .expect("`track-scrollbar` is a scrollbar");
@@ -374,8 +359,8 @@ fn check_the_red_line_is_two_pixels_on_its_own_layer(app: &adw::Application) {
     naivepost::ui::set_playhead(&window, 24.0);
     naivepost::ui::cut_view::repaint_page(&window);
     settle();
-    let band = find_named(&window, "track-band").expect("the band's drawing area is on the page");
-    let head = find_named(&window, "track-playhead").expect("the red line's layer is on the page");
+    let band = common::find_named(&window, "track-band").expect("the band's drawing area is on the page");
+    let head = common::find_named(&window, "track-playhead").expect("the red line's layer is on the page");
     assert_ne!(
         band.widget_name(),
         head.widget_name(),
