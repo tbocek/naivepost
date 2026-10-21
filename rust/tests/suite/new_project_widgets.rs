@@ -30,6 +30,8 @@ fn window_round() {
         already_there_is_not_applied(app);
         refused_name_is_not_applied(app);
         RAN_REFUSED.store(true, std::sync::atomic::Ordering::SeqCst);
+        choosers_follow_a_project_outside_the_root(app);
+        RAN_FOLLOW.store(true, std::sync::atomic::Ordering::SeqCst);
         RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
@@ -38,6 +40,7 @@ static RAN_ASK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::n
 static RAN_PRESS_ASK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_REFUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_TYPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_FOLLOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_S1: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -493,6 +496,73 @@ fn typed_name_is_applied(app: &adw::Application) {
 fn f0_8_s6_an_applied_new_project_moves_the_window() {
     common::pin_private_cwd();
     window_round();
+}
+
+#[test]
+fn f0_8_s6_the_choosers_follow_a_project_created_outside_the_root() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_FOLLOW.load(std::sync::atomic::Ordering::SeqCst),
+        "the chooser-folders-follow check never ran"
+    );
+}
+
+/// S6's "chooser folders follow the chosen folder when outside the root", on the two choosers besides
+/// Add source files. The desktop's sheets cannot be typed into headlessly, so each is reached the way
+/// every other check here reaches one: ＋ New through its real button (the sheet it opens is the one the
+/// press set, read back with `last_ask`), Open through the same body its button's callback calls
+/// (`open_folder`, which is what `ask_open_project`'s answer forwards to) after the press has put up and
+/// configured that chooser (`last_open_ask_for_test`).
+///
+/// It runs LAST in `window_round` because a new project becomes this window's live session here. The
+/// no-remembered-folder case is the one `applied_new_project_moves_the_window` already asserts (a project
+/// under the root leaves `chooser_dir()` None, and that check reads it back); what follows is the case
+/// that MOVES them — by now earlier checks have applied an outside-the-root project, so the folder is set.
+fn choosers_follow_a_project_outside_the_root(app: &adw::Application) {
+    let fixture = fixture_dir();
+    let model = naivepost::project::load(&fixture).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    let session = ui::session_handle(&window);
+    let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
+    let root = common::temp_dir_tagged("follow");
+
+    // The case that moves them: created OUTSIDE the root, so its parent is the folder the person chose.
+    let created = new_project::create(&root, &root.join("elsewhere"), "far")
+        .expect("a free name creates");
+    let chosen = created.chooser.clone().expect("outside the root names a folder");
+    naivepost::ui::new_apply::apply(&created, &session, &status);
+    assert_eq!(naivepost::ui::new_apply::chooser_dir().as_deref(), Some(chosen.as_path()));
+
+    ui::new_button(&window)
+        .expect("the header bar has a New button")
+        .emit_clicked();
+    let asked = ui::window::last_ask().expect("the press opened the naming sheet");
+    assert_eq!(
+        asked.initial_folder().and_then(|f| f.path()).as_deref(),
+        Some(chosen.as_path()),
+        "S4's sheet follows the chosen folder"
+    );
+    // And the default name it offers was walked in that same folder, not in the old one.
+    assert!(
+        asked.initial_name().is_some(),
+        "the sheet still carries a name to type over"
+    );
+
+    // Open: the press configures the chooser exactly as Add's does, so the seam proves the folder; the
+    // answer afterwards goes through the body the chooser's callback calls (`open_folder`).
+    ui::open_button(&window)
+        .expect("the header bar has an Open button")
+        .emit_clicked();
+    let opened = ui::window::last_open_ask_for_test().expect("an Open press put up its chooser");
+    assert_eq!(
+        opened.initial_folder().and_then(|f| f.path()).as_deref(),
+        Some(chosen.as_path()),
+        "the Open chooser follows the chosen folder too"
+    );
+    window.close();
+    std::fs::remove_dir_all(&root).ok();
 }
 
 /// S6 through the window: applying a created project replaces the live session, logs its line, puts

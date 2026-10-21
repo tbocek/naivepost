@@ -130,7 +130,11 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path, session: &Rc<R
     let day = glib::DateTime::now_local()
         .and_then(|today| today.format("%F").map(|day| day.to_string()))
         .unwrap_or_else(|_| "new-project".to_string());
-    let dir = open.parent().map(Path::to_path_buf).unwrap_or_else(|| root.to_path_buf());
+    // S6's chooser rule reaches this sheet too: after a project created outside the root, that is the
+    // folder the person was last standing in, and the free-name walk has to run where the sheet stands.
+    let dir = crate::ui::new_apply::chooser_dir()
+        .or_else(|| open.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| root.to_path_buf());
     let dialog = new_project_dialog(&dir, &day);
     LAST_ASK.with(|asked| *asked.borrow_mut() = Some(dialog.clone()));
 
@@ -155,10 +159,21 @@ pub fn last_ask() -> Option<gtk::FileDialog> {
     LAST_ASK.with(|asked| asked.borrow().clone())
 }
 
+/// What the last Open press asked for, read back the same way as [`last_ask`] — including the folder
+/// S6 says it should start in, which is what a check compares against `new_apply::chooser_dir()`.
+/// Test-only by name: the program never reads it, only sets the slot when it opens the chooser.
+pub fn last_open_ask_for_test() -> Option<gtk::FileDialog> {
+    LAST_OPEN.with(|asked| asked.borrow().clone())
+}
+
 thread_local! {
     /// The naming sheet the last press opened, for [`last_ask`]. Thread-local like the rest of this
     /// window's state: it belongs to the session, not to the process's arguments.
     static LAST_ASK: std::cell::RefCell<Option<gtk::FileDialog>> =
+        const { std::cell::RefCell::new(None) };
+
+    /// The folder chooser the last Open press opened, for [`last_open_ask_for_test`].
+    static LAST_OPEN: std::cell::RefCell<Option<gtk::FileDialog>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -545,6 +560,12 @@ fn ask_open_project(
         .title(open_project::TITLE)
         .accept_label("Open")
         .build();
+    // S6's chooser rule, for this chooser: with a project created outside the root this launch, the
+    // person's projects are almost certainly there, so the picker starts there.
+    if let Some(dir) = crate::ui::new_apply::chooser_dir() {
+        dialog.set_initial_folder(Some(&gio::File::for_path(&dir)));
+    }
+    LAST_OPEN.with(|asked| *asked.borrow_mut() = Some(dialog.clone()));
 
     let bar = bar.clone();
     let status = status.clone();
