@@ -938,9 +938,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_reads_describe_is
 }
 
 /// §6 on this job's live path: the chunk's answer is filed under `cache/llm/describe/<sha256 hex>` and
-/// the next identical walk reads it back — no socket, and no new row in `requests.tsv`, which is what
-/// "a cache hit is answered before the gate and the exchange log" means for the timed log. The s5 test
-/// beside this one pins the resume wording; what is pinned here is the FILE and the row count.
+/// the next identical walk reads it back — no socket, and no new WIRE row, which is what "a cache hit is
+/// answered before the gate and the exchange log" means for the timed log. The s5 test beside this one
+/// pins the resume wording; what is pinned here is the FILE and the wire-row count. The hit's OWN line
+/// is item 10's claim, and the s12 test below is where that is named.
 #[test]
 fn sec_09_llm_and_tools_6_cache_s7_describe_files_its_answer_and_replays_it_without_a_socket() {
     let fake = Fake::start(FOUR_EVENTS.to_string());
@@ -973,7 +974,7 @@ fn sec_09_llm_and_tools_6_cache_s7_describe_files_its_answer_and_replays_it_with
     );
     assert!(tree.cache_llm(describe::STEP, slot).exists(), "under cache/llm/describe/");
 
-    // The replay cost nothing on the wire; §10 still files the hit as its own `cache` line.
+    // The replay cost nothing on the wire.
     let rows = naivepost::requests::read(&tree).expect("requests.tsv");
     assert!(!rows.is_empty(), "the request that earned the answer is recorded");
     assert_eq!(fake.asks.lock().expect("the record lock").bodies.len(), 1, "the second pass made no ask");
@@ -994,6 +995,78 @@ fn sec_09_llm_and_tools_6_cache_s7_describe_files_its_answer_and_replays_it_with
         scene.events().lines().filter(|line| !line.is_empty()).count(),
         FRAMES_PER_REQ,
         "and the cached pass still writes the whole chunk: {second:?}"
+    );
+}
+
+/// §10's other sentence about a re-run, on this job's live path: "A reply served from the cache is a
+/// line too, marked as such with no time on the wire, so the file shows what a re-run saved."
+///
+/// The door under test is the one that READS `cache/llm/describe/`. A plain second walk does not reach
+/// it: §F1.7 S2's resume rule fires on `events.tsv` alone, so the chunk is answered from the event log
+/// and the stored slot is never opened — which is why this test removes the two files a chunk writes
+/// (neither folds into §6's key) before walking again, leaving the slot as the only thing that can
+/// answer. Nothing else in the app could file this line for describe: every other ask records its hit
+/// where it calls `llm_cache::read`, and describe reaches the same store through `read_at`.
+#[test]
+fn sec_09_llm_and_tools_10_every_request_timed_new_s12_a_describe_cache_hit_files_its_own_row() {
+    let fake = Fake::start(FOUR_EVENTS.to_string());
+    let scene = Scene::new("s12-cache-line", 4, &fake.url);
+    let mut said = Vec::new();
+    let first = {
+        let _guard = env_lock();
+        scene.enter();
+        let conf = scene.leg_conf();
+        let answer = scene.describe(&conf, &mut |line| said.push(line.to_string()));
+        Scene::leave();
+        answer
+    };
+    first.expect("the first walk describes the row");
+    assert_eq!(fake.waited(1).len(), 1, "and paid for one ask");
+
+    let tree = scene.tree();
+    std::fs::remove_file(tree.events_tsv("lecture")).expect("the event log goes away");
+    std::fs::remove_file(tree.describe_state("lecture")).expect("and the running state with it");
+    let before = naivepost::requests::read(&tree).expect("requests.tsv");
+    let before_wire = before
+        .iter()
+        .filter(|row| row.outcome != naivepost::requests::Outcome::Cache)
+        .count();
+
+    let third = {
+        let _guard = env_lock();
+        scene.enter();
+        let conf = scene.leg_conf();
+        let answer = scene.describe(&conf, &mut |_line| {});
+        Scene::leave();
+        answer
+    };
+    third.expect("the walk after the reset answers from the stored slot");
+    assert_eq!(
+        fake.asks.lock().expect("the record lock").bodies.len(),
+        1,
+        "the hit opened no socket, so any new line is the hit's own"
+    );
+
+    let after = naivepost::requests::read(&tree).expect("requests.tsv");
+    assert_eq!(after.len(), before.len() + 1, "the hit added exactly one line: {after:?}");
+    let hit = after.last().expect("the line the hit appended");
+    assert_eq!(hit.outcome, naivepost::requests::Outcome::Cache, "marked as a cache row");
+    assert_eq!(hit.step, describe::STEP, "it names the step that was served");
+    assert_eq!(hit.job, "describe", "and the job within it");
+    assert_eq!(hit.service, naivepost::requests::Service::Llm, "an LLM row, like the call it replaced");
+    // "No time on the wire" read back as EMPTY fields, not zeros: `0.00` would say a request went out
+    // and came back instantly, which is the opposite of what happened (§10).
+    assert_eq!(hit.on_wire_s, None, "a hit was never on the wire");
+    assert_eq!(hit.first_byte_s, None, "and there was no first byte");
+    assert_eq!(hit.wait_s, None, "nor a wait for a slot: a hit is answered before the gate (§6)");
+    assert!(!hit.started.is_empty(), "the door stamped the moment the answer was read");
+    assert_eq!(
+        after
+            .iter()
+            .filter(|row| row.outcome != naivepost::requests::Outcome::Cache)
+            .count(),
+        before_wire,
+        "and the hit cost no wire row either"
     );
 }
 

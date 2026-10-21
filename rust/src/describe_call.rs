@@ -120,6 +120,9 @@ pub fn stage_chunk(
     // the ONE rule that decides that number; at the default of 1 this is exactly the old serial
     // walk, so nothing changes for the common case. Sending them one at a time left the extra slots
     // to the model's other clients while this app's own independent asks queued behind each other.
+    // §09 §10 hangs one thing off this number: when a whole chunk plan fits in one round, the retry
+    // loop below can find the chunk's own stored reply on its second pass and must file that hit — so
+    // the rounds decide whether an in-run replay is even possible.
     let at_once = crate::llm_liveness::in_flight(true, crate::services::llm_slots(conf));
     // The two files stay the main thread's alone — `events.tsv` is appended per chunk and is the
     // resume marker, and `state.txt` holds "the state after the last chunk", so BOTH must go down
@@ -230,10 +233,65 @@ fn session_dir() -> std::path::PathBuf {
     crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
 }
 
+/// The row a chunk served from the cache hands [`crate::request_timing::record_cached`]. Its `started`
+/// is left empty on purpose: the door stamps the moment the answer was read, which is the only time a
+/// hit has. `kind` and `job` are the spellings [`ask`] uses for this step's wire rows, so a cache line
+/// and the request it replaced differ in the outcome column and nowhere else. §6 keys a describe slot
+/// on the model id, so the model a hit came from is this row's own column, not a guess.
+fn cache_row(model: &str) -> crate::requests::Request {
+    crate::requests::Request {
+        started: String::new(),
+        run: String::new(),
+        step: STEP.to_string(),
+        job: "describe".to_string(),
+        service: crate::requests::Service::Llm,
+        model: model.to_string(),
+        kind: "POST".to_string(),
+        ..Default::default()
+    }
+}
+
+/// Where one chunk's answer would be found in `cache/llm/describe/`: the digest of its request and the
+/// model that spelled it. Carried as one argument because both belong to the same fact — §6 keys the
+/// slot on the model id, so a reply is only ever read back under the model that wrote it.
+struct StoredChunk<'a> {
+    key: &'a str,
+    model: &'a str,
+}
+
+/// A chunk's replayed answer: what was stored under `stored`, if anything, applied to the batch.
+///
+/// The read is [`describe::cached_reply`] and §10's `cache` line is filed in the same breath, because
+/// this step reaches its cache through `read_at` rather than the `llm_cache::read` every other ask
+/// records from — without this call a describe re-run would leave no trace of what it saved. The row
+/// goes down before the answer is applied, so a chunk whose write then fails still leaves its line
+/// behind, exactly as a wire request does.
+fn replayed_chunk(
+    tree: &Tree,
+    stored: &StoredChunk<'_>,
+    lane: &str,
+    batch: &[f64],
+    interval: f64,
+    history: &[String],
+) -> Option<Result<ChunkAnswer, String>> {
+    let cached = describe::cached_reply(tree, stored.key)?;
+    crate::request_timing::record_cached(tree, cache_row(stored.model));
+    Some(
+        apply_and_write(tree, lane, batch, interval, history, &cached)
+            .map(|missing| ChunkAnswer { cached: true, missing }),
+    )
+}
+
 /// A chunk already answered by an earlier run costs no request: §F1.7 S2's resume rule, read through
 /// [`describe::starts_already_logged`] so the rule stays the one F1.7 wrote (the chunk's START second
 /// is the row whose presence proves the whole chunk was answered). Returns `None` when it is still to
-/// ask, and the cached answer when it is not.
+/// ask, and the answer without a wire call when it is not.
+///
+/// The two ways a chunk is answered here are not the same fact, and only one of them is §10's cache
+/// hit: the resume rule fires on the EVENTS row alone, so a chunk whose events survive but whose
+/// `cache/llm/describe/` slot is gone (an older build, a cleared cache) is still owed no request —
+/// nothing was served from the cache then, and [`replayed_chunk`] files a line only for the text it
+/// actually read back.
 fn resume_answer(
     tree: &Tree,
     lane: &str,
@@ -241,21 +299,17 @@ fn resume_answer(
     batch: &[f64],
     interval: f64,
     history: &[String],
-    key: &str,
+    stored: &StoredChunk<'_>,
 ) -> Option<Result<ChunkAnswer, String>> {
     if !describe::starts_already_logged(rows, batch, describe::FRAMES_PER_REQ).contains(&0) {
         return None;
     }
-    match describe::cached_reply(tree, key) {
-        Some(cached) => Some(
-            apply_and_write(tree, lane, batch, interval, history, &cached)
-                .map(|missing| ChunkAnswer { cached: true, missing }),
-        ),
-        // The rows say the chunk was answered but the cache has nothing for it (an old run before the
-        // cache existed, or a cleared cache). Nothing is re-asked: the work is on disk, and paying a
-        // request to reproduce it would be the resume rule failing in the other direction.
-        None => Some(Ok(ChunkAnswer { cached: true, missing: 0 })),
-    }
+    Some(match replayed_chunk(tree, stored, lane, batch, interval, history) {
+        Some(answered) => answered,
+        // Nothing is re-asked: the work is on disk, and paying a request to reproduce it would be the
+        // resume rule failing in the other direction.
+        None => Ok(ChunkAnswer { cached: true, missing: 0 }),
+    })
 }
 
 /// What one chunk came to.
@@ -313,13 +367,22 @@ fn run_chunk(
         Err(reason) => return Err(format!("{lane}: {reason}")),
     };
     let key = describe::cache_key(&message, &images, &conf.model);
-    if let Some(answer) = resume_answer(tree, lane, &rows, batch, interval, &history, &key) {
+    // §F1.7 S2's resume rule read through [`describe::starts_already_logged`], and one rung past it:
+    // a chunk whose START is already in the event log is answered without a request, whether the text
+    // comes back from `cache/llm/describe/` or only from what is on disk. Answers `None` when the
+    // chunk is still to ask.
+    let stored = StoredChunk { key: &key, model: &conf.model };
+    if let Some(answer) = resume_answer(tree, lane, &rows, batch, interval, &history, &stored) {
+        // Said for both shapes of a no-wire answer (see [`resume_answer`]): the words count the chunk,
+        // which is what the line has always said, while §10's `cache` row is filed only where the
+        // stored text was really read back.
         log(&describe::cached_note(1));
         return answer;
     }
     let mut refusal: Option<String> = None;
     for attempt in 0..attempts() {
         if let Some(cached) = describe::cached_reply(tree, &key) {
+            crate::request_timing::record_cached(tree, cache_row(&conf.model));
             let answered = apply_and_write(tree, lane, batch, interval, &history, &cached)?;
             log(&describe::cached_note(1));
             return Ok(ChunkAnswer { cached: true, missing: answered });
