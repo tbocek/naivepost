@@ -15,6 +15,7 @@ use crate::cut::{EffectKind, Fx, Seg};
 use crate::cut_speed;
 use crate::fx_lane;
 use crate::fx_record;
+use crate::fx_text;
 use crate::fx_zoom;
 
 // --- S7: the frame every clip comes out at -----------------------------------------------------------------------
@@ -537,20 +538,46 @@ pub fn overlay_chain(kind: &str, enable: (f64, f64), fades: (f64, f64), box_px: 
     ]
 }
 
-/// §4 (`title: generated transparent frame-sized SVG, black round-joined stroke then white fill`). The stroke is
-/// written first because SVG paints in document order: outline under letters, or the letters eat their own edge on a
-/// bright picture.
+/// §4 (`title: generated transparent frame-sized SVG, black round-joined stroke then white fill`) and F3.4 S4
+/// (`same function for preview and render`): the sheet is laid out by [`crate::fx_text`] — the size, the line break,
+/// the baselines and the edge's thickness are all asked of the module the preview paints from
+/// ([`crate::ui::cut_preview_caption`]), so a caption that wraps to three lines on the panel comes out of the render
+/// as three lines at the same relative size. Before this it invented its own size off the box height, one unwrapped
+/// a fixed 12-px stroke, which was a second layout nobody kept in step. `w`/`h` are the effect's BOX in px (see
+/// [`crate::produce_fx_chain::box_px`]); `overlay_chain` scales the sheet into that box, so the sheet is box-sized
+/// and its own origin is 0,0. The stroke is written before the fill because SVG paints in document order: outline
+/// under letters, or the letters eat their own edge on a bright picture.
 pub fn title_svg(words: &str, w: i32, h: i32) -> String {
     // Colours spelled as words: `#` starts a fragment in SVG and would need escaping twice over to survive the
     // format string. The paint order is what matters — stroke before fill, so the outline sits under the letters.
+    let (size, lines) = fx_text::fit(words, w as f64, h as f64);
+    // `fx_text` is the module BOTH halves ask: the preview paints from it through
+    // [`crate::ui::cut_preview_caption`], and every number below — size, lines, baselines, stroke — comes from here so
+    // neither side can drift. The SVG spelling of the face the preview selects (`cairo::FontWeight::Bold`): §S4 says
+    // bold sans-serif, and both halves have to say it or the video's words come out lighter than the panel's.
+    let mut texts = String::new();
+    if size > 0.0 {
+        let ys = fx_text::baselines(0.0, h as f64, size, lines.len());
+        for (line, y) in lines.iter().zip(ys.iter()) {
+            if line.is_empty() {
+                // A blank typed line draws nothing; the sheet still exists, so ffmpeg keeps a valid input.
+                continue;
+            }
+            texts.push_str(&format!(
+                "<text x=\"{cx}\" y=\"{y:.3}\">{}</text>",
+                crate::cut_cards::xml_escape(line),
+                cx = w / 2
+            ));
+        }
+    }
+    // One call site per shared door, so a reader can count them: `fx_text::fit` above, `fx_text::baselines` above,
+    // `fx_text::render_stroke_width` below.
     format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\
-         <g font-family=\"sans-serif\" font-size=\"{size}\" text-anchor=\"middle\" \
-         stroke-linejoin=\"round\" stroke=\"black\" stroke-width=\"12\" fill=\"white\">\
-         <text x=\"{cx}\" y=\"{y}\">{words}</text></g></svg>",
-        size = h / 12,
-        cx = w / 2,
-        y = h * 3 / 4,
+         <g font-family=\"sans-serif\" font-weight=\"bold\" font-size=\"{size:.3}\" text-anchor=\"middle\" \
+         stroke-linejoin=\"round\" stroke=\"black\" stroke-width=\"{stroke:.3}\" fill=\"white\">\
+         {texts}</g></svg>",
+        stroke = fx_text::render_stroke_width(size),
     )
 }
 
