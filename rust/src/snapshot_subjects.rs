@@ -14,7 +14,16 @@
 
 /// Does this screen's subject take `<name>.png`, pushing the window shot to `<name>-page.png`?
 pub fn subject_takes_the_name(screen: &str) -> bool {
-    menu(screen) || lane(screen) || frame(screen) || picker(screen)
+    menu(screen) || lane(screen) || frame(screen) || picker(screen) || sources(screen)
+}
+
+/// §4's picture is the sources LIST plus its frame controls, not the page beside them.
+pub fn is_sources_subject(screen: &str) -> bool {
+    screen == "03-sources"
+}
+
+fn sources(screen: &str) -> bool {
+    is_sources_subject(screen)
 }
 
 /// The sidecar name the staging step painted this screen's subject into, which the frame-taking step renames over

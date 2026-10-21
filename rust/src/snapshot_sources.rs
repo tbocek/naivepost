@@ -195,3 +195,36 @@ pub fn widen_for_rows(window: &adw::ApplicationWindow) -> bool {
     }
     true
 }
+
+/// Paint §4's own subject — the LEFT column: the list of rows and the frame controls under it — into `out`.
+/// `spec/img/03-sources.png` is that crop, and a whole-window shot cannot be it: at §1's minimum the column is
+/// half the page beside the prompt bench, so its rows read small and the right half is not the subject at all.
+/// The page goes beside it as `<name>-page.png` (see `snapshot_subjects::subject_takes_the_name`).
+pub fn write_column_png(window: &adw::ApplicationWindow, out: &Path) -> Result<(), String> {
+    let column = ui::find_source_widget(window, "prepare-left")
+        .ok_or("the Prepare page drew no prepare-left")?;
+    // The live column is painted in place — no reparenting (the page box hands `prepare-left` back as a
+    // `gtk::Widget`, so it cannot be taken out as a `gtk::Box`), and the page sidecar below must still find it
+    // where the page drew it. Only the COLOURS differ: the CSS provider below selects on `.prepare-left`, so
+    // this crop comes out light like the reference while the window shot, taken before it, keeps the dark theme
+    // the app really draws in.
+    column.add_css_class("prepare-left-shot");
+    let theme = gtk::CssProvider::new();
+    theme.load_from_string(
+        "window { background-color: #fafafa; }\n\
+         .prepare-left, .prepare-left-shot, .prepare-left-shot label\n\
+         { background-color: #fafafa; color: #1a1a1a; }\n\
+         .prepare-left-shot button { color: #1a1a1a; }\n",
+    );
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &theme,
+            gtk::STYLE_PROVIDER_PRIORITY_USER,
+        );
+    }
+    crate::snapshot_face::pump_context(32);
+    let result = crate::snapshot_face::write_png(&column, out);
+    column.remove_css_class("prepare-left-shot");
+    result
+}

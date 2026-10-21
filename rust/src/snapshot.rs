@@ -1250,6 +1250,20 @@ const FORM_UNDER_PX: i32 = 380;
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
+            } else if crate::snapshot_subjects::subject_takes_the_name(&screen_for_picker)
+                && crate::snapshot_subjects::is_sources_subject(&screen_for_picker) {
+                // §4's subject is the LEFT column (the row list and the frame controls under it), which a window
+                // shot cannot show at a readable size, so the column takes `<name>.png` and the page it was
+                // staged on goes beside it as `<name>-page.png` — the popover and picker precedent above.
+                if let Err(err) = crate::snapshot_sources::write_column_png(&window, &out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
+                let page_out = out.with_extension("page.png");
+                if let Err(err) = write_png(&painted, &page_out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
             } else if crate::snapshot_prompt_picker::is_picker_subject(&screen_for_picker) {
                 // §1's second picture is the picker LIST, so the list takes `<name>.png` and the Prepare page it
                 // was staged on goes beside it as `<name>-page.png`. A DropDown pops its rows on their own surface,

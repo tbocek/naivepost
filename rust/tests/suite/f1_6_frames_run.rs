@@ -539,8 +539,3 @@ impl Scene {
 pub fn conf_of(paths: &Paths) -> Conf {
     settings::read(paths).unwrap_or_default()
 }
-
-/// The frame folder the pass writes into: the same one that holds `.frames` and `scenes.tsv`.
-pub fn frames_folder(tree: &Tree) -> PathBuf {
-    tree.frames_dir(LANE)
-}
