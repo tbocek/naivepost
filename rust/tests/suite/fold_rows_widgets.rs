@@ -94,10 +94,16 @@ fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
         return ui::line_step_button(window, name).expect("the toolbar drew its undo-button");
     }
     let holder = if name == "fold-all-button" {
-        // The whole-cut badge stayed in the gutter-side holder; only the PER-GAP badges moved onto the band.
-        ui::fold_badges_box(window).expect("the Cut page drew its fold-all holder")
+        // The whole-cut badge now sits on the band's own gutter rail (§B); the old beside-the-rows holder is
+        // only the fallback for a page built without a band.
+        naivepost::ui::cut_tracks::gutter_badges_box(window).or_else(|| ui::fold_badges_box(window)).expect("the Cut page drew its fold-all rail")
     } else if name.starts_with("fold-") {
         ui::fold_overlay(window).expect("the band drew its own `fold-badges` overlay")
+    } else if name.starts_with("row-cross-") || name.starts_with("gutter-switch-") {
+        // §B's gutter: the row ✕ and the lane switches live on the band's 30 px rail, not in `camera-rows`.
+        naivepost::ui::cut_tracks::gutter_switches_box(window)
+            .or_else(|| ui::camera_rows_box(window))
+            .expect("the band drew its `gutter-switches` rail")
     } else {
         ui::camera_rows_box(window).expect("the Cut page drew its camera-rows box")
     };

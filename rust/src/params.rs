@@ -895,6 +895,16 @@ pub fn cut() -> Vec<Param> {
             ui::cut_colours::PLAYHEAD_RGB,
             "ui::cut_colours::PLAYHEAD_RGB",
         ),
+        colour(
+            "cut.colour.gutterGround",
+            ui::cut_colours::GUTTER_GROUND,
+            "ui::cut_colours::GUTTER_GROUND",
+        ),
+        colour(
+            "cut.colour.gutterEdge",
+            ui::cut_colours::GUTTER_EDGE,
+            "ui::cut_colours::GUTTER_EDGE",
+        ),
     ]
 }
 

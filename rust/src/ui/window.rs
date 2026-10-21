@@ -17,7 +17,7 @@ use crate::ui::cut_volume_hand::wire_volume_esc;
 use crate::ui::cut_text_hand::wire_text_esc;
 use crate::ui::cut_label_hand::wire_label_esc;
 use crate::ui::cut_folds::{
-    fold_badges_box, page_recordings, press_fold_all, push_session_recordings, refresh_fold_badges,
+    page_recordings, press_fold_all, push_session_recordings, refresh_fold_badges,
 };
 use crate::ui::cut_cameras::refresh_camera_rows;
 use crate::ui::cut_form_frame;
@@ -910,14 +910,15 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
 }
 
 /// F2.11 S1 (`the gutter badge folds/unfolds all`): create `fold-all-button` in the gutter holder and
-//  wire it to [`press_fold_all`]. The button lives beside the camera rows rather than painted into the
-/// gutter's 30 px for the same reason the gap badges do — see `fold-badges` at the page build.
+//  wire it to [`press_fold_all`]. §B's seat is the band's own 30 px gutter, so it goes into
+/// `gutter-badges`, an overlay child of `track-layers` that sits over the inked column; the older
+/// beside-the-rows holder is only the fallback for a page built without a band.
 fn wire_fold_all(window: &adw::ApplicationWindow) {
     // Look the button up IN THE HOLDER rather than by a tree-wide name search. A window's `close()` does
     // not destroy its widgets while another window's tree is still around, so searching by name can hand
     // back a `fold-all-button` parented to a DIFFERENT window's box: this one would then look already
     // built and never be appended, leaving the second window with no gutter badge at all.
-    let Some(holder) = fold_badges_box(window) else {
+    let Some(holder) = crate::ui::cut_tracks::gutter_badges_box(window) else {
         return;
     };
     if holder_children_named(&holder, "fold-all-button") {

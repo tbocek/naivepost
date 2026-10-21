@@ -24,7 +24,8 @@ use crate::{
 /// "colours" among the values a tuning pass may move, so no drawing helper holds one of its own any more.
 use crate::ui::cut_colours::{
     EDGE_AMBER, GROUND, INSERT_VIOLET, JOIN_WASH, KEPT_BORDER, KEPT_TINT, LANE_BORDER, LANE_GROUND,
-    MARK_IN_GREEN, MARK_OUT_RED, OVER_EATEN, PLAYHEAD_RGB, RULER_INK, SELECTION_BLUE, WATCH_OUTLINE,
+    GUTTER_EDGE, GUTTER_GROUND, MARK_IN_GREEN, MARK_OUT_RED, OVER_EATEN, PLAYHEAD_RGB, RULER_INK,
+    SELECTION_BLUE, WATCH_OUTLINE,
 };
 /// §1's playhead width: "2 px line on its own layer". Its colour is [`PLAYHEAD_RGB`].
 pub const PLAYHEAD_PX: f64 = 2.0;
@@ -41,6 +42,13 @@ pub const ROW_WAVE_PX: f64 = (THUMB_DEFAULT_PX as f64 + PICTURE_ROW_EXTRA_PX) / 
 /// A flag's triangle: 3 px of line (§1) with a pennant this wide and tall.
 const MARK_LINE_PX: f64 = 3.0;
 const FLAG_PX: f64 = 10.0;
+/// §A's selection-band rule: the ✕ on a kept bar or on the selection appears "only when ≥50 px wide".
+/// Below that the glyph would be most of the mark and there is nothing to press.
+pub const CROSS_MIN_PX: f64 = 50.0;
+
+/// One picture-row pitch: the row's own height plus the 4 px §A puts between rows. Public because the
+/// gutter rail places its switches with it — a switch that guesses the pitch lands on the wrong row.
+pub const ROWS_PITCH_PX: i32 = (THUMB_DEFAULT_PX as i32) + (PICTURE_ROW_EXTRA_PX as i32);
 
 /// §A's tick ladder: `0.2 0.5 1 2 5 10 30 60 120 300 600 s`, the FIRST one whose spacing at this zoom is at
 /// least 70 px apart — a label every 30 px would be a grey bar, and every 700 px a ruler with no marks.
@@ -352,6 +360,10 @@ pub struct Band {
     pub surface: gtk::DrawingArea,
     pub playhead: gtk::DrawingArea,
     pub layers: gtk::Overlay,
+    /// §B's gutter rail, IN the band: the whole-cut `fold-all-button` goes here (`ui::wire_fold_all`).
+    pub gutter_badges: gtk::Box,
+    /// The same rail one row lower per lane/row control: `gutter-switch-<lane>` and `row-cross-<n>`.
+    pub gutter_switches: gtk::Box,
 }
 
 /// Build the two surfaces with the names §1's inventory uses. Height is the band's own arithmetic; the
@@ -387,14 +399,83 @@ pub fn build(height: i32, width: i32) -> Band {
     badges.set_can_target(false);
     badges.set_halign(gtk::Align::Start);
     badges.set_valign(gtk::Align::Start);
+    // §B's gutter: the 30 px column at the band's left edge is a RAIL the page's controls sit on, not a
+    // band of its own, so its two holders are overlay children of this same stack — painted over the
+    // inked column `draw_gutter` lays down, and inside `track-layers` so every Cut-page refresh finds them
+    // by name the way it finds `fold-badges`. `gutter-badges` takes the whole-cut fold badge (§1's badge 23);
+    // `gutter-switches` takes one sound switch per lane and the empty-row ✕ (§1's badge 29), each pushed
+    // down to its own row by `cut_cameras::refresh_camera_rows`.
+    let rail = || {
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        column.set_can_target(false);
+        column.set_halign(gtk::Align::Start);
+        column.set_valign(gtk::Align::Start);
+        column.set_margin_start(2);
+        // Below the ruler: §B puts the gutter's controls in the selection band and the rows under it.
+        column.set_margin_top(cut_trim::RULER_H as i32 + 2);
+        column
+    };
+    let gutter_badges = rail();
+    gutter_badges.set_widget_name("gutter-badges");
+    let gutter_switches = rail();
+    gutter_switches.set_widget_name("gutter-switches");
     layers.set_child(Some(&surface));
     layers.add_overlay(&playhead);
     layers.add_overlay(&badges);
+    layers.add_overlay(&gutter_badges);
+    layers.add_overlay(&gutter_switches);
+    // §B's rail is dark ink, so its controls must not arrive wearing Adwaita's light button plate: over the
+    // gutter each one is a flat glyph on the rail, which is how `spec/img/05-cut.png` draws badges 23/29.
+    for column in [&gutter_badges, &gutter_switches] {
+        column.add_css_class("cut-gutter-col");
+    }
+    install_gutter_css_once();
     Band {
         surface,
         playhead,
         layers,
+        gutter_badges,
+        gutter_switches,
     }
+}
+
+/// The gutter rail's own CSS, installed once per process like `install_toolbar_css_once`: buttons on the
+/// rail are flat (no frame, no background) and sized to the 30 px column, because §B gives the gutter 30 px
+/// of TIMELINE space — a default button is wider than the rail it lives on.
+fn install_gutter_css_once() {
+    static LOADED: std::sync::Once = std::sync::Once::new();
+    LOADED.call_once(|| {
+        let provider = gtk::CssProvider::new();
+        provider.load_from_string(
+            ".cut-gutter-col button { background: none; border: none; box-shadow: none; \
+             min-width: 26px; min-height: 18px; padding: 0 1px; margin: 0; }",
+        );
+        gtk::style_context_add_provider_for_display(
+            &gtk::gdk::Display::default().expect("a display to style"),
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
+}
+
+/// This window's gutter rail, by name, scoped to its own content — the `fold_badges_box` rule: a closed
+/// window's tree survives and a name search from the window can land in it, so search from `content`.
+fn gutter_column(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Box> {
+    let content = window.content()?;
+    crate::ui::window::find_widget_by_name(content.upcast_ref(), name)?
+        .downcast::<gtk::Box>()
+        .ok()
+}
+
+/// The rail that holds this window's whole-cut fold badge: the band's `gutter-badges` when the page drew
+/// a band (§B's seat), else the older `fold-all-holder` so a page without a band still gets its badge.
+pub fn gutter_badges_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
+    gutter_column(window, "gutter-badges").or_else(|| crate::ui::cut_folds::fold_badges_box(window))
+}
+
+/// The rail this window's lane switches and row crosses live on, or None when the page has no band.
+pub fn gutter_switches_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
+    gutter_column(window, "gutter-switches")
 }
 
 /// The band this page shows: the two surfaces §1's stack is made of, found again through the window that
@@ -541,7 +622,50 @@ pub fn paint_at(cr: &cairo::Context, scene: &Scene, width: f64, height: f64, thu
     draw_in_out_marks(cr, scene, rows, tape);
     draw_laid_pieces(cr, scene, rows, tape);
     draw_lane_rows(cr, scene, rows, tape);
+    draw_gutter(cr, rows, height);
     draw_name_plates(cr, scene, rows);
+}
+
+/// §B's gutter: the first 30 px of the band's own space, inked from the ruler's bottom edge down so the rail
+/// under the switches reads as a rail. The ruler keeps its own ground on purpose: `draw_ruler` prints its
+/// first label at x = 2, and inking over it would erase the tape's first tick label.
+///
+/// It is painted LAST (see [`paint_at`]) because several painters fill from x = 0 across the whole tape —
+/// the row wave strips reach the surface's full width by design — and any of them drawn after this would
+/// paint back over the rail. That is also why `draw_picture_rows` clips its ground to the rail's edge: the
+/// row wash is painted before this one, so it needs no clip, but a reader who moves the call must keep the
+/// order or the gutter silently disappears into the row colour.
+fn draw_gutter(cr: &cairo::Context, rows: Rows, height: f64) {
+    fill(
+        cr,
+        GUTTER_GROUND,
+        0.0,
+        rows.selection,
+        cut_screen::GUTTER_PX,
+        (height - rows.selection).max(0.0),
+        1.0,
+    );
+    ink(cr, GUTTER_EDGE);
+    cr.rectangle(
+        cut_screen::GUTTER_PX - 1.0,
+        rows.selection,
+        1.0,
+        (height - rows.selection).max(0.0),
+    );
+    let _ = cr.fill();
+}
+
+/// §1's badges 25/27: the white ✕ on a kept bar or on the selection. Two crossing strokes, centred in the
+/// 22 px band; only drawn where `CROSS_MIN_PX` of width exists, per §A.
+fn cross(cr: &cairo::Context, cx: f64, cy: f64, reach: f64) {
+    cr.set_source_rgb(1.0, 1.0, 1.0);
+    cr.set_line_width(1.6);
+    cr.move_to(cx - reach, cy - reach);
+    cr.line_to(cx + reach, cy + reach);
+    let _ = cr.stroke();
+    cr.move_to(cx + reach, cy - reach);
+    cr.line_to(cx - reach, cy + reach);
+    let _ = cr.stroke();
 }
 
 /// F2.9 S2: the pieces a sound paste laid over the kept footage, on the PAINTED band as well as on the
@@ -706,6 +830,19 @@ fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     for (x, _, _) in cut_trim::border_positions(&boxes) {
         cr.rectangle(x - 0.5, rows.selection, 1.5, SELECTION_BAND_PX);
         let _ = cr.fill();
+    }
+    for b in &boxes {
+        if b.insert || b.w < CROSS_MIN_PX {
+            continue;
+        }
+        // §A puts the ✕ "only when ≥50 px wide", centred on the bar — the same mark the press geometry
+        // treats as the scene's badge, so what a test sees is what a click would take.
+        cross(
+            cr,
+            b.x + b.w / 2.0,
+            rows.selection + SELECTION_BAND_PX / 2.0,
+            4.0,
+        );
     }
 }
 
@@ -951,6 +1088,14 @@ fn draw_selection(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     for x in [x0, band_x(scene, to)] {
         cr.rectangle(x - 1.0, rows.selection, 2.5, SELECTION_BAND_PX);
         let _ = cr.fill();
+    }
+    if width >= CROSS_MIN_PX {
+        cross(
+            cr,
+            x0 + width / 2.0,
+            rows.selection + SELECTION_BAND_PX / 2.0,
+            4.0,
+        );
     }
 }
 

@@ -223,10 +223,33 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
         );
     }
     // What DOES live in the gutter are the switches and badges, drawn over the band's own first 30 px.
-    assert!(
-        find_named(&window, "track-layers").is_some(),
-        "the gutter belongs to the band's layer stack, which paints it in its first 30 px"
-    );
+    let layers = find_named(&window, "track-layers")
+        .expect("the gutter belongs to the band's layer stack, which paints it in its first 30 px");
+    // §B's rail is IN that stack: the whole-cut badge and the lane switches are overlay children of
+    // `track-layers`, not boxes the page packs beside it — a direct-children scan would miss them, because
+    // `gtk::Overlay` keeps each overlay child in its own private layout child.
+    fn inside(node: &gtk::Widget, name: &str) -> bool {
+        if node.widget_name() == name {
+            return true;
+        }
+        node.observe_children().iter::<glib::Object>().flatten().any(|child| {
+            child
+                .downcast_ref::<gtk::Widget>()
+                .is_some_and(|child| inside(child, name))
+        })
+    }
+    for rail in ["gutter-badges", "gutter-switches"] {
+        assert!(
+            find_named(&window, rail).is_some(),
+            "`{rail}` is the gutter's control rail (§B: fold-all badge, sound switches, empty-row ✕)"
+        );
+        assert!(
+            inside(&layers, rail),
+            "`{rail}` must be a descendant of `track-layers`: §1's gutter is the band's own left edge, \
+             not a column the page stacks next to it"
+        );
+    }
+    println!("GUTTER rails inside track-layers: gutter-badges + gutter-switches");
     RAN_GUTTER.store(true, Ordering::SeqCst);
 }
 

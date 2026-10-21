@@ -158,7 +158,9 @@ fn press_folds_the_file(app: &adw::Application) {
     ui::refresh_fold_badges(&window);
     settle();
 
-    let holder = ui::fold_badges_box(&window).expect("the Cut page drew its fold-badges holder");
+    let holder = naivepost::ui::cut_tracks::gutter_badges_box(&window)
+        .or_else(|| ui::fold_badges_box(&window))
+        .expect("the Cut page drew its fold-badges holder");
     let all = find_button(holder.upcast_ref(), "fold-all-button").expect("the gutter badge is there");
     all.emit_by_name::<()>("clicked", &[]);
     settle();

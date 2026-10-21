@@ -222,6 +222,9 @@ pub fn refresh_fold_badges(window: &adw::ApplicationWindow) {
         button.set_halign(gtk::Align::Start);
         button.set_valign(gtk::Align::Start);
         button.set_margin_start(badge.x.round() as i32);
+        // §B puts the −/+ badges IN the selection band, not above it: `fold-badges` is pinned to the band's
+        // top, so the ruler's height is paid for here or every badge floats over the ruler.
+        button.set_margin_top(crate::cut_trim::RULER_H as i32 + 1);
         let win = window.clone();
         button.connect_clicked(move |_| {
             press_fold_gap(&win, index);

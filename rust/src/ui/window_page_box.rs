@@ -631,28 +631,13 @@ pub(crate) fn page_box(
         crate::ui::cut_page_layout::arrange(&box_);
     }
 
-    // F2.11 S1 — the whole-cut fold badge's holder, beside the camera rows. THE CUT PAGE ONLY:
-    // `page_box` runs once per tab (PAGES is four long), and a box named `fold-all-holder` on each of them
-    // makes that name ambiguous — every lookup from `fold_badges_box` then lands on whichever page the
-    // walk reaches first, which is how one page's refresh appends into another page's tree and trips
-    // `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`. Measured: 4 such boxes
-    // per window before this guard, 1 after.
-    //
-    // DECISION (§A names no widget seat for the WHOLE-CUT badge): §B puts the fold-all badge in the 30 px
-    // gutter, which today is painted rather than widgetled, so this button takes the nearest real seat the
-    // page has — beside the rows, where a person looks for the tape's controls. The PER-GAP −/+ badges are
-    // NOT here: they are children of the band's own overlay (`fold-badges`, built in `cut_tracks::build`)
-    // so each sits over the bar whose gap it folds. Placement stays single-sourced in `cut_fold`:
-    // `FOLD_MIN_PX` (no badge over a gap with no room) and `BADGE_INSIDE_PX` (just inside the neighbouring
-    // bar, never mid-gap), both applied by `cut_fold::badges`, whose x each button is placed at.
-    if page == Page::Cut.label() {
-        let folds_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        folds_box.set_widget_name("fold-all-holder");
-        folds_box.set_tooltip_text(Some(
-            "\u{2212} folds a stretch the cut drops away \u{00b7} + on the seam opens it again",
-        ));
-        box_.append(&folds_box);
-    }
+    // F2.11 S1 — the whole-cut fold badge lives on the band's own gutter rail (`gutter-badges`, built in
+    // `cut_tracks::build`), which is §B's seat for it; the page used to append an empty `fold-all-holder`
+    // box here while the badge sat elsewhere, and that plate of nothing is gone. The PER-GAP −/+ badges are
+    // children of the same overlay (`fold-badges`), each over the bar whose gap it folds. Placement stays
+    // single-sourced in `cut_fold`: `FOLD_MIN_PX` (no badge over a gap with no room) and `BADGE_INSIDE_PX`
+    // (just inside the neighbouring bar, never mid-gap), both applied by `cut_fold::badges`.
+
 
     view.set_content(Some(&page_scroller));
     // The two widgets are handed back only for Prepare; every other page has none. `build_window`

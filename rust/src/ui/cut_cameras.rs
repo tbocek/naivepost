@@ -202,6 +202,26 @@ pub fn row_spans(cut_: &Cut) -> Vec<crate::timeline::Recording> {
     held
 }
 
+/// The rail row a gutter control belongs to, in px: one row pitch per row above it, measured with the same
+/// thumbnail height the band paints at (`cut_tracks::THUMB_DEFAULT_PX`, which is also what sized the band
+/// this page installed). Kept next to [`crate::ui::cut_tracks::ROWS_PITCH_PX`] so the switch and the row it
+/// mutes cannot drift apart.
+fn gutter_row_top(row: usize) -> i32 {
+    crate::ui::cut_tracks::ROWS_PITCH_PX * (row as i32 + 1)
+}
+
+/// Rail-local lookup: the control already on `rail` for `name`, or None. Scoped to the rail rather than
+/// searched from the window because a closed window's tree survives with its own `gutter-switch-cam1`
+/// (`camera_rows_box`'s lesson), and `camera-rows` itself is rebuilt on every pass, so a control living
+/// there would be rebuilt too — leaving the OLD one holding the name and the lookup answering a stale twin.
+fn rail_child(rail: &gtk::Box, name: &str) -> Option<gtk::Widget> {
+    rail.observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .find(|child| child.widget_name() == name)
+}
+
 pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
     let Some(rows_box) = camera_rows_box(window) else {
         return;
@@ -362,20 +382,41 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
             // OFF (not pressed) when the lane is silent EVERYWHERE, on while any scene still hears it —
             // the same reading `cut_hear::toggle_lane_all` acts on, so the switch never claims a state
             // the next press contradicts.
-            gutter.set_active(cut_hear::lane_is_heard_anywhere(&cut_, &[lane.as_str()]));
+            let heard_whole_cut = cut_hear::lane_is_heard_anywhere(&cut_, &[lane.as_str()]);
+            gutter.set_active(heard_whole_cut);
             gutter.set_tooltip_text(Some(&format!("{lane} for the whole cut")));
             let win = window.clone();
+            let lane_switch = lane.clone();
+            let switch_name = format!("gutter-switch-{lane_switch}");
             gutter.connect_toggled(move |switch| {
                 if refreshing() {
                     return;
                 }
-                press_gutter_switch(&win, lane.as_str());
+                press_gutter_switch(&win, lane_switch.as_str());
                 // The switch's own face is the whole-cut answer, which `toggle_lane_all` just wrote;
                 // re-read it so a half-silenced row that went fully silent shows exactly that.
                 let fresh = newest_review_cut();
                 switch.set_active(cut_hear::lane_is_heard_anywhere(&fresh, &[lane.as_str()]));
             });
-            holder.append(&gutter);
+            // §B's gutter: the whole-cut switch lives in the band's 30 px rail, not in the row list, and it is
+            // found rail-locally rather than by a name search — see [`rail_row_button`] for why.
+            gutter.set_margin_top(gutter_row_top(index));
+            gutter.set_halign(gtk::Align::Start);
+            let rail = crate::ui::cut_tracks::gutter_switches_box(window);
+            // Build once, re-state after: a switch already on the rail keeps its one identity, exactly
+            // as `watch-row-N` does in the row list. Re-appending would collide (`append` refuses a
+            // child that has a parent) and leave an older twin holding the name.
+            let kept = rail
+                .as_ref()
+                .and_then(|rail| rail_child(rail, &switch_name))
+                .and_then(|found| found.downcast::<gtk::ToggleButton>().ok());
+            match (kept, rail.as_ref()) {
+                // Re-state the switch already on the rail: drop this pass's fresh one and re-read the face
+                // of the one that has lived there since it was first drawn.
+                (Some(existing), _) => existing.set_active(heard_whole_cut),                (None, Some(rail)) => rail.append(&gutter),
+                // A page built without a band keeps the switch beside its plate.
+                (None, None) => holder.append(&gutter),
+            }
         }
         // F2.11 S2 (`An emptied bottom row stays until its \u{2715}`): the cross on the emptied bottom
         // row, sensitive only where `cut_fold::kill_row` would answer — so a live ✕ IS the promise that
@@ -384,8 +425,15 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
         // the plate/badges above it. Re-appending it each pass would leave the earlier child holding the
         // old sensitivity under the same widget name, which is the F2.10 lesson this function already
         // records for `watch-row-1`.
-        let found = find_widget_by_name(rows_box.upcast_ref(), &format!("row-cross-{}", index + 1))
-            .and_then(|found| found.downcast::<gtk::Button>().ok());
+        let rail = crate::ui::cut_tracks::gutter_switches_box(window);
+        let found = rail
+            .as_ref()
+            .and_then(|rail| rail_child(rail, &format!("row-cross-{}", index + 1)))
+            .and_then(|found| found.downcast::<gtk::Button>().ok())
+            .or_else(|| {
+                find_widget_by_name(rows_box.upcast_ref(), &format!("row-cross-{}", index + 1))
+                    .and_then(|found| found.downcast::<gtk::Button>().ok())
+            });
         let cross = match found {
             Some(existing) => existing,
             None => {
@@ -400,7 +448,12 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                 fresh.connect_clicked(move |_| {
                     press_badge(&win, Badge::EmptyRow, index);
                 });
-                holder.append(&fresh);
+                fresh.set_margin_top(gutter_row_top(index));
+                fresh.set_halign(gtk::Align::Start);
+                match rail.as_ref() {
+                    Some(rail) => rail.append(&fresh),
+                    None => holder.append(&fresh),
+                }
                 fresh
             }
         };
