@@ -49,16 +49,53 @@ pub fn write_png(
     let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, FRAME_W as i32, FRAME_H as i32)
         .map_err(|why| format!("the preview surface: {why}"))?;
     let mut drawn = String::new();
+    let mut plate_said = String::new();
     {
         let cr = cairo::Context::new(&surface).map_err(|why| format!("the preview context: {why}"))?;
-        draw(&cr, cut, t, frame, playing, &mut drawn);
+        draw_with_plate(&cr, cut, t, frame, playing, &mut drawn, &mut plate_said);
     }
     let mut file = std::fs::File::create(out).map_err(|why| format!("{}: {why}", out.display()))?;
     surface
         .write_to_png(&mut file)
         .map_err(|why| format!("writing the preview: {why}"))?;
+    if !plate_said.is_empty() {
+        drawn.push_str(&format!(" | plate: {plate_said}"));
+    }
     Ok(drawn)
 }
+
+/// The debt sentence drawn beside the stroked rect, in px of the fitted box.
+///
+/// §2's paused half is `rect stroked white with a plate`, and in the live panel that plate is the
+/// `preview-plate` label — `refresh_effects_lane` writes its wording through `fx_lane::plate_for` and GTK lays it
+/// centred over the picture (`cut_preview_panel::install`, `cut_lane_rows`). A surface painted on its own has no
+/// label to lean on, so without this the frame shot shows the rect and never the plate §2 pairs with it. Same
+/// door for the words (`fx_lane::plate_debt_at` + `fx_lane::plate_for`, asked with the rect's OWN width as the
+/// room, which is what `PLATE_MIN_PX` is measured against), same centre the overlay puts it at.
+fn plate_on_rect(cr: &cairo::Context, cut: &Cut, t: f64, rect: (f64, f64, f64, f64)) -> Option<String> {
+    let text = crate::fx_lane::plate_for(crate::fx_lane::plate_debt_at(&cut.fx, t), rect.2)?;
+    cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
+    cr.set_font_size(PLATE_FONT_PX);
+    let extents = cr.text_extents(&text).ok()?;
+    let box_w = extents.width() + 2.0 * PLATE_PAD_X;
+    let box_h = extents.height() + 2.0 * PLATE_PAD_Y;
+    let x = (rect.0 + rect.2 / 2.0 - box_w / 2.0).clamp(rect.0, (rect.0 + rect.2 - box_w).max(rect.0));
+    let y = (rect.1 + rect.3 / 2.0 - box_h / 2.0).clamp(rect.1, (rect.1 + rect.3 - box_h).max(rect.1));
+    // Dark plate, white words: it sits over the picture, and this reads on either ground.
+    cr.set_source_rgba(0.0, 0.0, 0.0, 0.78);
+    cr.rectangle(x, y, box_w, box_h);
+    let _ = cr.fill();
+    cr.set_source_rgb(1.0, 1.0, 1.0);
+    cr.move_to(x + PLATE_PAD_X - extents.x_bearing(), y + PLATE_PAD_Y - extents.y_bearing());
+    let _ = cr.show_text(&text);
+    Some(text)
+}
+
+/// The plate's own type size and padding in the 960x540 frame: big enough to read at the size the two images are
+/// compared at, small enough that one line fits inside a zoomed camera rect.
+const PLATE_FONT_PX: f64 = 22.0;
+const PLATE_PAD_X: f64 = 10.0;
+const PLATE_PAD_Y: f64 = 6.0;
 
 /// Paint into `cr` (given to `write_png`, and public so a check can drive the same door the shot uses).
 pub fn draw(
@@ -68,6 +105,20 @@ pub fn draw(
     frame: Option<&Path>,
     playing: bool,
     said: &mut String,
+) {
+    let mut unused = String::new();
+    draw_with_plate(cr, cut, t, frame, playing, said, &mut unused);
+}
+
+/// The same paint with a second out-param for the plate's words, so `write_png` can print them.
+fn draw_with_plate(
+    cr: &cairo::Context,
+    cut: &Cut,
+    t: f64,
+    frame: Option<&Path>,
+    playing: bool,
+    said: &mut String,
+    plate_said: &mut String,
 ) {
     // The recorded picture first, contain-fitted exactly as the panel's `GtkPicture` fits it: every fraction the
     // camera and the caption carry is measured against THAT box, so the fit has to be computed before the ink.
@@ -122,6 +173,11 @@ pub fn draw(
         cut_preview_frame::paint_playing(cr, &frame_state, &seen);
     } else {
         cut_preview_frame::paint_paused(cr, &frame_state, &seen);
+        // …and the plate that goes WITH the stroked rect (§2: "rect stroked white with a plate"), which only the
+        // live panel's label can supply — see [`plate_on_rect`].
+        let rect = cut_preview_frame::camera_rect_px(&seen.camera, fit);
+        *plate_said =
+            plate_on_rect(cr, cut, t, rect).unwrap_or_else(|| "none (no debt worth a line here)".to_string());
     }
     let _ = cr.restore();
     *said = format!(

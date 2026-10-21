@@ -9,6 +9,7 @@
 // (`cut_play_leg::route`). Plain data throughout: no widget, no display, no socket.
 
 use adw::prelude::*;
+use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx, Lane, Seg};
 use naivepost::ui;
 use naivepost::{cut_hear, cut_play, cut_play_leg, fx_record, fx_volume};
@@ -196,6 +197,9 @@ fn loud0() -> Fx {
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// The same for the tail check, which is the second step of the one activation.
 static RAN_TAIL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// …and for the two checks that place a speed by CLICKING the toolbar and the form's own buttons.
+static RAN_SCENE_CLICK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_MUTE_CLICK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Why the activation stopped, if it did — a panic inside GTK's activate is non-unwinding, so without this an
 /// entry test reports only "never ran". Same shape as `sec_06_effects_2_lane_preview_wired.rs`.
@@ -268,6 +272,145 @@ fn a_two_clock_speed_says_so_in_the_preview(app: &adw::Application) {
     RAN.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
+/// Mark a stretch on the selection ground — the same seam a drag leaves behind — so the Speed form has seconds
+/// to work on. Same call `tests/suite/speed_form_widgets.rs` makes for its own S1.
+fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
+    let band = ui::draw_selection(window, naivepost::cut_select::Surface::SelectionBand, None, from, to);
+    assert!(band.is_some(), "the band was drawn");
+    settle();
+}
+
+/// Choose a dropdown row the way the toolkit delivers a popover pick: `set_selected` emits `notify::selected`,
+/// the signal a click inside the popover raises. Copied from `speed_form_widgets.rs`, which defines it locally.
+fn choose(window: &adw::ApplicationWindow, name: &str, index: usize) {
+    common::widget(window, name)
+        .downcast::<gtk::DropDown>()
+        .unwrap_or_else(|_| panic!("`{name}` is a DropDown"))
+        .set_selected(index as u32);
+    settle();
+}
+
+/// Open the Speed form over `from..to` by CLICKING the toolbar's ✚ Effect row and its Speed entry, pick the sound
+/// answer at `sound_row` (`cut_speed::SOUND_CHOICES`: 0 with-the-picture, 1 pitched, 2 own, 3 scene, 4 Silent),
+/// set the length, and press Apply. Nothing here calls a rule directly — every step is a named widget.
+fn place_speed_by_click(
+    app: &adw::Application,
+    from: f64,
+    to: f64,
+    sound_row: usize,
+    length: &str,
+) -> adw::ApplicationWindow {
+    let window = common::cut_page(app, &Cut::default());
+    mark_band(&window, from, to);
+    common::click(&window, "effect-item-speed");
+    settle();
+    choose(&window, "speed-field-sound", sound_row);
+    common::entry(&window, "speed-field-length").set_text(length);
+    common::click(&window, "speed-apply-button");
+    settle();
+    window
+}
+
+/// The one speed record a placed cut carries, or a message naming what it holds instead.
+fn only_speed(cut: &Cut) -> &naivepost::cut::Fx {
+    let speeds: Vec<&naivepost::cut::Fx> = cut.fx.iter().filter(|effect| effect.kind == "speed").collect();
+    assert_eq!(
+        speeds.len(),
+        1,
+        "Apply was to place exactly one speed: {:?}",
+        cut.fx.iter().map(|f| (&f.kind, f.t, f.dur)).collect::<Vec<_>>()
+    );
+    speeds[0]
+}
+
+/// §06-effects#2 (`the two 1× sound answers cannot be previewed`), reached the way a person reaches it: ✚ Effect
+/// ▾ → Speed on the toolbar, the sound row chosen in the form, Apply pressed — and then the preview's OWN mix
+/// door asked what it can do with what that click wrote.
+fn placed_scene_sound_speed_is_said_about_in_the_preview(app: &adw::Application) {
+    // A 4 s band at 30..34, "1× to the scene's end" (row 3), length 4.
+    let window = place_speed_by_click(app, 30.0, 34.0, 3, "4");
+    let cut = ui::review_cut_of(&window);
+    let placed = only_speed(&cut);
+    assert_eq!(placed.snd, "scene", "the row the click chose stored the scene-end answer");
+    let inside = placed.t + placed.dur / 2.0;
+    // The tick's own door, at a second inside what the click placed.
+    let mix = ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, inside);
+    assert!(
+        mix.sound_needs_two_clocks,
+        "a placed `scene` speed is one the preview cannot copy (§2)"
+    );
+    assert!(
+        ui::preview_sound::sound_clock_noticed(),
+        "entering the stretch said §9's sentence once: {}", render_only_sentence()
+    );
+    // Another tick INSIDE the same stretch says nothing again — the notice is per entry, not per 100 ms.
+    for _ in 0..3 {
+        ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, inside);
+    }
+    let lines = std::cell::RefCell::new(Vec::new());
+    ui::preview_sound::report_sound_clock_change(true, true, "scene", &|line| {
+        lines.borrow_mut().push(line.to_string())
+    });
+    assert!(lines.borrow().is_empty(), "already noticed, so a further tick adds no line: {:?}", lines.borrow());
+    println!(
+        "CLICK PLACED snd={} at {:.1} for {:.1}s -> {}",
+        placed.snd,
+        placed.t,
+        placed.dur,
+        render_only_sentence()
+    );
+    window.close();
+    settle();
+}
+
+/// §06-effects#2 (`mute mutes the preview`) + §9's `silence the whole bed`, again through the click path: the
+/// Silent row lands `snd: "mute"`, and both preview doors answer silence for the whole bed — the playing mix and
+/// a parked line alike (§A.6 "Preview gain applies even paused").
+fn placed_silent_speed_silences_the_preview_bed(app: &adw::Application) {
+    let window = place_speed_by_click(app, 30.0, 34.0, 4, "4");
+    let cut = ui::review_cut_of(&window);
+    let placed = only_speed(&cut);
+    assert_eq!(placed.snd, "mute", "the Silent row stores the mute answer (§1's migration spelling)");
+    let inside = placed.t + placed.dur / 2.0;
+    let mix = ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, inside);
+    assert!(mix.bed_silenced, "the mix says the bed is silenced under this speed");
+    assert_eq!(mix.gain, 0.0, "every pipeline is asked for nothing — footage AND lane together");
+    assert_eq!(
+        ui::paused_preview_gain(&window, inside),
+        0.0,
+        "and a line PARKED inside the silent stretch is silent too (§A.6)"
+    );
+    let outside = ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, placed.t - 2.0);
+    assert!(
+        !outside.bed_silenced && outside.gain > 0.0,
+        "nothing covers the second before it: gain {}",
+        outside.gain
+    );
+    window.close();
+    settle();
+}
+
+/// The item's name, carried by the check above: the click path proves the wire, the logic tests prove the rule.
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s5_a_placed_scene_sound_speed_is_said_about_in_the_preview() {
+    run_once();
+    assert_eq!(stopped_early(), None, "the activation stopped early");
+    assert!(
+        RAN_SCENE_CLICK.load(std::sync::atomic::Ordering::SeqCst),
+        "the clicked scene-sound check never finished"
+    );
+}
+
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s5_a_silent_speed_silences_the_preview_bed() {
+    run_once();
+    assert_eq!(stopped_early(), None, "the activation stopped early");
+    assert!(
+        RAN_MUTE_CLICK.load(std::sync::atomic::Ordering::SeqCst),
+        "the clicked silent-speed check never finished"
+    );
+}
+
 /// One application, one activation, one run — the shape every wired file here uses, because `g_application_run`
 /// refuses a second claimant. Each entry test below asserts on what that single activation managed to do.
 fn run_once() {
@@ -293,6 +436,25 @@ fn run_once() {
             })) {
                 let reason = format_check_panic(&e);
                 STOP_REASON.lock().unwrap().get_or_insert(reason);
+            }
+            // Each clicked check gets its own catch: a panic inside GTK's activate is non-unwinding, so an
+            // uncaught one would abort the process and leave every entry test reporting "never ran".
+            for (check, done) in [
+                (
+                    &placed_scene_sound_speed_is_said_about_in_the_preview as &dyn Fn(&adw::Application),
+                    &RAN_SCENE_CLICK,
+                ),
+                (
+                    &placed_silent_speed_silences_the_preview_bed as &dyn Fn(&adw::Application),
+                    &RAN_MUTE_CLICK,
+                ),
+            ] {
+                if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app))) {
+                    let reason = format_check_panic(&e);
+                    STOP_REASON.lock().unwrap().get_or_insert(reason);
+                } else {
+                    done.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
             }
             app.quit();
         });
