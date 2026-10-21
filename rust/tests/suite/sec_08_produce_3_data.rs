@@ -337,7 +337,7 @@ fn sec_08_produce_3_data_s4_the_join_is_named_after_the_container_and_shared_by_
     for (container, code) in [(Container::Mp4, "mp4"), (Container::Webm, "webm"), (Container::Mkv, "mkv")] {
         let (_root, tree) = common::tree_in(&format!("join-{code}"));
         let settings = Produce { container, ..Default::default() };
-        let (tree2, run) = run_over(&tree, vec![seg(0.0, 10.0)], Vec::new(), settings.clone());
+        let (tree2, run) = run_over(&tree, vec![common::seg(0.0, 10.0)], Vec::new(), settings.clone());
         let plan = exec::plan(&run, &tree2, &mats(&[], exec::Cues::default()));
         let want = tree.clips_dir().join(format!("joined.{code}"));
         assert_eq!(want, tree.clips_dir().join(details::joined(code)));
@@ -363,7 +363,7 @@ fn sec_08_produce_3_data_s5_no_run_leaves_a_bin_named_join_behind() {
     let (_root, tree) = common::tree_in("join-no-bin");
     let (tree2, run) = run_over(
         &tree,
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         Vec::new(),
         Produce { container: Container::Mkv, ..Default::default() },
     );
@@ -383,7 +383,7 @@ fn sec_08_produce_3_data_s6_the_cue_sheet_lands_beside_the_video_when_there_are_
     let line = Entry { s: 0.0, e: 5.0, at: 0.0, text: "a spoken line".into(), ..Default::default() };
     let (tree, run) = run_over(
         &common::tree_in("sheet-yes").1,
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![line.clone()],
         Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
     );
@@ -407,7 +407,7 @@ fn sec_08_produce_3_data_s6_the_cue_sheet_lands_beside_the_video_when_there_are_
     let (_root2, tree2) = common::tree_in("sheet-no");
     let (tree3, run2) = run_over(
         &tree2,
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         Vec::new(),
         Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
     );
@@ -535,7 +535,7 @@ fn sec_08_produce_3_data_s10_the_sidecars_and_the_track_list_agree() {
     let (_root, tree) = common::tree_in("sidecars");
     let (tree, run) = run_over(
         &tree,
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![line],
         Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
     );
@@ -565,7 +565,7 @@ fn sec_08_produce_3_data_s10_the_sidecars_and_the_track_list_agree() {
     std::fs::write(quiet.final_video("mp4"), b"a video").unwrap();
     let (quiet, run2) = run_over(
         &quiet,
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         Vec::new(),
         Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
     );
@@ -596,7 +596,7 @@ fn sec_08_produce_3_data_s8_publish_json_survives_a_render() {
 
     let (tree2, run) = run_over(
         &tree,
-        vec![seg(0.0, 10.0)],
+        vec![common::seg(0.0, 10.0)],
         vec![Entry { s: 0.0, e: 4.0, at: 0.0, text: "a line".into(), ..Default::default() }],
         Produce::default(),
     );
@@ -620,7 +620,7 @@ fn sec_08_produce_3_data_s9_the_scratch_sweep_clears_every_clips_kind() {
     for name in ["c000_ab12.mp4", "c000_ab12.srt", "c000_t01.svg", "ranks-filled.svg", "joined.mp4"] {
         std::fs::write(scratch.join(name), b"an older render's leftovers").unwrap();
     }
-    let (tree2, run) = run_over(&tree, vec![seg(0.0, 10.0)], Vec::new(), Produce::default());
+    let (tree2, run) = run_over(&tree, vec![common::seg(0.0, 10.0)], Vec::new(), Produce::default());
     let spy = Spy::new();
     spy.run(&run, &tree2, &mats(&[], exec::Cues::default()));
     // The sweep is S1, so the leftovers are judged as the run SAW them: read the log's own count and check
@@ -662,10 +662,6 @@ fn sec_08_produce_3_data_s9_the_scratch_sweep_clears_every_clips_kind() {
 }
 
 // ---- the plumbing every test above drives through --------------------------------------------------
-
-fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
-}
 
 fn run_over(tree: &Tree, segs: Vec<Seg>, lines: Vec<Entry>, settings: Produce) -> (Tree, flow::Run) {
     let run = flow::snapshot(

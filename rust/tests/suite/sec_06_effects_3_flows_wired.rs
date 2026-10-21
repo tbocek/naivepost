@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::cut::Fx;
 use naivepost::ui;
 use serde_json::json;
 
@@ -38,17 +38,6 @@ static RAN_OFF_GATE: AtomicBool = AtomicBool::new(false);
 
 /// Three kept runs of ten seconds each: clip 1 = 0–10, clip 2 = 10–20, clip 3 = 20–30, so every second a pass
 /// writes down is checkable by hand.
-fn three_clips() -> Cut {
-    Cut {
-        segs: vec![
-            Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-            Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
-        ],
-        ..Default::default()
-    }
-}
-
 /// Press one of the three run-bar job buttons by its stable widget name. Emitted by name because a named widget
 /// is the decision taken in its spirit: the handler under test is the shell's own, not a seam a test opened for
 /// itself.
@@ -105,7 +94,7 @@ fn round(app: &adw::Application) {
     // app turns them into session seconds, so the record reads t = 1.0, dur = 2.0.
     let llm = FakeLlm::start(vec![caption_json(&[(1, &[(1.0, 3.0, "the reveal")])])]);
     point_at(&llm.url());
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     assert!(placed_of_kind(&window, "text").is_empty(), "the seeded cut holds no caption to confuse the count");
     let captions = wait_for_kind(&window, "captions-pass-button", "text");
     assert_eq!(captions.len(), 1, "the answered caption landed: {captions:?}");
@@ -124,7 +113,7 @@ fn round(app: &adw::Application) {
     // Clip 2, at rate 2.0: the effect covers the WHOLE clip, in session seconds, at the answered rate.
     let llm = FakeLlm::start(vec![speeds_json(&[(2, 2.0)])]);
     point_at(&llm.url());
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let speeds = wait_for_kind(&window, "speeds-pass-button", "speed");
     assert_eq!(speeds.len(), 1, "the answered rate became one speed effect: {speeds:?}");
     assert_eq!((speeds[0].t, speeds[0].dur, speeds[0].rate), (10.0, 10.0, 2.0), "over clip 2, at the answered rate");
@@ -139,7 +128,7 @@ fn round(app: &adw::Application) {
     // glides min(1, d/3) → 1 s over this 3 s span.
     let llm = FakeLlm::start(vec![effects_json(&[json!({"clip": 2, "kind": "zoom", "start": 1.0, "end": 4.0})])]);
     point_at(&llm.url());
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let zooms = wait_for_kind(&window, "decorations-pass-button", "zoom");
     assert_eq!(zooms.len(), 1, "the answered zoom became one lane effect: {zooms:?}");
     assert_eq!((zooms[0].t, zooms[0].dur), (11.0, 3.0), "the answered span, in session seconds");
@@ -201,7 +190,7 @@ fn round(app: &adw::Application) {
             _ => effects_json(&[json!({"clip": 1, "kind": "zoom", "start": 1.0, "end": 4.0})]),
         }]);
         point_at(&llm.url());
-        let window = cut_page(app, &three_clips());
+        let window = cut_page(app, &common::three_clips_cut());
         (gate.set)(&window, false);
         (gate.refresh)(&window);
         let button = (gate.button)(&window).expect("the pass's button is on the run-bar row");

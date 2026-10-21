@@ -47,6 +47,10 @@ architecture behind them.
         state.game_volume = 0.22;
         state.crf = 24.0;
         state.blurred_edges = true;
+        // One language ticked, so the Translate row draws its ticks in line instead of sitting empty
+        // beside a bare label (the picture's line 3 shows Subtitles and Translate sharing a line).
+        state.translate = vec!["German".into()];
+        state.session_language = "English".into();
         state.clips = 7;
         state.seconds = 254.0;
         state.to_speak = 5;

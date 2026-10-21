@@ -70,13 +70,6 @@ fn point_at(browser: &Path) {
     settings::save(&paths, &conf).expect("settings written");
 }
 
-/// Held while a scenario re-points the process-wide settings env. Poisoned means a check panicked mid-scenario;
-/// the env is still ours to set, so the guard is taken anyway rather than unwrapping into a second panic.
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
-
 /// A scenario: the temp root plus the guard that keeps this the only test inside the process-wide env. Derefs to
 /// the root so a caller writes `write_stub(&root, ..)` and never has to know about the guard.
 struct Scenario {
@@ -102,7 +95,7 @@ impl Drop for Scenario {
 /// The scenario root: settings + data under one temp folder, cwd pinned there, exclusive until the returned
 /// scenario is dropped — see the module's "why one scenario at a time".
 fn fixture(tag: &str) -> Scenario {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-f61browser-{tag}"));

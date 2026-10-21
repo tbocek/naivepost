@@ -39,12 +39,6 @@ use naivepost::{model_list_fetch, settings_probe};
 
 use crate::common;
 
-/// Held while a scenario re-points the process-wide settings env and `cwd`.
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
-
 /// A scenario: temp root + the guard that keeps this the only test inside the process-wide env. The open
 /// project is `<root>/session.naivepost`, which is what the program's own door resolves `cwd` to.
 struct Scenario {
@@ -66,7 +60,7 @@ impl Drop for Scenario {
 }
 
 fn fixture(tag: &str) -> Scenario {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-more-timed-{tag}"));

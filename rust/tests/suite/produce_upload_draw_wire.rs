@@ -13,11 +13,8 @@ use naivepost::produce_upload as up;
 use naivepost::produce_upload_draw as draw;
 use naivepost::settings::{self, Conf};
 
-/// Held while a scenario's environment is being pointed at it: `XDG_*` and the settings file are process-wide.
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
+use crate::common;
+
 
 struct Fixture {
     root: PathBuf,
@@ -33,7 +30,7 @@ impl Drop for Fixture {
 
 /// A scenario folder whose settings name this fake as the drawing server.
 fn fixture(tag: &str, sd_url: &str) -> Fixture {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-f56draw-{tag}"));

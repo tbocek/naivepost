@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::cut::{Cut, Fx};
 use naivepost::cut_effects_pass::{self as pass, Call};
 use naivepost::ui;
 
@@ -30,9 +30,6 @@ static RAN_LANE: AtomicBool = AtomicBool::new(false);
 static RAN_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_GATE: AtomicBool = AtomicBool::new(false);
 static RAN_NO_ANSWER: AtomicBool = AtomicBool::new(false);
-
-/// Let the main context run what the widget emissions queued. Bounded, and NON-blocking: `iteration(false)`
-/// returns immediately when nothing is ready, where a blocking wait would park the test thread forever.
 
 /// Every `fx-bar-*` name under the effects lane. Which kinds earn a bar is `fx_lane::paused_scene`'s decision
 /// (a volume is heard, not drawn), so this collects what the view drew rather than tallying a number by hand.
@@ -104,19 +101,6 @@ fn sibling_row(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
     None
 }
 
-/// Build a window sitting on the Cut tab with the given cut seeded, dropping the previous check's window first.
-/// Three kept clips of ten seconds each: clip 1 = 0–10, clip 2 = 10–20, clip 3 = 20–30, so every second the
-/// pass writes down is checkable by hand and clip 4 is outside the batch.
-fn three_clips() -> Cut {
-    let mut cut_ = Cut::default();
-    cut_.segs = vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-        Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
-    ];
-    cut_
-}
-
 /// One `add_effect` call as §3.7's tool receives it: a clip number, a kind, two offsets inside that clip, and
 /// volume's gain when it has one.
 fn call(clip: u32, kind: &str, start: f64, end: f64, gain: Option<f64>) -> Call {
@@ -132,7 +116,7 @@ fn kinds<'a>(cut_: &'a Cut, kind: &str) -> Vec<&'a Fx> {
 
 fn decorations_round(app: &adw::Application) {
     // --- (1) the control is on the run-bar row, labelled, live, in the job order ------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let button = ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
     assert_eq!(
         button.label().expect("✨ Decorations carries a label").as_str(),
@@ -167,7 +151,7 @@ fn decorations_round(app: &adw::Application) {
     // A page with no endpoint wired makes NO calls, and "nothing was proposed" is a USABLE reply
     // (`Reply::usable()` true, no fault), so the honest line is the empty-result one; `pass::no_answer()`
     // belongs to block (6), where a reply actually faults twice.
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let before = ui::review_cut_of(&window).fx.len();
     let button = ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
     button.emit_by_name::<()>("clicked", &[]);
@@ -190,7 +174,7 @@ fn decorations_round(app: &adw::Application) {
     // --- (3) a scripted reply lands with the app's defaults, and the skips are SAID --------------
     // A 3 s zoom on clip 1 (§F3.11's 2–4 s), a stop on clip 2, a ducking volume on clip 3, plus a volume
     // whose gain means "no change" and a kind this build does not know.
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let before = ui::review_cut_of(&window).fx.len();
     let said = ui::run_effects_pass_with_reply(
         &window,
@@ -252,7 +236,7 @@ fn decorations_round(app: &adw::Application) {
     settle();
 
     // --- (5) one ↶ takes the whole pass back ---------------------------------------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let said = ui::run_effects_pass_with_reply(&window, &[call(1, "zoom", 2.0, 5.0, None)]);
     settle();
     assert!(said.starts_with(&pass::placed(1)), "the pass reported its result, got {said:?}");
@@ -270,7 +254,7 @@ fn decorations_round(app: &adw::Application) {
     settle();
 
     // --- (6) the gate: decorationsPass off greys the control and refuses the press --------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     ui::set_decorations_pass(&window, false);
     naivepost::ui::window::refresh_decorations_gate(&window);
     let button = ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
@@ -301,7 +285,7 @@ fn decorations_round(app: &adw::Application) {
     settle();
 
     // --- (7) a clip outside the batch loses the WHOLE reply, twice and no more ------------------
-    let window = cut_page(app, &three_clips());
+    let window = cut_page(app, &common::three_clips_cut());
     let said = ui::run_effects_pass_with_reply(
         &window,
         &[call(1, "zoom", 1.0, 4.0, None), call(99, "volume", 0.0, 2.0, Some(0.5))],

@@ -24,6 +24,8 @@ use naivepost::textfmt::SessionLine;
 use naivepost::tools;
 use serde_json::Value;
 
+use crate::common;
+
 /// The model name every scenario asks with.
 const MODEL: &str = "briefmax-model";
 
@@ -183,11 +185,6 @@ fn roles_of(body: &str) -> Vec<String> {
 
 // ---- the scenario folder -------------------------------------------------------------
 
-/// Held while a scenario's environment is pointed at it.
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
 
 struct Fixture {
     root: PathBuf,
@@ -203,7 +200,7 @@ impl Drop for Fixture {
 
 /// Settings (model + address) and a `.naivepost` folder under one temp root, guard held throughout.
 fn fixture(tag: &str, address: &str) -> Fixture {
-    let scenario = scenario_lock()
+    let scenario = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("np-briefmax-{tag}-{}", std::process::id()));

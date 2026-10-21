@@ -17,6 +17,8 @@ use naivepost::layout::Tree;
 use naivepost::request_timing as rt;
 use naivepost::requests::{self, Outcome, Request, Service};
 
+use crate::common;
+
 const ITEM: &str = "§09-llm-and-tools#10-every-request-timed-new";
 
 /// A project folder inside a throwaway root (same shape as `tests/suite/text_formats_sidecars.rs`).
@@ -409,13 +411,9 @@ struct RunScenario {
     _root: PathBuf,
 }
 
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
 
 fn run_scenario(tag: &str) -> RunScenario {
-    let guard = scenario_lock()
+    let guard = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-reqrun-{tag}-{}", std::process::id()));

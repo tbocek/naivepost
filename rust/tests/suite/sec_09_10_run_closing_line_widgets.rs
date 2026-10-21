@@ -26,11 +26,6 @@ use naivepost::ui;
 
 use crate::common;
 
-fn scenario_lock() -> &'static std::sync::Mutex<()> {
-    static SCENARIO: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    SCENARIO.get_or_init(|| std::sync::Mutex::new(()))
-}
-
 /// A temp root whose session folder is the open project, with `cwd` pinned to it for as long as it lives.
 struct Scenario {
     tree: Tree,
@@ -39,7 +34,7 @@ struct Scenario {
 }
 
 fn scenario(tag: &str) -> Scenario {
-    let guard = scenario_lock()
+    let guard = common::scenario_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = std::env::temp_dir().join(format!("naivepost-s0910close-{tag}"));
