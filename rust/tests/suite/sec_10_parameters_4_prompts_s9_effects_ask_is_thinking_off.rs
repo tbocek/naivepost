@@ -39,10 +39,10 @@ fn rates(batch: &Clips) -> Vec<(u32, f64)> {
     batch.clips().iter().filter(|clip| clip.rate != 1.0).map(|clip| (clip.n, clip.rate)).collect()
 }
 
-/// The EFFECTS document §`prompts/system.md`'s `effects` row specifies, in the chat envelope a real server
-/// answers with, so the ask reads it through the same reply parser a live server's bytes go through.
+/// The answering shape for this job is an `add_effect` CALL, not a `{"fx": …}` document (§3's answer on this
+/// item: a call is the answer), so the fake answers in the tool shape the pass now insists on.
 fn effects_json(entries: &[serde_json::Value]) -> String {
-    envelope_of(&json!({ "fx": entries }).to_string())
+    add_effects_json(entries)
 }
 
 /// One `{clip, kind, start, end}` entry, gain left off unless given: an omitted field and a 1 are the same ask.

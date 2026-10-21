@@ -27,16 +27,39 @@ pub const MODEL: &str = "stream-model";
 /// chunk, because §1 says a `finish_reason` ends the reply — [`crate::llm_request::from_events`] stops reading
 /// there, and a tail that arrives after it did not arrive at all. Payloads are built with `serde_json`, so no
 /// backslash counting is involved.
+/// The streamed decoration answer, in the shape §3's answer on this item makes the ONLY answer: a round that
+/// calls `add_effect` rather than one that prints a `{"fx": […]}` document. The arguments ride in
+/// `delta.tool_calls` fragments split mid-JSON, so this still proves the stream reader reassembles a call whose
+/// arguments arrive in pieces — the point §09 S4 pins — and the answer that arrives is what `effects_ask` places.
 pub fn effects_chunks() -> Vec<String> {
-    let fx = serde_json::json!({"fx": [
-        {"clip": 1, "kind": "zoom", "start": 1.0, "end": 3.0},
-        {"clip": 2, "kind": "volume", "start": 4.0, "end": 6.0, "gain": 0.5},
-    ]})
+    let calls = serde_json::json!([
+        {"index": 0, "id": "call_0", "function": {"name": "add_effect",
+            "arguments": "{\"clip\":1,\"kind\":\"zoom\",\"start\":1.0,\"end\":3.0}"}},
+        {"index": 1, "id": "call_1", "function": {"name": "add_effect",
+            "arguments": "{\"clip\":2,\"kind\":\"volume\",\"start\":4.0,\"end\":6.0,\"gain\":0.5}"}},
+        {"index": 2, "id": "call_2", "function": {"name": "finish", "arguments": "{}"}},
+    ])
     .to_string();
-    let bytes = fx.as_bytes();
+    let bytes = calls.as_bytes();
     let third = bytes.len() / 3 + 1;
     let piece = |from: usize, to: usize| {
         String::from_utf8_lossy(&bytes[from.min(bytes.len())..to.min(bytes.len())]).to_string()
+    };
+    // Each fragment is one `delta.tool_calls` array, so the reader joins the arguments by INDEX across chunks.
+    // The three pieces below are slices of the array text, which means a fragment can open mid-object: the
+    // reader appends whatever `arguments` piece it is given, and only the LAST fragment of a call carries the
+    // name, so the pieces are sent one call at a time instead of cutting the array at a raw byte offset.
+    let arg0 = "{\"clip\":1,\"kind\":\"zoom\",\"start\":1.0,\"end\":3.0}".to_string();
+    let arg1 = "{\"clip\":2,\"kind\":\"volume\",\"start\":4.0,\"end\":6.0,\"gain\":0.5}".to_string();
+    let n0 = arg0.len() / 2;
+    let n1 = arg1.len() / 2;
+    let frag = |index: u32, id: &str, name: Option<&str>, arguments: &str| {
+        let call = match name {
+            Some(name) => serde_json::json!({"index": index, "id": id, "function":
+                {"name": name, "arguments": arguments}}),
+            None => serde_json::json!({"index": index, "function": {"arguments": arguments}}),
+        };
+        serde_json::json!({"choices": [{"delta": {"tool_calls": [call]}}]})
     };
     let prose = |words: &str| serde_json::json!({"choices": [{"delta": {"content": words}}]});
     vec![
@@ -46,13 +69,18 @@ pub fn effects_chunks() -> Vec<String> {
             "data: {}",
             serde_json::json!({"choices": [{"delta": {"reasoning_content": "two decorations"}}]})
         ),
+        // Two prose chunks the reader must NOT read as the answer this time: prose beside calls is talk.
         format!("data: {}", prose(&piece(0, third))),
         format!("data: {}", prose(&piece(third, 2 * third))),
-        format!("data: {}", prose(&piece(2 * third, bytes.len()))),
+        format!("data: {}", frag(0, "call_0", Some("add_effect"), &arg0[..n0])),
+        format!("data: {}", frag(0, "", None, &arg0[n0..])),
+        format!("data: {}", frag(1, "call_1", Some("add_effect"), &arg1[..n1])),
+        format!("data: {}", frag(1, "", None, &arg1[n1..])),
+        format!("data: {}", frag(2, "call_2", Some("finish"), "{}")),
         // Why the stream ended, last: everything the answer holds has arrived by then.
         format!(
             "data: {}",
-            serde_json::json!({"choices": [{"finish_reason": "stop", "delta": {}}]})
+            serde_json::json!({"choices": [{"finish_reason": "tool_calls", "delta": {}}]})
         ),
         "data: [DONE]".to_string(),
     ]

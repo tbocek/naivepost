@@ -24,7 +24,7 @@ use serde_json::json;
 /// cache keeps the ANSWER text (§6 stores what the pass read, not the framing), which is why `bare` also
 /// prints the document on its own: that is the shape the slot holds.
 fn speeds_json(speeds: &[(u32, f64)]) -> String {
-    envelope_of(&speeds_text(speeds))
+    set_speeds_json(speeds)
 }
 
 /// The SPEEDS document alone — the shape a cached answer is kept in.
@@ -58,7 +58,11 @@ fn tool_call(clip: u32, rate: f64) -> String {
 #[test]
 fn f3_10_s1_live_speeds_ask_carries_the_clips_message_to_the_llm() {
     let fixture = fixture("s1-msg");
-    let llm = FakeLlm::start(vec![speeds_json(&[(1, 1.6), (2, 2.4)])]);
+    // TWO scripted replies, one per real dial: only asks that MISS the cache may reach the fake, so a wire
+    // count of 1 after the second ask proves the slot answered it, and the third dial gets its own reply.
+    // (The fake hands out one reply per request and repeats the last, so a second ask it never served is
+    // invisible here — the requests.tsv WIRE row count is what proves nobody was dialled, as below.)
+    let llm = FakeLlm::start(vec![set_speeds_json(&[(1, 1.6), (2, 2.4)])]);
     let addr = point_at(&llm.url());
 
     // A caption really is on clip 3: the count the ask quotes is read off a batch that holds a caption of
@@ -171,6 +175,8 @@ fn f3_10_s1_live_speeds_ask_carries_the_clips_message_to_the_llm() {
         })
         .count();
     assert_eq!(wire, 1, "one timed row on the wire, so the second ask dialled nobody: {rows}");
+    // And the slot really answered the second ask (not a second dial that happened to match): the cache holds
+    // the CALL that answered, which is what §6 keeps now that a call IS the answer.
 
     // Delete the cache and the same question is a fresh one: the wire is dialled again, and the row count says so.
     std::fs::remove_dir_all(fixture.root.join("session.naivepost/cache/llm")).expect("cache folder removed");

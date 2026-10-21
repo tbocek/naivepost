@@ -39,7 +39,7 @@ fn kept(fixture: &Fixture, needle: &str) -> bool {
 fn f3_9_s3_a_live_captions_answer_is_cached_so_the_next_identical_ask_opens_no_socket() {
     let fixture = fixture("cached");
     let clips = vec![(1u32, 10.0), (2u32, 10.0)];
-    let answer = caption_json(&[(1, &[(0.5, 3.5, "The network is live")])]);
+    let answer = add_captions_json(&[(1, 0.5, 3.5, "The network is live")]);
     // Only ONE scripted reply: were the second ask to reach this server it would be handed the same
     // text, so the test would pass for the wrong reason. The proof it did not is the row count.
     let llm = FakeLlm::start(vec![answer.clone()]);
@@ -51,9 +51,10 @@ fn f3_9_s3_a_live_captions_answer_is_cached_so_the_next_identical_ask_opens_no_s
     assert_eq!(first.calls[0].clip, 1, "and it was clip 1's, as the wire said");
     let _ = llm.next_seen();
     assert!(kept(&fixture, "The network is live"), "a readable answer is kept");
-    // The stored bytes are the answer text, not the whole chat envelope: the cache holds what the pass
-    // read (`content`), which is what makes a later ask answerable without a socket.
-    assert!(!kept(&fixture, "\"choices\""), "the envelope is not what got cached: {:?}", cache_dir(&fixture));
+    // The stored bytes are the ANSWERING round's envelope: since §3's answer on this item the answer IS a call
+    // list, so what the pass read and keeps is the envelope carrying `add_caption` (see `chat_envelope`). A tool
+    // answer's prose `content` is not the answer, which is why it is no longer what lands in the slot.
+    assert!(kept(&fixture, "add_caption"), "the call is what got cached: {:?}", cache_dir(&fixture));
 
     // Same settings, same prompt, same attempt: the slot answers it, so the fake sees no second
     // request. §09 §10 still wants the hit in the log: one `cache` line, and no second WIRE line.

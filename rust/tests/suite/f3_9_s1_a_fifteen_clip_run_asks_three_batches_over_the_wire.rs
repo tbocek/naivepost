@@ -23,14 +23,15 @@ fn f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire_and_re_reads_the_
         "P.machine.captionBatch is 5, so fifteen clips are three asks"
     );
 
-    // First server: answers every batch with an empty list -- a whole answer, not a failure.
-    let empty = FakeLlm::start(vec![caption_json(&[])]);
+    // First server: answers every batch with `finish` and no caption -- a whole answer, not a failure. (§F3.9's
+    // `{clips:[]}` in tool shape: since §3's answer on this item the pass is answered by CALLS.)
+    let empty = FakeLlm::start(vec![finish_json()]);
     point_at(&empty.url());
     let first_batch = &all[0..5];
     let asked = captions_ask::ask(&fixture.tree, "Caption nothing in these.", first_batch, &[], 1, &|| false);
     assert!(
         !asked.failed && asked.calls.is_empty(),
-        "`{{clips:[]}}` is the prompt's own no-caption answer, not a wire failure: {:?}",
+        "a `finish`-only answer is the prompt's own no-caption answer, not a wire failure: {:?}",
         asked.reason
     );
     let seen = empty.next_seen();
@@ -44,7 +45,7 @@ fn f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire_and_re_reads_the_
     );
 
     // Second batch, asked after the settings were rewritten: it must dial the NEW address.
-    let second = FakeLlm::start(vec![caption_json(&[])]);
+    let second = FakeLlm::start(vec![finish_json()]);
     point_at(&second.url());
     let second_batch = &all[5..10];
     let asked = captions_ask::ask(&fixture.tree, "Caption nothing in these.", second_batch, &[], 1, &|| false);

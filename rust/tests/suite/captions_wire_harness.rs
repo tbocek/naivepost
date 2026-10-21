@@ -128,6 +128,79 @@ pub fn envelope_of(content: &str) -> String {
     json!({ "choices": [ { "message": { "content": content } } ] }).to_string()
 }
 
+/// A tool-call answer: what a model that took the §3.7 offer actually replies with, in the envelope shape
+/// `f3_10_s1` spells by hand. `(name, args)` pairs are turned into `function` calls, the arguments as a JSON
+/// STRING the way a real server sends them.
+pub fn calls_json(calls: &[(&str, serde_json::Value)]) -> String {
+    call_round(calls)
+}
+
+/// The same, named for what it builds: the envelope one round answered with.
+pub fn call_round(calls: &[(&str, serde_json::Value)]) -> String {
+    json!({ "choices": [{ "message": { "content": null, "tool_calls": calls
+        .iter()
+        .enumerate()
+        .map(|(at, (name, args))| json!({
+            "id": format!("call_{at}"),
+            "type": "function",
+            "function": { "name": name, "arguments": args.to_string() }
+        }))
+        .collect::<Vec<_>>() } }] })
+    .to_string()
+}
+
+/// `add_caption` calls for `(clip, start, end, text)` tuples — the caption answer as a tool conversation,
+/// closed by `finish` the way §F3.9's flowchart has the model close it (`tools: add_caption · finish`). A reply
+/// that asks for captions AND says it is done is one round, not two.
+#[allow(clippy::type_complexity)] // `(clip, start, end, text)` is the call's own four args, spelled out to read
+pub fn add_captions_json(captions: &[(u32, f64, f64, &str)]) -> String {
+    let mut calls: Vec<(&str, serde_json::Value)> = captions
+        .iter()
+        .map(|(clip, start, end, text)| {
+            (
+                "add_caption",
+                json!({ "clip": clip, "start": start, "end": end, "text": text }),
+            )
+        })
+        .collect();
+    calls.push(("finish", json!({})));
+    calls_json(&calls)
+}
+
+/// The same four-tuple spelling, named so a caller of another pass reads its own argument list rather than a
+/// bare tuple. (Also keeps clippy's `type_complexity` off a second copy of the signature.)
+pub type CaptionArgs = (u32, f64, f64, &'static str);
+
+/// `set_clip_speed` calls for `(clip, rate)` pairs, closed by `finish` -- §F3.10's `tools: set_clip_speed ·
+/// finish` as one round. A model that asks for rates and says it is done has answered; the pass must not dial
+/// again for it.
+#[allow(clippy::type_complexity)] // `(clip, rate)` is the call's own two args, spelled out to read
+pub fn set_speeds_json(speeds: &[(u32, f64)]) -> String {
+    let mut calls: Vec<(&str, serde_json::Value)> = speeds
+        .iter()
+        .map(|(clip, rate)| ("set_clip_speed", json!({ "clip": clip, "rate": rate })))
+        .collect();
+    calls.push(("finish", json!({})));
+    calls_json(&calls)
+}
+
+/// `add_effect` calls for `(clip, kind, start, end)` entries with an optional gain, closed by `finish` —
+/// §F3.11's `tools: add_effect zoom · stop · volume · finish` as one round.
+pub fn add_effects_json(effects: &[serde_json::Value]) -> String {
+    let mut calls: Vec<(&str, serde_json::Value)> = effects
+        .iter()
+        .map(|entry| ("add_effect", entry.clone()))
+        .collect();
+    calls.push(("finish", json!({})));
+    calls_json(&calls)
+}
+
+/// A tool answer that asked for nothing: `finish` and no caption. §F3.9's `{clips:[]}` in tool shape — a whole
+/// answer, not a failure.
+pub fn finish_json() -> String {
+    calls_json(&[("finish", json!({}))])
+}
+
 /// The session folder this scenario runs in, with its settings folder and project beside it.
 pub struct Fixture {
     pub root: PathBuf,

@@ -17,17 +17,11 @@ use common::three_clips;
 use naivepost::cut_speed_pass::{self, Call};
 use naivepost::params;
 use naivepost::speeds_ask;
-use serde_json::json;
 
 /// The SPEEDS document §`prompts/system.md`'s `speed` row specifies, in the chat envelope a real server
 /// answers with, so the ask reads it through the same parser a live reply goes through.
 fn speeds_json(speeds: &[(u32, f64)]) -> String {
-    envelope_of(
-        &json!({
-            "speeds": speeds.iter().map(|(clip, rate)| json!({ "clip": clip, "rate": rate })).collect::<Vec<_>>()
-        })
-        .to_string(),
-    )
+    set_speeds_json(speeds)
 }
 
 /// No caption anywhere: both rates are ones the tool will apply, so the merge is the only thing left to test.

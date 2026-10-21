@@ -29,7 +29,7 @@ use serde_json::json;
 use crate::common;
 use common::{cut_page, release_last_window, settle, wait_until, widget_in};
 
-use wire::{caption_json, envelope_of, point_at, FakeLlm};
+use wire::{add_captions_json, add_effects_json, point_at, set_speeds_json, FakeLlm};
 
 static RAN_CAPTIONS: AtomicBool = AtomicBool::new(false);
 static RAN_SPEEDS: AtomicBool = AtomicBool::new(false);
@@ -61,19 +61,15 @@ fn placed_of_kind(window: &adw::ApplicationWindow, kind: &str) -> Vec<Fx> {
         .collect()
 }
 
-/// The `{"speeds":[…]}` document §`prompts/system.md`'s `speed` row specifies, in a chat envelope.
+/// The `set_clip_speed` CALL §3.7's tool row spells for this job: since §3's answer on this item the answer IS
+/// a call list, so a prose `{"speeds": […]}` document is no longer an answer (see `sec_06_effects_3_flows_s1_plain`).
 fn speeds_json(speeds: &[(u32, f64)]) -> String {
-    envelope_of(
-        &json!({
-            "speeds": speeds.iter().map(|(clip, rate)| json!({ "clip": clip, "rate": rate })).collect::<Vec<_>>()
-        })
-        .to_string(),
-    )
+    set_speeds_json(speeds)
 }
 
-/// The `{"fx":[…]}` document §`prompts/system.md`'s `effects` row specifies, in a chat envelope.
+/// The `add_effect` CALLS §3.7's tool row spells for this job, in the same answering shape.
 fn effects_json(entries: &[serde_json::Value]) -> String {
-    envelope_of(&json!({ "fx": entries }).to_string())
+    add_effects_json(entries)
 }
 
 /// The wire for one pass: press the button and WAIT for the effect kind to appear — on the fx list the pass
@@ -92,7 +88,7 @@ fn round(app: &adw::Application) {
     // --- ✐ Captions: the caption the fake answered with is on the cut the shell holds ----------------
     // A caption over CLIP 1 at +1..+3 inside it: the model answers in clip-relative offsets (§F3.9) and the
     // app turns them into session seconds, so the record reads t = 1.0, dur = 2.0.
-    let llm = FakeLlm::start(vec![caption_json(&[(1, &[(1.0, 3.0, "the reveal")])])]);
+    let llm = FakeLlm::start(vec![add_captions_json(&[(1, 1.0, 3.0, "the reveal")])]);
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
     assert!(placed_of_kind(&window, "text").is_empty(), "the seeded cut holds no caption to confuse the count");
@@ -185,7 +181,7 @@ fn round(app: &adw::Application) {
         // A live answer waits behind each gate: were the press to get through, work WOULD land, so "nothing
         // changed" is a real verdict about the gate rather than about an unreachable model.
         let llm = FakeLlm::start(vec![match gate.kind {
-            "text" => caption_json(&[(1, &[(1.0, 3.0, "would have landed")])]),
+            "text" => add_captions_json(&[(1, 1.0, 3.0, "would have landed")]),
             "speed" => speeds_json(&[(1, 2.0)]),
             _ => effects_json(&[json!({"clip": 1, "kind": "zoom", "start": 1.0, "end": 4.0})]),
         }]);

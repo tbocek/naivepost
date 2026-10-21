@@ -28,7 +28,7 @@ fn batch() -> Clips {
 /// The EFFECTS document in the chat envelope a real server answers with. The cache keeps the ANSWER text
 /// (§6 stores what the pass read, not the framing).
 fn effects_json(entries: &[serde_json::Value]) -> String {
-    envelope_of(&json!({ "fx": entries }).to_string())
+    add_effects_json(entries)
 }
 
 fn fx(clip: u32, kind: &str, start: f64, end: f64, gain: Option<f64>) -> serde_json::Value {
@@ -79,11 +79,12 @@ fn f3_11_s4_live_effects_answer_is_cached_so_the_next_identical_ask_opens_no_soc
     assert_eq!(seen.method, "POST", "a chat call is a POST");
     assert_eq!(seen.path, "/v1/chat/completions", "on the LLM's chat path");
 
-    // §6 keeps what the pass READ — the answer document — so a replay needs no envelope to unwrap and cannot
-    // double-count a reply. This is the file the ask's own key names, so the test reads the real slot.
+    // §6 keeps what the pass READ — the answer's CALLS — so a replay needs no repair and no second dial. Since
+    // §3's answer on this item the answer IS a call list, and the slot holds the answering round's envelope
+    // carrying `add_effect` (see `clip_rules_tools_leg::answering_envelope`). This is the file the ask's own
+    // key names, so the test reads the real slot.
     let kept = std::fs::read_to_string(slot(&fixture, ATTEMPT)).expect("the answer was cached under its own key");
-    assert!(kept.contains("\"fx\""), "the slot holds the EFFECTS document: {kept}");
-    assert!(!kept.contains("\"choices\""), "the framing is not what got cached: {kept}");
+    assert!(kept.contains("add_effect"), "the slot holds the call that answered: {kept}");
 
     // Same settings, same prompt, same round: the slot answers it. No socket, so no second WIRE row;
     // §09 §10 does want a line for the hit, marked `cache` with no time on the wire.

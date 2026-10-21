@@ -16,17 +16,11 @@ use crate::common;
 use common::three_clips;
 use naivepost::cut_speed_pass::{self, Answer, Call};
 use naivepost::speeds_ask;
-use serde_json::json;
 
 /// The SPEEDS document §`prompts/system.md`'s `speed` row specifies, wrapped in the chat envelope a real
 /// server answers with, so the ask reads it through the same parser a live reply goes through.
 fn speeds_json(speeds: &[(u32, f64)]) -> String {
-    envelope_of(
-        &json!({
-            "speeds": speeds.iter().map(|(clip, rate)| json!({ "clip": clip, "rate": rate })).collect::<Vec<_>>()
-        })
-        .to_string(),
-    )
+    set_speeds_json(speeds)
 }
 
 /// No clip carries a caption here: a rate near 1 must read as silence on a plain clip, where nothing else

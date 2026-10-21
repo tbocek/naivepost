@@ -21,12 +21,12 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx};
 use naivepost::ui;
-use serde_json::json;
+
 
 use crate::common;
 use common::{release_last_window, settle, status_text, widget_in, cut_page};
 
-use wire::{envelope_of, point_at, FakeLlm};
+use wire::{set_speeds_json, point_at, FakeLlm};
 
 static RAN_LIVE_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_REFUSED_SAID: AtomicBool = AtomicBool::new(false);
@@ -49,12 +49,7 @@ fn three_clips_captioned_on_clip2() -> Cut {
 /// The SPEEDS document §`prompts/system.md`'s `speed` row specifies, in the chat envelope a real server
 /// answers with — the shape a live reply has, so the ask parses it the way it parses a server's bytes.
 fn speeds_json(speeds: &[(u32, f64)]) -> String {
-    envelope_of(
-        &json!({
-            "speeds": speeds.iter().map(|(clip, rate)| json!({ "clip": clip, "rate": rate })).collect::<Vec<_>>()
-        })
-        .to_string(),
-    )
+    set_speeds_json(speeds)
 }
 
 /// Press the real ⏩ Speeds button. Emitted by name because a named widget is the decision taken in its

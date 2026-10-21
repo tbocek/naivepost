@@ -21,9 +21,10 @@ fn batch() -> Vec<(u32, f64)> {
 fn f3_9_s4_a_live_out_of_batch_clip_is_asked_once_more_and_the_retry_lands() {
     let fixture = fixture("retry");
     let clips = batch();
-    // First answer names a clip outside the batch; the second stays inside it.
-    let bad = caption_json(&[(3, &[(1.0, 4.0, "a caption on a clip that is not here")])]);
-    let good = caption_json(&[(7, &[(1.0, 4.0, "a caption on clip seven")])]);
+    // First answer names a clip outside the batch; the second stays inside it. Both are CALLS now (§3's answer on
+    // this item: the pass is answered by `add_caption`, not by a JSON document).
+    let bad = add_captions_json(&[(3, 1.0, 4.0, "a caption on a clip that is not here")]);
+    let good = add_captions_json(&[(7, 1.0, 4.0, "a caption on clip seven")]);
     let llm = FakeLlm::start(vec![bad, good]);
     point_at(&llm.url());
 

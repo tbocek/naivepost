@@ -107,7 +107,7 @@ pub fn ask_at(
         // §09 §10: a reply served from the cache writes its own line, marked `cache` with no time on
         // the wire, so the file shows what a re-run saved. Nothing goes out here; the row only says so.
         crate::request_timing::record_cached(tree, base_row(&model));
-        return match parse_captions(&cached) {
+        return match read_back(&cached) {
             Ok(calls) => Asked { calls, failed: false, reason: String::new() },
             Err(reason) => failed(reason),
         };
@@ -172,97 +172,60 @@ pub fn ask_at(
         Err(reason) => return failed(format!("{STEP}: {reason}")),
     };
     if reply.tool_calls.is_empty() {
-        // Round 1 answered in prose, which is the whole ask: read the document BEFORE anything is kept, so an
-        // unreadable reply leaves nothing in the cache and the retry goes to the wire rather than being served
-        // the answer that was just refused (§6).
-        let answer = reply.answer().to_string();
-        // §3's content repair, once: an answer with no JSON in it at all (the whole reply was reasoning) or one
-        // that stopped mid-document is UNUSABLE, not merely refused — sending the identical request again would
-        // earn the identical reply. `llm_repair_leg::ask_repair_after` puts the correction back into the
-        // conversation (`retryTurn`) and turns thinking off when the answer was empty (`thinkAgain`). This is
-        // NOT `cut_captions::retries`, which counts out-of-batch answers a model can correct itself from (§F3.9
-        // S4) and stays exactly as it was: different failure, different counter, one round each.
-        let (answer, retried) = match parse_captions(&answer) {
-            // A readable document is the ordinary answer: it is KEPT first (§6: an unchanged step costs nothing),
-            // then returned. Returning before the store was written made a second identical ask open a socket.
-            Ok(calls) => {
-                if !answer.trim().is_empty() {
-                    llm_cache::store(tree, STEP, &parts, &answer);
-                }
-                return Asked { calls, failed: false, reason: String::new() };
-            }
-            Err(problem) => {
-                // §3 names the repairs worth a second ask: `noAnswer` (the whole reply was reasoning) and
-                // `cutOff` (stopped mid-JSON). Anything else — valid JSON in the wrong shape — is this pass's
-                // own complaint about the ANSWER, not the answer being unusable, so it costs no extra request:
-                // a server that answers `{"not":"..."}` forever still spends one per attempt, exactly as §F3.9
-                // S4 counts it and its sibling test pins.
-                let repairable = crate::llm_retry::repair(&answer, &problem)
-                    .is_some_and(|(kind, _)| kind != crate::llm_retry::Repair::Other);
-                if !repairable {
-                    return failed(problem);
-                }
-                // The verdict §3's repair needs, computed the SAME way as the gate above: this step's read of the
-                // answer is what makes it unusable, and the sentence sent to the model is `llm_retry::repair`'s
-                // wording rather than the parser's. Handing the repair door a `None` here would make it treat the
-                // answer as fine and resend the identical request — the very thing §3 forbids.
-                let verdict = |again: &llm_request::Reply| {
-                    parse_captions(again.answer()).err().and_then(|why| {
-                        crate::llm_retry::repair(again.answer(), &why)
-                            .filter(|(kind, _)| *kind != crate::llm_retry::Repair::Other)
-                            .map(|(_, correction)| correction)
-                    })
-                };
-                let repaired = crate::llm_repair_leg::ask_repair_after(
-                    STEP,
-                    &crate::ui::window::log_line,
-                    repair_messages(&system, &user),
-                    // The patience the FIRST round went out with is §4's flag for this key, read from the table
-                    // rather than named here: `thinkAgain` can only turn thinking OFF, so a prompt §4 leaves off
-                    // must not be handed a first round that thinks (that is what makes the retry identical to
-                    // the ask instead of cheaper).
-                    crate::prompts::thinking(STEP),
-                    // The offer went out on this request, so §3's "with tools these become tool results".
-                    !offered.is_empty(),
-                    &verdict,
-                    &reply,
-                    &|body| {
-                        let sent = crate::llm_retry_leg::chat(
-                            STEP,
-                            tree,
-                            &base,
-                            &endpoint,
-                            body,
-                            cancelled,
-                            &crate::ui::window::log_line,
-                        )?;
-                        Ok((sent.content_type, sent.body))
-                    },
-                    &|messages, thinking| {
-                        chat_body_mode(&model, messages, thinking).map(|text| text.to_string())
-                    },
-                );
-                match repaired {
-                    // The caller reads back the ANSWER, not the envelope: `body` is what the server sent, and
-                    // every other path in this file parses the answer field of a reply, so a repair that left
-                    // the raw JSON envelope here would be parsed as if it were the model's document.
-                    Ok(repaired) => match repaired.reply() {
-                        Ok(second) => (second.answer().to_string(), true),
-                        // The second reply was not readable as a chat answer at all: keep the FIRST verdict,
-                        // which is the honest reason a person can act on.
-                        Err(_) => return failed(problem),
-                    },
-                    // No second ask happened (the repair dial failed): keep the FIRST verdict, unchanged.
-                    Err(_) => return failed(problem),
-                }
-            }
+        // A server that no longer gets a `tools` field (§2 S5 remembered its refusal, so the body went out
+        // without one) CANNOT be blamed for answering in prose: the document is the only shape left to it, and
+        // `build(None)` is what §2 S5's own resend looks like. This is the sole exception, and it is silent --
+        // the refusal was already said once, on the round that earned it.
+        if crate::llm_tools_offer::tools_for(&endpoint.url, &offered).is_none() {
+            return match parse_captions(reply.answer()) {
+                Ok(calls) => Asked { calls, failed: false, reason: String::new() },
+                Err(problem) => failed(problem),
+            };
+        }
+        // §3's answered question about these three passes: the tools ARE on the wire, and a reply that carries a
+        // JSON document instead of calling `add_caption` is UNREADABLE, not an answer. This branch used to read
+        // such a document (and repair an unparseable one); both are gone, because a model that was offered
+        // `add_caption` and answered with prose has not answered. Asking again, with the correction in the
+        // conversation, is what §3's repair is for: ONE extra request, never two, and a second prose answer is
+        // this pass's failure, said by name rather than quietly placed.
+        let went_out = std::time::Instant::now();
+        let dial = |body: &str| {
+            crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, body, cancelled, &crate::ui::window::log_line)
+                .map(|sent| (sent.content_type, sent.body))
         };
-        let calls = match parse_captions(&answer) {
-            Ok(calls) => calls,
-            Err(reason) => return failed(if retried { format!("{reason} (asked twice)") } else { reason }),
+        let second = match crate::clip_rules_tools_leg::ask_again_for_calls(
+            STEP,
+            Tool::AddCaption.name(),
+            repair_messages(&system, &user),
+            &reply,
+            &crate::ui::window::log_line,
+            &|conversation| chat_body_conversation(&model, conversation, &offered),
+            // §3's patience ladder runs INSIDE this dial, so a repair whose retry had to wait for the server
+            // to come back leaves those wait rows here and nowhere else (§09 §10 writes one per REQUEST).
+            &dial,
+        ) {
+            Ok(second) => second,
+            Err(reason) => return failed(reason),
         };
-        if !answer.trim().is_empty() {
-            llm_cache::store(tree, STEP, &parts, &answer);
+        // That retry was a request too, and §09 §10 wants every request on the record: this ask cannot route it
+        // through `llm_retry_leg::chat` itself (the repair leg owns the dial), so the row is written here.
+        // One line for one request -- `llm_retry_leg::chat` files its own rows only for what it dials, so
+        // nothing is counted twice.
+        crate::clip_rules_tools_leg::record_repair_row(tree, base_row(&model), went_out);
+        // The retry answered by calling: its `add_caption` calls ARE the answer.
+        let calls: Vec<Call> = second
+            .tool_calls
+            .iter()
+            .filter_map(|call| {
+                let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
+                call_of_args(&args)
+            })
+            .collect();
+        // The retry answered by calling: its `add_caption` calls ARE the answer. What gets cached is the
+        // ANSWERING round's text (§6: an unchanged batch must not open a socket again), which for a tool answer
+        // is the call list re-spelled as the envelope the round arrived in — the one shape `read_back` reads.
+        if asks_for_anything(&second) {
+            llm_cache::store(tree, STEP, &parts, &chat_envelope(&second).to_string());
         }
         return Asked { calls, failed: false, reason: String::new() };
     }
@@ -286,8 +249,17 @@ pub fn ask_at(
             call_of_args(&args)
         })
         .collect();
-    let looped = crate::clip_rules_tools_leg::run_over_batch(
+    // The reply above IS the loop's first round: it is already on the wire and in `requests.tsv`, so feeding it
+    // back is what keeps a call answer at ONE request (§2 S5's plain-call shape) instead of dialling the identical
+    // body again for an answer already in hand.
+    let first = crate::tool_loop::Turn {
+        content: reply.content.clone(),
+        calls: reply.tool_calls.clone(),
+        finish: reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name()),
+    };
+    let looped = crate::clip_rules_tools_leg::run_over_batch_from(
         STEP,
+        &first,
         messages,
         &offered,
         &mut batch,
@@ -326,8 +298,10 @@ pub fn ask_at(
     // §7's live half for a tool flow: ONE section per request this ask made, each showing what the model was shown,
     // what it asked for, and what each tool answered. `call_of` could not do this — it reads a reply's calls blind
     // to their answers — so the loop files its own rounds, already answered by the one door that ran them.
+    // The FIRST round is skipped: that request was filed by `llm_retry_leg::chat` as it went out, and filing it a
+    // second time would print the same exchange twice.
     if !looped.rounds.is_empty() {
-        for round in &looped.rounds {
+        for round in looped.rounds.iter().skip(1) {
             if round.turn.calls.is_empty() {
                 // A round that asked nothing is the answer, and the dialling leg already filed that request on the
                 // page when it went out; filing it again would print the same exchange twice.
@@ -344,8 +318,10 @@ pub fn ask_at(
     }
     // The answer is the call list. Prose beside it is the model talking, not asking: a round with calls is not an
     // answer (§2), and an empty list after the rounds simply means the model asked for nothing.
-    if calls_out.is_empty() {
-        return Asked { calls: Vec::new(), failed: false, reason: String::new() };
+    // The caption a TOOL answer put in its `content` is not the answer either -- the calls are the only thing
+    // `read_back` reads back, and caching that envelope is what makes a re-run cost no socket (§6).
+    if asks_for_anything(&reply) {
+        llm_cache::store(tree, STEP, &parts, &chat_envelope(&reply).to_string());
     }
     Asked { calls: calls_out, failed: false, reason: String::new() }
 }
@@ -440,21 +416,6 @@ fn repair_messages(system: &str, user: &str) -> Vec<Message> {
     ]
 }
 
-/// The chat body for one message list at a chosen patience. `thinking == false` is §3's `thinkAgain`: the
-/// retry asks without reasoning, which is [`Mode::Execute`] (§1's table — temperature, ceiling and the
-/// `enable_thinking` switch all follow the mode, so nothing here re-spells them).
-fn chat_body_mode(
-    model: &str,
-    messages: &[Message],
-    thinking: bool,
-) -> Result<String, String> {
-    // §3's retry patience is a question about THIS prompt, so the switch it picks is still §4's own:
-    // a thinking-on key may be asked to think again, and the non-thinking case is what
-    // [`crate::prompts::mode_of`] returns for any key §4 leaves off.
-    // A flow that never thought cannot be repaired into thinking either, so the flag is ANDed, not chosen.
-    let mode = crate::prompts::mode_of(if thinking && crate::prompts::thinking(STEP) { STEP } else { crate::prompts::NOT_THINKING });
-    Ok(llm_request::body(STEP, model, messages, mode, None, true)?.to_string())
-}
 
 /// The chat body for one round of a tool conversation: the grown message list beside the offer the loop was
 /// given (§2 S2's "append the assistant turn · one `tool` message per call"). The body carries `"stream": true`
@@ -475,6 +436,7 @@ fn chat_body_conversation(
     )?
     .to_string())
 }
+
 
 /// The timed row shape this ask's rounds write: `started` and `run` belong to whoever owns the run, and a step
 /// that stands alone leaves them blank (the same shape `llm_retry_leg::chat` fills in).
@@ -506,15 +468,58 @@ fn failed(reason: String) -> Asked {
     Asked { calls: Vec::new(), failed: true, reason }
 }
 
+/// Read a cached captions answer back. Two shapes, because the answer's shape changed with the tools being put
+/// on the wire: an ENVELOPE is what a tool answer stores (its `add_caption` calls are the answer), a bare
+/// document is what an older slot holds (§6 keeps every step's answer, and a re-run must still cost nothing).
+pub fn read_back(cached: &str) -> Result<Vec<Call>, String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(cached.trim()) else {
+        return parse_captions(cached);
+    };
+    if value.get("choices").is_some() {
+        let answer = llm_request::parse_reply(&value);
+        let calls: Vec<Call> = answer
+            .tool_calls
+            .iter()
+            .filter_map(|call| {
+                let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
+                call_of_args(&args)
+            })
+            .collect();
+        if !calls.is_empty() {
+            return Ok(calls);
+        }
+        // An envelope whose message holds a document is the shape a live reply arrives in; read the document.
+        return parse_captions(answer.answer());
+    }
+    parse_captions(cached)
+}
+
+/// Whether an answer carries any caption call at all -- `finish` aside. The shared door is
+/// [`crate::clip_rules_tools_leg::asks_for_anything`]; this one only has to ignore `finish`, because the
+/// captions pass offers nothing else, and it reads clearer at the call site.
+fn asks_for_anything(reply: &llm_request::Reply) -> bool {
+    reply.tool_calls.iter().any(|call| call.name != Tool::Finish.name())
+}
+
+/// The chat envelope a round answered with, rebuilt for the cache — the shared door, so all three §3.7 passes
+/// keep what they read in one shape.
+fn chat_envelope(reply: &llm_request::Reply) -> serde_json::Value {
+    crate::clip_rules_tools_leg::answering_envelope(reply)
+}
+
 /// Read the CAPTIONS document the prompt specifies into the calls this pass places:
 /// `{"clips":[{"i":<n>,"fx":[{"start":..,"end":..,"text":".."}]}]}` (`spec/prompts/system.md`'s
 /// `captions` row). Array order is kept, because a caption's order in its clip is information the
 /// cut reads later and re-sorting it here would lose which line came first.
 ///
-/// `{"clips":[]}` parses to an empty list and is NOT an error — the prompt says a context that asks
-/// for nothing answers with an empty list and that is a whole answer. Anything that is not that one
-/// field, or an `fx` entry missing a number or the text, is an error naming what was wrong: a reply
-/// we cannot read is not the same thing as a reply that asked for nothing.
+/// `"clips":[]}` is an empty list and a whole answer, and so is a document naming no clip at all (§F3.9's
+/// prompt calls an empty answer complete). Anything whose `fx` entry is missing a number or the text is an
+/// error naming what was wrong: a reply we cannot read is not the same thing as a reply that asked for nothing.
+///
+/// NOT the live answer shape any more: §3's answer on this item says a reply that carries a JSON document
+/// instead of calling `add_caption` is unreadable, so the wire path no longer calls this. Two readers still
+/// need it — [`read_back`], because a slot written before that rule holds a document and must still cost
+/// nothing to re-run, and a server that refused the `tools` field, which has no other shape to answer in.
 pub fn parse_captions(answer: &str) -> Result<Vec<Call>, String> {
     let value: serde_json::Value = serde_json::from_str(answer.trim())
         .map_err(|_| "the captions answer is not JSON".to_string())?;
@@ -522,6 +527,8 @@ pub fn parse_captions(answer: &str) -> Result<Vec<Call>, String> {
         .get("clips")
         .and_then(|clips| clips.as_array())
         .ok_or_else(|| "the captions answer has no \"clips\" list".to_string())?;
+    // `{"clips":[]}` is the prompt's own whole no-caption answer; a document that is NOT that shape is unreadable,
+    // which is a different thing and says so (§F3.9).
     let mut calls: Vec<Call> = Vec::new();
     for entry in clips {
         let clip = entry

@@ -41,7 +41,7 @@ fn rates(batch: &Clips) -> Vec<(u32, f64)> {
 /// The EFFECTS document §`prompts/system.md`'s `effects` row specifies, in the chat envelope a real server
 /// answers with, so the ask reads it through the same reply parser a live server's bytes go through.
 fn effects_json(entries: &[serde_json::Value]) -> String {
-    envelope_of(&json!({ "fx": entries }).to_string())
+    add_effects_json(entries)
 }
 
 /// One `{clip, kind, start, end}` entry, gain left off unless given: an omitted field and a 1 are the same ask.

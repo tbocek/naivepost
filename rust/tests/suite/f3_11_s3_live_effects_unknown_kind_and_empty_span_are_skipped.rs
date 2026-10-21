@@ -21,7 +21,7 @@ fn batch() -> Clips {
 }
 
 fn effects_json(entries: &[serde_json::Value]) -> String {
-    envelope_of(&json!({ "fx": entries }).to_string())
+    add_effects_json(entries)
 }
 
 fn fx(clip: u32, kind: &str, start: f64, end: f64) -> serde_json::Value {
