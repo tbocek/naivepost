@@ -228,9 +228,22 @@ fn build_left_column() -> gtk::Box {
 
     // **7** the picture, and the text-overlay editor that lives over it. A fixed-size plate so the
     // column cannot collapse it against an expanding sibling (the narrate page's frame lesson).
+    // The plate goes inside an OVERLAY of exactly its own size: §A draws a word mark ON the thumbnail,
+    // and a bare `DrawingArea` holds no children, so the dashed boxes had nowhere to live but the column
+    // below the picture. The overlay is the plate's only parent, so the left column's child ORDER — which
+    // §1 pins — keeps reading as the thumbnail itself.
+    // §A: a word mark is visible ON the picture, not only as its chip below. The holder that can float
+    // children over a `DrawingArea` (which holds none) is the overlay above. The NAME stays on the plate:
+    // every §1 lookup and check measures the plate itself ("the picture wears the `.produce-plate` class"),
+    // so a wrapper wearing it would answer an `Overlay` where a plate is expected. The wrapper is named for
+    // itself instead, which no §1 list reads — §1's ORDER entry is this holder either way.
+    let picture_holder = gtk::Overlay::new();
+    picture_holder.set_widget_name("thumbnail-plate");
+    picture_holder.set_vexpand(false);
     let picture = gtk::DrawingArea::new();
-    picture.set_widget_name("thumbnail-picture");
     picture.set_vexpand(false);
+    picture.set_widget_name("thumbnail-picture");
+    picture.set_widget_name("thumbnail-picture");
     picture.set_halign(gtk::Align::Fill);
     picture.set_size_request(320, 180);
     picture.add_css_class("produce-plate");
@@ -238,7 +251,17 @@ fn build_left_column() -> gtk::Box {
         "Drag a box over the picture to put words on it \u{2014} they print to fill the box. Drag a border \
 to resize, the middle to move, and press its \u{270e} to reword or remove it.",
     ));
-    left.append(&picture);
+    picture_holder.set_child(Some(&picture));
+    // §A: a word mark is visible ON the picture, not only as its chip below. The holder that can float
+    // children over a `DrawingArea` (which holds none) is the overlay above; §1 pins the left column's
+    // child ORDER, so the column appends THAT holder rather than a wrapper around the plate.
+    let marks = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    marks.set_widget_name("thumbnail-word-boxes");
+    // The overlay slot the dashed boxes are appended to; empty until a mark exists, so it draws nothing.
+    picture_holder.add_overlay(&marks);
+    // Not measured: the holder must not push the plate's size around, it only floats over it.
+    picture_holder.set_measure_overlay(&marks, false);
+    left.append(&picture_holder);
     // The ✎ chips live in a named holder so `refresh` can rebuild them with the marks they stand for.
     let chips = gtk::Box::new(gtk::Orientation::Vertical, 2);
     chips.set_widget_name("thumbnail-word-chips");
@@ -319,10 +342,10 @@ fn build_right_column() -> gtk::Box {
     // width is wider than a narrow window's right column, and with an `External` horizontal policy it simply
     // ran off the edge instead of scrolling. Automatic gives it a bar when the column is squeezed and full
     // width whenever the column has room — which is what makes the pairing measurable at all.
-    scroller.set_policy(gtk::PolicyType::External, gtk::PolicyType::Automatic);
-    // The grid lays its pairs out several to a line (§A), so it is wider than the column it sits in; give it
-    // room to lay itself out at that width and scroll to read, rather than being squeezed.
-    scroller.set_min_content_width(GRID_MIN_W_PX);
+    scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    // No minimum content WIDTH on purpose: a floor wider than the column is exactly what overflowed it. The
+    // grid lays itself out at whatever width the column gives it, which is what makes the pairing measurable
+    // and keeps items 11–14 inside the column instead of cut at its edge.
     // And room to be TALL: the page hosts this scroller inside `page-scroll-Produce`, whose own scroller
     // shrinks anything that expands (see `window_page_box`'s comment on why pages scroll), so with only
     // `vexpand` the grid got one row's height and six of its lines were invisible. §1 asks for the encoder
@@ -359,14 +382,18 @@ fn build_right_column() -> gtk::Box {
     right
 }
 
-/// How wide the encoder grid needs to be to draw its pairs several to a line: three label+dropdown pairs at
-/// their natural widths. Below this GTK squeezes the grid into the column and every pair stacks on its own
-/// line, which is what §A's "several to a line" forbids.
-const GRID_MIN_W_PX: i32 = 760;
-
 /// How tall the encoder scroller has to be to show the lines §A groups: five rows of controls plus their
 /// spacing. Shorter and the last pairs hide behind the scroller's own bar instead of being drawn.
 const GRID_MIN_H_PX: i32 = 240;
+
+/// The height the page asks its column for, so the encoder scroller's [`GRID_MIN_H_PX`] is a FLOOR rather
+/// than a wish. `page_box` hosts every page inside `page-scroll-<page>`, whose vertical policy is `Never`
+/// (§1 wants nothing scrolling as a whole at §1's minimum size), so a child that only expands gets whatever
+/// height is left over — and headless, where nothing maps the window before a snapshot takes its pixels,
+/// what was left over was a sliver: the grid drew one line and the rest fell outside the shot. Asking for
+/// the page's own content height makes GTK honour the floor in both cases; on a real window the ask is
+/// below what the band gives, so it changes nothing there.
+const PAGE_MIN_H_PX: i32 = 640;
 
 /// §1's Produce split, opened at HALF: half of the 1240 px window §1 opens at, less the page's own 24 px
 /// margins on both sides ((1240 − 48) / 2). The same arithmetic Prepare uses, stated here rather than
@@ -392,6 +419,8 @@ pub fn build() -> gtk::Widget {
     // leave it and "at half" is only true by accident.
     left.set_hexpand(true);
     right.set_hexpand(true);
+    left.set_size_request(-1, PAGE_MIN_H_PX);
+    right.set_size_request(-1, PAGE_MIN_H_PX);
     split.set_start_child(Some(&left));
     split.set_end_child(Some(&right));
     ROOT.with(|held| *held.borrow_mut() = Some(split.clone().upcast()));
@@ -404,7 +433,7 @@ pub fn build() -> gtk::Widget {
 
 // --- the page's own lookups and output channels ----------------------------------------------------
 
-fn widget_in_root(name: &str) -> Option<gtk::Box> {
+pub fn widget_in_root(name: &str) -> Option<gtk::Box> {
     // The page is built once and held here so `draw_slots` can find its own box before the window has
     // a content root to walk from (the same reason the narrate page looks up from `window.content()`).
     ROOT.with(|held| held.borrow().clone()).and_then(|root| find(&root, name))
@@ -451,8 +480,14 @@ pub fn hold_window_for_test(window: &adw::ApplicationWindow) {
 /// check must have repainted. `draw_into` prefers the held window over this root, so in a binary that builds a
 /// fresh window per check the repaint lands on whichever window was built last unless the root is asked for by
 /// name; `page_image_box_for_test` is how a test asks.
-pub fn page_image_box_for_test() -> Option<gtk::Widget> {
+/// The page's own root, as `build()` published it (or the window `wire` put there) — the tree every name
+/// lookup reaches. `page_image_box_for_test` is a box INSIDE this one.
+pub fn page_root() -> Option<gtk::Widget> {
     ROOT.with(|held| held.borrow().clone())
+}
+
+pub fn page_image_box_for_test() -> Option<gtk::Widget> {
+    page_root()
         .and_then(|root| crate::ui::window::find_widget_by_name(&root, "publish-images"))
 }
 
@@ -522,8 +557,13 @@ pub fn refresh(window: &adw::ApplicationWindow) {
         s.publish_written = screen::publish_written(s.publish_written, counts.1);
     }
     draw_into(&s);
+    // `draw_into` rebuilt the slot rows whole, so their fresh `DrawingArea`s have no painter until this
+    // runs again — and the thumbnail must repaint too, since its words or crop may just have changed.
+    if let Some(win) = held_window() {
+        crate::ui::produce_paint::install(&win);
+    }
     // The ✎ chips belong to the marks, so they are redrawn by the same door that redraws the slots.
-    draw_word_chips(window, &s);
+    crate::ui::produce_words_press::draw_word_chips(window, &s);
     // §A: a row's presence is itself drawn, so the grid is rebuilt whole rather than updated in place.
     // The new controls are seeded from the held state as they are created (`build_settings`), which is
     // why no guarded set-value pass is needed here: nothing emits a change signal during construction,
@@ -961,105 +1001,6 @@ fn produce_settings(s: &ProduceState) -> crate::project::Produce {
     }
 }
 
-/// One ✎ chip per word box on the picture (§1 item 7: "✎ to reword"). Rebuilt whole, because a removed
-/// mark must not leave its chip behind claiming a box that no longer exists.
-fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
-    let Some(holder) = widget_in_root("thumbnail-word-chips") else {
-        return;
-    };
-    while let Some(child) = holder.first_child() {
-        holder.remove(&child);
-    }
-    for (index, mark) in s.texts.iter().enumerate() {
-        // §A: the box itself is visible on the picture (dashed violet), not only as its chip below.
-        let box_on_picture = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        box_on_picture.set_widget_name(&format!("words-box-{index}"));
-        box_on_picture.add_css_class("produce-word-box");
-        box_on_picture.set_halign(gtk::Align::Start);
-        box_on_picture.set_size_request(
-            (mark.wf * 320.0).max(28.0) as i32,
-            (mark.hf * 180.0).max(28.0) as i32,
-        );
-        box_on_picture.set_tooltip_text(Some(&mark.text));
-        holder.append(&box_on_picture);
-        let chip = gtk::Button::with_label(&format!("\u{270e} {}", mark.text));
-        chip.set_widget_name(&format!("words-chip-{index}"));
-        chip.set_tooltip_text(Some("reword or remove this box"));
-        chip.set_halign(gtk::Align::Start);
-        let w = window.clone();
-        let text = mark.text.clone();
-        chip.connect_clicked(move |_| crate::ui::produce_words::open_reword(&w, index, &text));
-        holder.append(&chip);
-    }
-}
-
-/// The drag-a-box gesture over the picture. The box is kept as FRACTIONS of the plate, not pixels:
-/// `screen::place_words` is resolution-independent, so a saved mark survives being shown at another
-/// size. Each corner first goes through [`screen::snap`] against [`screen::overlay_snap_targets`] — the
-/// plate's edges and middles plus every box already on it (§A: "boxes snap to the picture's and each
-/// other's edges and middles") — and a drag that ends smaller than §A's 28 px floor is a look, not a box.
-fn install_words_gesture(window: &adw::ApplicationWindow) {
-    let Some(picture) = widget_in(window, "thumbnail-picture") else {
-        return;
-    };
-    let gesture = gtk::GestureDrag::new();
-    gesture.set_button(1);
-    // Grabbed before the closure below takes what it needs: `add_controller` consumes nothing but the
-    // handler must own its own copies of `picture` and `window`.
-    let plate = picture.clone();
-    let w = window.clone();
-    // `drag-begin` carries the ABSOLUTE press position and `drag-end` only the OFFSET from it (the F2.8
-    // lesson), so both corners are known only across the two signals.
-    let start = std::rc::Rc::new(std::cell::Cell::new((0.0f64, 0.0f64)));
-    let start_begin = start.clone();
-    gesture.connect_drag_begin(move |_g, x, y| {
-        start_begin.set((x, y));
-    });
-    gesture.connect_drag_end(move |_g, offset_x, offset_y| {
-        let (start_x, start_y) = start.get();
-        let wide = f64::from(plate.width()).max(1.0);
-        let high = f64::from(plate.height()).max(1.0);
-        // The targets are read when the drag ENDS, not when it was wired: whatever boxes the page holds at
-        // that moment are the ones this box may line up with.
-        let (xs, ys) = screen::overlay_snap_targets(wide, high, &read_state().texts);
-        let near_x = screen::snap(start_x, &xs);
-        let near_y = screen::snap(start_y, &ys);
-        let far_x = screen::snap(start_x + offset_x, &xs);
-        let far_y = screen::snap(start_y + offset_y, &ys);
-        let x0 = near_x.min(far_x).max(0.0) / wide;
-        let y0 = near_y.min(far_y).max(0.0) / high;
-        let wf = (far_x - near_x).abs() / wide;
-        let hf = (far_y - near_y).abs() / high;
-        if screen::box_is_too_small(wf * wide, hf * high) {
-            return;
-        }
-        crate::ui::produce_words::open_place(
-            &w,
-            x0 + wf / 2.0,
-            y0 + hf / 2.0,
-            wf.min(1.0),
-            hf.min(1.0),
-        );
-    });
-    picture.add_controller(gesture.clone());
-    WORDS_GESTURE.with(|held| *held.borrow_mut() = Some(gesture));
-}
-
-thread_local! {
-    /// The picture's drag controller, kept so a test can fire a real drag the way `ui::zoom_gesture`
-    /// lets `zoom_drag_widgets.rs` fire the Cut panel's. Nothing in the program asks for it — hence
-    /// [`words_gesture_for_test`]'s name.
-    static WORDS_GESTURE: std::cell::RefCell<Option<gtk::GestureDrag>> = const {
-        std::cell::RefCell::new(None)
-    };
-}
-
-/// The thumbnail picture's drag gesture, for a test that drives the overlay editor through the real
-/// widget (`emit_by_name("drag-begin"/"drag-end")`). Program code never calls this.
-pub fn words_gesture_for_test(_window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
-    WORDS_GESTURE.with(|held| held.borrow().clone())
-}
-
 /// Store one typed box's whole text, under the widget's own name. Verbatim: §1 gives no trimming, case
 /// or length rule for any of the four, and an instruction or a description is prose whose spacing,
 /// leading blank line and trailing space belong to whoever wrote them — so the machine keeps the bytes.
@@ -1157,7 +1098,10 @@ pub fn wire(window: &adw::ApplicationWindow) {
         }),
     );
     // The overlay editor's drag lives on the picture itself; the ✎ chips arrive with each refresh.
-    install_words_gesture(&win);
+    crate::ui::produce_words_press::install_words_gesture(&win);
+    // §2 and §7: a plate is a flat CSS rectangle until someone paints it. Installed here, once — but
+    // `draw_slots` rebuilds the slot widgets whole, so `refresh` installs again for the new ones.
+    crate::ui::produce_paint::install(&win);
     refresh(&win);
 }
 

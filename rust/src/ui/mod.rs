@@ -37,6 +37,10 @@ pub mod log_paths;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_confirm;
 pub mod produce_page;
+/// §08-produce#1-screen 2 and 7: the PAINT funcs for this page's plates (the thumbnail with its words
+/// and crop box, each image slot). A `.produce-plate` DrawingArea is a flat CSS rectangle until this
+/// installs on it. Split out of `produce_page`, which is at its size budget.
+pub mod produce_paint;
 pub mod produce_snapshot;
 /// §08-produce#1-screen — the render legs the Produce page hands to `produce_exec`. Split out of
 /// `produce_page.rs`, which is past its size budget.
@@ -56,6 +60,9 @@ pub mod produce_languages;
 pub mod produce_press_wiring;
 /// §08-produce#1-screen item **7** — the ✎ dialog of the thumbnail's text-overlay editor.
 pub mod produce_words;
+/// §08-produce#1-screen item **7** — the thumbnail's text-overlay editor: its ✎ chips, dashed boxes and
+/// the drag that draws a box. Split out of `produce_page`, which is at its size budget.
+pub mod produce_words_press;
 /// §08-produce#1-screen items **4**, **5**, **8**, **9** — the four boxes a person TYPES into: their
 /// `changed` wires. Split out of `produce_page`, which is at its size budget.
 pub mod produce_text;

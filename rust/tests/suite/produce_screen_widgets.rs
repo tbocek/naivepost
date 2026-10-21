@@ -148,9 +148,11 @@ fn produce_round(_app: &adw::Application) {
     // The picture is a plate with the page's own ground, so it is not a hole in the layout.
     let picture = widget_in(&window, "thumbnail-picture").expect("the thumbnail plate exists");
     assert!(picture.has_css_class("produce-plate"), "and wears the plate class");
-    // §A: the written column has a 360 px minimum so the paned cannot starve it.
+    // §A: the written column has a 360 px minimum so the paned cannot starve it. The plate now floats in
+    // its own overlay, so the climb to the paned is one step longer than it was with a bare plate.
     let right = picture
         .parent()
+        .and_then(|slot| slot.parent())
         .and_then(|left| left.parent())
         .expect("the paned holds the two columns");
     assert_eq!(right.widget_name(), "produce-split", "the split is the page's named paned");

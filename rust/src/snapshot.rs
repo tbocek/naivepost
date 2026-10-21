@@ -116,6 +116,10 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // (stamped names + probed lengths) could never be laid out from the app's own rules. Taken on BEFORE
         // the window exists, because `build_window` seeds this window's session spans as it builds.
         ui::save_apply::note_open_for_snapshot(&dir);
+        // `build_window` below resets that door to the working copy beside the launch, so a page that
+        // resolves stored `project:` paths at PAINT time (the Produce plates) has to be told the folder
+        // this shot renders directly — otherwise its pictures resolve beside the launch and draw missing.
+        crate::ui::produce_paint::note_open_project(&dir);
         if screen_page(&screen) == Some("Narrate") {
             // BEFORE the window is shown: §A.7's visibility rule runs during `refresh`, and a scroller
             // hidden then stays hidden however many refreshes follow — so the reference has to be on
@@ -864,7 +868,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // Cut band its layout only exists after GTK has allocated the page. `present()` queues the map and
         // headless nothing else runs between here and the pixels, so without a drain the paned measures 0 px
         // wide, each column collapses to its own minimum, and the shot reads as one narrow column.
-        if screen_page(&screen) == Some("Prepare") {
+        if screen_page(&screen) == Some("Prepare") || screen_page(&screen) == Some("Produce") {
             let context = glib::MainContext::default();
             for _ in 0..64 {
                 while context.pending() {
