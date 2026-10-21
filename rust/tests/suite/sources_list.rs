@@ -15,6 +15,7 @@ use gtk4 as gtk;
 use naivepost::project::Project;
 use crate::common;
 use common::source_row as row;
+use common::settle;
 use naivepost::sources::{self, Control, TrackInfo};
 use naivepost::ui;
 
@@ -354,6 +355,10 @@ fn window_round() {
         RAN_PLACEMENT.store(true, Ordering::SeqCst);
         check_the_tooltips_are_on_the_widgets(app);
         RAN_TIPS.store(true, Ordering::SeqCst);
+        check_the_freq_steppers(app);
+        RAN_FREQ.store(true, Ordering::SeqCst);
+        staged_shot_draws_every_row(app);
+        RAN_SHOT.store(true, Ordering::SeqCst);
     });
 }
 
@@ -361,6 +366,152 @@ static RAN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_PRESS: AtomicBool = AtomicBool::new(false);
 static RAN_PLACEMENT: AtomicBool = AtomicBool::new(false);
 static RAN_TIPS: AtomicBool = AtomicBool::new(false);
+static RAN_FREQ: AtomicBool = AtomicBool::new(false);
+static RAN_SHOT: AtomicBool = AtomicBool::new(false);
+
+/// §4's own picture (`spec/img/03-sources.png`) is a lecture day, and the shipped fixture holds ONE source,
+/// so the shot stages its own session — through `snapshot_sources::stage`, which the `--snapshot 03-sources`
+/// arm calls, i.e. program code, not a test-only builder. This asserts that staging really puts every row and
+/// each of §4's controls on the page: the point is the wire from the stager to the row painter, so a shot that
+/// silently drew two rows again fails here rather than in a screenshot nobody compares.
+fn staged_shot_draws_every_row(app: &adw::Application) {
+    let window = ui::build_window(app, &fixture(), "Prepare");
+    window.present();
+    naivepost::snapshot_sources::stage(&window);
+
+    let drawn = naivepost::ui::source_rows_refresh::drawn_rows(&window);
+    assert!(drawn >= 6, "{ITEM}: the staged day drew only {drawn} rows");
+    for index in 0..drawn {
+        assert!(
+            widget::<gtk::ListBoxRow>(&window, &format!("source-row-{index}")).is_some(),
+            "{ITEM}: row {index} of {drawn} has no row widget"
+        );
+    }
+    // Badge **3** 🎥 belongs to a video row and to NO audio row: `mic-lav.wav` is in the staged set, so some
+    // index must have no footage toggle at all ("only a video may be footage").
+    assert!(
+        widget::<gtk::ToggleButton>(&window, "footage-0").is_some(),
+        "{ITEM}: the first staged row is a video and owes its footage toggle"
+    );
+    let audio_row = (0..drawn).find(|i| {
+        widget::<gtk::ToggleButton>(&window, &format!("footage-{i}")).is_none()
+    });
+    assert!(audio_row.is_some(), "{ITEM}: every staged row claims to have frames");
+
+    // Badge **4**: slot 1 sits on the newest take, and the face IS the slot number.
+    let narrator: gtk::Button = widget(&window, "narrator-0").expect("every row has its narrator button");
+    assert_eq!(narrator.label().as_deref(), Some("1"), "{ITEM}: slot 1 is on the first staged row");
+
+    // The ⚠ badge, which comes from the FILE's name: one staged name carries no timestamp.
+    let warned = (0..drawn).any(|i| widget::<gtk::Image>(&window, &format!("warning-{i}")).is_some());
+    assert!(warned, "{ITEM}: no staged name lacked a timestamp, so ⚠ never appeared");
+
+    // And the names are the stamped day the picture shows, not paths.
+    let names: Vec<String> = (0..drawn)
+        .filter_map(|i| {
+            widget::<gtk::Label>(&window, &format!("source-name-{i}"))
+                .map(|label| label.label().to_string())
+        })
+        .collect();
+    assert!(
+        names.iter().any(|name| name.starts_with("2026-09-16 ")),
+        "{ITEM}: no staged row wears a stamped name: {names:?}"
+    );
+    window.close();
+}
+
+#[test]
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s_shot_draws_every_row_and_its_controls() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_SHOT.load(Ordering::SeqCst),
+        "{ITEM}: the staged-shot check never ran"
+    );
+}
+
+/// §4's badge **8** walked by hand on the real buttons. `—` and `+` beside the value are what the spec's
+/// picture shows (`Freq: [1s][—][+]`) and what the prototype had (`gui/main.go`'s `newFreqPick`); the
+/// dropdown picks a stop out of hand and these move one stop at a time. Both must land on
+/// `Project::interval`, which is what `ui::session_freq` reads back — the same field the logic test below
+/// checks — and on the dropdown's face, or the page would show one interval and describe with another.
+fn check_the_freq_steppers(app: &adw::Application) {
+    let window = ui::build_window(app, &fixture(), "Prepare");
+    window.present();
+    let up: gtk::Button = widget(&window, "freq-up").expect("Freq has its + button");
+    let down: gtk::Button = widget(&window, "freq-down").expect("Freq has its \u{2014} button");
+    let face: gtk::DropDown = widget(&window, "freq-control").expect("Freq is still the dropdown");
+    assert_eq!(ui::session_freq(&window), 1.0, "{ITEM}: the fixture opens at 1 s");
+
+    up.emit_clicked();
+    settle();
+    assert_eq!(
+        ui::session_freq(&window),
+        naivepost::prepare::FREQ_STOPS[3],
+        "{ITEM}: + moved Freq one stop along the list"
+    );
+    assert_eq!(face.selected(), 3, "{ITEM}: the face moved with the field");
+
+    down.emit_clicked();
+    down.emit_clicked();
+    settle();
+    assert_eq!(
+        ui::session_freq(&window),
+        naivepost::prepare::FREQ_STOPS[1],
+        "{ITEM}: two \u{2014} presses walked two stops back"
+    );
+    assert_eq!(face.selected(), 1, "{ITEM}: and the face followed there too");
+
+    // The two controls §4 drops in the rewrite stay dropped: badge **9** frame size ("frames are stored
+    // at the video's own size and scaled for the model") and badge **11** Style ("the policy sets it from
+    // the User Context"). The picture still shows both because it is a screenshot of the prototype; the
+    // text says gone, so their absence is asserted here rather than left to be read off an image.
+    for dropped in ["frame-size-control", "style-control"] {
+        assert!(
+            widget::<gtk::Widget>(&window, dropped).is_none(),
+            "{ITEM}: {dropped} is gone in the rewrite and must not be drawn"
+        );
+    }
+    window.close();
+}
+
+#[test]
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s8_freq_steppers_answer_the_real_buttons() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_FREQ.load(Ordering::SeqCst),
+        "{ITEM}: the Freq stepper wire check never ran"
+    );
+}
+
+/// The rule behind those buttons: a step walks [`prepare::FREQ_STOPS`] and clamps at both ends, so the
+/// person at either end of the list gets no movement rather than an interval nothing describes with.
+#[test]
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s8_freq_steppers_walk_the_stop_list() {
+    common::pin_private_cwd();
+    use naivepost::prepare::{freq_step, FREQ_STOPS};
+    assert_eq!(freq_step(1.0, 1), 2.0, "{ITEM}: + is the next stop");
+    assert_eq!(freq_step(1.0, -1), 0.5, "{ITEM}: \u{2014} is the previous stop");
+    assert_eq!(freq_step(1.0, 2), 3.0, "{ITEM}: two steps are two stops");
+    assert_eq!(
+        freq_step(FREQ_STOPS[0], -1),
+        FREQ_STOPS[0],
+        "{ITEM}: stepping below the first stop stays on it"
+    );
+    let last = FREQ_STOPS[FREQ_STOPS.len() - 1];
+    assert_eq!(freq_step(last, 1), last, "{ITEM}: stepping past the last stop stays on it");
+    assert_eq!(
+        freq_step(last, 4),
+        last,
+        "{ITEM}: and any number of steps past the end stays there too"
+    );
+    assert_eq!(
+        freq_step(1.7, 1),
+        1.7,
+        "{ITEM}: a value off the list has nowhere to step from, so it does not move"
+    );
+}
 
 /// §4's tooltips, read off the widgets that carry them. A tooltip is invisible in a screenshot and only
 /// exists once it is ATTACHED, so this asserts the property on the real widget rather than on the

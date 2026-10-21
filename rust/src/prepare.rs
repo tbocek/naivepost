@@ -131,6 +131,22 @@ pub fn set_freq(project: &mut Project, secs: f64) -> bool {
     true
 }
 
+/// The stop `steps` places along [`FREQ_STOPS`] from `secs`, for the `—`/`+` buttons beside Freq (§4's
+/// badge **8**, §04 §1's picture). Walking off either end stays on that end stop — the prototype's
+/// stepper never left the stop list either (`gui/main.go`'s `freqPick::set` clamps to first/last), so a
+/// person at 5s pressing `+` gets no surprise rather than an interval nothing can describe with.
+/// A value that is not a stop steps nowhere: there is no place on the list to count from.
+pub fn freq_step(secs: f64, steps: i32) -> f64 {
+    let Some(at) = FREQ_STOPS.iter().position(|stop| *stop == secs) else {
+        return secs;
+    };
+    let last = FREQ_STOPS.len() - 1;
+    // One signed walk, then clamped: `i32` arithmetic keeps this off the underflow a usize would hit at
+    // the bottom of the list.
+    let moved = (at as i32 + steps).clamp(0, last as i32) as usize;
+    FREQ_STOPS[moved]
+}
+
 /// What the Language box shows when it is empty: the language that will actually be used.
 pub fn language_label(code: &str) -> String {
     if code.trim().is_empty() {
