@@ -66,11 +66,9 @@ fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
     fresh
 }
 
-/// Let the main context run what the widget emissions queued.
-
 /// A widget by its stable name, whatever its type -- used where the accessor's downcast is too narrow (the
 /// row boxes are `gtk::Box`, not buttons). Same walk the page's own finders use.
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
+fn find_named_panic(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
     fn walk(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
         if root.widget_name() == name {
             return Some(root.clone());
@@ -148,8 +146,8 @@ fn check_a_row_click_watches_it_and_says_what_the_cut_shows(app: &adw::Applicati
     );
     // The class lives on the ROW (`camera-row-<n>`), not on its name plate: `refresh_camera_rows` puts it
     // there and the plate only carries the label, so the outline is read off the holder.
-    let row_two = find_named(&window, "camera-row-2");
-    let row_one = find_named(&window, "camera-row-1");
+    let row_two = find_named_panic(&window, "camera-row-2");
+    let row_one = find_named_panic(&window, "camera-row-1");
     assert!(row_two.has_css_class("watched-row"), "**4** the watched row's box is outlined");
     assert!(!row_one.has_css_class("watched-row"), "and only that row's box");
     // **7**: the line at 25 s lies in a kept scene shown from camera 1(row 0), so watching row 2 says so.

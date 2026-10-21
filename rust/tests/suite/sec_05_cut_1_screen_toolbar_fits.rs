@@ -24,22 +24,6 @@ static RAN_GLYPHS: AtomicBool = AtomicBool::new(false);
 static RAN_VOLUME_ICON: AtomicBool = AtomicBool::new(false);
 static RAN_POPOVER: AtomicBool = AtomicBool::new(false);
 
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
 
 /// A Cut page over a session with footage, sized the way `just snapshot 05-cut` sizes it: the layout
 /// collapses to one column without an explicit size before `present()`.
@@ -104,7 +88,7 @@ const BAR_CONTROLS: [(&str, &str); 18] = [
 /// because "clipped" is a distance: the failing line names the control and both edges.
 fn check_every_control_sits_on_the_bar(app: &adw::Application) {
     let window = cut_page(app);
-    let bar = find_named(&window, "cut-toolbar").expect("\u{a7}A's toolbar is on the page");
+    let bar = common::find_named(&window, "cut-toolbar").expect("\u{a7}A's toolbar is on the page");
     let bar_bounds = bar
         .compute_bounds(window.upcast_ref::<gtk::Widget>())
         .expect("the toolbar has bounds");
@@ -121,7 +105,7 @@ fn check_every_control_sits_on_the_bar(app: &adw::Application) {
     // `compute_bounds` answers in NATIVE coordinates, which is what "inside the bar" has to mean here; a
     // widget's own x/y getters answer against its parent and would compare two different frames.
     for (name, what) in BAR_CONTROLS {
-        let widget = find_named(&window, name)
+        let widget = common::find_named(&window, name)
             .unwrap_or_else(|| panic!("\u{a7}1 item {what} is missing from the page: `{name}`"));
         let bounds = widget
             .compute_bounds(window.upcast_ref::<gtk::Widget>())
@@ -240,7 +224,7 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
 
     // And on screen: the realized button answers with the same glyph and the same tip.
     let window = cut_page(app);
-    let button = find_named(&window, "play-recording-button").expect("\u{a7}1 item 5 is on the page");
+    let button = common::find_named(&window, "play-recording-button").expect("\u{a7}1 item 5 is on the page");
     let downcast = button.downcast::<gtk::Button>().expect("it is a button");
     assert_eq!(
         downcast.label().as_deref(),
@@ -285,7 +269,7 @@ fn check_the_volume_group_wears_its_icon(app: &adw::Application) {
     // The page's own door for the slider, so this check and F2.5's read the same widget.
     let scale = naivepost::ui::preview_volume_scale(&window).expect("\u{a7}1 item 9 preview-volume");
     let row = scale.parent().expect("the slider sits in the volume row");
-    let icon = find_named(&window, "preview-volume-icon")
+    let icon = common::find_named(&window, "preview-volume-icon")
         .expect("\u{a7}A group 2 asks for an icon beside the slider");
     assert!(
         icon.parent().is_some_and(|p| p.upcast_ref::<gtk::Widget>() == row.upcast_ref::<gtk::Widget>()),
@@ -334,7 +318,7 @@ fn check_the_volume_group_wears_its_icon(app: &adw::Application) {
 /// §1 names in order, and activating the button drives that same MenuButton's active state.
 fn check_the_effects_button_opens_a_real_popover(app: &adw::Application) {
     let window = cut_page(app);
-    let button = find_named(&window, "effect-button").expect("\u{a7}1 item 17 effect-button");
+    let button = common::find_named(&window, "effect-button").expect("\u{a7}1 item 17 effect-button");
     let menu = button
         .downcast_ref::<gtk::MenuButton>()
         .expect("\u{a7}1 item 17 is a dropdown, so a MenuButton");

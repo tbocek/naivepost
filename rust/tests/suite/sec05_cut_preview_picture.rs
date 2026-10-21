@@ -25,23 +25,6 @@ static RAN_CLICK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 const FRAME_W: i32 = 96;
 const FRAME_H: i32 = 54;
 
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
-
 /// The folder `build_window` will treat as this window's session: the page asks `startup::session_dir(cwd)`,
 /// so a test that wants its own frames found has to write them where that rule points.
 fn startup_session_dir(root: &std::path::Path) -> std::path::PathBuf {
@@ -117,7 +100,7 @@ fn check_the_preview_shows_a_frame(app: &adw::Application) {
     ui::set_session_recordings(&tape);
     let seeded = cut::Cut { segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }], ..Default::default() };
     ui::seed_review_cut(&window, &seeded);
-    let picture = find_named(&window, "preview-picture").expect("§A's GtkPicture is on the panel");
+    let picture = common::find_named(&window, "preview-picture").expect("§A's GtkPicture is on the panel");
     let picture = picture.downcast::<gtk::Picture>().expect("it is a Picture");
     // Nothing extracted yet: the plate stays empty rather than showing a broken image.
     assert!(picture.paintable().is_none(), "no frames on disk means no picture, not a broken one");
@@ -155,7 +138,7 @@ fn check_a_click_on_the_picture_toggles_play(app: &adw::Application) {
     settle();
     assert!(!ui::preview_player(&window).transport.playing, "a fresh preview is not playing");
 
-    let button = find_named(&window, "preview-picture-button").expect("the picture is clickable");
+    let button = common::find_named(&window, "preview-picture-button").expect("the picture is clickable");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(

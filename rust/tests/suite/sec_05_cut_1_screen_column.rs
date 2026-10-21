@@ -23,23 +23,6 @@ static RAN_GUTTER: AtomicBool = AtomicBool::new(false);
 /// hundreds of px short.
 const VALUE_RIGHT_SLACK_PX: i32 = 8;
 
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
-
 /// A widget's horizontal extent in window coordinates: (left, right). One frame is shared by everything
 /// on the page because `translate_coordinates` answers relative to the native surface.
 #[allow(deprecated)] // 4.12's replacement needs a surface node this tree does not hand out
@@ -106,7 +89,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
 /// right edge sits at or left of its value's left edge, and the value ends where the grid ends.
 fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
     let window = cut_page(app);
-    let grid = find_named(&window, "cut-form").expect("§A's idle readings grid is on the page");
+    let grid = common::find_named(&window, "cut-form").expect("§A's idle readings grid is on the page");
     let (grid_left, grid_right) = span(&grid);
     println!("GRID cut-form spans x={grid_left}..{grid_right} ({} px)", grid.width());
     assert!(
@@ -129,9 +112,9 @@ fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
             "Aspect ratio" => (&key_box, "aspect-choice"),
             _ => (&key_box, &name),
         };
-        let key = find_named(&window, key_name)
+        let key = common::find_named(&window, key_name)
             .unwrap_or_else(|| panic!("the `{label}` row has no key label"));
-        let value = find_named(&window, value_name)
+        let value = common::find_named(&window, value_name)
             .unwrap_or_else(|| panic!("the `{label}` row has no value ({value_name})"));
         // The grid's own right edge is the column's: the pane ends where the divider sits, and §1 wants
         // each value reading at that end. (`cut-form` fills its pane -- see `cut_form_column`.)
@@ -170,7 +153,7 @@ fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
 /// `tests/suite/cut_form_frame_widgets.rs` uses, i.e. what the native file dialog's callback calls.
 fn check_the_pinned_heading_shows_only_with_a_form(app: &adw::Application) {
     let window = cut_page(app);
-    let heading = find_named(&window, "cut-form-heading").expect("§A's pinned heading row exists");
+    let heading = common::find_named(&window, "cut-form-heading").expect("§A's pinned heading row exists");
     assert!(!heading.is_visible(), "the idle column starts with the readings and NO heading (§1)");
 
     let video = {
@@ -186,10 +169,10 @@ fn check_the_pinned_heading_shows_only_with_a_form(app: &adw::Application) {
     assert!(naivepost::ui::insert_open(&window).is_some(), "the insert form is open");
 
     assert!(heading.is_visible(), "an open form pins its heading");
-    let title = find_named(&window, "cut-form-title")
+    let title = common::find_named(&window, "cut-form-title")
         .and_then(|w| w.downcast::<gtk::Label>().ok())
         .expect("the heading carries a title label");
-    let close = find_named(&window, "cut-form-close").expect("the heading carries the ✕");
+    let close = common::find_named(&window, "cut-form-close").expect("the heading carries the ✕");
     let words = title.text().to_string();
     assert!(!words.trim().is_empty(), "the open form's heading names what is open");
     let (title_left, title_right) = span(title.upcast_ref());
@@ -232,13 +215,13 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
     );
     for name in ["gutter-band", "gutter-column", "gutter-row", "gutter-strip"] {
         assert!(
-            find_named(&window, name).is_none(),
+            common::find_named(&window, name).is_none(),
             "`{name}` would be a band of its own, which §1 rules out: the gutter is the first 30 px of \
              each band's timeline space"
         );
     }
     // What DOES live in the gutter are the switches and badges, drawn over the band's own first 30 px.
-    let layers = find_named(&window, "track-layers")
+    let layers = common::find_named(&window, "track-layers")
         .expect("the gutter belongs to the band's layer stack, which paints it in its first 30 px");
     // §B's rail is IN that stack: the whole-cut badge and the lane switches are overlay children of
     // `track-layers`, not boxes the page packs beside it — a direct-children scan would miss them, because
@@ -255,7 +238,7 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
     }
     for rail in ["gutter-badges", "gutter-switches"] {
         assert!(
-            find_named(&window, rail).is_some(),
+            common::find_named(&window, rail).is_some(),
             "`{rail}` is the gutter's control rail (§B: fold-all badge, sound switches, empty-row ✕)"
         );
         assert!(
@@ -270,7 +253,7 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
     // `gutter-switches`. Positions come from the realized tree, so a holder that exists but draws nothing
     // off-screen cannot pass this.
     let band_left = span(&layers).0;
-    let badge = find_named(&window, "fold-all-button")
+    let badge = common::find_named(&window, "fold-all-button")
         .expect("\u{a7}1 badge 23: the fold-all badge lives in the gutter");
     let (badge_left, badge_right) = span(&badge);
     println!("GUTTER badge 23 x={badge_left}..{badge_right}, band left {band_left}");
@@ -280,7 +263,7 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
         naivepost::cut_screen::GUTTER_PX
     );
     let lane = "mic-lav";
-    let switch = find_named(&window, &format!("gutter-switch-{lane}"))
+    let switch = common::find_named(&window, &format!("gutter-switch-{lane}"))
         .unwrap_or_else(|| panic!("\u{a7}1 badge 29: `{lane}` has no gutter switch"));
     // The real widget, fired the way the toolkit fires it: pressing the rail's switch must reach the
     // hearing rule, which is what makes this the wire as well as the position check.

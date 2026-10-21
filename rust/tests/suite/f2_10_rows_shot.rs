@@ -63,7 +63,7 @@ fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
 
 /// The named widget, whatever its type — the row boxes are `gtk::Box`, not buttons, so a downcast-only
 /// accessor is too narrow. Same walk the page's own finders use.
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
+fn find_named_panic(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
     fn walk(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
         if root.widget_name() == name {
             return Some(root.clone());
@@ -179,11 +179,11 @@ fn check_clicking_the_other_plate_moves_the_outline(app: &adw::Application) {
     snapshot_rows::stage(&window, &fixture_dir());
     settle();
     assert!(
-        find_named(&window, "camera-row-2").has_css_class("watched-row"),
+        find_named_panic(&window, "camera-row-2").has_css_class("watched-row"),
         "**4**: the staged shot has row 2 outlined"
     );
     assert!(
-        !find_named(&window, "camera-row-1").has_css_class("watched-row"),
+        !find_named_panic(&window, "camera-row-1").has_css_class("watched-row"),
         "and only that row"
     );
     // The preview followed the watch: the frame the panel asked for came from camera 2's file (§B's `at(t)`
@@ -212,11 +212,11 @@ fn check_clicking_the_other_plate_moves_the_outline(app: &adw::Application) {
     settle();
     assert_eq!(ui::watched_row(), Some(0), "the click watched row 1");
     assert!(
-        find_named(&window, "camera-row-1").has_css_class("watched-row"),
+        find_named_panic(&window, "camera-row-1").has_css_class("watched-row"),
         "and the dashed outline moved onto it"
     );
     assert!(
-        !find_named(&window, "camera-row-2").has_css_class("watched-row"),
+        !find_named_panic(&window, "camera-row-2").has_css_class("watched-row"),
         "off the row it was on"
     );
     assert!(
@@ -419,7 +419,7 @@ fn check_the_bench_stays_scrolled_and_the_rows_are_painted(app: &adw::Applicatio
     let window = shot_window(app, "painted");
     snapshot_rows::stage(&window, &fixture_dir());
     settle();
-    let bench = find_named(&window, "bench-text");
+    let bench = find_named_panic(&window, "bench-text");
     assert!(
         bench
             .parent()

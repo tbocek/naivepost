@@ -18,24 +18,6 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle, status_
 static RAN_FRAME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// First widget in the tree with this name.
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
-
 /// A window on the Cut page, cwd pinned to its own temp root so nothing writes into `rust/`.
 fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     release_last_window();
@@ -59,17 +41,17 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 /// S15: the column is the three §A parts, and while nothing is being placed only the body shows.
 fn check_the_column_pins_a_heading_and_a_footer(app: &adw::Application) {
     let window = cut_window(app);
-    let scroller = find_named(&window, "cut-form-scroller").expect("§A's scroller holds the column body");
-    let heading = find_named(&window, "cut-form-heading").expect("§A's pinned heading row");
-    let footer = find_named(&window, "cut-form-footer").expect("§A's pinned button footer");
+    let scroller = common::find_named(&window, "cut-form-scroller").expect("§A's scroller holds the column body");
+    let heading = common::find_named(&window, "cut-form-heading").expect("§A's pinned heading row");
+    let footer = common::find_named(&window, "cut-form-footer").expect("§A's pinned button footer");
     assert!(
-        find_named(&window, "cut-form-close").is_some(),
+        common::find_named(&window, "cut-form-close").is_some(),
         "the heading carries the ✕ that closes it"
     );
     // The eight idle readings live INSIDE the scroller, which is what makes them scrollable under a pinned
     // heading rather than fixed to the column. A `ScrolledWindow` wraps its child in a viewport, so the
     // walk goes up until it reaches the scroller itself.
-    let grid = find_named(&window, "cut-form").expect("the idle readings grid");
+    let grid = common::find_named(&window, "cut-form").expect("the idle readings grid");
     let mut holder = grid.parent().expect("the grid sits inside something");
     while holder.widget_name() != "cut-form-scroller" {
         holder = holder.parent().unwrap_or_else(|| {
@@ -78,7 +60,7 @@ fn check_the_column_pins_a_heading_and_a_footer(app: &adw::Application) {
     }
     for label in naivepost::cut_screen::IDLE_FORM_ROWS {
         let name = naivepost::cut_screen::readout_widget(label);
-        assert!(find_named(&window, &name).is_some(), "no {name} readout under the scroller");
+        assert!(common::find_named(&window, &name).is_some(), "no {name} readout under the scroller");
     }
     // Idle means no title and no buttons: the pinned parts exist but show nothing until a form opens.
     assert!(!heading.is_visible(), "an idle column shows no heading");
@@ -103,8 +85,8 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
     settle();
     assert!(said.contains("sting.mp4"), "{said}");
     assert!(ui::insert_open(&window).is_some(), "the insert form is open");
-    let heading = find_named(&window, "cut-form-heading").expect("the pinned heading");
-    let title = find_named(&window, "cut-form-title")
+    let heading = common::find_named(&window, "cut-form-heading").expect("the pinned heading");
+    let title = common::find_named(&window, "cut-form-title")
         .and_then(|w| w.downcast::<gtk::Label>().ok())
         .expect("the heading carries a title label");
     assert!(heading.is_visible(), "an open form pins its heading");
@@ -115,8 +97,8 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
     );
     // An insert's buttons sit in the INSERT's own pinned footer (`insert-form-footer`, the box under its form);
     // the frame's `cut-form-footer` is what every other form pins, so exactly one of the two is shown.
-    let column_footer = find_named(&window, "cut-form-footer").expect("the column pins a footer");
-    let insert_footer = find_named(&window, "insert-form-footer")
+    let column_footer = common::find_named(&window, "cut-form-footer").expect("the column pins a footer");
+    let insert_footer = common::find_named(&window, "insert-form-footer")
         .expect("the insert has its own pinned footer for its buttons");
     assert!(
         column_footer.is_visible() || insert_footer.is_visible(),
@@ -124,20 +106,20 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
     );
 
     // The cross, fired the way GTK fires a click.
-    find_named(&window, "cut-form-close")
+    common::find_named(&window, "cut-form-close")
         .expect("the heading's ✕")
         .emit_by_name::<()>("clicked", &[]);
     settle();
 
     assert!(ui::insert_open(&window).is_none(), "the ✕ closed the insert form");
     assert!(
-        !find_named(&window, "insert-form")
+        !common::find_named(&window, "insert-form")
             .expect("the insert holder")
             .is_visible(),
         "the form box is hidden again"
     );
     assert!(!heading.is_visible(), "with nothing open the heading is pinned away again");
-    assert!(!find_named(&window, "cut-form-footer").expect("the footer").is_visible());
+    assert!(!common::find_named(&window, "cut-form-footer").expect("the footer").is_visible());
     let said = status_text(&window);
     assert!(
         said.contains("insert") && said.contains("cancelled"),

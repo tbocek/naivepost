@@ -5,7 +5,7 @@
 //!
 //! The spec states no per-line count, so the grouping comes from `spec/img/08-produce.png`: three
 //! dropdown pairs on the first line, three on the second, then two each. That falls out of one budget
-//! rather than a hand-written table — see [`LINE_COLUMNS`] and [`pair_cost`]. A budget of FOUR cells held
+//! rather than a hand-written table — see [`LINE_COLUMNS`] and [`slots_for`]. A budget of FOUR cells held
 //! only TWO dropdown pairs to a line (label + control is 2 cells), which is what the shot showed and what
 //! the picture does not: six cells is what makes a line hold three.
 
@@ -24,10 +24,6 @@ use crate::ui::produce_page::{read_state, row_widget, ProduceState};
 /// grouping at the width the column actually has, and a fourth dropdown pair cannot squeeze onto a line
 /// because there is no room left for it.
 pub const LINE_COLUMNS: i32 = 6;
-
-/// Grid columns one row's LABEL costs. Every pair is label + control, so a pair's cost is this plus the
-/// control's own span.
-const LABEL_COLUMNS: i32 = 1;
 
 /// Slots one line holds — three, which is what `spec/img/08-produce.png` draws for the dropdown rows.
 pub const SLOTS_PER_LINE: i32 = 3;
@@ -49,22 +45,6 @@ pub fn label_column(slot: i32) -> i32 {
 /// last slot runs to the grid's end.
 pub fn control_end(slot: i32) -> i32 {
     ((slot + 1).min(SLOTS_PER_LINE)) * PAIR_SLOTS
-}
-
-/// Grid columns a row's CONTROL costs. A dropdown or a single tick takes one slot; the two sliders and the
-/// Translate tick row need TWO (see [`slots_for`]), which is why the picture shows each of them sharing a
-/// line with ONE other pair at most, or standing alone.
-fn control_columns(row: &str) -> i32 {
-    if slots_for(row) > 1 {
-        PAIR_SLOTS * 2 - LABEL_COLUMNS
-    } else {
-        1
-    }
-}
-
-/// A pair's whole width in grid columns.
-pub fn pair_cost(row: &str) -> i32 {
-    LABEL_COLUMNS + control_columns(row)
 }
 
 /// Where the next pair goes: `(row, column)` in the grid, after taking `row`/`col` as they stand and

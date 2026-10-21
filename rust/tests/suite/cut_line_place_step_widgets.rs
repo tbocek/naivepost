@@ -840,7 +840,7 @@ fn check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app: &adw::Applicati
         line_px >= origin && line_px <= origin + view,
         "the restored line is inside the view: origin {origin}, line {line_px}, view {view}"
     );
-    let bar = find_named(&window, "track-scrollbar")
+    let bar = common::find_named(&window, "track-scrollbar")
         .expect("the page carries its scrollbar")
         .downcast::<gtk::Scrollbar>()
         .expect("it is a scrollbar");
@@ -849,25 +849,6 @@ fn check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app: &adw::Applicati
     let _ = std::fs::remove_file(cut_line::line_file(&proj));
     cut_view::set_pps(naivepost::cut_screen::ZOOM_AT_OPEN);
     window.close();
-}
-
-/// First widget in this window's tree carrying this name. `find_widget_by_name` is crate-private, so a
-/// test walks the same way `tests/suite/sec05_cut_picture_scrollbar.rs` does.
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
 }
 
 /// F2.4 S3 through the real key controller: an arrow with NOTHING in hand moves no line and

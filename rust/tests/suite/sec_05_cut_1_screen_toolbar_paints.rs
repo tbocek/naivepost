@@ -39,22 +39,6 @@ const BAR_CONTROLS: [(&str, &str); 18] = [
     ("zoom-in-button", "22 zoom +"),
 ];
 
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
 
 /// A Cut page over a session with footage, at §1's own minimum size — the size at which the toolbar must
 /// show everything, and the size `just snapshot 05-cut` renders at. Shape of
@@ -122,7 +106,7 @@ fn check_every_control_paints_inside_its_group(app: &adw::Application) {
     let window = cut_page(app);
     let mut clipped: Vec<String> = Vec::new();
     for (name, what) in BAR_CONTROLS {
-        let widget = find_named(&window, name)
+        let widget = common::find_named(&window, name)
             .unwrap_or_else(|| panic!("\u{a7}1 item {what} is missing from the page: `{name}`"));
         let bounds = widget
             .compute_bounds(window.upcast_ref::<gtk::Widget>())
@@ -164,12 +148,12 @@ fn check_the_scrollbar_paints_a_geared_thumb(app: &adw::Application) {
     naivepost::ui::cut_view::set_pps(naivepost::cut_screen::ZOOM_AT_OPEN);
     naivepost::ui::cut_view::set_origin(0.0, 1e9, 1.0);
     let window = cut_page(app);
-    let bar = find_named(&window, "track-scrollbar")
+    let bar = common::find_named(&window, "track-scrollbar")
         .expect("badge 31 is on the page")
         .downcast::<gtk::Scrollbar>()
         .expect("`track-scrollbar` is a scrollbar");
-    let zoom_in = find_named(&window, "zoom-in-button").expect("\u{a7}1 item 22 is on the bar");
-    let zoom_out = find_named(&window, "zoom-out-button").expect("\u{a7}1 item 22's twin is on the bar");
+    let zoom_in = common::find_named(&window, "zoom-in-button").expect("\u{a7}1 item 22 is on the bar");
+    let zoom_out = common::find_named(&window, "zoom-out-button").expect("\u{a7}1 item 22's twin is on the bar");
     let view = naivepost::ui::cut_view::surface_width(&window);
 
     // Walk all the way down with the page's own − door: the ladder's floor is the film length fitting.

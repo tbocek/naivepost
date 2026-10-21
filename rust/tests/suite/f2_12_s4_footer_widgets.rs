@@ -81,23 +81,6 @@ fn write_timed_card() -> String {
     path.to_string_lossy().to_string()
 }
 
-/// First widget in THIS window's tree carrying `name`.
-fn find_named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
-    fn walk(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if widget.widget_name() == name {
-            return Some(widget.clone());
-        }
-        for child in widget.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
-            if let Some(found) = walk(child, name) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref(), name)
-}
 
 /// Is `needle` somewhere under `hay`? The parent chain is not public, so the search runs downwards instead.
 fn holds(hay: &gtk::Widget, needle: &gtk::Widget) -> bool {
@@ -138,7 +121,7 @@ fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
 /// form is, and comes back when the form closes.
 fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
     let window = cut_page(app, "readings");
-    let readings = find_named(&window, "cut-form").expect("the idle readings are `cut-form`");
+    let readings = common::find_named(&window, "cut-form").expect("the idle readings are `cut-form`");
     assert!(readings.is_visible(), "an idle column shows its readings");
 
     open_form(&window);
@@ -148,15 +131,15 @@ fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
         "§S4: the form sits in the form column IN PLACE OF THE IDLE READINGS, so the grid is not drawn"
     );
     assert!(
-        find_named(&window, "insert-heading").is_some(),
+        common::find_named(&window, "insert-heading").is_some(),
         "the form drew its own heading line"
     );
     assert!(
-        find_named(&window, "insert-seconds").is_some(),
+        common::find_named(&window, "insert-seconds").is_some(),
         "the form drew its Seconds entry"
     );
 
-    find_named(&window, "insert-cancel-button")
+    common::find_named(&window, "insert-cancel-button")
         .expect("the form carries its cancel button")
         .emit_by_name::<()>("clicked", &[]);
     settle();
@@ -173,15 +156,15 @@ fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
 fn check_the_footer_holds_the_buttons_that_place_the_insert(app: &adw::Application) {
     let window = cut_page(app, "footer");
     open_form(&window);
-    let footer = find_named(&window, "insert-form-footer").expect("the page pins a footer for the insert");
+    let footer = common::find_named(&window, "insert-form-footer").expect("the page pins a footer for the insert");
     assert!(
         footer.is_visible(),
         "§05#1: an open form pins its footer, so its buttons are on screen and clickable"
     );
-    let apply = find_named(&window, "insert-apply-button")
+    let apply = common::find_named(&window, "insert-apply-button")
         .and_then(|w| w.downcast::<gtk::Button>().ok())
         .expect("the form carries its apply button");
-    let cancel = find_named(&window, "insert-cancel-button")
+    let cancel = common::find_named(&window, "insert-cancel-button")
         .and_then(|w| w.downcast::<gtk::Button>().ok())
         .expect("the form carries its cancel button");
     assert!(
@@ -198,7 +181,7 @@ fn check_the_footer_holds_the_buttons_that_place_the_insert(app: &adw::Applicati
         "an insert's apply button says \"Insert it\" (§1)"
     );
     // The body no longer ends with them: the scroller's content is the form alone.
-    let holder = find_named(&window, "insert-form").expect("the insert holder");
+    let holder = common::find_named(&window, "insert-form").expect("the insert holder");
     assert!(
         !holds(&holder, apply.upcast_ref()),
         "the buttons left the scrolling body for the pinned footer"
@@ -214,7 +197,7 @@ fn check_clicking_insert_it_places_the_card(app: &adw::Application) {
     let before = cut_of(&window);
     assert_eq!(before.segs.len(), 1, "one kept scene before the insert");
 
-    find_named(&window, "insert-apply-button")
+    common::find_named(&window, "insert-apply-button")
         .expect("the footer holds the apply button")
         .emit_by_name::<()>("clicked", &[]);
     settle();
@@ -232,13 +215,13 @@ fn check_clicking_insert_it_places_the_card(app: &adw::Application) {
     );
     assert!(ui::insert_open(&window).is_none(), "Apply closed the form");
     assert!(
-        !find_named(&window, "insert-form-footer")
+        !common::find_named(&window, "insert-form-footer")
             .expect("the footer")
             .is_visible(),
         "and took its pinned footer away with it"
     );
     assert!(
-        find_named(&window, "cut-form")
+        common::find_named(&window, "cut-form")
             .expect("the idle readings")
             .is_visible(),
         "and brought the idle readings back (§S4)"
@@ -253,7 +236,7 @@ fn check_clicking_cancel_closes_the_form_without_placing(app: &adw::Application)
     open_form(&window);
     let before = cut_of(&window);
 
-    find_named(&window, "insert-cancel-button")
+    common::find_named(&window, "insert-cancel-button")
         .expect("the footer holds the cancel button")
         .emit_by_name::<()>("clicked", &[]);
     settle();
@@ -267,13 +250,13 @@ fn check_clicking_cancel_closes_the_form_without_placing(app: &adw::Application)
     );
     assert!(ui::insert_open(&window).is_none(), "Cancel closed the form");
     assert!(
-        !find_named(&window, "insert-form-footer")
+        !common::find_named(&window, "insert-form-footer")
             .expect("the footer")
             .is_visible(),
         "and hid its pinned footer"
     );
     assert!(
-        find_named(&window, "cut-form")
+        common::find_named(&window, "cut-form")
             .expect("the idle readings")
             .is_visible(),
         "and brought the idle readings back (§S4)"

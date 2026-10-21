@@ -88,12 +88,8 @@ impl Drop for Scenario {
 }
 
 /// One tool call as the loop sees it.
-fn call(name: &str, args: &str) -> naivepost::exchanges::ToolCall {
-    naivepost::exchanges::ToolCall { name: name.to_string(), args: args.to_string(), result: String::new() }
-}
-
 fn add(start: f64, end: f64) -> naivepost::exchanges::ToolCall {
-    call("add_segment", &format!("{{\"start\": {start}, \"end\": {end}, \"why\": \"the point\"}}"))
+    common::call("add_segment", &format!("{{\"start\": {start}, \"end\": {end}, \"why\": \"the point\"}}"))
 }
 
 /// The camera rows a two-camera cut shows, spelled the way every passing brief spells them (§A's 1-based
@@ -154,7 +150,7 @@ fn empty_turn() -> Turn {
 /// `cutpass::MIN_SCENE_SECONDS`) and then called `finish_cut`, so the ROUND ends while the CUT does not: §8's
 /// rejection is an answer that did not become a cut, which is different from a reply that wrote nothing.
 fn refused_turn() -> Turn {
-    Turn { content: String::new(), calls: vec![add(2.0, 2.5), call("finish_cut", "{}")], finish: true }
+    Turn { content: String::new(), calls: vec![add(2.0, 2.5), common::call("finish_cut", "{}")], finish: true }
 }
 
 /// The reply §8 means by "the model spent the whole call thinking and wrote nothing": no content AND no calls.
@@ -177,7 +173,7 @@ fn unfinished_turn() -> Turn {
 fn good_turn(content: &str) -> Turn {
     Turn {
         content: content.to_string(),
-        calls: vec![add(2.0, 16.0), add(32.0, 46.0), call("finish_cut", "{}")],
+        calls: vec![add(2.0, 16.0), add(32.0, 46.0), common::call("finish_cut", "{}")],
         finish: true,
     }
 }
