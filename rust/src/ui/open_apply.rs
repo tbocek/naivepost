@@ -24,6 +24,17 @@ pub fn opened_status(base: &str) -> String {
     format!("opened \u{2014} {base}")
 }
 
+/// Move the window's Outputs row onto `dir` the way an Open does — `finish`'s two public legs, the save
+/// target and the readout repaint, without the parts that need a full `Applied`. §1 badge 15 asks which
+/// folder the row means, and an Open is what decides that in the program. Test-only: the real Open path
+/// goes through [`finish`] itself.
+#[allow(dead_code)] // called by tests only; production opens a project through `finish`
+pub fn move_row_for_test(dir: &std::path::Path, project: &Project) {
+    crate::ui::save_apply::set_open_dir(dir);
+    let window = crate::ui::window::main_window();
+    crate::ui::window::paint_readouts_for(&window, project, dir);
+}
+
 /// Finish an open: refresh every page, remember the project for this root, say it.
 ///
 /// `applied.root` is the folder just opened, which is NOT where the window's readouts point until the

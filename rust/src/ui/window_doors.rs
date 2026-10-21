@@ -141,11 +141,19 @@ thread_local! {
     static HEADER_TITLES: RefCell<Vec<gtk::Label>> = const { RefCell::new(Vec::new()) };
 }
 
-/// §1's badge **6** — the header ⓘ (not the per-page copies), newest slot wins so a test reads the
+/// §1 badge **6** — the header ⓘ (not the per-page copies), newest slot wins so a test reads the
 /// button this window built rather than one left over from an earlier window in the same process.
 pub fn tab_info_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     let _ = window;
     ui::INFO_BUTTON.with(|slots| slots.borrow().last().cloned())
+}
+/// The §1 header ⓘ's tooltip — the door a test reads instead of matching a raw glyph. §1: the ⓘ's
+/// tooltip is "current tab's label + help text", which is `Shell::info_tip`'s sentence joined by that
+/// dash. `None` when the button carries no tooltip at all.
+pub fn tab_info_parts(window: &adw::ApplicationWindow) -> Option<(String, String)> {
+    let tip = tab_info_button(window)?.tooltip_text()?.to_string();
+    let join = tip.find(" \u{2014} ")?;
+    Some((tip[..join].to_string(), tip[join + " \u{2014} ".len()..].to_string()))
 }
 /// The switcher inside the window: it is the one thing in here with a stack of its own.
 pub(crate) fn find_switcher(root: &gtk::Widget) -> Option<adw::ViewSwitcher> {
