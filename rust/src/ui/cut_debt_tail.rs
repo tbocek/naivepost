@@ -93,7 +93,7 @@ fn is_insert(clip: &Seg, _effect: &Fx) -> bool {
 /// Put the dashed tail on the bar it explains, or take it off — added AND removed off the answer, so a paid-off
 /// sound cannot keep a tail claiming otherwise. Whether is not composed here: [`tail_open`] asks
 /// [`crate::effect_details::read_head_open`].
-pub fn wear_tail(bar: &gtk::Box, cut: &Cut, index: usize, t: f64, recordings: &[timeline::Recording]) {
+pub fn wear_tail(bar: &gtk::Widget, cut: &Cut, index: usize, t: f64, recordings: &[timeline::Recording]) {
     let held_classes = bar.css_classes();
     let mut classes: Vec<&str> = held_classes
         .iter()
