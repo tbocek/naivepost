@@ -575,8 +575,19 @@ fn envelope(tree: &crate::layout::Tree, lane: &str, source: &std::path::Path) ->
     let (size, mtime) = stamp(source)?;
     let wave = crate::wave::read(tree, lane, size, mtime)?
         .ok_or_else(|| format!("{}: no envelope cached", source.display()))?;
-    let _ = said;
-    wave.chans.into_iter().next().ok_or_else(|| "empty envelope".to_string())
+    // §00's "failure is specific and local": these are the lines the decode and the wave build printed on
+    // their way to an answer. They used to be dropped here, which left a band that said only "reading the
+    // recording…" forever with nothing anywhere saying why — so they now ride out with the refusal.
+    let detail = if said.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", said.join("; "))
+    };
+    wave.chans
+        .into_iter()
+        .next()
+        .filter(|peaks| !peaks.is_empty())
+        .ok_or_else(|| format!("{}: empty envelope{detail}", source.display()))
 }
 
 /// `stamp` is private to `wave_build`, so the band reads the same two numbers itself.
@@ -613,7 +624,12 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     cr.rectangle(0.0, 0.0, width, height);
     let _ = cr.fill();
 
-    let peaks = envelope_of(&state);
+    let peaks = envelope_attempt(&state);
+    // §00's "failure is specific and local": when the wave cannot be had, the reason goes to the log instead
+    // of being swallowed behind the band's one public sentence ("reading the recording…").
+    if let Err(why) = &peaks {
+        crate::ui::window::log_line(&format!("take band: {why}"));
+    }
     let mut plan = band::paint_plan(&BandPaint {
         duration,
         width,
@@ -629,7 +645,7 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         // §1's "reading the recording…" is about the ENVELOPE, so it is answered by whether the envelope was
         // had — not by whether a file has seconds. The two came apart on a shot whose recording was measured
         // at 45 s but whose cache could not be read: the lane drew nothing and said nothing either.
-        envelope_decoded: peaks.is_some(),
+        envelope_decoded: peaks.is_ok(),
     });
     // `paint_plan` maps the red bar with the same helper this frame uses; keep them one number.
     plan.red_bar_px = band::second_to_px(red_bar_or(state.session), offset(), pps);
@@ -643,7 +659,7 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         cr.set_font_size(10.0);
         cr.move_to(4.0, lane_top + 14.0);
         let _ = cr.show_text(note);
-    } else if let Some(peaks) = &peaks {
+    } else if let Ok(peaks) = &peaks {
         draw_envelope(cr, &peaks.1, width, lane_top, lane_h);
     }
 
@@ -679,7 +695,9 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         cr.set_source_rgb(0.16, 0.42, 0.24);
         let _ = cr.stroke();
         if !label.is_empty() {
-            cr.set_source_rgb(0.05, 0.16, 0.09);
+            // Near-white: a take is a light patch on a dark lane, and ink dark enough to read on a pale
+            // ground disappears on this one — `spec/img/07-narrate.png` shows the seconds in white.
+            cr.set_source_rgb(0.94, 0.95, 0.97);
             cr.set_font_size(9.0);
             let _ = cr.text_extents(label);
             cr.move_to(left + 3.0, lane_top + 11.0);
@@ -728,10 +746,20 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
 /// reference is §F4.6 S3's output and S4 deletes it on every take, pitch or voice change, so measuring only
 /// that file left the lane blank right after the ＋ press that made a take. With no recording to read (a
 /// voices-folder id whose file went away), the reference still answers.
-fn envelope_of(state: &crate::ui::narrate_page::NarrateState) -> Option<(f64, Vec<u8>)> {
-    let tree = crate::ui::window::narrate_session_tree()?;
+/// The door a test asks the envelope question through: the same walk [`paint`] runs, with the refusal kept
+/// instead of folded away. `*_for_test` because the program never calls it — `paint` walks `envelope_attempt`
+/// itself and logs the reason where the user can read it.
+pub fn envelope_report_for_test(state: &crate::ui::narrate_page::NarrateState) -> Result<(f64, Vec<u8>), String> {
+    envelope_attempt(state)
+}
+
+/// The envelope walk itself, as `Ok(peaks)` or the `String` saying what stopped it: the reason has to travel
+/// out of here for §00's "failure is specific and local", because every caller used to fold it to `None` and
+/// a lane that drew nothing gave the person no way to find out why.
+fn envelope_attempt(state: &crate::ui::narrate_page::NarrateState) -> Result<(f64, Vec<u8>), String> {
+    let tree = crate::ui::window::narrate_session_tree().ok_or("no session folder open")?;
     if state.voice == screen::CAPTIONS {
-        return None;
+        return Err("the voice is captions only".to_string());
     }
     let mut sources: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(project) = crate::project::load(tree.dir()) {
@@ -740,16 +768,23 @@ fn envelope_of(state: &crate::ui::narrate_page::NarrateState) -> Option<(f64, Ve
     sources.push(crate::narrate_data::base_reference(&tree));
     // One lane per SOURCE file, not one per voice slot: `wave_build` keys its cache by (lane, size, mtime),
     // so two different files sharing a lane name would each accept whichever cache was written first.
+    let mut reasons = Vec::new();
     for source in sources {
         if !source.is_file() {
+            reasons.push(format!("{}: no such file", source.display()));
             continue;
         }
         let lane = format!("voice:{}", crate::narrate_data::take_base(&source));
-        if let Ok(peaks) = envelope(&tree, &lane, &source) {
-            return Some((PEAK_HZ, peaks));
+        match envelope(&tree, &lane, &source) {
+            Ok(peaks) => return Ok((PEAK_HZ, peaks)),
+            Err(why) => reasons.push(why),
         }
     }
-    None
+    Err(if reasons.is_empty() {
+        "no recording to read".to_string()
+    } else {
+        reasons.join("; ")
+    })
 }
 
 /// Vertical peak bars across the visible window, blue over the ground.
