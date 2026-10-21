@@ -36,6 +36,8 @@ static RAN_SPLIT: AtomicBool = AtomicBool::new(false);
 static RAN_ORDER: AtomicBool = AtomicBool::new(false);
 static RAN_PAIRS: AtomicBool = AtomicBool::new(false);
 static RAN_FITS: AtomicBool = AtomicBool::new(false);
+static RAN_PICTURE: AtomicBool = AtomicBool::new(false);
+static RAN_READABLE: AtomicBool = AtomicBool::new(false);
 
 fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&common::fixture_dir()).expect("the fixture loads");
@@ -335,12 +337,13 @@ fn control_name(row: &str) -> String {
     }
 }
 
-/// §A's "label + control pairs … left to right and then down, SEVERAL TO A LINE": group the drawn
-/// controls into lines by their measured y, print the grouping, and read the lines back as SETTINGS_ROWS.
-fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
-    // The grid's scroller is `EXTERNAL` on the horizontal axis (the page scrolls as a whole), so its content
-    // takes the full natural width of every pair and runs past the window: the measured x of a late row lands
-    // at 2700 px. Only the RELATIVE positions mean anything, so measure against the grid itself.
+/// The drawn encoder controls grouped into LINES: topmost first, left to right within a line. A control
+/// joins the current line when its top is within `SAME_LINE_PX` of that line's tallest top.
+///
+/// Measured against the GRID, not the window: the grid's scroller is `Automatic` on the horizontal axis (the
+/// page scrolls as a whole), so absolute x lands far outside the column and only RELATIVE positions mean
+/// anything.
+fn encoder_lines(window: &adw::ApplicationWindow) -> Vec<Vec<(f32, f32, String)>> {
     let grid = widget(window, "encoder-settings");
     let origin = grid
         .compute_bounds(window.upcast_ref::<gtk::Widget>())
@@ -353,8 +356,6 @@ fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
         "{ITEM}: every settings row draws a named control: {}",
         placed.len()
     );
-    // GROUP INTO LINES by y overlap, topmost first, left to right within a line. A control joins the
-    // current line when its top is within `SAME_LINE_PX` of that line's tallest top.
     placed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
     let mut lines: Vec<Vec<(f32, f32, String)>> = Vec::new();
     for control in placed {
@@ -370,6 +371,13 @@ fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
             None => lines.push(vec![control]),
         }
     }
+    lines
+}
+
+/// §A's "label + control pairs … left to right and then down, SEVERAL TO A LINE": print the grouping, and
+/// read the lines back as SETTINGS_ROWS.
+fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
+    let lines = encoder_lines(window);
     for (index, line) in lines.iter().enumerate() {
         let names: Vec<&str> = line.iter().map(|c| c.2.as_str()).collect();
         let ys: Vec<f32> = line.iter().map(|c| c.0).collect();
@@ -401,6 +409,194 @@ fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
         "{ITEM}: the encoder grid does not read as §A's rows, left to right and then down"
     );
     RAN_PAIRS.store(true, Ordering::SeqCst);
+}
+
+/// The picture's grouping, line by line: `spec/img/08-produce.png` draws THREE label+control pairs on its
+/// first two lines and TWO on each line after. That is the arrangement `produce_page_layout` must produce,
+/// and the only reading of "several to a line" that matches the drawing — a grid that puts two pairs per row
+/// passes "several" but is not this page.
+///
+/// shot shows five lines; this fixture has narration ON, which
+/// adds the Game audio slider (§F4.8 hides it, never the value), making six. So the Game-audio line is
+/// checked by POSITION (after Subtitles, before Quality) rather than by pinning who shares its row.
+fn check_encoder_lines_match_the_picture(window: &adw::ApplicationWindow) {
+    let lines = encoder_lines(window);
+    let names: Vec<Vec<&str>> = lines
+        .iter()
+        .map(|line| line.iter().map(|c| c.2.as_str()).collect())
+        .collect();
+    for (index, line) in names.iter().enumerate() {
+        println!("picture line {}: {line:?}", index + 1);
+    }
+    let want = |index: usize, expected: &[&str]| {
+        assert_eq!(
+            names.get(index).map(Vec::as_slice),
+            Some(expected),
+            "{ITEM}: §1's picture line {} is {expected:?} — every line read as: {names:?}",
+            index + 1
+        );
+    };
+    // Items 11: three dropdown pairs across the first line, then Resolution / Frame rate / Audio.
+    want(0, &["setting-container", "setting-codec", "setting-preset"]);
+    want(1, &[
+        "setting-resolution",
+        "setting-frame-rate",
+        "setting-audio",
+    ]);
+    // Item 12: Subtitles beside Translate — the widest control on the line, so no third pair fits.
+    want(2, &["setting-subtitles", "setting-translate"]);
+    // No line holds a fourth pair: that would mean the slot budget leaked.
+    for (index, line) in names.iter().enumerate() {
+        assert!(
+            line.len() <= 3,
+            "{ITEM}: picture line {} holds {} pairs: {line:?}",
+            index + 1,
+            line.len()
+        );
+    }
+    // Item 13 beside item 14: the CRF slider shares its line with Frame timing, exactly as the picture
+    // draws them, and Channels shares one with Frame edges.
+    let shares = |a: &str, b: &str| {
+        names
+            .iter()
+            .any(|line| line.contains(&a) && line.contains(&b))
+    };
+    assert!(
+        shares("setting-quality--crf", "tick-peak-rate-vfr"),
+        "{ITEM}: Quality (CRF) and Frame timing are on one line in the picture; lines read {names:?}"
+    );
+    assert!(
+        shares("tick-mono", "tick-blurred"),
+        "{ITEM}: Channels and Frame edges share a line in the picture; lines read {names:?}"
+    );
+    // The Game-audio line sits where §A's order puts it — after Subtitles, before Quality — without
+    // claiming a grouping the picture cannot show (it has no Game audio at all).
+    let line_of = |name: &str| names.iter().position(|line| line.contains(&name));
+    let subtitles = line_of("setting-subtitles").expect("{ITEM}: Subtitles drew a line");
+    let quality = line_of("setting-quality--crf").expect("{ITEM}: Quality drew a line");
+    if naivepost::produce_screen::settings_rows_shown(false).contains(&"Game audio") {
+        let game = line_of("setting-game-audio").expect("{ITEM}: narration on means a Game audio line");
+        assert!(
+            game > subtitles && game < quality,
+            "{ITEM}: the Game audio row belongs between Subtitles and Quality, got line {game} against \
+             subtitles {subtitles} and quality {quality}: {names:?}"
+        );
+    }
+    RAN_PICTURE.store(true, Ordering::SeqCst);
+}
+
+/// §A's default for one dropdown row, spelled from the same table the page seeds its pickers from.
+fn screen_default(row: &str) -> String {
+    naivepost::produce_screen::defaults()
+        .iter()
+        .find(|(name, _)| *name == row)
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default()
+}
+
+/// Check 5 measures the SHOT's own staging: the page `just snapshot 08-produce` paints is built from the
+/// state `snapshot_produce::paint` publishes (7 slots' worth of settings at §A's defaults, narration ON),
+/// not from the bare fixture state, so the last window of the round is published like the shot's is before
+/// anything is measured off it. Nothing here needs the shot's file paths, only its settings.
+fn shot_like_state() -> ui::produce_page::ProduceState {
+    let mut state = ui::produce_page::read_state();
+    for (row, value) in naivepost::produce_screen::defaults() {
+        match row {
+            "Container" => state.container = value.to_string(),
+            "Codec" => state.codec = value.to_string(),
+            "Preset" => state.preset = value.to_string(),
+            "Resolution" => state.resolution = value.to_string(),
+            "Frame rate" => state.frame_rate = value.to_string(),
+            "Audio" => state.audio = value.to_string(),
+            "Subtitles" => state.subtitles = value.to_string(),
+            _ => (),
+        }
+    }
+    state.game_volume = 0.22;
+    state.crf = 24.0;
+    state.blurred_edges = true;
+    state.narration_off = false;
+    state
+}
+
+/// Rough width of one character in the page's font, measured from the labels this grid draws ("Quality
+/// (CRF):" is 13 chars in the ~78 px `LABEL_PX` allows). Enough to catch a dropdown cut to a third of what
+/// it shows; not a measurement, which is what the failure message says.
+const CHOICE_PX_PER_CHAR: f64 = 6.0;
+
+/// §A's longest choice, spelled once so a check and a comment agree about what the dropdowns must show.
+const WIDEST_CHOICE: &str = "none in the video";
+
+/// What the setting's DROPDOWN shows, read off the widget the grid drew: its chosen item and its measured
+/// width. This is the check the rendered `shots/08-produce.png` cannot give a headless run — the window shot
+/// shows the whole page, the settings sit at its bottom edge, and codehalter hands the same PNG back for any
+/// re-render — so the readability of the three-pairs-to-a-line grid is measured where it can be.
+///
+/// §A's longest value is "none in the video"; a dropdown squeezed under that prints "none in the vid…", which
+/// is a row a person cannot read and a grid that is too wide for its column wearing it out.
+fn check_shot_settings_are_readable(window: &adw::ApplicationWindow) {
+    ui::produce_page::set_state(shot_like_state());
+    ui::produce_page::refresh(window);
+    common::settle();
+    let right = bounds(window, "produce-right");
+    let right_end = right.x() + right.width();
+    // §A's longest value is "none in the video" and the shot's state holds it, so the Subtitles dropdown is
+    // the widest row in the grid and the first to ellipsize at three pairs to a line.
+    let subtitles_box = bounds(window, &ui::produce_page::row_widget("Subtitles"));
+    let need = WIDEST_CHOICE.len() as f64 * CHOICE_PX_PER_CHAR;
+    println!(
+        "READ widest choice {WIDEST_CHOICE:?}: dropdown {:.1} px, needs about {need:.0} px",
+        subtitles_box.width()
+    );
+    assert!(
+        subtitles_box.width() as f64 >= need,
+        "{ITEM}: {WIDEST_CHOICE:?} would be cut short — the Subtitles dropdown is {:.1} px and reads at \
+         about {need:.0} px ({CHOICE_PX_PER_CHAR} px per character is an estimate, not a measurement)",
+        subtitles_box.width()
+    );
+    for row in [
+        "Container",
+        "Codec",
+        "Preset",
+        "Resolution",
+        "Frame rate",
+        "Audio",
+        "Subtitles",
+    ] {
+        let name = ui::produce_page::row_widget(row);
+        let picker = widget(window, &name)
+            .downcast::<gtk::DropDown>()
+            .unwrap_or_else(|_| panic!("{ITEM}: {name} is not a dropdown"));
+        let shown = picker
+            .model()
+            .and_then(|model| {
+                model
+                    .downcast::<gtk::StringList>()
+                    .ok()
+                    .and_then(|list| list.string(picker.selected()))
+            })
+            .map(|text| text.to_string())
+            .unwrap_or_default();
+        let box_ = bounds(window, &name);
+        // What the row must show is the choice §A's defaults hold — nothing ellipsized, nothing cut.
+        println!("READ {row}: shows {shown:?} at {:.1} px", box_.width());
+        assert!(
+            box_.x() >= right.x() - 1.0 && box_.x() + box_.width() <= right_end + 1.0,
+            "{ITEM}: {row}'s dropdown is outside the right column: {box_:?} against {right:?}"
+        );
+        // The item's own width at the page's font, asked of the label GTK draws inside the dropdown.
+        let want = picker
+            .first_child()
+            .and_then(|child| child.first_child())
+            .map(|label| label.measure(gtk::Orientation::Horizontal, -1).1)
+            .unwrap_or(0);
+        assert!(
+            shown == screen_default(row) || shown.is_empty() || want as f32 <= box_.width() + 1.0,
+            "{ITEM}: {row}'s dropdown prints {shown:?} cut short — it needs {want} px and has {:.1}",
+            box_.width()
+        );
+    }
+    RAN_READABLE.store(true, Ordering::SeqCst);
 }
 
 /// One cell of the grid: what it is, and where it sits inside `produce-right`'s own x-range.
@@ -485,6 +681,17 @@ fn layout_round() {
         check_encoder_rows_fit_the_column(&window);
         window.close();
         common::settle();
+
+        let window = produce_window(app);
+        check_encoder_lines_match_the_picture(&window);
+        window.close();
+        common::settle();
+
+        let window = produce_window(app);
+        ui::produce_page::hold_window_for_test(&window);
+        check_shot_settings_are_readable(&window);
+        window.close();
+        common::settle();
     });
 }
 
@@ -517,5 +724,28 @@ fn sec_08_produce_1_screen_s11_the_encoder_rows_fit_their_column() {
     assert!(
         RAN_FITS.load(Ordering::SeqCst),
         "{ITEM} s11: the encoder-fit check never ran"
+    );
+}
+
+/// §1 items 11–14 as `spec/img/08-produce.png` draws them: three pairs on the first two lines, two after.
+#[test]
+fn sec_08_produce_1_screen_s1_encoder_lines_match_the_spec_picture() {
+    common::pin_private_cwd();
+    layout_round();
+    assert!(
+        RAN_PICTURE.load(Ordering::SeqCst),
+        "{ITEM} s1: the picture-grouping check never ran"
+    );
+}
+
+/// Three pairs to a line only counts if each pair still READS: every dropdown shows its whole value and 
+/// stays inside the column.
+#[test]
+fn sec_08_produce_1_screen_s1_encoder_settings_stay_readable_at_three_to_a_line() {
+    common::pin_private_cwd();
+    layout_round();
+    assert!(
+        RAN_READABLE.load(Ordering::SeqCst),
+        "{ITEM} s1: the readability check never ran"
     );
 }
