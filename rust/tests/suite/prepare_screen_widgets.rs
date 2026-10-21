@@ -424,13 +424,14 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
     language.set_text("de");
     assert_eq!(ui::bench_language(&window).as_deref(), Some("de"));
 
-    // **3** the picker: thirteen rows in pipeline order, User Context first.
+    // **3** the picker: thirteen prompts in pipeline order, User Context first, then §1's REVIEW row
+    // "Editing policy" (a menu entry that opens F0.7's form, not a prompt). See `bench::picker_rows`.
     let picker = find(&window, "bench-picker")
         .expect("the bench has its row picker")
         .downcast::<gtk::DropDown>()
         .expect("the picker is a dropdown of the rows");
     let rows = naivepost::bench::picker_rows();
-    assert_eq!(rows.len(), 13);
+    assert_eq!(rows.len(), 14);
     assert_eq!(rows[0].1, "User Context");
 
     // §1's own picture is this page with the DESCRIBE prompt open, so the shipped wording has to be

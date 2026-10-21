@@ -14,7 +14,7 @@
 
 /// Does this screen's subject take `<name>.png`, pushing the window shot to `<name>-page.png`?
 pub fn subject_takes_the_name(screen: &str) -> bool {
-    menu(screen) || lane(screen) || frame(screen)
+    menu(screen) || lane(screen) || frame(screen) || picker(screen)
 }
 
 /// The sidecar name the staging step painted this screen's subject into, which the frame-taking step renames over
@@ -40,4 +40,8 @@ fn lane(screen: &str) -> bool {
 
 fn frame(screen: &str) -> bool {
     crate::snapshot_preview_frame::is_frame_subject(screen)
+}
+
+fn picker(screen: &str) -> bool {
+    crate::snapshot_prompt_picker::is_picker_subject(screen)
 }

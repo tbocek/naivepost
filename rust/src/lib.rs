@@ -230,6 +230,7 @@ pub mod snapshot_narrate;
 pub mod snapshot_preview;
 pub mod snapshot_preview_frame;
 pub mod snapshot_produce;
+pub mod snapshot_prompt_picker;
 pub mod snapshot_rows;
 pub mod snapshot_subjects;
 pub mod snapshot_settings;

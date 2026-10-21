@@ -501,6 +501,11 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s14_res
 #[test]
 fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s15_every_row_says_what_the_job_gets_and_answers() {
     for (index, _) in bench::picker_rows() {
+        // The picker's last row is §1's "Editing policy", a menu entry with no prompt of its own; the
+        // tooltips being checked here belong to the prompts, which are `ROWS`.
+        if bench::is_policy(index) {
+            continue;
+        }
         let row = &bench::ROWS[index];
         let tip = bench::tooltip(row);
         assert!(!tip.is_empty(), "{} says nothing", row.title);

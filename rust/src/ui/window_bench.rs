@@ -62,9 +62,10 @@ pub fn set_bench_open_row(index: usize) {
 /// something rather than kill the run.
 fn bench_open_row(count: usize) -> usize {
     BENCH_OPEN_ROW.with(|slot| {
-        slot.borrow()
-            .filter(|index| *index < count)
-            .unwrap_or(0)
+        // Read ONCE and cleared: a second window built in the same process (a test round, or a second
+        // shell) must open on its own default rather than inherit the ask that was made for another.
+        let asked = slot.borrow_mut().take();
+        asked.filter(|index| *index < count).unwrap_or(0)
     })
 }
 
@@ -174,11 +175,23 @@ pub(crate) fn bench_box(
     let reset_for_picker = reset.clone();
     let editor_for_picker = editor.clone();
     picker.connect_selected_notify(move |picker| {
-        let index = picker.selected();
-        if index == gtk::INVALID_LIST_POSITION {
+        let index = usize::try_from(picker.selected()).unwrap_or(0);
+        // §1's REVIEW row is not a prompt: choosing "Editing policy" opens F0.7's form and leaves the
+        // bench showing the prompt it was on (there is no text to paint for a row with no wording).
+        // `press_policy` is the SAME door the run bar's ⚙ and every tab's ⓘ call, so one form, one
+        // derivation, whichever way it was opened. The face then goes back to the live prompt row,
+        // which re-enters this handler — hence the `is_policy` guard above it doing its work first.
+        if bench::is_policy(index) {
+            if let Some(window) = ui::built_window() {
+                crate::ui::press_policy(&window);
+            }
+            picker.set_selected(u32::try_from(row_for_picker.borrow().selected).unwrap_or(0));
             return;
         }
-        row_for_picker.borrow_mut().select(usize::try_from(index).unwrap_or(0));
+        if picker.selected() == gtk::INVALID_LIST_POSITION {
+            return;
+        }
+        row_for_picker.borrow_mut().select(index);
         paint_bench(
             &row_for_picker,
             &title_for_picker,

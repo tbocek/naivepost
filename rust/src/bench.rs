@@ -175,11 +175,39 @@ pub fn reset(paths: &Paths, row: &Row) -> Result<Option<String>, String> {
 
 /// The picker's rows: index and title, in pipeline order. Titles rather than keys — the
 /// picker is read by the person who named nothing of it.
+/// The picker's extra entry: the row §1's REVIEW line adds ("add a row \"Editing policy\" opening the
+/// form of F0.7"). It is a row of the PICKER, not a prompt — it has no key, no `prompts/<key>/` file, no
+/// Reset and no text of its own; choosing it opens F0.7's form and leaves the bench on its prompt row.
+/// One past the end of [`ROWS`] on purpose: every prompt lookup indexes `ROWS`, so a policy index there
+/// would be read as a prompt with an empty key, i.e. as the User Context.
+pub const POLICY_ROW: usize = ROWS.len();
+
+/// The label that row wears in the picker.
+pub const POLICY_TITLE: &str = "Editing policy";
+
+/// Whether this picker index is the policy row rather than one of [`ROWS`].
+pub fn is_policy(index: usize) -> bool {
+    index == POLICY_ROW
+}
+
+/// What the row picker lists: the thirteen rows in pipeline order, then [`POLICY_TITLE`]. Built from
+/// [`ROWS`] so the menu cannot drift from the prompts themselves.
 pub fn picker_rows() -> Vec<(usize, String)> {
-    ROWS.iter()
+    let mut rows: Vec<(usize, String)> = ROWS
+        .iter()
         .enumerate()
         .map(|(index, row)| (index, row.title.to_string()))
-        .collect()
+        .collect();
+    rows.push((POLICY_ROW, POLICY_TITLE.to_string()));
+    // LAST, always: §1's picture of the open list (`spec/img/04-prompt-picker.png`) shows the prompt rows
+    // in pipeline order and this row is the addition §1's REVIEW line asks for, so an entry before it in
+    // this Vec would put a prompt out of order in the menu a screenshot has to match.
+    assert_eq!(
+        rows.last().map(|(_, title)| title.as_str()),
+        Some(POLICY_TITLE),
+        "Editing policy must stay the picker's last row"
+    );
+    rows
 }
 
 /// What the mark on a row means, spelled out because ✎ alone does not say where the
