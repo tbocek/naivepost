@@ -620,6 +620,10 @@ where
     // marker for work that was never done.
     let all: Vec<Word> = placed.iter().flat_map(|piece| piece.words.clone()).collect();
     requests::write_aligned(tree, source, &requests::AlignedDoc { words: all.clone() })?;
+    // §5 bullet 1: the scratch is this stage's own mess — gone once its answer is on disk, kept when it
+    // is not. A window that failed returns before this line, so `align/wNNNN.wav.plan` survives exactly
+    // the failure it explains (`asr.rs` applies the same rule to `asr/`).
+    let _ = std::fs::remove_dir_all(tree.align_scratch(source));
 
     out.model = picker.chosen.clone().unwrap_or_default();
     // S4: the written form comes back from the transcript; the times are the aligner's.

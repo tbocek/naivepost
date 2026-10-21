@@ -383,6 +383,8 @@ mod sec_03_shell_5_settings_dialog;
 mod sec_04_prepare_1_screen_split;
 mod sec_04_prepare_5_rules_answers;
 mod sec_04_prepare_5_rules_markers;
+mod sec_04_prepare_5_rules_match;
+mod sec_04_prepare_5_rules_scratch;
 mod sec_04_prepare_5_rules_transport;
 mod sec_04_prepare_6;
 mod sec_05_cut_1_band_paints;
