@@ -132,7 +132,14 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // §4's rows must be in the session BEFORE the page is built: `sources_list` draws one row per source
         // at build time, and a later repaint of a scroller whose band fits two rows still shows two rows. So
         // this screen builds over the staged lecture day; every other screen builds from `--project`.
-        let staged_model = if screen == "03-sources" { crate::snapshot_sources::staged() } else { model.clone() };
+        let staged_model =
+            if matches!(screen.as_str(), "03-sources" | "04-prepare" | "04-prompt-picker") {
+                // §1's badge **1** is "sources list and frame controls", so the two Prepare pictures have to show
+                // ROWS and not an empty scroller: the same staged day `03-sources` renders.
+                crate::snapshot_sources::staged()
+            } else {
+                model.clone()
+            };
         let window = ui::build_window(app, &staged_model, page);
         // The strip paints from this window's cut slot, so a snapshot must show the cut that lives in
         // the project it was asked to render — not whatever the working-copy folder happens to hold.
@@ -715,17 +722,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 crate::snapshot_settings::stage_model_list(&shown);
                 Some(shown.upcast())
             }
-            // `spec/img/04-prompt-picker.png` pictures the row picker OPEN on a prompt, so this
-            // shot is the same Prepare window with the bench started on the Describe row instead of
-            // the User Context. The subject stays the window — the picker only makes sense in place,
-            // beside the title and Reset it drives — and the row itself was requested above, before
-            // `build_window`. Row 2 = "Describe", per `bench::ROWS`.
-            //
-            // The open list itself cannot be captured here: a GtkDropDown pops its rows as its OWN
-            // top-level surface, and [`write_png`] paints one widget into one PNG, so pressing the
-            // picker for the shot would change nothing the picture can show (it was tried: the file came
-            // out the same picture as `04-prepare`). The page's picker is right as it is — §1's badge 3
-            // is a row picker — so what this shot proves is the row chosen, not the popup.
+            // `spec/img/04-prompt-picker.png` pictures the row picker OPEN on a prompt. The subject is the LIST
+            // itself (see `snapshot_subjects::subject_takes_the_name`), painted at the frame-taking step from
+            // `bench::picker_rows`, because a DropDown pops its rows on their own surface and they are therefore
+            // absent from the window's render node — an earlier whole-window shot came out byte-identical to
+            // `04-prepare`. The row itself was asked for above, before `build_window`; row 2 = "Describe", per
+            // `bench::ROWS`, which is what makes the page sidecar show the heading §1's picture labels.
             "04-prompt-picker" => None,
             // §1's own picture (`spec/img/03-window.png`) is captioned "Prepare page, LOG OPEN", so the
             // shell shot carries the exchange lines in an open expander — drawn through the same door §7's
@@ -891,7 +893,9 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // cannot show: at §1's minimum the left half is 596 px behind a prompt bench, and most of the staged
         // rows fall below the visible band. So this paints the column itself into the file the recipe asked
         // for — same reasoning as `write_face_png` painting the ▶ alone -- after the layout drain above.
-        if screen == "03-sources" {
+        if screen == "03-sources" || screen_page(&screen) == Some("Prepare") {
+            // The staged rows only read if the window is tall enough to show them: at §1's minimum most of the
+            // staged day falls below the sources scroller's band.
             crate::snapshot_sources::widen_for_rows(&window);
         }
     if screen_page(&screen) == Some("Cut") || screen_page(&screen) == Some("Narrate") {
@@ -1190,6 +1194,9 @@ const FORM_UNDER_PX: i32 = 380;
         // The closure below runs after `run`'s body has handed `screen` over, so it carries its own copy for the
         // one question it still has to ask of the screen name (which sidecar holds this shot's subject).
         let screen_for_frame = screen.clone();
+        // The picker-subject question is asked inside the frame-taking closure too, which needs its own copy for
+        // the same reason `screen_for_frame` exists.
+        let screen_for_picker = screen.clone();
         // The glyph goes beside the window shot as `<name>-face.png`; the whole page stays at `<name>.png`
         // so every snapshot keeps writing exactly one file under the name it was asked for -- except where the
         // spec pictures a SUBJECT instead of the page (a dialog, this screen's popover): then the subject takes
@@ -1237,6 +1244,23 @@ const FORM_UNDER_PX: i32 = 380;
                 if let Err(err) = crate::snapshot_effect_menu::write_png(&button, &out) {
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
+                let page_out = out.with_extension("page.png");
+                if let Err(err) = write_png(&painted, &page_out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
+            } else if crate::snapshot_prompt_picker::is_picker_subject(&screen_for_picker) {
+                // §1's second picture is the picker LIST, so the list takes `<name>.png` and the Prepare page it
+                // was staged on goes beside it as `<name>-page.png`. A DropDown pops its rows on their own surface,
+                // which the window's render node cannot contain, so the list is painted from `bench::picker_rows`
+                // (see that module's header for why popping the widget prints nothing).
+                match crate::snapshot_prompt_picker::paint(&window, &out) {
+                    Ok(rows) => println!("snapshot: 04-prompt-picker drew {rows} rows"),
+                    Err(err) => {
+                        eprintln!("snapshot: {err}");
+                        OUT.with(|e| *e.borrow_mut() = Some(err));
+                    }
                 }
                 let page_out = out.with_extension("page.png");
                 if let Err(err) = write_png(&painted, &page_out) {
