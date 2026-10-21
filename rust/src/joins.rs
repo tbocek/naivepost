@@ -315,6 +315,18 @@ pub struct Parts {
     pub tail: Vec<String>,
 }
 
+/// §5 bullet 3: *"'prefer the later saying' is the direction of the match, not a request to the
+/// model"*. Of two readings that leave out the same number of words, the one charging BEFORE wins — the
+/// kept copy of anything said twice is attributed to AFTER, because the shared middle of a restart is
+/// spoken twice and the answer keeps one copy, which is the LATER saying.
+///
+/// The app decides this; the model is never asked. Asking it would turn something the word list already
+/// settles into a coin flip, and `spec/prompts/textedit.md` says so in its own voice ("BEFORE gives way
+/// first", "what was said last is what the speaker meant to keep") without ever putting the choice to it.
+fn later_saying_wins(candidate_head: usize, best_head: usize) -> bool {
+    candidate_head > best_head
+}
+
 /// Split the answer into the two parts it kept, scoring every cut by how much it leaves out.
 ///
 /// The cut is FOUND rather than assumed because nothing in a repaired join marks the seam. For each
@@ -339,7 +351,7 @@ fn split_answer(
         match best {
             Some((best_removed, ref best_parts))
                 if best_removed < removed
-                    || (best_removed == removed && best_parts.head.len() >= head.len()) => {}
+                    || (best_removed == removed && !later_saying_wins(head.len(), best_parts.head.len())) => {}
             _ => best = Some((removed, Parts { head, tail })),
         }
     }

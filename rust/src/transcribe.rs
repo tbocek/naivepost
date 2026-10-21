@@ -438,6 +438,9 @@ where
     if !tree.turns_json(source).exists() && !short {
         turns = diarize()?;
         write_turns(tree, source, &turns)?;
+        // §5 bullet 1 again: the diarizer's scratch goes with its answer. A failed `diarize()` returned
+        // above and left `diar/` whole; an absent folder (nothing was ever asked, or a skip) is no error.
+        let _ = std::fs::remove_dir_all(tree.diar_scratch(source));
     }
 
     // S6: the segments, from the aligner's times when they exist and the ASR's otherwise.
