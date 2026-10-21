@@ -259,8 +259,9 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_a_title_is_written_
     std::fs::write(path, svg).expect("the sheet is written before ffmpeg is asked for it");
     let read_back = std::fs::read_to_string(path).expect("and it is really there");
     assert!(read_back.starts_with("<svg"), "{read_back}");
-    // Frame-sized means the sheet is as big as the frame it will be laid over and its letters are sized off that
-    // height (`h / 12` in `render_fx::title_svg`) — the box inside it is smaller, which is what §1's lower third is.
+    // Sized to its box: the sheet is as big as the box it will be laid over, and its letters are fitted to THAT box
+    // (`fx_text::fit` in `render_fx::title_svg`) — the box inside the frame is smaller, which is what §1's lower third
+    // is.
     let (w, h) = {
         let (x, y, w, h) = naivepost::produce_fx_chain::box_px(&c.fx[0], c.frame);
         let _ = (x, y); // the position is checked where it lands in the chain, below
