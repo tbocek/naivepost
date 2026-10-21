@@ -199,7 +199,7 @@ pub fn route(cut: &Cut, t: f64, volume: f64) -> Routings {
     Routings {
         still: frame.still,
         rate: frame.rate,
-        gain: cut_hear::mix_gain(volume, cut_hear::gain_under(&cut.fx, t)),
+        gain: cut_hear::mix_gain(volume, if cut_hear::bed_silenced_under(&cut.fx, t) { 0.0 } else { cut_hear::gain_under(&cut.fx, t) }),
     }
 }
 

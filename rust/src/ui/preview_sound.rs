@@ -98,3 +98,59 @@ pub fn card_holds_for_test(_window: &adw::ApplicationWindow, segs: &[crate::cut:
 pub fn heard_now(mix: &cut_hear::Mix) -> bool {
     !mix.footage_muted
 }
+
+// --- §06-effects#2: saying so when the preview cannot copy a speed's sound -------------------------------------
+
+thread_local! {
+    /// Whether the last tick was already inside a stretch whose sound needs its own clock. This is what keeps the
+    /// notice to ONE line per ENTRY: the tick asks [`report_sound_clock_change`] ten times a second, and eight
+    /// copies of "sound at 1× in the render only" would bury everything else in the log — exactly the failure
+    /// mode [`report_mute_change`] avoids by reading the previous answer first.
+    static SOUND_CLOCK_NOTICED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// §06-effects#2-the-lane-and-the-preview (`the two 1× sound answers cannot be previewed`; §9's `it SHOULD say
+/// "sound at 1× in the render only"`): say the sentence when the line has just entered a stretch the preview can
+/// only fake, and say it once. `own` and `scene` need the sound on a different clock from the picture, which one
+/// player does not have, so what the person hears is sped-up sound — worth naming rather than letting the render
+/// surprise them later.
+///
+/// The words are [`crate::effect_overlap::says_render_only`]'s, the single source of that sentence (the speed
+/// form's own Apply quotes the same function), so the form and the tick cannot drift into two phrasings.
+pub fn report_sound_clock_change(
+    had_notice: bool,
+    needs_notice: bool,
+    snd: &str,
+    log: &dyn Fn(&str),
+) {
+    let said = if !had_notice && needs_notice {
+        crate::effect_overlap::says_render_only(snd)
+    } else {
+        None
+    };
+    if let Some(line) = said {
+        log(line);
+    }
+    SOUND_CLOCK_NOTICED.with(|seen| seen.set(needs_notice));
+}
+
+/// What this process's last tick was told about the clock — the `had_notice` half of [`report_sound_clock_change`],
+/// kept here so `apply_mix` stays one line of wiring, as [`heard_before`] is for the mute twin.
+pub fn sound_clock_noticed() -> bool {
+    SOUND_CLOCK_NOTICED.with(|seen| seen.get())
+}
+
+/// Which sound answer the line is standing on, so the notice can be asked about it without the caller carrying
+/// the effect list. `None` for every answer that previews honestly — including no speed at all, which is why the
+/// caller reads [`crate::cut_hear::Mix::sound_needs_two_clocks`] rather than inferring it from here.
+pub fn unpreviewable_snd_under(fx: &[crate::cut::Fx], t: f64) -> Option<&'static str> {
+    fx.iter()
+        .find(|effect| {
+            effect.effect_kind() == Some(crate::cut::EffectKind::Speed)
+                && {
+                    let (from, to) = effect.spans();
+                    t >= from && t < to
+                }
+        })
+        .and_then(|effect| crate::effect_overlap::says_render_only(&effect.snd))
+}

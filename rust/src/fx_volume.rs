@@ -305,9 +305,19 @@ pub fn placed_status(fx: &Fx) -> String {
 /// "Preview gain applies even paused" is that fact stated from the other side: park the line in the middle of a
 /// raised passage and what you hear must be what will play, or the fades cannot be judged without playing.
 ///
+/// F3.6 S5 (`applied in the preview even while paused`): the loudness of a session second, asked exactly as the
+/// playing preview asks it — because it is a function of the second, not of whether frames are moving. §A.6's
+/// "Preview gain applies even paused" is that fact stated from the other side: park the line in the middle of a
+/// raised passage and what you hear must be what will play, or the fades cannot be judged without playing.
+///
 /// [`cut_hear::gain_under`] is the one rule (overlapping gains multiply, capped at playbin's ceiling); this is volume's
-/// name for it, so the preview and this flow cannot grow separate answers.
+/// name for it, so the preview and this flow cannot grow separate answers. The speed's `mute` answer goes through
+/// here too (§06-effects#2 `mute mutes the preview`, §9's `silence the whole bed`): parked inside a silent stretch
+/// the sound is silent, exactly as the tick's own mix answers.
 pub fn heard_while_paused(fx: &[Fx], t: f64) -> f64 {
+    if cut_hear::bed_silenced_under(fx, t) {
+        return 0.0;
+    }
     cut_hear::gain_under(fx, t)
 }
 

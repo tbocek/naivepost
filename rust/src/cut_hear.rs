@@ -203,6 +203,46 @@ pub fn rate_under(fx: &[Fx], t: f64) -> f64 {
     1.0
 }
 
+/// §06-effects#2-the-lane-and-the-preview (`mute mutes the preview`; `spec/06-effects.md` §9's row
+/// `Speed, sound mute; Stop … MUST: silence the whole bed, as the preview does`): is the FIRST Speed covering
+/// `t` one whose sound answer is `mute`? The rule itself is [`crate::fx_lane::mute_silences_the_preview`]'s —
+/// this is the mixer reading it, which is what makes the preview obey it rather than merely describe it.
+///
+/// First-covering, exactly like [`rate_under`], because inventory/effects.md §A.3 settles that "the earliest
+/// covering effect's answer wins". And it silences THE WHOLE BED, not the lens camera alone: the prototype let
+/// the hush run before the lanes were mixed in, so separate recordings stayed audible (§9 calls that out as the
+/// thing the rewrite MUST NOT copy), while [`crate::render_fx::mute_expr`] is the render's own whole-bed
+/// silence. Zeroing the mix gain is the same shape on this side.
+///
+/// A stop needs no special case here: §1 migrates a legacy speed silence to `snd: "mute"`, so a stop that was
+/// built to be silent already answers `mute` through this walk.
+/// The first Speed covering `t`, if any — the walk [`rate_under`] and [`bed_silenced_under`] both walk, put here
+/// once so a second question about the same effect cannot grow a second, drifting traversal (§A.3: "the earliest
+/// covering effect's answer wins").
+fn first_covering_speed(fx: &[Fx], t: f64) -> Option<&Fx> {
+    fx.iter().find(|effect| {
+        effect.effect_kind() == Some(crate::cut::EffectKind::Speed)
+            && {
+                let (from, to) = effect.spans();
+                t >= from && t < to
+            }
+    })
+}
+
+pub fn bed_silenced_under(fx: &[Fx], t: f64) -> bool {
+    first_covering_speed(fx, t).is_some_and(|effect| crate::fx_lane::mute_silences_the_preview(&effect.snd))
+}
+
+/// §06-effects#2-the-lane-and-the-preview (`the two 1× sound answers cannot be previewed`; `spec/06-effects.md`
+/// §9's row `Speed, sound own or scene … The preview plays sound at picture speed here; it SHOULD say "sound at
+/// 1× in the render only"`): is the FIRST Speed covering `t` one whose sound needs a clock of its own? The rule
+/// is [`crate::fx_lane::previewable_sound`]'s — this is the mixer asking it, which is what lets the preview SAY
+/// it is faking rather than play sped-up sound quietly. Same first-covering walk as [`rate_under`]; with no
+/// covering Speed the preview has nothing to apologise for.
+pub fn sound_needs_two_clocks_under(fx: &[Fx], t: f64) -> bool {
+    first_covering_speed(fx, t).is_some_and(|effect| !crate::fx_lane::previewable_sound(&effect.snd))
+}
+
 // --- S6: one preview volume, shared by every preview ---------------------------------------------------
 
 /// F2.5 S6: how loud the players are when nothing has been said. A number, not a percentage: the slider
@@ -290,6 +330,14 @@ pub struct Mix {
     pub gain: f64,
     /// The rate the preview runs at (S5): the first speed effect over `t`, or 1.
     pub rate: f64,
+    /// Whether the first speed effect over `t` asked for silence — [`bed_silenced_under`]. Carried beside
+    /// `gain` because a caller that only reads the gain cannot tell a muted stretch from a slider turned to
+    /// zero, and §06-effects#2's `mute mutes the preview` is worth naming where it is honoured.
+    pub bed_silenced: bool,
+    /// Whether the first speed effect over `t` asked for sound on its own clock — [`sound_needs_two_clocks_under`]:
+    /// the preview CANNOT give it (one player, one clock), so whoever drives the tick owes the person a sentence
+    /// about what they are hearing instead. §06-effects#2's `the two 1× sound answers cannot be previewed`.
+    pub sound_needs_two_clocks: bool,
 }
 
 /// F2.5: the whole per-tick answer, composed in the spec's order — the scene under the line decides, the
@@ -301,12 +349,27 @@ pub struct Mix {
 /// `footage_muted` stays false and no lane is refused, rather than inventing a silence nobody set.
 /// `volume` is the app's ONE preview volume ([`PreviewVolume::value`]), never a per-preview copy.
 pub fn mix_at(segs: &[Seg], lanes: &[Lane], fx: &[Fx], t: f64, volume: f64) -> Mix {
+    // §06-effects#2 (`mute mutes the preview`): the whole bed goes silent together — footage and every heard
+    // lane — which is one number, the gain every pipeline is asked for. `footage_muted` is NOT set for this:
+    // that flag is the scene's own mute property (S2), and `preview_sound::report_mute_change` logs one line
+    // per change of it, so borrowing it would say "the scene silenced the footage" about a speed's answer.
+    let silenced = bed_silenced_under(fx, t);
+    let two_clocks = sound_needs_two_clocks_under(fx, t);
+    let bed_gain = |volume: f64| -> f64 {
+        if silenced {
+            0.0
+        } else {
+            mix_gain(volume, gain_under(fx, t))
+        }
+    };
     let Some(scene) = scene_at(segs, t) else {
         return Mix {
             footage_muted: false,
             lane_starts: Vec::new(),
-            gain: mix_gain(volume, gain_under(fx, t)),
+            gain: bed_gain(volume),
             rate: rate_under(fx, t),
+            bed_silenced: silenced,
+            sound_needs_two_clocks: two_clocks,
         };
     };
     let deciding = &segs[scene];
@@ -316,8 +379,10 @@ pub fn mix_at(segs: &[Seg], lanes: &[Lane], fx: &[Fx], t: f64, volume: f64) -> M
             .iter()
             .map(|lane| (lane.name.clone(), lane_start(lane, deciding, t)))
             .collect(),
-        gain: mix_gain(volume, gain_under(fx, t)),
+        gain: bed_gain(volume),
         rate: rate_under(fx, t),
+        bed_silenced: silenced,
+        sound_needs_two_clocks: two_clocks,
     }
 }
 
