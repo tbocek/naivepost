@@ -634,6 +634,32 @@ fn check_encoder_rows_fit_the_column(window: &adw::ApplicationWindow) {
         "{ITEM}: every settings row draws a named control: {}",
         cells.len()
     );
+    // Each LABEL sits directly left of its OWN control (§1). The grid's children come out in attach order —
+    // label, control, label, control — so every EVEN cell is a label and the cell after it is its control:
+    // that control must start at or after the label's right edge (a label whose control starts to its LEFT
+    // is one pair sitting on top of another).
+    let mut pairs: Vec<(f32, f32, f32, String)> = Vec::new();
+    for node in grid.observe_children().iter::<glib::Object>() {
+        let Ok(obj) = node else { continue };
+        let Ok(cell) = obj.downcast::<gtk::Widget>() else { continue };
+        let Some(b) = cell.compute_bounds(window.upcast_ref::<gtk::Widget>()) else { continue };
+        pairs.push((b.y(), b.x(), b.x() + b.width(), cell.widget_name().to_string()));
+    }
+    // Attach order, NOT sorted by x: the pairs are attached label-then-control, which is the only order
+    // that says which control belongs to which label.
+    for i in (0..pairs.len()).step_by(2) {
+        let Some((ly, lx, ledges, lname)) = pairs.get(i) else { continue };
+        let Some(next) = pairs.get(i + 1) else { break };
+        if (next.0 - ly).abs() > SAME_LINE_PX {
+            continue; // a lone label on its line: nothing of its own to compare against
+        }
+        assert!(
+            next.1 >= ledges - 1.0,
+            "{ITEM}: the label {lname} overlaps its control {}: it spans {lx:.1}..{ledges:.1}, the \
+             control starts {:.1}",
+            next.3, next.1
+        );
+    }
     for (x, width, name) in &cells {
         println!("FIT {name} x={x:.1} right edge={:.1} (column ends {:.1})", x + width, right_end);
         assert!(

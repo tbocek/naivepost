@@ -232,6 +232,8 @@ mod window_doors;
 /// §1 — the page and the bottom bar as two halves of a draggable divider. Split out of `window.rs`,
 /// which is past its size budget.
 mod window_divider;
+/// §1's bottom band: how tall the run-bar row + log header are, and where those controls get drawn.
+pub mod window_shot;
 /// §F0.9 / §F0.10 / §F0.12 — the project dialogs: ＋ New, Open, Save, Rescan and Add sources, plus the
 /// import run they drive. Split out of `window.rs`, which is past its size budget. Its doors are
 /// re-exported through `window`.

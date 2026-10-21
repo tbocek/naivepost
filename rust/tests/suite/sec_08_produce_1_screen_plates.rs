@@ -30,6 +30,7 @@ static RAN_MARK: AtomicBool = AtomicBool::new(false);
 static RAN_ON_PICTURE: AtomicBool = AtomicBool::new(false);
 static RAN_NO_WRAPPER: AtomicBool = AtomicBool::new(false);
 static RAN_ALLOCATION: AtomicBool = AtomicBool::new(false);
+static RAN_READOUTS: AtomicBool = AtomicBool::new(false);
 
 fn near(a: f64, b: f64) -> bool {
     (a - b).abs() < TOLERANCE
@@ -101,6 +102,92 @@ fn with_mark(texts: Vec<TextMark>, frames: Vec<String>) -> ui::produce_page::Pro
     ui::produce_page::ProduceState { texts, frames, ..Default::default() }
 }
 
+/// §A's Inputs readout (item **15**) and the Outputs count beside it. The two counts the SESSION owns —
+/// lines still owed a take, and whether `publish.json` exists — are written into this run's own session
+/// folder first, so the row can only have read them from disk (`produce_screen_widgets` pins that override;
+/// here they are made true rather than assumed). Outputs is a count only ("61 files, 220 MB").
+fn check_inputs_and_outputs_readouts(_app: &adw::Application) {
+    let root = std::env::temp_dir().join(format!("np-produce-readouts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("own temp root");
+    std::env::set_current_dir(&root).expect("cwd moved to this check's own folder");
+    let tree = naivepost::layout::Tree::new(naivepost::startup::session_dir(&root))
+        .expect("the session folder is a project tree");
+    let line = |s: f64, e: f64, text: &str| naivepost::narration::Entry {
+        s,
+        e,
+        text: text.to_string(),
+        ..Default::default()
+    };
+    let lines = vec![line(1.0, 4.0, "one"), line(5.0, 8.0, "two")];
+    naivepost::narration::save(
+        &naivepost::narration::Narration { entries: lines.clone(), silent: Vec::new() },
+        &tree,
+    )
+    .expect("narration.json written");
+    // One of the two HAS a take, so exactly one line is owed.
+    let spoken = naivepost::produce_stamp::wav_of(&tree, &lines[0], None, 0).expect("a path for a spoken line");
+    std::fs::create_dir_all(spoken.parent().unwrap()).unwrap();
+    std::fs::write(&spoken, vec![3u8; 64]).unwrap();
+    let window = produce_window(_app);
+    let label_of = |name: &str| {
+        naivepost::ui::produce_page::widget_in(&window, name)
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+            .unwrap_or_else(|| panic!("{ITEM}: no {name} label on the page"))
+            .text()
+            .to_string()
+    };
+    // A cut of seven clips, four lines still owed a take, no upload text yet.
+    publish(
+        ui::produce_page::ProduceState {
+            clips: 7,
+            seconds: 254.0,
+            to_speak: 9,
+            publish_written: false,
+            out_files: 61,
+            out_bytes: 220 * 1024 * 1024,
+            ..Default::default()
+        },
+        &window,
+    );
+    assert_eq!(
+        label_of("produce-inputs"),
+        naivepost::produce_screen::inputs_line(7, 254.0, false, 1, false),
+        "{ITEM}: item 15 spells the counts §A words — clips, length, lines owed, no upload text"
+    );
+    assert_eq!(
+        label_of("produce-outputs"),
+        naivepost::produce_screen::outputs_summary(61, 220 * 1024 * 1024),
+        "{ITEM}: the Outputs part is a COUNT only, size included"
+    );
+    // Narration off swaps the clause; with no cut at all the row says so instead of counting zeros.
+    publish(
+        ui::produce_page::ProduceState {
+            clips: 7,
+            seconds: 254.0,
+            narration_off: true,
+            out_files: 0,
+            ..Default::default()
+        },
+        &window,
+    );
+    assert_eq!(
+        label_of("produce-inputs"),
+        naivepost::produce_screen::inputs_line(7, 254.0, true, 0, false),
+        "{ITEM}: narration off reads “no narration”, not a speak count"
+    );
+    assert_eq!(label_of("produce-outputs"), "0 files", "{ITEM}: nothing written yet says so plainly");
+    publish(ui::produce_page::ProduceState::default(), &window);
+    assert_eq!(
+        label_of("produce-inputs"),
+        naivepost::produce_screen::NO_CUT_LINE,
+        "{ITEM}: no cut yet — the row says where to build one"
+    );
+    RAN_READOUTS.store(true, Ordering::SeqCst);
+    window.close();
+    common::settle();
+}
+
 fn plate_round() {
     common::pin_private_cwd();
     // `one_app_round` runs its checks inside ONE `Application::run`, so only the first test that asks
@@ -115,6 +202,7 @@ fn plate_round() {
             on_picture(&produce_window(app));
             no_wrapper(&produce_window(app));
             allocation(&produce_window(app));
+            check_inputs_and_outputs_readouts(app);
         });
     });
 }
@@ -139,6 +227,12 @@ fn sec_08_produce_1_screen_s7_no_dashed_box_while_no_mark_exists() {
 fn sec_08_produce_1_screen_s2_both_plates_are_laid_out_to_be_painted() {
     plate_round();
     assert!(RAN_ALLOCATION.load(Ordering::SeqCst), "{ITEM} s2: the allocation check never ran");
+}
+
+#[test]
+fn sec_08_produce_1_screen_s4_inputs_and_outputs_read_their_counts() {
+    plate_round();
+    assert!(RAN_READOUTS.load(Ordering::SeqCst), "{ITEM} s4: the readout check never ran");
 }
 
 fn on_picture(window: &adw::ApplicationWindow) {
