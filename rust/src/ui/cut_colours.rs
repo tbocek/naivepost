@@ -54,6 +54,12 @@ pub const SPEED_TINT: Rgb = (0.92, 0.42, 0.6);
 pub const WATCH_OUTLINE: Rgb = (1.0, 1.0, 1.0);
 /// §1's playhead: "2 px line on its own layer", RGB(0.9, 0.15, 0.15) per inventory/cut.md §A.
 pub const PLAYHEAD_RGB: Rgb = (0.9, 0.15, 0.15);
+/// §B's gutter: "a 30 px column down the left edge of EVERY band, not a band of its own". It is inked
+/// dark so the badges, sound switches and row ✕ that live in it read as controls on a rail, which is how
+/// `spec/img/05-cut.png` draws it — the ground (0.95) under the switches left them reading as tape.
+pub const GUTTER_GROUND: Rgb = (0.17, 0.17, 0.2);
+/// The 1 px divider between the gutter and the tape, so the rail's right edge is a line, not a fade.
+pub const GUTTER_EDGE: Rgb = (0.29, 0.29, 0.33);
 
 /// One tint spelled the way §10's engineering line spells a list of numbers: `0.2 0.8 0.3`.
 pub fn spell(rgb: Rgb) -> String {

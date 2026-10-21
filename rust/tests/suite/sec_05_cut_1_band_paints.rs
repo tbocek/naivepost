@@ -11,7 +11,7 @@ use crate::common;
 use naivepost::{
     cut::{Fx, Seg},
     cut_screen, fx_lane, timeline::Recording,
-    ui::cut_tracks::{self as tracks, Scene, PICTURE_ROW_EXTRA_PX, SELECTION_BAND_PX},
+    ui::{cut_colours, cut_tracks::{self as tracks, Scene, PICTURE_ROW_EXTRA_PX, SELECTION_BAND_PX}},
 };
 
 const PPS: f64 = 2.0;
@@ -579,19 +579,99 @@ fn sec_05_cut_1_screen_a_folded_gap_is_greyer_than_the_kept_bar_beside_it() {
     ];
     let painted = painted(&scene);
     let band = head_px(&scene) / 2;
-    // Kept green covers 0..10 s (x 0..20) and 20..50 s (x 40..100); the dropped middle is x 20..40.
-    let kept = rgb(&painted.0, painted.1, 10, band);
-    let gap = rgb(&painted.0, painted.1, 28, band);
+    // Kept green covers 0..10 s and 20..50 s; the dropped middle is between them. Every sample comes from
+    // `band_span_px` — the tape starts AFTER §B's 30 px gutter, so a hand count of x would drift the moment
+    // the rail moves, and a sample inside the rail answers for the bar instead of the bar.
+    let (kept_x, kept_w) = tracks::band_span_px(&scene, 20.0, 50.0);
+    let kept_mid = (kept_x + kept_w / 2.0).round() as i32;
+    let (gap_x, gap_w) = tracks::band_span_px(&scene, 10.0, 20.0);
+    // The dropped stretch's own span ENDS where the kept scene begins (`x + w`), so the last pixel of ink
+    // still belongs to the gap; its midpoint sits under the kept bar's left border.
+    let gap_edge = (gap_x + gap_w - 2.0).round() as i32;
+    println!("FOLD kept x={kept_x:.0}+{kept_w:.0} -> {kept_mid}, gap x={gap_x:.0}+{gap_w:.0} -> {gap_edge}");
+    let kept = rgb(&painted.0, painted.1, kept_mid, band);
+    let gap = rgb(&painted.0, painted.1, gap_edge, band);
     // And the kept green reaches every second the cut keeps: x 60 is inside the 20..50 s scene, so a column
     // sampled there must read the same green top to bottom -- a hole would be a gap the fold painter fills.
+    // That column stays inside the 22 px selection band: `band` is its midpoint (head/2 = 32 of the band's
+    // 16..38) and two rows below it the ink is already the effects lane's ground, so a taller sample would
+    // compare green against empty plate and always differ.
     assert!(
-        !column_differs(&painted, 60, band, band + 2, kept),
+        !column_differs(&painted, kept_mid, band, band + 1, kept),
         "the kept bar runs unbroken across the seconds a scene covers"
     );
     assert!(kept.1 > kept.0 && kept.1 > kept.2, "kept footage is the green bar, got {kept:?}");
     assert!(
         gap.0 == gap.1 && gap.1 == gap.2 && gap.0 > 200,
         "a dropped stretch inside filmed material is a grey gap, got {gap:?}"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_gutter_is_painted_down_the_bands_left_edge() {
+    common::pin_private_cwd();
+    // §B: "gutter (a 30 px column down the left edge of every band, not a band of its own)". The number is
+    // one constant (§1's `GUTTER_PX`), so what proves it is ink: the first 30 px read DARKER than the tape
+    // beside them at the same height — in the selection band and again inside a picture row, because §B says
+    // EVERY band, and the rail carries both the fold badge and the row switches.
+    let scene = scene();
+    let painted = painted(&scene);
+    let ground_bytes = |part: f64| (part * 255.0).round() as u8;
+    let ground_sum = 3 * ground_bytes(cut_colours::GROUND.0) as u32;
+    let samples = [
+        (naivepost::cut_trim::RULER_H as i32 + 5, "selection band"),
+        (head_px(&scene) + 5, "picture row"),
+    ];
+    for (y, where_) in samples {
+        let rail = rgb(&painted.0, painted.1, 10, y);
+        let tape = rgb(&painted.0, painted.1, WIDTH / 2, y);
+        println!("GUTTER y={y} ({where_}): rail {rail:?} vs tape {tape:?}, ground sums to {ground_sum}");
+        let sum = |c: (u8, u8, u8)| c.0 as u32 + c.1 as u32 + c.2 as u32;
+        assert!(
+            sum(rail) < sum(tape),
+            "the gutter must be darker than the tape at the same height: rail {rail:?} vs tape {tape:?}"
+        );
+        assert!(
+            sum(rail) < ground_sum,
+            "the gutter must not be the band's own ground: rail {rail:?}, ground sums to {ground_sum}"
+        );
+    }
+}
+
+#[test]
+fn sec_05_cut_1_screen_a_wide_kept_bar_wears_a_cross() {
+    common::pin_private_cwd();
+    // §A's selection-band rule: the kept bar's ✕ appears "only when ≥50 px wide". Two scenes differing ONLY
+    // in how wide the kept bar is drawn, sampled at that bar's centre: the wide one shows white ink, the
+    // narrow one shows its own green with no glyph on it.
+    let centre_y = naivepost::cut_trim::RULER_H + SELECTION_BAND_PX / 2.0;
+    // The kept green is laid at alpha 1.0 over the ground (`draw_kept_bars`), so a bar's own colour is known
+    // and "no glyph here" can be pinned to it rather than to "not white".
+    let kept_green = |c: (u8, u8, u8)| c.1 > c.0 + 40 && c.1 > c.2 + 40;
+    let near_white = |c: (u8, u8, u8)| c.0 >= 200 && c.1 >= 200 && c.2 >= 200;
+    let mut wide = scene();
+    wide.segs = vec![Seg { s: 5.0, e: 40.0, ..Default::default() }];
+    let (wx, ww) = tracks::band_span_px(&wide, 5.0, 40.0);
+    assert!(ww >= tracks::CROSS_MIN_PX, "fixture: the wide bar is {} px", ww);
+    let wide_painted = painted(&wide);
+    let mid_x = (wx + ww / 2.0).round() as i32;
+    let on_wide = rgb(&wide_painted.0, wide_painted.1, mid_x, centre_y.round() as i32);
+    let mut narrow = scene();
+    // The gutter is inked over the band's first 30 px (§B), so the narrow bar has to sit clear of it or the
+    // sample would read the rail instead of the bar.
+    narrow.segs = vec![Seg { s: 40.0, e: 55.0, ..Default::default() }];
+    let (nx, nw) = tracks::band_span_px(&narrow, 40.0, 55.0);
+    assert!(nw < tracks::CROSS_MIN_PX, "fixture: the narrow bar is {} px", nw);
+    assert!(nx > cut_screen::GUTTER_PX, "fixture: the narrow bar starts past the gutter at x={nx:.0}");
+    let narrow_painted = painted(&narrow);
+    let on_narrow = rgb(&narrow_painted.0, narrow_painted.1, (nx + nw / 2.0).round() as i32, centre_y.round() as i32);
+    println!(
+        "CROSS wide {ww:.0}px centre x={mid_x} -> {on_wide:?}; narrow {nw:.0}px -> {on_narrow:?}"
+    );
+    assert!(near_white(on_wide), "a bar ≥ {:.0} px wears the white \u{2715}: {on_wide:?}", tracks::CROSS_MIN_PX);
+    assert!(
+        kept_green(on_narrow),
+        "a narrower bar shows its own green with no glyph on it: {on_narrow:?}"
     );
 }
 
@@ -666,9 +746,10 @@ fn sec_05_cut_1_screen_the_watched_row_wears_a_dashed_outline() {
     let y = head_px(&scene) + 1;
     // x 20 sits in the first dash, not in its gap: the dashes are 12 px of ink per 20 px, so this sample is
     // one a missing outline would fail.
+    // x 40, not x 20: §B's gutter inks the band's first 30 px, which would otherwise hide the outline here.
     assert_ne!(
-        rgb(&bare.0, bare.1, 20, y),
-        rgb(&watched.0, watched.1, 20, y),
+        rgb(&bare.0, bare.1, 40, y),
+        rgb(&watched.0, watched.1, 40, y),
         "the watched row's outline must be visible over its own row"
     );
 }
@@ -743,3 +824,4 @@ fn sec_05_cut_1_screen_the_band_lists_prepare_frames_and_shows_the_one_it_picks(
     // And an absent folder answers empty, which draws no pictures rather than inventing black (§1).
     assert!(tracks::frame_paths(&tree, "no-such-take").is_empty());
 }
+
