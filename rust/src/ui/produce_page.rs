@@ -799,6 +799,11 @@ fn store_setting(row: &str, value: &str) -> String {
 /// "track in file" into "none in the video", and what got forced is said rather than silently applied.
 pub fn set_setting(window: &adw::ApplicationWindow, row: &str, value: &str) -> String {
     let said = store_setting(row, value);
+    // The path the save dialog was OPENED on is this row's own offer, so a chooser that is never answered still
+    // leaves the press naming the file the row asks for (`produce_press_wiring::asked_path` reads it back).
+    if row == "Container" {
+        crate::ui::produce_press_wiring::answer_path(None);
+    }
     refresh(window);
     say(window, &said)
 }

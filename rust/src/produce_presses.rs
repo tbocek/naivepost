@@ -259,7 +259,11 @@ pub fn press_export(path: &str, legs: &Legs) -> Outcome {
         return Outcome::refusal(runs::EXPORT_NO_PICTURE);
     }
     let sizes = (legs.jpeg_sizes)(path);
-    let Some(rung) = runs::jpeg_rung(&sizes) else {
+    // No rung answered with a number — every encode failed, so the encoder left no file to point an uploader
+    // at. That is the same "nothing to export" as no picture. (`jpeg_rung` keeps its old answer for an empty
+    // list — an index into the rungs — because its own checks pin that rule; the press answers with the
+    // refusal instead of exporting nothing.)
+    let Some(rung) = runs::jpeg_rung(&sizes).filter(|_| !sizes.is_empty()) else {
         return Outcome::refusal(runs::EXPORT_NO_PICTURE);
     };
     // Read back what the encoder left: the rung's own number and the file's length must be one fact, so the
@@ -272,9 +276,15 @@ pub fn press_export(path: &str, legs: &Legs) -> Outcome {
             return refused;
         }
     };
+    // §F5.7 writes the last attempt "even if it still doesn't fit", so an over-cap file is NOT thrown away —
+    // it stays on disk and the status still reports it. What the cap does buy here is a reason worth opening
+    // the log for: `jpeg_target` names the three rungs it insisted on, and the page's `report` prints it as
+    // the `!!!` line. The picture landed; the uploader may refuse it, and that is what the line is for.
+    let overshoot = runs::jpeg_target(measured).err();
     Outcome {
         calls: vec![format!("export-rung{}", runs::JPEG_QUALITIES[rung])],
         status: runs::exported_log(path, measured),
+        error: overshoot,
         ..Default::default()
     }
 }

@@ -348,7 +348,8 @@ impl Tree {
         self.produce_dir().join("clips")
     }
 
-    fn produce_dir(&self) -> PathBuf {
+    /// Where every rendered output lives: `final.<container>`, `final.jpg`, `final.html`, the stamp.
+    pub fn produce_dir(&self) -> PathBuf {
         self.dir.join("produce")
     }
 
@@ -373,6 +374,14 @@ impl Tree {
             Some(code) => format!("final.{code}.vtt"),
             None => "final.vtt".to_string(),
         })
+    }
+
+    /// `<project>-thumbnail.jpg`: the export's default name, beside the video the uploader is paired with.
+    /// §F5.7 names the picture after the PROJECT (it is about to be uploaded somewhere else), not after the
+    /// video's stem — that one is `produce/final.jpg`, which the `<video>` tag's poster still reads.
+    pub fn export_jpg(&self) -> PathBuf {
+        let project = self.name().unwrap_or("naivepost");
+        self.produce_dir().join(crate::produce_runs::export_default(project))
     }
 
     pub fn final_jpg(&self) -> PathBuf {

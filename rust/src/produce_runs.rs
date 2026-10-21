@@ -387,6 +387,17 @@ pub fn export_default(project_name: &str) -> String {
 /// else is the reason the name is forced rather than suggested.
 pub const EXPORT_SUFFIX: &str = ".jpg";
 
+/// Put `suffix` on `name`, replacing whatever extension it already had (§F5.7: "extension forced to `.jpg`").
+/// The save dialog hands back whatever the person typed, so a typed `pic.png` still gets a JPEG: a name whose
+/// last dot is at the start (`.thumbs`) or nowhere gets the suffix appended rather than its only word eaten.
+pub fn force_suffix(name: &str, suffix: &str) -> String {
+    // Only a dot with something before it is an extension: `.git` is a whole name, not a nameless stem.
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => format!("{}{suffix}", &name[..dot]),
+        _ => format!("{name}{suffix}"),
+    }
+}
+
 /// What ↻ Save video offers as its default name.
 pub fn save_default(project_name: &str, container: Container) -> String {
     format!("{project_name}.{}", container_name(container))

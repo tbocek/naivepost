@@ -430,6 +430,7 @@ mod sec_07_narrate_5_rules;
 mod sec_07_narrate_6_pass;
 mod sec_07_narrate_6_preview_end;
 mod sec_08_produce_1_screen_page_layout;
+mod f5_7_s6_s7_paths_and_ladder;
 mod sec_08_produce_1_screen_plates;
 mod sec_08_produce_3_data;
 mod sec_08_produce_5_rules_press_replaced;
