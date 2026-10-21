@@ -88,6 +88,58 @@ pub fn thumb_size() -> (u32, u32) {
     crate::produce_screen::thumb_box(&aspect, w.max(1) as u32, h.max(1) as u32)
 }
 
+/// The path a save dialog would answer with, if anyone answered it.
+///
+/// A headless run (this container, CI, `just snapshot`) has no dialog to answer, and neither does the
+/// thumbnail's Change… door (`produce_slots::next_stood_in`): the app's convention is a STAND-IN at the seam
+/// rather than a button that does nothing, so the press still runs the real copy. What the seam answers is
+/// the only path a press ever gets — a real `FileChooserNative` response would forward here exactly as
+/// `cut_svg::open_svg_chooser` forwards its pick to `svg_chosen`.
+pub fn asked_path() -> Option<String> {
+    ASKED_PATH.with(|held| held.borrow().clone())
+}
+
+/// Record the path a save dialog settled on: `Some` for a chosen one, `None` to clear it (the person moved on
+/// from what the dialog was opened for, so the next press offers its own default again).
+/// Called from `ui::produce_page::set_setting` when the Container row changes — a different container, a
+/// different default name — and by a test that points the same door at a path of its own, the way every other
+/// leg here is scripted.
+pub fn answer_path(answer: Option<&str>) {
+    ASKED_PATH.with(|held| *held.borrow_mut() = answer.map(str::to_string));
+}
+
+thread_local! {
+    /// The path the save door last answered with; `None` means nobody typed anything.
+    static ASKED_PATH: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// What the save dialog would be OFFERED for ⤓ Save video: `<project>.<container>`, the row's own container.
+/// A test reads this instead of restating the spelling.
+pub fn offered_save_name() -> String {
+    runs::save_default(&project_name(), produce_page::container_of_row())
+}
+
+/// …and for ⤓ export: `<project>-thumbnail.jpg`, with the extension already forced, beside the video. This is
+/// what the export dialog is OPENED on and, when nobody answers it, the path the press writes — `export_path`
+/// is the only caller besides a test that reads the offer back.
+pub fn offered_export_name() -> String {
+    crate::ui::produce_languages::session_tree()
+        .export_jpg()
+        .display()
+        .to_string()
+}
+
+/// The path ⤓ writes: the save dialog's answer when it answered (extension forced), else this project's own
+/// offer from [`offered_export_name`] — one rule stated once, so the name the dialog shows and the file the
+/// ladder writes cannot drift apart. The old `export_name("final")` name is the `<video>` tag's poster file,
+/// not what a person uploads elsewhere.
+pub fn export_path(asked: Option<&str>) -> String {
+    match asked.filter(|typed| !typed.trim().is_empty()) {
+        Some(typed) => runs::force_suffix(typed, runs::EXPORT_SUFFIX),
+        None => offered_export_name(),
+    }
+}
+
 /// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit. The walk runs the ladder (every rung
 /// really encoded) and reports the weight of the file it wrote, so no byte count is ever assumed.
 pub fn export_thumbnail(window: &adw::ApplicationWindow) -> String {
@@ -95,7 +147,9 @@ pub fn export_thumbnail(window: &adw::ApplicationWindow) -> String {
     if !(pressed.has_picture)() {
         return report(window, runs::EXPORT_NO_PICTURE.to_string());
     }
-    let out = crate::produce_presses::press_export(&runs::export_name("final"), &pressed);
+    // The dialog's answer is what the path door holds: nothing typed headless, the typed name when a chooser
+    // ran (and the page's own stand-in, whose answer a test installs the same way).
+    let out = crate::produce_presses::press_export(&export_path(asked_path().as_deref()), &pressed);
     if out.refused {
         return report(window, out.status);
     }
@@ -122,12 +176,19 @@ pub fn reword(window: &adw::ApplicationWindow) -> String {
     report(window, out.status)
 }
 
-/// **10** ↻ Transcode: an encode with no model call. Refused while a render runs.
+/// **10** ↻ Transcode: an encode with no model call. Refused while a render runs. The file is the page's OWN
+/// output — `produce/final.<container>` for whatever the Container row says (§1's Output line), not a
+/// hardcoded `.mp4`: with the row on webm this must re-encode the webm, and `transcode_args` picks its audio
+/// codec and mux off the same row's container.
 pub fn transcode_again(window: &adw::ApplicationWindow) -> String {
     let settings = produce_page::row_settings();
+    let video = crate::ui::produce_languages::session_tree()
+        .final_video(produce_page::container_word().as_str())
+        .display()
+        .to_string();
     let out = crate::produce_presses::press_transcode(
-        "final.mp4",
-        "final.mp4",
+        &video,
+        &video,
         &settings,
         &legs(),
         crate::ui::window::log_line,
@@ -144,16 +205,22 @@ pub fn save_video(window: &adw::ApplicationWindow, to: &str, bytes: u64) -> Stri
     report(window, out.status)
 }
 
-/// **10** ⤓ Save video as the widget fires it: no path arrives from a chooser in a headless run, so the
-/// destination is §F5.7's own default — `<project>.<container>` — and the weight is read off the RENDER's
-/// own file rather than assumed (the copy has not been made yet when the line is printed).
+/// **10** ⤓ Save video as the widget fires it: the destination is what the save door answered (§F5.7 "a copy
+/// to a chosen path"), falling back to that door's own offer — `<project>.<container>` — and the weight is
+/// read off the RENDER's own file rather than assumed (the copy has not been made yet when the line prints).
 pub fn save_video_from_button(window: &adw::ApplicationWindow) -> String {
-    let container = produce_page::container_of_row();
-    let name = runs::save_default(&project_name(), container);
+    let to = match asked_path().filter(|typed| !typed.trim().is_empty()) {
+        Some(typed) => typed,
+        None => crate::ui::produce_languages::session_tree()
+            .produce_dir()
+            .join(offered_save_name())
+            .display()
+            .to_string(),
+    };
     let bytes = std::fs::metadata(produce_page::rendered_video())
         .map(|m| m.len())
         .unwrap_or(0);
-    save_video(window, &name, bytes)
+    save_video(window, &to, bytes)
 }
 
 /// The project's own name for the save default: the session folder's, falling back to the app's name when

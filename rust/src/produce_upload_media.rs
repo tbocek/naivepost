@@ -335,11 +335,18 @@ pub fn jpeg_args(png: &Path, out: &Path, quality: u32) -> Vec<String> {
     ]
 }
 
-/// ⤓ export's real ladder: encode `png` at each rung of [`crate::produce_runs::JPEG_QUALITIES`] and hand
-/// back the weight of the file each rung WROTE, best first. Every rung is measured, so
-/// [`crate::produce_runs::jpeg_rung`] answers with a number an encoder produced rather than with the size
-/// of the file that already existed (which made every ladder collapse to its first or last rung). A rung
-/// whose encode failed contributes the last good weight, so a failed rung never reads as a free win.
+/// ⤓ export's real ladder: encode `png` at each rung of [`crate::produce_runs::JPEG_QUALITIES`] INTO `out`,
+/// stopping at the FIRST rung whose measured weight fits [`crate::produce_runs::JPEG_MAX_BYTES`]. §F5.7 says
+/// "the first of 92, 85, 75, 60, 40 that fits 2 MiB", so descending further after a fit would leave the file
+/// at the WORST quality that was tried rather than the best one that fits: the file left on disk IS the rung
+/// chosen, and the vec holds the weights of the rungs actually encoded, best first. When nothing fits, every
+/// rung is tried and the last attempt stays written — §F5.7 writes it even though it is over the cap, and
+/// "never rescaled" means there is no smaller picture left to offer.
+///
+/// Every rung is measured, so [`crate::produce_runs::jpeg_rung`] answers with a number an encoder produced
+/// rather than with the size of the file that already existed (which made every ladder collapse to its first
+/// or last rung). A rung whose encode failed contributes the last good weight, so a failed rung never reads
+/// as a free win.
 pub fn jpeg_ladder(png: &Path, out: &Path, qualities: &[u32], mut log: impl FnMut(&str)) -> Vec<u64> {
     let mut sizes: Vec<u64> = Vec::with_capacity(qualities.len());
     let mut last = 0u64;
@@ -350,6 +357,10 @@ pub fn jpeg_ladder(png: &Path, out: &Path, qualities: &[u32], mut log: impl FnMu
             last = out.metadata().map(|meta| meta.len()).unwrap_or(0);
         }
         sizes.push(last);
+        // Stop the moment a rung fits: the file on disk is that rung, and no lower quality is wanted.
+        if last <= crate::produce_runs::JPEG_MAX_BYTES {
+            break;
+        }
     }
     sizes
 }

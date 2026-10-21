@@ -828,6 +828,12 @@ fn spawn_argv(argv: &[String]) -> Result<(), String> {
 pub fn jpeg_export(to: &str) -> (Vec<u64>, std::path::PathBuf) {
     let tree = session_tree();
     let out = std::path::PathBuf::from(to);
+    // The export folder is not guaranteed to exist yet: a session can export its thumbnail before any encode
+    // has written a byte into `produce/`, and ffmpeg will not create a folder for its output. Without this
+    // every rung fails to write and the press wrongly answers "nothing to export".
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display())).ok();
+    }
     let sizes = crate::produce_upload_media::jpeg_ladder(
         &tree.thumbnail_png(),
         &out,

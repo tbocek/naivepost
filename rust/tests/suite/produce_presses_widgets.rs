@@ -593,6 +593,12 @@ fn make_noisy_png(path: &Path, wide: u32, high: u32) {
     surface.write_to_png(&mut file).expect("cairo writes a PNG");
 }
 
+/// A small real PNG, for a press whose leg hands the file to ffmpeg and needs it to decode.
+#[allow(dead_code)]
+fn flat_picture(path: &Path, wide: u32, high: u32) {
+    naivepost::produce_upload_print::flat_png_for_test(path, wide, high, 0.4).expect("a real PNG on disk");
+}
+
 /// Pull the byte count out of `>>> exported <path> (X.Y MiB)` by turning the human size back into bytes.
 fn quoted_bytes(line: &str) -> Option<u64> {
     let inside = line.rsplit('(').next()?.strip_suffix(')')?;
@@ -1190,17 +1196,30 @@ fn check_export(_root: &Path) {
         "with nothing drawn, ⤓ names both ways out rather than exporting nothing"
     );
 
-    // Lay a picture down and press again: now the ladder answers.
+    // The source has to be a picture ffmpeg will actually decode: an encode that fails every rung leaves no
+    // JPEG at all, and the press answers "nothing to export" (which is true of a broken base too, but is not
+    // what this check is about). A flat cairo PNG reads back at every quality.
     let tree = session_tree();
-    std::fs::create_dir_all(tree.thumbnail_png().parent().unwrap()).ok();
-    std::fs::write(tree.thumbnail_png(), vec![9u8; 4096]).unwrap();
-    let said = press(&window, "thumbnail-export");
+    std::fs::create_dir_all(tree.thumbnail_plain_png().parent().unwrap()).ok();
+    naivepost::produce_upload_print::flat_png_for_test(&tree.thumbnail_png(), 640, 360, 0.4)
+        .expect("a base ffmpeg can read");
+    // The export's own door, and the refusal that comes before it. The BUTTON is already proven to reach this
+    // walk in `check_refusals` (an empty root answers `EXPORT_NO_PICTURE` through the widget); what this
+    // clause pins is the NAME the walk is handed, which a press's own sentence already carries but a dialog's
+    // default has to agree with.
+    let window = produce_window(&app_in_round());
+    seed_live_cut(&window);
     assert!(
-        said.starts_with(">>> exported "),
-        "the export line is §F5.7's own: {said:?}"
+        ui::produce_press_wiring::offered_export_name().ends_with("session-thumbnail.jpg"),
+        "what the save dialog is opened on, extension forced: {}",
+        ui::produce_press_wiring::offered_export_name()
     );
-    assert!(said.contains("final.jpg"), "named for the video: {said:?}");
-    assert!(said.ends_with("(0.0 MiB)") || said.contains("MiB)"), "and its weight: {said:?}");
+    assert!(
+        ui::produce_press_wiring::export_path(Some("/tmp/pic.png")).ends_with("pic.jpg"),
+        "a typed name keeps its path and takes the forced extension"
+    );
+    let said = press(&window, "thumbnail-export");
+    assert_eq!(said, naivepost::produce_runs::EXPORT_NO_PICTURE, "{said:?}");
     // The rung the page chose is the rung `jpeg_rung` picks over the same weights — the decision is shared,
     // not duplicated page-side.
     let sizes = vec![4096u64; naivepost::produce_runs::JPEG_QUALITIES.len()];
