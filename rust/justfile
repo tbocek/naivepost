@@ -14,25 +14,88 @@ build:
     cargo build --release
     @echo '-> target/release/naivepost'
 
-# Tests, on a virtual display: several tests build real widgets. Every test file is a module of ONE
+# Tests, on virtual displays: several tests build real widgets. Every test file is a module of ONE
 # binary (tests/all.rs), so a change relinks once; each file still runs in a process of its own, because
 # a widget test starts a whole application and leaves process-wide state behind for the next file.
-# `just test f1_13` runs only the files whose name contains f1_13.
+# The files run side by side, at most JOBS at a time (30: the machine has 32 threads), each process on
+# a display of its own from a pool that stays up (:100 and on), with a TMPDIR and XDG directories of
+# its own, so no two running files share a display, a temp file or a settings folder.
+# `just test f1_13` runs only the files whose name contains f1_13; `JOBS=1 just test` runs one at a time.
 test filter="":
-    xvfb-run -a env GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory just _files "{{filter}}"
+    just _files "{{filter}}"
 
 _files filter:
     #!/usr/bin/env bash
     set -uo pipefail
-    [ -n "{{filter}}" ] || cargo test --lib --bins || exit
+    export GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory
+    jobs=${JOBS:-30}
+    base=100
+    # The display pool: started once and left running for the next run; a lock without its server is stale.
+    for ((i = 0; i < jobs; i++)); do
+        d=$((base + i))
+        if [ ! -S "/tmp/.X11-unix/X$d" ]; then
+            rm -f "/tmp/.X$d-lock"
+            # setsid: out of this run's process group and tree, so a runner that stops the run leaves the pool up.
+            (setsid Xvfb ":$d" -screen 0 1280x1024x24 -nolisten tcp >/dev/null 2>&1 &)
+        fi
+    done
+    for ((i = 0; i < 50; i++)); do
+        up=0
+        for ((d = base; d < base + jobs; d++)); do [ -S "/tmp/.X11-unix/X$d" ] && up=$((up + 1)); done
+        [ "$up" -eq "$jobs" ] && break
+        sleep 0.1
+    done
+    [ -n "{{filter}}" ] || DISPLAY=":$base" cargo test --lib --bins || exit
     bin=$(cargo test --test all --no-run --message-format=json-render-diagnostics | sed -n 's|.*"name":"all".*"executable":"\([^"]*\)".*|\1|p')
     [ -n "$bin" ] || exit 1
     files=$(sed -n 's/^mod \(.*\);$/\1/p' tests/suite/mod.rs | grep -F -- "{{filter}}") || { echo "no test file in tests/suite/mod.rs matches {{filter}}"; exit 1; }
+    logs=$(mktemp -d)
+    trap 'rm -rf "$logs"' EXIT
+    # Longest first, by the last run's times (target/test-times), so a 40 s file does not start last and
+    # hold the run alone; a file with no time yet goes first, since its length is unknown.
+    times=target/test-times
+    if [ -f "$times" ]; then
+        files=$(printf '%s\n' $files | awk 'NR == FNR { t[$2] = $1; next } { print (($0 in t) ? t[$0] : 1e9), $0 }' "$times" - | sort -k1,1gr | cut -d' ' -f2)
+    fi
+    # One file in a process of its own: its display, its temp dir, its settings folders.
+    one() {
+        local own start=$EPOCHREALTIME
+        own=$(mktemp -d)
+        DISPLAY=":$((base + $1))" TMPDIR="$own" XDG_CONFIG_HOME="$own/config" XDG_DATA_HOME="$own/data" XDG_CACHE_HOME="$own/cache" \
+            "$bin" "suite::$2::" >"$logs/$2.log" 2>&1
+        local code=$?
+        rm -rf "$own"
+        awk -v a="$start" -v b="$EPOCHREALTIME" -v f="$2" 'BEGIN { printf "%.2f %s\n", b - a, f }' >"$logs/$2.time"
+        return $code
+    }
+    declare -A slot_of=() file_of=()
+    free=()
+    for ((i = 0; i < jobs; i++)); do free+=("$i"); done
     failed=()
-    for file in $files; do
+    # Each file's output in one block once it ends, so blocks of files running together do not interleave.
+    reap() {
+        local pid code
+        wait -n -p pid
+        code=$?
+        local file=${file_of[$pid]}
         echo "     Running tests/suite/$file.rs"
-        "$bin" "suite::$file::" || failed+=("$file")
+        cat "$logs/$file.log"
+        [ "$code" -eq 0 ] || failed+=("$file")
+        free+=("${slot_of[$pid]}")
+        unset "slot_of[$pid]" "file_of[$pid]"
+    }
+    for file in $files; do
+        [ ${#free[@]} -gt 0 ] || reap
+        slot=${free[-1]}
+        unset 'free[-1]'
+        one "$slot" "$file" &
+        slot_of[$!]=$slot
+        file_of[$!]=$file
     done
+    while [ ${#file_of[@]} -gt 0 ]; do reap; done
+    # A filtered run keeps the times of the files it did not run.
+    cat "$logs"/*.time >"$logs/ran"
+    { [ ! -f "$times" ] || awk 'NR == FNR { ran[$2] = 1; next } !($2 in ran)' "$logs/ran" "$times"; cat "$logs/ran"; } >"$times.new" && mv "$times.new" "$times"
     if [ ${#failed[@]} -gt 0 ]; then
         echo "FAILED test files (${#failed[@]}): ${failed[*]}"
         exit 101

@@ -54,6 +54,8 @@ fn caption(words: &str, box_: Option<(f64, f64, f64, f64)>) -> Fx {
 /// 7 pt floor rather than vanishing.
 #[test]
 fn f3_4_s4_the_preview_uses_the_shared_fitter() {
+    // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
+    common::pin_private_cwd();
     let words = "Ethereum in one lecture, covering gas, wallets and Layer 2 rollups";
     let effect = caption(words, None);
     let (box_px, size, lines) = ui::cut_preview_caption::layout(&effect, FIT);
@@ -91,6 +93,7 @@ fn f3_4_s4_the_preview_uses_the_shared_fitter() {
 /// text `cx, cy, wf, hf` as output-frame fractions), and a record with no box gets the lower third.
 #[test]
 fn f3_4_s4_the_preview_lays_the_words_in_the_stored_box() {
+    common::pin_private_cwd();
     let stored = caption("hello", Some((0.4, 0.3, 0.5, 0.2)));
     let (x, y, w, h) = ui::cut_preview_caption::box_of(&stored, FIT);
     assert!((w - 0.5 * FIT.0).abs() < 1e-9, "the stored width is a fraction of the output frame");
@@ -110,6 +113,7 @@ fn f3_4_s4_the_preview_lays_the_words_in_the_stored_box() {
 /// instead of only in a screenshot nobody took.
 #[test]
 fn f3_4_s4_the_edge_is_dilated_not_shadowed() {
+    common::pin_private_cwd();
     // A dilation scales with the type; a shadow would be a fixed offset. And it never rounds away to nothing.
     assert_eq!(fx_text::edge_radius(20.0), 20.0 * fx_text::EDGE_RADIUS_EM);
     assert_eq!(fx_text::edge_radius(4.0), 1.0, "under a pixel the edge would vanish between samples");
@@ -226,6 +230,7 @@ thread_local! {
 
 #[test]
 fn f3_4_s5_a_press_without_travel_on_a_caption_toggles_play() {
+    common::pin_private_cwd();
     common::one_app_round(round);
     let trouble = PANIC.with(|slot| slot.borrow().clone());
     if let Some(reason) = trouble {

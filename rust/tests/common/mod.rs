@@ -84,6 +84,58 @@ pub fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/demo.naivepost")
 }
 
+/// The demo project copied into `into`, so a test can change it without touching the fixture on disk:
+/// test files run side by side, and one that writes into `fixtures/` changes what the others load.
+pub fn copy_fixture(into: &std::path::Path) {
+    copy_dir(&fixture_dir(), into);
+}
+
+fn copy_dir(from: &std::path::Path, into: &std::path::Path) {
+    std::fs::create_dir_all(into).expect("folder exists");
+    for entry in std::fs::read_dir(from).expect("folder readable") {
+        let entry = entry.expect("an entry");
+        let target = into.join(entry.file_name());
+        if entry.file_type().expect("a file type").is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).expect("file copied");
+        }
+    }
+}
+
+/// How long a live watchdog check lets the watcher wait before it calls a hang: shorter than §1's 3 s,
+/// since a suite may not sleep three seconds; the door is the program's own.
+pub const WATCHDOG_TEST_LIMIT: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// A settings folder of the caller's own for a watchdog check, installed as `$XDG_CONFIG_HOME` and
+/// `$XDG_DATA_HOME`. Both are process-wide and the watcher starts once per process, so a check that needs
+/// a watcher of its own sits in a test file of its own. The `config_dir` is made up front:
+/// `settings::write_hang_dump` only forces 0700 on a folder it creates itself.
+pub fn watchdog_paths(tag: &str) -> naivepost::settings::Paths {
+    let dir = temp_dir_tagged(&format!("sec03wd-{tag}"));
+    std::env::set_var("XDG_CONFIG_HOME", &dir);
+    std::env::set_var("XDG_DATA_HOME", &dir);
+    naivepost::settings::from_environment().expect("an absolute XDG_CONFIG_HOME is a config home")
+}
+
+/// Every `hang-*` file in `paths.config_dir`, sorted. Empty while nothing has hung.
+pub fn hang_dumps(paths: &naivepost::settings::Paths) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(&paths.config_dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().starts_with("hang-"))
+                .unwrap_or(false)
+        })
+        .collect();
+    files.sort();
+    files
+}
+
 /// Let the main context run what the widget emissions queued. Bounded and NON-blocking:
 /// `iteration(false)` returns immediately when nothing is ready, where a blocking wait would park the
 /// test thread forever. Three files keep their own `settle` because theirs pumps `while pending()`
@@ -908,23 +960,24 @@ pub fn cut_window_with_footage(app: &adw::Application) -> adw::ApplicationWindow
 /// the next allocation). The allocation IS the event — no waiting, and no frame clock, which headless has
 /// none of (`context.iteration(true)` would block this process forever).
 pub fn size_to_minimum(window: &adw::ApplicationWindow) {
+    let (w, h) = (naivepost::shell::WINDOW_MIN_W, naivepost::shell::WINDOW_MIN_H);
+    // The window itself at the minimum, not only its boxes: GTK allocates the window's own size again at its
+    // next frame, so boxes forced onto a window of another size (a test that opened it 1440 wide) were undone
+    // whenever that frame came before the check, and a divider opened at 660 px read 682, now and then, with
+    // the test files running side by side.
+    window.set_default_size(w, h);
     window.present();
     let widget = window.upcast_ref::<gtk::Widget>();
     if !widget.is_mapped() {
         widget.map();
     }
     for _ in 0..2 {
-        widget.size_allocate(
-            &gtk::Allocation::new(
-                0,
-                0,
-                naivepost::shell::WINDOW_MIN_W,
-                naivepost::shell::WINDOW_MIN_H,
-            ),
-            -1,
-        );
+        widget.size_allocate(&gtk::Allocation::new(0, 0, w, h), -1);
         settle();
     }
+    wait_until("the window took §1's minimum size", || {
+        (window.width() - w).abs() <= 20 && (window.height() - h).abs() <= 20
+    });
 }
 
 /// §A's opening of the Cut page's own top/bottom divider, handed to it by the harness.

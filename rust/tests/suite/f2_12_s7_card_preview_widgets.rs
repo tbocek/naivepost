@@ -18,7 +18,7 @@ use naivepost::subprocess;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, tape};
+use common::{hold_last_window, release_last_window, settle, status_text, tape};
 
 static RAN_SPLICED: AtomicBool = AtomicBool::new(false);
 static RAN_FOOTAGE: AtomicBool = AtomicBool::new(false);
@@ -32,11 +32,22 @@ fn clip(s: f64, e: f64) -> Seg {
     Seg { s, e, ..Default::default() }
 }
 
+/// This program's own copy of the demo project: the card's video and frames are written into it, and
+/// written into `fixtures/` they would change what every other test file loads while it runs beside this one.
+fn project_dir() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = common::temp_dir_tagged("f2-12-s7").join("demo.naivepost");
+        common::copy_fixture(&dir);
+        dir
+    })
+}
+
 /// Build a window sitting on the Cut tab with this tape and cut, and open its folder so the card's frames
 /// have somewhere to go — `line_root` is that folder, and a window with none renders nothing on purpose.
 fn cut_page(app: &adw::Application, seeded: &cut::Cut) -> adw::ApplicationWindow {
     release_last_window();
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let model = naivepost::project::load(project_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     hold_last_window(window.clone());
     window.present();
@@ -46,10 +57,10 @@ fn cut_page(app: &adw::Application, seeded: &cut::Cut) -> adw::ApplicationWindow
     assert_eq!(ui::state(&window).page, Page::Cut);
     ui::set_session_recordings(&tape());
     ui::seed_review_cut(&window, seeded);
-    // The snapshot bench's own door for a folder: the fixture tree, which is a real `.naivepost` folder on
-    // disk, so the card's frames land beside a real session rather than in a bare temp directory.
-    ui::cut_picture::set_snapshot_dir(&fixture_dir());
-    ui::cut_card_preview::set_card_snapshot_dir(&fixture_dir());
+    // The snapshot bench's own door for a folder: the copied fixture, a real `.naivepost` folder on disk,
+    // so the card's frames land beside a real session rather than in a bare temp directory.
+    ui::cut_picture::set_snapshot_dir(project_dir());
+    ui::cut_card_preview::set_card_snapshot_dir(project_dir());
     settle();
     window
 }
@@ -107,7 +118,7 @@ fn shown_is_the_card(card_path: &str) -> bool {
 #[test]
 fn f2_12_s7_the_preview_shows_the_card_and_holds_the_footage() {
     common::pin_private_cwd();
-    let dir = fixture_dir();
+    let dir = project_dir();
     // A card three seconds long, over a cut that films 0–120 as one take.
     let sting = make_video(&dir, CARD_STEM, 3.0);
     let seeded = cut::Cut {

@@ -130,6 +130,8 @@ fn chat_answer(content: &str) -> String {
 /// then answers nothing is precisely what this row has to catch, so the body on the wire is the evidence.
 #[test]
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_llm_row_posts_one_completion() {
+    // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
+    crate::common::pin_private_cwd();
     let _env = env_turn();
     let (url, rx) = fake("application/json", leak(chat_answer("ok")), false);
     write_conf(&conf_at(&url));
@@ -155,6 +157,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_llm
 /// s2 — the vision row sends the 48 px red square as a data URL and passes only if the reply says red.
 #[test]
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s2_vision_row_shows_a_red_square() {
+    crate::common::pin_private_cwd();
     let _env = env_turn();
     // A reply naming the colour passes with `checks`' own sentence. A completion reply carries only the
     // model's words, so the picture is proven by the request line the fake recorded, and the verdict by
@@ -175,6 +178,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s2_vis
 /// s3 — the four audio.cpp model rows check the DECLARED TASK of the id in the box.
 #[test]
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s3_audio_rows_check_the_declared_task() {
+    crate::common::pin_private_cwd();
     let _env = env_turn();
     // Each row's own task, served under its own id: every row passes and says which task it saw.
     // The four rows' declared tasks come from `checks::AUDIO_ROWS` itself (TTS is served as `clon`).
@@ -218,6 +222,7 @@ fn asr_row_against(entries: &[(&str, &str)]) -> String {
 /// s4 — the id the server does not serve at all is refused with what IS served, named.
 #[test]
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s4_a_missing_id_names_the_catalogue() {
+    crate::common::pin_private_cwd();
     let _env = env_turn();
     let (url, _) = fake("application/json", leak(catalogue(&[("other-model", "asr")])), false);
     write_conf(&conf_at(&url));
@@ -229,6 +234,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s4_a_m
 /// name the server does not declare as `align` fails naming the server's own list.
 #[test]
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s5_the_aligner_row_is_answered_by_task() {
+    crate::common::pin_private_cwd();
     let _env = env_turn();
     // One listener answers one request, and ureq does not reuse it here, so the two dials (empty box,
     // then the disagreeing name) get two fakes each serving the same catalogue.
@@ -255,6 +261,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s5_the
 /// s6 — the ffmpeg row: the binary named, ffprobe beside it, then what the build has, by name.
 #[test]
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_the_ffmpeg_row_reads_the_build() {
+    crate::common::pin_private_cwd();
     // A build missing one filter from `checks::FF_FILTERS` is reported by that filter's name.
     let listing: Vec<String> = checks::FF_FILTERS
         .iter()
@@ -281,6 +288,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_the
 /// s7 — the firefox row: `off` is a pass; a missing binary fails with `checks`' wording; never a stub.
 #[test]
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_the_firefox_row_off_is_a_pass() {
+    crate::common::pin_private_cwd();
     let off = naivepost::settings_probe_rows::firefox_row("off").expect("`off` is the box saying no search");
     assert!(off.contains("no web search"), "{off}");
     assert!(!off.contains("nothing wired"), "{off}");
@@ -299,6 +307,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_the
 /// with [`checks::CONF_SAVE_WAIT`] as the beat — the widget half is in `settings_dialog_lands_its_write`.
 #[test]
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s8_the_conf_lands_on_the_beat_and_on_close() {
+    crate::common::pin_private_cwd();
     let root = std::env::temp_dir().join(format!("np-s5-save-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();

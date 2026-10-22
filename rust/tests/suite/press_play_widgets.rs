@@ -103,6 +103,8 @@ fn check_the_run_button_toggles_a_started_preview(app: &adw::Application) {
 
 #[test]
 fn f0_2_pressing_the_button_starts_the_visible_pages_step() {
+    // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_PRESS.load(std::sync::atomic::Ordering::SeqCst),
@@ -186,6 +188,7 @@ fn stand_a_run_open(window: &adw::ApplicationWindow, model: &naivepost::project:
 /// The flag above: a second `#[test]` on the same shared app, so a check that never ran cannot pass.
 #[test]
 fn f0_2_s2_a_started_preview_owns_the_run_button() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_TRANSPORT.load(std::sync::atomic::Ordering::SeqCst),
@@ -237,6 +240,7 @@ fn check_the_snapshot_names_the_live_sources(app: &adw::Application) {
 
 #[test]
 fn f0_2_s3_the_snapshot_names_the_live_sources() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_SNAPSHOT.load(std::sync::atomic::Ordering::SeqCst),
@@ -275,6 +279,7 @@ fn check_a_failed_stage_names_itself(app: &adw::Application) {
 
 #[test]
 fn f0_2_s4_a_failed_stage_names_itself_in_the_log() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_FAILURE.load(std::sync::atomic::Ordering::SeqCst),
@@ -355,6 +360,7 @@ fn check_the_pause_toggle_says_both_readings(app: &adw::Application) {
 
 #[test]
 fn f0_2_s1_the_button_press_lands_both_pause_readings() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_BOTH_READINGS.load(std::sync::atomic::Ordering::SeqCst),

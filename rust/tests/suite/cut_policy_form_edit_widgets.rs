@@ -224,6 +224,8 @@ fn run_round() {
 
 #[test]
 fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s7_the_form_hands_a_field_over_to_the_policy() {
+    // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
+    common::pin_private_cwd();
     run_round();
     assert!(
         RAN_HAND_OVER.load(Ordering::SeqCst),
@@ -233,6 +235,7 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s7_the_form_
 
 #[test]
 fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s8_a_hand_set_field_survives_a_re_derivation() {
+    common::pin_private_cwd();
     run_round();
     assert!(
         RAN_SURVIVES.load(Ordering::SeqCst),
