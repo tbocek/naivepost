@@ -50,6 +50,8 @@ fn split_round() {
         RAN_POLICY_OPEN.store(true, Ordering::SeqCst);
         check_the_title_names_the_open_row(app);
         RAN_TITLE.store(true, Ordering::SeqCst);
+        check_the_picker_switches_rows_and_stores(app);
+        RAN_SWITCH.store(true, Ordering::SeqCst);
     });
 }
 
@@ -63,6 +65,7 @@ static RAN_TITLE: AtomicBool = AtomicBool::new(false);
 static RAN_ON_SCREEN: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMN_TOPS: AtomicBool = AtomicBool::new(false);
 static RAN_BAND: AtomicBool = AtomicBool::new(false);
+static RAN_SWITCH: AtomicBool = AtomicBool::new(false);
 
 /// §03-shell.md §1 counts eight badges UNDER the page (**10**-**18**: the run bar's ▶, step selector and ⏹,
 /// the progress bar, then in the same row the `Inputs:` readout, the Outputs folder button and its count,
@@ -374,6 +377,120 @@ fn sec_04_prepare_1_screen_s2_the_title_names_the_open_prompt_row() {
     assert!(
         RAN_TITLE.load(Ordering::SeqCst),
         "{ITEM} s2: the open-row title check never ran"
+    );
+}
+
+/// §1's badge **3** and **4** as a WIRE: choosing a row in the real `bench-picker` repaints the heading,
+/// the text box and the mark/Reset pair through the same code a click runs, and typing in `bench-text`
+/// writes through ("Every keystroke is stored"). Asserted through `bench::text`/`bench::edited` — the
+/// stored state the logic tests check — not by re-reading the widget that was just set.
+///
+/// §1's other sentence here: "The User Context row hides mark and Reset (no built-in wording to differ
+/// from)", so the pair must be invisible on row 0 even after that row has been edited.
+fn check_the_picker_switches_rows_and_stores(app: &adw::Application) {
+    // "Every keystroke is stored" needs somewhere to store to: the config folder is the program's own
+    // seam (`settings::from_environment()`), pointed at this test's private directory.
+    let root = common::temp_dir_created("bench-picker");
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
+        std::env::set_var("XDG_DATA_HOME", root.join("data"));
+    }
+    let paths = naivepost::settings::from_environment().expect("the pinned config folder");
+
+    let window = prepare_window(app);
+    lay_out();
+    let picker = widget(&window, "bench-picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown");
+    let describe = naivepost::bench::ROWS
+        .iter()
+        .position(|row| row.title == "Describe")
+        .expect("Describe is a bench row");
+
+    // --- choosing a prompt row: heading, wording and Reset all follow the picker.
+    picker.set_selected(u32::try_from(describe).unwrap());
+    lay_out();
+    assert_eq!(
+        widget(&window, "prepare-title")
+            .downcast::<gtk::Label>()
+            .expect("the heading is a label")
+            .label()
+            .as_str(),
+        naivepost::bench::title(&naivepost::bench::ROWS[describe]),
+        "{ITEM} s3: the heading did not follow the picker to the Describe prompt"
+    );
+    let editor = widget(&window, "bench-text")
+        .downcast::<gtk::TextView>()
+        .expect("the bench box is a text view");
+    let shipped = naivepost::bench::shipped(&naivepost::bench::ROWS[describe]);
+    let buffer = editor.buffer();
+    let (start, end) = buffer.bounds();
+    let shown = buffer.text(&start, &end, true).to_string();
+    assert_eq!(
+        shown,
+        shipped,
+        "{ITEM} s3: the box shows the shipped Describe wording before any edit"
+    );
+    // Nothing edited yet: §1's mark and Reset are only "live while this machine holds an edit".
+    assert!(
+        !widget(&window, "bench-reset").is_visible(),
+        "{ITEM} s4: Reset shows on an unedited prompt row"
+    );
+
+    // --- typing: the keystroke goes through to the machine's stored prompt, not just the widget.
+    let typed = format!("{shipped}\nextra line from a keystroke");
+    editor.buffer().set_text(&typed);
+    lay_out();
+    assert!(
+        naivepost::bench::edited(&paths, &naivepost::bench::ROWS[describe]),
+        "{ITEM} s3: typing into bench-text stored nothing"
+    );
+    assert_eq!(
+        naivepost::bench::text(&paths, &fixture(), &naivepost::bench::ROWS[describe]),
+        typed,
+        "{ITEM} s3: the stored Describe wording is not what was typed"
+    );
+    assert!(
+        widget(&window, "bench-reset").is_visible() && widget(&window, "bench-reset").is_sensitive(),
+        "{ITEM} s4: Reset is not live while this machine holds an edit"
+    );
+    assert!(
+        widget(&window, "bench-mark").is_visible(),
+        "{ITEM} s3: the \"edited — kept in your settings\" mark is missing on an edited prompt"
+    );
+
+    // --- User Context: §1 says its row hides BOTH the mark and Reset, edit or not.
+    picker.set_selected(0);
+    lay_out();
+    let context_text = widget(&window, "bench-text")
+        .downcast::<gtk::TextView>()
+        .expect("the bench box is a text view");
+    context_text.buffer().set_text("a context typed in this test");
+    lay_out();
+    assert_eq!(
+        naivepost::ui::session_handle(&window).borrow().context,
+        "a context typed in this test",
+        "{ITEM} s3: the User Context keystroke did not reach the session"
+    );
+    assert!(
+        !widget(&window, "bench-mark").is_visible(),
+        "{ITEM} s3: the User Context row must hide the edited mark"
+    );
+    assert!(
+        !widget(&window, "bench-reset").is_visible(),
+        "{ITEM} s3: the User Context row must hide Reset"
+    );
+    window.close();
+}
+
+/// The session's User Context as the shell holds it — the state a keystroke on row 0 writes through to.
+#[test]
+fn sec_04_prepare_1_screen_s3_a_picker_row_switch_and_a_keystroke_go_through_the_widgets() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_SWITCH.load(Ordering::SeqCst),
+        "{ITEM} s3: the picker/keystroke wire check never ran"
     );
 }
 
