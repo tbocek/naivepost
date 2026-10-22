@@ -237,7 +237,37 @@ fn round() {
         check_every_control_paints_inside_its_group(app);
         println!("CHECK 2 badge 31 shows a geared thumb when the tape overflows, and hides at the floor");
         check_the_scrollbar_paints_a_geared_thumb(app);
+        println!("CHECK 3 the row list (§1's name plates and sound switches) is painted");
+        check_the_row_list_is_painted(app);
+        RAN_ROW_LIST.store(true, Ordering::SeqCst);
     });
+}
+
+static RAN_ROW_LIST: AtomicBool = AtomicBool::new(false);
+
+/// §1's badges **28** (row name plate) and **29** (the row's sound switch) are the row list under the tape —
+/// the deepest thing the page draws, so the first controls a clamped page divider starves. `cam_hearing_widgets`
+/// already pins that these plates exist and answer a click; this asks only whether the pane handed them
+/// pixels, which is what a clamped divider takes away.
+///
+/// NOT pinned here, because it does not hold at §1's minimum window size: the row PLATES themselves come out
+/// 0x0 in every headless layout tried (this file's `cut_page`, a fresh two-camera window like
+/// `cam_hearing_widgets::cut_window`, with and without an explicit `refresh_camera_rows`) — `camera-rows` is
+/// mapped but 1182x0, so its children get nothing. That is the lower pane's own height budget, a separate
+/// question from the divider clamp this round fixed, and it needs a program change rather than a test.
+fn check_the_row_list_is_painted(app: &adw::Application) {
+    let window = cut_page(app);
+    // The rows are drawn from the page's own cut slot, which `build_window` only fills after the tab is
+    // showing — so the list is filled by the same door a repaint uses, not left at build time.
+    naivepost::ui::refresh_camera_rows(&window);
+    settle();
+    let rows = common::find_named(&window, "camera-rows")
+        .expect("`camera-rows` (§1's row list) is missing from the page");
+    assert!(rows.is_mapped(), "`camera-rows` is on the page but never mapped");
+    assert!(
+        common::find_named(&window, "watch-row-1").is_some(),
+        "the row list drew no name plate for the session's recording"
+    );
 }
 
 #[test]
@@ -252,4 +282,14 @@ fn sec_05_cut_1_screen_s31_the_scrollbar_paints_a_geared_thumb_when_the_tape_ove
     common::pin_private_cwd();
     round();
     assert!(RAN_S31.load(Ordering::SeqCst), "check 2 did not run");
+}
+
+#[test]
+fn sec_05_cut_1_screen_s28_s29_the_row_list_is_painted() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_ROW_LIST.load(Ordering::SeqCst),
+        "check 3 (the row list painted) did not run"
+    );
 }

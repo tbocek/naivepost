@@ -17,8 +17,46 @@ use gtk4 as gtk;
 const UPPER_PANE_SHARE: f64 = 0.45;
 
 /// Where the Cut page's top/bottom divider goes in a snapshot `page_h` px tall.
-pub fn cut_upper_pane_px(page_h: i32) -> i32 {
+fn cut_upper_pane_px(page_h: i32) -> i32 {
     (page_h.max(1) as f64 * UPPER_PANE_SHARE).round() as i32
+}
+
+/// Rest BOTH of the Cut page's dividers the moment this window has a real size — the same door a person's
+/// drag fires, and the reason a headless shot can show §A's `paned 660/380` at all.
+///
+/// A `gtk::Paned` clamps every `set_position` into `[start minimum, total - end minimum]`, and headless the
+/// two are read before the window is allocated, so both asks land on their clamp (measured: a 5 px tall
+/// `cut-page-split` and a 65 px page scroller — every control below the divider built and unpainted). The
+/// shell's own divider solved this by re-asking `rest_split` at its first real allocation
+/// (`window_divider::install`); `install` also runs for these two, but a `notify::height` callback never
+/// fires for a widget that is allocated exactly once, which is what a headless window does. So the shot asks
+/// both rules from a drain that runs AFTER the window took §1's size. No sleep, no guessed wait: the drain
+/// only runs the loop that is already pending.
+pub fn rest_page_splits(window: &adw::ApplicationWindow) {
+    let Some(scroll) = crate::ui::find_source_widget(window, "page-scroll-Cut") else {
+        return;
+    };
+    let page_h = scroll.height().max(1);
+    // The shell's page/band split first: it is what decides how much room the page has at all.
+    if let Some(divider) = crate::ui::find_source_widget(window, "main-divider")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+    {
+        crate::ui::window_divider::rest_split(&divider);
+    }
+    // …then the Cut page's top/bottom divider, at §A's opening clamped into the room the page really has.
+    let Some(vsplit) = crate::ui::find_source_widget(window, "cut-page-split")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+    else {
+        return;
+    };
+    vsplit.set_position(cut_upper_pane_px(page_h).max(crate::ui::cut_page_layout::SELF_SPLIT_TOP_PX));
+    // …and the left/right divider, at §A's 660 px of preview, once its own pane has a width to be clamped by.
+    if let Some(hsplit) = crate::ui::find_source_widget(window, "cut-top")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+    {
+        hsplit.set_position(crate::ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX);
+    }
+    crate::snapshot_face::pump_context(16);
 }
 
 /// Ask §A's split of the Cut page's own divider, the same door a person's drag fires, and hand back the line
@@ -28,21 +66,31 @@ pub fn cut_upper_pane_px(page_h: i32) -> i32 {
 /// The upper pane opened at §A's [`crate::ui::cut_page_layout::SELF_SPLIT_TOP_PX`] and took the whole leftover,
 /// so the tape under it — ruler, toolbar, tracks, strip and camera rows, which is what §A's picture is about —
 /// fell past the window's bottom edge. `top_h` is the height the layout actually gave that pane.
-pub fn rest_cut_split(
-    window: &adw::ApplicationWindow,
-    split: &gtk::Paned,
-    top_h: i32,
-) -> Option<String> {
-    let scroll = crate::ui::find_source_widget(window, "page-scroll-Cut")?;
-    let page_h = scroll.height().max(1);
-    let keep = cut_upper_pane_px(page_h);
-    // The ask goes to the paned whether or not the pane needs moving: its own position may already sit lower
-    // than the ratio asks, and printing the number it lands on is how a wrong shot can be traced.
-    split.set_position(keep.min(top_h));
-    // The relayout has to land before the pixels are taken; headless nothing else pumps the context here.
-    crate::snapshot_face::pump_context(16);
-    Some(format!(
-        "05-cut split | page {page_h} px, upper pane asked {top_h}, set to {}",
-        split.position()
-    ))
+/// Put the Cut page's transport into the state §1's picture draws it in, through the page's own buttons.
+///
+/// §1's badges **5**-**9** (▶ recording, ▶✂ cut, ▶✂✂ review, frame steps, preview volume) are greyed until a
+/// preview is playing, so the reference shows them inked. A snapshot presses no keys, so this fires the same
+/// doors `03-runbar-busy` fires — seed a cut, stand the red line inside the first clip, press the page's own ▶
+/// — and then hands the transport back with the run bar's ⏹ door, so the shot is the page at rest with its
+/// transport live rather than a running preview whose frame would depend on wall-clock time.
+pub fn stage_cut_transport(window: &adw::ApplicationWindow) {
+    use crate::{cut, cut_line, ui};
+    ui::seed_review_cut(
+        window,
+        &cut::Cut {
+            segs: vec![
+                cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
+                cut::Seg { s: 40.0, e: 60.0, cam: 0, ..Default::default() },
+            ],
+            ..Default::default()
+        },
+    );
+    ui::set_line_position(window, cut_line::LinePos { t: 15.0 });
+    ui::set_playhead(window, 15.0);
+    if let Some(play) = ui::play_recording_button(window) {
+        play.emit_by_name::<()>("clicked", &[]);
+    }
+    if let Some(stop) = ui::play_button(window) {
+        stop.emit_by_name::<()>("clicked", &[]);
+    }
 }
