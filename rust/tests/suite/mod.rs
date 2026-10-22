@@ -385,6 +385,9 @@ mod sec_03_shell_1_the_window_watchdog;
 mod sec_03_shell_2_the_run_bar;
 mod sec_03_shell_5_settings_dialog;
 mod sec_04_prepare_1_screen_split;
+/// §1's page-fitting rule (all of it on screen at 1280×900, nothing clipped, a spilling column scrolls
+/// inside itself) stated once and measured on all five pages.
+mod all_pages_fit;
 mod sec_04_prepare_5_rules_answers;
 mod sec_04_prepare_5_rules_markers;
 mod sec_04_prepare_5_rules_match;

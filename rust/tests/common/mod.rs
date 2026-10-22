@@ -8,6 +8,7 @@
 
 use adw::prelude::*;
 use gtk4 as gtk;
+pub mod fit_geometry;
 use naivepost::{
     cut::{Cut, Fx, Seg},
     edges::AlignedWord,
