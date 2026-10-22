@@ -56,6 +56,63 @@ pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
     collapsed + open_body_px(log)
 }
 
+/// THE OPEN LOG'S HEIGHT WHEN NOTHING DRAGS THE DIVIDER — the headless answer to §1's "Expanding the log
+/// moves the divider up so the log gets room of its own".
+///
+/// §1's two sentences assume a person moves the handle, and the shell follows it: `connect_band_rest` watches
+/// the expander's `expanded` notify and re-asks the rule. Headless that never fires for a shot —
+/// `snapshot_face::show_the_log` expands the expander through `paint_progress`, but the divider's clamp was
+/// already computed for the COLLAPSED band, and `gtk::Paned::set_position` clamps to that floor, so the shot
+/// printed `band h=571 min=274` inside an 844 px divider: the log's 220 px body plus ~297 px of leftover page,
+/// a grey box under the run bar no window shows. This is the same door a person's drag fires, asked once more
+/// AFTER the expander was opened: the band is read live, and the handle goes back to `total − band`.
+///
+/// Returns the band it asked for, or `None` when this window has no shell band (a dialog shot).
+pub fn opened_px(divider: &gtk::Paned) -> Option<i32> {
+    let bottom = divider.end_child()?;
+    let log = find_in_bottom(&bottom, "log-expander")?.downcast::<gtk::Expander>().ok()?;
+    // THE COLLAPSED CASE IS THE RESTING CASE — leave it to `rest_split`, which is what the shell already
+    // asked and what §1's collapsed sentence counts. Asking here would move a shot that never opened its log.
+    if !log.is_expanded() {
+        return None;
+    }
+    let run_row = bottom.first_child()?;
+    let total = divider.height();
+    if total <= 1 {
+        return None;
+    }
+    let band = band_px(&run_row, &log).clamp(1, total - 1);
+    // THE BOTTOM HALF'S FLOOR MOVES WITH THE LOG. `window_divider::install` puts `rest_px` (the collapsed two
+    // rows) on the band as its size request, and a `gtk::Paned` cannot be asked to sit below its end child's
+    // minimum — measured: asking 274 px into an 844 px divider left the handle at 570 and the band at 571 px,
+    // because the clamp had nothing else to give. That floor is a PROGRAM floor: §1 says the collapsed band is
+    // exactly its two rows, and the page's own minimum is what stops the handle coming down further, so the
+    // request has to be lifted here for the open state and handed back by `connect_band_rest` on the close.
+    bottom.set_size_request(-1, band);
+    divider.set_position(rest_position(total, band));
+    // …and the halves' minimums are re-read only on the next allocation, which headless nothing causes: the
+    // divider clamps `set_position` against the end child's CURRENT minimum (still the collapsed 274 px), so
+    // the same pair of asks has to be made again after the snapshot's clamp re-allocates the window. Two more
+    // asks, same rule; a third is what lands the handle at 844 − 274 = 570 with the page above it.
+    for _ in 0..2 {
+        divider.set_position(rest_position(total, band));
+    }
+    Some(band)
+}
+
+/// The first widget named `name` at or below `node`, within the band.
+fn find_in_bottom(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    if node.widget_name() == name {
+        return Some(node.clone());
+    }
+    for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+        if let Some(widget) = child.downcast_ref::<gtk::Widget>().and_then(|w| find_in_bottom(w, name)) {
+            return Some(widget);
+        }
+    }
+    None
+}
+
 /// The band's RESTING height — what the divider starts at and re-asks for at every size. §1 names two states
 /// and only one of them is a resting position: "The log STARTS collapsed, and while it is collapsed the bottom
 /// half is exactly as tall as the run bar row plus the log expander's header, with no empty space under them";

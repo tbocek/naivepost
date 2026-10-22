@@ -383,6 +383,7 @@ mod sec_03_shell_1_second_window_band;
 mod sec_03_shell_1_the_window;
 mod sec_03_shell_1_the_window_growth;
 mod sec_03_shell_1_the_window_minimum;
+mod sec_03_shell_1_the_window_screen;
 mod sec_03_shell_1_the_window_watchdog;
 mod sec_03_shell_2_the_run_bar;
 mod sec_03_shell_4_clean_on_load;

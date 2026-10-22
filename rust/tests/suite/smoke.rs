@@ -208,9 +208,17 @@ fn page_names(window: &adw::ApplicationWindow) -> Vec<&'static str> {
         .collect()
 }
 
+/// The User Context as the window shows it. §04 §1 puts that paragraph in the prompt bench, and the bench
+/// box is a `gtk::TextView` (`window_bench`), not a label — so walking labels finds nothing and the check
+/// would pass only by accident if the text ever moved. Read from the widget that actually holds it.
 fn context_label(window: &adw::ApplicationWindow) -> String {
-    labels(window)
-        .into_iter()
-        .find(|t| t.contains("recorded in one sitting"))
+    common::widget_in(window, "bench-text")
+        .and_then(|widget| widget.downcast::<gtk4::TextView>().ok())
+        .map(|editor| {
+            let buffer = editor.buffer();
+            buffer
+                .slice(&buffer.start_iter(), &buffer.end_iter(), false)
+                .to_string()
+        })
         .unwrap_or_default()
 }
