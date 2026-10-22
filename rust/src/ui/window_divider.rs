@@ -119,31 +119,8 @@ pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, reado
     // …and again on every later resize: a window that grows gives the extra to the PAGE (§1: "Expanding the
     // log moves the divider up… collapsing it returns that height to the page", and at rest the band keeps
     // its own height however tall the window gets). Without this the handle stays where the first map put
-    // it and the leftover lands under the log as blank space — which is exactly what the shell shot showed.
-    divider.connect_notify_local(Some("height"), move |d, _| {
-        if d.height() <= 1 {
-            return;
-        }
-        // One rule, one place: [`rest_split`] re-asks the band's height for the log's state and moves the handle.
-        rest_split(d);
-    });
-    // …and at every real ALLOCATION too, so the rule cannot depend on call order. A paned clamps its position to
-    // `[start minimum, total − end minimum]`, and headless the two halves' minimums can sum past the window, so an
-    // ask made before the size lands is clamped by a number that means nothing. GTK 4 has no allocate signal to
-    // hook (`connect_alloc`/`connect_size_allocate` do not exist in gtk4-rs), so this watches `width`/`height`
-    // together with one shared cell: it fires whenever either changes, and re-asks the rule only for a height it
-    // has not seen, which keeps the re-ask from feeding back into itself.
-    let last_alloc_height = std::rc::Rc::new(std::cell::Cell::new(0));
-    for name in ["width", "height"] {
-        let seen = last_alloc_height.clone();
-        divider.connect_notify_local(Some(name), move |d, _| {
-            let height = d.height();
-            if height > 1 && seen.get() != height {
-                seen.set(height);
-                rest_split(d);
-            }
-        });
-    }
+    // it and the leftover lands under the log as blank space, or the band falls below the window's edge.
+    connect_every_layout(&divider);
 }
 
 /// Re-ask the resting split the first time the paned is allocated a real height — the one moment the number
@@ -164,6 +141,31 @@ fn connect_first_allocation(divider: &gtk::Paned) {
         }
         asked.set(true);
         rest_split(&held);
+    });
+}
+
+/// Re-ask the resting split whenever the window is laid out at a height the divider has not had yet.
+///
+/// The hook is the window surface's `layout` signal, which GDK emits each time GTK lays the window out at its
+/// size; GTK's own handler allocates the widgets first, so the divider's height is the new one here. A widget
+/// has no `height` or `width` property to watch: the `notify::height` handlers this replaces never fired, on
+/// Xvfb or anywhere, so a window that grew kept its handle where the first map put it.
+fn connect_every_layout(divider: &gtk::Paned) {
+    divider.connect_realize(|d| {
+        let Some(surface) = d.native().and_then(|native| native.surface()) else {
+            return;
+        };
+        let held = d.downgrade();
+        let seen = std::rc::Rc::new(std::cell::Cell::new(0));
+        surface.connect_layout(move |_, _, _| {
+            let Some(d) = held.upgrade() else { return };
+            let height = d.height();
+            // Only a height not seen yet: the re-ask moves the handle, which lays the window out again.
+            if height > 1 && seen.get() != height {
+                seen.set(height);
+                rest_split(&d);
+            }
+        });
     });
 }
 

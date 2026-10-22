@@ -222,6 +222,9 @@ fn letters(chars: usize) -> String {
 /// the refusal's WORDING at the builder; this proves the door passes a real request through it.
 #[test]
 fn p_machine_promptmaxchars_s1_the_live_door_refuses_one_char_over_the_bound_and_sends_exactly_it() {
+    // Scene re-points the process-wide cwd and settings env, and the tests of this file run on threads
+    // side by side: one test's fake was read from another's settings, and its request never came.
+    let _scenario = common::scenario_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let fake = Fake::start(chat("an answer nobody should have to pay for"));
     let scene = Scene::new("s1", &fake.url);
     // Over the bound: the system and user halves together are one char more than the cap allows.
@@ -265,6 +268,7 @@ fn p_machine_promptmaxchars_s1_the_live_door_refuses_one_char_over_the_bound_and
 /// separate from the text (a vision call's base64 must not read as prose).
 #[test]
 fn p_machine_promptmaxchars_s2_the_log_records_the_size_that_went_to_the_llm() {
+    let _scenario = common::scenario_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let fake = Fake::start(chat("split at twelve seconds"));
     let scene = Scene::new("s2", &fake.url);
     let text = letters(2000);
@@ -319,6 +323,7 @@ fn p_machine_promptmaxchars_s2_the_log_records_the_size_that_went_to_the_llm() {
 /// refused the call — the row is written only for a request that went out.
 #[test]
 fn p_machine_promptmaxchars_s3_the_timed_row_records_what_was_sent() {
+    let _scenario = common::scenario_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let fake = Fake::start(chat("a short answer"));
     let scene = Scene::new("s3", &fake.url);
     let text = letters(1500);
