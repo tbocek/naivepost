@@ -47,7 +47,7 @@ const CONTEXT_MAX_H: i32 = 64;
 /// `main-divider`'s start-half minimum — so every tab was allocated ~2731 px inside an 890 px window and
 /// each page's content was painted above the top of the window. Propagate + a near-window ceiling keeps §1's
 /// "one text box filling the rest of column": vexpand still fills the band, the box still scrolls its text.
-pub(crate) const BENCH_MAX_H: i32 = 900;
+pub(crate) const BENCH_MAX_H: i32 = 460;
 use crate::project::Project;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
@@ -100,6 +100,12 @@ pub(crate) fn page_box(
     page_scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
     // The page keeps a usable height band rather than collapsing to nothing beside a huge log.
     page_scroller.set_min_content_height(PAGE_MIN_H);
+    // §1: "the page takes all the rest of the height". A `gtk::Paned` splits its leftover by SHARE between
+    // children that expand, and with both halves expanding the shell's divider settled on 342 px for Prepare —
+    // the scroller's own minimum — while the bottom box took 501 px of an 844 px divider and painted its plate
+    // over the bottom of the page. Expanding here is what makes the page, not the band, the half that grows.
+    page_scroller.set_vexpand(true);
+    page_scroller.set_vexpand_set(true);
     // Width too: without it the scroller reports a 0 px natural width and its child is laid out at
     // whatever minimum the parts ask for, so a two-column page (Prepare's paned) never sees the window's
     // real width and the handle cannot sit at half. `hscrollbar-policy: never` says the page is meant to
@@ -626,6 +632,12 @@ pub(crate) fn page_box(
 
 
     view.set_content(Some(&page_scroller));
+    // The page's half of `main-divider` is this `AdwToolbarView`, not the scroller inside it, so the expand
+    // that makes §1's "the page takes all the rest of the height" true has to be set HERE: measured with only
+    // the inner scroller expanding, the stack handed the toolbar view its 342 px minimum and the bottom box took
+    // 501 px of an 844 px divider, painting its plate over the bottom of the page.
+    view.set_vexpand(true);
+    view.set_vexpand_set(true);
     // The two widgets are handed back only for Prepare; every other page has none. `build_window`
     // wires that button directly rather than finding it by name, because a window whose four pages
     // each hold an "add-sources-button" makes `find_widget_by_name` return whichever one it reaches

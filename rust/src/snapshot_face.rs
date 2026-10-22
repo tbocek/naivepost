@@ -181,9 +181,16 @@ pub(crate) fn set_shot_size(width: i32, height: i32) {
     SHOT_SIZE.store((width << 16) | height, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// The size `write_png` draws at: the ask above when there was one, else the widget's own box.
-fn shot_size(widget: &gtk::Widget) -> (u32, u32) {
+/// The ask [`set_shot_size`] recorded, as two numbers: `(0, 0)` when nothing was asked and a shot therefore
+/// takes its widget's own box. Read by [`crate::snapshot_band`]'s report so the printed line says both the
+// size the shot was taken at and the size the window had.
+pub(crate) fn asked_shot_wh() -> (i32, i32) {
     let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
+    (packed >> 16, packed & 0xffff)
+}
+
+/// The size `write_png` draws at: the ask above when there was one, else the widget's own box.
+fn shot_size(widget: &gtk::Widget) -> (u32, u32) {    let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
     let (width, height) = (packed >> 16, packed & 0xffff);
     if width > 0 && height > 0 {
         return (width as u32, height as u32);

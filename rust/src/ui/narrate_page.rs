@@ -408,8 +408,11 @@ pub fn build() -> gtk::Widget {
     // whatever room the pane gives while the bounds above still decide when its scrollbar appears.
     scroller.set_vexpand(true);
     scroller.set_vexpand_set(true);
-    // The request below is the FLOOR this column must never go under (see the note that follows), not a
-    // fixed size any more — vexpand can only ask for more than it, never less.
+    // No height floor on the column any more, and the reason is the shell's divider: a `gtk::Paned` splits its
+    // leftover between children that expand by SHARE, so every page's own floor was charged to the page half of
+    // `main-divider` — measured, Prepare sat at 342 px while the bottom box took 501 px of an 844 px divider and
+    // painted its plate over the bottom of the page. §1 wants the band to be exactly its two rows and the page to
+    // "take all the rest of the height", which needs the pages to ask for nothing they can scroll instead.
     scroller.set_size_request(-1, 560);
     let lines = gtk::ListBox::new();
     lines.set_widget_name("narrate-lines");
