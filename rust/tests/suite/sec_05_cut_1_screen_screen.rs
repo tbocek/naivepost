@@ -70,10 +70,7 @@ fn cut_page_with_a_lane(app: &adw::Application) -> adw::ApplicationWindow {
     naivepost::ui::tab_button(&window, naivepost::shell::Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    // Size AGAIN now that the Cut page is the visible tab: a paned only gets boxes once GTK allocates the
-    // page it lives on, so the pass above (made while Prepare was showing) could not lay the Cut page out.
-    common::size_to_minimum(&window);
-    common::rest_cut_page_split(&window);
+    common::wait_for_stable_layout(&window);
     // Recordings BEFORE the cut: `set_session_recordings` borrows the page's slot that the
     // following `seed_review_cut` re-reads (same order `sec_05_cut_1_screen_layout` uses).
     naivepost::ui::set_session_recordings(&[naivepost::timeline::Recording {

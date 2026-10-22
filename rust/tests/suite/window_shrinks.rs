@@ -18,7 +18,7 @@ use gtk4 as gtk;
 use naivepost::shell::Page;
 use naivepost::ui;
 use crate::common;
-use common::{fixture_dir, settle};
+use common::fixture_dir;
 
 static RAN_PAGES: AtomicBool = AtomicBool::new(false);
 
@@ -48,19 +48,10 @@ fn window_floor(window: &adw::ApplicationWindow) -> (i32, i32) {
     )
 }
 
-/// Force a layout pass so every widget has been sized once, and report the tallest minimums among the
-/// page's own descendants (the shell chrome — header, run bar, log — is measured by `window_floor`).
+/// Lay the window out once so every widget has been sized; the numbers read after it are minimums, so the
+/// size it is laid out at does not change them.
 fn lay_out(window: &adw::ApplicationWindow) {
-    window.present();
-    settle();
-    let widget = window.upcast_ref::<gtk::Widget>();
-    if !widget.is_mapped() {
-        widget.map();
-    }
-    // Give it a real box to lay its children out in; the numbers below are minimums, so the size chosen
-    // here does not change them — it only makes GTK walk the tree.
-    widget.size_allocate(&gtk::Allocation::new(0, 0, 1400, 900), -1);
-    settle();
+    common::size_to_minimum(window);
 }
 
 /// The visible page's content box: what the ViewStack shows right now. Measuring only this subtree is how

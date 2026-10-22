@@ -942,87 +942,77 @@ pub fn cut_window_with_footage(app: &adw::Application) -> adw::ApplicationWindow
         Page::Cut,
         "the Cut page is showing"
     );
-    settle();
-    // …and sized AGAIN now that the Cut page is the visible one: a paned only gets boxes once its page is
-    // the tab GTK allocates, so the pass above (made on Prepare) could not lay the Cut page out.
-    size_to_minimum(&window);
-    rest_cut_page_split(&window);
+    wait_for_stable_layout(&window);
     window
 }
 
-/// Give a window §1's minimum size FOR REAL, twice, draining between the two.
+/// Give a window §1's minimum size for real and wait until GTK has laid it out at that size.
 ///
-/// Headless `present()` shows a window without resizing it, and a `gtk::Paned` inside a window that was
-/// never allocated answers 5 px and clamps every divider ask onto that number — which is how the Cut-page
-/// widget tests found their toolbar, tracks and scrollbar missing: the page's own paned sat at its clamp
-/// with the end child left unmapped. The SECOND allocation is what re-draws the halves after the shell's
-/// resting ask moved its handle (measured: `position()` says 790 while the band is still drawn 488 px until
-/// the next allocation). The allocation IS the event — no waiting, and no frame clock, which headless has
-/// none of (`context.iteration(true)` would block this process forever).
+/// The window manager-less X server sizes the window to its default size, and the size request moves the X
+/// window; nothing here allocates boxes by hand. A box forced with `size_allocate` is undone at GTK's next
+/// frame, so a check read it or the real layout depending on timing, and a layout bug the program has (a
+/// divider that never opens) passed in the tests and showed in the shots.
 pub fn size_to_minimum(window: &adw::ApplicationWindow) {
     let (w, h) = (naivepost::shell::WINDOW_MIN_W, naivepost::shell::WINDOW_MIN_H);
-    // The window itself at the minimum, not only its boxes: GTK allocates the window's own size again at its
-    // next frame, so boxes forced onto a window of another size (a test that opened it 1440 wide) were undone
-    // whenever that frame came before the check, and a divider opened at 660 px read 682, now and then, with
-    // the test files running side by side.
     window.set_default_size(w, h);
     window.present();
-    let widget = window.upcast_ref::<gtk::Widget>();
-    if !widget.is_mapped() {
-        widget.map();
-    }
-    for _ in 0..2 {
-        widget.size_allocate(&gtk::Allocation::new(0, 0, w, h), -1);
-        settle();
-    }
-    wait_until("the window took §1's minimum size", || {
-        (window.width() - w).abs() <= 20 && (window.height() - h).abs() <= 20
+    wait_for_stable_layout(window);
+    // The X window is checked, not `window.width()`: without a window manager GTK keeps a 5 px resize border
+    // inside it on every side, so the content box of a 1240×900 window is 1230×890.
+    let surface = window.surface().expect("a presented window has a surface");
+    assert_eq!(
+        (surface.width(), surface.height()),
+        (w, h),
+        "the window laid out at another size than §1's minimum: its content asks for more"
+    );
+}
+
+/// How many paints in a row must show every widget in the same place before the layout counts as settled.
+/// Measured on Xvfb: a fresh window settles in two to three frames, a paned's resting ask (an idle) included.
+const STABLE_PAINTS: u32 = 3;
+
+/// Runs the main loop until the window has been painted [`STABLE_PAINTS`] times in a row with every widget's
+/// box unchanged: the layout GTK settled on, the one a person would see, read after its frames rather than
+/// guessed with a number of loop turns. Fails after [`WAIT_LIMIT`] when the layout keeps moving.
+pub fn wait_for_stable_layout(window: &adw::ApplicationWindow) {
+    let clock = window.frame_clock().expect("a presented window has a frame clock");
+    let paints = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let counter = paints.clone();
+    let handler = clock.connect_after_paint(move |_| counter.set(counter.get() + 1));
+    let (mut seen, mut same, mut last) = (0, 0, None);
+    window.queue_draw();
+    wait_until("the window's layout came to rest", || {
+        if paints.get() == seen {
+            return false;
+        }
+        seen = paints.get();
+        let now = boxes(window.upcast_ref(), window.upcast_ref(), Vec::new());
+        if last.as_ref() == Some(&now) {
+            same += 1;
+        } else {
+            same = 1;
+            last = Some(now);
+        }
+        // A frame is only painted when something asks for one; ask, so a layout at rest is seen to stay so.
+        window.queue_draw();
+        same >= STABLE_PAINTS
     });
+    clock.disconnect(handler);
 }
 
-/// §A's opening of the Cut page's own top/bottom divider, handed to it by the harness.
-///
-/// WHY A TEST ASKS THIS AT ALL. A `gtk::Paned` clamps every `set_position` into `[min_position, max_position]`
-/// and `max_position` is `total − end minimum`; a window that was never resized (headless `present()` does not
-/// resize) answers ~660 px of page, so §A's 380 ask lands on the clamp — measured: 655 of 660 — and GTK leaves
-/// the pane BELOW the handle unmapped. Every control in the toolbar, the tracks and the scrollbar then exists,
-/// carries a name, and is never painted. The program cannot fix that from inside: at build time the paned has no
-/// height to honour (it answers 5 px), and asking again later needs a frame clock that headless does not have.
-/// So this states the geometry the spec asks for, exactly as `src/snapshot_rows.rs` already does for its shots
-/// (`paned.set_position(SHOT_SPLIT_POS)`), through the same door a person's drag uses.
-pub fn rest_cut_page_split(window: &adw::ApplicationWindow) {
-    let Some(paned) = ui::find_source_widget(window, "cut-page-split")
-        .and_then(|widget| widget.downcast::<gtk::Paned>().ok())
-    else {
-        return;
-    };
-    let total = paned.height().max(1);
-    let opening = naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX.clamp(1, total - 1);
-    paned.set_position(opening);
-    // …and TWO more allocations: the first lets the halves catch up with the moved handle (measured:
-    // `position()` answers 380 while both children keep their old boxes until the next allocation), the second
-    // re-runs that for whatever the newly-mapped bottom pane now asks for. Allocations, not waits.
-    size_to_minimum(window);
-    size_to_minimum(window);
-}
-
-/// §1's collapsed band, handed to the shell by the harness.
-///
-/// Same problem as [`rest_cut_page_split`] one level up. The shell's resting ask runs in an idle (its only
-/// headless door: `connect_realize` fires before the allocation and `notify::height` never fires at all), and
-/// when nothing allocates the window afterwards the handle's move is never drawn — measured: `position()` said
-/// 790 while the band was still painted 488 px tall in the first window and 707 px in the second, so every
-/// control below the handle stayed off screen. This asks the shell's OWN rule and then allocates twice, which
-/// is what makes the drawn boxes match it.
-pub fn rest_shell_band(window: &adw::ApplicationWindow) {
-    let Some(divider) = ui::find_source_widget(window, "main-divider")
-        .and_then(|widget| widget.downcast::<gtk::Paned>().ok())
-    else {
-        return;
-    };
-    naivepost::ui::window_divider::rest_split(&divider);
-    size_to_minimum(window);
-    size_to_minimum(window);
+/// Every mapped widget's box in window coordinates, in tree order.
+fn boxes(root: &gtk::Widget, widget: &gtk::Widget, mut out: Vec<[i32; 4]>) -> Vec<[i32; 4]> {
+    if widget.is_mapped() {
+        if let Some(r) = widget.compute_bounds(root) {
+            out.push([r.x(), r.y(), r.width(), r.height()].map(|v| v.round() as i32));
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        out = boxes(root, &c, out);
+        child = c.next_sibling();
+    }
+    out
 }
 
 /// One narration entry starting halfway through its span — the shape a frozen preview reads back.

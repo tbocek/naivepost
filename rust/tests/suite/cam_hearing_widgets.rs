@@ -100,11 +100,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         .expect("the shell has a Cut tab")
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
-    // Size AGAIN now that the Cut page is the visible tab, and open §A's page split: headless an unallocated
-    // window leaves the page's paned on its clamp with everything below the handle unmapped, so `camera-rows`
-    // would exist but never be painted.
-    common::size_to_minimum(&window);
-    common::rest_cut_page_split(&window);
+    common::wait_for_stable_layout(&window);
     ui::seed_review_cut(&window, &seeded_cut());
     // The line sits at 25 s: inside BOTH recordings' span, and inside the scene whose picture comes
     // from camera 0 — which is what makes S3's "the cut shows camera 1 here" sentence owed.

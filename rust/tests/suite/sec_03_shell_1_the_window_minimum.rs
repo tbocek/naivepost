@@ -17,10 +17,8 @@
 //!   asks (band ≥ total, band 0) that make `set_position` panic if they are ever forwarded raw.
 //!
 //! Shape: exactly ONE `#[test]` drives the widgets, because a process gets one `adw::Application::run`
-//! (`common::one_app_round`), and the pure-logic test stands on its own. Nothing here calls
-//! `context.iteration(true)`: headless has no frame clock, so it would block this process forever; every
-//! number is read after a real `size_allocate`, and the one thing that genuinely lands later (a paned
-//! re-drawing its halves after a handler moved its handle) is waited for with `common::wait_until`.
+//! (`common::one_app_round`), and the pure-logic test stands on its own. Every number is read once the
+//! window's frames show its layout at rest (`common::wait_for_stable_layout`).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -88,7 +86,6 @@ fn minimum_window(app: &adw::Application, page: &str, footage: bool) -> adw::App
     window.set_default_size(shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
     hold_last_window(window.clone());
     common::size_to_minimum(&window);
-    common::rest_shell_band(&window);
     window
 }
 
@@ -274,16 +271,13 @@ fn s1k_opening_the_log_through_the_expander_moves_the_divider(app: &adw::Applica
         "{ITEM} §1: opening the log changed nothing: handle {rest_handle} -> {open_handle}, band \
          {rest_band:.0} -> {open_band:.0} px (two rows {row_h:.0} + body {opened})"
     );
-    // Close it the same way. A `gtk::Paned` only re-allocates its halves on the next allocation, which
-    // headless nothing causes, so the harness re-lays the window out — the same double allocation
-    // `common::rest_shell_band` does for a freshly built window — before reading what came back.
+    // Close it the same way, and read what came back once GTK has laid the window out again.
     expander.set_expanded(false);
     common::wait_until(
         "{ITEM} §1: collapsing the log never handed its room back to the page",
         || !expander.is_expanded() && (paned.position() - rest_handle).abs() <= 20,
     );
-    common::size_to_minimum(&window);
-    common::size_to_minimum(&window);
+    common::wait_for_stable_layout(&window);
     let back_handle = paned.position();
     let back_band = band_px(&window);
     println!("{ITEM} s1k: closed again handle {back_handle}, band {back_band:.0} px");

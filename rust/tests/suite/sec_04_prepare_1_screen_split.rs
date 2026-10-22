@@ -18,7 +18,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::project::Project;
-use naivepost::shell;
 use naivepost::ui;
 use crate::common;
 
@@ -710,21 +709,9 @@ fn fixture() -> Project {
 
 fn prepare_window(app: &adw::Application) -> adw::ApplicationWindow {
     let window = ui::build_window(app, &fixture(), "Prepare");
-    // §1's minimum, spelled out like `sec_03_shell_1_the_window.rs` does: under xvfb a mapped window is
-    // allocated what the X server offers (900 px here came out as 890) rather than its own floor, and every
-    // number this file reads is an ALLOCATION — so without this the same page was measured in a different box
-    // than the one the shell's own test measures.
-    window.set_default_size(shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
-    window.present();
-    lay_out();
-    let widget = window.upcast_ref::<gtk::Widget>();
-    if !widget.is_mapped() {
-        widget.map();
-    }
-    // The allocation IS the layout pass: §1's size, so the columns, the bench and the bottom band are measured
-    // at the size §1 fixes rather than at whatever headless GTK felt like giving them.
-    widget.size_allocate(&gtk::Allocation::new(0, 0, shell::WINDOW_MIN_W, shell::WINDOW_MIN_H), -1);
-    lay_out();
+    // §1's minimum, as the shell's own test opens it: every number this file reads is an allocation, so the
+    // page is measured in the box GTK lays it out in at that size.
+    common::size_to_minimum(&window);
     window
 }
 

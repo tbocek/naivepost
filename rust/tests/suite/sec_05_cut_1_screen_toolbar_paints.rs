@@ -63,10 +63,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
     naivepost::ui::tab_button(&window, naivepost::shell::Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    // Size AGAIN now that the Cut page is the visible tab: a paned only gets boxes once GTK allocates the
-    // page it lives on, so the pass above (made while Prepare was showing) could not lay the Cut page out.
-    common::size_to_minimum(&window);
-    common::rest_cut_page_split(&window);
+    common::wait_for_stable_layout(&window);
     naivepost::ui::set_session_recordings(&[naivepost::timeline::Recording {
         base: "lecture".into(),
         start: 0.0,

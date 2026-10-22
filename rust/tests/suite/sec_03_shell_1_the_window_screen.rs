@@ -54,7 +54,6 @@ fn minimum_window(app: &adw::Application, page: &str) -> adw::ApplicationWindow 
     window.set_default_size(shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
     hold_last_window(window.clone());
     common::size_to_minimum(&window);
-    common::rest_shell_band(&window);
     window
 }
 

@@ -48,8 +48,7 @@ fn window(app: &adw::Application, page: &str) -> adw::ApplicationWindow {
     release_last_window();
     let model = naivepost::project::load(&fixture_dir()).expect("the snapshot fixture loads");
     let window = ui::build_window(app, &model, page);
-    window.set_default_size(shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
-    common::rest_shell_band(&window);
+    common::size_to_minimum(&window);
     hold_last_window(window.clone());
     settle();
     window

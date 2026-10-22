@@ -8,8 +8,8 @@
 //! the Cut page could pin its preview to a 240×135 plate and pass every round. So this file allocates the
 //! SAME window twice — once at §1's minimum, once well above it — and reads where the picture, the lane under
 //! it and the tape actually landed each time. Every number comes from a drawn box (`compute_bounds`,
-//! `width()`/`height()` after a real `size_allocate`), never from a `measure` ask, and nothing waits on a
-//! guessed amount of time: the layout is forced by the allocation itself.
+//! `width()`/`height()` once GTK's frames show the layout at rest), never from a `measure` ask, and nothing
+//! waits on a guessed amount of time.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -19,7 +19,7 @@ use naivepost::shell;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, wait_until};
+use common::{fixture_dir, hold_last_window, release_last_window, wait_until};
 
 static RAN_GROWTH: AtomicBool = AtomicBool::new(false);
 
@@ -46,10 +46,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     window.set_default_size(shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
     hold_last_window(window.clone());
     lay_out(&window, shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
-    // …and the Cut page's own divider opened at §A's 380 px: headless its ask lands on GTK's clamp (655 of
-    // 660) and the pane below it — toolbar, tracks, strip — is left UNMAPPED, so there would be nothing here
-    // to measure growing.
-    common::rest_cut_page_split(&window);
+    common::wait_for_stable_layout(&window);
     window
 }
 
@@ -57,20 +54,12 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 /// gave a window of that size, rather than a size forced on it for one frame.
 fn lay_out(window: &adw::ApplicationWindow, w: i32, h: i32) {
     window.present();
-    // The window grows for real: a size request moves the X window, an allocation alone does not. GTK
-    // allocates the surface's own size again at its next frame, so a box forced to 1500 px by
-    // `size_allocate` was read as an 890 px window whenever that frame came first (now and then, on a
-    // loaded machine, with the test files running side by side).
+    // The window grows for real: a size request moves the X window, and the shell lays itself out at the
+    // new size with nothing asked of it by the test.
     window.set_size_request(w, h);
-    wait_until(&format!("the window took its {w}x{h} size"), || (window.height() - h).abs() <= 20);
-    // The shell's resting split, asked again at the size the window now has.
-    naivepost::ui::window_divider::rest_split(
-        &ui::find_source_widget(window, "main-divider")
-            .expect("§1: page and bottom bar are two halves of a divider")
-            .downcast::<gtk::Paned>()
-            .expect("the divider is a gtk::Paned"),
-    );
-    settle();
+    common::wait_for_stable_layout(window);
+    let surface = window.surface().expect("a presented window has a surface");
+    assert_eq!((surface.width(), surface.height()), (w, h), "the window took its {w}x{h} size");
 }
 
 /// The shell's page/bottom-bar divider.
