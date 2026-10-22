@@ -192,6 +192,10 @@ pub fn is_policy(index: usize) -> bool {
 
 /// What the row picker lists: the thirteen rows in pipeline order, then [`POLICY_TITLE`]. Built from
 /// [`ROWS`] so the menu cannot drift from the prompts themselves.
+///
+/// The names are the PLAIN prompt names ("Describe", not "‹Describe› prompt"): `spec/img/04-prompt-picker.png`
+/// draws the list that way, and §1's "‹Name› prompt" wording belongs to the HEADING (badge 2), which
+/// [`title`] spells. The live DropDown and the shot's copy both come from here, so neither can disagree.
 pub fn picker_rows() -> Vec<(usize, String)> {
     let mut rows: Vec<(usize, String)> = ROWS
         .iter()

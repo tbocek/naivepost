@@ -110,6 +110,10 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // stay on the default row, which is the User Context (§1 **5**).
         if matches!(screen.as_str(), "04-prepare" | "04-prompt-picker") {
             ui::set_bench_open_row(2);
+            // …and earns the mark on it: §1's badge 2 is that row WITH its "edited" mark and a live
+            // Reset, which only exist while this machine holds an override. Before the window, because
+            // the bench reads the settings once as it paints.
+            crate::snapshot_bench::stage_edited_row(2);
         }
         // F2.10: a snapshot renders a PROJECT, so the folder it was asked for is taken on exactly as Open
         // takes one on — otherwise nothing can resolve a stored source path and the session's recordings
@@ -1201,6 +1205,7 @@ const FORM_UNDER_PX: i32 = 380;
         // The picker-subject question is asked inside the frame-taking closure too, which needs its own copy for
         // the same reason `screen_for_frame` exists.
         let screen_for_picker = screen.clone();
+        let screen_for_heading = screen.clone();
         // The glyph goes beside the window shot as `<name>-face.png`; the whole page stays at `<name>.png`
         // so every snapshot keeps writing exactly one file under the name it was asked for -- except where the
         // spec pictures a SUBJECT instead of the page (a dialog, this screen's popover): then the subject takes
@@ -1288,13 +1293,27 @@ const FORM_UNDER_PX: i32 = 380;
                 // which the window's render node cannot contain, so the list is painted from `bench::picker_rows`
                 // (see that module's header for why popping the widget prints nothing).
                 match crate::snapshot_prompt_picker::paint(&window, &out) {
-                    Ok(rows) => println!("snapshot: 04-prompt-picker drew {rows} rows"),
+                    // The tick's row and name go to the log line through one door of the picker module.
+                    Ok((rows, tick)) => println!("snapshot: {tick} ({rows} rows)"),
                     Err(err) => {
                         eprintln!("snapshot: {err}");
                         OUT.with(|e| *e.borrow_mut() = Some(err));
                     }
                 }
                 let page_out = out.with_extension("page.png");
+                if let Err(err) = write_png(&painted, &page_out) {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
+            } else if screen_for_heading == "04-prepare" {
+                let heading_out = out.with_extension("heading.png");
+                match crate::snapshot_bench::paint_heading(&window, &heading_out) {
+                    Ok(report) => println!("snapshot: 04-prepare heading staged -- {report}"),
+                    Err(err) => {
+                        eprintln!("snapshot: {err}");
+                        OUT.with(|e| *e.borrow_mut() = Some(err));
+                    }
+                }
                 if let Err(err) = write_png(&painted, &page_out) {
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));

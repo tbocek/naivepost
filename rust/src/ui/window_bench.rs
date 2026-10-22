@@ -582,11 +582,9 @@ pub fn paint_run_bar(
 /// §10's prose log heights: 220 px open, 110 px collapsed. No `P.` id exists for them, so they are
 /// bare constants here with the note rather than invented parameter rows.
 pub(crate) const LOG_OPEN_PX: i32 = 220;
-/// The prompt bench's height band: enough lines to read a paragraph of prompt without scrolling, and
-/// capped so a long shipped prompt scrolls inside the bench instead of pushing the page taller (see
-/// `bench_box`).
+/// The prompt bench's floor: enough lines to read a paragraph of prompt without scrolling. The ceiling
+/// is the scroller's own (`editor_scroller`), so nothing here caps it twice.
 pub(crate) const BENCH_MIN_H: i32 = 160;
-pub(crate) const BENCH_MAX_H: i32 = 420;
 
 /// Draw F0.5's two widgets from the bookkeeping state: the bar's fraction and tooltip come from the
 /// queue, the expander's openness from the run's `log_expanded`, and its body from the lines logged
