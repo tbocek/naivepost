@@ -57,7 +57,7 @@ fn minimum_window(app: &adw::Application, page: &str) -> adw::ApplicationWindow 
     window
 }
 
-/// Where `named` was drawn, panicking with the name if it was given no box at all.
+/// Where `named` was drawn, panicking with the name if it has no box at all.
 fn drawn(window: &adw::ApplicationWindow, named: &str) -> (f64, f64, f64, f64) {
     let bounds = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), named);
     assert!(
@@ -149,15 +149,43 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
         previous_right = x + w;
         previous_name = name.to_string();
     }
-    // …and the two readouts §1 counts as badges **14** and **15**, individually: a row whose last child ends
-    // inside the window can still have one of them squeezed to nothing beside it.
+    // …and the three parts of badges **14**/**15**, individually: a row whose last child ends inside the window
+    // can still have one of them squeezed to nothing beside it. The row is allocated ~362 px at §1's minimum while
+    // this fixture's two full sentences ask ~528 px, so GTK shrinks somebody; §1's precedent for what gives way is
+    // badge **4**'s project path — it ellipsizes, the tabs beside it keep their words — so here the count label
+    // takes a share and ellipsizes into it, and the fact worth pinning is that all three are on screen and in
+    // order, not the share's width. `prepare_screen_widgets.rs` pins the sentence itself from the text.
+    let (row_x, _ry, row_w, _rh) = drawn(&window, "readout-row");
+    let mut previous_right = row_x;
     for name in ["inputs-readout", "outputs-folder-button", "outputs-readout"] {
-        let (x, _y, w, h) = drawn(&window, name);
+        let (x, _y, w, h) = drawn_or_share(&window, name);
         println!("{ITEM} s1: {name} box x={x:.0} w={w:.0} h={h:.0}");
-        assert!(w > 0.0 && h > 0.0, "{ITEM} §1 badge: {name} was given an EMPTY box");
-        inside_window(&window, name, x, w);
+        assert!(
+            h > 0.0 && x >= -SLACK_PX && x + w <= window.width() as f64 + SLACK_PX,
+            "{ITEM} §1 badge: {name} is not on screen at §1's minimum ({x:.0},{w:.0},{h:.0})"
+        );
+        assert!(
+            x >= previous_right - SLACK_PX,
+            "{ITEM} §1: {name} starts at x={x:.0}, left of the previous badge's right edge {previous_right:.0}"
+        );
+        previous_right = x + w;
     }
+    assert!(
+        previous_right <= row_x + row_w + SLACK_PX,
+        "{ITEM} §1: the readouts run to {:.0}, past their row's right edge {:.0}",
+        previous_right,
+        row_x + row_w
+    );
     window.close();
+}
+
+/// The box of a label §1 lets give way by ellipsizing (badge **4**'s project path, badge **15**'s count): it must
+/// have a height and sit inside the window, but its width may be as narrow as the ellipsis GTK falls back to, so
+/// an empty box is not by itself the failure here — the failure is a part of the row that is NOT on screen, and
+/// the sentence it should print, which `prepare_screen_widgets.rs` pins from the label's own text.
+fn drawn_or_share(window: &adw::ApplicationWindow, named: &str) -> (f64, f64, f64, f64) {
+    ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), named)
+        .unwrap_or_else(|| panic!("{ITEM}: {named} has no drawn box at all at §1's minimum size"))
 }
 
 /// Is `named`'s box wholly inside the window's width? This is the fact a clipped ⏹ broke and a name lookup
@@ -258,6 +286,56 @@ fn s2_the_tab_row_sits_in_the_header_centre(app: &adw::Application) {
     window.close();
 }
 
+/// §1 badge **5**, the other half: the tab row is centred (above) and its four WORDS are drawn whole here.
+/// libadwaita ellipsizes a switcher's labels when its centre slot runs short ("Prep…"), and §1 makes this size
+/// the one where "every control and lane a page names is on screen at once", so a tab may neither be allowed to
+/// ellipsize nor be squeezed under its own text. `ui::window_tabs::keep_labels_whole` is what holds that; this
+/// measures whether it worked.
+fn s1_the_tab_words_are_drawn_whole(app: &adw::Application) {
+    let window = minimum_window(app, "Prepare");
+    for page in shell::Page::all() {
+        let word = page.label();
+        let button = ui::tab_button(&window, page)
+            .unwrap_or_else(|| panic!("{ITEM}: the tab row has no {word} button"));
+        // The tab's own label — the one whose text IS the word. A switcher button holds its label inside a
+        // box of its own, so the walk goes down through every child rather than only the first.
+        fn find_label(node: &gtk::Widget, word: &str) -> Option<gtk::Label> {
+            for child in node.observe_children().iter::<glib::Object>() {
+                let Ok(child) = child else { continue };
+                let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+                if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
+                    if label.text() == word {
+                        return Some(label);
+                    }
+                }
+                if let Some(found) = find_label(&widget, word) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let label = find_label(button.upcast_ref(), word)
+            .unwrap_or_else(|| panic!("{ITEM}: the {word} tab holds no label saying {word:?}"));
+        assert_eq!(
+            label.ellipsize(),
+            gtk::pango::EllipsizeMode::None,
+            "{ITEM} §1: the {word} tab may be shown as an ellipsis"
+        );
+        let natural = label.measure(gtk::Orientation::Horizontal, -1).1;
+        let (_, _, w, _) = drawn(&window, "page-tabs");
+        let button_w = button
+            .compute_bounds(window.upcast_ref::<gtk::Widget>())
+            .map(|b| b.width() as f64)
+            .unwrap_or_default();
+        println!("{ITEM} s1: tab {word} natural={natural} drawn w={button_w:.1} (row w={w:.0})");
+        assert!(
+            button_w >= f64::from(natural),
+            "{ITEM} §1: the {word} tab was given {button_w:.1} px for a {natural} px word, so it prints truncated"
+        );
+    }
+    window.close();
+}
+
 /// How far off the window's centre the tab row may sit before it counts as not centred: GTK rounds each
 /// allocation and Adwaita pads the header's ends, so a strictly centred row is a pixel or two off.
 const CENTRE_SLACK_PX: f64 = 8.0;
@@ -299,6 +377,7 @@ fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
         s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app);
         s1_nothing_is_drawn_between_the_page_and_the_run_bar(app);
         s2_the_tab_row_sits_in_the_header_centre(app);
+        s1_the_tab_words_are_drawn_whole(app);
         s1_the_pass_buttons_are_still_reachable(app);
         RAN.store(true, Ordering::SeqCst);
     });

@@ -269,8 +269,8 @@ fn check_readouts_and_reset(app: &adw::Application) {
     );
 
     // ---- badge 7: Outputs reads "Prepare: N files, size" and its button names three subfolders ----
-    let outputs = ui::outputs_readout(&window).expect("the bar has an Outputs readout");
-    let shown = outputs.text().to_string();
+    let outputs_label = ui::outputs_readout(&window).expect("the bar has an Outputs readout");
+    let shown = ui::outputs_sentence(&window).expect("the bar has an Outputs readout");
     let body = shown.strip_prefix("Outputs: ").unwrap_or(shown.as_str());
     assert!(
         body.starts_with(naivepost::prepare::OUTPUTS_LABEL),
@@ -306,14 +306,14 @@ fn check_readouts_and_reset(app: &adw::Application) {
         "a folder with files in it has a newest one, so there is an age to show"
     );
     assert_eq!(
-        outputs.tooltip_text().as_deref(),
+        outputs_label.tooltip_text().as_deref(),
         Some(tip.as_str()),
         "§6's \"newest <ago>\" is the row's tooltip"
     );
     assert!(
-        outputs.tooltip_text().unwrap_or_default().starts_with("newest "),
+        outputs_label.tooltip_text().unwrap_or_default().starts_with("newest "),
         "and it reads as an age: {:?}",
-        outputs.tooltip_text()
+        outputs_label.tooltip_text()
     );
     let folder_button = ui::outputs_folder_button(&window).expect("the Outputs folder button");
     let tip = folder_button

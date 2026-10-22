@@ -219,6 +219,11 @@ fn s5_bottom_bar_order(app: &adw::Application) {
         "§1: the progress bar and the readouts share the row, the bar first: {run_names:?}"
     );
     let readout_row = common::widget_in(&window, "readout-row").expect("the readouts share the run row");
+    // Exactly three children, in §1's order: Inputs readout, Outputs folder button, Outputs readout. The word
+    // "Outputs:" badge 15 draws in front of its button (`spec/img/04-prepare.png`: `Outputs: [📁] Prepare: 9378
+    // files, 987.9 MB`) is the BUTTON's own label, not a fourth thing — the row has no spare pixel at §1's
+    // minimum for one (an extra label squeezed `outputs-readout` to 0 px). Its wording is pinned by
+    // `prepare_screen_widgets.rs`, which reads the row back as one sentence.
     assert_eq!(
         child_names(&readout_row),
         vec![

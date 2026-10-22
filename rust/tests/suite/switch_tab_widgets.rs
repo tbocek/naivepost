@@ -107,10 +107,8 @@ fn inputs_text(window: &adw::ApplicationWindow) -> String {
 }
 
 fn outputs_text(window: &adw::ApplicationWindow) -> String {
-    ui::outputs_readout(window)
+    ui::outputs_sentence(window)
         .expect("the window carries outputs-readout")
-        .text()
-        .to_string()
 }
 
 fn info_tip(window: &adw::ApplicationWindow) -> String {

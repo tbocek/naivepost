@@ -22,9 +22,20 @@ use gtk4 as gtk;
 use crate::bench;
 use crate::ui;
 
-/// Width of the painted list. Wide enough for the longest row ("Editing policy", then "User Context") plus the
-/// ✓ and a button's padding; measured heights are used, widths cannot be (a menu's text width ignores its icon).
-const LIST_SHOT_W: i32 = 400;
+/// Width of the painted list. `spec/img/04-prompt-picker.png` is 620 px wide and its panel covers x=318..618
+/// of that, i.e. 300 px of the window's right edge; matching that number is what keeps the panel a COMPACT
+/// menu under the picker instead of the half-window sheet an earlier, wider ask produced.
+const LIST_SHOT_W: i32 = 220;
+/// The panel's rows sit ~12 px in from its left border in the reference (`spec/img/04-prompt-picker.png`:
+/// border at x=318, "Describe" at x=331), which is a popover's own content inset rather than a button's.
+const PANEL_PAD_PX: i32 = 8;
+/// The reference panel's top edge sits a couple of pixels below the button it hangs from (measured on
+/// `spec/img/04-prompt-picker.png`: button y=30..59, panel y=61..450). A headless frame is taken without GTK's
+/// shadow pass, so the arrow and its gap that a live popover draws must be added by hand or the panel touches
+/// the button.
+const PANEL_GAP_PX: f32 = 4.0;
+/// …and the same at the panel's right edge, measured the same way.
+const PANEL_EDGE_PX: f32 = 4.0;
 /// §1's window size, which every shell screenshot is taken at; restoring it after this module's own ask is
 /// what keeps the page sidecar beside the list at that size.
 const SHELL_SHOT_W: i32 = 1240;
@@ -46,6 +57,10 @@ pub fn is_picker_subject(screen: &str) -> bool {
 pub fn paint(window: &adw::ApplicationWindow, out: &Path) -> Result<(usize, String), String> {
     let chosen = chosen_row(window)?;
     let list = picker_list(chosen);
+    list.set_margin_start(PANEL_PAD_PX);
+    list.set_margin_end(PANEL_PAD_PX);
+    list.set_margin_top(PANEL_PAD_PX / 2);
+    list.set_margin_bottom(PANEL_PAD_PX / 2);
     pin_light_theme();
     // The frame is taken at the LIST's size, never at the window's ask: `write_png` draws at whatever
     // `set_shot_size` last asked for, and the whole-window 1240x900 was still in that slot here, which
@@ -103,22 +118,35 @@ pub fn paint_over_page(window: &adw::ApplicationWindow, out: &Path) -> Result<(u
     let bounds = picker.compute_bounds(window.upcast_ref::<gtk::Widget>()).unwrap();
     let panel_bounds = (bounds.x(), bounds.y(), bounds.width(), bounds.height());
     let list = picker_list(chosen);
+    let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    // The frame the reference's popover wears (`spec/img/04-prompt-picker.png` shows a bordered, shadowed
+    // panel). GTK draws a live popover's own shadow, which a headless frame render skips, so this box carries
+    // its own — and its margins go on the PANEL, not on `list`, because the panel is rendered at `list`'s own
+    // measure and a margin on the list is clipped out of it.
+    panel.add_css_class("bench-picker-panel");
+    panel.add_css_class("card");
+    panel.set_margin_start(PANEL_PAD_PX);
+    panel.set_margin_end(PANEL_PAD_PX);
+    panel.set_margin_top(PANEL_PAD_PX / 2);
+    panel.set_margin_bottom(PANEL_PAD_PX / 2);
+    panel.append(&list);
     pin_light_theme();
     list.set_halign(gtk::Align::Fill);
     list.set_hexpand(true);
-    let width = LIST_SHOT_W.min(bounds.width() as i32 * 2).max(220);
+    let width = LIST_SHOT_W.max(200);
     // All fourteen rows, as §1's caption says ("The list scrolls: Translate and Upload text sit below
     // Narration") — the panel is as tall as its own content, only clamped inside the window.
-    let height = list.measure(gtk::Orientation::Vertical, -1).3 + 12;    let holder = gtk::Window::new();
+    let height = list.measure(gtk::Orientation::Vertical, -1).3 + PANEL_PAD_PX;
+    let holder = gtk::Window::new();
     holder.set_decorated(false);
     holder.set_default_size(width, height);
-    holder.set_child(Some(&list));
+    holder.set_child(Some(&panel));
     holder.present();
     crate::snapshot_face::pump_context(64);
     // The page behind must be laid out before it can be shot: this holder has just taken the seatbelts off
     // the main window's mapping, and a window that was never allocated renders as an empty plate.
     crate::snapshot_face::pump_context(64);
-    let painted = composite_panel(window, &list, width, height, panel_bounds, out);
+    let painted = composite_panel(window, &panel, width, height, panel_bounds, out);
     holder.close();
     painted.map(|()| {
         (
@@ -151,8 +179,10 @@ fn composite_panel(
     let panel = crate::snapshot_face::render_surface(list.upcast_ref(), width, height)?;
     // Right edge under the picker's right edge, top just below the button, clamped inside the window.
     let (px, py, pw, _) = picker_bounds;
-    let x = (px + pw - width as f32).max(0.0);
-    let y = (py + picker_bounds.3)
+    // The reference's panel hugs the window's right edge (its right border is 4 px inside the window's own
+    // border in `spec/img/04-prompt-picker.png`), so the panel's right edge goes a hair left of the picker's.
+    let x = (px + pw - width as f32 - PANEL_EDGE_PX).max(0.0);
+    let y = (py + picker_bounds.3 + PANEL_GAP_PX)
         .min(h as f32 - height as f32)
         .max(0.0);
     cr.set_source_surface(&panel, x.floor() as f64, y.floor() as f64)
@@ -270,6 +300,9 @@ fn picker_list(chosen: usize) -> gtk::Box {
     // A CSS class as well as a name, because the theme pin below selects on it: `widget-name` is not a CSS
     // selector in GTK 4 (`#name` matches widget names, but a provider added to one widget must still match it).
     list.add_css_class("bench-picker-list");
+    // The reference's panel has a border and a drop shadow (`spec/img/04-prompt-picker.png`); GTK draws the
+    // shadow of a real popover, and a headless frame render skips that pass, so the box carries its own frame.
+    list.add_css_class("card");
     for (index, title) in &rows {
         // A row of a menu is a flat button: full width, text at the start, exactly as GTK's own dropdown draws
         // its rows. A plain label would centre and shrink-wrap into a ragged column.
