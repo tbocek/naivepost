@@ -33,12 +33,13 @@ pub fn is_picker_subject(screen: &str) -> bool {
     screen == "04-prompt-picker"
 }
 
-/// Paint this window's bench row list into `out`, on its own mapped top level. Returns the row names drawn, so
-/// the caller prints what the shot holds — a clipped or empty list then shows up in the log, not only in the PNG.
+/// Paint this window's bench row list into `out`, on its own mapped top level. Returns how many rows were
+/// drawn and one line naming the row that carries the tick, so a clipped list or a tick on the wrong row
+/// shows up in the log and not only in the PNG.
 ///
 /// The chosen row comes off the live widget: the DropDown's own face says which row the bench opened on, so the
 /// tick cannot disagree with the heading beside it in the page shot.
-pub fn paint(window: &adw::ApplicationWindow, out: &Path) -> Result<usize, String> {
+pub fn paint(window: &adw::ApplicationWindow, out: &Path) -> Result<(usize, String), String> {
     let chosen = chosen_row(window)?;
     let rows = bench::picker_rows();
     let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -111,11 +112,28 @@ pub fn paint(window: &adw::ApplicationWindow, out: &Path) -> Result<usize, Strin
     crate::snapshot_face::pump_context(64);
     let result = crate::snapshot_face::write_png(list.upcast_ref(), out);
     holder.close();
-    result.map(|()| rows.len())
+    result.map(|()| {
+        let (rows, tick) = (rows.len(), chosen);
+        (
+            rows,
+            format!("04-prompt-picker tick on row {tick} ({})", row_name(tick)),
+        )
+    })
+}
+
+/// The name of the picker's row `index`, from the same list the menu is built from.
+fn row_name(index: usize) -> String {
+    bench::picker_rows()
+        .into_iter()
+        .find(|(at, _)| *at == index)
+        .map(|(_, name)| name)
+        .unwrap_or_else(|| "?".to_string())
 }
 
 /// The line a row wears: the chosen one carries a ✓ before its name, as `spec/img/04-prompt-picker.png` marks
-/// "User Context". That is GTK's own convention for a dropdown's selected row, so the mark needs no new string.
+/// the row its picker face shows ("User Context" there, because that page was shot on row 0). That is GTK's own
+/// convention for a dropdown's selected row, so the mark needs no new string — and it follows whichever row THIS
+/// shot opened on, which §1's other picture (`04-prepare.png`, the Describe prompt open) puts on row 2.
 fn row_label(index: usize, title: &str, chosen: usize) -> String {
     if index == chosen {
         return format!("\u{2713} {title}");

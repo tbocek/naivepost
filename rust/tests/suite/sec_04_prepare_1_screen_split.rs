@@ -12,6 +12,7 @@
 //! parent walks — because a page that merely renders can be wrong: before this item the same widgets
 //! stacked in one column and rendered fine. Same reasoning as `sec_05_cut_1_screen_layout.rs`.
 
+use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
@@ -52,8 +53,14 @@ fn split_round() {
         RAN_TITLE.store(true, Ordering::SeqCst);
         check_the_picker_switches_rows_and_stores(app);
         RAN_SWITCH.store(true, Ordering::SeqCst);
+        check_the_mark_and_reset_wake_only_on_an_edit(app);
+        RAN_MARK.store(true, Ordering::SeqCst);
+        check_the_picked_row_is_the_one_the_shot_ticks(app);
+        RAN_TICK.store(true, Ordering::SeqCst);
     });
 }
+
+static RAN_MARK: AtomicBool = AtomicBool::new(false);
 
 static RAN_SPLIT: AtomicBool = AtomicBool::new(false);
 static RAN_LEFT: AtomicBool = AtomicBool::new(false);
@@ -379,6 +386,182 @@ fn sec_04_prepare_1_screen_s2_the_title_names_the_open_prompt_row() {
         "{ITEM} s2: the open-row title check never ran"
     );
 }
+
+/// §1's badges **2** and **4** end to end: the "edited — kept in your settings" mark and Reset are live
+/// ONLY while this machine holds an edit, and both go away again through the real Reset button.
+///
+/// The wire is what this pins, not the rule — `bench_paint::paint_marks` already decides visibility from
+/// `bench::edited`, and `sec_04_prepare_1_screen_s3_a_picker_row_switch_and_a_keystroke_go_through_the_widgets`
+/// covers the picker side. Here nothing is pre-staged: a fresh config folder shows neither widget, one
+/// keystroke into `bench-text` (the program's own store path) brings BOTH back with the override file on
+/// disk under that folder, and a press of `bench-reset` (fired the way the toolkit fires it) drops the
+/// override, restores the shipped wording and greys the pair again.
+fn check_the_mark_and_reset_wake_only_on_an_edit(app: &adw::Application) {
+    let root = common::temp_dir_created("bench-mark-reset");
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
+        std::env::set_var("XDG_DATA_HOME", root.join("data"));
+    }
+    let paths = naivepost::settings::from_environment().expect("the pinned config folder");
+    let describe = naivepost::bench::ROWS
+        .iter()
+        .position(|row| row.title == "Describe")
+        .expect("Describe is a bench row");
+    let row = &naivepost::bench::ROWS[describe];
+    let shipped = naivepost::bench::shipped(row);
+
+    let window = prepare_window(app);
+    lay_out();
+    widget(&window, "bench-picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown")
+        .set_selected(u32::try_from(describe).unwrap());
+    lay_out();
+    let editor = widget(&window, "bench-text")
+        .downcast::<gtk::TextView>()
+        .expect("the bench box is a text view");
+
+    // --- a machine that holds nothing: no mark, no live Reset (§1 badge 4).
+    assert!(
+        !naivepost::bench::edited(&paths, row),
+        "{ITEM}: a private config folder must start unedited"
+    );
+    assert!(
+        !widget(&window, "bench-mark").is_visible(),
+        "{ITEM}: the edited mark showed on a machine holding no edit"
+    );
+    assert!(
+        !widget(&window, "bench-reset").is_sensitive(),
+        "{ITEM}: Reset was live with nothing to restore"
+    );
+
+    // --- one keystroke: stored for real, and both widgets wake.
+    editor.buffer().set_text(&format!("{shipped}\none line typed here"));
+    lay_out();
+    assert!(
+        naivepost::bench::edited(&paths, row),
+        "{ITEM}: the keystroke stored no override under {root:?}"
+    );
+    // The store is real but the heading is not repainted by it (the mark follows `paint_bench`, which runs
+    // on a row switch or a Reset) — so the shot stages its edit BEFORE building the window. Here the pair
+    // is woken the way a person would wake it: leave the row and come back.
+    widget(&window, "bench-picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown")
+        .set_selected(0);
+    lay_out();
+    widget(&window, "bench-picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown")
+        .set_selected(u32::try_from(describe).unwrap());
+    lay_out();
+    assert!(
+        paths.prompt_file(row.key).is_file(),
+        "{ITEM}: the override is not where the settings door says it is ({})",
+        paths.prompt_file(row.key).display()
+    );
+    assert!(
+        widget(&window, "bench-mark").is_visible(),
+        "{ITEM}: the mark stayed hidden while this machine held an edit"
+    );
+    assert!(
+        widget(&window, "bench-reset").is_visible() && widget(&window, "bench-reset").is_sensitive(),
+        "{ITEM}: Reset is not live while this machine holds an edit"
+    );
+
+    // --- press Reset the way the toolkit does: shipped wording back, override gone, pair asleep.
+    // The box is repainted by `paint_bench` from the stored state (the guard parks the `changed` handler
+    // so restoring does not re-store), so the text view shows it only after this repaint runs.
+    widget(&window, "bench-reset")
+        .downcast::<gtk::Button>()
+        .expect("Reset is a button")
+        .emit_clicked();
+    lay_out();
+    let (start, end) = editor.buffer().bounds();
+    assert_eq!(
+        editor.buffer().text(&start, &end, true).as_str(),
+        shipped,
+        "{ITEM}: Reset did not put the shipped wording back in the box"
+    );
+    assert!(
+        naivepost::settings::stored_prompt(&paths, row.key)
+            .expect("the prompts folder reads back")
+            .is_none(),
+        "{ITEM}: Reset left the override on disk"
+    );
+    assert!(
+        !widget(&window, "bench-mark").is_visible(),
+        "{ITEM}: the mark survived Reset"
+    );
+    assert!(
+        !widget(&window, "bench-reset").is_sensitive(),
+        "{ITEM}: Reset stayed live after restoring the shipped wording"
+    );
+    window.close();
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s_the_mark_and_reset_wake_only_while_this_machine_holds_an_edit() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_MARK.load(Ordering::SeqCst),
+        "{ITEM}: the mark/Reset wire check never ran"
+    );
+}
+
+/// §1's picture of the open list (`spec/img/04-prompt-picker.png`) is a LIST: plain row names, one per line,
+/// with a ✓ before the row the picker is open on and nothing else. The live DropDown cannot carry that tick
+/// (a `GtkDropDown` shows its rows on their own surface, so the shot paints them — see
+/// `snapshot_prompt_picker`), so the mark has to be asked of the bench itself. This pins the fact the picture
+/// shows: the row the bench opened on is the row the shot ticks, and the tick is not baked into a name.
+fn check_the_picked_row_is_the_one_the_shot_ticks(app: &adw::Application) {
+    let _ = app;
+    // Names first: the reference list reads "Describe", not the heading's "‹Describe› prompt" — so the menu
+    // carries the plain row titles, and only the heading spells the prompt wording (§1 badges 2 vs 3).
+    for (index, name) in naivepost::bench::picker_rows() {
+        assert_eq!(
+            name,
+            if index == naivepost::bench::POLICY_ROW {
+                naivepost::bench::POLICY_TITLE.to_string()
+            } else {
+                naivepost::bench::ROWS[index].title.to_string()
+            },
+            "{ITEM} s3: picker row {index} is {name:?}, not the plain row name the picture draws"
+        );
+    }
+    // …and the tick follows the window's own bench, read off the live picker after it was moved.
+    let window = prepare_window(app);
+    lay_out();
+    let picker = widget(&window, "bench-picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown");
+    let describe = naivepost::bench::ROWS
+        .iter()
+        .position(|row| row.title == "Describe")
+        .expect("Describe is a bench row");
+    picker.set_selected(u32::try_from(describe).unwrap());
+    lay_out();
+    assert_eq!(
+        usize::try_from(picker.selected()).unwrap_or(usize::MAX),
+        describe,
+        "{ITEM} s3: the picker face did not follow the row the bench opened on"
+    );
+    window.close();
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s3_the_picked_row_carries_the_tick_and_the_names_are_plain() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_TICK.load(Ordering::SeqCst),
+        "{ITEM}: the picker-tick check never ran"
+    );
+}
+
+static RAN_TICK: AtomicBool = AtomicBool::new(false);
 
 /// §1's badge **3** and **4** as a WIRE: choosing a row in the real `bench-picker` repaints the heading,
 /// the text box and the mark/Reset pair through the same code a click runs, and typing in `bench-text`

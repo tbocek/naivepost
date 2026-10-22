@@ -38,8 +38,8 @@ pub(crate) const PREPARE_HALF_PX: i32 = 596;
 /// the list scrolls while the add row above and the Freq row below stay put).
 pub(crate) const SOURCES_MIN_H: i32 = 120;
 
-/// The prompt bench's ceiling lives in `window_bench::BENCH_MAX_H` (the scroller's own builder sets it);
-/// this file no longer caps the box — see [`editor_scroller`] for why the cap came off here.
+/// The prompt bench's ceiling lives in `window_bench` (the scroller's own builder sets it); this file no
+/// longer caps the box — see [`editor_scroller`] for why the cap came off here.
 use crate::project::Project;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
