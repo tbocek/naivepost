@@ -389,6 +389,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // A collapsed expander must claim nothing, or the band it belongs to is charged a body that is never drawn.
     super::window_log::hide_body_while_collapsed(&log, log_scroller.upcast_ref());
 
+
     // §2's run bar: ▶ at the left of the row above the log, ⏹ next to it (F0.3), then the "I'm
     // feeling lucky" gears (F0.4), then the progress bar F0.5 adds.
     let play = gtk::Button::from_icon_name(run::PLAY_ICON);

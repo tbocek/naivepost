@@ -50,16 +50,10 @@ pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
     if !log.is_expanded() {
         return collapsed;
     }
-    // The body's own ask, read back off the widget that holds it: the shell sizes the log's scroller with
-    // `min_content_height` (see `window.rs`, where §10's prose 220 px goes on), so asking that scroller is
-    // how this stays right if that number ever moves. Walked rather than passed in because the divider owns
-    // neither widget.
-    let body = log
-        .child()
-        .and_then(|child| find_scroller(&child))
-        .map(|scroller| scroller.min_content_height())
-        .unwrap_or(super::window_bench::LOG_OPEN_PX);
-    collapsed + body.max(0)
+    // The body's own ask, read back off the widget that holds it ([`open_body_px`]): the shell sizes the log's
+    // scroller with `min_content_height` (see `window.rs`, where §10's prose 220 px goes on), so asking that
+    // scroller is how this stays right if that number ever moves.
+    collapsed + open_body_px(log)
 }
 
 /// The band's RESTING height — what the divider starts at and re-asks for at every size. §1 names two states
@@ -70,6 +64,20 @@ pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
 /// and thereby asked for ~280 px of band in a window whose page needs every pixel above it.
 pub fn rest_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
     height_px(run_row, log)
+}
+
+/// The open log's own height, read back off the widget that holds it: `window.rs` sizes the log's scroller
+/// with `min_content_height` (§10's prose "log heights 220/110" — no `P.` id, so the number lives on the
+/// widget, `window_bench::LOG_OPEN_PX`). §1's open band is the collapsed two rows PLUS this, which is what
+/// [`band_px`] adds to get the height the divider has to leave the band. Walked off the expander rather than
+/// passed in because the divider owns neither widget; falls back to §10's number when there is no scroller to
+/// ask (a window still being built).
+pub fn open_body_px(log: &gtk::Expander) -> i32 {
+    log.child()
+        .and_then(|child| find_scroller(&child))
+        .map(|scroller| scroller.min_content_height())
+        .unwrap_or(super::window_bench::LOG_OPEN_PX)
+        .max(0)
 }
 
 /// The first `gtk::ScrolledWindow` at or below `node` — the log body's own scroller.
