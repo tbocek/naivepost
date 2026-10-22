@@ -148,7 +148,12 @@ pub(crate) fn bench_box(
     // ~970 px tall so the window could not be shrunk (`tests/suite/window_shrinks.rs`). Inside this scroller
     // the editor scrolls between these bounds instead of stretching the page.
     scroller.set_min_content_height(BENCH_MIN_H);
-    scroller.set_max_content_height(BENCH_MAX_H);
+    // NO `max_content_height`: a ceiling here capped the box at 420 px however much room the column had, so
+    // in §1's 900 px window the bench stopped ~460 px down while the page band ran on below it — the shot
+    // showed the right column ending short above an empty area. A `ScrolledWindow` without a ceiling still
+    // reports only its MINIMUM as its own minimum height, so the text view's full document height cannot leak
+    // into the shell's floor (the failure this cap was written for); vexpand fills the column and the text
+    // scrolls inside it, which is §4's "one text box filling the rest of the column (it scrolls)".
 
     // The box's contents are set when the row changes, never from its own `changed` handler: typing
     // stores text and storing must not retype the buffer out from under the cursor.

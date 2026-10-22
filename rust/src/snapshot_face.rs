@@ -81,6 +81,13 @@ pub(crate) fn show_the_log(window: &adw::ApplicationWindow) -> Result<(), String
         crate::ui::shell_beats::StatusLine { status: &status, owned: false },
         true,
     );
+    // §1's open-log sentence needs the DIVIDER too, not just the expander: a snapshot window is never dragged,
+    // so nothing moves the handle up for the body the line above just opened (`window_shot::opened_px`).
+    if let Some(divider) = ui::find_source_widget(window, "main-divider")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+    {
+        crate::ui::window_shot::opened_px(&divider);
+    }
     Ok(())
 }
 

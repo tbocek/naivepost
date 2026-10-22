@@ -474,6 +474,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // parent moved.
     let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     run_row.set_widget_name("run-bar");
+    CONTROLS_BOX.with(|cell| *cell.borrow_mut() = Some(controls.clone()));
     run_row.append(&super::window_run_scroller::wrap_controls(controls.upcast::<gtk::Widget>()).upcast::<gtk::Widget>());
     run_row.append(&progress);
 
@@ -601,6 +602,18 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // also gives the band its own height ask (`band_px`) — that rule lives there and nowhere else, so a second
     // copy here is what made the two disagree about how tall the band should be.
     super::window_divider::install(&box_, stack.upcast_ref(), run_row.upcast_ref(), readout_row.upcast_ref(), log.upcast_ref());
+    // §1's four badges must be ON SCREEN at the minimum size: the row's job buttons move into their own box
+    // before the readouts (`window_run_bar_fit`).
+    super::window_run_bar_fit::fit(
+        &run_row,
+        &CONTROLS_BOX
+            .with(|cell| cell.borrow().clone())
+            .expect("the run bar's controls box was built above"),
+        readout_row.upcast_ref(),
+    );
+    // §1 badge 13: the progress bar alone takes the row's free width. Last, because `install` and `fit` above
+    // are what add the row's last two children — running earlier left them out of the rule.
+    super::window_run_scroller::hand_the_free_width_to(run_row.upcast_ref());
 
     window.set_content(Some(&box_));
 
@@ -1385,6 +1398,12 @@ pub(crate) use crate::ui::window_logs::log_line;
 
 
 
+
+thread_local! {
+    /// The run bar's controls box (`run-controls-inner`), kept beside the build so `window_run_bar_fit`
+    /// can re-seat its job buttons after `wrap_controls` upcasts the box into the sideways scroller.
+    static CONTROLS_BOX: std::cell::RefCell<Option<gtk::Box>> = const { std::cell::RefCell::new(None) };
+}
 
 thread_local! {
     /// The run bar `build_window` created, published so a test can read the step it holds. Same

@@ -31,7 +31,13 @@ pub fn report(window: &adw::ApplicationWindow) -> Option<String> {
     // No divider means no shell: a form or dialog top level has its own layout and nothing to report.
     let paned_handle = found("main-divider")?;
     if let Some(paned) = paned_handle.downcast_ref::<gtk::Paned>() {
-        crate::ui::window_divider::rest_split(paned);
+        // §1's rule read two ways: with the log COLLAPSED the band is its two rows, with it OPEN the log has
+        // room of its own. `rest_split` asks the collapsed pair (what the shell rests at); when the shot has
+        // opened the log, `opened_px` re-asks through the same door a person's drag fires — otherwise the shot
+        // prints a 571 px band inside an 844 px divider, a grey box under the run bar no window shows.
+        if ui::window_shot::opened_px(paned).is_none() {
+            crate::ui::window_divider::rest_split(paned);
+        }
     }
     let mut line = format!(
         "band | window {}x{}, asked shot {}x{}",

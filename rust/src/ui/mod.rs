@@ -206,6 +206,9 @@ mod window_trim_strip;
 /// §02's run bar — the ▶ ⏹ 🎲 ▶✂ presses and their wires. Split out of `window.rs`, which is past its
 /// size budget. Its doors are re-exported through `window`.
 mod window_run_press;
+/// §1's run-bar row, made to fit at the minimum size: the job buttons get a box of their own. Split out of
+/// `window.rs`, which is at its size budget.
+mod window_run_bar_fit;
 mod window_run_scroller;
 /// F2.12 Insert — the form's half: its holder, what is open, the plan drawn and Apply. Split out of
 /// `window.rs`, which is past its size budget. Its doors are re-exported through `window`.

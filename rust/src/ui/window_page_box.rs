@@ -38,16 +38,8 @@ pub(crate) const PREPARE_HALF_PX: i32 = 596;
 /// the list scrolls while the add row above and the Freq row below stay put).
 pub(crate) const SOURCES_MIN_H: i32 = 120;
 
-/// The tallest the User Context paragraph may stand at before it scrolls inside itself (§1: the page fits
-/// §1's minimum window height with nothing scrolling as a whole; two or three lines carry the note).
-const CONTEXT_MAX_H: i32 = 64;
-/// The prompt bench's own ceiling. Same reason as [`CONTEXT_MAX_H`], at the other end of the page: an
-/// uncapped `max_content_height` makes a GtkScrolledWindow report the WHOLE prompt as its minimum height
-/// (measured 2536 px), which climbs through `prepare-split`, Prepare's page box and `AdwViewStack` into
-/// `main-divider`'s start-half minimum — so every tab was allocated ~2731 px inside an 890 px window and
-/// each page's content was painted above the top of the window. Propagate + a near-window ceiling keeps §1's
-/// "one text box filling the rest of column": vexpand still fills the band, the box still scrolls its text.
-pub(crate) const BENCH_MAX_H: i32 = 460;
+/// The prompt bench's ceiling lives in `window_bench::BENCH_MAX_H` (the scroller's own builder sets it);
+/// this file no longer caps the box — see [`editor_scroller`] for why the cap came off here.
 use crate::project::Project;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
@@ -188,11 +180,12 @@ pub(crate) fn page_box(
         // choices from a list rather than free text — an interval off the stops would be sent to the
         // model as a claim about frames that were never picked.
         left.append(&frame_controls(session));
-        // §1's minimum window height has to hold the whole page, so the column ends with a spacer that takes
-        // any height left over instead of letting the list stretch past the band.
-        let left_filler = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        left_filler.set_vexpand(true);
-        left.append(&left_filler);
+        // §1's minimum window height has to hold the whole page. THE LEFT COLUMN HAS NO STRETCHING
+        // FILLER: an expanding spacer here made GTK hand the leftover height of the paned half to nothing,
+        // so the list sat at its own minimum and a grey band opened under the Freq row while the right
+        // column's bench ran on down the page — §4's picture has both columns ending together, just above
+        // the run bar. The scroller is what takes the extra height instead: it already scrolls its rows.
+        scroll.set_vexpand_set(true);
         // Same as the right column: the Paned's child claims the width, not the widgets inside it.
         left.set_hexpand(true);
         left.set_hexpand_set(true);
@@ -240,20 +233,9 @@ pub(crate) fn page_box(
         prepare = Some((add_, copy_));
     }
 
-    let context = gtk::Label::new(Some(&project.context));
-    context.set_wrap(true);
-    context.set_xalign(0.0);
-    context.add_css_class("body");
-    // §1's minimum size is the size every page fits, so a page must not grow past the band it is given:
-    // this paragraph scrolls inside its own box instead of pushing everything below it down the column
-    // (a long User Context once made Prepare taller than §1's 900 px and the whole page scrolled).
-    let context_box = gtk::ScrolledWindow::new();
-    context_box.set_widget_name("context-scroll");
-    context_box.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-    context_box.set_propagate_natural_height(true);
-    context_box.set_max_content_height(CONTEXT_MAX_H);
-    context_box.set_child(Some(&context));
-    box_.append(&context_box);
+    // The User Context is NOT drawn here. §04 §1 puts it in the prompt bench (row 0, the right column), and
+    // that copy is on the page already; a second full-width paragraph under the two panels was what made the
+    // shot show a stray line of text between the page and the run bar, which §1's picture does not have.
 
     // §07-narrate#1-screen: the Narrate page is one surface built by its own module, appended where
     // every other page puts its content. Its handlers go on in `build_window`, after `set_content`.
@@ -875,11 +857,12 @@ pub(crate) fn sources_list(session: &Rc<RefCell<Project>>, status: &gtk::Label) 
 /// (the view keeps its own name inside it, so every flow still finds `bench-text`), and this sets the bands
 /// the column needs rather than the document's.
 fn editor_scroller(scroller: &gtk::ScrolledWindow) -> gtk::Widget {
-    // §1 wants the box to FILL the column, which is what the two `vexpand` lines below do; the height
-    // band comes from [`BENCH_MAX_H`] for the reason spelled out there (an uncapped ceiling made the
-    // prompt's full height the shell's minimum). Only the floor survives here.
-    scroller.set_propagate_natural_height(true);
-    scroller.set_max_content_height(BENCH_MAX_H);
+    // §1 wants the box to FILL the column, which is what the two `vexpand` lines below do. NO
+    // `max_content_height` and no `propagate_natural_height` any more: a capped ceiling stopped the box
+    // growing past it, so in §1's 900 px window the bench ended ~460 px down the column while the page band
+    // ran on to ~780 px — the shot showed the right column stopping short above an empty area. The floor
+    // (`BENCH_MIN_H`, set by `bench_box`) is all the height rule that survives: vexpand fills whatever the
+    // column has, and the text scrolls inside it.
     scroller.set_vexpand(true);
     scroller.set_vexpand_set(true);
     // Width too. An `Automatic` horizontal policy makes a ScrolledWindow's minimum WIDTH zero,
