@@ -34,6 +34,21 @@ pub fn rest_band(window: &adw::ApplicationWindow) {
     }
 }
 
+/// The run-bar row's own children, printed as `name x=.. w=..`.
+///
+/// §1 counts six things in that row (▶ , the lucky gears , ⏹ , the progress bar , then the two readouts and
+/// the folder button between them) and says all of them are on screen at the minimum size. A shot can hold
+/// every one of them in the tree and still draw ⏹ UNDER the progress bar — which is what the shell shot showed
+/// while a name lookup found it happily — so the numbers of each direct child are printed here and read off the
+/// recipe rather than guessed from the PNG. Report only: this decides no rule.
+fn row_children(row: &gtk::Widget) -> String {
+    let mut said = String::new();
+    for (name, x, w) in crate::ui::window_run_scroller::drawn_row_widths(row) {
+        said.push_str(&format!(", {name} x={x:.0} w={w:.0}"));
+    }
+    said
+}
+
 /// One line describing where the band is. The handle itself is moved by [`rest_band`], which `snapshot::run`
 /// asks just before this — headless nothing drags this divider, so a shot that left it at GTK's default shows
 /// the split nobody would ever leave it at (measured on `03-window`: the page half sat at its 342 px minimum
@@ -74,6 +89,10 @@ pub fn report(window: &adw::ApplicationWindow) -> Option<String> {
             )),
             None => line.push_str(&format!(", {name} unmapped")),
         }
+    }
+    // …and the run-bar row's own children, since "in the tree" is not the claim §1 makes about that row.
+    if let Some(row) = found("run-bar") {
+        line.push_str(&row_children(&row));
     }
     // The divider's own position is the rule's answer: page above it, band below. Printed because a wrong
     // resting split and a page minimum that swallows the band look identical in the PNG.

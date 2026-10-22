@@ -97,6 +97,9 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
     // The three badges §1 names, left to right inside the scroller.
     let mut previous_right = f64::MIN;
     let mut previous_name = String::new();
+    // ⏹'s right edge, kept for the check after the loop: badge 13 may take the row's free width but must leave
+    // the badges theirs, and a bar whose track starts LEFT of that is drawn over them (what the shot showed).
+    let mut last_badge_right = f64::MIN;
     for name in RUN_BUTTONS {
         // The handle may land somewhere else after a resize, so the row's own box is re-read each time.
         let (x, y, w, h) = drawn(&window, name);
@@ -115,8 +118,16 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
         );
         inside_window(&window, name, x, w);
         previous_right = x + w;
+        last_badge_right = x + w;
         previous_name = name.to_string();
     }
+    // Badge 13 against those badges: the progress bar's box must begin at or right of ⏹'s right edge.
+    let (bar_x, _by, bw, _bh) = drawn(&window, "run-progress");
+    println!("{ITEM} s1: run-progress box x={bar_x:.0} w={bw:.0}, stop-button right edge {last_badge_right:.0}");
+    assert!(
+        bar_x >= last_badge_right - SLACK_PX,
+        "{ITEM} §1 badge 13: the progress bar starts at x={bar_x:.0}, LEFT of ⏹'s right edge \n         ({last_badge_right:.0}) — it takes more than the row's free width and is drawn over the buttons"
+    );
     // Then the row itself, left to right: the scroller, the bar, the job buttons, the readouts.
     let mut previous_right = f64::MIN;
     let mut previous_name = String::new();
@@ -293,6 +304,31 @@ fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
         RAN.store(true, Ordering::SeqCst);
     });
     assert!(RAN.load(Ordering::SeqCst), "{ITEM}: the widget round never ran");
+}
+
+/// §1 badge **13**'s rule, in words a test can check without a window: the bar takes what is left of the row
+/// once every other part of it has been served, and never squeezes another part out of the row.
+#[test]
+fn sec_03_shell_1_the_window_s13_the_progress_bar_leaves_the_badges_their_room() {
+    use naivepost::ui::window_run_bar_fit::PROGRESS_MIN_PX;
+    use naivepost::ui::window_run_scroller::progress_px;
+    // §1's numbers for the row at the minimum size: a ~1220 px row, ▶ / 🎲 / ⏹ needing 171 px, the four job
+    // buttons 171 px, the two readouts 531 px, and six gaps of 6 px (measured off `just snapshot 03-window`).
+    let (row_w, badges, jobs, readouts, gaps) = (1220, 171, 171, 531, 36);
+    let bar = progress_px(row_w, badges, jobs, readouts, gaps);
+    assert_eq!(
+        bar + badges + jobs + readouts + gaps,
+        row_w,
+        "{ITEM} §1 badge 13: the bar must take EXACTLY the row's free width — no more (that is what drew ⏹ \
+         under the track) and no less (that leaves blank plate in the row)"
+    );
+    // A row narrower than everything in it still gets a VISIBLE bar: the floor is `PROGRESS_MIN_PX`, never 0.
+    let squeezed = progress_px(400, badges, jobs, readouts, gaps);
+    assert_eq!(
+        squeezed, PROGRESS_MIN_PX,
+        "{ITEM} §1 badge 13: a squeezed row must fall back to the bar's floor, not to nothing"
+    );
+    assert!(squeezed > 0, "{ITEM}: a zero-width progress bar is invisible");
 }
 
 /// The band rule's arithmetic with no window in sight, restated for this item's id so a failure names the
