@@ -31,6 +31,10 @@ use common::source_row as row;
 const ITEM: &str =
     "sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it";
 
+/// §4's sentence for the auto-fill, spelled once here and asserted nowhere else so the wording cannot
+/// drift without a red test.
+const SLOT_1_SEATED: &str = "is the narrator now -- slot 1 was empty";
+
 /// A real `.naivepost` folder whose `naivepost.json` lists `rows`, with a file on disk for each so the
 /// drop rule keeps every row and only the FLAGS are wrong. Written under the caller's own temp dir.
 fn dirty_folder(dir: &Path, rows: &[naivepost::project::Source]) -> PathBuf {
@@ -117,6 +121,69 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         applied.lines.is_empty(),
         "{ITEM}: a clean load has nothing to report: {:?}",
         applied.lines
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+/// Seat a narrator when the load itself emptied slot 1 by dropping its holder.
+///
+/// §4's auto-fill is not tied to a strip alone: "Slot 1 auto-filled whenever unheld -- after an add, a
+/// removal, a rescan that dropped a row, or a load that stripped a bad tag". `apply` drops missing rows
+/// before it cleans, so a project whose slot-1 file has gone loses the narrator with nothing stripped, and
+/// the session would open with nobody to speak in. This test drops the holder and checks another present,
+/// untagged recording takes the slot -- and says so on the load's own report.
+#[test]
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_load_that_dropped_the_narrator_seats_another_one(
+) {
+    common::pin_private_cwd();
+    let root = common::temp_dir_created("clean-dropped-slot1");
+    // A real folder whose slot-1 holder has NO file on disk (so `apply`'s drop rule removes it), plus a
+    // present untagged recording and a present footage row: §4 seats the recording, footage last.
+    let folder = root.join("gone.naivepost");
+    fs::create_dir_all(folder.join("sources")).expect("sources folder");
+    for name in ["mic.wav", "cam.mkv"] {
+        fs::write(folder.join("sources").join(name), "bytes").expect("source file");
+    }
+    let project = Project {
+        sources: vec![
+            row("project:sources/old.wav", false, 1),
+            row("project:sources/mic.wav", false, 0),
+            row("project:sources/cam.mkv", true, 0),
+        ],
+        ..Default::default()
+    };
+    naivepost::project::save(&project, &folder).expect("the project writes");
+
+    let applied = open_project::apply(&folder, |path| path.is_file())
+        .expect("a project with one missing source still opens");
+
+    assert_eq!(applied.dropped, ["project:sources/old.wav"], "{ITEM}: only the missing row goes");
+    assert_eq!(
+        sources::slot_holder(&applied.project, 1),
+        Some(0),
+        "{ITEM}: the load left slot 1 unheld -- §4 fills it whenever it is empty"
+    );
+    assert_eq!(
+        applied.project.sources[0].path,
+        "project:sources/mic.wav",
+        "{ITEM}: a recording is seated before footage"
+    );
+    assert!(
+        applied.lines.iter().any(|line| line.contains(SLOT_1_SEATED)),
+        "{ITEM}: the load never said who took slot 1: {:?}",
+        applied.lines
+    );
+    // The SAME rule through the launch's door, which is the other half of "a load": it takes a project on
+    // exactly as the button does, so its own drop must seat a narrator too.
+    let (launched, report) = ui::launch::load_for_launch(&folder);
+    assert_eq!(
+        sources::slot_holder(&launched, 1),
+        Some(0),
+        "{ITEM}: the launch dropped the holder and left slot 1 empty"
+    );
+    assert!(
+        report.iter().any(|line| line.contains(SLOT_1_SEATED)),
+        "{ITEM}: the launch never filled the slot its own drop emptied: {report:?}"
     );
     fs::remove_dir_all(&root).ok();
 }

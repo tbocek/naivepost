@@ -70,15 +70,10 @@ pub(crate) use crate::ui::cut_zoom_hand::{
     set_zoom_form, show_zoom_form, trim_seconds, zoom_field_row,
 };
 
-
-
-
 // The §05-cut effects-lane group lives in `cut_lane_rows` (window.rs is past its size budget); these are
 // the doors the rest of the page and the other ui modules call, kept at the paths they had.
 pub use crate::ui::cut_lane_rows::{cut_bar_width_px, effects_lane_box, refresh_effects_lane};
 pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
-
-
 
 // The §1 bench, tabs and readouts group lives in `window_bench` (window.rs is past its size budget);
 // these are the doors the rest of the page calls, kept at the paths they had.
@@ -389,7 +384,6 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // A collapsed expander must claim nothing, or the band it belongs to is charged a body that is never drawn.
     super::window_log::hide_body_while_collapsed(&log, log_scroller.upcast_ref());
 
-
     // §2's run bar: ▶ at the left of the row above the log, ⏹ next to it (F0.3), then the "I'm
     // feeling lucky" gears (F0.4), then the progress bar F0.5 adds.
     let play = gtk::Button::from_icon_name(run::PLAY_ICON);
@@ -474,8 +468,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // parent moved.
     let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     run_row.set_widget_name("run-bar");
-    CONTROLS_BOX.with(|cell| *cell.borrow_mut() = Some(controls.clone()));
-    run_row.append(&super::window_run_scroller::wrap_controls(controls.upcast::<gtk::Widget>()).upcast::<gtk::Widget>());
+    run_row.append(&super::window_run_scroller::wrap_controls(controls.clone().upcast::<gtk::Widget>()).upcast::<gtk::Widget>());
     run_row.append(&progress);
 
     wire_play(
@@ -607,18 +600,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // also gives the band its own height ask (`band_px`) — that rule lives there and nowhere else, so a second
     // copy here is what made the two disagree about how tall the band should be.
     super::window_divider::install(&box_, stack.upcast_ref(), run_row.upcast_ref(), readout_row.upcast_ref(), log.upcast_ref());
-    // §1's four badges must be ON SCREEN at the minimum size: the row's job buttons move into their own box
-    // before the readouts (`window_run_bar_fit`).
-    super::window_run_bar_fit::fit(
-        &run_row,
-        &CONTROLS_BOX
-            .with(|cell| cell.borrow().clone())
-            .expect("the run bar's controls box was built above"),
-        readout_row.upcast_ref(),
-    );
-    // §1 badge 13: the progress bar alone takes the row's free width. Last, because `install` and `fit` above
-    // are what add the row's last two children — running earlier left them out of the rule.
-    super::window_run_scroller::hand_the_free_width_to(run_row.upcast_ref());
+    // …and the row is made to fit, in the one order that works (`window_run_fit`).
+    super::window_run_fit::fit_into_row(&run_row, &controls, readout_row.upcast_ref());
 
     window.set_content(Some(&box_));
 
@@ -1113,13 +1096,6 @@ pub(crate) fn session_reads() -> (Option<layout::Tree>, Cut, Narration) {
     (tree, cut, narration)
 }
 
-
-
-
-
-
-
-
 pub use crate::ui::window_policy::{
     built_window, close_policy_forms, derive_policy, forget_policy_form, main_window,
     open_policy_form, policy_form_open, policy_is_current, press_policy, refresh_policy_form,
@@ -1130,7 +1106,6 @@ pub(crate) use crate::ui::window_policy::{
     schedule_policy_derive, user_context, wire_policy, wire_settings, POLICY_TRACKERS,
     POLICY_WATCH_WINDOW,
 };
-
 
 thread_local! {
     /// The run bar `build_window` created, published for the same reason as [`SESSION`]: so the
@@ -1175,8 +1150,6 @@ thread_local! {
     pub(crate) static SESSION: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Project>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
-
-
 
 thread_local! {
     /// One window's cut, held beside [`PREVIEW_PLAYERS`] with the same newest-slot rule.
@@ -1268,33 +1241,7 @@ thread_local! {
 
 pub use crate::ui::cut_view::{band_clip_boxes_for_test, strip_clip_boxes_for_test, strip_pps};
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // --- F2.9: copy, paste and lane --------------------------------------------------------------------------
-
-
-
-
-
 
 // The F2.12 insert group lives in `window_insert` (window.rs is past its size budget); these are
 // the doors the rest of the page calls, kept at their paths.
@@ -1305,7 +1252,6 @@ pub use crate::ui::window_insert::{
 pub(crate) use crate::ui::window_insert::{
     press_insert_from_button, refresh_insert_button, save_insert_cut,
 };
-
 
 /// F2.8 S1: the strip's height — the ruler row plus the kept-bar row, one number the size request and
 /// the painter both read so they cannot drift apart.
@@ -1323,16 +1269,8 @@ pub const RULER_EVERY_SECONDS: f64 = 30.0;
 /// seeded clips live; a narrower strip cut the third tick off at 240 px and left a label-less bar.
 pub const STRIP_WIDTH: i32 = 480;
 
-
-
-
-
 // F3.10 S1–S5, the pass itself, lives in [`crate::ui::cut_speeds_pass`]: window.rs is past its size budget,
 // and the pass needs none of this file's state — only the doors it already exports.
-
-
-
-
 
 /// F3.11's label. As with ✐ Captions and ⏩ Speeds, the spec's flowchart starts at a model call and names no
 /// control: a named button is the decision taken in its spirit, so the pass can be started and its gate seen.
@@ -1354,8 +1292,6 @@ pub use crate::ui::window_narrate::{
 };
 pub(crate) use crate::ui::window_narrate::live_project;
 
-
-
 /// F2.3: the Cut page's ▶✂✂ forwards to [`press_review_cuts`], reading the cut this window holds.
 fn wire_review_cuts(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
@@ -1367,8 +1303,6 @@ fn wire_review_cuts(button: &gtk::Button, window: &adw::ApplicationWindow) {
 // (window.rs is past its size budget); this is the same name, re-exported under its old path.
 pub(crate) use crate::ui::window_save::wire_save;
 
-
-
 // The window's log (the launch lines held until a window exists, the sink every flow writes into, and
 // the readers a test asserts against) live in `window_logs` (window.rs is past its size budget); these
 // are the same names, re-exported under the paths every other module and test already reaches them through.
@@ -1376,39 +1310,6 @@ pub use crate::ui::window_logs::{
     clear_logs_for_test, logs_for_test, note_startup, note_unload, window_logs,
 };
 pub(crate) use crate::ui::window_logs::log_line;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-thread_local! {
-    /// The run bar's controls box (`run-controls-inner`), kept beside the build so `window_run_bar_fit`
-    /// can re-seat its job buttons after `wrap_controls` upcasts the box into the sideways scroller.
-    static CONTROLS_BOX: std::cell::RefCell<Option<gtk::Box>> = const { std::cell::RefCell::new(None) };
-}
 
 thread_local! {
     /// The run bar `build_window` created, published so a test can read the step it holds. Same
@@ -1424,20 +1325,6 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // The §05-cut#1-screen history + zoom group lives in `window_history_zoom` (window.rs is past its
 // size budget); these are the doors this file and its callers still reach them through.
 pub use crate::ui::window_history_zoom::{
@@ -1450,7 +1337,6 @@ pub(crate) use crate::ui::window_history_zoom::{
     wire_aspect_choice, wire_history_and_zoom, wire_history_keys, wire_wheel_gestures,
     wire_zoom_drag, wire_zoom_esc, zoom_form_owner,
 };
-
 
 /// F2.2 S5: this window's side of the ▶✂ tick loop, over the SAME player and cut slots the buttons use.
 struct CutPreviewSlot(adw::ApplicationWindow);
@@ -1477,11 +1363,6 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
         crate::ui::cut_cut_play::set_clock_tooltip(&self.0, clock, len, preview_playhead(&self.0));
     }
 }
-
-
-
-
-
 
 /// F3.9's label. The spec's flowchart starts at "after the cut" and names no control, so nothing existed to
 /// wire the pass to: a named button is the decision taken in its spirit — the pass has to be startable, and its

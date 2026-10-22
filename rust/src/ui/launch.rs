@@ -50,6 +50,9 @@ pub fn load_for_launch(path: &Path) -> (project::Project, Vec<String>) {
         // takes on a project exactly as the Open button does, so two rows in one slot or footage on an
         // audio file are cleared here too, with what was cleared appended to this door's own report.
         crate::sources::clean_on_load(&mut project, &mut report);
+        // …and the seating for the load whose OWN drop emptied slot 1 — the same second door `apply` opens,
+        // so neither way of taking a project on can leave a session with no narrator.
+        crate::sources::fill_after_load(&mut project, &mut report);
     }
     (project, report)
 }
