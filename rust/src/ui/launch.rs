@@ -46,6 +46,10 @@ pub fn load_for_launch(path: &Path) -> (project::Project, Vec<String>) {
                 report.push(open_project::dropped_line(&source.path));
             }
         }
+        // §4's "a load that stripped a bad tag", asked of the same rule `apply` asks it of: a launch
+        // takes on a project exactly as the Open button does, so two rows in one slot or footage on an
+        // audio file are cleared here too, with what was cleared appended to this door's own report.
+        crate::sources::clean_on_load(&mut project, &mut report);
     }
     (project, report)
 }
