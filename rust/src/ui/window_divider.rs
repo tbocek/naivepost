@@ -78,7 +78,7 @@ pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, reado
     // with the log CLOSED — 10× the height §1 counts. The open log's 220 px comes from the handle instead, which
     // `rest_split` moves to `total − band_px(…)`; the paned clamps that to this minimum, so the ask has to be the
     // small one or the clamp can never come down.
-    bottom.set_size_request(-1, super::window_shot::rest_px(run_row, &log));
+    bottom.set_size_request(-1, super::window_shot::height_ask(run_row, &log));
     let log = log.downcast_ref::<gtk::Expander>().expect("the log is an expander").clone();
     // The closures below outlive this call, so they hold their OWN widget references — clones of the two
     // widgets §1 counts, which live as long as the window that owns the divider.

@@ -740,6 +740,8 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 ui::note_exchange_line(&format!(">>> {step}: 451.4 kB of text and 0 image(s) went to the LLM"));
                 ui::note_exchange_line(&format!(">>> {step}: 28.6 kB came back in 2m39s"));
                 ui::note_exchange_line(&crate::exchanges::link_line("llm/prepare-page.html"));
+                // …and the divider gets the ask a click on the header would leave behind, now the log is open.
+                crate::snapshot_band::rest_band(&window);
                 None
             }
             // §4's own picture is the LIST — eight stamped rows with their controls, not the empty scroller
@@ -893,9 +895,10 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // rows fall below the visible band. So this paints the column itself into the file the recipe asked
         // for — same reasoning as `write_face_png` painting the ▶ alone -- after the layout drain above.
         if screen == "03-sources" || screen_page(&screen) == Some("Prepare") {
-            // The staged rows only read if the window is tall enough to show them: at §1's minimum most of the
-            // staged day falls below the sources scroller's band.
-            crate::snapshot_sources::widen_for_rows(&window);
+            // The staged rows only read if the window is tall enough to show them, and the shell still has to
+            // be §1's minimum height in the shot: both doors run in one place (`stage_for_shot`), including
+            // the divider ask that gives the page the grown band back.
+            crate::snapshot_sources::stage_for_shot(&window);
         }
     if screen_page(&screen) == Some("Cut") || screen_page(&screen) == Some("Narrate") {
         // Drain the loop so GTK has laid the page out before anything asks it for a width: `present()`
@@ -1225,6 +1228,8 @@ const FORM_UNDER_PX: i32 = 380;
             // pixel-for-pixel with `spec/img`.
             crate::snapshot_face::set_shot_size(want_w, want_h);
         }
+        // The band's resting split, asked at the size the PNG is taken at (see `snapshot_band::rest_band`).
+        crate::snapshot_band::rest_band(&window);
         // §1's bottom band belongs to every shell screenshot, so the shot says where it landed: a page whose
         // minimum eats the run-bar row shows no bottom bar at all and still exits 0 (see `snapshot_band`).
         if let Some(said) = crate::snapshot_band::report(&window) {

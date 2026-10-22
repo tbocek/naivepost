@@ -59,7 +59,7 @@ pub fn hand_the_free_width_to(row: &gtk::Widget) {
         // scroller minimum-0 the row has room for them only if they take what the bar leaves.
         let keeps = matches!(
             child.widget_name().as_str(),
-            "run-progress" | "run-controls" | "pass-controls"
+            "run-progress" | "run-controls" | "pass-controls" | "pass-scroller"
         );
         child.set_hexpand(keeps);
         if !keeps {
@@ -92,12 +92,17 @@ fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
     let mut others = 0;
     for child in children_of(row) {
         match child.widget_name().as_str() {
+            // The job scroller counts as an "other": it measures minimum 0 but holds four buttons the row
+            // has to make room for, so the bar is sized from what is left after BOTH scrollers' natural asks.
             "run-progress" | "run-controls" => continue,
             _ => others += child.measure(gtk::Orientation::Horizontal, -1).1.max(0),
         }
     }
     let gaps = 6 * children_of(row).len() as i32;
-    bar.set_size_request((divider_w - others - gaps).max(64), -1);
+    bar.set_size_request(
+        (divider_w - others - gaps).max(super::window_run_bar_fit::PROGRESS_MIN_PX),
+        -1,
+    );
 }
 
 /// The row's direct children, as widgets.

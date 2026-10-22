@@ -19,11 +19,25 @@ use crate::ui;
 /// The widgets §1 counts under the page, by the names their builders gave them.
 const BAND: [&str; 4] = ["main-divider", "run-bar", "inputs-readout", "log-expander"];
 
-/// One line describing where the band is, and MOVING THE HANDLE WHERE §1 WANTS IT. Headless nothing drags this
-/// divider, so a snapshot that leaves it at GTK's default shows the split nobody would ever leave it at: measured
-/// on `03-window`, the page half sat at its 342 px minimum while the bottom box took 501 px of an 844 px divider
-/// and painted its plate over the bottom of the page. The rule lives in `ui::window_divider`; this asks it once,
-/// after the window has its real size, through the same door a person's drag fires.
+/// THE SHELL'S DIVIDER ASKS ITS RESTING SPLIT — the door a person's drag fires, asked for a shot.
+///
+/// The divider is the one thing a headless window never drags, and a band whose height ask moved (a shot that
+/// opened §1's log, a page grown for its own subject) keeps the handle where the OLD ask put it — measured on
+/// `03-window`, `pos=570` left the band 571 px of an 844 px divider, so the run-bar row floated in the middle
+/// of the window with the log body past its edge. The clamp only answers correctly once the window holds the
+/// size the PNG is taken at, so callers run this AFTER their own size ask and BEFORE the pixels.
+pub fn rest_band(window: &adw::ApplicationWindow) {
+    if let Some(divider) =
+        ui::find_source_widget(window, "main-divider").and_then(|w| w.downcast::<gtk::Paned>().ok())
+    {
+        ui::window_shot::opened_px(&divider);
+    }
+}
+
+/// One line describing where the band is. The handle itself is moved by [`rest_band`], which `snapshot::run`
+/// asks just before this — headless nothing drags this divider, so a shot that left it at GTK's default shows
+/// the split nobody would ever leave it at (measured on `03-window`: the page half sat at its 342 px minimum
+/// while the bottom box took 501 px of an 844 px divider and painted its plate over the bottom of the page).
 ///
 /// Returns `None` when this window has no shell band to measure (a dialog shot).
 pub fn report(window: &adw::ApplicationWindow) -> Option<String> {
@@ -32,9 +46,9 @@ pub fn report(window: &adw::ApplicationWindow) -> Option<String> {
     let paned_handle = found("main-divider")?;
     if let Some(paned) = paned_handle.downcast_ref::<gtk::Paned>() {
         // §1's rule read two ways: with the log COLLAPSED the band is its two rows, with it OPEN the log has
-        // room of its own. `rest_split` asks the collapsed pair (what the shell rests at); when the shot has
-        // opened the log, `opened_px` re-asks through the same door a person's drag fires — otherwise the shot
-        // prints a 571 px band inside an 844 px divider, a grey box under the run bar no window shows.
+        // room of its own. A shot that opened its log already had [`rest_band`] ask for the open height; with the
+        // log still closed this asks the collapsed pair — what the shell rests at — through the same door a
+        // person's drag fires, so a caller that forgot to does not print a band floating mid-window.
         if ui::window_shot::opened_px(paned).is_none() {
             crate::ui::window_divider::rest_split(paned);
         }
