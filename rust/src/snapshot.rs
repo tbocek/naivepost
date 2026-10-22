@@ -910,13 +910,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         }
             if screen_page(&screen) == Some("Cut") {
             // §A's preview is "contain-fit, min height 160" and `spec/img/05-cut.png` draws it filling the
-            // upper pane; `arrange` sized the panel from the OPENING (380 px), but the shot's window is only
-            // 800 px tall and the tape below needs more than the leftover, so GTK shrank that pane back to
-            // 314 px. Now that the page has real allocations, hand the panel the pane it actually got -- the
-            // same door, with the number the layout answers instead of the number §A opened at.
-            // NOT for `05-rows`: its own staging (`snapshot_rows::stage`) shrinks this pane on purpose -- the
-            // two camera rows are the subject of that picture and they sit BELOW everything here, so re-growing
-            // the preview pushes them back out of the ~890 px a headless window ever paints.
+            // upper pane; `arrange` sized the panel from the OPENING (380 px), so once the page had real
+            // allocations this hands it the pane it ACTUALLY got -- same door, the layout's own number.
+            // NOT for `05-rows`: its staging shrinks this pane on purpose -- those camera rows are that
+            // picture's subject, they sit BELOW everything here, and a re-grown preview pushes them past the
+            // ~890 px a headless window paints.
             if let (Some(panel), Some(split)) = (
                 ui::find_source_widget(&window, "preview-panel"),
                 ui::find_source_widget(&window, "cut-page-split")
@@ -926,10 +924,14 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                     .start_child()
                     .map(|child| child.height().max(1))
                     .unwrap_or(1);
-                // The lane under the picture keeps its row; the rest of the pane is the picture's.
                 let lane_h = crate::fx_lane::lane_height_px(1) as i32;
                 crate::ui::cut_preview_panel::grow_to(&panel, panel.width().max(1) as f64, (top_h - lane_h) as f64);
                 crate::ui::cut_preview_frame::repaint(&window);
+                // §1's "splits keep their proportions", at §A's ratio, from this page's own divider — headless
+                // nothing drags it (`snapshot_layout` owns the rule).
+                if let Some(said) = crate::snapshot_layout::rest_cut_split(&window, &split, top_h) {
+                    println!("snapshot: {said}");
+                }
             }
         }
 

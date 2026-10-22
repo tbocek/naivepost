@@ -226,6 +226,7 @@ pub mod snapshot_face;
 pub mod snapshot_sources;
 pub mod snapshot_insert;
 pub mod snapshot_lane;
+pub mod snapshot_layout;
 pub mod snapshot_narrate;
 pub mod snapshot_preview;
 pub mod snapshot_preview_frame;
@@ -261,6 +262,7 @@ pub mod voice_ref;
 pub mod word_list;
 pub mod wave;
 pub mod wave_build;
+pub mod watchdog;
 pub mod ui;
 
 /// The four pages, in the order the user works through them (spec/00-principles.md §1).

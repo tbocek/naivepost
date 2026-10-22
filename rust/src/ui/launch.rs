@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
 
-use crate::{icons, machine_store, open_project, project, settings, startup, ui};
+use crate::{icons, machine_store, open_project, project, settings, startup, ui, watchdog};
 
 /// Open one folder the way a launch opens it: the project AND whatever the load had to say about it.
 ///
@@ -71,6 +71,10 @@ pub fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
     // The environment is read here and handed to settings.rs as strings, which is how that module
     // keeps its own tests off the real `$HOME`. No config folder at all means no settings.
     let paths = settings_paths();
+    // §1's watchdog: started once at launch, beside the config folder its dumps land in. The GUI half of
+    // it (the heartbeat) is armed per window by `build_window`; this is the watcher that cannot live on
+    // the thread it watches.
+    watchdog::start_watch(paths.clone(), watchdog::SILENCE_LIMIT);
     // §7's launch job, in one call: take over a legacy `<root>/llm.conf`, read the conf, and when it
     // holds no `PROJECT_*` pairs recover them from the legacy `settings.json` and write them back so
     // that file is never asked about again. A settings file that cannot be read must not cost the

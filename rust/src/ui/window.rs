@@ -200,6 +200,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     SESSION_DIRS.with(|held| held.borrow_mut().push(session_folder.clone()));
     crate::project_autosave::install(Rc::clone(&session), session_folder.clone());
     crate::project_autosave::start();
+    // §1's watchdog: the GTK thread's own heartbeat, armed for as long as a window lives. The watcher
+    // that reads it was started by the launch (`ui::launch::open_at_start`).
+    crate::watchdog::arm();
     // The folder this window has open: the working copy beside its launch root. A rename or an Open
     // moves it afterwards -- that is what `save_target` answers -- but a fresh window always starts on
     // its own root's session, whatever an earlier window in this process left behind.

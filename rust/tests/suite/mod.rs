@@ -380,6 +380,8 @@ mod sec05_cut_preview_picture;
 mod sec05_live_log_link;
 mod sec_03_shell_1_log_path_links;
 mod sec_03_shell_1_the_window;
+mod sec_03_shell_1_the_window_growth;
+mod sec_03_shell_1_the_window_watchdog;
 mod sec_03_shell_2_the_run_bar;
 mod sec_03_shell_5_settings_dialog;
 mod sec_04_prepare_1_screen_split;

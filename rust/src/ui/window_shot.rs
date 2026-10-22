@@ -32,7 +32,43 @@ pub fn height_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
         .label_widget()
         .map(|label| label.measure(gtk::Orientation::Vertical, -1).0)
         .unwrap_or_default();
-    row.max(header).max(1) + header
+    // ONE sum, not `row.max(header) + header`: §1 counts the run-bar row AND the header, so a header taller
+    // than the row used to be charged twice and left a blank strip under the band.
+    (row + header).max(1)
+}
+
+/// The band's height for the log's CURRENT state: [`height_px`] while the log is collapsed, and that plus the
+/// room the log body asks for once it is open. §1's two sentences are one rule read two ways — collapsed the
+/// bottom half is "exactly as tall as the run bar row plus the log expander's header", expanded the log has
+/// "room of its own" — and the divider's handle has to move between exactly those two numbers.
+pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
+    let collapsed = height_px(run_row, log);
+    if !log.is_expanded() {
+        return collapsed;
+    }
+    // The body's own ask, read back off the widget that holds it: the shell sizes the log's scroller with
+    // `min_content_height` (see `window.rs`, where §10's prose 220 px goes on), so asking that scroller is
+    // how this stays right if that number ever moves. Walked rather than passed in because the divider owns
+    // neither widget.
+    let body = log
+        .child()
+        .and_then(|child| find_scroller(&child))
+        .map(|scroller| scroller.min_content_height())
+        .unwrap_or(super::window_bench::LOG_OPEN_PX);
+    collapsed + body.max(0)
+}
+
+/// The first `gtk::ScrolledWindow` at or below `node` — the log body's own scroller.
+fn find_scroller(node: &gtk::Widget) -> Option<gtk::ScrolledWindow> {
+    if let Some(scroller) = node.downcast_ref::<gtk::ScrolledWindow>() {
+        return Some(scroller.clone());
+    }
+    for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+        if let Some(found) = child.downcast_ref::<gtk::Widget>().and_then(find_scroller) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// Start the divider so the band is exactly [`height_px`] tall: the handle goes to `total − band`, leaving

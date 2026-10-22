@@ -248,7 +248,12 @@ pub fn arrange(page_box: &gtk::Box) {
             Some(lane) => {
                 let box_ = gtk::Box::new(gtk::Orientation::Vertical, 1);
                 box_.set_widget_name("cut-preview-stack");
-                box_.set_valign(gtk::Align::Start);
+                // §1: "above the minimum the layout grows with the window and no part has a fixed pixel
+                // size: the video preview scales to the room it is given". The stack therefore FILLS its
+                // pane rather than sitting at its built height at the top of it; `grow_to` below keeps the
+                // floors (§A's 160 px picture, the panel's own thumbnail shape) as floors.
+                box_.set_vexpand(true);
+                box_.set_valign(gtk::Align::Fill);
                 box_.append(preview);
                 box_.append(lane);
                 box_.upcast()
@@ -261,7 +266,13 @@ pub fn arrange(page_box: &gtk::Box) {
         split.set_resize_start_child(true);
         // §A: the preview is a GtkPicture with min height 160; the panel itself is pinned to the
         // picture's own shape, so it does not stretch when the column beside it is taller.
-        preview.set_valign(gtk::Align::Start);
+        // §1 again: the picture takes the room its pane is given, so it fills vertically (the toolkit keeps
+        // the footage's aspect inside it — `cut_picture::build` sets `ContentFit::Contain`). Only the LAYOUT
+        // grows here: the camera/drag fractions are still measured against the panel's declared pin through
+        // `cut_zoom_hand::preview_picture_px`, whose own comment says why an allocation cannot be the
+        // measuring stick (it differs between an isolated and a loaded run).
+        preview.set_vexpand(true);
+        preview.set_valign(gtk::Align::Fill);
         // `cut_preview_panel::install` pins the panel to `PREVIEW_PANEL_W` and starts it at the left;
         // in the paned's start half it must instead take every pixel that half gets, which is what makes
         // it the wide side (§1's badge 1 sits to the LEFT of the readings and dwarfs them).

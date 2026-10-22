@@ -9,6 +9,7 @@
 
 use crate::align;
 use crate::asr;
+use crate::watchdog;
 use crate::cut_cards;
 use crate::cut_clamp;
 use crate::fx_record;
@@ -232,6 +233,18 @@ pub fn prepare() -> Vec<Param> {
             "machine.progressPulseMs",
             format!("{} ms", runqueue::PROGRESS_PULSE.as_millis()),
             "runqueue::PROGRESS_PULSE",
+        ),
+        // §1's hang watchdog, the third pair of numbers in that same prose row ("hang watchdog 200 ms /
+        // 3 s"): the GUI thread's beat and how much of its silence counts as a hang.
+        param(
+            "machine.hangWatchdogBeatMs",
+            format!("{} ms", watchdog::HEARTBEAT.as_millis()),
+            "watchdog::HEARTBEAT",
+        ),
+        param(
+            "machine.hangWatchdogSilenceSeconds",
+            format!("{} s", watchdog::SILENCE_LIMIT.as_secs()),
+            "watchdog::SILENCE_LIMIT",
         ),
     ];
     params.extend(audio());
