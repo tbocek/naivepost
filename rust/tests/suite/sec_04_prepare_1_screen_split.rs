@@ -57,6 +57,7 @@ fn split_round() {
         RAN_MARK.store(true, Ordering::SeqCst);
         check_the_picked_row_is_the_one_the_shot_ticks(app);
         RAN_TICK.store(true, Ordering::SeqCst);
+        window.close();
     });
 }
 
@@ -496,6 +497,32 @@ fn check_the_mark_and_reset_wake_only_on_an_edit(app: &adw::Application) {
     assert!(
         !widget(&window, "bench-reset").is_sensitive(),
         "{ITEM}: Reset stayed live after restoring the shipped wording"
+    );
+
+    // --- and once more through the door the SCREENSHOT uses, not a keystroke: `snapshot.rs` stages an
+    // override with `snapshot_bench::stage_edited_row` before it builds the window, because a shot presses
+    // no keys. If that door stored nothing, `shots/04-prepare.png` would draw §1's badge 2 row without its
+    // mark and with a greyed Reset — which is exactly what an earlier round shipped.
+    naivepost::snapshot_bench::stage_edited_row(describe);
+    assert!(
+        naivepost::bench::edited(&paths, row),
+        "{ITEM}: staging the picture's row stored no override under {root:?}, so the shot could never show its mark"
+    );
+    // The pair itself needs no re-check here — the keystroke leg above already pinned that an edit wakes
+    // both. What is new is §1's other sentence: "The User Context row hides mark and Reset (no built-in
+    // wording to differ from)", so row 0 stays bare even while ANOTHER row holds this machine's edit.
+    widget(&window, "bench-picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown")
+        .set_selected(0);
+    lay_out();
+    assert!(
+        !widget(&window, "bench-mark").is_visible(),
+        "{ITEM}: the User Context row showed the edited mark while another row held an override"
+    );
+    assert!(
+        !widget(&window, "bench-reset").is_visible(),
+        "{ITEM}: the User Context row showed Reset while another row held an override"
     );
     window.close();
     fs::remove_dir_all(&root).ok();
