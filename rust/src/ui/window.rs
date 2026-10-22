@@ -597,6 +597,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     switcher.set_widget_name("page-tabs");
     switcher.set_hexpand(false);
     switcher.set_halign(gtk::Align::Center);
+    // libadwaita's own default is LOOSE, which slides the title toward whichever side has room: with
+    // badge 4 (the project path) packed after Save and expanding, that slide moved the tab row ~80 px
+    // right of the bar's centre. STRICT keeps it centred and lets the start group give way instead —
+    // §1 puts the tab row "in its centre", and badge 4 only ever says where the label is PACKED.
+    header.set_centering_policy(adw::CenteringPolicy::Strict);
     header.set_title_widget(Some(&switcher.clone().upcast::<gtk::Widget>()));
     // §1's draggable divider: the page stack above, the bottom bar below. Built in `window_divider`, which
     // also gives the band its own height ask (`band_px`) — that rule lives there and nowhere else, so a second

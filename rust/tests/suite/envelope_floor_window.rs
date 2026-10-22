@@ -36,7 +36,6 @@ fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
 /// One aligned word. This round asks the envelope alone (no word times), so the helper is kept for
 /// shape-parity with the sibling fixture files rather than used here.
 #[allow(dead_code)]
-#[allow(dead_code)]
 fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {
     Retake { s, e, again, to, text: String::new(), whole: String::new() }
 }

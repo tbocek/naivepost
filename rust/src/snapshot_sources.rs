@@ -23,20 +23,9 @@ use gtk4 as gtk;
 use crate::project::{Project, Source};
 use crate::ui;
 
-/// Width this screen asks for: wide enough that a stamped name, the track face and the four symbol controls
-/// all read on one line once the column gets its share (§1's minimum is only a floor, not a ceiling).
-const WIDE_ENOUGH_W: i32 = 1240;
-
-/// One row's height in the crop ask (§4's row is one line; 48 px is what the page settles them at).
-const ROW_PX: i32 = 48;
-
-/// How many rows §1's minimum height already shows in the sources scroller's band (measured off the shot:
-/// at 900 px the band fits five). Each staged row beyond this is what the ask has to add.
-const ROWS_AT_MIN_H: i32 = 5;
-
 /// The sources scroller's own floor (`window_page_box::SOURCES_MIN_H`, private there). At §1's minimum the
-/// page gives the list more than this, so a taller window only helps if the scroller is asked for the extra
-/// too -- which is what [`widen_for_rows`] does through the page's own repaint.
+/// page gives the list more than this, so rows beyond what fits scroll inside the scroller like everything
+/// else that does not fit.
 pub const SHOT_BAND_ROWS: i32 = 5;
 
 /// One lecture day's recordings, in the order §4's picture lists them (newest first). Names carry the
@@ -160,41 +149,34 @@ pub fn stage(window: &adw::ApplicationWindow) -> usize {
     ui::source_rows_refresh::drawn_rows(window)
 }
 
-/// Ask for a window big enough to show every staged row, so the ordinary page shot has them all above the
-/// fold (the recipe's own file name is kept: this changes the size the shot is taken at, nothing else).
+/// Put §4's staged day on the window AND leave the shell at §1's minimum height. §1 demands that every
+/// screenshot is the whole window at its minimum ("header bar, page, run bar and log header, never the page
+/// alone"), so the doors run in one place, in this order: lay the staged rows out through the page's own
+/// painter, bring the shell back to §1's minimum, then ask the divider for its resting split at that size so
+/// nothing under the page goes missing from the shot. Returns the number of rows drawn.
 ///
-/// `spec/img/03-sources.png` is a crop of one column at a height that fits eight rows; in a 1240×900 window
-/// the scroller shows only the rows its band happens to fit and the rest of the staged day sits below it.
-/// §1 lets a page grow with the window (only the width has a floor), so asking is the legal way — and
-/// reparenting a live child into a throwaway top level is not, which is what an earlier attempt printed as
-/// "window produced no render node". Returns whether there was a list to stage at.
-pub fn widen_for_rows(window: &adw::ApplicationWindow) -> bool {
-    // Rows first: the ask has to cover them all, and the count is read off the widget tree rather than from
-    // the project this module just staged, so a row the painter skipped shrinks the ask instead of hiding.
-    let rows = i32::try_from(ui::source_rows_refresh::drawn_rows(window)).unwrap_or(ROWS_AT_MIN_H);
-    // §1 fixes 1240×900 as the window's FLOOR and several screens already ask wider for their subject (the
-    // `wide` pass-screen ask in `snapshot.rs`). What hides a row here is the sources scroller's own band, so
-    // the only honest way to show the whole staged day is a taller window: ask for what §1's minimum leaves
-    // the list, plus one row-height per row beyond the ones that fit at the floor. `set_default_size` is the
-    // OPENING size; `set_size_request` would be a minimum, which §1 forbids above 1240×900.
-    let extra = ROW_PX * (rows - ROWS_AT_MIN_H).max(0);
-    let wanted = crate::shell::WINDOW_MIN_H + extra;
-    // The page/bottom-bar divider is what decides how tall the page band is, and headless nothing drags it
-    // (§1: "Above the minimum the layout grows with the window"). Give the page the whole ask so the sources
-    // scroller gets the rows instead of scrolling them away.
+/// The window is never grown for the rows, and the number says why: a `gtk::Window` under xvfb keeps whatever
+/// height its content asks for, so raising it for the staged day and lowering it again afterwards never brought
+/// the shell back to §1's 900 px (measured: 986 px in the shot, the log past its edge). Rows below the fold
+/// scroll inside the sources scroller instead.
+pub fn stage_for_shot(window: &adw::ApplicationWindow) -> usize {
+    // Rows first, through the page's own painter: what the painter cannot draw is reported, not hidden.
+    let rows = stage(window);
+    crate::snapshot_face::pump_context(8);
+    // …and the shell sits at §1's minimum before anything measures it, so the band's ask is taken at the size
+    // the screenshot is fixed at.
+    window.set_size_request(crate::shell::WINDOW_MIN_W, crate::shell::WINDOW_MIN_H);
+    window.set_default_size(crate::shell::WINDOW_MIN_W, crate::shell::WINDOW_MIN_H);
+    crate::snapshot_face::pump_context(8);
     if let Some(divider) =
         ui::find_source_widget(window, "main-divider").and_then(|w| w.downcast::<gtk::Paned>().ok())
     {
-        divider.set_position(wanted);
+        crate::ui::window_divider::rest_split(&divider);
     }
-    // `set_default_size` alone never reaches the pixels: `snapshot.rs` clamps to
-    // `default_height().max(WINDOW_MIN_H)` just before the shot, so the same floor has to be lifted here too.
-    if window.default_height() < wanted {
-        window.set_default_size(window.default_width().max(WIDE_ENOUGH_W), wanted);
-        window.set_size_request(crate::shell::WINDOW_MIN_W, wanted);
-    }
-    true
+    crate::snapshot_face::pump_context(8);
+    rows
 }
+
 
 /// Paint §4's own subject — the LEFT column: the list of rows and the frame controls under it — into `out`.
 /// `spec/img/03-sources.png` is that crop, and a whole-window shot cannot be it: at §1's minimum the column is

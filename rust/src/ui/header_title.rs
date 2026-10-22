@@ -59,6 +59,11 @@ pub fn label_for(dir: &Path, tab: &str, fit: Fit) -> String {
 /// which is what makes it the thing that pins the window's minimum width.
 pub const TITLE_MIN_CHARS: i32 = 1;
 
+/// The label's natural ask, in characters — see the note on [`build_label`]'s `max-width-chars`. Long enough to
+/// read a real project path, short enough that the start group leaves the header's two sides balanced for the
+/// tab row to sit in its centre at §1's 1240 px (measured: 40 chars keeps the tabs centred, no cap does not).
+pub const TITLE_NATURAL_CHARS: i32 = 40;
+
 /// Build §1's badge **4** and pack it into the header after Save. §1: "project name/path packed after
 /// Save", with the tab row taking the centre slot — so this goes on the bar's start side, where it sits
 /// right behind New/Open/Save and gives way from its own end as the window narrows. Installed here rather
@@ -82,6 +87,12 @@ fn build_label() -> gtk::Label {
     // `width-chars` also caps how much it asks for, which is why the natural width is asked for here and
     // the ellipsis only ever trims it: without this the header showed "…" at any window size.
     label.set_max_width_chars(-1);
+    // EXPANDS, but never asks for more than it must: with the header's title widget held dead centre
+    // (`CenteringPolicy::Strict` in `window.rs`) the START group's natural width is what decides where the
+    // centre lands — measured, an uncapped path pulled the tab row's centre from 615 to 736 px in a 1240 px
+    // window. `max-width-chars` caps the NATURAL ask only; the minimum stays one character (`width_chars(1)`),
+    // so a narrow window still ellipsizes this label instead of being held wide.
+    label.set_max_width_chars(TITLE_NATURAL_CHARS);
     label.set_width_chars(1);
     label.set_single_line_mode(true);
     label.set_hexpand(true);

@@ -43,9 +43,9 @@ const SLACK_PX: f64 = 4.0;
 const RUN_BUTTONS: [&str; 3] = ["play-button", "lucky-button", "stop-button"];
 
 /// The row's children in §1's order: the scrolling controls, the bar that takes the free width, the job
-/// buttons moved out of the scroller (`window_run_bar_fit`), and the readouts at the right end.
-const ROW_CHILDREN: [&str; 4] = ["run-controls", "run-progress", "pass-controls", "readout-row"];
-
+/// buttons in their own scroller (`window_run_bar_fit`; the box that holds them is `pass-controls`, inside it),
+/// and the readouts at the right end.
+const ROW_CHILDREN: [&str; 4] = ["run-controls", "run-progress", "pass-scroller", "readout-row"];
 /// A window on `page` at §1's minimum with the band at rest — the geometry §1 says every shot is taken at.
 fn minimum_window(app: &adw::Application, page: &str) -> adw::ApplicationWindow {
     release_last_window();
@@ -113,6 +113,7 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
             "{ITEM} §1: {name} starts at x={x:.0}, at or left of {previous_name}'s right edge \
              ({previous_right:.0}) — §1's order is play, lucky, stop"
         );
+        inside_window(&window, name, x, w);
         previous_right = x + w;
         previous_name = name.to_string();
     }
@@ -134,10 +135,32 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
             "{ITEM} §1: {name} starts at x={x:.0}, at or left of {previous_name}'s right edge \
              ({previous_right:.0}) — §1's row order is controls, progress, jobs, readouts"
         );
+        inside_window(&window, name, x, w);
         previous_right = x + w;
         previous_name = name.to_string();
     }
+    // …and the two readouts §1 counts as badges **14** and **15**, individually: a row whose last child ends
+    // inside the window can still have one of them squeezed to nothing beside it.
+    for name in ["inputs-readout", "outputs-folder-button", "outputs-readout"] {
+        let (x, _y, w, h) = drawn(&window, name);
+        println!("{ITEM} s1: {name} box x={x:.0} w={w:.0} h={h:.0}");
+        assert!(w > 0.0 && h > 0.0, "{ITEM} §1 badge: {name} was given an EMPTY box");
+        inside_window(&window, name, x, w);
+    }
     window.close();
+}
+
+/// Is `named`'s box wholly inside the window's width? This is the fact a clipped ⏹ broke and a name lookup
+/// cannot see: `find_widget_by_name` walks the tree, and a widget pushed past the window's right edge, or
+/// squeezed into a zero-width corner of its scroller, is still in the tree.
+fn inside_window(window: &adw::ApplicationWindow, named: &str, x: f64, w: f64) {
+    assert!(
+        x >= -SLACK_PX && x + w <= window.width() as f64 + SLACK_PX,
+        "{ITEM} §1: {named} is drawn from x={x:.0} to {:.0}, which reaches outside the {} px window — \
+         it is not on screen at §1's minimum size",
+        x + w,
+        window.width()
+    );
 }
 
 /// §1: the page sits directly above the run bar. A widget drawn in the strip between them is either a stray
@@ -205,6 +228,30 @@ fn s1_nothing_is_drawn_between_the_page_and_the_run_bar(app: &adw::Application) 
     window.close();
 }
 
+/// §1 badge **5**: the tab row is the header bar's title widget, so it reads as being in the header's
+/// CENTRE only if it is actually drawn there. A name lookup cannot see a shifted title widget — libadwaita's
+/// default LOOSE centring slid the row right of centre beside the expanding project path — so this measures
+/// the drawn box: its horizontal centre against the window's own.
+fn s2_the_tab_row_sits_in_the_header_centre(app: &adw::Application) {
+    let window = minimum_window(app, "Prepare");
+    let (x, _y, w, h) = drawn(&window, "page-tabs");
+    let tabs_centre = x + w / 2.0;
+    let window_centre = window.width() as f64 / 2.0;
+    println!(
+        "{ITEM} s2: page-tabs box x={x:.0} y={_y:.0} w={w:.0} h={h:.0} centre={tabs_centre:.0}, window centre={window_centre:.0}"
+    );
+    assert!(
+        (tabs_centre - window_centre).abs() <= CENTRE_SLACK_PX,
+        "{ITEM} §1: the tab row is drawn with its centre at {tabs_centre:.0}, the window's centre is \
+         {window_centre:.0} — §1 wants the tab row in the header bar's centre"
+    );
+    window.close();
+}
+
+/// How far off the window's centre the tab row may sit before it counts as not centred: GTK rounds each
+/// allocation and Adwaita pads the header's ends, so a strictly centred row is a pixel or two off.
+const CENTRE_SLACK_PX: f64 = 8.0;
+
 /// The four job buttons moved into `pass-controls` when the run-bar row was fixed, so prove none of them was
 /// lost on the way: each resolves AND is drawn inside the run-bar row.
 fn s1_the_pass_buttons_are_still_reachable(app: &adw::Application) {
@@ -241,6 +288,7 @@ fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
     common::one_app_round(|app| {
         s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app);
         s1_nothing_is_drawn_between_the_page_and_the_run_bar(app);
+        s2_the_tab_row_sits_in_the_header_centre(app);
         s1_the_pass_buttons_are_still_reachable(app);
         RAN.store(true, Ordering::SeqCst);
     });
