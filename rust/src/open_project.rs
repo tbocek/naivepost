@@ -175,6 +175,10 @@ pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, Open
     // what empties a slot, and slot 1 is never left unheld. This door rather than a second check at each
     // caller because `apply` is already the ONE place that decides what a load keeps.
     crate::sources::clean_on_load(&mut project, &mut lines);
+    // …and the same auto-fill for the load that dropped slot 1's holder instead of stripping a tag: the
+    // rows above were already dropped as missing, so a strip may never have happened and slot 1 can still
+    // be empty. One door again, so the seatings cannot disagree about who is the narrator.
+    crate::sources::fill_after_load(&mut project, &mut lines);
 
     Ok(Applied {
         root,

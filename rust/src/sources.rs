@@ -322,6 +322,26 @@ pub fn clean_on_load(project: &mut Project, report: &mut Vec<String>) {
     }
 }
 
+/// Seat a narrator when a load left slot 1 unheld, and say who took it.
+///
+/// §4 wants slot 1 filled "whenever unheld", and one of its four moments is a load — but not every load
+/// strips a flag: `open_project::apply` drops the rows whose file has gone BEFORE [`clean_on_load`] runs,
+/// so when the dropped row was slot 1's holder nothing was stripped and the session would open with no
+/// narrator at all. A strip is therefore not the only door to the auto-fill; this is the other one.
+/// Silent while slot 1 is held, so a project that loads as written stays quiet (§4 keeps whatever the
+/// user left in slot 1).
+pub fn fill_after_load(project: &mut Project, report: &mut Vec<String>) -> Option<String> {
+    if slot_holder(project, 1).is_some() {
+        return None;
+    }
+    let seated = rescan::fill_slot_1(project)?;
+    report.push(format!(
+        "{} is the narrator now -- slot 1 was empty",
+        base_name(&seated)
+    ));
+    Some(seated)
+}
+
 /// The track popover's checks. The last ticked track cannot be unticked: a row with no track would
 /// hear nothing, and an empty `tracks` is what "not chosen yet" means elsewhere.
 pub fn tick_track(project: &mut Project, index: usize, track: u32, on: bool) -> bool {
