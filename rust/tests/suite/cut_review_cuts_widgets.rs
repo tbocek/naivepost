@@ -297,6 +297,8 @@ fn window_round() {
 
 #[test]
 fn f2_3_s2_review_button_starts_the_review_through_the_widget() {
+    // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_START.load(Ordering::SeqCst), "the S2 start-through-the-click check never ran");
     assert!(RAN_END.load(Ordering::SeqCst), "the S5 end / S1 refusal checks never ran");
@@ -305,6 +307,7 @@ fn f2_3_s2_review_button_starts_the_review_through_the_widget() {
 
 #[test]
 fn f2_3_s7_the_review_press_leaves_a_running_player() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_RUNNING.load(Ordering::SeqCst),
@@ -316,6 +319,7 @@ fn f2_3_s7_the_review_press_leaves_a_running_player() {
 /// button rather than in a string.
 #[test]
 fn f2_3_s1_the_review_button_greys_and_wears_the_pause_face() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_FACE.load(Ordering::SeqCst),
@@ -408,6 +412,7 @@ fn check_s5_a_hand_on_the_line_ends_the_review(app: &adw::Application) {
 /// S3/S4 through the real button and the program's own tick loop.
 #[test]
 fn f2_3_s3_the_review_advances_join_by_join_through_the_widget() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_TICK.load(Ordering::SeqCst),
@@ -418,6 +423,7 @@ fn f2_3_s3_the_review_advances_join_by_join_through_the_widget() {
 /// S5's hand on the line, through the same widget and tick.
 #[test]
 fn f2_3_s5_moving_the_line_by_hand_ends_the_review() {
+    common::pin_private_cwd();
     window_round();
     assert!(
         RAN_MOVED.load(Ordering::SeqCst),

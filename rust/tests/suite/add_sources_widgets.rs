@@ -100,6 +100,8 @@ fn check_refused_during_a_run(app: &adw::Application) {
 
 #[test]
 fn f0_12_s1_the_add_button_and_the_copy_tick_are_on_prepare() {
+    // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_OFFER.load(Ordering::SeqCst), "the Add check never ran");
 }
@@ -107,6 +109,7 @@ fn f0_12_s1_the_add_button_and_the_copy_tick_are_on_prepare() {
 /// S0 through the same widgets: refused during a run, with §1's sentence on the status line.
 #[test]
 fn f0_12_s0_adding_is_refused_while_a_run_is_on() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_REFUSED.load(Ordering::SeqCst), "the refusal check never ran");
 }
@@ -215,6 +218,7 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
 
 #[test]
 fn f0_12_s2_a_pick_lands_rows_in_the_list_through_the_widgets() {
+    common::pin_private_cwd();
     window_round();
     assert!(RAN_PICK.load(Ordering::SeqCst), "the pick check never ran");
 }

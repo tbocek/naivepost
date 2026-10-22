@@ -184,6 +184,8 @@ fn never() -> bool {
 /// S15: a real request goes out over a socket, is answered, is timed, and leaves its row behind.
 #[test]
 fn sec_02_services_1_the_four_servers_s15_a_real_request_over_the_wire_is_timed_and_recorded() {
+    // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
+    crate::common::pin_private_cwd();
     let server = FakeServer::start("chat", 200, r#"{"data":[{"id":"gpt-test"}]}"#.to_string(), Duration::ZERO);
     let tree = Tree::new(project_dir("s15")).expect("a project folder");
     let endpoint = endpoint_at(&server.url(), "");
@@ -252,6 +254,7 @@ fn sec_02_services_1_the_four_servers_s15_a_real_request_over_the_wire_is_timed_
 /// S16: nothing listening gives an error naming the server and the address — and still leaves its row.
 #[test]
 fn sec_02_services_1_the_four_servers_s16_a_down_server_gives_an_error_and_still_leaves_its_row() {
+    crate::common::pin_private_cwd();
     let (dead, _held) = FakeServer::dead_port();
     // `_held` keeps this port number off the market for the whole test; the address dialled is the loopback
     // beside it, which nothing in the suite can bind while it is held.
@@ -303,6 +306,7 @@ fn sec_02_services_1_the_four_servers_s16_a_down_server_gives_an_error_and_still
 /// S17: the upload leg sends a raw body with `X-Audiocpp-Filename`, not a multipart envelope.
 #[test]
 fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_header() {
+    crate::common::pin_private_cwd();
     let server = FakeServer::start("upload", 200, r#"{"path":"/tmp/ref.wav"}"#.to_string(), Duration::ZERO);
     let tree = Tree::new(project_dir("s17")).expect("a project folder");
     let endpoint = endpoint_at(&server.url(), "");
@@ -352,6 +356,7 @@ fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_head
 /// S18: housekeeping is bounded at twenty seconds; the work kinds are not bounded at all.
 #[test]
 fn sec_02_services_1_the_four_servers_s18_the_unload_leg_is_bounded_at_twenty_seconds() {
+    crate::common::pin_private_cwd();
     // The rule first, straight from the table this round obeys.
     assert_eq!(
         services::timeout_for(Kind::UnloadAll),
@@ -417,6 +422,7 @@ fn sec_02_services_1_the_four_servers_s18_the_unload_leg_is_bounded_at_twenty_se
 /// S19: every sd.cpp path is reachable — capabilities, submit, poll, cancel — in that order.
 #[test]
 fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are_all_reachable() {
+    crate::common::pin_private_cwd();
     let server = FakeServer::start(
         "sd",
         200,
@@ -477,6 +483,7 @@ fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are
 /// subprocess, and their verdicts belong to `details_confirmed_probes.rs` s6 and s7).
 #[test]
 fn sec_02_services_1_the_four_servers_s24_a_live_provider_delegates_the_rows_it_does_not_dial() {
+    crate::common::pin_private_cwd();
     let canned: Provider =
         Rc::new(|key, typed| Ok(format!("canned {key}={typed}")));
     let provider = settings_probe::live_over(canned);
@@ -519,6 +526,7 @@ fn sec_02_services_1_the_four_servers_s24_a_live_provider_delegates_the_rows_it_
 /// (the pipeline needs it), so an installed one legitimately passes instead of refusing.
 #[test]
 fn sec_02_services_1_the_four_servers_s25_the_default_live_fallback_says_nothing_is_wired() {
+    crate::common::pin_private_cwd();
     let reason = settings_probe::live_provider()(naivepost::ui::settings::USE_KEY, "qwen3-test")
         .expect_err("nothing is wired behind the default provider for this key");
     assert!(

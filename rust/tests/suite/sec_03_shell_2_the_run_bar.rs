@@ -22,6 +22,8 @@ use common::{fake_audio_server, fixture_dir};
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_the_two_track_lines_join_with_a_spaced_middle_dot() {
+    // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
+    common::pin_private_cwd();
     assert_eq!(
         TRACK_JOIN,
         "  \u{00B7}  ",
@@ -67,6 +69,7 @@ fn sec_03_shell_2_the_run_bar_s1_the_two_track_lines_join_with_a_spaced_middle_d
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_each_track_tips_its_own_counting() {
+    common::pin_private_cwd();
     // Mid-queue: one task taken, the rest still waiting.
     let mut q = Queue::new();
     q.job(TRACK_STT, "describe", 1, 2);
@@ -109,6 +112,7 @@ fn sec_03_shell_2_the_run_bar_s1_each_track_tips_its_own_counting() {
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_nothing_queued_leaves_the_standing_tooltip() {
+    common::pin_private_cwd();
     assert_eq!(
         STANDING_TIP,
         "The run: the job, which of the run's jobs it is, and the task it is on",
@@ -125,6 +129,7 @@ fn sec_03_shell_2_the_run_bar_s1_nothing_queued_leaves_the_standing_tooltip() {
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_idle_bar_runs_this_step_and_lets_the_gears_go() {
+    common::pin_private_cwd();
     let drawn = run::controls(&None, None);
     assert_eq!(drawn.icon, run::PLAY_ICON);
     assert_eq!(drawn.tooltip, run::PLAY_TOOLTIP);
@@ -136,6 +141,7 @@ fn sec_03_shell_2_the_run_bar_s1_idle_bar_runs_this_step_and_lets_the_gears_go()
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_a_busy_bar_turns_play_into_pause_and_greys_the_gears() {
+    common::pin_private_cwd();
     let running = Some(run::Run {
         step: run::Step::Prepare,
         paused: false,
@@ -155,6 +161,7 @@ fn sec_03_shell_2_the_run_bar_s1_a_busy_bar_turns_play_into_pause_and_greys_the_
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s2_the_gears_turn_while_a_single_step_runs() {
+    common::pin_private_cwd();
     // One ▶ on one tab is enough to turn them: §2 says so in words, because the progress bar may have
     // nothing countable for most of such a step and the bar would otherwise look idle.
     let running = Some(run::Run {
@@ -192,6 +199,7 @@ fn sec_03_shell_2_the_run_bar_s2_the_gears_turn_while_a_single_step_runs() {
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_a_paused_run_still_greys_the_gears() {
+    common::pin_private_cwd();
     // \u{23f8} parks a run to carry on later; it does not free the bar, so the chain stays out of reach.
     let paused = Some(run::Run {
         step: run::Step::Prepare,
@@ -207,6 +215,7 @@ fn sec_03_shell_2_the_run_bar_s1_a_paused_run_still_greys_the_gears() {
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_the_pages_transport_owns_the_bar_too() {
+    common::pin_private_cwd();
     let playing = run::Transport { playing: true, started: true };
     let drawn = run::controls(&None, Some(playing));
     assert_eq!(drawn.icon, run::PAUSE_ICON, "a playing preview is busy as far as the bar reads it");
@@ -231,6 +240,7 @@ fn sec_03_shell_2_the_run_bar_s1_the_pages_transport_owns_the_bar_too() {
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_the_bar_is_the_two_tracks_summed_and_draws_no_words() {
+    common::pin_private_cwd();
     assert_eq!((TRACK_STT, TRACK_FRAMES), (0, 1), "§2: 0 = speech/describe, 1 = frames/fix");
     assert_eq!((TRACK_DESCRIBE, TRACK_FIX), (TRACK_STT, TRACK_FRAMES));
 
@@ -257,6 +267,7 @@ fn sec_03_shell_2_the_run_bar_s1_the_bar_is_the_two_tracks_summed_and_draws_no_w
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_a_thinking_model_pulses_the_bar() {
+    common::pin_private_cwd();
     assert!(ui::should_pulse(true, 0.0), "a run with nothing countable pulses");
     assert!(!ui::should_pulse(true, 0.25), "once something is countable the needle takes over");
     assert!(!ui::should_pulse(false, 0.0), "with no run there is nothing to pulse");
@@ -268,6 +279,7 @@ fn sec_03_shell_2_the_run_bar_s1_a_thinking_model_pulses_the_bar() {
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_an_older_run_steps_key_is_ignored_and_never_written() {
+    common::pin_private_cwd();
     let root = common::temp_dir("run-steps");
     let dir = root.join("demo.naivepost");
     std::fs::create_dir_all(&dir).unwrap();
@@ -507,12 +519,14 @@ fn repaint(window: &adw::ApplicationWindow, bar: &Rc<std::cell::RefCell<run::Run
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s2_the_bar_reads_play_lucky_stop_and_carries_the_standing_tooltip() {
+    common::pin_private_cwd();
     widgets_round();
     assert!(RAN_ORDER.load(std::sync::atomic::Ordering::SeqCst), "the order check never ran");
 }
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s2_a_run_busy_greys_the_gears_and_keeps_the_standing_tooltip() {
+    common::pin_private_cwd();
     widgets_round();
     assert!(RAN_GATE.load(std::sync::atomic::Ordering::SeqCst), "the gears-gate check never ran");
 }
@@ -606,6 +620,7 @@ fn check_the_stop_press_stops_the_turning(app: &adw::Application) {
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s3_the_widget_turns_the_gears_for_a_bare_run() {
+    common::pin_private_cwd();
     widgets_round();
     assert!(
         RAN_TURN.load(std::sync::atomic::Ordering::SeqCst),
@@ -615,6 +630,7 @@ fn sec_03_shell_2_the_run_bar_s3_the_widget_turns_the_gears_for_a_bare_run() {
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s4_the_stop_press_stops_the_gears_turning() {
+    common::pin_private_cwd();
     widgets_round();
     assert!(
         RAN_STOP_TURN.load(std::sync::atomic::Ordering::SeqCst),

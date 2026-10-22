@@ -8,64 +8,22 @@
 //! doors the program uses ([`naivepost::watchdog::start_watch`] from the launch,
 //! [`naivepost::watchdog::arm`] from `build_window`), only with a shorter limit than §1's 3 s.
 //!
-//! Like its sibling `sec_03_shell_1_the_window.rs`, this binary brings GTK up once, inside ONE
-//! `adw::Application::run_with_args`, and runs every widget scenario in that one `activate`. Every test
-//! gets its own `$XDG_CONFIG_HOME`, so no dump lands in the real `~/.config/naivepost`.
+//! The live check of a window that keeps beating is in `sec_03_shell_1_the_window_watchdog_window.rs`:
+//! the watcher starts once per process, so the check that hangs on purpose and the one that must stay
+//! quiet each need a process, and so a file, of their own. Every test gets its own `$XDG_CONFIG_HOME`,
+//! so no dump lands in the real `~/.config/naivepost`.
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Once;
+use std::path::Path;
 use std::time::Duration;
 
-use adw::prelude::*;
-use naivepost::settings::{self, Paths};
 use naivepost::watchdog;
-use naivepost::ui;
 
 use crate::common;
-use common::{temp_dir_tagged, wait_until};
+use common::wait_until;
 
-/// One GTK application for this binary's widget round; see the module doc for why there is exactly one.
-static GTK: Once = Once::new();
-static RAN: AtomicBool = AtomicBool::new(false);
 
-/// How long the live checks ask the watcher to wait before calling it a hang. Shorter than §1's 3 s
-/// because a suite may not sleep for three seconds; the LIMIT is the only thing that differs, the door
-/// is the program's own. The two live tests share ONE process and run in parallel, so this stays well
-/// above what a loaded machine needs to turn a GTK context: at 300 ms the window check never looks hung.
-const SHORT_LIMIT: Duration = Duration::from_millis(300);
-
-static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-/// A config folder of this test's own, installed as `$XDG_CONFIG_HOME`/`$XDG_DATA_HOME` (process-wide,
-/// which is why the scenarios here share one process and each takes a fresh tag). The `config_dir` is
-/// made up front: `settings::write_hang_dump` only forces 0700 on a folder it creates itself, so a
-/// throwaway root keeps its own mode either way.
-fn private_config(tag: &str) -> Paths {
-    let dir = temp_dir_tagged(&format!("sec03wd-{tag}-{}", COUNTER.fetch_add(1, Ordering::SeqCst)));
-    std::env::set_var("XDG_CONFIG_HOME", &dir);
-    std::env::set_var("XDG_DATA_HOME", &dir);
-    settings::from_environment().expect("an absolute XDG_CONFIG_HOME is a config home")
-}
-
-/// Every `hang-*` file in `paths.config_dir`, sorted. Empty while nothing has hung.
-fn dumps(paths: &Paths) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(&paths.config_dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.file_name()
-                .map(|name| name.to_string_lossy().starts_with("hang-"))
-                .unwrap_or(false)
-        })
-        .collect();
-    files.sort();
-    files
-}
+const SHORT_LIMIT: Duration = common::WATCHDOG_TEST_LIMIT;
 
 /// The names a hang dump must carry, checked against one file's text.
 fn assert_dump_names(path: &Path, text: &str) {
@@ -155,7 +113,7 @@ fn sec_03_shell_1_the_window_s10_a_dump_names_the_stalled_thread_its_pid_and_its
 /// config folder §7 names, 0600, with the stamp §7 names.
 #[test]
 fn sec_03_shell_1_the_window_s10_a_live_watch_dumps_after_the_silence_passes() {
-    let paths = private_config("hang");
+    let paths = common::watchdog_paths("hang");
     // One hang per test process, and this is the only check that hangs one on purpose. It owns the dump
     // the other live check must NOT see: `start_watch` is once per process (one GUI thread, one watcher),
     // so both checks share the watcher this call starts and hand it the same short limit.
@@ -164,8 +122,8 @@ fn sec_03_shell_1_the_window_s10_a_live_watch_dumps_after_the_silence_passes() {
     // One beat establishes that the thread is alive; then nothing more is said, and the silence is the
     // hang. Beating on the test's own clock is the marker the GTK timer uses.
     watchdog::beat(watchdog::clock().as_millis() as u64);
-    wait_until("the watchdog wrote its hang dump", || !dumps(&paths).is_empty());
-    let files = dumps(&paths);
+    wait_until("the watchdog wrote its hang dump", || !common::hang_dumps(&paths).is_empty());
+    let files = common::hang_dumps(&paths);
     assert_eq!(files.len(), 1, "one hang is one dump: {files:?}");
     let path = &files[0];
     assert_eq!(path.parent().unwrap(), paths.config_dir, "the dump lands beside the settings (§7)");
@@ -199,67 +157,11 @@ fn sec_03_shell_1_the_window_s10_a_live_watch_dumps_after_the_silence_passes() {
         "the watcher had looked again",
         || watchdog::clock() > SHORT_LIMIT * 4,
     );
-    assert_eq!(dumps(&paths).len(), 1, "one hang earns exactly one file");
+    assert_eq!(common::hang_dumps(&paths).len(), 1, "one hang earns exactly one file");
     assert!(
         watchdog::beats() > beats_before,
         "the beat the test rang is counted: {} -> {}",
         beats_before,
         watchdog::beats()
     );
-}
-
-/// Every scenario that needs GTK, inside one application's one `activate`.
-#[test]
-fn sec_03_shell_1_the_window_s10_a_live_window_keeps_the_beat_and_stays_quiet() {
-    common::pin_private_cwd();
-    let paths = private_config("live");
-    GTK.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(move |app| {
-            // The launch's own door, with §1's limit shortened so the check finishes. A window that is
-            // really turning its main context beats, so nothing may be dumped while it lives.
-            watchdog::start_watch(Some(paths.clone()), SHORT_LIMIT);
-            let model = naivepost::project::Project {
-                sources: vec![common::footage("project:sources/a.mkv")],
-                ..Default::default()
-            };
-            let window = ui::build_window(app, &model, "Prepare");
-            window.present();
-            common::hold_last_window(window.clone());
-            // `build_window` armed the heartbeat; wait for the timer to have actually fired rather than
-            // guessing a number of turns.
-            wait_until("the window's heartbeat timer fired", || watchdog::beats() > 0);
-            let beats_at_window = watchdog::beats();
-            // Now pump the main context for longer than the silence limit: if the beat were not real,
-            // this is where the dump would land. The condition waited for is the shared clock passing the
-            // limit — no guessed number of turns, and `wait_until` pumps the context while it waits.
-            wait_until(
-                "the main context had turned past the silence limit",
-                || watchdog::clock() > SHORT_LIMIT * 3,
-            );
-            assert!(
-                watchdog::beats() > beats_at_window,
-                "a live window keeps beating: {} -> {}",
-                beats_at_window,
-                watchdog::beats()
-            );
-            assert!(
-                dumps(&paths).is_empty(),
-                "§1: a window whose GUI thread is answering gets no dump: {:?}",
-                dumps(&paths)
-            );
-            // And the beat it rings is the GTK timer's own, not a test's: the marker moved on its own
-            // between the two reads above.
-            assert!(watchdog::last_beat().is_some(), "the thread has said it was there");
-            window.close();
-            common::release_last_window();
-            RAN.store(true, Ordering::SeqCst);
-            app.quit();
-        });
-        app.run_with_args::<String>(&[]);
-    });
-    assert!(RAN.load(Ordering::SeqCst), "the live watchdog round never ran");
 }

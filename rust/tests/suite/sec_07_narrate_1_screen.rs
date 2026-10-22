@@ -438,7 +438,7 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, widget_in};
+use common::{hold_last_window, release_last_window, settle, widget_in};
 
 static RAN_HEADER_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_BOX_UNDER_HEADER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -583,7 +583,7 @@ fn row_round(app: &adw::Application) {
     // dir (a test never writes into the fixture), with a three-clip cut in the copy so the counts are real.
     release_last_window();
     let root = scratch_dir("row");
-    copy_fixture(&root);
+    common::copy_fixture(&root);
     write_three_clip_cut(&root);
     std::env::set_current_dir(&root).expect("cwd pinned to the copied project");
     // --- **14-19**: time, status, then ▶ ↻ ＋ 🗑 at the header's right end ---------------------------
@@ -703,24 +703,6 @@ fn scratch_dir(name: &str) -> std::path::PathBuf {
     ));
     std::fs::create_dir_all(&root).expect("scratch folder created");
     root
-}
-
-/// The demo project, copied so a test can edit its cut without touching the fixture on disk.
-fn copy_fixture(into: &std::path::Path) {
-    copy_dir(&fixture_dir(), into);
-}
-
-fn copy_dir(from: &std::path::Path, into: &std::path::Path) {
-    std::fs::create_dir_all(into).expect("folder exists");
-    for entry in std::fs::read_dir(from).expect("folder readable") {
-        let entry = entry.expect("an entry");
-        let target = into.join(entry.file_name());
-        if entry.file_type().expect("a file type").is_dir() {
-            copy_dir(&entry.path(), &target);
-        } else {
-            std::fs::copy(entry.path(), target).expect("file copied");
-        }
-    }
 }
 
 /// `cut/cut.json` for a three-clip cut of ten seconds each — what the tally counts, and what `refresh` reads

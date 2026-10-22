@@ -77,10 +77,7 @@ fn noise_end(at: f64) -> f64 {
 }
 
 fn tree_with_cache(tag: &str, lane: &str, at: f64) -> (std::path::PathBuf, naivepost::layout::Tree) {
-    let root = std::path::PathBuf::from(format!(
-        "/tmp/naivepost-wave-edges-{tag}-{}",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("naivepost-wave-edges-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let dir = root.join("demo.naivepost");
     std::fs::create_dir_all(&dir).unwrap();
@@ -171,7 +168,7 @@ fn sec_02_services_4_degraded_modes_s15_an_envelope_off_the_cache_gives_the_band
 
 #[test]
 fn sec_02_services_4_degraded_modes_s15_no_envelope_means_no_cut_points_rather_than_invented_ones() {
-    let root = std::path::PathBuf::from(format!("/tmp/naivepost-wave-edges-none-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("naivepost-wave-edges-none-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let dir = root.join("demo.naivepost");
     std::fs::create_dir_all(&dir).unwrap();
@@ -217,7 +214,7 @@ fn sec_02_services_4_degraded_modes_s16_the_settings_box_decides_where_cut_point
     assert!(!wave_edges::waveform_mode("qwen3-aligner"));
 
     // Read the way the app reads it: a config home with nothing written, and one that names an aligner.
-    let root = std::path::PathBuf::from(format!("/tmp/naivepost-wave-edges-conf-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("naivepost-wave-edges-conf-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let paths = naivepost::settings::Paths {
         config_dir: root.join("config"),

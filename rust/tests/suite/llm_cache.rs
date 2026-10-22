@@ -25,7 +25,7 @@ use sha2::Digest;
 
 /// A project folder of §1's shape, unique per test so parallel tests cannot read each other's cache.
 fn tree(tag: &str) -> Tree {
-    let dir = std::path::PathBuf::from(format!("/tmp/naivepost-llmcache-{tag}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("naivepost-llmcache-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     Tree::new(dir.join("x.naivepost")).expect("a .naivepost folder is a project")

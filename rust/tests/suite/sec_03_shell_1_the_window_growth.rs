@@ -19,7 +19,7 @@ use naivepost::shell;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
+use common::{fixture_dir, hold_last_window, release_last_window, settle, wait_until};
 
 static RAN_GROWTH: AtomicBool = AtomicBool::new(false);
 
@@ -53,28 +53,23 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
-/// Force one real layout pass at `w`×`h`: GTK gives every widget its box here, so what the checks below read
-/// are allocations rather than asks. No waiting: the allocation IS the event.
+/// Grow the window to `w`×`h` and wait until it is that big, so what the checks below read are the boxes GTK
+/// gave a window of that size, rather than a size forced on it for one frame.
 fn lay_out(window: &adw::ApplicationWindow, w: i32, h: i32) {
     window.present();
-    let widget = window.upcast_ref::<gtk::Widget>();
-    if !widget.is_mapped() {
-        widget.map();
-    }
-    widget.size_allocate(&gtk::Allocation::new(0, 0, w, h), -1);
-    settle();
-    // The shell's resting split, asked and then re-allocated: headless a paned moves its handle without
-    // re-allocating its halves, so the band keeps its old box until someone allocates again. WITHOUT this the
-    // minimum-size measurement reads GTK's own default split (measured 488 px of band against §1's 53 px) and
-    // nothing at the minimum is measurable. It has to be THIS window's size that gets allocated again — the
-    // shared helper allocates §1's minimum, which would shrink a bigger box back down.
+    // The window grows for real: a size request moves the X window, an allocation alone does not. GTK
+    // allocates the surface's own size again at its next frame, so a box forced to 1500 px by
+    // `size_allocate` was read as an 890 px window whenever that frame came first (now and then, on a
+    // loaded machine, with the test files running side by side).
+    window.set_size_request(w, h);
+    wait_until(&format!("the window took its {w}x{h} size"), || (window.height() - h).abs() <= 20);
+    // The shell's resting split, asked again at the size the window now has.
     naivepost::ui::window_divider::rest_split(
         &ui::find_source_widget(window, "main-divider")
             .expect("§1: page and bottom bar are two halves of a divider")
             .downcast::<gtk::Paned>()
             .expect("the divider is a gtk::Paned"),
     );
-    widget.size_allocate(&gtk::Allocation::new(0, 0, w, h), -1);
     settle();
 }
 
@@ -154,6 +149,11 @@ fn check_the_bottom_band_keeps_its_own_height(app: &adw::Application) {
     let window = cut_window(app);
     let (_, _, _, small_band) = drawn(&window, "bottom-bar");
     lay_out(&window, BIG_W, BIG_H);
+    // The divider settles on the new height through the same allocations: wait for the band to get there.
+    wait_until("the collapsed band reached the window's bottom edge", || {
+        let (_, ey, _, eh) = drawn(&window, "log-expander");
+        (ey + eh - window.height() as f64).abs() <= 2.0
+    });
     let (ex, ey, _, eh) = drawn(&window, "log-expander");
     let (_, _, _, band_h) = drawn(&window, "bottom-bar");
     println!("BAND at {BIG_W}x{BIG_H}: expander y {ey} h {eh} x {ex}; bottom-bar {band_h} (was {small_band})");

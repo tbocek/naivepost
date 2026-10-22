@@ -15,7 +15,7 @@ use naivepost::{align, degraded, frames, hand_edit, prepare, requests, roles, se
 
 /// A project folder of §1's shape: the scratch paths are only interesting under a real `.naivepost` tree.
 fn tree(tag: &str) -> Tree {
-    let dir = PathBuf::from(format!("/tmp/naivepost-params-{tag}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("naivepost-params-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("inputs")).unwrap();
     Tree::new(dir.join("talk.naivepost")).expect("a .naivepost folder is a project")
