@@ -72,18 +72,24 @@ pub fn outputs_readout(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
         .downcast()
         .ok()
 }
+/// §1's badge **15** — the word "Outputs:" that leads it, its own label in front of the folder button.
+pub fn outputs_label(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
+    find_widget_by_name(window.upcast_ref(), "outputs-label")?
+        .downcast()
+        .ok()
+}
 /// §1's badge **15** — the folder button that goes with the Outputs count.
 pub fn outputs_folder_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "outputs-folder-button")?
         .downcast()
         .ok()
 }
-/// §1's badge **15** as a whole: the word "Outputs:" its folder button wears plus the count behind it, read back
-/// as ONE sentence so a caller sees the row the way it is drawn (`Outputs: Prepare: 9378 files, 987.9 MB`).
-/// The word lives on the button (§1 counts three things in this row), so the sentence is the button's label and
-/// the count label joined by the space the button's own edge supplies.
+/// §1's badge **15** as a whole: the `Outputs:` label, the folder button (which draws no word of its own) and
+/// the count after it, read back as ONE sentence so a caller sees the row the way it is drawn
+/// (`Outputs: Prepare: 5 files, 1.4 MB`). The sentence is the label's text and the count joined by the space
+/// the button's own edge supplies.
 pub fn outputs_sentence(window: &adw::ApplicationWindow) -> Option<String> {
-    let word = outputs_folder_button(window)?.label().unwrap_or_default();
+    let word = outputs_label(window)?.text();
     Some(format!("{word} {}", outputs_readout(window)?.text()))
 }
 /// Mark this window's narration write as owed — the state a half-typed line leaves behind.

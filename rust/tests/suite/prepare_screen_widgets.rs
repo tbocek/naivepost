@@ -16,8 +16,9 @@ use common::{fixture_dir, settle};
 
 /// The bench writes through the settings folder, so this binary points the app at its own: the same
 /// `XDG_CONFIG_HOME` every settings test uses, set before GTK starts and never read from `$HOME`.
+/// Pid-scoped like [`session_root`]: both tests of this binary call `window_round` and the bench WRITES here.
 fn config_home() -> PathBuf {
-    let dir = std::env::temp_dir().join("np-prepare-screen-widgets");
+    let dir = common::temp_dir_noclean("np-prepare-screen-widgets");
     std::fs::create_dir_all(&dir).expect("a settings folder for the bench to write into");
     dir
 }
@@ -72,8 +73,14 @@ fn window_round() {
 }
 
 /// The root the window treats as "this project": `<root>/session.naivepost`.
+///
+/// `temp_dir_noclean`, NOT a per-call fresh folder: this binary's tests are THREADS of one process and both
+/// call [`window_round`], whose seed clears the session folder. A name shared with other processes (or a
+/// `remove_dir_all` of the live cwd) is how one run failed with "naivepost.json: No such file or directory"
+/// while the next passed; the pid keeps other runs out, and the seed below still makes the session itself
+/// fresh each time.
 fn session_root() -> PathBuf {
-    std::env::temp_dir().join("np-prepare-screen-session")
+    common::temp_dir_noclean("np-prepare-screen-session")
 }
 
 /// A session folder with one footage source that HAS frames and a transcript, so the Inputs row
@@ -298,8 +305,8 @@ fn check_readouts_and_reset(app: &adw::Application) {
     );
     assert_eq!(
         body,
-        &format!("{}{}", naivepost::prepare::OUTPUTS_LABEL, line),
-        "the label is §1's prefix over §6's count-and-size sentence: {body:?}"
+        &format!("{} {}", naivepost::prepare::OUTPUTS_LABEL, line),
+        "the label is §1's prefix over §6's count-and-size sentence, with one space between: {body:?}"
     );
     assert!(
         !tip.is_empty(),

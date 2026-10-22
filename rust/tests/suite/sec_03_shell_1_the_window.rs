@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::project::Project;
+use naivepost::prepare;
 use naivepost::shell::{self, Page};
 use naivepost::ui;
 
@@ -219,19 +220,18 @@ fn s5_bottom_bar_order(app: &adw::Application) {
         "§1: the progress bar and the readouts share the row, the bar first: {run_names:?}"
     );
     let readout_row = common::widget_in(&window, "readout-row").expect("the readouts share the run row");
-    // Exactly three children, in §1's order: Inputs readout, Outputs folder button, Outputs readout. The word
-    // "Outputs:" badge 15 draws in front of its button (`spec/img/04-prepare.png`: `Outputs: [📁] Prepare: 9378
-    // files, 987.9 MB`) is the BUTTON's own label, not a fourth thing — the row has no spare pixel at §1's
-    // minimum for one (an extra label squeezed `outputs-readout` to 0 px). Its wording is pinned by
-    // `prepare_screen_widgets.rs`, which reads the row back as one sentence.
+    // Exactly four children, in §1's order: Inputs readout, the `Outputs:` label, the Outputs folder button,
+    // the Outputs count (`Outputs: [📁] Prepare: 5 files, 1.4 MB`). The word is a LABEL of its own now — §1
+    // counts it as one of the row's parts and the button draws the icon alone.
     assert_eq!(
         child_names(&readout_row),
         vec![
             "inputs-readout".to_string(),
+            "outputs-label".to_string(),
             "outputs-folder-button".to_string(),
             "outputs-readout".to_string()
         ],
-        "§1's order inside that row: Inputs readout, Outputs folder button, Outputs readout"
+        "§1's order inside that row: Inputs readout, Outputs label, Outputs folder button, Outputs count"
     );
     let log = position_of(&names, "log-expander");
     assert!(position_of(&names, "run-bar") < log, "the log expander sits under the row: {names:?}");
@@ -954,6 +954,7 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
             s4_project_label_names_the_open_project(app);
             s4b_tab_row_icons(app);
             s5_bottom_bar_order(app);
+            s15_the_outputs_row_reads_label_button_count(app);
             s6b_log_messages_and_levels(app);
             s7_draggable_divider(app);
             s8_a_page_whose_prerequisites_vanish_moves_to_prepare(app);
@@ -964,6 +965,35 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
         app.run_with_args::<String>(&[]);
     });
     assert!(RAN.load(Ordering::SeqCst), "the widget rounds never ran");
+}
+
+/// §1 badge **15** through the widget, as structure only: the row's four parts are the Inputs readout, then
+/// its OWN "Outputs:" label, then a folder button that carries no word of its own, then the count. Where they
+/// land on screen is `spec/img/03-window.png`'s and `all_pages_fit`/`window_shrinks`' to judge.
+fn s15_the_outputs_row_reads_label_button_count(app: &adw::Application) {
+    let root = scratch_root("outputsrow");
+    let window = window(app, "Prepare");
+    let label = ui::outputs_label(&window).expect("§1 badge 15: the row has its own Outputs: label");
+    assert_eq!(label.text().as_str(), "Outputs:", "the label says exactly the word §1 spells");
+    let button = ui::outputs_folder_button(&window).expect("§1 badge 15: the folder button");
+    assert_eq!(
+        button.label().unwrap_or_default().as_str(),
+        "",
+        "the word belongs to the label, so the button draws the icon alone"
+    );
+    let row = common::widget_in(&window, "readout-row").expect("the readouts share the run row");
+    assert_eq!(
+        child_names(&row),
+        vec![
+            "inputs-readout".to_string(),
+            "outputs-label".to_string(),
+            "outputs-folder-button".to_string(),
+            "outputs-readout".to_string()
+        ],
+        "§1's order inside the row: Inputs readout, Outputs label, folder button, count"
+    );
+    window.close();
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// S3: the project name/path ladder — path + tab words → file name + tab words → file name alone —
@@ -1000,6 +1030,24 @@ fn sec_03_shell_1_the_window_s3_the_project_label_narrows_path_then_name_then_na
     assert_eq!(stage_for(&text, natural / 4), Fit::Tightest);
     // An unallocated label (width 0) keeps the widest rung, which is the 1240 px window §1 opens at.
     assert_eq!(stage_for(&text, 0), Fit::Roomy);
+}
+
+/// §1 badge **15**'s count, as the format contract §1 spells: `Prepare: 5 files, 1.4 MB` — the label, ONE
+/// space, then the count-and-size sentence with no prefix of its own. How many files there are and what an
+/// empty folder says belong to §6 (`prepare_screen.rs`, `prepare_screen_widgets.rs`).
+#[test]
+fn sec_03_shell_1_the_window_s15_the_count_reads_the_label_space_count_size() {
+    // The same readout sentence the row draws, built by the program's own helper.
+    let (line, _) = prepare::outputs_readout(5, 1_400_000, None);
+    let shown = format!("{} {}", prepare::OUTPUTS_LABEL, line);
+    assert!(
+        shown.starts_with("Prepare: "),
+        "§1 spells the row `Prepare: 5 files, 1.4 MB` — label, ONE space, count: {shown:?}"
+    );
+    let (label, body) = shown.split_once(' ').expect("label and count separated by a space");
+    assert_eq!(label, prepare::OUTPUTS_LABEL, "exactly one space joins them: {shown:?}");
+    assert!(!body.starts_with(' '), "no double blank after the label: {shown:?}");
+    assert!(!body.contains(':'), "the count carries no prefix of its own: {shown:?}");
 }
 
 /// S6: the level rule itself — `>>> ` / `!!! ` / four spaces stay what decides the LEVEL (§7 spells its
