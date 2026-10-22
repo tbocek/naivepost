@@ -53,11 +53,15 @@ fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     hold_last_window(window.clone());
-    window.present();
+    common::size_to_minimum(&window);
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
     settle();
+    // …and sized again now that the Cut page is the visible tab: headless an unallocated window leaves the
+    // page's paned on its clamp with everything below the handle unmapped, and `stage` below then measures an
+    // unmapped page. The shot's own staging moves this divider itself.
+    common::size_to_minimum(&window);
     window
 }
 

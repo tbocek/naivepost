@@ -102,10 +102,14 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
     let window = naivepost::ui::build_window(app, &seed, "Prepare");
     hold_last_window(window.clone());
     window.set_default_size(1440, 900);
-    window.present();
+    common::size_to_minimum(&window);
     naivepost::ui::tab_button(&window, naivepost::shell::Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
+    // Size AGAIN now that the Cut page is the visible tab: a paned only gets boxes once GTK allocates the
+    // page it lives on, so the pass above (made while Prepare was showing) could not lay the Cut page out.
+    common::size_to_minimum(&window);
+    common::rest_cut_page_split(&window);
     // Recordings BEFORE the cut: `set_session_recordings` borrows the page's own slot and a
     // `seed_review_cut` that follows re-reads it, so the order matters (the reverse panics `RefCell
     // already borrowed` inside `cut_folds`). Same order `tests/suite/sec_05_cut_1_band_paints.rs` uses.

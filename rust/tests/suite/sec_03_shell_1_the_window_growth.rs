@@ -46,6 +46,10 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     window.set_default_size(shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
     hold_last_window(window.clone());
     lay_out(&window, shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
+    // …and the Cut page's own divider opened at §A's 380 px: headless its ask lands on GTK's clamp (655 of
+    // 660) and the pane below it — toolbar, tracks, strip — is left UNMAPPED, so there would be nothing here
+    // to measure growing.
+    common::rest_cut_page_split(&window);
     window
 }
 
@@ -57,6 +61,19 @@ fn lay_out(window: &adw::ApplicationWindow, w: i32, h: i32) {
     if !widget.is_mapped() {
         widget.map();
     }
+    widget.size_allocate(&gtk::Allocation::new(0, 0, w, h), -1);
+    settle();
+    // The shell's resting split, asked and then re-allocated: headless a paned moves its handle without
+    // re-allocating its halves, so the band keeps its old box until someone allocates again. WITHOUT this the
+    // minimum-size measurement reads GTK's own default split (measured 488 px of band against §1's 53 px) and
+    // nothing at the minimum is measurable. It has to be THIS window's size that gets allocated again — the
+    // shared helper allocates §1's minimum, which would shrink a bigger box back down.
+    naivepost::ui::window_divider::rest_split(
+        &ui::find_source_widget(window, "main-divider")
+            .expect("§1: page and bottom bar are two halves of a divider")
+            .downcast::<gtk::Paned>()
+            .expect("the divider is a gtk::Paned"),
+    );
     widget.size_allocate(&gtk::Allocation::new(0, 0, w, h), -1);
     settle();
 }
@@ -103,12 +120,20 @@ fn check_the_preview_grows_with_the_room(app: &adw::Application) {
         "and it keeps its share of the width too: {big_w} px"
     );
     // The lane under the frame and the tape under the pane both still have pixels: the leftover height is
-    // shared, not spent on the picture alone.
+    // shared, not spent on the picture alone. The window's own box is read off the widget rather than the
+    // allocation asked for: under xvfb the headless WM reports a few px more than §1's number (the same
+    // reason the band check below measures `window.height()`), and a control near the bottom edge would
+    // otherwise fail a comparison against a size the window was never given.
+    let (win_w, win_h) = (
+        window.width() as f64,
+        window.height() as f64,
+    );
     for name in ["preview-panel", "cut-preview-stack", "effects-lane", "track-strip", "cut-bottom"] {
+        let (x, y, w, h) = drawn(&window, name);
         assert!(
-            ui::window_shot::is_on_screen_for_test(window.upcast_ref(), name),
-            "\u{a7}1: {name} lost its pixels when the window grew: {:?}",
-            ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name)
+            w > 0.0 && h > 0.0 && x >= -0.5 && y >= -0.5 && x < win_w && y < win_h,
+            "\u{a7}1: {name} lost its pixels when the window grew: ({x:.0},{y:.0},{w:.0},{h:.0}) in a \
+             {win_w:.0}x{win_h:.0} px window",
         );
     }
     // Splits keep their proportions: the shell's own divider hands the extra height to the PAGE half, so

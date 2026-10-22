@@ -379,6 +379,7 @@ mod sec05_cut_picture_scrollbar;
 mod sec05_cut_preview_picture;
 mod sec05_live_log_link;
 mod sec_03_shell_1_log_path_links;
+mod sec_03_shell_1_second_window_band;
 mod sec_03_shell_1_the_window;
 mod sec_03_shell_1_the_window_growth;
 mod sec_03_shell_1_the_window_watchdog;
