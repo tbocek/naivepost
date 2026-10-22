@@ -881,7 +881,7 @@ pub fn cut_window_with_footage(app: &adw::Application) -> adw::ApplicationWindow
          test the wrong page"
     );
     let window = ui::build_window(app, &model, "Prepare");
-    window.present();
+    size_to_minimum(&window);
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
@@ -891,7 +891,85 @@ pub fn cut_window_with_footage(app: &adw::Application) -> adw::ApplicationWindow
         "the Cut page is showing"
     );
     settle();
+    // …and sized AGAIN now that the Cut page is the visible one: a paned only gets boxes once its page is
+    // the tab GTK allocates, so the pass above (made on Prepare) could not lay the Cut page out.
+    size_to_minimum(&window);
+    rest_cut_page_split(&window);
     window
+}
+
+/// Give a window §1's minimum size FOR REAL, twice, draining between the two.
+///
+/// Headless `present()` shows a window without resizing it, and a `gtk::Paned` inside a window that was
+/// never allocated answers 5 px and clamps every divider ask onto that number — which is how the Cut-page
+/// widget tests found their toolbar, tracks and scrollbar missing: the page's own paned sat at its clamp
+/// with the end child left unmapped. The SECOND allocation is what re-draws the halves after the shell's
+/// resting ask moved its handle (measured: `position()` says 790 while the band is still drawn 488 px until
+/// the next allocation). The allocation IS the event — no waiting, and no frame clock, which headless has
+/// none of (`context.iteration(true)` would block this process forever).
+pub fn size_to_minimum(window: &adw::ApplicationWindow) {
+    window.present();
+    let widget = window.upcast_ref::<gtk::Widget>();
+    if !widget.is_mapped() {
+        widget.map();
+    }
+    for _ in 0..2 {
+        widget.size_allocate(
+            &gtk::Allocation::new(
+                0,
+                0,
+                naivepost::shell::WINDOW_MIN_W,
+                naivepost::shell::WINDOW_MIN_H,
+            ),
+            -1,
+        );
+        settle();
+    }
+}
+
+/// §A's opening of the Cut page's own top/bottom divider, handed to it by the harness.
+///
+/// WHY A TEST ASKS THIS AT ALL. A `gtk::Paned` clamps every `set_position` into `[min_position, max_position]`
+/// and `max_position` is `total − end minimum`; a window that was never resized (headless `present()` does not
+/// resize) answers ~660 px of page, so §A's 380 ask lands on the clamp — measured: 655 of 660 — and GTK leaves
+/// the pane BELOW the handle unmapped. Every control in the toolbar, the tracks and the scrollbar then exists,
+/// carries a name, and is never painted. The program cannot fix that from inside: at build time the paned has no
+/// height to honour (it answers 5 px), and asking again later needs a frame clock that headless does not have.
+/// So this states the geometry the spec asks for, exactly as `src/snapshot_rows.rs` already does for its shots
+/// (`paned.set_position(SHOT_SPLIT_POS)`), through the same door a person's drag uses.
+pub fn rest_cut_page_split(window: &adw::ApplicationWindow) {
+    let Some(paned) = ui::find_source_widget(window, "cut-page-split")
+        .and_then(|widget| widget.downcast::<gtk::Paned>().ok())
+    else {
+        return;
+    };
+    let total = paned.height().max(1);
+    let opening = naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX.clamp(1, total - 1);
+    paned.set_position(opening);
+    // …and TWO more allocations: the first lets the halves catch up with the moved handle (measured:
+    // `position()` answers 380 while both children keep their old boxes until the next allocation), the second
+    // re-runs that for whatever the newly-mapped bottom pane now asks for. Allocations, not waits.
+    size_to_minimum(window);
+    size_to_minimum(window);
+}
+
+/// §1's collapsed band, handed to the shell by the harness.
+///
+/// Same problem as [`rest_cut_page_split`] one level up. The shell's resting ask runs in an idle (its only
+/// headless door: `connect_realize` fires before the allocation and `notify::height` never fires at all), and
+/// when nothing allocates the window afterwards the handle's move is never drawn — measured: `position()` said
+/// 790 while the band was still painted 488 px tall in the first window and 707 px in the second, so every
+/// control below the handle stayed off screen. This asks the shell's OWN rule and then allocates twice, which
+/// is what makes the drawn boxes match it.
+pub fn rest_shell_band(window: &adw::ApplicationWindow) {
+    let Some(divider) = ui::find_source_widget(window, "main-divider")
+        .and_then(|widget| widget.downcast::<gtk::Paned>().ok())
+    else {
+        return;
+    };
+    naivepost::ui::window_divider::rest_split(&divider);
+    size_to_minimum(window);
+    size_to_minimum(window);
 }
 
 /// One narration entry starting halfway through its span — the shape a frozen preview reads back.

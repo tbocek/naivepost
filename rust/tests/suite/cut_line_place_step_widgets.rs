@@ -42,11 +42,15 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
          test the wrong page"
     );
     let window = ui::build_window(app, &model, "Prepare");
-    window.present();
+    common::size_to_minimum(&window);
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut, "the Cut tab bounced");
+    // Size AGAIN now that the Cut page is the visible tab: a paned only gets boxes once GTK allocates the
+    // page it lives on, so the pass above (made while Prepare was showing) could not lay the Cut page out.
+    common::size_to_minimum(&window);
+    common::rest_cut_page_split(&window);
     window
 }
 

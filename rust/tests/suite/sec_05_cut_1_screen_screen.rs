@@ -66,10 +66,14 @@ fn cut_page_with_a_lane(app: &adw::Application) -> adw::ApplicationWindow {
     let window = naivepost::ui::build_window(app, &seed, "Prepare");
     hold_last_window(window.clone());
     window.set_default_size(1440, 900);
-    window.present();
+    common::size_to_minimum(&window);
     naivepost::ui::tab_button(&window, naivepost::shell::Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
+    // Size AGAIN now that the Cut page is the visible tab: a paned only gets boxes once GTK allocates the
+    // page it lives on, so the pass above (made while Prepare was showing) could not lay the Cut page out.
+    common::size_to_minimum(&window);
+    common::rest_cut_page_split(&window);
     // Recordings BEFORE the cut: `set_session_recordings` borrows the page's slot that the
     // following `seed_review_cut` re-reads (same order `sec_05_cut_1_screen_layout` uses).
     naivepost::ui::set_session_recordings(&[naivepost::timeline::Recording {
@@ -90,6 +94,11 @@ fn cut_page_with_a_lane(app: &adw::Application) -> adw::ApplicationWindow {
     };
     naivepost::ui::seed_review_cut(&window, &seeded);
     naivepost::ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
+    settle();
+    // …and the page redraws once more now that it HAS a cut: `cut_view::repaint_page` is what grows the band's
+    // size request to the scene (`fit_band_height_for_window`), and a seeded lane only reaches the band through
+    // that door. Without this the band keeps the height it was sized to when the page had no cut.
+    naivepost::ui::cut_view::repaint_page(&window);
     settle();
     window
 }
