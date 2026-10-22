@@ -253,10 +253,8 @@ fn check_a_press_ends_on_screen(app: &adw::Application) {
     }
     // §S8 runs for every ending, not only the happy one: the readouts were refreshed from the folder the
     // run worked in, through the doors Rescan uses, so the count is this folder's and not the launch's.
-    let readout = ui::outputs_readout(&window)
-        .expect("the shell carries the Outputs readout")
-        .text()
-        .to_string();
+    let readout = ui::outputs_sentence(&window)
+        .expect("the shell carries the Outputs readout");
     let expected = naivepost::prepare::outputs_count(&tree).to_string();
     // §6 makes Prepare's row "Prepare: N files, size", so the count is the LEADING number of what
     // follows the label, not the whole row — read the same way `f1_1_endings` reads it.

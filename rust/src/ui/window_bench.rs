@@ -24,10 +24,9 @@ use crate::project::Project;
 use crate::shell::{Page, Shell};
 use crate::ui::window as ui;
 
-/// §1's two readouts as the row draws them: each label is the word plus what `shell` computed, so
-/// the prefix is the only text this file adds to those two rows.
+/// §1's readout as the row draws it: the label is what `shell` computed, so this file adds no prefix of its own
+/// to it — §1 badge **15**'s word "Outputs:" is a separate label in front of the folder button (`window.rs`).
 const INPUTS_PREFIX: &str = "Inputs: ";
-const OUTPUTS_PREFIX: &str = "Outputs: ";
 /// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
 const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
 
@@ -513,7 +512,7 @@ pub(crate) fn paint_readouts(
         }
         None => inputs_label.set_tooltip_text(None::<&str>),
     }
-    outputs_label.set_text(&format!("{OUTPUTS_PREFIX}{}", shell.outputs(tree)));
+    outputs_label.set_text(&shell.outputs(tree));
     // §6's second half: "newest <ago>" on hover, cleared for any page that has no age to date.
     match shell.outputs_tip(tree) {
         Some(tip) => outputs_label.set_tooltip_text(Some(&tip)),

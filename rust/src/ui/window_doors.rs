@@ -78,6 +78,14 @@ pub fn outputs_folder_button(window: &adw::ApplicationWindow) -> Option<gtk::But
         .downcast()
         .ok()
 }
+/// §1's badge **15** as a whole: the word "Outputs:" its folder button wears plus the count behind it, read back
+/// as ONE sentence so a caller sees the row the way it is drawn (`Outputs: Prepare: 9378 files, 987.9 MB`).
+/// The word lives on the button (§1 counts three things in this row), so the sentence is the button's label and
+/// the count label joined by the space the button's own edge supplies.
+pub fn outputs_sentence(window: &adw::ApplicationWindow) -> Option<String> {
+    let word = outputs_folder_button(window)?.label().unwrap_or_default();
+    Some(format!("{word} {}", outputs_readout(window)?.text()))
+}
 /// Mark this window's narration write as owed — the state a half-typed line leaves behind.
 ///
 /// S3 owns the decision whether leaving the tab writes (`shell::Pending::owe`); this only raises

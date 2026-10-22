@@ -47,6 +47,10 @@ use crate::shell::{Move, Outcome, Page, Refresh, Shell};
 /// The page-specific wording §1 mentions lives in `Shell::outputs`' own doc — the button itself is
 /// one control for every page, so it gets one sentence here rather than four near-duplicates.
 pub(crate) const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
+/// §1 badge **15**'s word, drawn in front of the folder button (see `readout_row` below) with ONE space between
+/// it and the button — that gap is the row's own spacing, so the label carries no trailing blank. The count
+/// behind the button carries no prefix of its own, so this string appears exactly once in the row.
+pub(crate) const OUTPUTS_PREFIX: &str = "Outputs:";
 
 pub const APP_ID: &str = "ch.bocek.naivepost";
 
@@ -267,6 +271,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // tab click repaints them, and they are window-level rather than page-level so a switch updates
     // one pair instead of four. Both texts come from `Shell::inputs` / `Shell::outputs`; nothing
     // here composes a sentence.
+    // §1's badges **14** and **15**: the visible tab's `Inputs:` readout, then its `Outputs:` count with the
+    // folder button beside it. They are built before the switch is wired because a tab click repaints them, and
+    // they are window-level rather than page-level so a switch updates one pair instead of four.
     let readout_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     readout_row.set_widget_name("readout-row");
     readout_row.set_margin_start(8);
@@ -280,6 +287,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     outputs_folder.set_widget_name("outputs-folder-button");
     outputs_folder.set_tooltip_text(Some(OUTPUTS_FOLDER_TIP));
     outputs_folder.set_valign(gtk::Align::Center);
+    // §1 badge **15**'s word is the BUTTON's own label (`spec/img/04-prepare.png`: `Outputs: [📁] Prepare: 9378
+    // files, 987.9 MB`), so the row still holds exactly the three children §1 counts.
+    outputs_folder.set_label(OUTPUTS_PREFIX);
     // §1 badge **15**: the press opens the folder the row is naming, read at press time so a switch or a
     // Save-as moves what opens (`window_outputs`).
     super::window_outputs::wire(&outputs_folder);
@@ -287,7 +297,15 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     let outputs_readout = gtk::Label::new(None);
     outputs_readout.set_widget_name("outputs-readout");
     outputs_readout.set_xalign(0.0);
+    // The count ellipsizes rather than being squeezed out: at §1's minimum this row is allocated ~362 px for
+    // ~528 px of full sentences, so GTK must shrink somebody, and §1 already names the kind of thing that gives
+    // way — badge **4**, the project path, is "ellipsized" while the tab words keep theirs. Without
+    // `ellipsize(End)` the label's minimum width IS its whole text, GTK cannot shrink it, and it is drawn 0 px
+    // wide instead (measured: x=1222 of a 1230 px row). It stays an EXPANDER because a `gtk::Box` copies its
+    // children's expand flags into its own measure, and a non-expanding count makes `readout-row` answer natural
+    // 0 — the number `window_run_scroller::share_the_free_width` sizes §1's progress bar from.
     outputs_readout.set_hexpand(true);
+    outputs_readout.set_ellipsize(gtk::pango::EllipsizeMode::End);
     outputs_readout.add_css_class("dim-label");
     readout_row.append(&outputs_readout);
 
@@ -1377,7 +1395,7 @@ pub const CAPTIONS_PASS_LABEL: &str = "\u{2710} Captions";
 // The §1 widget doors live in `window_doors` (window.rs is past its size budget); these are the same names,
 // re-exported under the paths every other module and test already reaches them through.
 pub use crate::ui::window_doors::{
-    state, tab_tooltip, tab_dimmed, tab_button, inputs_readout, outputs_readout, outputs_folder_button, tab_info_parts, mark_narration_owed, tab_info_button, save_button, save_tooltip, rescan_button, find_source_widget, open_button, session_handle, session_sources, run_queue, open_tooltip, progress_bar, log_expander, progress_tooltip, rescan_tooltip, add_sources_button, copy_into_project, bench_language, session_freq, running_step, marking_pass, set_marking_pass, new_button, new_tooltip, play_button, stop_button, lucky_button, play_tooltip, find_status, project_title, paint_project_title,
+    state, tab_tooltip, tab_dimmed, tab_button, inputs_readout, outputs_readout, outputs_sentence, outputs_folder_button, tab_info_parts, mark_narration_owed, tab_info_button, save_button, save_tooltip, rescan_button, find_source_widget, open_button, session_handle, session_sources, run_queue, open_tooltip, progress_bar, log_expander, progress_tooltip, rescan_tooltip, add_sources_button, copy_into_project, bench_language, session_freq, running_step, marking_pass, set_marking_pass, new_button, new_tooltip, play_button, stop_button, lucky_button, play_tooltip, find_status, project_title, paint_project_title,
 
 };
 pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};

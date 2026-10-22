@@ -235,10 +235,8 @@ fn check_finished_run_on_screen(app: &adw::Application) {
     // `Shell::outputs`' (§04 #1 badge 7), which carries §6's "N files, size" after §1's label, so what is
     // pinned here is the NUMBER and that it moved with the run — the sentence shape belongs to the shell's
     // test.
-    let readout = ui::outputs_readout(&window)
-        .expect("the shell carries the Outputs readout")
-        .text()
-        .to_string();
+    let readout = ui::outputs_sentence(&window)
+        .expect("the shell carries the Outputs readout");
     let body = readout
         .trim_start_matches("Outputs: ")
         .trim_start_matches(naivepost::prepare::OUTPUTS_LABEL)
