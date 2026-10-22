@@ -266,10 +266,12 @@ fn s1_nothing_is_drawn_between_the_page_and_the_run_bar(app: &adw::Application) 
     window.close();
 }
 
-/// §1 badge **5**: the tab row is the header bar's title widget, so it reads as being in the header's
-/// CENTRE only if it is actually drawn there. A name lookup cannot see a shifted title widget — libadwaita's
-/// default LOOSE centring slid the row right of centre beside the expanding project path — so this measures
-/// the drawn box: its horizontal centre against the window's own.
+/// §1 badge **5**, both halves: the tab row is the header bar's title widget, so it reads as being in the
+/// header's CENTRE only if it is actually drawn there (a name lookup cannot see a shifted title widget —
+/// libadwaita's default LOOSE centring slid the row right of centre beside the expanding project path), and its
+/// four WORDS are drawn whole at this size (libadwaita ellipsizes a switcher's labels when its centre slot runs
+/// short, "Prep…"), which `ui::window_tabs::keep_labels_whole` is what holds. So this measures the drawn box —
+/// its horizontal centre against the window's own — and then each tab button's width against its label's.
 fn s2_the_tab_row_sits_in_the_header_centre(app: &adw::Application) {
     let window = minimum_window(app, "Prepare");
     let (x, _y, w, h) = drawn(&window, "page-tabs");
@@ -283,16 +285,8 @@ fn s2_the_tab_row_sits_in_the_header_centre(app: &adw::Application) {
         "{ITEM} §1: the tab row is drawn with its centre at {tabs_centre:.0}, the window's centre is \
          {window_centre:.0} — §1 wants the tab row in the header bar's centre"
     );
-    window.close();
-}
-
-/// §1 badge **5**, the other half: the tab row is centred (above) and its four WORDS are drawn whole here.
-/// libadwaita ellipsizes a switcher's labels when its centre slot runs short ("Prep…"), and §1 makes this size
-/// the one where "every control and lane a page names is on screen at once", so a tab may neither be allowed to
-/// ellipsize nor be squeezed under its own text. `ui::window_tabs::keep_labels_whole` is what holds that; this
-/// measures whether it worked.
-fn s1_the_tab_words_are_drawn_whole(app: &adw::Application) {
-    let window = minimum_window(app, "Prepare");
+    // …and the words: §1 makes this the size where "every control and lane a page names is on screen at
+    // once", so a tab may neither be allowed to ellipsize nor be squeezed under its own text.
     for page in shell::Page::all() {
         let word = page.label();
         let button = ui::tab_button(&window, page)
@@ -322,12 +316,11 @@ fn s1_the_tab_words_are_drawn_whole(app: &adw::Application) {
             "{ITEM} §1: the {word} tab may be shown as an ellipsis"
         );
         let natural = label.measure(gtk::Orientation::Horizontal, -1).1;
-        let (_, _, w, _) = drawn(&window, "page-tabs");
         let button_w = button
             .compute_bounds(window.upcast_ref::<gtk::Widget>())
             .map(|b| b.width() as f64)
             .unwrap_or_default();
-        println!("{ITEM} s1: tab {word} natural={natural} drawn w={button_w:.1} (row w={w:.0})");
+        println!("{ITEM} s2: tab {word} natural={natural} drawn w={button_w:.1} (row w={w:.0})");
         assert!(
             button_w >= f64::from(natural),
             "{ITEM} §1: the {word} tab was given {button_w:.1} px for a {natural} px word, so it prints truncated"
@@ -377,7 +370,6 @@ fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
         s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app);
         s1_nothing_is_drawn_between_the_page_and_the_run_bar(app);
         s2_the_tab_row_sits_in_the_header_centre(app);
-        s1_the_tab_words_are_drawn_whole(app);
         s1_the_pass_buttons_are_still_reachable(app);
         RAN.store(true, Ordering::SeqCst);
     });

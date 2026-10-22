@@ -56,6 +56,8 @@ fn split_round() {
         RAN_MARK.store(true, Ordering::SeqCst);
         check_the_picked_row_is_the_one_the_shot_ticks(app);
         RAN_TICK.store(true, Ordering::SeqCst);
+        check_the_open_picker_hangs_under_its_button(&window);
+        RAN_OPEN_PANEL.store(true, Ordering::SeqCst);
         window.close();
     });
 }
@@ -914,3 +916,132 @@ fn sec_04_prepare_1_screen_s3_the_inputs_readout_is_in_the_run_bar_row_not_on_th
         "{ITEM} s3: the readout-placement check never ran"
     );
 }
+
+/// §1's second picture (`spec/img/04-prompt-picker.png`), as numbers: the row picker's list hangs under the
+/// picker button at the top right of the bench column, and the heading row and the text box stay on screen
+/// beside it. `spec/QUESTIONS.md`'s §04 answer 3c rejects "only the list, stretched over the whole window",
+/// so what is pinned is COVERAGE: the panel is a strip of the window, not the window, and nothing it overlaps
+/// has been pushed off.
+fn check_the_open_picker_hangs_under_its_button(window: &adw::ApplicationWindow) {
+    let picker = bounds(window, "bench-picker");
+    let heading = bounds(window, "bench-heading");
+    let text = bounds(window, "bench-text");
+    // The shot's own placement doors, so a green check cannot coexist with a wrong picture.
+    let (px, py, pw, ph) = naivepost::snapshot_prompt_picker::open_panel_box_for_test(window)
+        .expect("{ITEM} s6: the picker has no box to hang a list under");
+    let win_w = window.width().max(naivepost::shell::WINDOW_MIN_W) as f64;
+    let win_h = window.height().max(naivepost::shell::WINDOW_MIN_H) as f64;
+    let (picker_x, picker_right, picker_bottom) = (
+        picker.x() as f64,
+        (picker.x() + picker.width()) as f64,
+        (picker.y() + picker.height()) as f64,
+    );
+    println!(
+        "SPLIT s6 picker x={picker_x:.1}..{picker_right:.1} y={:.1}..{picker_bottom:.1}; panel x={px:.1}..{:.1} y={py:.1}..{:.1} in a {win_w:.0}x{win_h:.0} window",
+        picker.y(), px + pw, py + ph
+    );
+    // The split's own handle position, not `prepare-left`'s box: inside a `gtk::Paned` with `shrink-start-child`
+    // a column is allocated its own minimum while the handle sits elsewhere, so the column's x+w says nothing
+    // about where the divider is. The handle is what separates the two columns on screen, and it is the geometry
+    // the panel must fit inside — read here, before the width checks, because both of them compare against it.
+    let split = widget(window, "prepare-split")
+        .downcast::<gtk::Paned>()
+        .expect("{ITEM} s6: the Prepare page is split by a paned");
+    let split_bounds = bounds(window, "prepare-split");
+    let divider_x = split_bounds.x() as f64 + split.position() as f64;
+    println!("SPLIT s6 prepare-split x={:.1} handle at {divider_x:.1}", split_bounds.x());
+    // **COMPACT**: the panel is a menu, not a sheet — narrower than the bench column it hangs over, and a slice
+    // of the window's width (`spec/QUESTIONS.md` §04 answer 3c's exact complaint was a list filling the canvas).
+    assert!(
+        pw < win_w - divider_x,
+        "{ITEM} s6: the open list is {pw:.0} px wide but the column it hangs over is only {:.0} px — that is a \
+         sheet over the whole page, not a dropdown under a button",
+        win_w - divider_x
+    );
+    assert!(
+        pw < win_w / 4.0,
+        "{ITEM} s6: the open list is {pw:.0} px wide in a {win_w:.0} px window against a {:.0} px picker — \
+         that is a sheet, not a dropdown hanging under a button",
+        picker_right - picker_x
+    );
+    // **AND THE PAGE IS STILL THERE**: the panel hangs under the heading row it belongs to, down the RIGHT
+    // column only, inside the window — which is what a dropdown does and a sheet does not. The height is NOT
+    // capped: §1's caption says the list scrolls ("Translate and Upload text sit below Narration"), so all
+    // fourteen rows are drawn and the bottom lands where GTK clamps a real popover, at the window's edge.
+    let heading_x = heading.x() as f64;    assert!(
+        py >= heading.y() as f64 + heading.height() as f64 - 2.0,
+        "{ITEM} s6: the open list starts at {py:.1}, over the bench heading that owns the picker \
+         (heading {:.1}..{:.1})",
+        heading.y() as f64,
+        heading.y() as f64 + heading.height() as f64
+    );
+    assert!(
+        px - heading_x >= 120.0,
+        "{ITEM} s6: only {:.0} px of the heading row stay visible to the list's left, so the list covers the \
+         page instead of hanging beside it (heading starts {heading_x:.1}, list starts {px:.1})",
+        px - heading_x
+    );
+    assert!(
+        px >= divider_x - 1.0,
+        "{ITEM} s6: the open list starts at {px:.1}, left of the page's own divider at {divider_x:.1} — it \
+         overlays the sources column, not the bench's",
+    );
+    assert!(
+        py + ph <= win_h + 1.0,
+        "{ITEM} s6: the open list runs past the bottom of the window (ends {py:.1}+{ph:.0} in {win_h:.0} px)"
+    );
+    // **HUNG FROM THE BUTTON**: its right edge is the button's, its top is just under the button.
+    assert!(
+        (px + pw - picker_right).abs() <= 8.0,
+        "{ITEM} s6: the list's right edge ({:.1}) does not follow the picker's ({picker_right:.1}), so it is \
+         not anchored to that button",
+        px + pw
+    );
+    assert!(
+        py >= picker_bottom - 1.0 && py <= picker_bottom + 12.0,
+        "{ITEM} s6: the list's top ({py:.1}) is not under the picker button (ends {picker_bottom:.1})"
+    );
+    // **AND THE PAGE IS STILL THERE**: the heading row beside it, and the text box under it, both on screen.
+    let (heading_x, heading_right) = (heading.x() as f64, (heading.x() + heading.width()) as f64);
+    assert!(
+        px > heading_x && px + pw <= heading_right + 1.0,
+        "{ITEM} s6: the list ({px:.1}..{:.1}) does not sit within the bench heading's column \
+         ({heading_x:.1}..{heading_right:.1})",
+        px + pw
+    );
+    for name in ["bench-heading", "bench-text", "prepare-title", "add-sources-row", "sources-scroll"] {
+        // The bounds this file reads everywhere, not `is_on_screen_for_test`: that door compares against
+        // `window.width()`, which under a window manager with no WM answers 0 before the first map, and every
+        // control would read as "off screen" whatever the picture shows.
+        let (x, y, w, h) = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name)
+            .unwrap_or((0.0, 0.0, 0.0, 0.0));
+        assert!(
+            w > 0.0 && h > 0.0 && x >= -0.5 && y >= -0.5 && x < win_w && y < win_h,
+            "{ITEM} s6: {name} left the screen once the picker opened: ({x:.1},{y:.1},{w:.1},{h:.1}) in a \
+             {win_w:.0}x{win_h:.0} window"
+        );
+    }
+    assert!(
+        text.height() > 0.0 && (text.y() as f64) < py + ph,
+        "{ITEM} s6: the prompt text box ({:.1}..{:.1}) is not the panel's neighbour any more \
+         (panel ends {:.1})",
+        text.y() as f64, (text.y() + text.height()) as f64, py + ph
+    );
+    // The window shot is the screen now: no sidecar steals `04-prompt-picker.png` from the page.
+    assert!(
+        !naivepost::snapshot_subjects::subject_takes_the_name("04-prompt-picker"),
+        "{ITEM} s6: a subject took the asked filename again, which is how the asked name ended up a list alone"
+    );
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s6_the_open_picker_hangs_under_its_button_over_the_page() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_OPEN_PANEL.load(Ordering::SeqCst),
+        "{ITEM} s6: the open-picker placement check never ran"
+    );
+}
+
+static RAN_OPEN_PANEL: AtomicBool = AtomicBool::new(false);
