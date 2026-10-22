@@ -249,6 +249,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
             // it, and pinned in tests by `f2_5_s2_the_lane_plate_on_the_live_band_carries_the_layout`.
         }
         if screen == "05-cut" || screen == "05-fold" {
+            // §1's badges 5-9 are greyed until a preview plays; the shot's own doors put them live
+            // (`snapshot_layout::stage_cut_transport`).
+            if screen == "05-cut" {
+                crate::snapshot_layout::stage_cut_transport(&window);
+            }
             let folded_segs = vec![
                 cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
                 cut::Seg { s: 40.0, e: 60.0, cam: 0, ..Default::default() },
@@ -933,11 +938,9 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 let lane_h = crate::fx_lane::lane_height_px(1) as i32;
                 crate::ui::cut_preview_panel::grow_to(&panel, panel.width().max(1) as f64, (top_h - lane_h) as f64);
                 crate::ui::cut_preview_frame::repaint(&window);
-                // §1's "splits keep their proportions", at §A's ratio, from this page's own divider — headless
-                // nothing drags it (`snapshot_layout` owns the rule).
-                if let Some(said) = crate::snapshot_layout::rest_cut_split(&window, &split, top_h) {
-                    println!("snapshot: {said}");
-                }
+                // No divider re-ask here: made before the window has §1's size it lands on the paned's clamp
+                // and undoes `rest_page_splits`, which runs after the final size request.
+                let _ = top_h;
             }
         }
 
@@ -1225,6 +1228,12 @@ const FORM_UNDER_PX: i32 = 380;
             window.set_size_request(want_w, want_h);
             window.set_default_size(want_w, want_h);
             crate::snapshot_face::pump_context(32);
+            // …and the Cut page's two dividers re-ask §A's openings now that the window has §1's real size:
+            // headless a `notify::height` never fires for a widget allocated once, so both asks made during the
+            // build landed on their clamp (measured: 5 px of `cut-page-split`), and every control below the
+            // divider was built but painted nothing. Same doors a person's drag fires (`snapshot_layout`).
+            crate::snapshot_layout::rest_page_splits(&window);
+            crate::snapshot_face::pump_context(16);
             // §1's screenshot IS the window at 1240×900, so the PNG is asked for at that size whatever the
             // headless window ended up ALLOCATED. `write_png` shoots the widget's own box, and under xvfb
             // that box lands a hair under the floor (§1's numbers are the window's, frame and WM decoration

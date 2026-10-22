@@ -317,7 +317,11 @@ pub fn arrange(page_box: &gtk::Box) {
     // scrolls as a whole, which §1 forbids. The position above plus vexpand on both panes is what opens it now.
     let bottom = gtk::Box::new(gtk::Orientation::Vertical, 4);
     bottom.set_widget_name("cut-bottom");
-    bottom.set_vexpand(true);
+    // NOT `vexpand`: §1 opens this pane at the page's leftover (the divider sits at 380 px), and a Paned
+    // hands its leftover to an expanding child by SHARE — with both panes expanding GTK settled the handle on
+    // the two halves' own asks instead of on the position above (measured: 29 px of upper pane against the
+    // 380 px §A opens it at, so every control below the divider was built but painted nothing). The band
+    // still fills what its pane gives it, which is what `valign(Fill)` below does on its own.
     bottom.set_valign(gtk::Align::Fill);
     vsplit.set_end_child(Some(&bottom));
     page_box.insert_child_after(&vsplit, Some(&title_row));
@@ -327,6 +331,11 @@ pub fn arrange(page_box: &gtk::Box) {
     split.set_position(SELF_SPLIT_PREVIEW_PX);
     split.set_resize_start_child(true);
     split.set_shrink_start_child(false);
+    // §A's 380 px opening is an OPENING, not a drag a person has made, and headless nothing drags it: the ask
+    // above was clamped because the paned had no height yet, so the same rule is re-asked at the first real
+    // allocation and at every later one. In a window on a display this is a no-op after the first pass.
+    rest_opening_once(&vsplit);
+    rest_on_resize(&vsplit);
 
     // --- the bottom half: toolbar, tracks, scrollbar (A's "bottom = toolbar, tracks, scrollbar") --
     // §A's vertical paned gives the BOTTOM half the page's leftover height, so the tape and the lanes
@@ -352,7 +361,9 @@ pub fn arrange(page_box: &gtk::Box) {
     // header, run bar and log) has to hold BOTH panes, and the old 410 + 196 pair summed past it — measured
     // 101 px of travel in `page-scroll-Cut`. The openings are positions + vexpand now, so the floor stays at
     // §1's number and `tests/suite/window_shrinks.rs` measures zero travel here.
-    bottom.set_vexpand(true);
+    // Only the UPPER pane expands (§A's "above the minimum the layout grows with the window": the extra height
+    // belongs to the picture). With both expanding the paned split its leftover between them and ignored the
+    // position entirely — see [`SELF_SPLIT_TOP_PX`]'s opening note and the `cut-bottom` valign above.
     vsplit.set_shrink_start_child(true);
     vsplit.set_shrink_end_child(true);
     // Now the upper pane has real height (the window minus the divider's opening), hand it to the picture:
@@ -397,4 +408,42 @@ fn detach(page_box: &gtk::Box, names: &[String]) -> Vec<gtk::Widget> {
         }
     }
     ordered
+}
+
+/// One shot at re-asking §A's opening for the Cut page's own divider, for one window.
+///
+/// A `gtk::Paned` clamps every `set_position` into `[start minimum, total − end minimum]`, and the moment
+/// that stops clamping is the first real allocation (§1's minimum window): before it the paned answers 1 px
+/// tall and any ask lands on the clamp. The shell's divider does exactly this (`window_divider`), and GTK 4
+/// has no allocate signal to hook, so a bounded one-shot idle is the door — no sleep, no guessed wait.
+pub fn rest_opening_once(divider: &gtk::Paned) {
+    let asked = std::rc::Rc::new(std::cell::Cell::new(false));
+    let held = divider.clone();
+    glib::idle_add_local_once(move || {
+        if held.height() <= 1 || asked.get() {
+            return;
+        }
+        asked.set(true);
+        held.set_position(SELF_SPLIT_TOP_PX);
+    });
+}
+
+/// Re-ask §A's opening whenever this page's divider is given a new height — the Cut page's own copy of the
+/// rule `window_divider::install` runs for the shell's divider, which is why the shell's shot rests right and
+/// this page's did not. A `set_position` made while the paned is unallocated lands on its clamp (measured: 29 px
+/// of upper pane instead of §A's 380), and GTK 4 fires no allocate signal, so the two `notify` watches plus one
+/// shared cell are the door: it re-asks only for a height it has not seen, which keeps the ask from feeding back
+/// into itself, and a person's drag is untouched because their drag also changes the height only via the paned.
+pub fn rest_on_resize(divider: &gtk::Paned) {
+    let seen_height = std::rc::Rc::new(std::cell::Cell::new(0));
+    for name in ["width", "height"] {
+        let seen = seen_height.clone();
+        divider.connect_notify_local(Some(name), move |paned, _| {
+            let height = paned.height();
+            if height > 1 && seen.get() != height {
+                seen.set(height);
+                paned.set_position(SELF_SPLIT_TOP_PX);
+            }
+        });
+    }
 }

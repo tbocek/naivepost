@@ -352,7 +352,50 @@ fn round() {
         check_the_page_has_both_dividers(app);
         println!("CHECK 6 the toolbar, tracks and scrollbar are below the top/bottom divider");
         check_the_bottom_half_is_below_the_divider(app);
+        println!("CHECK 7 the tape under the toolbar is PAINTED, not merely in the tree");
+        check_the_tape_is_painted_below_the_toolbar(app);
+        RAN_TAPE_PAINTED.store(true, Ordering::SeqCst);
     });
+}
+
+static RAN_TAPE_PAINTED: AtomicBool = AtomicBool::new(false);
+
+/// §1's badges **24** (ruler) and **25** (the green bar of a kept scene) live in the pane UNDER the page's
+/// own top/bottom divider, so "below it, top to bottom" is only true if that pane got
+/// pixels. A `gtk::Paned` clamps `set_position` into `[start minimum, total − end minimum]`, and headless the
+/// ask is made while the paned is 1 px tall — measured: the upper pane landed on 29 px of §A's 380 and every
+/// widget below it was found by name with a 0-height box. So this reads each one's real box and its position
+/// against the toolbar's bottom edge; no number here but the ones §1 states as an order.
+fn check_the_tape_is_painted_below_the_toolbar(app: &adw::Application) {
+    let window = cut_page(app);
+    let toolbar = common::find_named(&window, "cut-toolbar").expect("§1's toolbar is on the page");
+    let (_, toolbar_bottom) = edges(&toolbar);
+    for name in ["track-layers", "track-strip"] {
+        let widget = common::find_named(&window, name)
+            .unwrap_or_else(|| panic!("`{name}` is missing from the Cut page"));
+        let (top, bottom) = edges(&widget);
+        println!(
+            "TAPE {name}: y={top}..{bottom} w={} h={} mapped={}",
+            widget.width(),
+            widget.height(),
+            widget.is_mapped()
+        );
+        assert!(
+            widget.is_mapped() && widget.width() > 0 && widget.height() > 0,
+            "`{name}` (§1's ruler and kept-scene bars) was built but never painted: {}x{} mapped={}",
+            widget.width(),
+            widget.height(),
+            widget.is_mapped()
+        );
+        assert!(
+            top >= toolbar_bottom,
+            "`{name}` starts at {top}, above the toolbar's bottom edge {toolbar_bottom} — §1 puts the tracks BELOW the toolbar"
+        );
+    }
+    // Badge 31's own position is NOT pinned here: §A hides the bar when the tape fits the view, and which of
+    // the two states a laid-out page happens to open in is badge 31's rule — shown when it overflows with a
+    // geared thumb, hidden at the floor — already walked through the toolbar's zoom doors in
+    // `sec_05_cut_1_screen_toolbar_paints.rs`. Its ORDER (last in the lower pane) is check 6 of this file.
 }
 
 #[test]
@@ -402,4 +445,14 @@ fn sec_05_cut_1_screen_the_toolbar_tracks_and_scrollbar_sit_below_the_divider() 
     common::pin_private_cwd();
     round();
     assert!(RAN_BELOW.load(Ordering::SeqCst), "the below-the-divider check never ran");
+}
+
+#[test]
+fn sec_05_cut_1_screen_s24_s25_tape_is_painted_below_the_toolbar() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_TAPE_PAINTED.load(Ordering::SeqCst),
+        "the tape-below-the-toolbar paint check never ran"
+    );
 }
