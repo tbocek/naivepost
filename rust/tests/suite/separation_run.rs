@@ -136,16 +136,26 @@ impl Scene {
         self.seen.lock().expect("the record lock").clone()
     }
 
-    /// Wait until this fake has answered `count` requests. The recording happens on the connection's
-    /// own thread, so a reply can return before its entry is in the list — the same reason
-    /// `tests/suite/audio_task_dial.rs` polls instead of sleeping a fixed time.
+    /// Wait until this fake has answered `count` requests, and FAIL if it never did.
+    ///
+    /// The recording happens on the connection's own thread, so a reply can return before its entry is in
+    /// the list — the same reason `tests/suite/audio_task_dial.rs` polls instead of sleeping a fixed time.
+    /// The deadline is the shared one (`common::WAIT_LIMIT`) and it PANICS naming what is missing: returning
+    /// the short Vec was how this file failed one run and passed the next on identical code — under parallel
+    /// load the caller's next assertion tripped over the absent entry with nothing to say why.
     fn wait_until(&self, count: usize) -> Vec<Seen> {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + crate::common::WAIT_LIMIT;
         loop {
             let seen = self.mine();
-            if seen.len() >= count || std::time::Instant::now() > deadline {
+            if seen.len() >= count {
                 return seen;
             }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "only {} of {count} separation requests reached the fake audio.cpp server within {:?}",
+                seen.len(),
+                crate::common::WAIT_LIMIT
+            );
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
     }

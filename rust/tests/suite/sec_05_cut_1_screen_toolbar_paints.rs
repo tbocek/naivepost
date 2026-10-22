@@ -16,6 +16,7 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 static RAN_PAINTS: AtomicBool = AtomicBool::new(false);
 static RAN_S31: AtomicBool = AtomicBool::new(false);
+static RAN_S15_S16: AtomicBool = AtomicBool::new(false);
 
 /// §1 items **5**-**22**, by the names every flow's tests already use.
 const BAR_CONTROLS: [(&str, &str); 18] = [
@@ -232,14 +233,21 @@ fn check_the_scrollbar_paints_a_geared_thumb(app: &adw::Application) {
 }
 
 fn round() {
+    // ONE app round for the whole file: `common::one_app_round` may only be entered once per process, and a
+    // second window open beside the first makes the first measure wrong (measured: badge 31's scrollbar answers
+    // `is_visible()` false forever while another window is still up). So every check runs HERE, one after
+    // another on the app thread, each building its own page and closing it before the next.
     common::one_app_round(|app| {
         println!("CHECK 1 every \u{a7}1 control 5-22 paints inside its own group");
         check_every_control_paints_inside_its_group(app);
         println!("CHECK 2 badge 31 shows a geared thumb when the tape overflows, and hides at the floor");
         check_the_scrollbar_paints_a_geared_thumb(app);
-        println!("CHECK 3 the row list (§1's name plates and sound switches) is painted");
+        RAN_S31.store(true, Ordering::SeqCst);
+        println!("CHECK 3 the row list (\u{a7}1's name plates and sound switches) is painted");
         check_the_row_list_is_painted(app);
         RAN_ROW_LIST.store(true, Ordering::SeqCst);
+        println!("CHECK 4 badges 15/16 fit inside `group-verbs` in the shot's own layout");
+        check_the_verbs_fit_without_clipping(app);
     });
 }
 
@@ -270,6 +278,135 @@ fn check_the_row_list_is_painted(app: &adw::Application) {
     );
 }
 
+/// A Cut page in the state `just snapshot 05-cut` renders: the shot's own default size (1280×900, asked
+/// BEFORE `present()`), its staging (`snapshot_layout::stage_cut_transport`, so §1's badges 5-9 are inked and
+/// the transport button carries its word), the folded cut with its lane, and both page dividers re-asked at
+/// the final size. This is NOT this file's `cut_page`: at rest the transport asks ~110 px less, GTK hands
+/// `group-verbs` its full natural width and every verb keeps its group — which is exactly why check 1 could
+/// stay green while the SHOT pushed Insert and Lane out of the verbs group.
+fn cut_page_as_shot(app: &adw::Application) -> adw::ApplicationWindow {
+    release_last_window();
+    let root = std::env::temp_dir().join(format!("cut-shot-w-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp root");
+    std::env::set_current_dir(&root).expect("cwd pinned away from rust/");
+    let session = naivepost::startup::session_dir(&root);
+    let mut seed = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    std::fs::create_dir_all(&session).expect("session folder");
+    naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
+
+    let window = naivepost::ui::build_window(app, &seed, "Prepare");
+    hold_last_window(window.clone());
+    // The shot's order: the size first (a Cut-page shot asks 1280 wide), then the tab, then the staging,
+    // then `present()` — a paned only lays out the page it lives on once that page is visible.
+    window.set_default_size(1280, 900);
+    naivepost::ui::tab_button(&window, naivepost::shell::Page::Cut)
+        .expect("the shell has a Cut tab")
+        .emit_clicked();
+    naivepost::snapshot_layout::stage_cut_transport(&window);
+    naivepost::ui::set_session_recordings(&[naivepost::timeline::Recording {
+        base: "session-tape".into(),
+        start: 0.0,
+        end: 120.0,
+    }]);
+    let folded = naivepost::cut::Cut {
+        segs: vec![
+            naivepost::cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
+            naivepost::cut::Seg { s: 40.0, e: 60.0, cam: 0, ..Default::default() },
+        ],
+        lanes: vec![naivepost::cut::Lane {
+            name: "mic-lav".to_string(),
+            src: "project:sources/mic-lav.wav".to_string(),
+            at: 12.0,
+            off: 0.0,
+            dur: 46.0,
+        }],
+        ..Default::default()
+    };
+    naivepost::ui::seed_review_cut(&window, &folded);
+    naivepost::ui::refresh_fold_badges(&window);
+    naivepost::ui::press_fold_gap(&window, 1);
+    naivepost::ui::refresh_camera_rows(&window);
+    window.present();
+    settle();
+    naivepost::ui::set_playhead(&window, 24.0);
+    // …then the shot's own clamp + divider re-ask, so the toolbar is measured at the size the PNG takes.
+    window.set_size_request(1280, 900);
+    window.set_default_size(1280, 900);
+    settle();
+    naivepost::snapshot_layout::rest_page_splits(&window);
+    settle();
+    window
+}
+
+/// Badges **15** and **16**: `Insert` and `⇲ Lane` are on the page, visible, and stand in the verbs group
+/// rather than being pushed out of it, and the verbs row holds §1's seven controls in §1's order —
+/// `＋ Add | Split － Remove ⧉ Copy ⧉ Paste Insert ⇲ Lane`. Identity and order, not pixels: how wide each one
+/// ends up inside its group is check 1's question (`check_every_control_paints_inside_its_group`).
+///
+/// The state is the one `just snapshot 05-cut` renders, which check 1 does not see: with the transport live the
+/// six groups ask for more than the bar has, and that is when a control can leave its group entirely.
+///
+/// Visibility is asked with `is_visible`, not `is_mapped`: headless GTK never maps the widgets below the
+/// window's own fold (`check_the_row_list_is_painted` records the same fact about `camera-rows`).
+fn check_the_verbs_fit_without_clipping(app: &adw::Application) {
+    let window = cut_page_as_shot(app);
+    println!("SHOT window {}x{}", window.width(), window.height());
+    let mut wrong: Vec<String> = Vec::new();
+    for (name, what) in [("insert-button", "15 Insert"), ("lane-button", "16 Lane")] {
+        let widget = common::find_named(&window, name)
+            .unwrap_or_else(|| panic!("\u{a7}1 item {what} is missing from the page: `{name}`"));
+        let group = group_of(&widget);
+        println!("BTN {name}: visible={} mapped={} in {group:?}", widget.is_visible(), widget.is_mapped());
+        if !widget.is_visible() {
+            wrong.push(format!("{name} ({what}) is not visible on the shot's page"));
+        }
+        if group.as_deref() != Some("group-verbs") {
+            wrong.push(format!(
+                "{name} ({what}) stands in {group:?}, not in `group-verbs` where \u{a7}1 puts it"
+            ));
+        }
+    }
+    // §1's list, as identity and order read off the row the buttons were packed into.
+    let row = common::find_named(&window, "group-verbs-row")
+        .expect("the verbs group packs its buttons into `group-verbs-row`");
+    let names: Vec<String> = row
+        .observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .map(|child| child.widget_name().to_string())
+        .collect();
+    let wanted: Vec<String> = naivepost::cut_screen::VERB_BUTTONS
+        .iter()
+        .map(|tool| tool.name.to_string())
+        .collect();
+    println!("VERBS row: {:?}", names);
+    assert_eq!(names, wanted, "the verbs row is not \u{a7}1's controls in \u{a7}1's order");
+    assert!(
+        wrong.is_empty(),
+        "{} of \u{a7}1's two last verb controls are not on the shot's page in their own group: {}",
+        wrong.len(),
+        wrong.join("; ")
+    );
+    RAN_S15_S16.store(true, Ordering::SeqCst);
+    window.close();
+}
+
+/// The nearest ancestor named `group-‹name›` — the toolbar group a control was packed into.
+fn group_of(widget: &gtk::Widget) -> Option<String> {
+    let mut owner = widget.parent();
+    while let Some(node) = owner {
+        let name = node.widget_name().to_string();
+        if name.starts_with("group-") && !name.ends_with("-row") {
+            return Some(name);
+        }
+        owner = node.parent();
+    }
+    None
+}
+
 #[test]
 fn sec_05_cut_1_screen_toolbar_paints_each_numbered_control_in_its_group() {
     common::pin_private_cwd();
@@ -291,5 +428,15 @@ fn sec_05_cut_1_screen_s28_s29_the_row_list_is_painted() {
     assert!(
         RAN_ROW_LIST.load(Ordering::SeqCst),
         "check 3 (the row list painted) did not run"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_s15_s16_verbs_fit_without_clipping() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_S15_S16.load(Ordering::SeqCst),
+        "check 4 (badges 15/16 unclipped) did not run"
     );
 }

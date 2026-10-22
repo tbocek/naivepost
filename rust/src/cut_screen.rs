@@ -17,11 +17,15 @@ use crate::{prepare, tools};
 /// makes §A's one row of six groups wider than the bar at §1's 1240 px floor — measured with
 /// `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs`: the six groups' natural widths summed to 1646 px
 /// against a 1182 px bar, so GTK shrank each group and Copy/Paste/Insert/Lane painted inside their own
-/// scroller's clip. At 4 px the same six rows sum to 1079 and every §1 control sits inside its own group.
-/// The `min-width` is what makes 4 px safe: without it a one-glyph step button measures 10 px wide, under
-/// the 16 px click target `cut_line_place_step_widgets` asks for, so the glyph keeps a clickable square
+/// scroller's clip. At 4 px the same six rows sum to 1079 and every §1 control sits inside its own group
+/// at REST — but not with the transport live, which is the state `just snapshot 05-cut` renders: there the
+/// word-labelled ▶ button adds ~110 px, the six rows sum past the 1222 px bar, GTK has no slack to hand out,
+/// shrinks `group-verbs` below its 396 px natural and paints Insert/Lane under `+ Effect`. 2 px keeps the
+/// six naturals under the bar so every group gets what its buttons ask for.
+/// The `min-width` is what makes a thin padding safe: without it a one-glyph step button measures 10 px wide,
+/// under the 16 px click target `cut_line_place_step_widgets` asks for, so the glyph keeps a clickable square
 /// while the padding comes down.
-pub const BUTTON_PADDING_PX: u32 = 4;
+pub const BUTTON_PADDING_PX: u32 = 2;
 
 /// The click-target floor a toolbar button must keep, in px — the same number
 /// `cut_line_place_step_widgets` asserts, spelled here because this rule is what delivers it.

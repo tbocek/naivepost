@@ -149,7 +149,7 @@ fn dial_here(dirs: &Dirs, ask: Ask<'_>, model: &str, envelope: &serde_json::Valu
 /// assertion about what THIS test sent (an absent bearer, say) reads whichever landed last. Filtering
 /// by the port this test's own fake listens on attributes the request honestly.
 fn wait_for_recorded_at(url: &str, needle: &str, in_body: &str) -> Seen {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + crate::common::WAIT_LIMIT;
     loop {
         if let Some(seen) = recorded_at(url)
             .into_iter()
@@ -160,7 +160,8 @@ fn wait_for_recorded_at(url: &str, needle: &str, in_body: &str) -> Seen {
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "no request to {needle} carrying {in_body:?} reached {url}"
+            "no request to {needle} carrying {in_body:?} reached {url} within {:?}",
+            crate::common::WAIT_LIMIT
         );
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
@@ -606,9 +607,12 @@ fn sec_02_services_1_the_four_servers_s1_asr_is_asked_per_chunk_with_its_own_cut
     // re-scan until it is in the record instead of sleeping a fixed time (`wait_for_recorded` below waits
     // the same way for a single request).
     let counted = std::time::Instant::now();
-    while recorded().iter().filter(|seen| mine(seen)).count() < 1
-        && counted.elapsed() < std::time::Duration::from_secs(5)
-    {
+    while recorded().iter().filter(|seen| mine(seen)).count() < 1 {
+        assert!(
+            counted.elapsed() < crate::common::WAIT_LIMIT,
+            "the second chunk never reached the fake upload endpoint on its own within {:?}",
+            crate::common::WAIT_LIMIT
+        );
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     let seen: Vec<Seen> = recorded().into_iter().filter(mine).collect();
