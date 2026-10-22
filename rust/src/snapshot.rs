@@ -1296,20 +1296,20 @@ const FORM_UNDER_PX: i32 = 380;
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
-            } else if crate::snapshot_prompt_picker::is_picker_subject(&screen_for_picker) {
-                // §1's second picture is the picker LIST, so the list takes `<name>.png` and the Prepare page it
-                // was staged on goes beside it as `<name>-page.png`. Preferred: open the live dropdown INSIDE the
-                // window (a non-native popover shares the window's surface), which is what the reference shows —
-                // the page with a panel hanging under the picker. Fallback: the list alone, on its own top level,
-                // for a build where that popover gives no pixels.
-                let painted_here = match crate::snapshot_prompt_picker::paint_over_page(&window, &out) {
+            } else if screen_for_picker == "04-prompt-picker" {
+                // §1's second picture is the PAGE with the picker's list open over it, so the window keeps the
+                // asked filename and the list is painted where the popover would sit — hanging under the picker
+                // button, the heading row and the text box still visible beside it (`spec/QUESTIONS.md`, §04
+                // answer 3c). The sidecar is this screen's own copy of the page, kept for a byte-for-byte
+                // comparison with `04-prepare.png`.
+                let painted_here = match crate::snapshot_prompt_picker::paint_open_over_window(&window, &out) {
                     Ok((rows, tick)) => {
                         println!("snapshot: {tick} ({rows} rows), over the page");
                         true
                     }
                     Err(err) => {
                         println!(
-                            "snapshot: the live popover could not be shot ({err}; {}) -- painting the list alone",
+                            "snapshot: the open list could not be painted over the page ({err}; {}) -- painting the list alone",
                             crate::snapshot_prompt_picker::probe(
                                 &ui::find_source_widget(&window, "bench-picker").expect("the picker")
                             )
