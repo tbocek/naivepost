@@ -192,6 +192,8 @@ pub mod cut_lane_paint;
 /// §1's bench, the tab buttons and the readouts they repaint. Split out of `window.rs`, which is past its
 /// size budget. Its doors are re-exported through `window`.
 mod window_bench;
+/// §1's tab row: why the four tab words never ellipsize at the minimum window size.
+pub(crate) mod window_tabs;
 /// §1 badge **15** — the Outputs folder button's own rules (window.rs is past its size budget).
 pub(crate) mod window_outputs;
 /// §05-cut#1-screen — the selection band, the held effect and its live form, the preview's volume. Split

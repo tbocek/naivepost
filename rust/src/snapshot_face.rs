@@ -208,6 +208,20 @@ fn shot_size(widget: &gtk::Widget) -> (u32, u32) {    let packed = SHOT_SIZE.loa
     )
 }
 
+/// Draw one widget into an ARGB surface at `width`x`height` (the same route `snapshot_face::write_png`
+/// takes, kept there because the two surfaces have to be composited before anything reaches disk).
+pub(crate) fn render_surface(widget: &gtk::Widget, width: i32, height: i32) -> Result<cairo::ImageSurface, String> {
+    let paintable = gtk::WidgetPaintable::new(Some(widget.upcast_ref::<gtk::Widget>()));
+    let snapshot = gtk::Snapshot::new();
+    paintable.snapshot(&snapshot, width as f64, height as f64);
+    let node = snapshot.to_node().ok_or("widget produced no render node")?;
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, width, height)
+        .map_err(|err| err.to_string())?;
+    let cr = cairo::Context::new(&surface).map_err(|err| err.to_string())?;
+    unsafe { gsk::ffi::gsk_render_node_draw(node.as_ref().to_glib_none().0, cr.to_raw_none()) };
+    Ok(surface)
+}
+
 pub(crate) fn write_png(widget: &gtk::Widget, out: &Path) -> Result<(), String> {
     let (width, height) = shot_size(widget);
 

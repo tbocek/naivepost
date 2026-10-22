@@ -590,6 +590,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     switcher.set_widget_name("page-tabs");
     switcher.set_hexpand(false);
     switcher.set_halign(gtk::Align::Center);
+    // §1's minimum is the size at which "every control and lane a page names is on screen at once", and
+    // the four tab words are named controls. libadwaita lets a narrow switcher ellipsize them ("Prep…"),
+    // which is what the shot showed; the labels keep their whole word and badge 4, which already
+    // ellipsizes (§1: path → file name → icons only), gives way first.
+    super::window_tabs::keep_labels_whole(&switcher);
     // libadwaita's own default is LOOSE, which slides the title toward whichever side has room: with
     // badge 4 (the project path) packed after Save and expanding, that slide moved the tab row ~80 px
     // right of the bar's centre. STRICT keeps it centred and lets the start group give way instead —

@@ -1298,15 +1298,33 @@ const FORM_UNDER_PX: i32 = 380;
                 }
             } else if crate::snapshot_prompt_picker::is_picker_subject(&screen_for_picker) {
                 // §1's second picture is the picker LIST, so the list takes `<name>.png` and the Prepare page it
-                // was staged on goes beside it as `<name>-page.png`. A DropDown pops its rows on their own surface,
-                // which the window's render node cannot contain, so the list is painted from `bench::picker_rows`
-                // (see that module's header for why popping the widget prints nothing).
-                match crate::snapshot_prompt_picker::paint(&window, &out) {
-                    // The tick's row and name go to the log line through one door of the picker module.
-                    Ok((rows, tick)) => println!("snapshot: {tick} ({rows} rows)"),
+                // was staged on goes beside it as `<name>-page.png`. Preferred: open the live dropdown INSIDE the
+                // window (a non-native popover shares the window's surface), which is what the reference shows —
+                // the page with a panel hanging under the picker. Fallback: the list alone, on its own top level,
+                // for a build where that popover gives no pixels.
+                let painted_here = match crate::snapshot_prompt_picker::paint_over_page(&window, &out) {
+                    Ok((rows, tick)) => {
+                        println!("snapshot: {tick} ({rows} rows), over the page");
+                        true
+                    }
                     Err(err) => {
-                        eprintln!("snapshot: {err}");
-                        OUT.with(|e| *e.borrow_mut() = Some(err));
+                        println!(
+                            "snapshot: the live popover could not be shot ({err}; {}) -- painting the list alone",
+                            crate::snapshot_prompt_picker::probe(
+                                &ui::find_source_widget(&window, "bench-picker").expect("the picker")
+                            )
+                        );
+                        false
+                    }
+                };
+                if !painted_here {
+                    match crate::snapshot_prompt_picker::paint(&window, &out) {
+                        // The tick's row and name go to the log line through one door of the picker module.
+                        Ok((rows, tick)) => println!("snapshot: {tick} ({rows} rows)"),
+                        Err(err) => {
+                            eprintln!("snapshot: {err}");
+                            OUT.with(|e| *e.borrow_mut() = Some(err));
+                        }
                     }
                 }
                 let page_out = out.with_extension("page.png");

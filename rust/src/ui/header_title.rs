@@ -59,10 +59,12 @@ pub fn label_for(dir: &Path, tab: &str, fit: Fit) -> String {
 /// which is what makes it the thing that pins the window's minimum width.
 pub const TITLE_MIN_CHARS: i32 = 1;
 
-/// The label's natural ask, in characters — see the note on [`build_label`]'s `max-width-chars`. Long enough to
-/// read a real project path, short enough that the start group leaves the header's two sides balanced for the
-/// tab row to sit in its centre at §1's 1240 px (measured: 40 chars keeps the tabs centred, no cap does not).
-pub const TITLE_NATURAL_CHARS: i32 = 40;
+/// The label's natural ask, in characters — see the note on [`build_label`]'s `max-width-chars`. It is a
+/// CAP on what the path may claim, not on what it shows (the ellipsis trims only this ask): long enough to
+/// read a real project path, short enough that the start group leaves the header's two sides balanced for
+/// the tab row to sit in its centre at §1's 1240 px. Measured: 40 chars slid the tab row off centre once
+/// the tab words stopped ellipsizing (centre 658 against a window centre of 615); 14 puts them back.
+pub const TITLE_NATURAL_CHARS: i32 = 14;
 
 /// Build §1's badge **4** and pack it into the header after Save. §1: "project name/path packed after
 /// Save", with the tab row taking the centre slot — so this goes on the bar's start side, where it sits

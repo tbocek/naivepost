@@ -13,7 +13,7 @@
 
 use crate::common::fit_geometry as fit_checks;
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -33,6 +33,11 @@ const PAGES: [&str; 4] = ["Prepare", "Cut", "Narrate", "Produce"];
 // test drives that one round and reads its result out of this record.
 static RAN: AtomicU32 = AtomicU32::new(0);
 
+/// Whether the round below measured the header's tab row. One flag, not one per page: the tab row is a
+/// single shared widget (`§03-shell.md` §1 badge 5 — "the tab row as the header bar's title widget"), so
+/// measuring it on all four windows would measure the same box four times.
+static RAN_TABS: AtomicBool = AtomicBool::new(false);
+
 fn page_bit(page: &str) -> u32 {
     1 << PAGES.iter().position(|p| *p == page).unwrap()
 }
@@ -48,6 +53,10 @@ fn fit_round() {
             fit_checks::assert_all_inside(&format!("{page} page"), &window, &content);
             check_the_band_is_under_the_page(&window, page);
             check_scrollers_do_the_scrolling(&window, page);
+            if page == "Prepare" {
+                check_the_tab_words_are_whole(&window);
+                RAN_TABS.store(true, Ordering::SeqCst);
+            }
             window.close();
             RAN.fetch_or(page_bit(page), Ordering::SeqCst);
         }
@@ -67,6 +76,18 @@ fn all_pages_fit_at_the_size_the_shell_opens_at() {
             "{ITEM}: the {page} page was never measured, or one of its checks failed"
         );
     }
+}
+
+/// §1 badge **5**: the header bar's tab row shows all four words whole at the size the shell opens at.
+/// Measured inside the same round as the pages, because it needs a laid-out window like everything else here.
+#[test]
+fn tab_words_show_whole_at_the_size_the_shell_opens_at() {
+    common::pin_private_cwd();
+    fit_round();
+    assert!(
+        RAN_TABS.load(Ordering::SeqCst),
+        "{ITEM}: the tab-word check never ran"
+    );
 }
 
 /// Each spec screen's §1 says its page fits; this is that rule as one test per page, so a failure names
@@ -155,6 +176,50 @@ fn check_the_band_is_under_the_page(window: &adw::ApplicationWindow, page: &str)
         assert!(
             x >= -fit_checks::SLACK_PX,
             "{ITEM}: on {page}, {name} starts off the left edge at x={x:.0}"
+        );
+    }
+}
+
+/// §03-shell.md §1 badge **5**'s tab row, measured once: each of the four words is drawn whole at the
+/// minimum size. libadwaita ellipsizes a switcher's labels when its centre slot runs short ("Prep…"), and
+/// §1 makes this size the one where "every control and lane a page names is on screen at once", so a tab
+/// may neither be allowed to ellipsize nor be squeezed under its own text. `ui::window_tabs::keep_labels_whole`
+/// is what holds that; this measures whether it worked.
+fn check_the_tab_words_are_whole(window: &adw::ApplicationWindow) {
+    for page in shell::Page::all() {
+        let word = page.label();
+        let button = ui::tab_button(window, page)
+            .unwrap_or_else(|| panic!("{ITEM}: the tab row has no {word} button"));
+        // The tab's own label — the one whose text IS the word. A switcher button holds its label inside a
+        // box of its own, so the walk goes down through every child rather than only the first.
+        fn find_label(node: &gtk::Widget, word: &str) -> Option<gtk::Label> {
+            for child in node.observe_children().iter::<glib::Object>() {
+                let Ok(child) = child else { continue };
+                let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+                if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
+                    if label.text() == word {
+                        return Some(label);
+                    }
+                }
+                if let Some(found) = find_label(&widget, word) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let label = find_label(button.upcast_ref(), word)
+            .unwrap_or_else(|| panic!("{ITEM}: the {word} tab holds no label saying {word:?}"));
+        assert_eq!(
+            label.ellipsize(),
+            gtk::pango::EllipsizeMode::None,
+            "{ITEM}: the {word} tab may be shown as an ellipsis"
+        );
+        let natural = label.measure(gtk::Orientation::Horizontal, -1).1;
+        let (_, _, w, _) = fit_checks::window_box(button.upcast_ref());
+        println!("all_pages_fit tab {word} natural={natural} drawn w={w:.1}");
+        assert!(
+            w >= f64::from(natural),
+            "{ITEM}: the {word} tab was given {w:.1} px for a {natural} px word, so it prints truncated"
         );
     }
 }
