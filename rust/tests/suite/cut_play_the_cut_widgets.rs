@@ -44,10 +44,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         Page::Cut,
         "the Cut tab bounced -- the fixture has no footage row"
     );
-    // Size AGAIN now that the Cut page is the visible tab: a paned only gets boxes once GTK allocates the
-    // page it lives on, so the pass above (made while Prepare was showing) could not lay the Cut page out.
-    common::size_to_minimum(&window);
-    common::rest_cut_page_split(&window);
+    common::wait_for_stable_layout(&window);
     window
 }
 

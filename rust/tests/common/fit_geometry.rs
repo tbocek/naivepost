@@ -28,32 +28,18 @@ pub const WINDOW_SIZE: (i32, i32) = (1280, 900);
 /// it by a pixel or two depending on the font; a whole control off screen is far past this.
 pub const SLACK_PX: f64 = 4.0;
 
-/// Drain the GLib main loop until nothing is pending, `rounds` times over — so a size allocation, the
-/// resize it queues and the layout that follows all land before anything is measured.
-fn pump(rounds: usize) {
-    let context = glib::MainContext::default();
-    for _ in 0..rounds {
-        while context.pending() {
-            context.iteration(false);
-        }
-    }
-}
-
-/// Note a window as shown at the size §01 opens it at, and force a real size allocation plus the paint
-/// that follows. A window that was never mapped has the geometry of an empty box, and every measurement
-/// below would be vacuous.
+/// Show a window at the size §01 opens it at and wait until GTK has laid it out there. A window that was
+/// never mapped has the geometry of an empty box, and every measurement below would be vacuous.
 pub fn show_and_lay_out(window: &adw::ApplicationWindow) {
     window.set_default_size(WINDOW_SIZE.0, WINDOW_SIZE.1);
     window.present();
-    pump(60);
-    if window.width() < 40 {
-        // A window GTK never drew: ask for the size, let that request be processed, then allocate it.
-        window.set_size_request(WINDOW_SIZE.0, WINDOW_SIZE.1);
-        pump(60);
-        window.size_allocate(&gtk4::Allocation::new(0, 0, WINDOW_SIZE.0, WINDOW_SIZE.1), 1);
-        pump(60);
-    }
-    pump(60);
+    super::wait_for_stable_layout(window);
+    let surface = window.surface().expect("a presented window has a surface");
+    assert_eq!(
+        (surface.width(), surface.height()),
+        WINDOW_SIZE,
+        "the window laid out at another size than it opens at: its content asks for more"
+    );
 }
 
 /// Every widget inside `root` that has a name. `widget_name` does not inherit, so this walks the whole
@@ -137,7 +123,7 @@ pub fn page_of(window: &adw::ApplicationWindow, page_name: &str) -> gtk4::Widget
     // page X has to put the window on page X first.
     if stack.visible_child().as_ref() != Some(page.upcast_ref()) {
         stack.set_visible_child_name(page_name);
-        pump(30);
+        super::wait_for_stable_layout(window);
     }
     page
 }

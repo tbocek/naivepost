@@ -57,11 +57,7 @@ fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    settle();
-    // …and sized again now that the Cut page is the visible tab: headless an unallocated window leaves the
-    // page's paned on its clamp with everything below the handle unmapped, and `stage` below then measures an
-    // unmapped page. The shot's own staging moves this divider itself.
-    common::size_to_minimum(&window);
+    common::wait_for_stable_layout(&window);
     window
 }
 

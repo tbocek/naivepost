@@ -7,12 +7,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
-use gtk4 as gtk;
-use naivepost::shell::{self, Page};
+use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, settle};
+use common::{fixture_dir, hold_last_window};
 
 static RAN_SECOND_WINDOW: AtomicBool = AtomicBool::new(false);
 
@@ -40,29 +39,11 @@ fn cut_page_window(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
-/// Force one real layout pass at §1's minimum: `present()` alone leaves an Xvfb window UNRESIZED (measured:
-/// it keeps GTK's 200×120 default and then reports its content's own minimum height), so every box below
-/// would be measured against a window that was never sized. The allocation IS the event — no waiting.
+/// Open the window at §1's minimum and wait until GTK has laid it out there, so every box below is the one
+/// a person would see.
 fn lay_out(window: &adw::ApplicationWindow) {
-    window.present();
     hold_last_window(window.clone());
-    let widget = window.upcast_ref::<gtk::Widget>();
-    if !widget.is_mapped() {
-        widget.map();
-    }
-    widget.size_allocate(
-        &gtk::Allocation::new(0, 0, shell::WINDOW_MIN_W, shell::WINDOW_MIN_H),
-        -1,
-    );
-    settle();
-    // …and once more AFTER the resting ask has run (`settle` drains it): headless a paned does not re-allocate
-    // its halves when a handler moves its handle — measured: `position()` answers the new number while both
-    // children keep their old boxes — so the drawn geometry only catches up on the next allocation.
-    widget.size_allocate(
-        &gtk::Allocation::new(0, 0, shell::WINDOW_MIN_W, shell::WINDOW_MIN_H),
-        -1,
-    );
-    settle();
+    common::size_to_minimum(window);
 }
 
 /// The second window built while the first is still alive gets §1's band too, and its toolbar is on screen.
