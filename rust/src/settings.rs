@@ -825,6 +825,17 @@ pub fn write_hang_dump(
     Ok(path)
 }
 
+/// Write one watchdog dump that CARRIES THE STACKS — §1's GUI hang watchdog, as opposed to
+/// [`write_hang_dump`], which names a stalled server-side component and has no stack of its own.
+/// Same file shape (§7: `hang-*.txt`, 0600 beside the settings); what differs is what got measured
+/// and what the body holds, so the caller hands the whole body ready-made.
+pub fn write_stack_dump(paths: &Paths, body: &str, stamp: &str) -> Result<PathBuf, String> {
+    write_mode(&paths.config_dir, 0o700)?;
+    let path = paths.hang_path(stamp);
+    write_bytes(&path, body.as_bytes(), 0o600)?;
+    Ok(path)
+}
+
 /// How long a component had been unresponsive, printed the way Go prints a duration.
 pub(crate) fn seconds_for(wait: std::time::Duration) -> String {
     let ms = wait.as_millis();

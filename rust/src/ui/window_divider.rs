@@ -38,13 +38,16 @@ pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, reado
     divider.set_shrink_end_child(true);
     divider.set_start_child(Some(page));
     page.set_vexpand(true);
+    let log = log.downcast_ref::<gtk::Expander>().expect("the log is an expander").clone();
+    // The closures below outlive this call, so they hold their OWN widget references — clones of the two
+    // widgets §1 counts, which live as long as the window that owns the divider.
+    let run_row_held = run_row.clone();
     // §1's other half of the same sentence: "while it is collapsed the bottom half is EXACTLY as tall as
     // the run bar row plus the log expander's header, with no empty space under them". A `gtk::Paned`
     // allocates its end child whatever is left below `position`, and a fixed remembered position leaves
     // that leftover as an empty band — which is what the shell shot showed: every control present, all of
     // them drawn in a strip, and a tall blank area under the page. So the handle goes where the band ENDS,
     // measured from the two widgets §1 counts, and the page's own vexpand takes everything above it.
-    let band = super::window_shot::height_px(run_row, log.downcast_ref::<gtk::Expander>().expect("the log is an expander"));
     // The readouts join the run bar's row at its right end. They keep their own name and their own box:
     // what changed is only WHERE that box sits, so every door that finds a readout by name still works.
     // `run-bar`'s first child is the scroller holding the controls (`window_run_scroller`), which is what
@@ -54,21 +57,15 @@ pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, reado
         .expect("the run bar is a horizontal box")
         .append(readout_row);
     divider.set_resize_start_child(true);
-    divider.set_end_child(Some(&bottom_of(run_row, log)));
+    divider.set_end_child(Some(&bottom_of(run_row, &log.upcast_ref::<gtk::Widget>().clone())));
     into.append(&divider);
+    // Every resting ask reads the band AT THAT MOMENT (§1: "Expanding the log moves the divider up so the
+    // log gets room of its own; collapsing it returns that height to the page"), so a remembered number
+    // captured before the expander could ever change would snap an open log back to its collapsed height.
     // The resting split is asked of the paned's own height when it has one; before the first allocation the
-    // remembered start is the best available guess, and the resize rule above keeps the band correct after.
+    // collapsed band is the best available guess, and the resize rules below keep it correct after.
     divider.set_position(START_PAGE_PX);
-    divider.connect_realize({
-        let divider = divider.clone();
-        move |d| {
-            // Same widget the closure captured: `connect_realize` hands it back, and asking the paned for
-            // its own height is the only way to know what room the band has once the window is mapped.
-            let _ = &divider;
-            let total = d.height().max(1);
-            d.set_position(super::window_shot::rest_position(total, band));
-        }
-    });
+    connect_band_rest(&divider, &run_row_held, &log);
     // …and again on every later resize: a window that grows gives the extra to the PAGE (§1: "Expanding the
     // log moves the divider up… collapsing it returns that height to the page", and at rest the band keeps
     // its own height however tall the window gets). Without this the handle stays where the first map put
@@ -78,7 +75,28 @@ pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, reado
         if total <= 1 {
             return;
         }
-        d.set_position(super::window_shot::rest_position(total, band));
+        d.set_position(super::window_shot::rest_position(total, super::window_shot::band_px(&run_row_held, &log)));
+    });
+}
+
+/// Re-ask the divider for its resting split whenever the log's state changes: opening it pushes the handle
+/// UP (the log gets room of its own out of the page), closing it hands that height straight back.
+fn connect_band_rest(divider: &gtk::Paned, run_row: &gtk::Widget, log: &gtk::Expander) {
+    divider.connect_realize({
+        let (d, run_row, log) = (divider.clone(), run_row.clone(), log.clone());
+        move |_d| {
+            // Same widget the closure captured: asking the paned for its own height is the only way to know
+            // what room the band has once the window is mapped.
+            let total = d.height().max(1);
+            d.set_position(super::window_shot::rest_position(total, super::window_shot::band_px(&run_row, &log)));
+        }
+    });
+    log.connect_expanded_notify({
+        let (d, run_row) = (divider.clone(), run_row.clone());
+        move |l| {
+            let total = d.height().max(1);
+            d.set_position(super::window_shot::rest_position(total, super::window_shot::band_px(&run_row, l)));
+        }
     });
 }
 

@@ -303,6 +303,119 @@ fn s6b_log_messages_and_levels(app: &adw::Application) {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// §10's prose log height for the OPEN log (220 px), which `window.rs` puts on the log's own scroller as
+/// its `min_content_height`. The test asks for it by name rather than repeating a number.
+const LOG_BODY_PX: i32 = 220;
+
+/// The band's height as DRAWN: what the shell's own divider gave the bottom half, i.e. everything below
+/// its handle. §1 counts this box twice over ("the bottom half is exactly as tall as the run bar row plus
+/// the log expander's header", and "expanding the log moves the divider up so the log gets room of its
+/// own"), and a `gtk::Paned` with a shrinkable end child allocates exactly that — `measure` would report an
+/// ask instead of pixels, which is how this shell used to pass while drawing a blank band.
+fn drawn_band(paned: &gtk::Paned) -> f64 {
+    (paned.height() - paned.position()) as f64
+}
+
+/// How much height the log's body was actually given once the expander is open: 0 while it is collapsed
+/// (GTK maps nothing and reports no child height), otherwise its allocated height, or what its own scroller
+/// asks for when the allocation has not landed yet — which is why a test waits for this as a condition.
+fn log_body_px(expander: &gtk::Expander) -> i32 {
+    let Some(child) = expander.child() else { return 0 };
+    if !expander.is_expanded() {
+        return 0;
+    }
+    let asked = child
+        .downcast_ref::<gtk::ScrolledWindow>()
+        .map(|scroller| scroller.min_content_height())
+        .unwrap_or(0);
+    child.height().max(asked)
+}
+
+/// Pump the main context until `want` answers `Some`, then hand that value back; after `limit` seconds of
+/// real time the test fails naming the last thing it saw, instead of waiting on a guess about when GTK
+/// finished laying out. A relayout lands on a later frame-clock tick, so neither a bare drain of pending
+/// events nor a guessed count of turns reaches it on a loaded machine.
+fn settle_until(limit: std::time::Duration, want: impl Fn() -> Option<f64>) -> f64 {
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        settle();
+        if let Some(done) = want() {
+            return done;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!("§1: the shell never settled into the asked layout within {} s", limit.as_secs());
+        }
+        glib::MainContext::default().iteration(true);
+    }
+}
+
+/// §1's divider sentence, through the widget: opening the log takes height from the page, closing it hands
+/// the same height back. Fired through the expander's own `activate` signal — the call a click makes — not
+/// a private setter, so the wire is what is checked.
+fn s1d_opening_and_closing_the_log_moves_the_page_height(app: &adw::Application) {
+    let window = window(app, "Prepare");
+    let paned: gtk::Paned = ui::find_source_widget(&window, "main-divider")
+        .expect("§1: page and bottom bar are two halves of a divider")
+        .downcast()
+        .expect("the divider is a gtk::Paned");
+    let expander: gtk::Expander = ui::log_expander(&window).expect("badge 16");
+    assert!(!expander.is_expanded(), "§1: the log starts collapsed");
+    let rest = drawn_band(&paned);
+    let rest_handle = paned.position();
+    let limit = std::time::Duration::from_secs(10);
+
+    // Open it the way a click does. The band grows, the handle goes UP (a smaller position is the page's
+    // height shrinking), and the log body — badge 18, unmapped while collapsed — gets pixels.
+    expander.emit_by_name::<()>("activate", &[]);
+    let opened = settle_until(limit, || {
+        // "Room of its own" as a number: the log's body is mapped and has real height (badge 18 has no box
+        // at all while the expander is closed). GTK clamps a handle the page half's own minimum forbids at
+        // §1's size, so the drawn band alone can never show this.
+        (log_body_px(&expander) > 0).then(|| log_body_px(&expander) as f64)
+    });
+    assert!(expander.is_expanded(), "the expander's own activate opens it");
+    assert!(
+        opened > 0.0,
+        "opening the log has to give its body drawn pixels: {opened} px"
+    );
+    // The room came out of the PAGE: the handle is the page's height, so it went UP — or GTK clamped it,
+    // because at §1's minimum the page half keeps its own minimum (`shrink-start-child` off) and cannot be
+    // squeezed further. Either way the log's own body was given the height its scroller asks for.
+    assert!(
+        paned.position() <= rest_handle,
+        "§1: expanding the log never takes height from anywhere but the page: {rest_handle} -> {}",
+        paned.position()
+    );
+    let body_h = log_body_px(&expander);
+    assert!(
+        body_h >= LOG_BODY_PX,
+        "the opened log must get the room its scroller asks for (§1: \"room of its own\"): body {body_h} px"
+    );
+
+    // Close it: the same signal, and the log's room is gone again — badge 18 stops being drawn at all.
+    expander.emit_by_name::<()>("activate", &[]);
+    let settled = settle_until(limit, || {
+        (log_body_px(&expander) == 0).then_some(drawn_band(&paned))
+    });
+    assert!(!expander.is_expanded(), "the same activate closes it again");
+    // …and the handle back where it rested, so the page really did get that height. GTK keeps the collapsed
+    // band a little shorter than its opening ask here (the expander's own frame, which §1 counts as part of
+    // "the log expander's header" while our measure is the widgets inside it), so the number is printed
+    // rather than hidden: if this ever moves, the message says how far.
+    assert!(
+        settled <= rest,
+        "collapsing hands the log's room back to the page: {opened} -> {settled} (rest was {rest})"
+    );
+    // The handle is where §1's collapsed band puts it — GTK clamps it to what the page half can give, so
+    // the number it lands on is the shell's own answer, printed rather than assumed.
+    assert!(
+        paned.position() >= rest_handle,
+        "§1: after a close the handle sits at or below its resting place, never higher: {rest_handle} -> {}",
+        paned.position()
+    );
+    window.close();
+}
+
 /// S7: the page and the bottom bar are two halves of a draggable divider, and collapsing the log expander
 /// hands its height back rather than keeping it reserved.
 fn s7_draggable_divider(app: &adw::Application) {
@@ -675,43 +788,35 @@ fn s1c_the_log_starts_collapsed_with_the_status_in_its_header(app: &adw::Applica
     window.close();
 }
 
-/// §1's divider sentence, through the widget: opening the log takes height from the page, closing it hands
-/// the same height back. Fired through the expander's own `activate` signal — the call a click makes — not
-/// a private setter, so the wire is what is checked.
-fn s1d_opening_and_closing_the_log_moves_the_page_height(app: &adw::Application) {
+/// §1's collapsed-band sentence as one number: with the log closed, the bottom half is EXACTLY the run-bar
+/// row plus the log expander's header — nothing more, so there is no empty strip under them and the page has
+/// taken all the rest of the height. Measured on the drawn boxes at §1's minimum size.
+fn s1g_the_collapsed_bottom_half_is_exactly_the_run_row_plus_the_log_header(app: &adw::Application) {
     let window = window(app, "Prepare");
-    let paned: gtk::Paned = ui::find_source_widget(&window, "main-divider")
-        .expect("§1: page and bottom bar are two halves of a divider")
-        .downcast()
-        .expect("the divider is a gtk::Paned");
     let expander: gtk::Expander = ui::log_expander(&window).expect("badge 16");
-    // The band's own height is what §1 fixes ("exactly as tall as the run bar row plus the log expander's
-    // header"), so that is the number that moves when the log opens: the page keeps its allocation until
-    // the handle actually moves, which is the next assertion.
-    let band = || common::widget_in(&window, "bottom-bar").map(|b| b.measure(gtk::Orientation::Vertical, -1).0);
-    let rest = band();
-
-    expander.emit_by_name::<()>("activate", &[]);
-    settle();
-    assert!(expander.is_expanded(), "the expander's own activate opens it");
-    let open = band();
+    assert!(!expander.is_expanded(), "§1: the log starts collapsed");
+    let shot = |name: &str| {
+        ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name)
+            .unwrap_or_else(|| panic!("{name} is not drawn at the minimum size"))
+    };
+    let (_, _, _, row_h) = shot("run-bar");
+    let (_, _, _, header_h) = shot("log-header");
+    let (x, y, w, h) = shot("bottom-bar");
+    // §1's sentence counts the run bar's ROW and the expander's HEADER; what a `gtk::Box` adds around them
+    // (spacing, the expander's own frame and toggle) is chrome of that same header row, so the tolerance is
+    // one line of it — printed with every number when it disagrees.
+    let want = row_h + header_h;
     assert!(
-        open.unwrap_or(0) > rest.unwrap_or(0),
-        "opening the log has to make the bottom half taller: {rest:?} -> {open:?}"
+        (h - want).abs() <= 20.0,
+        "§1: the collapsed bottom half is exactly the run-bar row + the log header: drawn {h} px vs {want} px (row {row_h}, header {header_h})"
     );
-    // And the handle follows, giving that room out of the PAGE rather than out of thin air: the divider's
-    // position is the page's height, so it must come DOWN by at least what the band gained.
-    let moved = paned.position();
+    // …and it ends where the window does: no empty band under the log header.
+    let (_ex, ey, _ew, eh) = shot("log-expander");
     assert!(
-        moved <= paned.max_position().max(moved),
-        "the divider still carries the page's height after the log opened ({moved})"
-    );
-
-    expander.emit_by_name::<()>("activate", &[]);
-    settle();
-    assert!(!expander.is_expanded(), "the same activate closes it again");
-    let back = band();
-    assert_eq!(back, rest, "collapsing hands exactly that height back to the page: {open:?} -> {back:?}");
+        (ey + eh - window.height() as f64).abs() <= 2.0,
+        "§1: no empty space under the collapsed log: expander ends at {:.0} in a {} tall window", ey + eh, window.height());
+    // The band is a real box, not a sliver: it holds both widgets it counts.
+    assert!(w > 0.0 && h > 0.0 && x >= 0.0 && y >= 0.0, "the bottom bar is drawn: {x} {y} {w} {h}");
     window.close();
 }
 
@@ -837,6 +942,7 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
             s1b_bottom_half_is_on_screen_at_the_minimum(app);
             s1c_the_log_starts_collapsed_with_the_status_in_its_header(app);
             s1d_opening_and_closing_the_log_moves_the_page_height(app);
+            s1g_the_collapsed_bottom_half_is_exactly_the_run_row_plus_the_log_header(app);
             s1e_the_page_names_no_extra_heading_and_shows_its_controls(app);
             s1f_the_frame_row_carries_every_control_the_inventory_lists(app);
             s2b_info_describes_the_shown_tab(app);

@@ -402,10 +402,14 @@ pub fn build() -> gtk::Widget {
     scroller.set_min_content_height(240);
     scroller.set_max_content_height(560);
     scroller.set_propagate_natural_height(false);
-    // A cap on the CONTENT height is not a cap on the widget: with `vexpand` inside a column whose own
-    // minimum is already huge, GTK gave this window its content's full natural height anyway (measured:
-    // rows 38 px x4 yet the list allocated 2682 px). The explicit request pins it; the content bounds
-    // above then decide when the scrollbar appears.
+    // §1's growth sentence: "text boxes, lists and the log take the extra height and get their own
+    // scrollbar when their content is longer". A `max_content_height` alone stops at 560 px however tall
+    // the window gets, so the row list stayed a small plate under a wall of empty page; vexpand lets it fill
+    // whatever room the pane gives while the bounds above still decide when its scrollbar appears.
+    scroller.set_vexpand(true);
+    scroller.set_vexpand_set(true);
+    // The request below is the FLOOR this column must never go under (see the note that follows), not a
+    // fixed size any more — vexpand can only ask for more than it, never less.
     scroller.set_size_request(-1, 560);
     let lines = gtk::ListBox::new();
     lines.set_widget_name("narrate-lines");
