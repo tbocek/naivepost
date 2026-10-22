@@ -110,7 +110,7 @@ impl Scene {
             data_dir: root.join("data/naivepost"),
         };
         let (url, seen) = fake_audio(answer, status);
-        let tools = stubs(std::process::id().to_string().as_str());
+        let tools = stubs(&common::temp_dir_tagged("np-sep-tools"));
         // The conf names both the endpoint and the tool box: §1 says ffprobe comes from the same folder
         // as a configured ffmpeg, and these stubs let the split be proven without ffmpeg installed.
         let mut conf = Conf::default();
@@ -161,7 +161,11 @@ impl Scene {
     }
 }
 
-/// One folder holding both stub tools, unique per test so parallel tests never share a log.
+/// One folder holding both stub tools, unique per SCENE. The tests of this file run as threads of one
+/// process and each builds its own `Scene` before taking the `ENV` lock, so a folder keyed on the pid alone
+/// had two scenes `cat >`-ing the same `ffprobe`/`ffmpeg` at once — the race that made one run of this file
+/// fail and the next pass. `common::temp_dir_tagged` adds a process-wide counter, which is what keeps them
+/// apart.
 ///
 /// `ffprobe` answers a duration. `ffmpeg` behaves like the tool where the split depends on it: its last
 /// argument is an output path unless it is `-` (the `volumedetect`/`null` pass, which answers the mean
@@ -174,9 +178,8 @@ impl Scene {
 ///   there is no input at all.
 ///
 /// A stub that only succeeded would let the run report halves it never wrote.
-fn stubs(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("np-sep-tools-{tag}-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("the stub folder");
+fn stubs(dir: &std::path::Path) -> PathBuf {
+    std::fs::create_dir_all(dir).expect("the stub folder");
     for (name, script) in [
         ("ffprobe", "#!/bin/sh\necho \"12.5\"\n"),
         (
@@ -229,7 +232,7 @@ esac
         std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
             .expect("the stub runs");
     }
-    dir
+    dir.to_path_buf()
 }
 
 /// A fake audio.cpp: every `POST /v1/tasks/run` gets `answer` at `status`; every other path answers

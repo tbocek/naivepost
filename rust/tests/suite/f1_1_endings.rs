@@ -240,6 +240,7 @@ fn check_finished_run_on_screen(app: &adw::Application) {
     let body = readout
         .trim_start_matches("Outputs: ")
         .trim_start_matches(naivepost::prepare::OUTPUTS_LABEL)
+        .trim_start()
         .to_string();
     assert_eq!(
         body.split_whitespace().next().unwrap_or_default(),

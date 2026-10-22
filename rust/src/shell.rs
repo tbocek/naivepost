@@ -533,7 +533,9 @@ impl Shell {
             return if text == prepare::NO_OUTPUTS {
                 text
             } else {
-                format!("{}{}", prepare::OUTPUTS_LABEL, text)
+                // §1 spells the row `Prepare: 5 files, 1.4 MB` — the label and its count separated by ONE
+                // space, the same shape as the "Outputs:" label in front of it.
+                format!("{} {}", prepare::OUTPUTS_LABEL, text)
             };
         }
         // §1 asks for a count of what the page wrote; counting the page's own output folder is the

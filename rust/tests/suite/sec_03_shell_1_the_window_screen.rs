@@ -157,7 +157,7 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
     // order, not the share's width. `prepare_screen_widgets.rs` pins the sentence itself from the text.
     let (row_x, _ry, row_w, _rh) = drawn(&window, "readout-row");
     let mut previous_right = row_x;
-    for name in ["inputs-readout", "outputs-folder-button", "outputs-readout"] {
+    for name in ["inputs-readout", "outputs-label", "outputs-folder-button", "outputs-readout"] {
         let (x, _y, w, h) = drawn_or_share(&window, name);
         println!("{ITEM} s1: {name} box x={x:.0} w={w:.0} h={h:.0}");
         assert!(

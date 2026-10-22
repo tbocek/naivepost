@@ -620,6 +620,7 @@ pub use window::tab_info_button;
 pub use window::inputs_readout;
 pub use window::outputs_readout;
 pub use window::outputs_sentence;
+pub use window::outputs_label;
 pub use window::outputs_folder_button;
 pub use window::tab_dimmed;
 pub use window::tab_tooltip;

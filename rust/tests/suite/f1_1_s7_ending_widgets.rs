@@ -261,6 +261,7 @@ fn check_a_press_ends_on_screen(app: &adw::Application) {
     let body = readout
         .trim_start_matches("Outputs: ")
         .trim_start_matches(naivepost::prepare::OUTPUTS_LABEL)
+        .trim_start()
         .to_string();
     let seen: usize = body
         .split_whitespace()

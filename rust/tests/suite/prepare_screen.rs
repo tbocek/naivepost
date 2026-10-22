@@ -236,7 +236,7 @@ fn sec_04_prepare_1_screen_s_outputs_label_and_three_subfolder_tooltip() {
     assert_eq!(
         shell.outputs(Some(&tree)),
         format!(
-            "{}{}",
+            "{} {}",
             prepare::OUTPUTS_LABEL,
             prepare::outputs_readout(total, bytes, newest).0
         ),
