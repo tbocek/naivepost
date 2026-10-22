@@ -41,6 +41,10 @@ pub fn height_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
 /// room the log body asks for once it is open. §1's two sentences are one rule read two ways — collapsed the
 /// bottom half is "exactly as tall as the run bar row plus the log expander's header", expanded the log has
 /// "room of its own" — and the divider's handle has to move between exactly those two numbers.
+///
+/// The body's ask is read off the scroller ONLY when the expander actually holds it: `window.rs` keeps a
+/// collapsed log's body out of the tree altogether (an expander otherwise keeps its child in its allocation and
+/// charges the band 240 px of undrawn body), so asking here can only ever see an open log.
 pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
     let collapsed = height_px(run_row, log);
     if !log.is_expanded() {
@@ -56,6 +60,16 @@ pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
         .map(|scroller| scroller.min_content_height())
         .unwrap_or(super::window_bench::LOG_OPEN_PX);
     collapsed + body.max(0)
+}
+
+/// The band's RESTING height — what the divider starts at and re-asks for at every size. §1 names two states
+/// and only one of them is a resting position: "The log STARTS collapsed, and while it is collapsed the bottom
+/// half is exactly as tall as the run bar row plus the log expander's header, with no empty space under them";
+/// OPENING the log is what moves the handle up. So the resting ask is [`height_px`] — the two widgets §1 counts,
+/// nothing else — never the expander's own `measure`, which headless GTK answers as though the body were open
+/// and thereby asked for ~280 px of band in a window whose page needs every pixel above it.
+pub fn rest_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
+    height_px(run_row, log)
 }
 
 /// The first `gtk::ScrolledWindow` at or below `node` — the log body's own scroller.

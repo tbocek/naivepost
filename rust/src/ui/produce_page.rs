@@ -419,6 +419,9 @@ pub fn build() -> gtk::Widget {
     // leave it and "at half" is only true by accident.
     left.set_hexpand(true);
     right.set_hexpand(true);
+    // No height floor here either: the shell's divider splits its leftover by share between expanding halves,
+    // and a page that asks for 640 px of itself charges that to the page half of `main-divider`, which is what
+    // squeezed the bottom band out of §1's window. The columns' own scrollers handle a short band.
     left.set_size_request(-1, PAGE_MIN_H_PX);
     right.set_size_request(-1, PAGE_MIN_H_PX);
     split.set_start_child(Some(&left));

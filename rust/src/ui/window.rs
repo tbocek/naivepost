@@ -223,6 +223,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     status.set_margin_end(8);
 
     let stack = adw::ViewStack::new();
+    // §1's "grows with the window": each tab measured on its own, so the page half of `main-divider` can shrink
+    // to what THIS page needs instead of to the tallest tab's floor.
+    super::window_log::per_tab_stack(&stack);
     let mut prepare_add: Option<(gtk::Button, gtk::CheckButton)> = None;
     for page in Page::all() {
         let name = page.label();
@@ -367,8 +370,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // minimum is what `min_content_height` sets only while its content asks for more, and here the
     // content is a text view that vexpands, so the shell can be dragged under 220 px and the log
     // scrolls. That is what makes the run bar + log stop pinning the window's height.
+    log_scroller.set_widget_name("log-scroller");
     log_scroller.set_min_content_height(LOG_OPEN_PX);
-    log_scroller.set_child(Some(&log_view));
     log_scroller.set_child(Some(&log_view));
 
     let log_header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -383,6 +386,8 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     log.set_label_widget(Some(&log_header));
     log.set_child(Some(&log_scroller));
     log.set_expanded(false);
+    // A collapsed expander must claim nothing, or the band it belongs to is charged a body that is never drawn.
+    super::window_log::hide_body_while_collapsed(&log, log_scroller.upcast_ref());
 
     // §2's run bar: ▶ at the left of the row above the log, ⏹ next to it (F0.3), then the "I'm
     // feeling lucky" gears (F0.4), then the progress bar F0.5 adds.
@@ -591,7 +596,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     switcher.set_hexpand(false);
     switcher.set_halign(gtk::Align::Center);
     header.set_title_widget(Some(&switcher.clone().upcast::<gtk::Widget>()));
-    // §1's draggable divider: the page stack above, the bottom bar below. Built in `window_divider`.
+    // §1's draggable divider: the page stack above, the bottom bar below. Built in `window_divider`, which
+    // also gives the band its own height ask (`band_px`) — that rule lives there and nowhere else, so a second
+    // copy here is what made the two disagree about how tall the band should be.
     super::window_divider::install(&box_, stack.upcast_ref(), run_row.upcast_ref(), readout_row.upcast_ref(), log.upcast_ref());
 
     window.set_content(Some(&box_));

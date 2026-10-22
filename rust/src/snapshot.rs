@@ -860,16 +860,15 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 window.set_default_size(if wide { 2400 } else { 1280 }, crate::shell::WINDOW_MIN_H);
             }
             if subject.is_none() {
-                // The shell's own page/bottom-bar divider, opened to what §1's minimum leaves the page after
-                // the header, the run bar row and an open log band. Left at its 480 px opening the bottom half
-                // keeps a share the page then does not need, and headless nothing drags this handle — so asking
-                // here is how the shot gets the split a person would leave it at. `snapshot_rows::stage` moves
-                // it again for the two screens whose subject sits at the very bottom of the Cut page.
-                if let Some(divider) = ui::find_source_widget(&window, "main-divider")
-                    .and_then(|w| w.downcast::<gtk::Paned>().ok())
-                {
-                    divider.set_position(crate::shell::PAGE_BAND_PX);
-                }
+                // The shell's page/bottom-bar split is NOT forced here any more, and the reason is a number:
+                // this used to call `divider.set_position(shell::PAGE_BAND_PX)` (560), which in an 844 px
+                // divider asked for 560 + the collapsed band and got clamped to "page = everything", so the
+                // run-bar row landed on the window's last pixel and the log header fell below the bottom edge —
+                // the shot with no bottom bar at all. §1 says the resting split is whatever leaves the band
+                // "exactly as tall as the run bar row plus the log expander's header", and `window_divider`
+                // now re-asks that at the paned's first real allocation, which is the same rule a person's drag
+                // obeys. A snapshot must not override it: overriding the rule is how the shot looked right while
+                // the program drew the wrong thing.
             }
             window.present();
         }
@@ -1225,6 +1224,11 @@ const FORM_UNDER_PX: i32 = 380;
             // which is enough to shift what fits in the header and the run-bar row when it is compared
             // pixel-for-pixel with `spec/img`.
             crate::snapshot_face::set_shot_size(want_w, want_h);
+        }
+        // §1's bottom band belongs to every shell screenshot, so the shot says where it landed: a page whose
+        // minimum eats the run-bar row shows no bottom bar at all and still exits 0 (see `snapshot_band`).
+        if let Some(said) = crate::snapshot_band::report(&window) {
+            println!("snapshot: {said}");
         }
         // One more cycle after the map: the map happens before the first frame is drawn. The paint
         // and the quit are synchronous here, so no second mapped window is ever waited on.

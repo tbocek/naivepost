@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::project::Project;
+use naivepost::shell;
 use naivepost::ui;
 use crate::common;
 
@@ -40,6 +41,8 @@ fn split_round() {
         RAN_ON_SCREEN.store(true, Ordering::SeqCst);
         check_each_column_starts_at_its_named_top(&window);
         RAN_COLUMN_TOPS.store(true, Ordering::SeqCst);
+        check_the_bottom_band_is_inside_the_window(&window);
+        RAN_BAND.store(true, Ordering::SeqCst);
         window.close();
         check_the_picker_lists_every_prompt_plus_policy(app);
         RAN_POLICY_LIST.store(true, Ordering::SeqCst);
@@ -59,6 +62,61 @@ static RAN_POLICY_OPEN: AtomicBool = AtomicBool::new(false);
 static RAN_TITLE: AtomicBool = AtomicBool::new(false);
 static RAN_ON_SCREEN: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMN_TOPS: AtomicBool = AtomicBool::new(false);
+static RAN_BAND: AtomicBool = AtomicBool::new(false);
+
+/// §03-shell.md §1 counts eight badges UNDER the page (**10**-**18**: the run bar's ▶, step selector and ⏹,
+/// the progress bar, then in the same row the `Inputs:` readout, the Outputs folder button and its count,
+/// and under that row the log expander), and says the bottom half is "exactly as tall as the run bar row plus
+/// the log expander's header, with no empty space under them: the page takes all the rest of the height".
+///
+/// A page whose minimum is taller than §1's window leaves that band NOTHING: every widget is still in the tree
+/// with a zero box, so a name lookup cannot see it — which is what the shell shots showed (page content to the
+/// bottom edge, no run bar at all). So this reads the band's own bounds and the window's measured minimum.
+fn check_the_bottom_band_is_inside_the_window(window: &adw::ApplicationWindow) {
+    let floor = window.measure(gtk::Orientation::Vertical, -1).0;
+    println!(
+        "SPLIT s6 window allocated {} px, measured vertical minimum {floor} px (§1's floor {})",
+        window.height(),
+        naivepost::shell::WINDOW_MIN_H
+    );
+    assert!(
+        floor <= naivepost::shell::WINDOW_MIN_H,
+        "{ITEM} s6: the window cannot be smaller than {floor} px, over §1's {} px minimum, so the bottom band has no room inside it",
+        naivepost::shell::WINDOW_MIN_H
+    );
+    for name in ["run-bar", "inputs-readout", "log-expander"] {
+        let b = bounds(window, name);
+        assert!(
+            b.width() > 0.0 && b.height() > 0.0,
+            "{ITEM} s6: {name} was given no pixels ({b:?}) — the bottom band is outside the window"
+        );
+        assert!(
+            b.y() + b.height() <= window.height() as f32 + 2.0,
+            "{ITEM} s6: {name} runs past the bottom of the window (ends {:.1} in a {} px window)",
+            b.y() + b.height(),
+            window.height()
+        );
+    }
+    // The band sits UNDER the page, not behind it.
+    let split = bounds(window, "prepare-split");
+    let run = bounds(window, "run-bar");
+    assert!(
+        run.y() >= split.y() + split.height() - 4.0,
+        "{ITEM} s6: the run bar is not under the page (run y={:.1}, page ends {:.1})",
+        run.y(),
+        split.y() + split.height()
+    );
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s6_the_bottom_band_is_inside_the_window_under_the_page() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_BAND.load(Ordering::SeqCst),
+        "{ITEM} s6: the bottom-band check never ran"
+    );
+}
 
 /// §1's new sentence: "At the minimum window size the whole page is on screen at once with nothing
 /// scrolled out of view: the 'Add source files…' row and the sources list at the top of the left column,
@@ -325,7 +383,21 @@ fn fixture() -> Project {
 
 fn prepare_window(app: &adw::Application) -> adw::ApplicationWindow {
     let window = ui::build_window(app, &fixture(), "Prepare");
+    // §1's minimum, spelled out like `sec_03_shell_1_the_window.rs` does: under xvfb a mapped window is
+    // allocated what the X server offers (900 px here came out as 890) rather than its own floor, and every
+    // number this file reads is an ALLOCATION — so without this the same page was measured in a different box
+    // than the one the shell's own test measures.
+    window.set_default_size(shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
     window.present();
+    lay_out();
+    let widget = window.upcast_ref::<gtk::Widget>();
+    if !widget.is_mapped() {
+        widget.map();
+    }
+    // The allocation IS the layout pass: §1's size, so the columns, the bench and the bottom band are measured
+    // at the size §1 fixes rather than at whatever headless GTK felt like giving them.
+    widget.size_allocate(&gtk::Allocation::new(0, 0, shell::WINDOW_MIN_W, shell::WINDOW_MIN_H), -1);
+    lay_out();
     window
 }
 
