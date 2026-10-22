@@ -208,8 +208,10 @@ mod window_trim_strip;
 mod window_run_press;
 /// §1's run-bar row, made to fit at the minimum size: the job buttons get a box of their own. Split out of
 /// `window.rs`, which is at its size budget.
-mod window_run_bar_fit;
-mod window_run_scroller;
+pub mod window_run_bar_fit;
+/// §1's run-bar row at the minimum size: which widgets scroll, and how the progress bar gets the row's free
+/// width. Split out of `window.rs`, which is past its size budget.
+pub mod window_run_scroller;
 /// F2.12 Insert — the form's half: its holder, what is open, the plan drawn and Apply. Split out of
 /// `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
 mod window_insert;

@@ -198,6 +198,9 @@ pub fn rest_split(divider: &gtk::Paned) {
     // `install` puts on it is deliberately the COLLAPSED two rows. Asking for the open height (274 px) instead
     // held the bottom half at 501 px even with the log closed, where §1 counts only ~54 px.
     divider.set_position(super::window_shot::rest_position(total, band));
+    // The run-bar row now has a width, so the progress bar's ask is re-made from it: `install` sized the bar
+    // while the row was still unallocated and knew nothing (§1 badge 13 wants the ROW's free width).
+    super::window_run_scroller::resize_row(&run_row);
 }
 
 /// The first widget named `name` at or below `node` — how [`rest_split`] finds the two widgets §1 counts.

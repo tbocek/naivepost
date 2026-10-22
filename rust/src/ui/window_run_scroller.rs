@@ -71,6 +71,46 @@ pub fn hand_the_free_width_to(row: &gtk::Widget) {
     }
 }
 
+/// Badge **13**'s width: what the row has LEFT once every other part of it has been served.
+///
+/// This is the whole rule, kept apart from any widget so a test can pin it: the bar may take the row's free
+/// width (§1 badge 13) but never the room §1's badges and readouts need. `badges` is ▶ / 🎲 / ⏹ and `jobs`
+/// the four job buttons — asked off the boxes INSIDE their scrollers, because a `gtk::ScrolledWindow`
+/// measures natural 0 and would otherwise report none of its content, which is exactly how ⏹ ended up drawn
+/// UNDER the progress bar track in the shell shot. A row narrower than all of them still gets a visible bar:
+/// the floor is [`PROGRESS_MIN_PX`], never 0.
+pub fn progress_px(total: i32, badges: i32, jobs: i32, readouts: i32, gaps: i32) -> i32 {
+    (total - badges - jobs - readouts - gaps).max(super::window_run_bar_fit::PROGRESS_MIN_PX)
+}
+
+/// Re-ask §1's progress-bar width for a row that has just been resized. Called by `window_divider` after it
+/// moves the band's handle: the bar's ask was first made while the row had no width at all (see
+/// [`share_the_free_width`]), so without this the shell keeps a bar sized from nothing.
+pub fn resize_row(row: &gtk::Widget) {
+    let Some(bar) = find_in(row, "run-progress") else {
+        return;
+    };
+    share_the_free_width(row, &bar);
+}
+
+/// The widths GTK actually gave the run-bar row's parts, as `(name, left edge, width)` in the window's own
+/// coordinates — how the shell shot and §1's screen tests read badge 13 instead of guessing from the PNG.
+/// Report only: decides no rule.
+pub fn drawn_row_widths(row: &gtk::Widget) -> Vec<(String, f64, f64)> {
+    children_of(row)
+        .iter()
+        .filter(|child| !child.widget_name().is_empty())
+        .filter_map(|child| {
+            let b = child.compute_bounds(row)?;
+            Some((
+                child.widget_name().to_string(),
+                b.x() as f64,
+                b.width() as f64,
+            ))
+        })
+        .collect()
+}
+
 /// Size the progress bar from what the row has LEFT, which is what "the row's free width" means (§1 badge 13).
 ///
 /// The bar cannot get that from `hexpand` alone: the controls' scroller must expand too (it measures minimum
@@ -79,30 +119,72 @@ pub fn hand_the_free_width_to(row: &gtk::Widget) {
 /// divider's width minus everything else in the row at its NATURAL size, and keeps expanding so a narrower
 /// window squeezes IT and not the buttons.
 fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
-    let Some(divider_w) = row
-        .parent()
-        .and_then(|bottom| bottom.parent())
-        .map(|paned| paned.width())
-        .filter(|w| *w > 0)
-    else {
-        return;
+    // THE ROW'S OWN WIDTH, whatever it happens to be when this runs — see [`resize_row`] for why the same ask is
+    // re-made once the divider has been allocated.
+    // The two scrollers measure natural 0, so their CONTENTS are asked for by name instead: `run-controls-inner`
+    // is §1's ▶ / 🎲 / ⏹ and `pass-controls` the four job buttons (`window_run_bar_fit` moved them there).
+    // Everything else in the row contributes its own natural ask.
+    let natural = |name: &str| {
+        find_in(row, name)
+            .map(|widget| widget.measure(gtk::Orientation::Horizontal, -1).1.max(0))
+            .unwrap_or_default()
     };
-    // Every other child at its natural ask EXCEPT the scroller, whose natural width is §1's whole button row
-    // (~800 px) and would leave the bar nothing; the scroller takes only what is left after the bar.
-    let mut others = 0;
-    for child in children_of(row) {
-        match child.widget_name().as_str() {
-            // The job scroller counts as an "other": it measures minimum 0 but holds four buttons the row
-            // has to make room for, so the bar is sized from what is left after BOTH scrollers' natural asks.
-            "run-progress" | "run-controls" => continue,
-            _ => others += child.measure(gtk::Orientation::Horizontal, -1).1.max(0),
-        }
-    }
+    let badges = natural("run-controls-inner");
+    let jobs = natural("pass-controls");
+    // THE SCROLLER'S ALLOCATION, not its content's natural ask: GTK splits the row from what each child
+    // answers for itself, and a `gtk::ScrolledWindow` keeps whatever extra it was given rather than shrinking
+    // to its buttons. Measured at §1's minimum, `run-controls` answered 211 px for three badges needing 171,
+    // and the four spare pixels landed on top of ⏹ — the bar started at x=217 while ⏹ ran to 224.
+    // THE SCROLLERS' OWN ALLOCATIONS, which is what GTK splits the row from — not their content's natural ask.
+    // A `gtk::ScrolledWindow` keeps whatever extra it was given instead of shrinking to its buttons: measured at
+    // §1's minimum, `run-controls` answered 211 px for three badges needing 171, and those four spare pixels
+    // landed on top of ⏹ — the bar started at x=217 while ⏹ ran to 224. Measuring with the allocations is what
+    // makes this arithmetic agree with the allocation GTK then makes.
+    let allocated = |name: &str, content: i32| {
+        find_in(row, name)
+            .map(|widget| widget.width().max(content).max(0))
+            .unwrap_or(content)
+    };
+    let controls_w = allocated("run-controls", badges);
+    let pass_w = allocated("pass-scroller", jobs);
+    // The readouts' own ask, and the row's gaps: the bar gets whatever is left once every other part of the row
+    // has been served. `row.width()` answers 1 px before the window is allocated, which clamps the answer to
+    // the floor — harmless, because [`resize_row`] asks again with the real width.
+    let readouts: i32 = children_of(row)
+        .iter()
+        .filter(|child| {
+            !matches!(
+                child.widget_name().as_str(),
+                "run-progress" | "run-controls" | "pass-scroller"
+            )
+        })
+        .map(|child| child.measure(gtk::Orientation::Horizontal, -1).1.max(0))
+        .sum();
     let gaps = 6 * children_of(row).len() as i32;
     bar.set_size_request(
-        (divider_w - others - gaps).max(super::window_run_bar_fit::PROGRESS_MIN_PX),
+        progress_px(row.width(), controls_w, pass_w, readouts, gaps),
         -1,
     );
+}
+
+/// The first widget named `name` at or below `node`.
+fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    if node.widget_name() == name {
+        return Some(node.clone());
+    }
+    for child in node
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+    {
+        if let Some(widget) = child
+            .downcast_ref::<gtk::Widget>()
+            .and_then(|w| find_in(w, name))
+        {
+            return Some(widget);
+        }
+    }
+    None
 }
 
 /// The row's direct children, as widgets.
