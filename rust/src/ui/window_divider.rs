@@ -183,7 +183,16 @@ pub fn rest_split(divider: &gtk::Paned) {
     // at 501 px even with the log closed, where §1 wants only the run-bar row + header (~54 px). The handle
     // alone does the work — `rest_position(total, band)` puts it at `total − band` and the paned then allocates
     // the end child exactly that.
-    let total = divider.height().max(1);
+    let total = divider.height();
+    if total <= 1 {
+        return;
+    }
+    // THE ASK CANNOT EXCEED THE PANED'S OWN ROOM. `set_position` PANICS when the range GTK clamps it
+    // into comes out inverted (`min > max. min = 1, max = 0`), and headless that happens for real: the
+    // one-shot idle and the `notify::width` handler both fire before the window is allocated, so the
+    // divider answers height 0 and any band, however small, is more than the total has. §1's band rule
+    // describes a window at §01's size; an unallocated divider has no geometry to honour yet, and the
+    // ask that matters is the one that fires once the real height lands.
     let band = super::window_shot::band_px(&run_row, &log).clamp(1, total - 1);
     // NO `set_size_request` on the band here: a size request is a floor GTK will not squeeze below, and the one
     // `install` puts on it is deliberately the COLLAPSED two rows. Asking for the open height (274 px) instead

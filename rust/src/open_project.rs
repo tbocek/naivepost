@@ -168,6 +168,13 @@ pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, Open
             lines.push(dropped_line(path));
         }
     }
+    // §4's fourth auto-fill moment: "a load that stripped a bad tag". A hand-edited or stale project
+    // file can claim two rows in one narrator slot, a slot past the last one, or frames out of an audio
+    // file; `sources::clean_on_load` clears those, says which row it cleared and why (those lines ride
+    // `Applied.lines`, so the shell logs them), and only then may slot 1 be auto-filled -- a strip is
+    // what empties a slot, and slot 1 is never left unheld. This door rather than a second check at each
+    // caller because `apply` is already the ONE place that decides what a load keeps.
+    crate::sources::clean_on_load(&mut project, &mut lines);
 
     Ok(Applied {
         root,

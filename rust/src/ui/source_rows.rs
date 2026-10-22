@@ -17,6 +17,33 @@ use crate::services;
 use crate::source_probe;
 use crate::sources::{self, Control, TrackInfo};
 
+/// §4's "slot 1 highlighted", as ink the app owns rather than a theme class.
+///
+/// `suggested-action` is what adwaita would paint, and under the headless renderer (and in the light crop
+/// `snapshot_sources::write_column_png` installs over the column) that class comes out as a bare digit —
+/// the one thing about this control a glance has to catch was invisible. The rule stays the same: slot 1
+/// only, added at build and re-set on every cycle.
+pub const SLOT_ONE_CSS: &str = ".narrator-one { font-weight: bold; border: 2px solid #26a269; }\n";
+
+/// Install [`SLOT_ONE_CSS`] once per process, the way `produce_page` and `cut_lane_rows` install theirs.
+fn install_row_css_once() {
+    use std::cell::RefCell as RefCellOnce;
+    thread_local! {
+        static LOADED: RefCellOnce<bool> = const { RefCellOnce::new(false) };
+    }
+    if LOADED.with(|loaded| *loaded.borrow()) {
+        return;
+    }
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(SLOT_ONE_CSS);
+    gtk::style_context_add_provider_for_display(
+        &gtk::gdk::Display::default().expect("a display to style"),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+    LOADED.with(|loaded| loaded.replace(true));
+}
+
 /// What a row needs to be drawn: the live session, the status line a press reports on, and the list the
 /// row belongs to, so a removal can redraw what follows it.
 #[derive(Clone)]
@@ -126,7 +153,9 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
     // the narration's voice, so it is drawn as suggested (§4's "slot 1 highlighted").
     narrator.set_label(&source.narrator.to_string());
     if source.narrator == 1 {
+        install_row_css_once();
         narrator.add_css_class("suggested-action");
+        narrator.add_css_class("narrator-one");
     }
     wire_narrator(&narrator, session.clone(), &rows.status, index, name.clone());
     box_.append(&narrator);
@@ -278,8 +307,10 @@ fn wire_narrator(
         face.set_label(&slot.to_string());
         face.set_tooltip_text(Some(&format!("{}{}", sources::slot_tip(slot), sources::ROW_KEY)));
         face.remove_css_class("suggested-action");
+        face.remove_css_class("narrator-one");
         if slot == 1 {
             face.add_css_class("suggested-action");
+            face.add_css_class("narrator-one");
         }
         status.set_text(&format!("{name}: narrator {slot}"));
     });
