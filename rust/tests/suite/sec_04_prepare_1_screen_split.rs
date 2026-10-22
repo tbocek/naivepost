@@ -36,6 +36,10 @@ fn split_round() {
         RAN_HEADING.store(true, Ordering::SeqCst);
         check_the_inputs_readout_is_not_on_the_page(&window);
         RAN_READOUT.store(true, Ordering::SeqCst);
+        check_the_whole_page_is_on_screen_at_the_minimum(&window);
+        RAN_ON_SCREEN.store(true, Ordering::SeqCst);
+        check_each_column_starts_at_its_named_top(&window);
+        RAN_COLUMN_TOPS.store(true, Ordering::SeqCst);
         window.close();
         check_the_picker_lists_every_prompt_plus_policy(app);
         RAN_POLICY_LIST.store(true, Ordering::SeqCst);
@@ -53,6 +57,111 @@ static RAN_READOUT: AtomicBool = AtomicBool::new(false);
 static RAN_POLICY_LIST: AtomicBool = AtomicBool::new(false);
 static RAN_POLICY_OPEN: AtomicBool = AtomicBool::new(false);
 static RAN_TITLE: AtomicBool = AtomicBool::new(false);
+static RAN_ON_SCREEN: AtomicBool = AtomicBool::new(false);
+static RAN_COLUMN_TOPS: AtomicBool = AtomicBool::new(false);
+
+/// §1's new sentence: "At the minimum window size the whole page is on screen at once with nothing
+/// scrolled out of view: the 'Add source files…' row and the sources list at the top of the left column,
+/// the bench's heading row at the top of the right column."
+///
+/// (a) Nothing scrolled: Prepare's own page scroller has no travel at §1's minimum — the same number
+/// `window_shrinks.rs` measures, read here for this page's named controls. (b) Every control §1 numbers on
+/// this page has drawn pixels inside the allocated window.
+fn check_the_whole_page_is_on_screen_at_the_minimum(window: &adw::ApplicationWindow) {
+    let scroller = widget(window, "page-scroll-Prepare")
+        .downcast::<gtk::ScrolledWindow>()
+        .expect("{ITEM} s4: the page keeps its own scroller");
+    let adj = scroller.vadjustment();
+    let travel = adj.upper() - adj.page_size();
+    println!("SPLIT s4 page-scroll-Prepare travel {travel:.1} px (upper {:.1}, page {:.1})", adj.upper(), adj.page_size());
+    assert!(
+        travel <= 1.0,
+        "{ITEM} s4: at §1's minimum the page still has {travel:.1} px scrolled out of view"
+    );
+    for name in [
+        "add-sources-row",
+        "sources-scroll",
+        "frame-controls",
+        "bench-heading",
+        "bench-text",
+    ] {
+        assert!(
+            ui::window_shot::is_on_screen_for_test(window.upcast_ref(), name),
+            "{ITEM} s4: {name} has no drawn box inside the window: {:?}",
+            ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name)
+        );
+    }
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s4_at_the_minimum_the_whole_page_is_on_screen() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_ON_SCREEN.load(Ordering::SeqCst),
+        "{ITEM} s4: the whole-page-on-screen check never ran"
+    );
+}
+
+/// The first DRAWN child of a column — §1's "at the top of" is about what is painted first, and a hidden
+/// or zero-height widget paints nothing. Its y comes from its bounds against the window, like every other
+/// number this file reads.
+fn first_drawn_child(window: &adw::ApplicationWindow, column: &gtk::Widget) -> Option<(String, f64)> {
+    let mut node = column.first_child();
+    while let Some(child) = node {
+        if child.height() > 0 {
+            let y = child
+                .compute_bounds(window)
+                .map(|b| b.y() as f64)
+                .unwrap_or_default();
+            return Some((child.widget_name().to_string(), y));
+        }
+        node = child.next_sibling();
+    }
+    None
+}
+
+/// §1: the left column starts at the "Add source files…" row and the right one at the bench's heading
+/// row, side by side, and the text box fills what is left of its column below that heading.
+fn check_each_column_starts_at_its_named_top(window: &adw::ApplicationWindow) {
+    let left = widget(window, "prepare-left");
+    let right = widget(window, "prepare-right");
+    let (left_name, left_y) = first_drawn_child(window, &left).expect("{ITEM} s5: the left column draws nothing");
+    let (right_name, right_y) = first_drawn_child(window, &right).expect("{ITEM} s5: the right column draws nothing");
+    println!("SPLIT s5 column tops: left `{left_name}` y={left_y:.1}, right `{right_name}` y={right_y:.1}");
+    assert_eq!(left_name, "add-sources-row", "{ITEM} s5: the left column does not start at the add row");
+    assert_eq!(right_name, "bench-heading", "{ITEM} s5: the right column does not start at the bench heading");
+    assert!(
+        (left_y - right_y).abs() <= 2.0,
+        "{ITEM} s5: the two columns do not begin at the same height: {left_y:.1} vs {right_y:.1}"
+    );
+    // "one text box filling the rest of the column": under the heading, inside the window.
+    let heading = bounds(window, "bench-heading");
+    let text = bounds(window, "bench-text");
+    println!("SPLIT s5 bench heading y={:.1} h={:.1}; text y={:.1} ends {:.1} in a {} tall window", heading.y(), heading.height(), text.y(), text.y() + text.height(), window.height());
+    assert!(
+        text.y() >= heading.y() + heading.height() - 2.0,
+        "{ITEM} s5: the text box does not start below the heading ({:.1} vs {:.1})",
+        text.y(),
+        heading.y() + heading.height()
+    );
+    assert!(
+        text.y() + text.height() <= window.height() as f32 + 2.0,
+        "{ITEM} s5: the text box runs past the bottom of the window ({:.1} in a {} px window)",
+        text.y() + text.height(),
+        window.height()
+    );
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s5_each_column_starts_at_its_named_top_control() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_COLUMN_TOPS.load(Ordering::SeqCst),
+        "{ITEM} s5: the column-top check never ran"
+    );
+}
 
 /// §1's badge **3** as data: the picker lists every prompt in pipeline order and then the row §1's REVIEW
 /// line adds. The policy row is a row of the MENU, not a prompt — `bench::ROWS` (which drives every
