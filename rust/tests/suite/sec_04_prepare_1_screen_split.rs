@@ -58,6 +58,8 @@ fn split_round() {
         RAN_TICK.store(true, Ordering::SeqCst);
         check_the_open_picker_hangs_under_its_button(&window);
         RAN_OPEN_PANEL.store(true, Ordering::SeqCst);
+        check_the_page_holds_no_second_user_context_paragraph(&window);
+        RAN_UC.store(true, Ordering::SeqCst);
         window.close();
     });
 }
@@ -75,6 +77,7 @@ static RAN_ON_SCREEN: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMN_TOPS: AtomicBool = AtomicBool::new(false);
 static RAN_BAND: AtomicBool = AtomicBool::new(false);
 static RAN_SWITCH: AtomicBool = AtomicBool::new(false);
+static RAN_UC: AtomicBool = AtomicBool::new(false);
 
 /// §03-shell.md §1 counts eight badges UNDER the page (**10**-**18**: the run bar's ▶, step selector and ⏹,
 /// the progress bar, then in the same row the `Inputs:` readout, the Outputs folder button and its count,
@@ -914,6 +917,79 @@ fn sec_04_prepare_1_screen_s3_the_inputs_readout_is_in_the_run_bar_row_not_on_th
     assert!(
         RAN_READOUT.load(Ordering::SeqCst),
         "{ITEM} s3: the readout-placement check never ran"
+    );
+}
+
+/// §1 badge **5** is the bench's text box — "the prompt or the User Context", row 0 being the project's
+/// User Context — so that text has exactly one place on the screen. An earlier round also drew it full width
+/// under the two columns, a copy §1 has no badge for; this pins the one-copy fact by typing a marker into
+/// `bench-text` and finding it in exactly one carrier.
+fn check_the_page_holds_no_second_user_context_paragraph(window: &adw::ApplicationWindow) {
+    // Row 0 through the picker, then a marker line typed into `bench-text` — the program's own store door
+    // (`bench::store`, which for row 0 writes the project).
+    let marker = "UC-ONCE-7f31 only here";
+    let picker = widget(window, "bench-picker")
+        .downcast::<gtk::DropDown>()
+        .expect("{ITEM} s5: the row picker is a dropdown");
+    picker.set_selected(0);
+    lay_out();
+    let editor = widget(window, "bench-text")
+        .downcast::<gtk::TextView>()
+        .expect("{ITEM} s5: the bench box is a text view");
+    editor.buffer().set_text(marker);
+    lay_out();
+
+    let carriers = texts_holding(window.upcast_ref(), marker);
+    assert_eq!(
+        carriers,
+        vec!["bench-text".to_string()],
+        "{ITEM} s5: the User Context must show once, in the bench (badge 5), nowhere else on the page"
+    );
+    // Put the box back the way the round found it: this window is shared by every check in the file.
+    editor.buffer().set_text("");
+    lay_out();
+}
+
+/// Names of the widgets in `root`'s subtree that DRAW `needle` (a label's text or a text view's buffer)
+/// and have a non-zero box. A widget with no name is reported by its type so a stray copy is still locatable.
+fn texts_holding(root: &gtk::Widget, needle: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let mut stack: Vec<gtk::Widget> = vec![root.clone()];
+    while let Some(node) = stack.pop() {
+        let shown = if let Some(label) = node.downcast_ref::<gtk::Label>() {
+            label.text().to_string()
+        } else if let Some(view) = node.downcast_ref::<gtk::TextView>() {
+            let (start, end) = view.buffer().bounds();
+            view.buffer().text(&start, &end, true).to_string()
+        } else {
+            String::new()
+        };
+        let drawn = node.compute_bounds(root).is_some_and(|b| b.height() > 0.0 && b.width() > 0.0);
+        if drawn && shown.contains(needle) {
+            let name = node.widget_name();
+            found.push(if name.is_empty() || name == "unknown" {
+                node.type_().name().to_string()
+            } else {
+                name.to_string()
+            });
+        }
+        for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+            if let Ok(widget) = child.downcast::<gtk::Widget>() {
+                stack.push(widget);
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s5_the_user_context_shows_once_in_the_bench() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_UC.load(Ordering::SeqCst),
+        "{ITEM} s5: the one-copy User Context check never ran"
     );
 }
 
