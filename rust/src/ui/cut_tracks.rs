@@ -499,7 +499,11 @@ fn install_gutter_css_once() {
         let provider = gtk::CssProvider::new();
         provider.load_from_string(
             ".cut-gutter-col button { background: none; border: none; box-shadow: none; \
-             min-width: 26px; min-height: 18px; padding: 0 1px; margin: 0; }",
+             min-width: 26px; min-height: 18px; padding: 0 1px; margin: 0; }\n\
+             /* The rail is dark ink (`draw_gutter`), so its glyphs must arrive in light ink: left at the\
+                theme's default colour the whole-cut fold-all badge painted dark-on-dark and read as absent\
+                -- the render showed only a smudge at the top of the gutter. */\n\
+             .cut-gutter-col button { color: #f2f2f2; font-size: 15px; }",
         );
         gtk::style_context_add_provider_for_display(
             &gtk::gdk::Display::default().expect("a display to style"),
