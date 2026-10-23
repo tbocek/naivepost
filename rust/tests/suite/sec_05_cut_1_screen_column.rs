@@ -19,6 +19,7 @@ static RAN_IDLE_PAINTED: AtomicBool = AtomicBool::new(false);
 static RAN_LADDER: AtomicBool = AtomicBool::new(false);
 static RAN_HEADING: AtomicBool = AtomicBool::new(false);
 static RAN_GUTTER: AtomicBool = AtomicBool::new(false);
+static RAN_CEILING: AtomicBool = AtomicBool::new(false);
 static RAN_TOP_READING: AtomicBool = AtomicBool::new(false);
 
 /// How far a value's right edge may fall short of the grid's own right edge and still count as
@@ -290,7 +291,33 @@ fn check_the_thumbnail_ladder_steps_its_readout(app: &adw::Application) {
 /// dropdown are MAPPED and inside the scroller's own box, the 'Thumbnails:' key sits ABOVE 'Aspect ratio:',
 /// and every row's key is mapped.
 fn check_the_idle_column_opens_on_its_first_reading(app: &adw::Application) {
+    // BOTH sizes §1 allows the page to be seen at. Checking only the minimum is the hole that let the
+    // render be wrong while this file was green: at §1's minimum the row-count floor covers the readings,
+    // and in a taller window the form column is allocated a pane whose scroller was shorter than its own
+    // body, so the shot opened on 'Aspect ratio:' with 'Thumbnails:' (badge **2**) scrolled away above it.
+    let roomy = cut_page(app);
+    column_opens_at_top(roomy, "at a 1440x900 window");
     let window = cut_page_at_minimum(app);
+    column_opens_at_top(window.clone(), "at \u{a7}1's minimum");
+    hold_last_window(window);
+    RAN_TOP_READING.store(true, Ordering::SeqCst);
+}
+
+/// §1's "the idle column starts with the readings", measured on one realized page: the scroller sits at
+/// the top of its body, the ladder buttons and the aspect dropdown are MAPPED inside its own box, and
+/// 'Thumbnails:' reads ABOVE 'Aspect ratio:'.
+fn column_opens_at_top(window: adw::ApplicationWindow, where_: &str) {
+    // Open the page's own top/bottom divider at §A's 380 px — the SAME door a person's drag fires, and the
+    // state the spec's picture is drawn in. Without it a test window settles the divider wherever the two
+    // panes' own asks put it, which is why this column read wrong in the shot and right here: at §A's
+    // opening the form column's pane is exactly 380 px, and a column whose scroller is shorter than its
+    // own body loses its first reading at that height and at no other.
+    if let Some(vsplit) =
+        common::find_named(&window, "cut-page-split").and_then(|w| w.downcast::<gtk::Paned>().ok())
+    {
+        vsplit.set_position(naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX);
+        settle();
+    }
     let scroller_box = common::find_named(&window, "cut-form-scroller")
         .expect("§A's scroller holds the idle rows");
     let scroller = scroller_box
@@ -298,9 +325,12 @@ fn check_the_idle_column_opens_on_its_first_reading(app: &adw::Application) {
         .downcast::<gtk::ScrolledWindow>()
         .expect("§A's scroller is a ScrolledWindow");
     let adjust = scroller.vadjustment();
+    let grid =
+        common::find_named(&window, "cut-form").expect("the idle readings grid is on the page");
     println!(
-        "COLUMN at minimum: scroller {} px tall, adjustment lower={} upper={} page={} value={}",
+        "COLUMN {where_}: scroller {} px tall, body {} px tall, adjustment lower={} upper={} page={} value={}",
         scroller.height(),
+        grid.height(),
         adjust.lower(),
         adjust.upper(),
         adjust.page_size(),
@@ -309,6 +339,18 @@ fn check_the_idle_column_opens_on_its_first_reading(app: &adw::Application) {
     // Where the scroller's box is in window coordinates: a reading painted outside it is not on screen.
     let top = top_y(&scroller_box);
     let bottom = top + scroller.height();
+    // The viewport must be at the top of its body AND tall enough to hold it whole: a column that starts
+    // at its first line only because nothing scrolled it yet still loses that line as soon as anything does.
+    crate::common::wait_until(
+        &format!("the idle readings fit their viewport {where_}"),
+        || adjust.page_size() >= grid.measure(gtk::Orientation::Vertical, -1).1 as f64,
+    );
+    assert!(
+        adjust.value() <= adjust.lower() + 1.0,
+        "the idle column is scrolled off its first reading {where_}: value={} lower={}",
+        adjust.value(),
+        adjust.lower()
+    );
     for name in ["thumb-minus", "thumb-plus", "aspect-choice"] {
         let widget =
             common::find_named(&window, name).unwrap_or_else(|| panic!("{name} is on the column"));
@@ -347,11 +389,38 @@ fn check_the_idle_column_opens_on_its_first_reading(app: &adw::Application) {
         .unwrap_or_else(|| panic!("the `{label}` row has no key label"));
         assert!(
             key.is_mapped(),
-            "`{label}`'s key is built but not painted on the idle column"
+            "`{label}`'s key is built but not painted on the idle column ({where_})"
         );
     }
-    hold_last_window(window);
-    RAN_TOP_READING.store(true, Ordering::SeqCst);
+}
+
+/// The preview's height ask can never push the page's divider past §A's opening. The ask IS the start
+/// pane's minimum: ask above 380 px and the paned clamps its handle down to it, the pane overflows the
+/// divider, and everything above the new handle position — §1's 'Thumbnails:' first — is clipped out of
+/// what the page draws. Measured before this rule held: `cut-top` 417 px tall at y=45 inside a paned
+/// whose own edge sat at y=82, and the shot opened on 'Aspect ratio:'.
+fn check_the_preview_ask_cannot_open_past_the_split(app: &adw::Application) {
+    let _ = app;
+    let lane = naivepost::fx_lane::lane_height_px(1) as i32;
+    // A pane bigger than §A's opening: the ceiling, not the pane, decides.
+    let grown = naivepost::ui::cut_page_layout::preview_ask_ceiling(500, lane);
+    assert!(
+        grown + lane <= naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX,
+        "an over-large pane cannot ask the picture taller than \u{a7}A's 380 px opening: {grown} + {lane}"
+    );
+    // A pane smaller than the opening: the pane's own room decides, nothing is padded up.
+    let tight = naivepost::ui::cut_page_layout::preview_ask_ceiling(240, lane);
+    assert_eq!(
+        tight + lane,
+        240,
+        "a short pane keeps its own room, not \u{a7}A's number: {tight} + {lane}"
+    );
+    // Never zero or negative: a pane no taller than the lane still gets a picture.
+    assert!(
+        naivepost::ui::cut_page_layout::preview_ask_ceiling(lane, lane) >= 1,
+        "a degenerate pane still asks for at least one pixel of picture"
+    );
+    RAN_CEILING.store(true, Ordering::SeqCst);
 }
 
 /// A widget's top edge in window coordinates, the vertical twin of [`span`].
@@ -565,6 +634,8 @@ fn round() {
         check_the_pinned_heading_shows_only_with_a_form(app);
         println!("CHECK 3 the gutter is a 30 px column, not a band");
         check_the_gutter_is_a_column_not_a_band(app);
+        println!("CHECK 4 the preview's height ask cannot open the page past \u{a7}A's 380 px");
+        check_the_preview_ask_cannot_open_past_the_split(app);
     });
 }
 
@@ -625,5 +696,15 @@ fn sec_05_cut_1_screen_the_gutter_is_a_30_px_column_not_a_band_of_its_own() {
     assert!(
         RAN_GUTTER.load(Ordering::SeqCst),
         "the gutter check never ran"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_preview_ask_stays_inside_the_page_split() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_CEILING.load(Ordering::SeqCst),
+        "the preview ask-ceiling check never ran"
     );
 }
