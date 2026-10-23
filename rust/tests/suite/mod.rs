@@ -400,6 +400,7 @@ mod sec_04_prepare_5_rules_scratch;
 mod sec_04_prepare_5_rules_transport;
 mod sec_04_prepare_6;
 mod sec_05_cut_1_band_paints;
+mod sec_05_cut_1_strip_paints;
 mod sec_05_cut_1_screen_column;
 mod sec_05_cut_1_screen_layout;
 mod sec_05_cut_1_screen_screen;
