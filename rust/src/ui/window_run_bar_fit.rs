@@ -45,6 +45,15 @@ pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
                     .expect("a job button is held by a box")
                     .remove(&button);
             }
+            if let Some(label) = button.downcast_ref::<gtk::Button>().and_then(|b| b.child()) {
+                if let Some(label) = label.downcast_ref::<gtk::Label>() {
+                    // Ellipsized, and told it may shrink to one character's width, so a squeezed job button tails
+                    // its name off with "…" inside itself instead of being cut mid-glyph (the row once drew
+                    // "✎ Cal" for "✐ Captions") — and so the box's own floor stays small enough for §1's minimum.
+                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    label.set_width_chars(1);
+                }
+            }
             jobs.append(&button);
         }
     }
@@ -65,6 +74,18 @@ pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
     // new box away while they were still in it — every button then resolved by name under a scroller that held
     // none of them, and the row kept its old ~800 px ask.
     scroller.set_child(Some(&jobs));
+    // …and floored at [`JOB_BOX_MIN_PX`], not at its buttons' own ask. These four are jobs sharing the row, not
+    // one of §1's badges, so they give way before ▶ / ⏹ / the readouts do — but only down to that floor. Left at
+    // ScrolledWindow's default minimum of 0 the row served this box 70 px and drew "✎ Cal" where the button reads
+    // "✐ Captions", and clipping a label mid-glyph is not §1's "what no longer fits scrolls": scrolling shows the
+    // rest on a drag, clipping never does. Flooring at the buttons' MEASURED width was tried and is wrong — the
+    // shell's own minimum grew past §1's 1240 (the shot came out 1322 px wide, `window_shrinks` red) because a
+    // GtkLabel's floor travels into the shell through the row however it is ellipsized. So the number is written
+    // here instead: measured as the largest floor that still leaves the window laying out at §1's 1240.
+    scroller.set_min_content_width(JOB_BOX_MIN_PX);
+    // The bar's ask below (`share_the_free_width`) charges this box its NATURAL width, so the row hands these
+    // buttons as much of their full labels as §1's size has room for; where it does not, an ellipsized label tails
+    // off with "…" inside its own button rather than being cut between words.
     // …and it asks the CONTROLS scroller for its buttons' own minimum — the ONE width that decides whether §1's
     // badges stay on screen. A `gtk::ScrolledWindow` measures MINIMUM 0 whatever it holds, so GTK happily allocates
     // it less than its own buttons and scrolls the rest away unseen: measured at §1's minimum size `run-controls`
@@ -74,9 +95,7 @@ pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
     // measures the three badges alone (measured with all seven still inside, the ask came out 644 px and pushed the
     // job buttons past the window's edge). It costs the shell's minimum WIDTH nothing at §1's size — the row has
     // far more than 224 to give — and only bites when the window is narrower than the badges, where scrolling them
-    // sideways is §1's own answer ("what no longer fits scrolls … instead of holding the window wide"). The JOB
-    // scroller keeps its floor of 0 for the opposite reason: those four buttons are not §1's badges, they are what
-    // §1 says must give way, and asking for their width was measured to starve badge 12 further.
+    // sideways is §1's own answer ("what no longer fits scrolls … instead of holding the window wide").
     if let Some(inner) = find_in(row.upcast_ref(), "run-controls-inner") {
         if let Some(scroller) = find_in(row.upcast_ref(), "run-controls") {
             if let Some(scroller) = scroller.downcast_ref::<gtk::ScrolledWindow>() {
@@ -99,6 +118,13 @@ pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
         None => row.append(&scroller),
     }
 }
+
+/// The narrowest the JOB box may be squeezed to: enough for each of the four job buttons to show its icon plus
+/// a few characters of name with an ellipsis (measured at §1's minimum: `pass-scroller` 139 px). Written as a
+/// number rather than measured off the buttons, because their measured minimum pushes the SHELL past §1's 1240 —
+/// see the note where the scroller is floored in [`fit`].
+pub const JOB_BOX_MIN_PX: i32 = 104;
+
 
 /// Badge **13**: the floor the progress bar keeps even when everything else in the row has been served —
 /// "the progress bar (taking the row's free width)" with no room at all would be an invisible bar. Used by
