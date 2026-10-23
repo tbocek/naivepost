@@ -295,10 +295,8 @@ fn sec_06_effects_2_the_lane_and_the_preview_s6_playing_preview() {
 
     // The camera layer rides the smoothed clock, not the once-a-tick playhead.
     assert!(lane::camera_clock_is_smoothed());
-    assert!(
-        naivepost::preview::TICK_MS >= 10,
-        "the tick is slow enough that this matters"
-    );
+    let tick = naivepost::preview::TICK_MS;
+    assert!(tick >= 10, "the tick is slow enough that this matters");
 
     // A stop's still is rendered from the scene's own camera: it borrows its framing, never invents one.
     let mut stop = fx(EffectKind::Speed, 6.0, 2.0);
@@ -471,33 +469,34 @@ fn sec_06_effects_2_the_lane_and_the_preview_s11_plate_debt_at_the_line() {
     };
 
     // Three of its five seconds gone by the line at 13 → two seconds of sound still behind.
-    assert_eq!(lane::plate_debt_at(&[held.clone()], 13.0), 2.0);
+    let held_one = std::slice::from_ref(&held);
+    assert_eq!(lane::plate_debt_at(held_one, 13.0), 2.0);
     assert_eq!(
-        lane::plate_text(lane::plate_debt_at(&[held.clone()], 13.0)),
+        lane::plate_text(lane::plate_debt_at(held_one, 13.0)),
         "sound 2.0 s behind"
     );
 
     // Before the record starts there is nothing to be late for, so no plate.
-    assert_eq!(lane::plate_debt_at(&[held.clone()], 9.0), 0.0);
-    assert!(lane::plate_for(lane::plate_debt_at(&[held.clone()], 9.0), 100.0).is_none());
+    assert_eq!(lane::plate_debt_at(held_one, 9.0), 0.0);
+    assert!(lane::plate_for(lane::plate_debt_at(held_one, 9.0), 100.0).is_none());
 
     // Past its end nothing covers the line, so no record owes anything. The last covered second is where the
     // debt tops out — at 14.9 s of a 5.0 s bar only 0.1 s is still owed, which is what `plate_text` reads as
     // "sound 0.1 s behind", never an inflated figure. Compared with a tolerance: the seconds are floats and the
     // subtraction carries their representation error, which is not what this rule is about.
-    let near_end = lane::plate_debt_at(&[held.clone()], 14.9);
+    let near_end = lane::plate_debt_at(std::slice::from_ref(&held), 14.9);
     assert!(
         (near_end - 0.1).abs() < 1e-6,
         "0.1 s still owed at 14.9 of a 5.0 s bar, got {near_end}"
     );
     assert_eq!(
-        lane::plate_debt_at(&[held.clone()], 15.0),
+        lane::plate_debt_at(std::slice::from_ref(&held), 15.0),
         0.0,
         "the bar ended; nothing under the line"
     );
-    assert_eq!(lane::plate_debt_at(&[held.clone()], 20.0), 0.0);
+    assert_eq!(lane::plate_debt_at(std::slice::from_ref(&held), 20.0), 0.0);
     assert_eq!(
-        lane::plate_debt_at(&[held.clone()], 10.0),
+        lane::plate_debt_at(std::slice::from_ref(&held), 10.0),
         5.0,
         "at its start, all of it is owed"
     );

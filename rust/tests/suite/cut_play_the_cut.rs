@@ -431,7 +431,7 @@ fn f2_2_s6_dropped_stretches_come_back_dimmed_and_kept_material_never_does() {
         assert!(
             !cut.segs
                 .iter()
-                .any(|seg| cut_play::cut_time(&[seg.clone()], start).is_some()),
+                .any(|seg| cut_play::cut_time(std::slice::from_ref(seg), start).is_some()),
             "kept material must never appear in the dimmed list, got {start}..{end}"
         );
     }

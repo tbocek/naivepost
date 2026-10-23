@@ -167,6 +167,9 @@ fn p_eng_edgereachseconds_s4_the_resume_side_walks_back_over_the_sound_only_insi
     );
 }
 
+// S5's own fact, compile-time because these are constants: the relationship IS what this row pins, and a
+// runtime assert on two literals is a constant value.
+const _: () = assert!(edge::LATE_STAMP < edge::EDGE_REACH);
 /// S5: the reach is its own bound, distinct from the three numbers that sit next to it on a cut edge.
 #[test]
 fn p_eng_edgereachseconds_s5_the_reach_is_not_the_late_stamp_window_nor_the_pad() {
@@ -179,10 +182,7 @@ fn p_eng_edgereachseconds_s5_the_reach_is_not_the_late_stamp_window_nor_the_pad(
         5.0,
         "the late-stamp window decides here, not the reach"
     );
-    assert!(
-        edge::LATE_STAMP < edge::EDGE_REACH,
-        "0.6 < 0.8: the window is the tighter of the two"
-    );
+    // 0.6 < 0.8: the window is the tighter of the two (asserted at compile time above).
 
     // Each neighbour is a separate constant with a separate question.
     // P.eng.edgePadSeconds (0.05): what is left of a sound once the envelope has placed it.

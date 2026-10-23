@@ -379,7 +379,7 @@ fn f3_6_s5_overlapping_gains_multiply() {
     // Mid-band the envelope is 1, so the gain is what it says: trans = tout = 0.25 around t = 14 well inside 4 s.
     assert_close(
         "one volume doubles it",
-        cut_hear::gain_under(&[loud.clone()], 14.0),
+        cut_hear::gain_under(std::slice::from_ref(&loud), 14.0),
         2.0,
     );
     // Two of them are two things done to the same sound: 2 times 2, not the average of 2 and 2.
@@ -392,7 +392,7 @@ fn f3_6_s5_overlapping_gains_multiply() {
     let hush = vol(0.0, 12.0, 4.0, 0.25);
     assert_close(
         "a volume at nought is silence",
-        cut_hear::gain_under(&[hush.clone()], 14.0),
+        cut_hear::gain_under(std::slice::from_ref(&hush), 14.0),
         0.0,
     );
     assert!(fx_record::gain_is_silence(&hush));
@@ -421,7 +421,7 @@ fn f3_6_s5_overlapping_gains_multiply() {
     let ramped = vol(2.0, 12.0, 4.0, 1.0);
     assert_close(
         "halfway up the ramp",
-        cut_hear::gain_under(&[ramped.clone()], 12.5),
+        cut_hear::gain_under(std::slice::from_ref(&ramped), 12.5),
         1.5,
     );
 
@@ -429,20 +429,20 @@ fn f3_6_s5_overlapping_gains_multiply() {
     // where the envelope is not even 1 — which is the point, since the fades can only be judged without a moving frame.
     assert_close(
         "heard paused mid-band",
-        fx_volume::heard_while_paused(&[loud.clone()], 14.0),
+        fx_volume::heard_while_paused(std::slice::from_ref(&loud), 14.0),
         2.0,
     );
     assert_eq!(
-        fx_volume::heard_while_paused(&[loud.clone()], 14.0),
-        cut_hear::gain_under(&[loud.clone()], 14.0)
+        fx_volume::heard_while_paused(std::slice::from_ref(&loud), 14.0),
+        cut_hear::gain_under(std::slice::from_ref(&loud), 14.0)
     );
     assert_close(
         "heard paused mid-ramp",
-        fx_volume::heard_while_paused(&[ramped.clone()], 12.5),
+        fx_volume::heard_while_paused(std::slice::from_ref(&ramped), 12.5),
         1.5,
     );
     assert_eq!(
-        fx_volume::heard_while_paused(&[ramped.clone()], 12.5),
+        fx_volume::heard_while_paused(std::slice::from_ref(&ramped), 12.5),
         cut_hear::gain_under(&[ramped], 12.5)
     );
 

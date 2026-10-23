@@ -593,7 +593,7 @@ pub(crate) fn page_box(
         let _ = crate::ui::cut_preview_panel::install(&box_, &previous);
         // §A/§1 put the page in an order the flows did not build it in (preview | readings on top,
         // then toolbar, tracks, scrollbar). This re-orders the widgets just built; see the module doc.
-        crate::ui::cut_page_layout::arrange(&box_);
+        crate::ui::cut_page_layout::arrange(&box_, window);
     }
 
     // F2.11 S1 — the whole-cut fold badge lives on the band's own gutter rail (`gutter-badges`, built in

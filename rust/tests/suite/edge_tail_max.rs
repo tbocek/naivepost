@@ -168,6 +168,9 @@ fn p_eng_edgetailmaxseconds_s4_the_same_cap_bounds_the_resume_side() {
     );
 }
 
+// The tail is followed for less time than the trough is searched after it — compile-time, because these are
+// constants and the relationship IS what S5 pins.
+const _: () = assert!(edge::EDGE_TAIL_MAX < edge::TROUGH_REACH);
 /// S5: the cap is fenced-side only, and it is not any of the bounds that sit next to it.
 #[test]
 fn p_eng_edgetailmaxseconds_s5_the_cap_is_fenced_only_and_is_not_its_neighbours() {
@@ -242,10 +245,7 @@ fn p_eng_edgetailmaxseconds_s5_the_cap_is_fenced_only_and_is_not_its_neighbours(
         edge::ENVELOPE_WINDOW,
         "the tail cap is not the room window"
     );
-    assert!(
-        edge::EDGE_TAIL_MAX < edge::TROUGH_REACH,
-        "the tail is followed for less time than the trough is searched after it"
-    );
+    // The tail is followed for less time than the trough is searched after it (asserted at compile time above).
 
     // And this row points at the cap, not at any neighbour's constant.
     assert_eq!(

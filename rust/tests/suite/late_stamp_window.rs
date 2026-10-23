@@ -119,6 +119,8 @@ fn p_eng_latestampseconds_s2_a_stamp_inside_the_window_resumes_at_the_sound_that
 /// S3: the window bounds the QUIET crossing, not the walk over the sound. A run that ends 0.5 s before
 /// the stamp is inside the window, and the walk then travels back over the whole run to its onset —
 /// further back than the window itself measures.
+const _: () = assert!((5.0 - 4.25) > edge::LATE_STAMP);
+const _: () = assert!((5.0 - 4.25) < edge::EDGE_REACH);
 #[test]
 fn p_eng_latestampseconds_s3_a_wider_short_run_still_lands_inside_the_window() {
     // P.eng.lateStampSeconds: quiet 0.5 s ≤ the 120-bucket window, so the crossing is allowed.
@@ -131,14 +133,8 @@ fn p_eng_latestampseconds_s3_a_wider_short_run_still_lands_inside_the_window() {
     // The walk back is 140 buckets — more than the 120-bucket window — yet legal, because how far the
     // SOUND may be followed is the reach's business (P.eng.edgeReachSeconds), not the window's.
     assert_eq!((5.0 - 4.25) * HZ, 150.0, "total travel exceeds the window");
-    assert!(
-        (5.0 - 4.25) > edge::LATE_STAMP,
-        "the answer lies further back than the window itself"
-    );
-    assert!(
-        (5.0 - 4.25) < edge::EDGE_REACH,
-        "but stays inside the reach"
-    );
+    // The answer lies further back than the window itself, yet stays inside the reach — both asserted at
+    // compile time above, since they follow from the two constants alone.
 }
 
 /// S4: quiet longer than the window leaves the stamp alone. Chasing the next sound would clip the word
@@ -163,10 +159,9 @@ fn p_eng_latestampseconds_s4_quiet_longer_than_the_window_leaves_the_stamp_alone
         5.0,
         "out of the late window, though inside the reach"
     );
-    assert!(
-        edge::LATE_STAMP < edge::EDGE_REACH,
-        "0.6 < 0.8: the window is the tighter of the two"
-    );
+    // 0.6 < 0.8: the window is the tighter of the two — a fact of the two constants, so it belongs in a
+    // const block rather than in a runtime assert.
+    const _: () = assert!(edge::LATE_STAMP < edge::EDGE_REACH);
 
     // Through the flow too: no word times, so the envelope alone is asked. Out of the window it hands the
     // stamp back unchanged, but `place_edges` has already opened the gap to that second, so the resume

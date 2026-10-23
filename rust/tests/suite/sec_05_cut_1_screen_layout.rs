@@ -77,6 +77,10 @@ fn edges(widget: &gtk::Widget) -> (i32, i32) {
     (top, top + widget.height())
 }
 
+/// How far below the tape's bottom edge §A's scrollbar (§1 badge **31**) may sit. The bar is the next thing
+/// in the same pane, so anything past a row spacing or two means something else was packed between them.
+const MAX_TAPE_TO_BAR_PX: i32 = 24;
+
 /// A widget's left edge in window coordinates, alongside its top edge.
 #[allow(deprecated)] // same door as [`edges`]
 fn left_edge(widget: &gtk::Widget) -> (i32, i32) {
@@ -433,7 +437,145 @@ fn round() {
         RAN_TAPE_PAINTED.store(true, Ordering::SeqCst);
         println!("CHECK 8 the tracks are ONE stack with ONE ruler");
         check_one_stack_has_one_ruler(app);
+        println!("CHECK 9 the lower pane holds the whole tape and the bar under it");
+        check_the_band_is_whole_and_the_bar_follows(app);
+        RAN_BAND_WHOLE.store(true, Ordering::SeqCst);
+        println!("CHECK 10 the idle reading column is PAINTED, label and value both");
+        check_the_readings_are_painted_pairs(app);
+        RAN_READINGS.store(true, Ordering::SeqCst);
     });
+}
+
+static RAN_BAND_WHOLE: AtomicBool = AtomicBool::new(false);
+static RAN_READINGS: AtomicBool = AtomicBool::new(false);
+
+/// §A's "bottom = toolbar, tracks, scrollbar" read as pixels, not as child order. Two things had to hold:
+/// the band got every row it asked for (a `DrawingArea` CLIPS its draw to its own allocation, so a pane that
+/// is short does not scroll — it eats the wave rows at the bottom of the tape), and the scrollbar sits
+/// directly under it rather than being pushed out of the pane. Measured before the fix: the band was given
+/// 132 px of ask against a bottom half 46 px short of what the pane held, and the bar landed at the
+/// toolbar's own y because an unmapped widget reports the box of whatever preceded it.
+fn check_the_band_is_whole_and_the_bar_follows(app: &adw::Application) {
+    let window = cut_page(app);
+    let vsplit = common::find_named(&window, "cut-page-split")
+        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+        .expect("§A's vertical paned (380) is on the page");
+    assert_eq!(
+        vsplit.position(),
+        naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX,
+        "§A opens the upper part {} px tall; the handle sits at {}",
+        naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX,
+        vsplit.position()
+    );
+    let layers = common::find_named(&window, "track-layers").expect("§1's band is on the page");
+    let asked = naivepost::ui::cut_tracks::idle_band_height();
+    println!(
+        "BAND track-layers h={} asked={asked}",
+        layers.height()
+    );
+    assert!(
+        layers.height() >= asked,
+        "§27's wave strip lives in the bottom third of the band's last row, so a band shorter than the {} px \
+         its own scene asks for has its wave rows clipped: got {} px",
+        asked,
+        layers.height()
+    );
+    // The bar shares the pane BELOW the tape. At the open zoom a short session fits the view and §A hides the
+    // bar (pinned by `sec05_cut_picture_scrollbar.rs`), and GTK gives a hidden widget no box at all — so the
+    // gap is only measured when the bar has one, which is exactly when it is on screen.
+    if let Some(bar) = common::find_named(&window, "track-scrollbar") {
+        if bar.is_visible() {
+            let (_, tape_bottom) = edges(&layers);
+            let (bar_top, _) = edges(&bar);
+            println!("BAR tape-bottom {tape_bottom} -> bar-top {bar_top}");
+            assert!(
+                (bar_top - tape_bottom).abs() <= MAX_TAPE_TO_BAR_PX,
+                "§1's badge 31 sits under the tracks, not elsewhere in the pane: tape bottom {tape_bottom}, \
+                 bar top {bar_top}"
+            );
+        }
+    }
+    window.close();
+}
+
+/// §1's readings are "label left and value right", so each row is a PAIR of painted labels — a key ending in
+/// `:` and a non-empty value — and none of them may be a blank plate. Read off the realized tree: the frame,
+/// the grid and three named rows must have pixels, and their text must say something.
+fn check_the_readings_are_painted_pairs(app: &adw::Application) {
+    let window = cut_page(app);
+    for name in ["cut-form-frame", "cut-form"] {
+        let widget =
+            common::find_named(&window, name).unwrap_or_else(|| panic!("{name} is missing"));
+        assert!(
+            widget.is_mapped() && widget.width() > 0 && widget.height() > 0,
+            "§A's form column is in the tree but paints nothing: {name} {}x{} mapped={}",
+            widget.width(),
+            widget.height(),
+            widget.is_mapped()
+        );
+    }
+    // Three rows: two plain readings and the Thumbnails ladder, whose value is a box holding the number.
+    for name in [
+        "cut-readout-playhead",
+        "cut-readout-aspect-ratio",
+        "cut-readout-thumbnails",
+    ] {
+        let value = common::find_named(&window, name)
+            .unwrap_or_else(|| panic!("the reading row `{name}` is missing"));
+        let (top, bottom) = edges(&value);
+        assert!(
+            value.is_mapped() && bottom > top,
+            "§1's reading `{name}` has no pixels: {}x{} mapped={}",
+            value.width(),
+            value.height(),
+            value.is_mapped()
+        );
+        let key = format!("{name}-key");
+        let label = common::find_named(&window, &key)
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+            .unwrap_or_else(|| panic!("`{key}` is the row's left-hand label (§1: label left)"));
+        let text = label.text().trim().to_string();
+        assert!(
+            text.ends_with(':') && text.len() > 1,
+            "`{key}` should read as a label, not {:?}",
+            text
+        );
+        // The value is either the label itself or, on the ladder, the number BETWEEN its two step buttons:
+        // the first label that is not one of the steps (a step reads as an icon, so it would pass for "text").
+        let shown = match value.downcast_ref::<gtk::Label>() {
+            Some(l) => l.text().trim().to_string(),
+            None => first_value_text(&value),
+        };
+        assert!(
+            !shown.is_empty(),
+            "§1 pairs each reading's value with its label (`{text}`); this row shows nothing"
+        );
+        println!("READOUT {name}: `{text}` = `{shown}`");
+    }
+    window.close();
+}
+
+/// The reading a row's VALUE box shows: the first `gtk::Label` under `node` whose text is not a step button's
+/// glyph. The Thumbnails row's named widget is the ladder (`🖼− 64 🖼+`), and its own number is what §1 puts
+/// at the right end, so an icon-only label does not count as the value.
+fn first_value_text(node: &gtk::Widget) -> String {
+    for child in node.observe_children().iter::<glib::Object>() {
+        let Ok(child) = child else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
+        if let Some(label) = widget.downcast_ref::<gtk::Label>() {
+            let text = label.text().trim().to_string();
+            if !text.is_empty() && !text.chars().any(|c| "\u{1f5bc}\u{2212}".contains(c)) {
+                return text;
+            }
+        }
+        let deeper = first_value_text(&widget);
+        if !deeper.is_empty() {
+            return deeper;
+        }
+    }
+    String::new()
 }
 
 static RAN_TAPE_PAINTED: AtomicBool = AtomicBool::new(false);
@@ -543,6 +685,70 @@ fn sec_05_cut_1_screen_the_toolbar_tracks_and_scrollbar_sit_below_the_divider() 
     assert!(
         RAN_BELOW.load(Ordering::SeqCst),
         "the below-the-divider check never ran"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_band_is_whole_and_the_bar_sits_under_it() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_BAND_WHOLE.load(Ordering::SeqCst),
+        "the band-height / scrollbar-seat check never ran"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_idle_readings_paint_a_label_and_a_value() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_READINGS.load(Ordering::SeqCst),
+        "the reading-pair check never ran"
+    );
+}
+
+/// §27 Tracks: "each row's first audio track as a strip below it" — the band RESERVES the strip for every
+/// camera, through `cut_tracks::bands_for`, which is what both the painter and every press reader use. No
+/// window needed: this is the arithmetic the layout charges the pane from, so a drift here names itself.
+#[test]
+fn sec_05_cut_1_screen_the_band_reserves_a_picture_row_and_its_wave_strip() {
+    use naivepost::cut_screen::{EFFECT_ROW_PX, THUMB_AT_OPEN};
+    use naivepost::ui::cut_tracks;
+    let bands = cut_tracks::bands_for(0);
+    assert!(
+        bands.wave_height > 0.0,
+        "§27's wave strip has no height, so no row carries one: {:?}",
+        bands
+    );
+    assert!(
+        bands.row_height > 0.0,
+        "§27's picture band has no height: {:?}",
+        bands
+    );
+    // One camera: the row ends where the strip ends, and that bottom is the idle band's own ask.
+    let one_row_bottom = bands.first_picture + bands.row_height + bands.wave_height;
+    let asked = f64::from(cut_tracks::idle_band_height());
+    println!("IDLE first_picture={} one row ends {one_row_bottom}, band asks {asked}", bands.first_picture);
+    assert!(
+        asked >= one_row_bottom,
+        "§27's picture row plus its wave strip must fit inside the height the band asks for: row ends \
+         {one_row_bottom}, band asks {asked}"
+    );
+    // And the ask IS those parts, stated once through the modules that own them: the ruler (`cut_trim`),
+    // the selection band, one empty effects-lane row, and one row pitch (thumbnail + slack). If any of those
+    // moves, this names which.
+    let spelled = naivepost::cut_trim::RULER_H
+        + naivepost::ui::cut_tracks::SELECTION_BAND_PX
+        + EFFECT_ROW_PX
+        + (f64::from(THUMB_AT_OPEN) + naivepost::ui::cut_tracks::PICTURE_ROW_EXTRA_PX);
+    assert_eq!(
+        asked as i32,
+        spelled as i32,
+        "idle band height drifted from ruler {} + selection {} + lane row {EFFECT_ROW_PX} + row pitch {}",
+        naivepost::cut_trim::RULER_H,
+        naivepost::ui::cut_tracks::SELECTION_BAND_PX,
+        f64::from(THUMB_AT_OPEN) + naivepost::ui::cut_tracks::PICTURE_ROW_EXTRA_PX
     );
 }
 

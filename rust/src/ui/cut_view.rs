@@ -558,6 +558,15 @@ pub fn refresh_page_scrollbar(window: &adw::ApplicationWindow) {
     }
 }
 
+/// The bar's length as the page can give it: its own allocation once it has one, the surface it scrolls
+/// otherwise. Recorded through `refresh_scrollbar`, which is the door that stores it (`BAR_WIDTH`).
+fn naivepost_length_of(bar: &gtk::Widget, window: &adw::ApplicationWindow) {
+    let Some(scrollbar) = bar.downcast_ref::<gtk::Scrollbar>() else {
+        return;
+    };
+    refresh_scrollbar(scrollbar, surface_width(window));
+}
+
 /// This window's band scene, from state the page already keeps: the newest review cut, this page's takes,
 /// the newest window's selection and red line — the same newest-slot doors every other Cut-page reader
 /// uses, so the band cannot paint an older window's marks. Lives here because `window.rs` is at its budget.
@@ -587,6 +596,17 @@ pub fn attach_scrollbar(window: &adw::ApplicationWindow) {
     let Some(widget) = find_widget_by_name(&content, "track-scrollbar") else {
         return;
     };
+    // A bar §1 says is hidden has no allocation, and an unmapped scrollbar answers 0 px on both axes. The
+    // gearing is defined against the BAR's length (§B: "thumb geared at high zoom so one screenful is always
+    // 40 px of drag"), so the length has to be recorded while the bar is mapped and page-wide — which is true
+    // the moment the page is realized, whatever the tape's width turns out to be. Without this the bar is
+    // never mapped at the open zoom (the session fits), stays 0×0, and every thumb it later paints is geared
+    // against nothing.
+    let bar = widget.clone();
+    let win = window.clone();
+    widget.connect_realize(move |_| {
+        naivepost_length_of(&bar, &win);
+    });
     let Ok(bar) = widget.downcast::<gtk::Scrollbar>() else {
         return;
     };
