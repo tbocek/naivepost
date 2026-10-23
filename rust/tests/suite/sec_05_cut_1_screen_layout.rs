@@ -443,11 +443,14 @@ fn round() {
         println!("CHECK 10 the idle reading column is PAINTED, label and value both");
         check_the_readings_are_painted_pairs(app);
         RAN_READINGS.store(true, Ordering::SeqCst);
+        println!("CHECK 11 the idle column shows no pinned heading, and a form pins one");
+        check_the_idle_column_shows_no_pinned_heading(app);
     });
 }
 
 static RAN_BAND_WHOLE: AtomicBool = AtomicBool::new(false);
 static RAN_READINGS: AtomicBool = AtomicBool::new(false);
+static RAN_NO_HEADING: AtomicBool = AtomicBool::new(false);
 
 /// §A's "bottom = toolbar, tracks, scrollbar" read as pixels, not as child order. Two things had to hold:
 /// the band got every row it asked for (a `DrawingArea` CLIPS its draw to its own allocation, so a pane that
@@ -550,6 +553,40 @@ fn check_the_readings_are_painted_pairs(app: &adw::Application) {
         println!("READOUT {name}: `{text}` = `{shown}`");
     }
     window.close();
+}
+
+/// §1 badge **2**: the thumbnail-size row is the FIRST thing the idle form column shows — "Thumbnails:" with
+/// its 🖼− / size / 🖼+ ladder, above "Aspect ratio:" — and it must be PAINTED, not merely in the tree. The
+/// §1's Form column: "a pinned heading (title left, ✕ at its right end, closes) shown only while a form is
+/// open (the idle column starts with the readings, no heading)". Read as state, not pixels: the heading is
+/// hidden on the idle page and `set_pinned` — the program's own door for opening and closing a form — shows
+/// it for a title and hides it again.
+fn check_the_idle_column_shows_no_pinned_heading(app: &adw::Application) {
+    let window = cut_page(app);
+    let heading_visible = || {
+        common::find_named(&window, "cut-form-heading")
+            .expect("\u{a7}A pins a heading row")
+            .is_visible()
+    };
+    assert!(
+        !heading_visible(),
+        "the idle column starts with the readings and NO pinned heading (\u{a7}1)"
+    );
+    assert!(
+        naivepost::ui::cut_form_frame::set_pinned(&window, Some("Zoom")),
+        "the page has the pinned parts `set_pinned` writes"
+    );
+    assert!(
+        heading_visible(),
+        "with a form open the pinned heading shows (\u{a7}1: shown while a form is open)"
+    );
+    assert!(naivepost::ui::cut_form_frame::set_pinned(&window, None));
+    assert!(
+        !heading_visible(),
+        "closing the form takes the heading away again"
+    );
+    window.close();
+    RAN_NO_HEADING.store(true, Ordering::SeqCst);
 }
 
 /// The reading a row's VALUE box shows: the first `gtk::Label` under `node` whose text is not a step button's
@@ -702,6 +739,18 @@ fn sec_05_cut_1_screen_the_idle_readings_paint_a_label_and_a_value() {
     assert!(
         RAN_READINGS.load(Ordering::SeqCst),
         "the reading-pair check never ran"
+    );
+}
+
+/// §1's Form column: the pinned heading belongs to an open form only — hidden on the idle page, shown by
+/// the program's own door `set_pinned` for a title, hidden again when nothing is open.
+#[test]
+fn sec_05_cut_1_screen_the_idle_column_shows_no_pinned_heading() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_NO_HEADING.load(Ordering::SeqCst),
+        "the pinned-heading state check never ran"
     );
 }
 
