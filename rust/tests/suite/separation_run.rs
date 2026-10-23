@@ -63,7 +63,9 @@ fn enter(scene: &Scene) {
     std::env::set_current_dir(&scene.root).expect("the scene is the working folder");
 }
 
-/// Put back what [`enter`] moved, so the next test starts from the real environment.
+/// Put back what [`enter`] moved, so the next test starts from the real environment. The caller still holds
+/// [`ENV`] here: `leave` and `drop(_guard)` are the two halves of one release, in that order — dropping the
+/// guard first would let another thread walk into this scene's folders while its env still pointed at them.
 fn leave() {
     std::env::remove_var("XDG_CONFIG_HOME");
     std::env::remove_var("XDG_DATA_HOME");
@@ -82,8 +84,14 @@ struct Scene {
 
 impl Scene {
     /// One scenario per test BINARY, the shape the wire harnesses use: the session is resolved from the
-    /// working folder and the settings folder from the environment, and both belong to the process, so
-    /// a test lays them out once, holds the lock, and restores them before returning.
+    /// working folder and the settings folder from the environment, and both belong to the process, so a
+    /// test lays them out once, holds the lock, and restores them before returning.
+    ///
+    /// THE CALLER MUST HOLD [`ENV`] BEFORE CALLING. Building a scene reads `std::env::temp_dir()`, and the
+    /// suite runs every test file as its own process with its own `$TMPDIR` handed to it — but within this
+    /// binary the tests are threads, and any thread that resolves a path outside the guard can land in a
+    /// folder another test has just removed. That window is what made one run of this file fail and the next
+    /// pass on identical code.
     fn new(answer: &'static str, status: u16) -> Self {
         let root = std::env::temp_dir().join(format!(
             "np-sep-{}-{}",
@@ -136,25 +144,32 @@ impl Scene {
         self.seen.lock().expect("the record lock").clone()
     }
 
-    /// Wait until this fake has answered `count` requests, and FAIL if it never did.
+    /// Wait until this fake has answered a request whose path contains `path`, and FAIL if it never did.
     ///
     /// The recording happens on the connection's own thread, so a reply can return before its entry is in
     /// the list — the same reason `tests/suite/audio_task_dial.rs` polls instead of sleeping a fixed time.
     /// The deadline is the shared one (`common::WAIT_LIMIT`) and it PANICS naming what is missing: returning
     /// the short Vec was how this file failed one run and passed the next on identical code — under parallel
     /// load the caller's next assertion tripped over the absent entry with nothing to say why.
-    fn wait_until(&self, count: usize) -> Vec<Seen> {
+    ///
+    /// It waits for the ROW each assertion reads, matched by path, and not for a COUNT of requests: the walk
+    /// makes one extra call when the shipped model is missing (the `GET /v1/models` that feeds §1's install
+    /// hint), and a leg may also be retried under the suite's 30-way parallel load, so "four requests" is a
+    /// guess about the walk's internals rather than about what this test claims.
+    fn wait_for(&self, path: &str) -> Seen {
         let deadline = std::time::Instant::now() + crate::common::WAIT_LIMIT;
         loop {
-            let seen = self.mine();
-            if seen.len() >= count {
-                return seen;
+            if let Some(row) = self.mine().into_iter().find(|seen| seen.line.contains(path)) {
+                return row;
             }
             assert!(
                 std::time::Instant::now() < deadline,
-                "only {} of {count} separation requests reached the fake audio.cpp server within {:?}",
-                seen.len(),
-                crate::common::WAIT_LIMIT
+                "no request for {path:?} reached the fake audio.cpp server within {:?}; the fake saw {:?}",
+                crate::common::WAIT_LIMIT,
+                self.mine()
+                    .iter()
+                    .map(|seen| seen.line.clone())
+                    .collect::<Vec<_>>()
             );
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -377,8 +392,10 @@ fn sec_02_services_1_the_four_servers_s1_a_ticked_row_plans_a_separation_dial() 
 /// stems come back as the two files `separate` names — the bytes are on disk, not just promised.
 #[test]
 fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_writes_both_halves() {
-    let scene = Scene::new("{\"voice\":\"/uploads/lecture/voice.wav\",\"rest\":\"/uploads/lecture/rest.wav\"}", 200);
+    // The env and the working folder are process-wide, so everything that reads them — including laying the
+    // scene's folders out — happens inside the guard. See [`Scene::new`].
     let _guard = ENV.lock().expect("the env lock");
+    let scene = Scene::new("{\"voice\":\"/uploads/lecture/voice.wav\",\"rest\":\"/uploads/lecture/rest.wav\"}", 200);
     for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
         std::env::remove_var(name);
     }
@@ -417,26 +434,22 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
     assert_eq!(after.sources.len(), 2, "the session now holds both halves");
     assert!(after.sources.iter().all(|row| !row.sepvoice), "neither half asks again");
 
-    // The fake's task reply is fixed, so the stems it names get read from the fake by that name.
-    let mine = scene.wait_until(4);
+    // The fake's task reply is fixed, so the stems it names get read from the fake by that name. Each leg is
+    // awaited by the PATH its assertion reads — upload, task run, then the two stem GETs — never by a count.
+    let upload = scene.wait_for("/v1/ui/upload");
     // The upload's `X-Audiocpp-Filename` is how §1 names the file; the task envelope says where it went.
-    let upload = mine
-        .iter()
-        .find(|seen| seen.line.contains("/v1/ui/upload"))
-        .expect("the recording went up before anything was asked about it");
     assert!(
         upload.filename.contains("lecture"),
-        "the upload named the recording it carried: {:?}",
-        upload
+        "the upload named the recording it carried: {upload:?}"
     );
-    let runs: Vec<&Seen> = mine
-        .iter()
-        .filter(|seen| seen.line.contains("/v1/tasks/run"))
-        .collect();
-    assert_eq!(runs.len(), 1, "one task run for one recording: {runs:?}");
-    assert!(runs[0].line.contains("POST"), "a task run is a POST: {}", runs[0].line);
+    let task = scene.wait_for("/v1/tasks/run");
+    assert!(task.line.contains("POST"), "a task run is a POST: {}", task.line);
+    // …and both stems have been fetched before anything on disk is believed.
+    let voice_stem = scene.wait_for("/uploads/lecture/voice.wav");
+    let rest_stem = scene.wait_for("/uploads/lecture/rest.wav");
+    println!("separation_run: stems fetched at {:?}", [voice_stem.line, rest_stem.line]);
     // The envelope §5 confirms: the shipped separation id, and a server path rather than a local one.
-    let sent: serde_json::Value = serde_json::from_str(&runs[0].body).expect("a JSON envelope");
+    let sent: serde_json::Value = serde_json::from_str(&task.body).expect("a JSON envelope");
     assert_eq!(sent["model"], services::SEP_MODEL, "the separation model §1 ships");
     assert!(
         sent["request"]["audio"]
@@ -459,12 +472,11 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
     // And the request went to the address the settings box names, which is the point of §1's base URL.
     // The port is compared separately because ureq leaves it out of the authority when it is writing an
     // `HTTP://` address that already carries it, and this fake is one of those.
-    let host = runs[0].host.as_str();
+    let host = task.host.as_str();
     let port = scene.url.rsplit(':').next().unwrap_or("");
     assert!(
         host.starts_with("127.0.0.1") && scene.url.contains(port) && !host.contains(port),
-        "the split asked the loopback address the settings name: {:?} from {}",
-        runs[0],
+        "the split asked the loopback address the settings name: {task:?} from {}",
         scene.url
     );
 }
@@ -473,8 +485,9 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
 /// sentence is the only thing that tells a person what to run.
 #[test]
 fn sec_02_services_1_the_four_servers_s4_a_missing_separation_model_reaches_the_log_with_its_hint() {
-    let scene = Scene::new("{\"error\":\"model not found\"}", 404);
+    // Scene inside the guard, as in the round-trip test above: see [`Scene::new`].
     let _guard = ENV.lock().expect("the env lock");
+    let scene = Scene::new("{\"error\":\"model not found\"}", 404);
     for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
         std::env::remove_var(name);
     }

@@ -967,9 +967,8 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
     assert!(RAN.load(Ordering::SeqCst), "the widget rounds never ran");
 }
 
-/// §1 badge **15** through the widget, as structure only: the row's four parts are the Inputs readout, then
-/// its OWN "Outputs:" label, then a folder button that carries no word of its own, then the count. Where they
-/// land on screen is `spec/img/03-window.png`'s and `all_pages_fit`/`window_shrinks`' to judge.
+/// §1 badge **15** through the widget: it carries its OWN "Outputs:" word, and the folder button beside it
+/// carries no word of its own. The order of the row's parts is `s5_bottom_bar_order`'s claim, not this one's.
 fn s15_the_outputs_row_reads_label_button_count(app: &adw::Application) {
     let root = scratch_root("outputsrow");
     let window = window(app, "Prepare");
@@ -980,17 +979,6 @@ fn s15_the_outputs_row_reads_label_button_count(app: &adw::Application) {
         button.label().unwrap_or_default().as_str(),
         "",
         "the word belongs to the label, so the button draws the icon alone"
-    );
-    let row = common::widget_in(&window, "readout-row").expect("the readouts share the run row");
-    assert_eq!(
-        child_names(&row),
-        vec![
-            "inputs-readout".to_string(),
-            "outputs-label".to_string(),
-            "outputs-folder-button".to_string(),
-            "outputs-readout".to_string()
-        ],
-        "§1's order inside the row: Inputs readout, Outputs label, folder button, count"
     );
     window.close();
     let _ = std::fs::remove_dir_all(&root);
