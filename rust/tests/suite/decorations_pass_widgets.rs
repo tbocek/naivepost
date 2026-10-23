@@ -1,6 +1,8 @@
-// F3.11 Decorations proposed by the model — the WIRE: a click on ✨ Decorations reaches the rules in
-// `naivepost::cut_effects_pass` through a real widget, and what they answer lands on the cut, the lane, the
-// status line and the log instead of staying inside a callback.
+// F3.11 Decorations proposed by the model — the WIRE: the pass's own door reaches the rules in
+// `naivepost::cut_effects_pass`, and what they answer lands on the cut, the lane,
+// the status line and the log instead of staying inside a callback. The trigger is §S2b's:
+// `cut_suggest_land` → `cut_suggest_passes::run_after_cut` asks this door LAST after the cut lands, filtered
+// by P.policy.decorationsPass — F3.11 names no control.
 //
 // `rust/tests/suite/cut_effects_proposed.rs` proves the rules themselves (the one-call brief that names the captions
 // and the rates, the whole-reply rejection for a clip outside the list, the per-call skip of an unknown kind or
@@ -23,7 +25,7 @@ use naivepost::ui;
 use crate::common;
 use common::{cut_page, settle, status_text, widget_in};
 
-static RAN_ROW: AtomicBool = AtomicBool::new(false);
+static RAN_DOOR_JOBS: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_PLACED: AtomicBool = AtomicBool::new(false);
 static RAN_LANE: AtomicBool = AtomicBool::new(false);
@@ -55,21 +57,8 @@ fn lane_bar_names(window: &adw::ApplicationWindow) -> Vec<String> {
     names
 }
 
-/// Index of a named widget among its own siblings, so the ROW ORDER can be asserted, not just presence.
-fn sibling_row(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
-    let target = widget_in(window, name)?;
-    let parent = target.parent()?;
-    let mut cursor = parent.first_child();
-    let mut index = 0;
-    while let Some(current) = cursor {
-        if current.widget_name() == name {
-            return Some(index);
-        }
-        index += 1;
-        cursor = current.next_sibling();
-    }
-    None
-}
+// F3.11 has no control to find by name any more: the passes are jobs of the run after the cut, so each block
+// drives the program's own door (`run_effects_pass`, `run_after_cut`) instead of emitting a click.
 
 /// One `add_effect` call as §3.7's tool receives it: a clip number, a kind, two offsets inside that clip, and
 /// volume's gain when it has one.
@@ -91,54 +80,45 @@ fn kinds<'a>(cut_: &'a Cut, kind: &str) -> Vec<&'a Fx> {
 // --- the round ----------------------------------------------------------------------------------------
 
 fn decorations_round(app: &adw::Application) {
-    // --- (1) the control is on the run-bar row, labelled, live, in the job order ------------------
+    // --- (1) the trigger: the pass runs as a job of the run after the cut, in §S2b's order ---------
+    // No control starts it: F3.11's trigger is the run after the cut, so
+    // what is proven here is the door `cut_suggest_land` walks: `run_after_cut` over the policy's switches.
+    // Decorations is asked LAST — captions, then speeds, then decorations — and with no endpoint wired each
+    // pass gets no calls, so nothing is invented into the cut while all three are still reached.
     let window = cut_page(app, &common::three_clips_cut());
-    let button =
-        ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
-    assert_eq!(
-        button
-            .label()
-            .expect("✨ Decorations carries a label")
-            .as_str(),
-        naivepost::ui::window::DECORATIONS_PASS_LABEL,
-        "the button carries the pass's own label"
-    );
     assert!(
-        button.is_sensitive(),
-        "decorations are on by default, so the control is live"
+        ui::review_cut_of(&window).fx.is_empty(),
+        "the seeded cut holds nothing to confuse the count"
     );
-    let speed_row =
-        sibling_row(&window, "speeds-pass-button").expect("⏩ Speeds is on the same row");
-    let deco_row =
-        sibling_row(&window, "decorations-pass-button").expect("✨ Decorations is on the same row");
+    let lines =
+        naivepost::cut_suggest_passes::run_after_cut(&window, &ui::session_policy(&window), |_| {});
+    assert!(
+        lines.is_empty(),
+        "with no model dialled no pass claims to have placed anything -- got {lines:?}"
+    );
     assert_eq!(
-        deco_row,
-        speed_row + 1,
-        "✨ Decorations comes straight after ⏩ Speeds in the job row -- got {deco_row} vs {speed_row}"
+        status_text(&window),
+        "nothing proposed \u{2014} the cut stands as it is",
+        "the last pass asked (decorations) is the one whose line the run ends on"
     );
-    // §1 puts the job buttons in a scroller of their own AFTER badge 13 (`window_run_bar_fit`), because at §1's
-    // minimum width their labels are what squeezed ⏹ out of the shot. What §F3.11 owns is that ✨ Decorations sits
-    // on this row beside the other jobs -- checked above (⏩ Speeds then ✨ Decorations); its place relative to the
-    // progress bar is §1's to decide, so it is not asserted here.
-    RAN_ROW.store(true, Ordering::SeqCst);
+    RAN_DOOR_JOBS.store(true, Ordering::SeqCst);
     eprintln!("DECO block 1 (row) done");
     window.close();
     settle();
 
-    // --- (2) a real click answers, and invents nothing when no model was dialled ------------------
+    // --- (2) the pass answers, and invents nothing when no model was dialled ----------------------
     // A page with no endpoint wired makes NO calls, and "nothing was proposed" is a USABLE reply
     // (`Reply::usable()` true, no fault), so the honest line is the empty-result one; `pass::no_answer()`
     // belongs to block (6), where a reply actually faults twice.
     let window = cut_page(app, &common::three_clips_cut());
     let before = ui::review_cut_of(&window).fx.len();
-    let button =
-        ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
-    button.emit_by_name::<()>("clicked", &[]);
+    let said = ui::run_effects_pass(&window);
     settle();
+    eprintln!("DECO block 2 (no model) done: {said}");
     assert_eq!(
         status_text(&window),
         "nothing proposed \u{2014} the cut stands as it is",
-        "a headless click gets the rule's own nothing-was-proposed line, never an invented decoration"
+        "the pass run with no model dialled never ran"
     );
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
@@ -146,7 +126,7 @@ fn decorations_round(app: &adw::Application) {
         "nothing was written when nothing was proposed"
     );
     RAN_CLICK.store(true, Ordering::SeqCst);
-    eprintln!("DECO block 2 (click) done");
+    eprintln!("DECO block 2 (no model) done");
     window.close();
     settle();
 
@@ -276,21 +256,11 @@ fn decorations_round(app: &adw::Application) {
     window.close();
     settle();
 
-    // --- (6) the gate: decorationsPass off greys the control and refuses the press --------------
+    // --- (6) the gate: decorationsPass off makes the pass refuse and place nothing ----------------
+    // No control greys out any more — F3.11 is a job of the run after the cut, not a button — so what the
+    // switch owns is the refusal itself, the same predicate `cut_suggest_passes::order` filters on.
     let window = cut_page(app, &common::three_clips_cut());
-    ui::set_decorations_pass(&window, false);
-    naivepost::ui::window::refresh_decorations_gate(&window);
-    let button =
-        ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
-    assert!(
-        !button.is_sensitive(),
-        "the control greys out when the pass is off -- a grey button always means the pass would refuse"
-    );
-    let tip = button.tooltip_text().unwrap_or_default();
-    assert!(
-        tip.contains("P.policy.decorationsPass"),
-        "the grey tooltip names the parameter -- got {tip:?}"
-    );
+    ui::set_decorations_pass_for_test(&window, false);
     let refused = ui::run_effects_pass(&window);
     assert!(
         refused.contains("decorations are off"),
@@ -308,11 +278,11 @@ fn decorations_round(app: &adw::Application) {
         still_refused.contains("decorations are off"),
         "nor does the with_reply seam, got {still_refused:?}"
     );
-    ui::set_decorations_pass(&window, true);
-    naivepost::ui::window::refresh_decorations_gate(&window);
+    ui::set_decorations_pass_for_test(&window, true);
+    let reopened = ui::run_effects_pass_with_reply(&window, &[call(1, "zoom", 1.0, 4.0, None)]);
     assert!(
-        button.is_sensitive(),
-        "switching the policy back on re-enables the control"
+        !reopened.contains("decorations are off"),
+        "switching the policy back on lets the pass run again, got {reopened:?}"
     );
     RAN_GATE.store(true, Ordering::SeqCst);
     eprintln!("DECO block 6 (gate) done");
@@ -359,7 +329,7 @@ fn decorations_round(app: &adw::Application) {
 }
 
 #[test]
-fn f3_11_widget_the_decorations_button_reaches_the_pass() {
+fn f3_11_widget_the_decorations_pass_door_places_what_it_is_answered() {
     // Pin cwd to our own temp root BEFORE anything builds: the press resolves the project through
     // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray
     // `rust/session.naivepost/` into the repo.
@@ -378,10 +348,13 @@ fn f3_11_widget_the_decorations_button_reaches_the_pass() {
     });
 
     assert!(
-        RAN_ROW.load(Ordering::SeqCst),
-        "the run-bar row block never ran"
+        RAN_DOOR_JOBS.load(Ordering::SeqCst),
+        "the post-cut job block never ran"
     );
-    assert!(RAN_CLICK.load(Ordering::SeqCst), "the real click never ran");
+    assert!(
+        RAN_CLICK.load(Ordering::SeqCst),
+        "the run-through-the-door check never ran"
+    );
     assert!(
         RAN_PLACED.load(Ordering::SeqCst),
         "the scripted-reply placement never ran"

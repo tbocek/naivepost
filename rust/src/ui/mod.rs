@@ -525,19 +525,15 @@ pub use window_insert::{
     close_insert_form, insert_chosen, insert_chosen_with_length, insert_open, place_known,
     press_insert, press_insert_apply, refresh_insert_button, visible_insert_form,
 };
-// F3.9 Captions proposed by the model: the pass's seams, so a test can fire ✐ Captions by name and read the
-// placed captions through the same cut state the logic tests check.
-pub use window::captions_pass_button;
-pub use window::refresh_captions_gate;
+// F3.9 Captions proposed by the model: the pass's seams — no control starts it (it is a job of the run after
+// the cut), so a test drives the door itself and reads the placed captions through the same cut state the logic
+// tests check.
 pub use window::run_captions_pass;
 pub use window::run_captions_pass_with_reply;
-pub use window::set_captions_pass;
-// F3.10 Speeds proposed by the model: the pass's seams, so a test can fire ⏩ Speeds by name and read the
-// placed rates through the same cut state the logic tests check. The pass itself is `cut_speeds_pass`.
+pub use window::set_captions_pass_for_test;
+// F3.10 Speeds proposed by the model: the same seams for the rates. The pass itself is `cut_speeds_pass`.
 pub use cut_speeds_pass::{run_speeds_pass, run_speeds_pass_with_reply};
-pub use window::refresh_speeds_gate;
-pub use window::set_speeds_pass;
-pub use window::speeds_pass_button;
+pub use window::set_speeds_pass_for_test;
 // F3.11 Decorations proposed by the model: the pass's seams, so a test can fire ✨ Decorations by name and read
 // the same cut state the logic test in `tests/suite/cut_effects_proposed.rs` checks. The pass itself is
 // `cut_effects_pass`.
@@ -549,7 +545,6 @@ pub use cut_text_hand::{
     press_text_esc, press_text_item, release_text_arm_only, text_armed, text_drag_ended,
     text_drag_ended_with_source, text_form_open, text_type_words,
 };
-pub use window::decorations_pass_button;
 pub use window::narrate_pulsed;
 pub use window::narrate_script_loaded;
 pub use window::narrate_stage;
@@ -563,7 +558,7 @@ pub use window::press_zoom_esc;
 pub use window::pull_half_typed;
 pub use window::refresh_effects_lane;
 pub use window::refuse_narrate_run;
-pub use window::set_decorations_pass;
+pub use window::set_decorations_pass_for_test;
 pub use window::set_narrate_script;
 pub use window::set_narrate_script_slow;
 pub use window::set_zoom_armed;

@@ -4,15 +4,13 @@
 //! itself is pinned by `tests/suite/sec_06_effects_6_parameters.rs` s4 and by `tests/suite/max_proposed_effects.rs`; what
 //! nothing proved was that a Cut-page pass reaches the check at all — a cap that sits beside a reply nobody counts
 //! is a number in a table. This file drives the page: a scripted reply of exactly the cap is PLACED, one past it is
-//! refused and SAID, through the same door the ✨ Decorations button forwards to.
+//! refused and SAID, through the door the run after the cut calls.
 //!
-//! Which widget fired, and which seam answered: `decorations-pass-button`'s handler calls
-//! [`naivepost::ui::run_effects_pass`] (src/ui/cut_pass_gates.rs:320), which telephones the LLM — with no endpoint
-//! wired it answers with no calls, so a bare click can never present a full reply to count. The cap check lives in
-//! `place_effects_reply`, the body BOTH doors share (src/ui/cut_effects_pass.rs:124), so this test presses the real
-//! button to prove the control is live and the gate open, then hands the replies through the shared door
-//! [`naivepost::ui::run_effects_pass_with_reply`] — the program's own scripted seam, not a test-only copy of the
-//! rule. Nothing here re-implements the cap: both blocks end inside `effect_cap_allows_reply`.
+//! Which seam answered: the cap check lives in `place_effects_reply`, the body BOTH doors share
+//! (src/ui/cut_effects_pass.rs:124) — the live door that telephones the LLM and the scripted door
+//! [`naivepost::ui::run_effects_pass_with_reply`] end in the same function, so this file hands its replies
+//! through the scripted one, which is the program's own seam and not a test-only copy of the rule. Nothing
+//! here re-implements the cap: both blocks end inside `effect_cap_allows_reply`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -27,7 +25,7 @@ use common::{cut_page, settle, status_text, widget_in};
 
 static RAN_AT_CAP: AtomicBool = AtomicBool::new(false);
 static RAN_OVER_CAP: AtomicBool = AtomicBool::new(false);
-static RAN_BUTTON: AtomicBool = AtomicBool::new(false);
+static RAN_DOOR: AtomicBool = AtomicBool::new(false);
 static RAN_DENSITY_SAYS: AtomicBool = AtomicBool::new(false);
 static RAN_DENSITY_QUIET: AtomicBool = AtomicBool::new(false);
 
@@ -89,23 +87,8 @@ fn cap_round(app: &adw::Application) {
 
     // --- (1) a reply the cap allows is placed -----------------------------------------------------------------
     let window = cut_page(app, &many_clips(small));
-    let button =
-        ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
-    assert!(
-        button.is_sensitive(),
-        "decorations are on, so the gate is open and the pass will run"
-    );
-    // The real press first: with no endpoint wired the model proposes nothing, which proves the button forwards to
-    // the pass rather than swallowing the press, and leaves the cut's fx where they were.
     let before = ui::review_cut_of(&window).fx.len();
-    button.emit_by_name::<()>("clicked", &[]);
-    settle();
-    assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
-        before,
-        "a headless click proposes nothing, so nothing is written"
-    );
-    RAN_BUTTON.store(true, Ordering::SeqCst);
+    RAN_DOOR.store(true, Ordering::SeqCst);
 
     let said = ui::run_effects_pass_with_reply(&window, &reply(small));
     settle();
@@ -226,10 +209,10 @@ fn density_round(app: &adw::Application) {
     assert_eq!(status_text(&window), said, "and it reached the status row");
     RAN_DENSITY_SAYS.store(true, Ordering::SeqCst);
     eprintln!("DENSITY block (a) (past the guide) done: {said}");
-    // The wire is the ✨ Decorations button itself: `run_effects_pass_with_reply` above is that same door with
-    // the telephone scripted, and this block's own (1) already proves a real click walks into the pass and lands
-    // its effects. Pressing it again here would ask a server this test does not stand up, so instead the row is
-    // checked to be the pass's OWN sentence -- which only the pass writes.
+    // The wire is the pass's own door: `run_effects_pass_with_reply` above is that same door with
+    // the telephone scripted, and this block's own (1) already proves a real run of the door walks into the pass
+    // and lands its effects. Running it again here would ask a server this test does not stand up, so instead the
+    // row is checked to be the pass's OWN sentence -- which only the pass writes.
     assert!(
         status_text(&window).starts_with(&pass::placed(6)),
         "the status row carries the decorations pass's own sentence -- got {:?}",
@@ -347,8 +330,7 @@ fn sec_06_effects_6_parameters_used_s10_the_density_row_points_at_the_prompt_cla
 // --- S9: the cap -------------------------------------------------------------------------------------------
 
 #[test]
-fn sec_06_effects_6_parameters_used_s9_the_decorations_button_refuses_a_reply_past_the_density_cap()
-{
+fn sec_06_effects_6_parameters_used_s9_the_decorations_pass_refuses_a_reply_past_the_density_cap() {
     // Pin cwd BEFORE anything builds: the presses resolve the project through `startup::session_dir(current_dir())`,
     // and leaving it at rust/ writes a stray `rust/session.naivepost/` into the repo.
     let root = std::env::temp_dir().join(format!("np-06e6-cap-{}", std::process::id()));
@@ -358,10 +340,7 @@ fn sec_06_effects_6_parameters_used_s9_the_decorations_button_refuses_a_reply_pa
     ui::window::clear_logs_for_test();
 
     window_round();
-    assert!(
-        RAN_BUTTON.load(Ordering::SeqCst),
-        "the ✨ Decorations press never ran"
-    );
+    assert!(RAN_DOOR.load(Ordering::SeqCst), "the pass door never ran");
     assert!(
         RAN_AT_CAP.load(Ordering::SeqCst),
         "the at-the-cap block never ran"

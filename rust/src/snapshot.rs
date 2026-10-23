@@ -1379,16 +1379,6 @@ const FORM_UNDER_PX: i32 = 380;
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
             }
-            if crate::snapshot_effects::runbar_shot_wanted() {
-                // §06-effects#3's three job buttons, whose row the shell scrolls sideways at this window width,
-                // painted on their own where each label reads. Same sidecar precedent as the effect menu above.
-                let runbar_out = out.with_extension("runbar.png");
-                let window = ui::window::main_window();
-                if let Err(err) = crate::snapshot_effects::write_runbar_png(&window, &runbar_out) {
-                    eprintln!("snapshot: {err}");
-                    OUT.with(|e| *e.borrow_mut() = Some(err));
-                }
-            }
             app.quit();
         });
     });

@@ -1,9 +1,10 @@
-// F3.11 Decorations proposed by the model — the live wire through the real control: pressing ✨ Decorations
-// telephones the address the settings hold, and what comes back lands on the cut, the lane and the status line.
+// F3.11 Decorations proposed by the model — the live wire through the program's own door: `run_effects_pass`,
+// the door `cut_suggest_passes::run_after_cut` walks after the cut, telephones the address the settings hold,
+// and what comes back lands on the cut, the lane and the status line.
 //
 // `tests/suite/decorations_pass_widgets.rs` drives the same rules through `ui::run_effects_pass_with_reply`, which
 // is the seam WITHOUT the telephone. This file has no such seam: the reply arrives over HTTP from a loopback
-// fake, so what is proven is the wiring between the button and `effects_ask` — that a click dials, that the
+// fake, so what is proven is the wiring between the pass's door and `effects_ask` — that the door dials, that the
 // decoration it answers with is the effect that appears (with the app's defaults on it), that a skipped line
 // is said instead of vanishing, and that one ↶ takes the whole pass back.
 //
@@ -19,13 +20,12 @@ mod wire;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx};
 use naivepost::ui;
 use serde_json::json;
 
 use crate::common;
-use common::{cut_page, release_last_window, settle, status_text, widget_in};
+use common::{cut_page, release_last_window, settle, status_text};
 
 use wire::{add_effects_json, point_at, FakeLlm};
 
@@ -72,16 +72,11 @@ fn three_clips_captioned() -> Cut {
     cut_
 }
 
-/// Press the real ✨ Decorations button. Emitted by name because a named widget is the decision taken in its
-/// spirit: the handler under test is the shell's own, not a seam a test opened for itself.
+/// Start the ✨ Decorations pass through the program's own door. F3.11 has no control — it is a job of the
+/// run after the cut — so this is the door `cut_suggest_passes::run_after_cut` walks, and the live HTTP ask
+/// behind it is what the test reads.
 fn press_decorations(window: &adw::ApplicationWindow) {
-    let button =
-        widget_in(window, "decorations-pass-button").expect("✨ Decorations is on the run-bar row");
-    button
-        .clone()
-        .downcast::<gtk::Button>()
-        .expect("it is a button")
-        .emit_by_name::<()>("clicked", &[]);
+    let _ = ui::run_effects_pass(window);
     settle();
 }
 
@@ -110,7 +105,7 @@ fn placed(window: &adw::ApplicationWindow) -> Vec<Fx> {
 }
 
 fn round(app: &adw::Application) {
-    // --- (1) a real click telephones, and the decoration it answers with lands on the cut ---------
+    // --- (1) the pass telephones, and the decoration it answers with lands on the cut -------------
     let llm = FakeLlm::start(vec![effects_json(&[fx_entry(2, "zoom", 1.0, 4.0, None)])]);
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
@@ -154,7 +149,7 @@ fn round(app: &adw::Application) {
         said.contains(">>> effects: 1 decoration(s)"),
         "the status says what the pass did, got {said:?}"
     );
-    // And the click really dialled: the fake saw the request the button caused, offering this job's tool.
+    // And the door really dialled: the fake saw the request the pass caused, offering this job's tool.
     let seen = llm.next_seen();
     assert_eq!(seen.method, "POST", "a chat call is a POST");
     assert_eq!(seen.path, "/v1/chat/completions", "on the LLM's chat path");
@@ -255,7 +250,7 @@ fn round(app: &adw::Application) {
 }
 
 #[test]
-fn f3_11_widget_the_decorations_button_dials_the_live_ask() {
+fn f3_11_the_decorations_pass_door_dials_the_live_ask() {
     // Pin cwd BEFORE anything builds: the pass resolves the session folder from it, and the settings folder
     // travels with it so `point_at` rewrites an address only this scenario can read.
     let root = std::env::temp_dir().join(format!("np-effects-live-{}", std::process::id()));
@@ -286,7 +281,7 @@ fn f3_11_widget_the_decorations_button_dials_the_live_ask() {
 
     assert!(
         RAN_LIVE_CLICK.load(Ordering::SeqCst),
-        "the live click never ran"
+        "the live pass run never ran"
     );
     assert!(
         RAN_SKIP_SAID.load(Ordering::SeqCst),

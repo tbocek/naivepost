@@ -28,17 +28,6 @@ const NAME_PREFIX: &str = "policy";
 /// The form's title, §03's label for the screen.
 pub const TITLE: &str = "Editing policy";
 
-/// The tooltip both openers carry — the ⚙ on the run bar and each tab's ⓘ say the same thing about
-/// where they lead. A function rather than only a constant so a test can pin the two buttons against one
-/// source of truth instead of retyping the string.
-pub const OPEN_TIP: &str = "Editing policy \u{2014} every field, who set it and why";
-
-/// [`OPEN_TIP`] as an accessor, for callers that should not care whether it is a const or a computed
-/// string. Same bytes, one definition.
-pub fn tip() -> &'static str {
-    OPEN_TIP
-}
-
 /// The three sources, spelled once. A `format!("{origin:?}")` would print `Default`/`Model`/`User`
 /// capitalised the way Rust spells variants; the form shows the lowercase words the project file uses,
 /// which is what a person comparing the two should see.

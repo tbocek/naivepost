@@ -1,19 +1,19 @@
-// F3.9 Captions proposed by the model — the WIRE: a click on ✐ Captions reaches the rules in
-// `naivepost::cut_captions` through a real widget, and what they answer lands on the cut, the lane and the
-// status line instead of staying inside a callback.
+// F3.9 Captions proposed by the model — the WIRE: the pass's own door reaches the rules in
+// `naivepost::cut_captions`, and what they answer lands on the cut, the lane and the status line instead of
+// staying inside a callback. The trigger is §S2b's: `cut_suggest_land` → `cut_suggest_passes::run_after_cut`
+// asks this door after the cut lands, filtered by P.policy.captionsPass — F3.9 names no control.
 //
 // `rust/tests/suite/cut_captions_proposed.rs` proves the rules themselves (batching, the message, the two refusals,
 // the fades, the skip sentence); this file proves the Cut page can actually reach them. Before this round the
 // pass had no door at all: every rule was tested and nothing in the app called any of it.
 //
 // No live model is dialled here. The reply is fed through `ui::run_captions_pass_with_reply`, the same split
-// F3.4 makes with `text_drag_ended_with_source`: one seam for the telephone, one for the rule, so the widget
+// F3.4 makes with `text_drag_ended_with_source`: one seam for the telephone, one for the rule, so the page
 // test exercises placement against real page state without a network.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::cut::Fx;
 use naivepost::cut_captions::{self, Call};
 use naivepost::tools::clips::CAPTION_MIN_SECONDS; // P.policy.captionMinSeconds
@@ -25,7 +25,7 @@ use common::{cut_page, settle, status_text, widget_in};
 static RAN_CLICK_PLACES: AtomicBool = AtomicBool::new(false);
 static RAN_REJECTED_WHOLE_REPLY: AtomicBool = AtomicBool::new(false);
 static RAN_SKIPPED_IS_SAID: AtomicBool = AtomicBool::new(false);
-static RAN_GATE_GREYS_BUTTON: AtomicBool = AtomicBool::new(false);
+static RAN_GATE_REFUSES: AtomicBool = AtomicBool::new(false);
 static RAN_PARAMS_PINNED: AtomicBool = AtomicBool::new(false);
 static RAN_UNDO_TAKES_PASS: AtomicBool = AtomicBool::new(false);
 
@@ -36,24 +36,20 @@ fn batch_of_three() -> Vec<(u32, f64)> {
 // --- the round ----------------------------------------------------------------------------------------
 
 fn captions_round(app: &adw::Application) {
-    // --- (1) S5/S6: a real click places nothing when nothing was proposed, and says so -------------
-    // The button exists, is wired and answers: that is the wire. With no model dialled the pass gets no calls,
-    // so zero captions land and the cut is untouched — never invented words standing in for a proposal.
+    // --- (1) S5/S6: the pass places nothing when nothing was proposed, and says so ----------------
+    // The program's own door answers — F3.9 names no control, its trigger is `run_after_cut`. With no model
+    // dialled the pass gets no calls, so zero captions land and the cut is
+    // untouched — never invented words standing in for a proposal.
     let window = cut_page(app, &common::three_clips_cut());
     let before = ui::review_cut_of(&window).fx.len();
-    let button =
-        widget_in(&window, "captions-pass-button").expect("✐ Captions is in the Cut toolbar");
-    button
-        .clone()
-        .downcast::<gtk::Button>()
-        .expect("it is a button")
-        .emit_by_name::<()>("clicked", &[]);
+    let started = ui::run_captions_pass(&window);
     settle();
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
         before,
         "with no proposal from the model no caption is invented into the cut"
     );
+    assert!(!started.contains("off"), "the pass ran, got {started}");
     assert!(
         status_text(&window).contains("caption"),
         "the status says what the pass did, got {:?}",
@@ -176,32 +172,25 @@ fn captions_round(app: &adw::Application) {
     window.close();
     settle();
 
-    // --- (4) the gate: captionsPass off greys the control and refuses the press -------------------
+    // --- (4) the gate: captionsPass off makes the pass refuse and place nothing -------------------
+    // No control greys out any more — F3.9 is a job of the run after the cut, not a button — so what the
+    // switch owns is the refusal itself, the same predicate `cut_suggest_passes::order` filters on.
     let window = cut_page(app, &common::three_clips_cut());
-    ui::set_captions_pass(&window, false);
-    ui::refresh_captions_gate(&window);
-    let button = ui::captions_pass_button(&window).expect("✐ Captions is in the Cut toolbar");
-    assert!(
-        !button.is_sensitive(),
-        "the control greys out when the pass is off -- a grey button always means the pass would refuse"
-    );
+    ui::set_captions_pass_for_test(&window, false);
     let refused = ui::run_captions_pass(&window);
     assert!(
         refused.contains("off"),
         "the pass itself refuses, got {refused}"
     );
     assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "and places nothing");
-    // An insensitive button swallows the emission, so what is asserted here is the state rather than a
-    // fired-and-ignored click: GTK will not run the handler of a control it has greyed out.
-    assert!(!button.is_sensitive(), "still grey after the refused press");
-    // And back on: the gate follows the field both ways, so the grey is never sticky.
-    ui::set_captions_pass(&window, true);
-    ui::refresh_captions_gate(&window);
+    // And back on: the gate follows the field both ways, so the refusal is never sticky.
+    ui::set_captions_pass_for_test(&window, true);
+    let reopened = ui::run_captions_pass(&window);
     assert!(
-        button.is_sensitive(),
-        "switching the policy back on re-enables the control"
+        !reopened.contains("off"),
+        "switching the policy back on lets the pass run again, got {reopened}"
     );
-    RAN_GATE_GREYS_BUTTON.store(true, Ordering::SeqCst);
+    RAN_GATE_REFUSES.store(true, Ordering::SeqCst);
     window.close();
     settle();
 
@@ -281,7 +270,7 @@ fn captions_round(app: &adw::Application) {
 }
 
 #[test]
-fn f3_9_widget_the_captions_button_reaches_the_pass() {
+fn f3_9_widget_the_captions_pass_door_places_what_it_is_answered() {
     // Pin cwd to our own temp root BEFORE anything builds: the press resolves the project through
     // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray
     // `rust/session.naivepost/` into the repo.
@@ -301,7 +290,7 @@ fn f3_9_widget_the_captions_button_reaches_the_pass() {
 
     assert!(
         RAN_CLICK_PLACES.load(Ordering::SeqCst),
-        "S5 click-through never ran"
+        "S5 run-through-the-door never ran"
     );
     assert!(
         RAN_REJECTED_WHOLE_REPLY.load(Ordering::SeqCst),
@@ -312,7 +301,7 @@ fn f3_9_widget_the_captions_button_reaches_the_pass() {
         "S4 reject/retry/skip never ran"
     );
     assert!(
-        RAN_GATE_GREYS_BUTTON.load(Ordering::SeqCst),
+        RAN_GATE_REFUSES.load(Ordering::SeqCst),
         "the gate never ran"
     );
     assert!(

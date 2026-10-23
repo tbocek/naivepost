@@ -42,15 +42,10 @@ const SLACK_PX: f64 = 4.0;
 /// row's free width. Badge 14/15 (the Inputs/Outputs readouts) come after them in the same row.
 const RUN_BUTTONS: [&str; 3] = ["play-button", "lucky-button", "stop-button"];
 
-/// The row's children in §1's order: the scrolling controls, the bar that takes the free width, the job
-/// buttons in their own scroller (`window_run_bar_fit`; the box that holds them is `pass-controls`, inside it),
-/// and the readouts at the right end.
-const ROW_CHILDREN: [&str; 4] = [
-    "run-controls",
-    "run-progress",
-    "pass-scroller",
-    "readout-row",
-];
+/// The row's children in §1's order and NOTHING else: the scrolling controls (▶ / lucky / ⏹), the bar that
+/// takes the free width, and the readouts at the right end. §2's list is the row's whole content — no gear,
+/// no pass buttons; those flows start from elsewhere.
+const ROW_CHILDREN: [&str; 3] = ["run-controls", "run-progress", "readout-row"];
 /// A window on `page` at §1's minimum with the band at rest — the geometry §1 says every shot is taken at.
 fn minimum_window(app: &adw::Application, page: &str) -> adw::ApplicationWindow {
     release_last_window();
@@ -164,7 +159,7 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
         assert!(
             x >= previous_right - SLACK_PX,
             "{ITEM} §1: {name} starts at x={x:.0}, at or left of {previous_name}'s right edge \
-             ({previous_right:.0}) — §1's row order is controls, progress, jobs, readouts"
+             ({previous_right:.0}) — §1's row order is controls, progress, readouts"
         );
         inside_window(&window, name, x, w);
         previous_right = x + w;
@@ -380,15 +375,55 @@ fn s2_the_tab_row_sits_in_the_header_centre(app: &adw::Application) {
 /// allocation and Adwaita pads the header's ends, so a strictly centred row is a pixel or two off.
 const CENTRE_SLACK_PX: f64 = 8.0;
 
-/// The four job buttons moved into `pass-controls` when the run-bar row was fixed, so prove both halves of
-/// that move: each button's OWN parent is now `pass-controls` (a `gtk_box_append` of a still-parented child is
-/// refused by GTK 4 and leaves the button where it was — which is how ⏹ ended up clipped out of the shot while
-/// every name lookup still found it), and none of them was lost on the way: each resolves AND is drawn inside
-/// the run-bar row.
-fn s1_the_pass_buttons_are_still_reachable(app: &adw::Application) {
+/// The box's children by widget name, in the order it holds them — how "exactly these and no others" is said.
+fn child_names(widget: &gtk::Widget) -> Vec<String> {
+    widget
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .map(|child| child.widget_name().to_string())
+        .collect()
+}
+
+/// §2's run bar holds EXACTLY what its list says: ▶ , "I'm feeling lucky" , ⏹ , the progress bar, then the
+/// Inputs readout, the "Outputs:" label, the folder button and the count. Nothing else may sit in that row — a
+/// control no section places there is what this check exists to catch (the editing-policy ⚙ and the three F3.x
+/// pass buttons once did, clipped to "Cap…" in the rendered shot). Checked on the Cut page, where those four
+/// controls used to be added.
+fn s1_the_run_bar_holds_only_what_section_two_lists(app: &adw::Application) {
     let window = minimum_window(app, "Cut");
     let (bar_x, bar_y, bar_w, bar_h) = drawn(&window, "run-bar");
     println!("{ITEM} s1: Cut run-bar box x={bar_x:.0} y={bar_y:.0} w={bar_w:.0} h={bar_h:.0}");
+    // (a) the row itself, by child name, in order.
+    assert_eq!(
+        child_names(&common::widget_in(&window, "run-bar").expect("§1 draws a run-bar row")),
+        vec!["run-controls", "run-progress", "readout-row"],
+        "{ITEM} §1/§2: the run-bar row holds something §2 does not list"
+    );
+    // (b) inside the scroller: the three transport badges alone.
+    assert_eq!(
+        child_names(
+            &common::widget_in(&window, "run-controls-inner")
+                .expect("the controls sit in their scrolling box")
+        ),
+        vec!["play-button", "lucky-button", "stop-button"],
+        "{ITEM} §2: the run bar's controls are not exactly \u{25b6} , lucky, \u{23f9}"
+    );
+    // (c) the readouts at the row's right end, in §1's order.
+    assert_eq!(
+        child_names(
+            &common::widget_in(&window, "readout-row").expect("the readouts share the run row")
+        ),
+        vec![
+            "inputs-readout",
+            "outputs-label",
+            "outputs-folder-button",
+            "outputs-readout"
+        ],
+        "{ITEM} §1 badge 14/15: the readouts are not exactly Inputs, Outputs label, folder button, count"
+    );
+    // (d) none of the four controls that do not belong here is anywhere in the window.
     for name in [
         "policy-button",
         "captions-pass-button",
@@ -396,32 +431,8 @@ fn s1_the_pass_buttons_are_still_reachable(app: &adw::Application) {
         "decorations-pass-button",
     ] {
         assert!(
-            common::widget_in(&window, name).is_some(),
-            "{ITEM}: {name} is gone from the tree — the pass buttons must survive the move to pass-controls"
-        );
-        // The move itself: whose child is it? Held by `run-controls-inner`, the append never happened.
-        let held_by = common::widget_in(&window, name)
-            .expect("just checked")
-            .parent()
-            .map(|p| p.widget_name().to_string())
-            .unwrap_or_default();
-        println!("{ITEM} s1: {name} is held by {held_by:?}");
-        assert_eq!(
-            held_by, "pass-controls",
-            "{ITEM} §1: {name} is still held by {held_by:?}, not by `pass-controls` — the job buttons were \
-             never moved out of the controls scroller, so their ~600 px of labels squeeze §1's badges"
-        );
-        let (x, y, w, h) = drawn(&window, name);
-        println!("{ITEM} s1: {name} box x={x:.0} y={y:.0} w={w:.0} h={h:.0}");
-        assert!(
-            w > 0.0 && h > 0.0,
-            "{ITEM}: {name} resolves but has an EMPTY box"
-        );
-        assert!(
-            y >= bar_y - SLACK_PX && y + h <= bar_y + bar_h + SLACK_PX,
-            "{ITEM} §1: {name} is drawn at y={y:.0}..{:.0}, outside the run-bar row y={bar_y:.0}..{:.0}",
-            y + h,
-            bar_y + bar_h
+            common::widget_in(&window, name).is_none(),
+            "{ITEM} §1: {name} is in the window tree — no spec section puts a control for it on the run bar"
         );
     }
     window.close();
@@ -464,7 +475,7 @@ fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
         s12_the_stop_button_is_drawn_inside_its_scroller(app);
         s1_nothing_is_drawn_between_the_page_and_the_run_bar(app);
         s2_the_tab_row_sits_in_the_header_centre(app);
-        s1_the_pass_buttons_are_still_reachable(app);
+        s1_the_run_bar_holds_only_what_section_two_lists(app);
         RAN.store(true, Ordering::SeqCst);
     });
     assert!(
@@ -479,18 +490,18 @@ fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
 fn sec_03_shell_1_the_window_s13_the_progress_bar_leaves_the_badges_their_room() {
     use naivepost::ui::window_run_bar_fit::PROGRESS_MIN_PX;
     use naivepost::ui::window_run_scroller::progress_px;
-    // §1's numbers for the row at the minimum size: a ~1220 px row, ▶ / 🎲 / ⏹ needing 171 px, the four job
-    // buttons 171 px, the two readouts 531 px, and six gaps of 6 px (measured off `just snapshot 03-window`).
-    let (row_w, badges, jobs, readouts, gaps) = (1220, 171, 171, 531, 36);
-    let bar = progress_px(row_w, badges, jobs, readouts, gaps);
+    // §1's numbers for the row at the minimum size: a ~1220 px row, ▶ / 🎲 / ⏹ needing 171 px, the two
+    // readouts 531 px, and three gaps of 6 px (measured off `just snapshot 03-window`).
+    let (row_w, badges, readouts, gaps) = (1220, 171, 531, 18);
+    let bar = progress_px(row_w, badges, readouts, gaps);
     assert_eq!(
-        bar + badges + jobs + readouts + gaps,
+        bar + badges + readouts + gaps,
         row_w,
         "{ITEM} §1 badge 13: the bar must take EXACTLY the row's free width — no more (that is what drew ⏹ \
          under the track) and no less (that leaves blank plate in the row)"
     );
     // A row narrower than everything in it still gets a VISIBLE bar: the floor is `PROGRESS_MIN_PX`, never 0.
-    let squeezed = progress_px(400, badges, jobs, readouts, gaps);
+    let squeezed = progress_px(400, badges, readouts, gaps);
     assert_eq!(
         squeezed, PROGRESS_MIN_PX,
         "{ITEM} §1 badge 13: a squeezed row must fall back to the bar's floor, not to nothing"

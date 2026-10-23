@@ -1,9 +1,10 @@
-// F3.10 Speeds proposed by the model — the live wire through the real control: pressing ⏩ Speeds telephones
+// F3.10 Speeds proposed by the model — the live wire through the program's own door: `run_speeds_pass`, the
+// door `cut_suggest_passes::run_after_cut` walks after the cut, telephones
 // the address the settings hold, and what comes back lands on the cut, the lane and the status line.
 //
 // `tests/suite/speeds_pass_widgets.rs` drives the same rules through `ui::run_speeds_pass_with_reply`, which is the
 // seam WITHOUT the telephone. This file has no such seam: the reply arrives over HTTP from a loopback fake, so
-// what is proven is the wiring between the button and `speeds_ask` — that a click dials, that the rates it
+// what is proven is the wiring between the pass's door and `speeds_ask` — that the door dials, that the rates it
 // answers with are the effects that appear, and that a refusal reaches the status line instead of vanishing.
 //
 // One scenario per binary is NOT enough here (the stages share one app run), but the process-wide env still has
@@ -18,12 +19,11 @@ mod wire;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx};
 use naivepost::ui;
 
 use crate::common;
-use common::{cut_page, release_last_window, settle, status_text, widget_in};
+use common::{cut_page, release_last_window, settle, status_text};
 
 use wire::{point_at, set_speeds_json, FakeLlm};
 
@@ -51,15 +51,11 @@ fn speeds_json(speeds: &[(u32, f64)]) -> String {
     set_speeds_json(speeds)
 }
 
-/// Press the real ⏩ Speeds button. Emitted by name because a named widget is the decision taken in its
-/// spirit: the handler under test is the shell's own, not a seam a test opened for itself.
+/// Start the ⏩ Speeds pass through the program's own door. F3.10 has no control — it is a job of the run
+/// after the cut — so this is the door `cut_suggest_passes::run_after_cut` walks, and the live HTTP ask behind
+/// it is what the test reads.
 fn press_speeds(window: &adw::ApplicationWindow) {
-    let button = widget_in(window, "speeds-pass-button").expect("⏩ Speeds is on the run-bar row");
-    button
-        .clone()
-        .downcast::<gtk::Button>()
-        .expect("it is a button")
-        .emit_by_name::<()>("clicked", &[]);
+    let _ = ui::run_speeds_pass(window);
     settle();
 }
 
@@ -74,7 +70,7 @@ fn speeds(window: &adw::ApplicationWindow) -> Vec<Fx> {
 }
 
 fn round(app: &adw::Application) {
-    // --- (1) a real click telephones, and the rate it answers with lands on the cut ---------------
+    // --- (1) the pass telephones, and the rate it answers with lands on the cut -------------------
     let llm = FakeLlm::start(vec![speeds_json(&[(2, 1.5)])]);
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
@@ -96,7 +92,7 @@ fn round(app: &adw::Application) {
         said.contains("run fast"),
         "the status says what the pass did, got {said:?}"
     );
-    // And the click really dialled: the fake saw the request the button caused.
+    // And the door really dialled: the fake saw the request the pass caused.
     let seen = llm.next_seen();
     assert_eq!(seen.method, "POST", "a chat call is a POST");
     assert_eq!(seen.path, "/v1/chat/completions", "on the LLM's chat path");
@@ -158,7 +154,7 @@ fn round(app: &adw::Application) {
 }
 
 #[test]
-fn f3_10_widget_the_speeds_button_dials_the_live_ask() {
+fn f3_10_the_speeds_pass_door_dials_the_live_ask() {
     // Pin cwd BEFORE anything builds: the pass resolves the session folder from it, and the settings folder
     // travels with it so `point_at` rewrites an address only this scenario can read.
     let root = std::env::temp_dir().join(format!("np-speeds-live-{}", std::process::id()));
@@ -189,7 +185,7 @@ fn f3_10_widget_the_speeds_button_dials_the_live_ask() {
 
     assert!(
         RAN_LIVE_CLICK.load(Ordering::SeqCst),
-        "the live click never ran"
+        "the live pass run never ran"
     );
     assert!(
         RAN_REFUSED_SAID.load(Ordering::SeqCst),

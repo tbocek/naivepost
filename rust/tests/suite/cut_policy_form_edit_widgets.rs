@@ -39,14 +39,15 @@ fn fresh_window(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
-/// Open the form the way a person does — the run bar's ⚙ — and hand back its handle. `open_policy_form` is
-/// the same slot `press_policy` pushed it into, which is how a test reaches a separate top level.
+/// Open the form the way a person does — the header ⓘ, §1 badge 6 — and hand back its handle.
+/// `open_policy_form` is the same slot `press_policy` pushed it into, which is how a test reaches a separate
+/// top level.
 fn open_form(window: &adw::ApplicationWindow) -> adw::Window {
-    ui::line_step_button(window, "policy-button")
-        .expect("the run bar carries the policy gear")
+    ui::line_step_button(window, "tab-info-button")
+        .expect("the header carries the \u{24d8}")
         .emit_clicked();
     settle();
-    ui::open_policy_form().expect("the gear opened the policy form")
+    ui::open_policy_form().expect("the \u{24d8} opened the policy form")
 }
 
 /// A control inside the open form, found by the name its builder gave it.

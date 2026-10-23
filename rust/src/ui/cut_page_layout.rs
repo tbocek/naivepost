@@ -163,7 +163,6 @@ pub const FORM_COLUMN_MIN_W: i32 = 300;
 /// below the painted window; 300 keeps heading, body and footer all on screen.
 const IDLE_ROWS_CAP_H: i32 = 300;
 
-
 /// Re-order the Cut page's children into §A's shape. Called once, at the end of `window.rs`'s Cut
 /// arm, after every part has been built. A name that is absent (a page built without that part) is
 /// skipped rather than fatal: the arrangement is a layout, not a contract on which flows have landed.

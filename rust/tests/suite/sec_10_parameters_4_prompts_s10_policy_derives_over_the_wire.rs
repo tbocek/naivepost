@@ -40,7 +40,7 @@ fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
 
 /// Every widget case runs inside ONE application's activate hook: GTK may only have its main loop
 /// started by the thread that will run it, and cargo runs `#[test]` functions on a worker.
-fn check_the_gear_dials_the_policy_prompt(app: &adw::Application) {
+fn check_the_info_button_dials_the_policy_prompt(app: &adw::Application) {
     // The scenario root: pinning `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and the cwd is the whole point of
     // calling it, and the guard keeps the folders alive until the test's end.
     let _fixture = fixture("s10-policy-wire");
@@ -61,7 +61,7 @@ fn check_the_gear_dials_the_policy_prompt(app: &adw::Application) {
     );
     let before = ui::session_policy(&window).cut_mode.value;
 
-    button(&window, "policy-button").emit_by_name::<()>("clicked", &[]);
+    button(&window, "tab-info-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
     let seen = llm.next_seen();
@@ -144,7 +144,7 @@ fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
     settle();
     // A different context from S10's so the LLM cache (keyed on the exact request) cannot answer here.
     ui::set_session_context(&window, "burn in captions for the whole film");
-    button(&window, "policy-button").emit_by_name::<()>("clicked", &[]);
+    button(&window, "tab-info-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
     let seen = llm.next_seen();
@@ -179,7 +179,7 @@ static RAN_S11: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::n
 
 fn window_round() {
     common::one_app_round(|app| {
-        check_the_gear_dials_the_policy_prompt(app);
+        check_the_info_button_dials_the_policy_prompt(app);
         RAN_S10.store(true, std::sync::atomic::Ordering::SeqCst);
         check_an_edited_policy_prompt_wins_on_the_wire(app);
         RAN_S11.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -187,7 +187,8 @@ fn window_round() {
 }
 
 #[test]
-fn sec_10_parameters_4_prompts_s10_pressing_the_gear_sends_the_policy_prompt_over_the_wire() {
+fn sec_10_parameters_4_prompts_s10_pressing_the_info_button_sends_the_policy_prompt_over_the_wire()
+{
     window_round();
     assert!(
         RAN_S10.load(std::sync::atomic::Ordering::SeqCst),

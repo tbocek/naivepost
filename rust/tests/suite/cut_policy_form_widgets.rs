@@ -1,4 +1,4 @@
-//! F0.7 S5 — the wire: a real click on ⚙ (and on a tab's ⓘ) opens the policy form, and the form shows
+//! F0.7 S5 — the wire: a real click on the header ⓘ opens the policy form, and the form shows
 //! what `policy` actually holds rather than a copy someone remembered to refresh.
 //!
 //! The logic tests (`tests/suite/policy_derive.rs`) prove the derivation, the validation and the S4 rule that
@@ -93,26 +93,23 @@ fn label_text(name: &str) -> String {
         .unwrap_or_else(|| panic!("the form has a label named {name}"))
 }
 
-/// S5: a real click on the run bar's ⚙ opens the form, and it is showing.
-fn check_the_gear_opens_the_form(app: &adw::Application) {
+/// S5: a real click on the header ⓘ opens the form, and it is showing.
+fn check_the_info_button_opens_the_form(app: &adw::Application) {
     let window = fresh_window(app);
     assert!(
         !ui::policy_form_open(&window),
         "no form is open before the click — otherwise this proves nothing about the click"
     );
 
-    let gear = button(&window, "policy-button");
-    assert_eq!(
-        gear.tooltip_text().as_deref(),
-        Some(naivepost::ui::policy_form::OPEN_TIP),
-        "the gear says where it leads"
-    );
-    gear.emit_clicked();
+    // §1 badge 6's ⓘ is the window's only door into the policy form; its tooltip is §1's rule and lives in
+    // `sec_03_shell_1_the_window.rs` — this file checks only that the press opens the form.
+    let info = button(&window, "tab-info-button");
+    info.emit_clicked();
     settle();
 
     assert!(
         ui::policy_form_open(&window),
-        "F0.7 S5: clicking ⚙ opened the policy form"
+        "F0.7 S5: clicking the header ⓘ opened the policy form"
     );
     assert!(
         form_widget("policy-form").is_some(),
@@ -143,7 +140,7 @@ fn check_every_field_has_a_row_with_value_source_and_reason(app: &adw::Applicati
     );
     assert_eq!(passed, policy::Applied::Set, "// P.policy.speedPass");
 
-    button(&window, "policy-button").emit_clicked();
+    button(&window, "tab-info-button").emit_clicked();
     settle();
 
     let rows = policy::derived_fields();
@@ -207,7 +204,7 @@ fn check_a_hand_set_field_still_reads_user_after_a_later_derivation(app: &adw::A
         naivepost::project::CutMode::Words
     );
 
-    button(&window, "policy-button").emit_clicked();
+    button(&window, "tab-info-button").emit_clicked();
     settle();
     assert_eq!(edit_value("policy-edit-cutMode"), "words");
     assert_eq!(
@@ -238,7 +235,7 @@ fn check_a_hand_set_field_still_reads_user_after_a_later_derivation(app: &adw::A
 
     // Re-opening the form (which takes the raise-and-refresh path) must show the SURVIVING value, not
     // what the rejected proposal asked for.
-    button(&window, "policy-button").emit_clicked();
+    button(&window, "tab-info-button").emit_clicked();
     settle();
     assert_eq!(
         edit_value("policy-edit-cutMode"),
@@ -258,23 +255,16 @@ fn check_a_hand_set_field_still_reads_user_after_a_later_derivation(app: &adw::A
     window.close();
 }
 
-/// The second way in: the header's ⓘ (badge **6**) reaches the same form as the gear, so the page is not
-/// the only door. §1 puts ⓘ once in the header bar and F0.1 S4 syncs its tooltip to the tab showing — so
-/// this presses THE header button, after moving to Cut, and asks for the same form.
-fn check_the_tab_info_button_opens_the_same_form(app: &adw::Application) {
+/// The same door read from the other side: after moving to Cut, the header ⓘ still reaches the form. §1 puts
+/// ⓘ once in the header bar; what a switch does to its tooltip is F0.1 S4's claim (`sec_03_shell_1_the_window.rs`).
+fn check_the_info_button_reopens_the_form_after_a_tab_switch(app: &adw::Application) {
     let window = fresh_window(app);
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
     settle();
 
-    let info = button(&window, "tab-info-button");
-    assert_eq!(
-        info.tooltip_text().as_deref(),
-        Some(naivepost::shell::info_tip(Page::Cut).as_str()),
-        "F0.1 S4: the header ⓘ describes the tab now showing — its label plus that tab's help text"
-    );
-    info.emit_clicked();
+    button(&window, "tab-info-button").emit_clicked();
     settle();
     assert!(
         ui::policy_form_open(&window),
@@ -286,17 +276,17 @@ fn check_the_tab_info_button_opens_the_same_form(app: &adw::Application) {
 
 fn window_round() {
     common::one_app_round(|app| {
-        check_the_gear_opens_the_form(app);
+        check_the_info_button_opens_the_form(app);
         RAN_GEAR.store(true, Ordering::SeqCst);
         check_every_field_has_a_row_with_value_source_and_reason(app);
         RAN_ROWS.store(true, Ordering::SeqCst);
         check_a_hand_set_field_still_reads_user_after_a_later_derivation(app);
         RAN_USER_STICKS.store(true, Ordering::SeqCst);
-        check_the_tab_info_button_opens_the_same_form(app);
+        check_the_info_button_reopens_the_form_after_a_tab_switch(app);
         RAN_INFO.store(true, Ordering::SeqCst);
         check_the_four_columns_and_the_two_buttons(app);
         RAN_COLUMNS.store(true, Ordering::SeqCst);
-        check_the_gear_derives_before_it_paints(app);
+        check_the_info_button_derives_before_it_paints(app);
         RAN_DERIVE.store(true, Ordering::SeqCst);
         check_the_target_length_row_shows_the_derived_number(app);
         RAN_TARGET.store(true, Ordering::SeqCst);
@@ -318,7 +308,7 @@ fn check_the_four_columns_and_the_two_buttons(app: &adw::Application) {
         "cut on the words, not the model",
         Origin::Model,
     );
-    button(&window, "policy-button").emit_clicked();
+    button(&window, "tab-info-button").emit_clicked();
     settle();
 
     for caption in ["field", "value", "source", "because"] {
@@ -395,7 +385,10 @@ fn check_the_four_columns_and_the_two_buttons(app: &adw::Application) {
 fn f0_7_s5_policy_form_reopens_from_the_menu_through_a_real_click() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_GEAR.load(Ordering::SeqCst), "the ⚙ check never ran");
+    assert!(
+        RAN_GEAR.load(Ordering::SeqCst),
+        "the header ⓘ open-the-form check never ran"
+    );
     assert!(
         RAN_ROWS.load(Ordering::SeqCst),
         "the row-by-row check never ran"
@@ -426,7 +419,7 @@ fn f0_7_s5_policy_form_reopens_from_the_menu_through_a_real_click() {
 /// path — the real button, `press_policy`, `derive_policy`, `policy::derive` and `policy::apply`.
 /// The assertion is deliberately made through the same widgets the logic test's state drives: if the
 /// click reached nothing, `cutMode` would still read its default.
-fn check_the_gear_derives_before_it_paints(app: &adw::Application) {
+fn check_the_info_button_derives_before_it_paints(app: &adw::Application) {
     use naivepost::policy::{self, Proposal};
     ui::close_policy_forms();
     let window = fresh_window(app);
@@ -451,7 +444,7 @@ fn check_the_gear_derives_before_it_paints(app: &adw::Application) {
         },
     );
 
-    button(&window, "policy-button").emit_clicked();
+    button(&window, "tab-info-button").emit_clicked();
     settle();
 
     // P.policy.cutMode — derived, sourced to the model, carrying its reason.
@@ -485,7 +478,7 @@ fn check_the_target_length_row_shows_the_derived_number(app: &adw::Application) 
     let window = fresh_window(app);
     // The §12 example itself, in a person's words. No sender stub: nothing here asks a model.
     ui::set_session_context(&window, "keep it to half an hour");
-    button(&window, "policy-button").emit_clicked();
+    button(&window, "tab-info-button").emit_clicked();
     settle();
 
     // P.policy.targetLengthSeconds — the derived 1800 s sits in the entry as seconds, credited to the
@@ -507,7 +500,7 @@ fn check_the_target_length_row_shows_the_derived_number(app: &adw::Application) 
     // value "no target" carries) rather than an empty box that cannot be told from a mistake.
     ui::close_policy_forms();
     let bare = fresh_window(app);
-    button(&bare, "policy-button").emit_clicked();
+    button(&bare, "tab-info-button").emit_clicked();
     settle();
     assert_eq!(
         edit_value("policy-edit-targetLengthSeconds"),
