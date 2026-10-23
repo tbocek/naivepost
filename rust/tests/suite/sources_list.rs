@@ -546,13 +546,34 @@ fn staged_shot_draws_every_row(app: &adw::Application) {
         "{ITEM}: every staged row claims to have frames"
     );
 
-    // Badge **4**: slot 1 sits on the newest take, and the face IS the slot number.
+    // Badge **4**: slot 1 sits on the newest take, and the face is the mic beside the slot number.
     let narrator: gtk::Button =
         widget(&window, "narrator-0").expect("every row has its narrator button");
     assert_eq!(
-        narrator.label().as_deref(),
+        narrator_slot_face(&window, 0).as_deref(),
         Some("1"),
         "{ITEM}: slot 1 is on the first staged row"
+    );
+    // …and §4's face is BOTH parts: a microphone so the button says what it is for (a bare digit read as a
+    // row index), and the emphasis class that marks slot 1 as the voice the narration is spoken in.
+    let mic = narrator
+        .child()
+        .and_then(|child| child.downcast::<gtk::Box>().ok())
+        .and_then(|face| {
+            face.observe_children()
+                .iter::<glib::Object>()
+                .filter_map(Result::ok)
+                .find_map(|kid| kid.downcast::<gtk::Image>().ok())
+        })
+        .expect("§4's narrator face is the 🎤 icon beside the slot, so the button carries a box with an image");
+    assert_eq!(
+        mic.icon_name().unwrap_or_default().as_str(),
+        naivepost::ui::source_rows::NARRATOR_ICON,
+        "{ITEM}: the narrator button shows a 🎤 beside its slot"
+    );
+    assert!(
+        narrator.has_css_class("narrator-one"),
+        "{ITEM}: §4 draws slot 1 highlighted — the slot-1 button carries its emphasis class"
     );
 
     // The ⚠ badge, which comes from the FILE's name: one staged name carries no timestamp.
@@ -777,6 +798,13 @@ fn check_the_tooltips_are_on_the_widgets(app: &adw::Application) {
 /// [`ui::find_source_widget`].
 fn widget<T: IsA<gtk::Widget>>(window: &adw::ApplicationWindow, name: &str) -> Option<T> {
     ui::find_source_widget(window, name)?.downcast().ok()
+}
+
+/// The slot number the narrator button's face shows. A `gtk::Button` carrying a child box has no `label()`
+/// of its own (§4's face is the 🎤 icon beside the number), so the number is read off that box's label.
+fn narrator_slot_face(window: &adw::ApplicationWindow, index: usize) -> Option<String> {
+    widget::<gtk::Label>(window, &format!("narrator-face-{index}"))
+        .map(|label| label.text().to_string())
 }
 
 fn fixture() -> Project {

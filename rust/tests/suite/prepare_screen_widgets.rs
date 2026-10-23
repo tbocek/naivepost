@@ -124,9 +124,8 @@ fn seed_session_files() {
     std::fs::write(&tsv, text).expect("transcript");
 }
 
-/// Let the emissions a `set_selected` / `emit_clicked` queued actually run, so the handler's
-/// repaint has happened by the time the assertions read the widgets.
-
+/// Lets the emissions a `set_selected` / `emit_clicked` queued actually run, so the handler's
+/// repaint has happened by the time the assertions read the widgets. (`common::settle`.)
 /// §6 badge 5 through the widget, on a window of its own: with nothing stored on this machine yet, the
 /// picker opens on row 0 (the User Context) and already carries that row's description — the tooltip is
 /// there before anyone touches the dropdown, not only after a selection changes.
@@ -200,7 +199,6 @@ fn check_readouts_and_reset(app: &adw::Application) {
         find(&window, "bench-mark").expect("mark").is_visible(),
         "and the ✎ was drawn with it"
     );
-    // §1's mark is the sentence, not the glyph: ✎ alone does not say where the text went.
     // §6's mark tooltip: the sentence about where the kept wording lives and what Reset does to it.
     assert_eq!(
         find(&window, "bench-mark")
@@ -210,6 +208,19 @@ fn check_readouts_and_reset(app: &adw::Application) {
         Some(naivepost::bench::KEPT_TIP),
         "the mark's tooltip is \"{}\"",
         naivepost::bench::KEPT_TIP
+    );
+    // §1's badge 2 has to READ as words at window scale: a lone U+270E is a barely visible outline in
+    // DejaVu, which is why the face carries the word next to the pencil.
+    let mark_face = find(&window, "bench-mark")
+        .expect("mark")
+        .downcast::<gtk::Label>()
+        .expect("the mark is a label")
+        .text()
+        .to_string();
+    assert_eq!(
+        mark_face,
+        naivepost::bench::EDITED_MARK,
+        "the mark wears `bench::EDITED_MARK`"
     );
 
     find(&window, "bench-reset")
@@ -293,7 +304,6 @@ fn check_readouts_and_reset(app: &adw::Application) {
     // §6's shape after the label, so the count is read as the leading number of "N files, size".
     let count: usize = body
         .trim_start_matches(naivepost::prepare::OUTPUTS_LABEL)
-        .trim()
         .split_whitespace()
         .next()
         .and_then(|lead| lead.parse().ok())

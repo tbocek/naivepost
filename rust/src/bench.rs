@@ -17,7 +17,9 @@ use crate::{
 };
 
 /// The mark on a row whose wording this machine holds (§1: "✎ = edited on this machine").
-pub const EDITED_MARK: &str = "\u{270e}";
+/// The pencil ALONE is unreadable at window scale — DejaVu draws U+270E as a faint outline, so the shot
+/// showed a smudge beside the title — hence the word next to it: the mark has to say what it means.
+pub const EDITED_MARK: &str = "\u{270e} edited";
 
 /// What the mark means, since ✎ alone does not say where the text went.
 pub const EDITED_TIP: &str = "edited \u{2014} kept in your settings";

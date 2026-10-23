@@ -54,6 +54,8 @@ fn split_round() {
         RAN_SWITCH.store(true, Ordering::SeqCst);
         check_the_mark_and_reset_wake_only_on_an_edit(app);
         RAN_MARK.store(true, Ordering::SeqCst);
+        check_the_heading_row_with_an_edit(app);
+        RAN_HEADING_EDITED.store(true, Ordering::SeqCst);
         check_the_picked_row_is_the_one_the_shot_ticks(app);
         RAN_TICK.store(true, Ordering::SeqCst);
         check_the_open_picker_hangs_under_its_button(&window);
@@ -65,6 +67,7 @@ fn split_round() {
 }
 
 static RAN_MARK: AtomicBool = AtomicBool::new(false);
+static RAN_HEADING_EDITED: AtomicBool = AtomicBool::new(false);
 
 static RAN_SPLIT: AtomicBool = AtomicBool::new(false);
 static RAN_LEFT: AtomicBool = AtomicBool::new(false);
@@ -576,6 +579,118 @@ fn sec_04_prepare_1_screen_s_the_mark_and_reset_wake_only_while_this_machine_hol
     assert!(
         RAN_MARK.load(Ordering::SeqCst),
         "{ITEM}: the mark/Reset wire check never ran"
+    );
+}
+
+/// §1's heading row ORDER on a machine that HOLDS an edit: "one heading row (left to right: title,
+/// \"edited — kept in your settings\" mark, then at the row's right end the row picker and Reset)".
+///
+/// Two facts, both read off the built window rather than off a rule:
+///  * the CHILD ORDER of `bench-heading` is title, mark, …, picker, Reset — the mark belongs beside the
+///    title and only the picker/Reset are pushed to the right end;
+///  * with the override gone the mark hides and Reset goes insensitive again (the visibility rule stays
+///    `bench_paint`'s; what is new here is that the order and that transition are checked together).
+///
+/// Deliberately NOT measured here: where the parts sit in pixels (that is judged against
+/// `spec/img/04-prepare.png`), nor the mark's face or Reset's liveness under an edit, which
+/// `prepare_screen_widgets::check_readouts_and_reset` already reads off the same widgets. What stays is the
+/// child-index order and the post-Reset hide/sleep transition.
+///
+/// The edit is staged through `bench::store`, the same door a keystroke uses, BEFORE the window is built —
+/// which is exactly how `snapshot.rs` gets badge 2 into `shots/04-prepare.png`.
+fn check_the_heading_row_with_an_edit(app: &adw::Application) {
+    let root = common::temp_dir_created("bench-heading-edited");
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
+        std::env::set_var("XDG_DATA_HOME", root.join("data"));
+    }
+    let paths = naivepost::settings::from_environment().expect("the pinned config folder");
+    let describe = naivepost::bench::ROWS
+        .iter()
+        .position(|row| row.title == "Describe")
+        .expect("Describe is a bench row");
+    let row = &naivepost::bench::ROWS[describe];
+    let edited = format!("{}\none line typed here", naivepost::bench::shipped(row));
+    let mut project = Project::default();
+    naivepost::bench::store(&paths, &mut project, row, &edited).expect("the store door accepts it");
+    assert!(
+        naivepost::bench::edited(&paths, row),
+        "{ITEM} s2: storing an override did not make this machine hold one"
+    );
+
+    // Build the bench ON that row, the way the shot does: `paint_marks` runs once as the bench is built.
+    let window = prepare_window(app);
+    lay_out();
+    // The bench opens on the User Context, which shows neither mark nor Reset (§1), so every assertion
+    // below about their liveness needs a prompt row open first.
+    widget(&window, "bench-picker")
+        .downcast::<gtk::DropDown>()
+        .expect("the picker is a dropdown")
+        .set_selected(u32::try_from(describe).unwrap());
+    lay_out();
+
+    // --- (a) the child order §1 spells: title, mark, [free width], picker, Reset. Read off the child
+    // indices, not off pixels — where the row LOOKS is judged against `spec/img/04-prepare.png`.
+    let heading = widget(&window, "bench-heading")
+        .downcast::<gtk::Box>()
+        .expect("the heading row is a box");
+    let names: Vec<String> = heading
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .map(|child| child.widget_name().to_string())
+        .collect();
+    let wanted = ["prepare-title", "bench-mark", "bench-picker", "bench-reset"];
+    let placed: Vec<usize> = wanted
+        .iter()
+        .map(|name| {
+            names
+                .iter()
+                .position(|child| child == name)
+                .unwrap_or_else(|| {
+                    panic!("{ITEM} s2: {name} is not a child of the heading row — {names:?}")
+                })
+        })
+        .collect();
+    // The unnamed spacer that pushes picker + Reset to the row's right end is not one of §1's parts, so
+    // only the four named children have to come out in order.
+    assert!(
+        placed.windows(2).all(|pair| pair[0] < pair[1]),
+        "{ITEM} s2: the heading row's children are not in §1's order title → mark → picker → Reset — {names:?}"
+    );
+
+    // --- (b) put the shipped wording back through the real button: the mark hides, Reset sleeps.
+    // The mark's own face and Reset's liveness under an edit belong to `prepare_screen_widgets`'s
+    // `check_readouts_and_reset`; what is only ever checked here is that they go to sleep again.
+    let reset_button = widget(&window, "bench-reset")
+        .downcast::<gtk::Button>()
+        .expect("Reset is a button");
+    reset_button.emit_clicked();
+    lay_out();
+    assert!(
+        !naivepost::bench::edited(&paths, row),
+        "{ITEM} s2: Reset left the override on disk"
+    );
+    assert!(
+        !widget(&window, "bench-mark").is_visible(),
+        "{ITEM} s2: the mark survived Reset"
+    );
+    assert!(
+        !widget(&window, "bench-reset").is_sensitive(),
+        "{ITEM} s2: Reset stayed live after restoring the shipped wording"
+    );
+    window.close();
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn sec_04_prepare_1_screen_s2_the_heading_row_is_title_then_mark_then_picker_then_reset() {
+    common::pin_private_cwd();
+    split_round();
+    assert!(
+        RAN_HEADING_EDITED.load(Ordering::SeqCst),
+        "{ITEM} s2: the edited heading-row check never ran"
     );
 }
 

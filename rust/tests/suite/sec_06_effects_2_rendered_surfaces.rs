@@ -675,7 +675,10 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_staged_frame_states_crop_pla
     let rect = cut_preview_frame::camera_rect_px(&seen.camera, fit);
     let room = fx_lane::room_px(rect.2, 0.0);
     let debt = fx_lane::plate_debt_at(&cut.fx, t);
-    assert!(debt > 0.0, "nothing at the shot's second owes a sound sentence");
+    assert!(
+        debt > 0.0,
+        "nothing at the shot's second owes a sound sentence"
+    );
     assert!(
         fx_lane::plate_shown(room),
         "the rect leaves {:.1} px of room, under the 60 px §2 sets for the plate",
@@ -719,7 +722,9 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_staged_frame_states_crop_pla
         "an overlay carries an alpha outside the real range: {alphas:?}"
     );
     assert!(
-        alphas.iter().any(|a| (*a - fx_lane::visibility_at(&caption, t)).abs() < 1e-9),
+        alphas
+            .iter()
+            .any(|a| (*a - fx_lane::visibility_at(&caption, t)).abs() < 1e-9),
         "no overlay is drawn at the alpha its own fades answer: {alphas:?}, expected {}",
         fx_lane::visibility_at(&caption, t)
     );
@@ -728,7 +733,8 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_staged_frame_states_crop_pla
         "every overlay is at full alpha, so the fades were flattened rather than shown: {alphas:?}"
     );
     assert!(
-        listed.overlays
+        listed
+            .overlays
             .iter()
             .any(|(_, kind, _)| *kind == EffectKind::Text),
         "the placed caption is not among the visible overlays: {:?}",

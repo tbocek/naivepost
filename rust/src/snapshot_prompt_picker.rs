@@ -33,6 +33,10 @@ use crate::ui;
 /// of that, i.e. 300 px of the window's right edge; matching that number is what keeps the panel a COMPACT
 /// menu under the picker instead of the half-window sheet an earlier, wider ask produced.
 const LIST_SHOT_W: i32 = 220;
+/// The open panel over the page is wider than the list-on-its-own picture: `spec/img/04-prompt-picker.png`
+/// draws the menu about a fifth of the window wide, and at 220 px every row's wording was clipped to one
+/// word ("System contex", "Upload text") while the reference spells each row out.
+const PANEL_SHOT_W: i32 = 300;
 /// The panel's rows sit ~12 px in from its left border in the reference (`spec/img/04-prompt-picker.png`:
 /// border at x=318, "Describe" at x=331), which is a popover's own content inset rather than a button's.
 const PANEL_PAD_PX: i32 = 8;
@@ -217,7 +221,7 @@ pub fn paint_open_over_window(
 /// The panel's width, and where its left edge sits: right-aligned a hair inside the picker's own right edge,
 /// clamped inside the window, as the reference draws it.
 fn panel_width() -> i32 {
-    LIST_SHOT_W
+    PANEL_SHOT_W
 }
 
 /// The panel's height is its rows' own measured height plus the frame's padding — never a guess, and never
@@ -416,7 +420,15 @@ fn pin_light_theme() {
          /* The reference marks its chosen row with a highlighted band, as GTK's own dropdown does; the check mark
             alone read as plain text and did not say which row is open. */\n\
          box.bench-picker-list button.picked { background-color: #d3e3f8; }\n\
-         box.bench-picker-panel { background-color: #fafafa; border: 1px solid #b6b6b6; }\n",
+         /* The panel blitted over the page is its OWN box (`paint_open_over_window` adds this class), and
+            without a size of its own it shrink-wrapped to the longest row's text, which at window scale came
+            out as unreadable specks where the reference spells each row out. */\n\
+         box.bench-picker-panel { background-color: #fafafa; border: 1px solid #b6b6b6; min-width: 240px; }\n\
+         /* The rows of the panel blitted over the page select on `.bench-picker-list`, which the class list of
+            a re-parented widget does not keep once it sits in a fresh top level — so they came out at the
+            theme's default size and read as specks beside the reference. */\n\
+         box.bench-picker-panel button { color: #1a1a1a; background-color: transparent; padding: 8px 12px; font-size: 17px; }\n\
+         box.bench-picker-panel button.picked { background-color: #d3e3f8; }\n",
     );
     // On the DISPLAY (GTK 4's answer, since `WidgetExt::style_context` was deprecated in 4.10). The rules select
     // on `window` and on `.bench-picker-list`, so only this throwaway top level and its rows take these colours —
