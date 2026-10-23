@@ -152,9 +152,18 @@ fn scrollbar_ask_px() -> i32 {
     SCROLLBAR_ASK_PX
 }
 
-/// The scroller's own height band: the picture's own 160 px minimum is the floor, and a form body
-/// longer than the cap scrolls inside the frame instead of pushing the tape down the page.
-const IDLE_ROWS_MIN_HEIGHT: i32 = 200;
+/// The scroller's FLOOR: what the eight idle readings cost, asked of the real `cut-form` grid rather
+/// than remembered. A form body longer than this still scrolls (the cap below), but §1's readings never
+/// do: at 200 px the viewport was shorter than the eight rows (~250 px), so the column opened on its TAIL
+/// and "Thumbnails:" — badge **2**, the first reading — was painted above the visible edge even though
+/// every door that asks for the top had run.
+pub const IDLE_ROWS_MIN_HEIGHT: i32 = ROW_PITCH_PX * IDLE_ROW_COUNT as i32;
+/// One reading row's pitch: a label line plus the 2 px the grid keeps between rows (`cut_form_column`).
+const ROW_PITCH_PX: i32 = 29;
+/// How many readings §1 lists (**4** playhead, selection, cut, cut at 1×, source, segments, plus the
+/// thumbnail size and the aspect) — spelled once in `cut_screen::IDLE_FORM_ROWS`, which is also checked
+/// against this by `tests/suite/sec_05_cut_1_screen_layout.rs`.
+pub const IDLE_ROW_COUNT: usize = 8;
 /// The width §1's reading column asks for before the preview starts losing pixels to it.
 pub const FORM_COLUMN_MIN_W: i32 = 300;
 /// The height that column needs to show its eight idle readings whole (§1: "idle readings, one per line").
@@ -162,7 +171,10 @@ pub const FORM_COLUMN_MIN_W: i32 = 300;
 /// scroller scrolled and the render showed only the last four rows (three clipped pills above them). The
 /// floor makes the pane ask for its readings instead of clipping them; what gives is the divider position,
 /// which §1 already allows ("above the minimum the layout grows with the window").
-pub const FORM_COLUMN_MIN_H: i32 = 300;
+pub const FORM_COLUMN_MIN_H: i32 = IDLE_ROWS_MIN_HEIGHT + COLUMN_FRAME_PX;
+/// What the column costs around its readings: the pinned heading and footer (§A pins both, hidden while
+/// idle but still box-spaced) and the scroller's own frame.
+const COLUMN_FRAME_PX: i32 = 40;
 /// … and the height band the scroller between the pinned heading and footer is sized to. Left uncapped
 /// it asked for the whole page's height, which is what pushed the tracks ~750 px below the preview. Measured
 /// on `05-insert-form`: at 460 the form body filled the frame and its footer ("Insert it" + "Cancel") fell
@@ -254,13 +266,33 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
             // `External` policy was standing in for once the column sat beside the picture.
             scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
             scroller.set_vexpand(false);
-            scroller.set_min_content_height(IDLE_ROWS_MIN_HEIGHT);
-            scroller.set_max_content_height(IDLE_ROWS_CAP_H);
-            // §1's idle column starts with the readings, so the pane is asked to show its TOP: the scroller
-            // keeps whatever adjustment it last had, and at the minimum window the eight rows do not fit, so
-            // a leftover value left the first four readings painted above the visible edge. `frame_parts`
-            // also asks this whenever a body is placed in the frame; this is the seat §1 describes -- the page
-            // painting its readings.
+            // Ask the grid itself what its readings cost and use the larger of that and the row-count
+            // floor: a taller ladder or a wrapped label raises the ask instead of scrolling rows away.
+            let rows_h = idle_rows_height(frame);
+            scroller.set_min_content_height(IDLE_ROWS_MIN_HEIGHT.max(rows_h));
+            scroller.set_max_content_height(IDLE_ROWS_CAP_H.max(IDLE_ROWS_MIN_HEIGHT.max(rows_h)));
+            // The ASK goes on the scroller alone, not on the frame: §1 forbids the page from scrolling as a
+            // whole at its minimum (`tests/suite/window_shrinks.rs` measures zero travel on every tab), and
+            // a request on the frame is charged to the page box, which pushed `page-scroll-Cut` past its
+            // band (measured: 826 px of ask against a 790 px band). The frame keeps its own floor; the paned
+            // gives this pane what it can.
+            // …and the column must FIT the pane it is seated in. §A opens the upper part 380 px tall; left to
+            // its own asks the frame measured 417 px, so GTK overflowed it past the divider and the first
+            // reading — badge **2**, "Thumbnails:" with its −/+ ladder — landed under the header bar's edge,
+            // present in the tree and painted where nobody can see it. Capping the height here (not after the
+            // map: a headless window is allocated exactly once, and every ask made later never reaches the
+            // render node `write_png` draws) keeps the whole column inside §A's opening.
+            frame.set_valign(gtk::Align::Start);
+            frame.set_size_request(
+                FORM_COLUMN_MIN_W,
+                FORM_COLUMN_MIN_H.min(SELF_SPLIT_TOP_PX - COLUMN_FRAME_PX),
+            );
+            // The eight rows are shown WHOLE rather than scrolled into that cap: the scroller takes its
+            // body's natural height up to the cap instead of answering its minimum and clipping the grid.
+            scroller.set_propagate_natural_height(true);
+            // A scroller keeps whatever value its adjustment last held, so the page asks for the TOP of the
+            // readings here, at the seat §1 describes — the page painting its idle rows. `frame_parts` also
+            // asks this whenever a body is placed in the frame.
             if let Some(window) = window {
                 crate::ui::cut_form_frame::scroll_to_top(window);
             }
@@ -488,6 +520,19 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
             (SELF_SPLIT_TOP_PX - BANDS_ABOVE_PICTURE_PX - lane_h) as f64,
         );
     }
+}
+
+/// What the eight idle readings actually cost: the `cut-form` grid's own vertical minimum, asked of the
+/// widget rather than remembered. 0 when this page has no readings (a page built without the form column).
+fn idle_rows_height(frame: &gtk::Widget) -> i32 {
+    frame
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+        .filter_map(|child| child.downcast::<gtk::Grid>().ok())
+        .find(|grid| grid.widget_name() == "cut-form")
+        .map(|grid| grid.measure(gtk::Orientation::Vertical, -1).0)
+        .unwrap_or(0)
 }
 
 /// Take every named widget out of `page_box` and hand it back, in the order asked for. Detaching (as

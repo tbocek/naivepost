@@ -100,9 +100,11 @@ pub fn frame_parts(body: &gtk::Widget) -> (gtk::Box, gtk::Box) {
 }
 
 /// Put one scroller's viewport at the top of its body. `frame_parts` wires this to every frame's own
-/// scroller, so it runs whenever a body is placed in the column; [`scroll_to_top`] is the same ask for a
-/// caller that only has the window.
-fn scroll_to_top_of(scroller: &gtk::ScrolledWindow) {
+/// scroller, so it runs whenever a body goes into the column; [`scroll_to_top`] is the same ask for a
+/// caller that only has the window. The page's layout re-asks it on every new height of the viewport
+/// (`cut_page_layout::arrange_priced`), because GTK can park the adjustment at its upper limit before the
+/// viewport has grown to fit the readings.
+pub fn scroll_to_top_of(scroller: &gtk::ScrolledWindow) {
     let adjust = scroller.vadjustment();
     adjust.set_value(adjust.lower());
 }
