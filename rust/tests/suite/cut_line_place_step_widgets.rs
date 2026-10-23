@@ -348,12 +348,14 @@ fn check_a_real_click_clears_watches_and_a_hold_nudges_instead_of_stepping(app: 
     );
 
     // A cut with one kept scene covering 10..20, so a click at 15 lands ON a scene's picture.
-    let mut seeded = Cut::default();
-    seeded.segs = vec![Seg {
-        s: 10.0,
-        e: 20.0,
+    let seeded = Cut {
+        segs: vec![Seg {
+            s: 10.0,
+            e: 20.0,
+            ..Default::default()
+        }],
         ..Default::default()
-    }];
+    };
     ui::seed_review_cut(&window, &seeded);
 
     // The REAL gesture, emitted the way GTK does it. x is in px at SELECT_SURFACE_PPS, so 15 s of the

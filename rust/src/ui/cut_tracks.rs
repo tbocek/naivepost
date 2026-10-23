@@ -332,6 +332,41 @@ pub fn band_height_for(scene: &Scene) -> i32 {
     band_height_px(scene, THUMB_DEFAULT_PX).ceil() as i32
 }
 
+/// The band's height when NOTHING has been cut yet and nothing has been fitted to a scene: what [`build`]
+/// starts the surfaces at, and the number §1's "opened with the upper part 380 px tall" has to leave room for
+/// below the divider. It is the same sum the painter lays out, asked of an empty scene — an empty lane is
+/// still one row deep (`fx_lane::row_count`), and §1's band costs a row per camera (an unknown camera count
+/// is one row, `Scene::row_count.max(1)`) plus a row per cut lane (none before a cut) — so the layout and the
+/// ink cannot disagree about where the tape begins. Before this was computed the same way in
+/// `cut_page_layout`, the two drifted and the tape was starved of the rows it asks for at draw time.
+pub fn idle_band_height() -> i32 {
+    band_height_for(&idle_scene(1))
+}
+
+/// The scene the band costs when nothing has been cut: `count` rows of footage (a page that has not been told
+/// what was filmed still draws one row, the same `row_count.max(1)` the painter uses), no clips, no effects,
+/// no lanes. `cut_page_layout` prices the bottom pane from it, and a caller that knows how many rows this
+/// session filmed asks for that many — a two-camera session costs two picture rows, each carrying its wave
+/// strip, and the pane must make room for both or the second row is clipped off the surface.
+pub fn idle_scene(count: usize) -> Scene {
+    Scene {
+        pps: crate::ui::cut_view::pps(),
+        origin: 0.0,
+        segs: Vec::new(),
+        fx: Vec::new(),
+        recordings: Vec::new(),
+        folds: Vec::new(),
+        selection: None,
+        watched_row: None,
+        row_count: count.max(1),
+        shift: Default::default(),
+        lanes: Vec::new(),
+        lane_plates: Vec::new(),
+        thumbs: Vec::new(),
+        line: 0.0,
+    }
+}
+
 /// Hang both layers on their drawing areas; everything they paint comes from `scene`, called at draw time,
 /// so neither callback holds state of its own. Both return `Proceed`: the band draws and does not consume
 /// the event, so the page's existing button and gesture handling keeps working as it did on the strip.
@@ -721,6 +756,8 @@ pub const THUMB_DEFAULT_PX: u32 = cut_screen::THUMB_AT_OPEN;
 /// feeds the picture rows' start, and a second arithmetic would be a second answer.
 #[derive(Debug, Clone, Copy)]
 pub struct Rows {
+    /// The ruler's own height at the top of the band (`cut_trim::RULER_H`). Public so the layout that seats
+    /// the pane above can charge the band for the ruler it paints, as it charges it for the lane and the rows.
     pub selection: f64,
     pub effects: f64,
     pub pictures: f64,

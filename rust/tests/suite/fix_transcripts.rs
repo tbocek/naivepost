@@ -728,10 +728,10 @@ fn f1_8_s7_a_marked_stretch_folds_to_one_line() {
         end: 10.0,
         again: None,
     };
-    assert!(fix::fold_marks(&rows, &[bare.clone()])
+    assert!(fix::fold_marks(&rows, std::slice::from_ref(bare))
         .starts_with("00:00 (abandoned attempt to 00:10 -- already removed"));
     let outside = vec![session(10.0, 12.0, BASE, "SPEAKER_00", "after")];
-    assert!(fix::fold_marks(&outside, &[bare.clone()]).contains("SPEAKER_00: after"));
+    assert!(fix::fold_marks(&outside, std::slice::from_ref(bare)).contains("SPEAKER_00: after"));
 
     // The narrator is named in the text the user opens as well as the text the cut reads.
     let narrated = vec![session(0.0, 2.0, OTHER, "SPEAKER_09", "the narration")];

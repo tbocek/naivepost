@@ -86,7 +86,7 @@ fn f2_6_s1_a_drag_on_a_wave_strip_or_a_lane_selects_one_recordings_sound() {
         "no recording there means no sound selection, and never a footage one by accident"
     );
     assert!(
-        sel::scoped_to_row(&strip.scope, 0) == false,
+        !sel::scoped_to_row(&strip.scope, 0),
         "a sound selection is nobody's footage"
     );
 }

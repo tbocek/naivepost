@@ -352,12 +352,12 @@ fn f2_5_s5_two_volume_effects_multiply_and_fade() {
         ..Default::default()
     };
     assert_eq!(
-        hear::gain_under(&[fade.clone()], 0.5),
+        hear::gain_under(std::slice::from_ref(&fade), 0.5),
         0.875,
         "a quarter in to the ramp: ×0.5 is ×0.875 there"
     );
     assert_eq!(
-        hear::gain_under(&[fade.clone()], 2.0),
+        hear::gain_under(std::slice::from_ref(&fade), 2.0),
         0.5,
         "the ramp is over, the gain holds"
     );
@@ -409,12 +409,12 @@ fn f2_5_s5_the_rate_follows_the_speed_effect_under_the_line() {
         ..Default::default()
     };
     assert_eq!(
-        hear::rate_under(&[fast.clone()], 15.0),
+        hear::rate_under(std::slice::from_ref(&fast), 15.0),
         2.0,
         "a slowed or sped stretch is slow or fast to watch"
     );
     assert_eq!(
-        hear::rate_under(&[fast.clone()], 9.0),
+        hear::rate_under(std::slice::from_ref(&fast), 9.0),
         1.0,
         "outside its seconds nothing changes"
     );

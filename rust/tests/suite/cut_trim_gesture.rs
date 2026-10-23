@@ -493,8 +493,7 @@ fn f2_8_s1_and_s2_the_tooltips_name_the_reach_and_the_hands() {
     assert!(trim::TRIM_TIP.contains("border"));
     assert!(trim::MOVE_TIP.contains("right-drag"));
     assert!(trim::MOVE_TIP.contains("recording"));
-    assert!(
-        trim::EDGE_GRAB_PX < cut_select::SNAP_PX,
-        "the grab is tighter than the snap"
-    );
+    let grab = trim::EDGE_GRAB_PX;
+    let snap = cut_select::SNAP_PX;
+    assert!(grab < snap, "the grab is tighter than the snap");
 }
