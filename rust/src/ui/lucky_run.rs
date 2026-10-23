@@ -16,7 +16,7 @@ use std::rc::Rc;
 use std::time::{Instant, SystemTime};
 
 use gtk4 as gtk;
-use gtk4::prelude::WidgetExt;
+use gtk4::prelude::{ButtonExt, Cast, WidgetExt};
 
 use crate::exchanges;
 use crate::hand_edit;
@@ -29,14 +29,56 @@ use crate::runqueue::{self, Queue};
 use crate::shell::Shell;
 use crate::ui::window;
 
-/// The CSS class the gears carry while the chain runs. One const because the driver adds/removes it and
-/// [`gears_css`] styles it: two spellings would let the button stop turning without any test noticing.
+/// The CSS class the gears' BUTTON carries while a run computes. One const because the driver and
+/// [`paint_run_bar`](crate::ui::window_bench::paint_run_bar) both set it and tests read it: two spellings
+/// would let the button stop turning without any test noticing.
 pub const RUNNING_CLASS: &str = "lucky-running";
+/// The class that actually rotates: the gears IMAGE inside the button, not the button. §2 says the GEARS
+/// turn, and animating the button node would spin the words "I'm feeling lucky" along with them.
+pub const GEARS_TURNING_CLASS: &str = "lucky-gears-turning";
+
+/// The gears image inside the lucky button. GTK 4's Button has no image property, so `window.rs` builds
+/// the face as a box holding this node; §2 turns the GEARS, not the words beside them.
+pub fn gears_of(button: &gtk::Button) -> Option<gtk::Image> {
+    let face = button.child()?.downcast::<gtk::Box>().ok()?;
+    face.first_child()
+        .and_then(|child| child.downcast::<gtk::Image>().ok())
+}
+
+/// The words on the lucky button (§2 names the control by them): found by name, because a GTK 4 Button
+/// with a child of its own carries no label of its own and the face box holds the gears beside them.
+pub fn words_of(button: &gtk::Button) -> Option<String> {
+    button
+        .child()?
+        .downcast::<gtk::Box>()
+        .ok()?
+        .last_child()
+        .and_then(|child| child.downcast::<gtk::Label>().ok())
+        .map(|label| label.text().to_string())
+}
+
+/// Put the gears on or off the turning state. The button keeps [`RUNNING_CLASS`] as the state marker every
+/// door and test reads; the animation goes on its gears ([`GEARS_TURNING_CLASS`]) so only they move.
+pub fn set_turning(button: &gtk::Button, turning: bool) {
+    if turning {
+        button.add_css_class(RUNNING_CLASS);
+    } else {
+        button.remove_css_class(RUNNING_CLASS);
+    }
+    if let Some(image) = gears_of(button) {
+        if turning {
+            image.add_css_class(GEARS_TURNING_CLASS);
+        } else {
+            image.remove_css_class(GEARS_TURNING_CLASS);
+        }
+    }
+}
 
 /// S2: the rule that makes the gears turn. GTK 4 animates a widget with a CSS `@keyframes` block plus
 /// an `animation` shorthand (the library ships the same shape for its own spinner), and a class with no
 /// rule behind it is inert: the driver has been adding [`RUNNING_CLASS`] since F0.4's first round and
-/// nothing moved, because no such rule existed anywhere in `src/` or `assets/`.
+/// nothing moved, because no such rule existed anywhere in `src/` or `assets/`. The rule now keys on
+/// [`GEARS_TURNING_CLASS`], the gears image [`set_turning`] decorates, so the words beside them stay put.
 ///
 /// A rotation rather than a pulse: the spec's word is "the gears start turning", and one full turn per
 /// 1.6 s reads as machinery rather than as a blink. Installed once beside the lane's own classes, at
@@ -44,7 +86,7 @@ pub const RUNNING_CLASS: &str = "lucky-running";
 pub fn gears_css() -> String {
     format!(
         "@keyframes lucky-gears {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(360deg); }} }}\n\
-         .{RUNNING_CLASS} {{ animation: lucky-gears 1.6s linear infinite; }}\n"
+         .{GEARS_TURNING_CLASS} {{ animation: lucky-gears 1.6s linear infinite; }}\n"
     )
 }
 
@@ -122,7 +164,7 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
 
     // S2: the gears turn for the length of the chain, and the button cannot be pressed again meanwhile.
     button.set_sensitive(false);
-    button.add_css_class(RUNNING_CLASS);
+    set_turning(button, true);
     // §S4's unload answers on its own thread, after the step that asked for it has been painted, so the
     // chain lends its status row to that line for its length (§2 gives the row to the run, and the
     // housekeeping line is the run's own news). Taken back before the end sentence is written.
@@ -199,7 +241,7 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
         crate::ui::run_close::close_chain_end(handles);
     }
     button.set_sensitive(true);
-    button.remove_css_class(RUNNING_CLASS);
+    set_turning(button, false);
     // The chain's own end sentence owns the row from here; the housekeeping line stays in the log only.
     crate::ui::run_close::mark_chain_row(None);
 }

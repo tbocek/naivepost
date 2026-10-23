@@ -171,9 +171,9 @@ fn f0_4_s2_the_gears_have_a_turning_rule() {
         "GTK animates only from a @keyframes block: {css}"
     );
     assert!(
-        css.contains(lucky_run::RUNNING_CLASS),
-        "the rule styles the class the driver adds ({}): {css}",
-        lucky_run::RUNNING_CLASS
+        css.contains(lucky_run::GEARS_TURNING_CLASS),
+        "the rule styles the class on the gears ({}): {css}",
+        lucky_run::GEARS_TURNING_CLASS
     );
     assert!(
         css.contains("animation:") && css.contains("infinite"),

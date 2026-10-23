@@ -420,8 +420,21 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     stop_.set_tooltip_text(Some(run::STOP_TOOLTIP));
     // The gears after ▶: labelled rather than icon-only, because §03 names the control by its words and
     // the spec's run-bar image shows the phrase on the button. §2's order is ▶ , lucky , ⏹ .
-    let lucky = gtk::Button::with_label(lucky::LUCKY_LABEL);
+    // §2's icon: the two gears beside the words, as spec/img/03-runbar.svg draws them. GTK 4's Button has
+    // no image property (only `from_icon_name` / `label`), so the button is built empty and carries a box:
+    // the gears first, then the phrase. `gears_of` finds the image back for [`lucky_run::set_turning`],
+    // which animates that node alone so the words never rotate.
+    let lucky = gtk::Button::new();
     lucky.set_widget_name("lucky-button");
+    let gears = gtk::Image::from_icon_name(lucky::GEARS_ICON);
+    gears.set_widget_name("lucky-gears");
+    let lucky_words = gtk::Label::new(Some(lucky::LUCKY_LABEL));
+    lucky_words.set_widget_name("lucky-words");
+    let lucky_face = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    lucky_face.set_widget_name("lucky-face");
+    lucky_face.append(&gears);
+    lucky_face.append(&lucky_words);
+    lucky.set_child(Some(&lucky_face));
     lucky.set_tooltip_text(Some(lucky::LUCKY_TOOLTIP));
     paint_run_bar(
         &play,

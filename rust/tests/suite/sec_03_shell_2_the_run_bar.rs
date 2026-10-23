@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk4 as gtk;
+use naivepost::lucky;
 use naivepost::run;
 use naivepost::runqueue::{self, Queue, TRACK_DESCRIBE, TRACK_FIX, TRACK_FRAMES, TRACK_STT, STANDING_TIP, TRACK_JOIN};
 use naivepost::ui;
@@ -315,6 +316,8 @@ fn widgets_round() {
         RAN_TURN.store(true, std::sync::atomic::Ordering::SeqCst);
         check_the_stop_press_stops_the_turning(app);
         RAN_STOP_TURN.store(true, std::sync::atomic::Ordering::SeqCst);
+        check_the_bar_carries_its_words(app);
+        RAN_WORDS.store(true, std::sync::atomic::Ordering::SeqCst);
     });
 }
 
@@ -322,6 +325,7 @@ static RAN_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 static RAN_GATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_TURN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_STOP_TURN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_WORDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Point the settings this process reads at the fake server, as tests/suite/press_play_widgets.rs does.
 fn serve_audio(url: &str) {
@@ -498,6 +502,91 @@ fn check_the_press_gates_the_gears(app: &adw::Application) {
     repaint(&window, &bar);
     assert!(gears.is_sensitive(), "§2: with no run left the gears are pressable again");
     window.close();
+}
+
+/// §2's wording and shape, read off the real buttons: what ⏹ and the gears promise a pointer, that ▶ is
+/// the row's suggested action, that the gears icon sits beside the phrase, and that the progress bar is
+/// the part of the row that takes the free width. Tooltips live only on the widgets, so this half cannot
+/// be done without one.
+fn check_the_bar_carries_its_words(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+
+    // ⏹: §2's own sentence, em dash and ⏸ included — it names the other button rather than leaving the
+    // reader to discover that ⏸ parks a run instead of ending it.
+    let stop_ = ui::stop_button(&window).expect("the run bar has a \u{23f9}");
+    assert_eq!(
+        run::STOP_TOOLTIP,
+        "Stop the run or the playback \u{2014} \u{23f8} is what parks one to carry on later",
+        "§2's words for \u{23f9}, spelled once"
+    );
+    assert_eq!(
+        stop_.tooltip_text().as_deref(),
+        Some(run::STOP_TOOLTIP),
+        "\u{23f9} carries them"
+    );
+
+    // The gears: §2's quoted sentence for the press, the phrase the spec names the control by, and the
+    // two-gear icon beside it (GTK 4's Button holds no label of its own once it has a child, so the words
+    // come from the face box `lucky_run::words_of` reads).
+    let gears = ui::lucky_button(&window).expect("the run bar carries the gears");
+    assert_eq!(
+        lucky::LUCKY_TOOLTIP,
+        "Run every step, Prepare to Produce, without stopping to ask",
+        "§2's words for I'm feeling lucky, spelled once"
+    );
+    assert_eq!(gears.tooltip_text().as_deref(), Some(lucky::LUCKY_TOOLTIP));
+    assert_eq!(
+        naivepost::ui::lucky_run::words_of(&gears).as_deref(),
+        Some(lucky::LUCKY_LABEL),
+        "the button reads the phrase §2 names it by"
+    );
+    assert_eq!(
+        naivepost::ui::lucky_run::gears_of(&gears)
+            .and_then(|image| image.icon_name().map(|n| n.to_string()))
+            .as_deref(),
+        Some(lucky::GEARS_ICON),
+        "§2: \"Icon: two gears\" — the gears are drawn, not just meant"
+    );
+
+    // ▶ is the row's suggested action (§2 says so in parentheses), and the progress bar is the part of the
+    // row that grows: nothing else pins hexpand, sec_03_shell_1_the_window_screen.rs only measures widths.
+    assert!(
+        ui::play_button(&window)
+            .expect("the run bar has a \u{25b6}")
+            .has_css_class("suggested-action"),
+        "§2: \"\u{25b6} (suggested-action)\""
+    );
+    assert!(
+        ui::progress_bar(&window).expect("the run bar carries a progress bar").hexpands(),
+        "§2: the progress bar takes the row's free width"
+    );
+    window.close();
+}
+
+#[test]
+fn sec_03_shell_2_the_run_bar_s1_the_stop_and_lucky_buttons_carry_the_spec_words() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(
+        RAN_WORDS.load(std::sync::atomic::Ordering::SeqCst),
+        "the wording check never ran"
+    );
+}
+
+/// §2: "the GEARS turn", not the button — an animation on the button node would spin the words "I'm
+/// feeling lucky" along with the icon. The rule's positive shape (keyframes + the gears class) is pinned
+/// by f0_4_s2_the_gears_have_a_turning_rule; only §2's own half is asserted here: the button node carries
+/// no animation of its own.
+#[test]
+fn sec_03_shell_2_the_run_bar_s2_only_the_gears_turn() {
+    common::pin_private_cwd();
+    let css = naivepost::ui::lucky_run::gears_css();
+    assert!(
+        !css.contains(&format!(".{} {{ animation", naivepost::ui::lucky_run::RUNNING_CLASS)),
+        "the button node must not rotate, or the label next to the gears rotates with it: {css}"
+    );
 }
 
 /// Repaint the run bar through the door every handler uses, so the state under test is the one the

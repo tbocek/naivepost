@@ -572,9 +572,9 @@ pub fn paint_run_bar(
     // is what makes that true: `lucky_run` also toggles it around a chain, and both agree -- ON exactly
     // while a run stands -- so the two never fight.
     if drawn.gears_turning {
-        lucky.add_css_class(crate::ui::lucky_run::RUNNING_CLASS);
+        crate::ui::lucky_run::set_turning(lucky, true);
     } else {
-        lucky.remove_css_class(crate::ui::lucky_run::RUNNING_CLASS);
+        crate::ui::lucky_run::set_turning(lucky, false);
     }
 }
 

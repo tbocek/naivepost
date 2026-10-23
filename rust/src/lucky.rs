@@ -33,11 +33,14 @@ pub const NARRATE_SKIPPED: &str =
 /// as text beside the gears, so the words go on the button rather than being implied by an icon.
 pub const LUCKY_LABEL: &str = "I'm feeling lucky";
 
-/// The button's tooltip. Mirrors the prototype's step-picker tooltip (gui/runchain.go:220-221), which
-/// is the only explanatory text that control carries; the prototype supplies no separate tooltip for the
-/// press itself, so this states what the press does and where it goes.
-pub const LUCKY_TOOLTIP: &str = "Run every step, in page order: Prepare \u{2192} Cut \u{2192} Narrate \u{2192} Produce. \
-Narrate skips itself when the video has no narration, and Cut skips itself when the cut has hand edits.";
+/// The button's tooltip: §2's own quoted sentence for this control, nothing added to it. What the chain
+/// skips and why is F0.4's news and is said in the log, not on a tooltip.
+pub const LUCKY_TOOLTIP: &str = "Run every step, Prepare to Produce, without stopping to ask";
+
+/// §2's icon for the control: "two gears". GTK's two-cog symbolic — the same name Settings' ⚙ and F0.7's
+/// policy gear use, already listed in [`crate::icons::NAMED_SYMBOLIC_ICONS`], so the shipped icon tree
+/// resolves it; no new icon name is invented for the run bar.
+pub const GEARS_ICON: &str = "emblem-system-symbolic";
 
 /// The four steps in the order the pipeline runs them, taken from [`Page::all`] so the order lives in
 /// one place. Each entry is the page to switch to and the name the log calls it by — which differs from
