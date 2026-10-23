@@ -376,7 +376,8 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
     // A refresh must not stack a second surface on the same bar (build-once, like every other refresh path).
     ui::refresh_effects_lane(&window);
     settle();
-    let surfaces = widget(&window, "fx-bar-0")        .observe_children()
+    let surfaces = widget(&window, "fx-bar-0")
+        .observe_children()
         .iter::<glib::Object>()
         .filter_map(|child| child.ok())
         .filter(|child| {
@@ -404,7 +405,8 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
         ..Default::default()
     };
     assert!(
-        (floor_pair.fx[0].t + floor_pair.fx[0].dur) - floor_pair.fx[0].t < fx_lane::PACK_MIN_SECONDS,
+        (floor_pair.fx[0].t + floor_pair.fx[0].dur) - floor_pair.fx[0].t
+            < fx_lane::PACK_MIN_SECONDS,
         "these are the seconds that broke it: the recomputed span is {:?}",
         (floor_pair.fx[0].t + floor_pair.fx[0].dur) - floor_pair.fx[0].t
     );

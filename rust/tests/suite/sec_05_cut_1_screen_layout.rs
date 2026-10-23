@@ -469,10 +469,7 @@ fn check_the_band_is_whole_and_the_bar_follows(app: &adw::Application) {
     );
     let layers = common::find_named(&window, "track-layers").expect("§1's band is on the page");
     let asked = naivepost::ui::cut_tracks::idle_band_height();
-    println!(
-        "BAND track-layers h={} asked={asked}",
-        layers.height()
-    );
+    println!("BAND track-layers h={} asked={asked}", layers.height());
     assert!(
         layers.height() >= asked,
         "§27's wave strip lives in the bottom third of the band's last row, so a band shorter than the {} px \
@@ -729,7 +726,10 @@ fn sec_05_cut_1_screen_the_band_reserves_a_picture_row_and_its_wave_strip() {
     // One camera: the row ends where the strip ends, and that bottom is the idle band's own ask.
     let one_row_bottom = bands.first_picture + bands.row_height + bands.wave_height;
     let asked = f64::from(cut_tracks::idle_band_height());
-    println!("IDLE first_picture={} one row ends {one_row_bottom}, band asks {asked}", bands.first_picture);
+    println!(
+        "IDLE first_picture={} one row ends {one_row_bottom}, band asks {asked}",
+        bands.first_picture
+    );
     assert!(
         asked >= one_row_bottom,
         "§27's picture row plus its wave strip must fit inside the height the band asks for: row ends \

@@ -106,11 +106,19 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
         // that same row with its dropdown spread — the popup is its own surface, so the two shots come out
         // the same picture here (see the `04-prompt-picker` seed arm for why). `03-window` and `03-sources`
         // stay on the default row, which is the User Context (§1 **5**).
-        if matches!(screen.as_str(), "04-prepare" | "04-prompt-picker") {
+        // `04-prepare` asks for row 2 (Describe): `spec/img/04-prepare.png` IS the Prepare page with the
+        // Describe prompt open (its badge 2 labels the prompt text). `04-prompt-picker` asks for NOTHING:
+        // its reference is the User Context row with the dropdown spread, and a request left over from an
+        // earlier shot would have this one open on another row (`BENCH_OPEN_ROW` reads once per window).
+        if screen.as_str() == "04-prepare" {
             ui::set_bench_open_row(2);
-            // …and earns the mark on it: §1's badge 2 is that row WITH its "edited" mark and a live
-            // Reset, which only exist while this machine holds an override. Before the window, because
-            // the bench reads the settings once as it paints.
+        }
+        // …and only `04-prepare` earns the mark on it: §1's badge 2 is that row WITH its "edited" mark and
+        // a live Reset, which only exist while this machine holds an override. Before the window, because
+        // the bench reads the settings once as it paints. NOT for `04-prompt-picker`: its reference
+        // (`spec/img/04-prompt-picker.png`) is User Context with no mark and no Reset at all, so staging an
+        // override there would draw two widgets the picture does not have.
+        if screen.as_str() == "04-prepare" {
             crate::snapshot_bench::stage_edited_row(2);
         }
         // F2.10: a snapshot renders a PROJECT, so the folder it was asked for is taken on exactly as Open

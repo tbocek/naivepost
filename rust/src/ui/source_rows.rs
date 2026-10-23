@@ -71,6 +71,20 @@ pub fn repaint(rows: &Rows) {
     append_all(rows);
 }
 
+/// The 🎤 narrator button's face: the microphone beside the slot it holds. §4 draws "🎤 1"; a bare number
+/// read as a row index, and with the split toggle also wearing a microphone (before this) the pair looked
+/// like one control that had moved.
+pub const NARRATOR_ICON: &str = "audio-input-microphone-symbolic";
+/// The 🎥 footage toggle's face. §4 draws a camera for it, and the theme this container ships does not
+/// resolve `camera-video-symbolic` (the file sits in `/usr/share/icons/Adwaita/symbolic/devices/`, which
+/// that theme's `index.theme` does not list — so every video row drew the broken-image picture), hence the
+/// recorder glyph: what footage is, recorded. Distinct from the mic and the loudspeaker at a glance.
+pub const FOOTAGE_ICON: &str = "media-record-symbolic";
+/// The 🗣 split-the-voice toggle's face. §4 names 🗣 and no installed theme ships a speaking-head symbolic
+/// (`ls /usr/share/icons/*/symbolic/*/*speaker*` finds only `audio-speakers-symbolic`), so the rewrite
+/// draws a loudspeaker: the voice this file splits off, and unmistakably NOT the narrator's microphone.
+pub const SEPARATE_ICON: &str = "audio-speakers-symbolic";
+
 /// A symbol control: an icon, flat so a row of them reads as one band rather than a row of boxes, and
 /// carrying §4's key to the four symbols at the end of its tooltip.
 fn icon_toggle(icon: &str, name: &str, tip: &str) -> gtk::ToggleButton {
@@ -142,7 +156,7 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
 
     if controls.contains(&Control::Footage) {
         let footage = icon_toggle(
-            "camera-video-symbolic",
+            FOOTAGE_ICON,
             &format!("footage-{index}"),
             sources::FOOTAGE_TIP,
         );
@@ -152,9 +166,14 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
     }
 
     let narrator = icon_button("", &format!("narrator-{index}"), sources::NARRATOR_TIP);
-    // The face is the slot, which is the one thing about this control a glance has to catch; slot 1 is
-    // the narration's voice, so it is drawn as suggested (§4's "slot 1 highlighted").
-    narrator.set_label(&source.narrator.to_string());
+    // §4's face is the mic AND the slot: the mic says what the button is for, the number says which slot it
+    // holds. Slot 1 is the narration's voice, so it is drawn as suggested (§4's "slot 1 highlighted").
+    let face = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+    face.append(&gtk::Image::from_icon_name(NARRATOR_ICON));
+    let slot_face = gtk::Label::new(Some(&source.narrator.to_string()));
+    slot_face.set_widget_name(&format!("narrator-face-{index}"));
+    face.append(&slot_face);
+    narrator.set_child(Some(&face));
     if source.narrator == 1 {
         install_row_css_once();
         narrator.add_css_class("suggested-action");
@@ -198,9 +217,10 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
 
     // 🗣 split-the-voice toggle. Greyed on a split product (§4), never dropped: a row without it would
     // pull the trash to a different x than its neighbours. The prototype's ✂ is NOT reused, because on
-    // Cut ✂ means Split; this reads as the voice it takes off.
+    // Cut ✂ means Split; the face is [`SEPARATE_ICON`], a loudspeaker — see its note: it must not read as
+    // the narrator's microphone standing after the file name.
     let separate = icon_toggle(
-        "audio-input-microphone-symbolic",
+        SEPARATE_ICON,
         &format!("separate-{index}"),
         sources::SEPARATE_TIP,
     );

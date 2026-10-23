@@ -84,6 +84,8 @@ pub const NAMED_SYMBOLIC_ICONS: &[&str] = &[
     "view-list-symbolic",
     "edit-cut-symbolic",
     "audio-input-microphone-symbolic",
+    "audio-speakers-symbolic",
+    "media-record-symbolic",
     "applications-multimedia-symbolic",
     "camera-video-symbolic",
     "dialog-warning-symbolic",

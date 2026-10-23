@@ -199,13 +199,18 @@ pub fn seed_structured_frame(
 /// where the headless window's own allocation came out a little under it (under xvfb the allocated box is
 /// 1230×890 for a window whose floor is 1240×900). `write_png` asks the widget for its size; this is what
 /// it asks instead. Zero means "the widget's own size", which is what a dialog's shot wants.
-static SHOT_SIZE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+static SHOT_SIZE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
 /// Ask for the shot at `width`×`height` pixels (0×0 restores "whatever the widget was allocated").
 pub(crate) fn set_shot_size(width: i32, height: i32) {
     // One slot is enough: a snapshot run renders exactly one screen, and the two numbers are packed so a
-    // single atomic carries both.
-    SHOT_SIZE.store((width << 16) | height, std::sync::atomic::Ordering::SeqCst);
+    // single atomic carries both. The shift happens on u32: a heading row is 700 px wide, and `700 << 16`
+    // overflows i32, which would pack a negative value and make every wide sidecar come out 1x1.
+    SHOT_SIZE.store(
+        (i64::from(u32::try_from(width).unwrap_or(0)) << 16)
+            | i64::from(u32::try_from(height).unwrap_or(0)),
+        std::sync::atomic::Ordering::SeqCst,
+    );
 }
 
 /// The ask [`set_shot_size`] recorded, as two numbers: `(0, 0)` when nothing was asked and a shot therefore
@@ -213,13 +218,13 @@ pub(crate) fn set_shot_size(width: i32, height: i32) {
 // size the shot was taken at and the size the window had.
 pub(crate) fn asked_shot_wh() -> (i32, i32) {
     let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
-    (packed >> 16, packed & 0xffff)
+    ((packed >> 16) as i32, (packed & 0xffff) as i32)
 }
 
 /// The size `write_png` draws at: the ask above when there was one, else the widget's own box.
 fn shot_size(widget: &gtk::Widget) -> (u32, u32) {
     let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
-    let (width, height) = (packed >> 16, packed & 0xffff);
+    let (width, height) = ((packed >> 16) as i32, (packed & 0xffff) as i32);
     if width > 0 && height > 0 {
         return (width as u32, height as u32);
     }
